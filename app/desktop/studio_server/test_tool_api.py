@@ -5807,3 +5807,88 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
             assert len(rag_set["tools"]) == 1
             assert rag_set["tools"][0]["name"] == "mixed_test_rag"
             assert rag_set["tools"][0]["id"].startswith("kiln_tool::rag::")
+
+
+def test_get_search_tools_excludes_archived(client, test_project, mock_project_from_id):
+    """Archived RAG configs should not be returned by /search_tools."""
+
+    active = RagConfig(
+        parent=test_project,
+        name="Active Search Tool",
+        tool_name="active_tool",
+        tool_description="Active",
+        extractor_config_id="e1",
+        chunker_config_id="c1",
+        embedding_config_id="em1",
+        vector_store_config_id="v1",
+        is_archived=False,
+    )
+    archived = RagConfig(
+        parent=test_project,
+        name="Archived Search Tool",
+        tool_name="archived_tool",
+        tool_description="Archived",
+        extractor_config_id="e2",
+        chunker_config_id="c2",
+        embedding_config_id="em2",
+        vector_store_config_id="v2",
+        is_archived=True,
+    )
+    active.save_to_file()
+    archived.save_to_file()
+
+    response = client.get(f"/api/projects/{test_project.id}/search_tools")
+    assert response.status_code == 200
+    tools = response.json()
+    # Only the active one should be returned
+    assert len(tools) == 1
+    assert tools[0]["tool_name"] == "active_tool"
+    assert tools[0]["name"] == "Active Search Tool"
+
+
+async def test_available_tools_excludes_archived_rag(client, test_project):
+    """Archived RAG configs should be excluded from the RAG set in /available_tools."""
+
+    active = RagConfig(
+        parent=test_project,
+        name="Active RAG",
+        description="",
+        tool_name="active_rag",
+        tool_description="Active desc",
+        extractor_config_id="e1",
+        chunker_config_id="c1",
+        embedding_config_id="em1",
+        vector_store_config_id="v1",
+        is_archived=False,
+    )
+    archived = RagConfig(
+        parent=test_project,
+        name="Archived RAG",
+        description="",
+        tool_name="archived_rag",
+        tool_description="Archived desc",
+        extractor_config_id="e2",
+        chunker_config_id="c2",
+        embedding_config_id="em2",
+        vector_store_config_id="v2",
+        is_archived=True,
+    )
+    active.save_to_file()
+    archived.save_to_file()
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+        assert response.status_code == 200
+        result = response.json()
+
+        rag_set = next(
+            (s for s in result if s["set_name"] == "Search Tools (RAG)"), None
+        )
+        assert rag_set is not None
+        # Only the active RAG config should be present
+        assert len(rag_set["tools"]) == 1
+        assert rag_set["tools"][0]["name"] == "active_rag"

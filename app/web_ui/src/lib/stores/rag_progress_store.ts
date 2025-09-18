@@ -20,6 +20,7 @@ interface RagConfigurationProgressState {
   logs: Record<string, LogMessage[]>
   status: Record<string, RagConfigurationStatus>
   running_rag_configs: Record<string, boolean>
+  is_archived: Record<string, boolean>
   error: KilnError | null
   last_started_rag_config_id: string | null
 }
@@ -50,6 +51,9 @@ function createRagProgressStore() {
 
     // rag configuration id -> is_running
     running_rag_configs: {},
+
+    // rag configuration id -> is_archived
+    is_archived: {},
 
     // error
     error: null,
@@ -89,7 +93,7 @@ function createRagProgressStore() {
     }
 
     const tasks: Promise<unknown>[] = data.map((rag_config) => {
-      if (!rag_config.id) {
+      if (!rag_config.id || rag_config.is_archived) {
         return Promise.resolve()
       }
       return run_rag_config(project_id, rag_config.id)
@@ -314,6 +318,9 @@ function createRagProgressStore() {
       }
 
       eventSource.onerror = (error) => {
+        console.error(
+          `Error processing SSE message while running RAG config ${rag_config_id}: ${error}`,
+        )
         update((state) => ({
           ...state,
           logs: {
@@ -345,6 +352,7 @@ function createRagProgressStore() {
         logs: {},
         running_rag_configs: {},
         rag_configs: {},
+        is_archived: {},
         error: null,
         last_started_rag_config_id: null,
       }),
@@ -500,6 +508,16 @@ export async function load_rag_configs(project_id: string) {
             {} as Record<string, RagConfigWithSubConfigs>,
           ),
         },
+        is_archived: {
+          ...state.is_archived,
+          ...rag_configs_response.reduce(
+            (acc, rag_config) => {
+              acc[String(rag_config.id)] = rag_config.is_archived
+              return acc
+            },
+            {} as Record<string, boolean>,
+          ),
+        },
       }
       return newState
     })
@@ -509,4 +527,17 @@ export async function load_rag_configs(project_id: string) {
       error: createKilnError(e),
     }))
   }
+}
+
+export async function update_rag_config_archived_state(
+  rag_config_id: string,
+  is_archived: boolean,
+) {
+  ragProgressStore.update((state) => ({
+    ...state,
+    is_archived: {
+      ...state.is_archived,
+      [rag_config_id]: is_archived,
+    },
+  }))
 }

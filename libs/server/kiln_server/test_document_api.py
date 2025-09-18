@@ -1297,6 +1297,8 @@ async def test_get_rag_configs_success(
     ):
         assert response_rag_config["id"] == rag_config.id
         assert response_rag_config["name"] == rag_config.name
+        assert "is_archived" in response_rag_config
+        assert response_rag_config["is_archived"] is False
         assert response_rag_config["description"] == rag_config.description
         assert (
             response_rag_config["extractor_config"]["id"]
@@ -1437,6 +1439,100 @@ async def test_get_rag_configs_with_mixed_tags_success(
         assert response_rag_config["name"] == rag_config.name
         assert response_rag_config["description"] == rag_config.description
         assert response_rag_config["tags"] == rag_config.tags
+
+
+@pytest.mark.asyncio
+async def test_patch_rag_config_only_updates_is_archived(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Patch Name",
+        description="Patch Desc",
+        tool_name="tool",
+        tool_description="tdesc",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+        tags=["a"],
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        # Only toggle archived
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}",
+            json={"is_archived": True},
+        )
+
+    assert response.status_code == 200
+    updated = response.json()
+    # is_archived updated, other fields unchanged
+    assert updated["is_archived"] is True
+    assert updated["name"] == "Patch Name"
+    assert updated["description"] == "Patch Desc"
+
+    # Unarchive again
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}",
+            json={"is_archived": False},
+        )
+    assert response.status_code == 200
+    assert response.json()["is_archived"] is False
+    assert updated["name"] == "Patch Name"
+    assert updated["description"] == "Patch Desc"
+
+
+@pytest.mark.asyncio
+async def test_run_rag_config_returns_error_when_archived(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Run RAG",
+        description="",
+        tool_name="tool",
+        tool_description="tdesc",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+        tags=None,
+        is_archived=True,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.utils.shared_async_lock_manager") as mock_lock_manager,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_lock_manager.acquire.return_value.__aenter__ = AsyncMock()
+        mock_lock_manager.acquire.return_value.__aexit__ = AsyncMock()
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}/run"
+        )
+
+    assert response.status_code == 422
+    assert "archived" in response.json()["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1592,6 +1688,9 @@ async def test_run_rag_config_not_found(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch(
+            "kiln_server.document_api.get_rag_config_from_id"
+        ) as mock_get_rag_config_from_id,
+        patch(
             "kiln_server.document_api.build_rag_workflow_runner"
         ) as mock_build_runner,
         patch("kiln_ai.utils.lock.shared_async_lock_manager") as mock_lock_manager,
@@ -1602,6 +1701,8 @@ async def test_run_rag_config_not_found(client, mock_project):
         )
         mock_lock_manager.acquire.return_value.__aenter__ = AsyncMock()
         mock_lock_manager.acquire.return_value.__aexit__ = AsyncMock()
+        mock_get_rag_config_from_id.return_value = MagicMock(spec=RagConfig)
+        mock_get_rag_config_from_id.return_value.is_archived = False
 
         response = client.get(
             f"/api/projects/{mock_project.id}/rag_configs/fake_id/run"
@@ -1683,6 +1784,7 @@ async def test_get_rag_config_progress_specific_configs(
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
             vector_store_config_id=mock_vector_store_config.id,
+            is_archived=False,
         ),
         RagConfig(
             parent=mock_project,
@@ -1694,6 +1796,7 @@ async def test_get_rag_config_progress_specific_configs(
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
             vector_store_config_id=mock_vector_store_config.id,
+            is_archived=True,  # we should keep archived configs in the progress
         ),
     ]
 
@@ -2429,6 +2532,24 @@ async def test_search_rag_config_not_found(client, mock_project):
 
     assert response.status_code == 404, response.text
     assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_rag_config_archived(client, mock_project, mock_rag_config):
+    """Test search with archived RAG config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        mock_rag_config.is_archived = True
+        mock_rag_config.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            json={"query": "test query"},
+        )
+
+    assert response.status_code == 422, response.text
+    assert "archived" in response.json()["message"]
 
 
 @pytest.mark.asyncio

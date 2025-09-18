@@ -42,7 +42,22 @@
     loading = false
   })
 
-  $: rag_configs = $allRagConfigs
+  $: all_rag_configs = $allRagConfigs
+
+  $: active_rag_configs = (all_rag_configs || [])
+    .filter((rag_config) => !rag_config.is_archived)
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+
+  // sort the rag configs to have the archived ones last, then by date created
+  $: archived_rag_configs = (all_rag_configs || [])
+    .filter((rag_config) => rag_config.is_archived)
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
 
   function updateURL(params: Record<string, string | string[] | number>) {
     // update the URL so you can share links
@@ -71,9 +86,9 @@
   <AppPage
     title="Search Tools (RAG)"
     subtitle="Enable tasks to search documents for knowledge."
-    no_y_padding={!!(rag_configs && rag_configs.length == 0)}
+    no_y_padding={!!(all_rag_configs && all_rag_configs.length == 0)}
     breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
-    action_buttons={rag_configs && rag_configs.length == 0
+    action_buttons={all_rag_configs && all_rag_configs.length == 0
       ? []
       : [
           {
@@ -87,11 +102,11 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if rag_configs && rag_configs.length == 0}
+    {:else if all_rag_configs && all_rag_configs.length == 0}
       <div class="flex flex-col items-center justify-center min-h-[75vh]">
         <EmptyRagConfigsIntro {project_id} />
       </div>
-    {:else if rag_configs}
+    {:else if all_rag_configs}
       <div class="my-4">
         <div class="overflow-x-auto rounded-lg border">
           <table class="table table-fixed">
@@ -102,7 +117,10 @@
               </tr>
             </thead>
             <tbody>
-              {#each (rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
+              {#each (active_rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
+                <TableRagConfigRow {rag_config} {project_id} />
+              {/each}
+              {#each (archived_rag_configs || []).slice((page_number - 1) * page_size, page_number * page_size) as rag_config}
                 <TableRagConfigRow {rag_config} {project_id} />
               {/each}
             </tbody>
@@ -110,10 +128,10 @@
         </div>
       </div>
 
-      {#if page_number > 1 || (rag_configs && rag_configs.length > page_size)}
+      {#if page_number > 1 || (all_rag_configs && all_rag_configs.length > page_size)}
         <div class="flex flex-row justify-center mt-10">
           <div class="join">
-            {#each Array.from({ length: Math.ceil(rag_configs.length / page_size) }, (_, i) => i + 1) as page}
+            {#each Array.from({ length: Math.ceil(all_rag_configs.length / page_size) }, (_, i) => i + 1) as page}
               <button
                 class="join-item btn {page_number == page ? 'btn-active' : ''}"
                 on:click={() => updateURL({ page: page })}

@@ -32,7 +32,17 @@
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 
-  function status_to_badge_props(status: RagConfigurationStatus) {
+  function status_to_badge_props(
+    status: RagConfigurationStatus,
+    is_archived: boolean,
+  ) {
+    if (is_archived) {
+      return {
+        text: "Archived",
+        archived: true,
+      }
+    }
+
     switch (status) {
       case "complete": {
         return {
@@ -66,7 +76,7 @@
     }
   }
 
-  $: status_badge_props = status_to_badge_props(status)
+  $: status_badge_props = status_to_badge_props(status, rag_config.is_archived)
 
   function open() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
@@ -136,13 +146,15 @@
           <!-- Status and Action Row -->
           <div class="flex items-center justify-between gap-4">
             <div
-              class="badge badge-outline px-3 py-1 {status_badge_props?.warning
-                ? 'badge-warning'
+              class="badge px-3 py-1 {status_badge_props?.warning
+                ? 'badge-outline badge-warning'
                 : ''} {status_badge_props?.running
-                ? 'badge-success'
+                ? 'badge-outline badge-success'
                 : ''} {status_badge_props?.error
-                ? 'badge-error'
-                : ''} {status_badge_props?.primary ? 'badge-primary' : ''}"
+                ? 'badge-outline badge-error'
+                : ''} {status_badge_props?.primary
+                ? 'badge-outline badge-primary'
+                : ''} {status_badge_props?.archived ? 'badge-secondary' : ''}"
             >
               {status_badge_props?.text}
             </div>
@@ -164,7 +176,7 @@
                 max={total_docs || 100}
               ></progress>
             </div>
-          {:else if total_docs > 0}
+          {:else if total_docs > 0 && !rag_config.is_archived}
             <!-- Document count for non-running states -->
             <div class="text-gray-500">
               {#if rag_progress.total_document_completed_count < total_docs}
@@ -177,9 +189,11 @@
             </div>
           {/if}
 
-          <div role="presentation" on:click|stopPropagation>
-            <RunRagControl {rag_config} {project_id} />
-          </div>
+          {#if !rag_config.is_archived}
+            <div role="presentation" on:click|stopPropagation>
+              <RunRagControl {rag_config} {project_id} />
+            </div>
+          {/if}
         </div>
       </td>
     {:else}
