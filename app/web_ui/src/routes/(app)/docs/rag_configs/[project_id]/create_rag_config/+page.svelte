@@ -638,7 +638,7 @@
                       "The model used to extract text from your documents (PDFs, images, videos, etc).",
                   },
                   {
-                    name: "Chunker",
+                    name: "Chunking Strategy",
                     value: template.chunker.description,
                     tooltip:
                       "Parameters for splitting larger documents into smaller chunks for search.",
