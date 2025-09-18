@@ -28,6 +28,7 @@
       name: template.name,
       subtitle: template.preview_subtitle,
       description: template.preview_description,
+      tooltip: template.preview_tooltip,
       on_click: () => suggestion_selected(template, id),
       required_api_keys: template.required_api_keys,
     }),
