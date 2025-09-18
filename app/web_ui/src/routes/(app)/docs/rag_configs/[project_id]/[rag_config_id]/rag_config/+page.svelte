@@ -319,13 +319,13 @@
                   tooltip: "The tool description the model sees.",
                 },
                 {
-                  name: "Internal Name",
+                  name: "Reference Name",
                   tooltip:
                     "A name to identify this RAG configuration for your own reference, not seen by the model.",
                   value: rag_config.name || "N/A",
                 },
                 {
-                  name: "Internal Description",
+                  name: "Reference Description",
                   tooltip:
                     "A description of the RAG configuration for your own reference, not seen by the model.",
                   value: rag_config.description || "N/A",
@@ -498,7 +498,7 @@
   patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
   fields={[
     {
-      label: "Internal Name",
+      label: "Reference Name",
       description:
         "A name to identify this search tool for your own reference, not seen by the model.",
       api_name: "name",
@@ -506,7 +506,7 @@
       input_type: "input",
     },
     {
-      label: "Internal Description",
+      label: "Reference Description",
       description:
         "A description of the search tool for your own reference, not seen by the model.",
       api_name: "description",
