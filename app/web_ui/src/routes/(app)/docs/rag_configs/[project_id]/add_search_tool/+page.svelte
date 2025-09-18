@@ -178,7 +178,11 @@
 >
   <div>
     <p class="mb-6">
-      This search configuration requires an {missing_api_keys_string} API key.
+      {#if missing_api_keys === "Openai"}
+        This search configuration requires an OpenAI API key.
+      {:else if missing_api_keys === "Gemini"}
+        This search configuration requires a Google Gemini API key.
+      {/if}
     </p>
     {#if settings && settings["open_router_api_key"]}
       <Warning
