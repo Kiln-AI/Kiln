@@ -10,6 +10,7 @@
     href?: string
     on_click?: () => void
     is_external?: boolean
+    badge_text?: string
   }>
 </script>
 
@@ -20,6 +21,7 @@
     {#each items as item}
       <SettingsItem
         name={item.name}
+        badge_text={item.badge_text}
         description={item.description}
         button_text={item.button_text}
         href={item.href}

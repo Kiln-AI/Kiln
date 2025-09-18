@@ -84,7 +84,7 @@
     <FormElement
       id="tags_selector"
       label="Document Selection"
-      description="Define which documents can be retrieved."
+      description="Define which documents will be searched by this tool."
       info_description="If a tag filter is applied, only documents with those tags will be searched by this tool. You can add tags to your documents in the document library."
       inputType="multi_select"
       empty_label="All Documents in Library"

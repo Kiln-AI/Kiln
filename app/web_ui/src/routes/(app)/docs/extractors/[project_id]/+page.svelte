@@ -116,7 +116,7 @@
 
 <AppPage
   title="Document Extractors"
-  subtitle="Extract data from your documents"
+  subtitle="Extractors convert files like PDFs or images into text your models can use"
   limit_max_width
   breadcrumbs={[
     {

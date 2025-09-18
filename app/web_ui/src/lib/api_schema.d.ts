@@ -1766,6 +1766,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/search_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Search Tools */
+        get: operations["get_search_tools_api_projects__project_id__search_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2307,6 +2324,16 @@ export interface components {
              * @description A description for your own reference.
              */
             description?: string | null;
+            /**
+             * Tool Name
+             * @description A name for the model to identify the Search Tool in conversations.
+             */
+            tool_name: string;
+            /**
+             * Tool Description
+             * @description A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.
+             */
+            tool_description: string;
             /**
              * Extractor Config Id
              * @description The extractor config to use for the RAG workflow
@@ -3981,6 +4008,16 @@ export interface components {
              */
             description?: string | null;
             /**
+             * Tool Name
+             * @description A name for the model to identify the Search Tool in conversations.
+             */
+            tool_name: string;
+            /**
+             * Tool Description
+             * @description A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.
+             */
+            tool_description: string;
+            /**
              * Extractor Config Id
              * @description The ID of the extractor config used to extract the documents.
              */
@@ -4016,6 +4053,10 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
             /**
              * Created At
              * Format: date-time
@@ -4285,6 +4326,17 @@ export interface components {
              * @description The score of the chunk, which depends on the similarity metric used.
              */
             similarity: number | null;
+        };
+        /** SearchToolApiDescription */
+        SearchToolApiDescription: {
+            /** Id */
+            id: string | null;
+            /** Tool Name */
+            tool_name: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
         };
         /**
          * StructuredOutputMode
@@ -8818,6 +8870,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_search_tools_api_projects__project_id__search_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchToolApiDescription"][];
                 };
             };
             /** @description Validation Error */

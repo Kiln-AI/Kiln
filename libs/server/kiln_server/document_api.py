@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Dict, List
+from typing import Annotated, Awaitable, Callable, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -97,7 +97,7 @@ async def run_extractor_runner_with_status(
 
 
 async def run_rag_workflow_runner_with_status(
-    runner: RagWorkflowRunner,
+    runner_factory: Callable[[], Awaitable[RagWorkflowRunner]],
 ) -> StreamingResponse:
     async def event_generator():
         latest_progress = RagProgress()
@@ -130,6 +130,9 @@ async def run_rag_workflow_runner_with_status(
             return data
 
         try:
+            # we initialize the runner inside the wrapper to surface errors to the frontend via logging UI
+            # we do it via a factory to allow for easier mocking in tests
+            runner = await runner_factory()
             async for progress in runner.run():
                 latest_progress = progress.model_copy()
                 data = serialize_progress(progress)
@@ -144,7 +147,19 @@ async def run_rag_workflow_runner_with_status(
             ]
             data = serialize_progress(latest_progress)
             yield f"data: {json.dumps(data)}\n\n"
-            return
+        except Exception as e:
+            logger.error(
+                f"Unexpected server error running RAG workflow runner: {e}",
+                exc_info=True,
+            )
+            latest_progress.logs = [
+                LogMessage(
+                    level="error",
+                    message=f"Unexpected server error: {e}",
+                )
+            ]
+            data = serialize_progress(latest_progress)
+            yield f"data: {json.dumps(data)}\n\n"
 
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
@@ -187,6 +202,8 @@ class RagConfigWithSubConfigs(BaseModel):
     id: ID_TYPE
     name: str
     description: str | None
+    tool_name: str
+    tool_description: str
     created_at: datetime.datetime
     created_by: str
     extractor_config: ExtractorConfig
@@ -204,6 +221,12 @@ class CreateRagConfigRequest(BaseModel):
     description: str | None = Field(
         description="A description for your own reference.",
         default=None,
+    )
+    tool_name: str = Field(
+        description="A name for the model to identify the Search Tool in conversations.",
+    )
+    tool_description: str = Field(
+        description="A description of the purpose of the tool. The model will use this description to understand the tool's capabilities.",
     )
     extractor_config_id: ID_TYPE = Field(
         description="The extractor config to use for the RAG workflow",
@@ -1255,6 +1278,8 @@ def connect_document_api(app: FastAPI):
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
+            tool_name=request.tool_name,
+            tool_description=request.tool_description,
             extractor_config_id=extractor_config.id,
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
@@ -1314,6 +1339,8 @@ def connect_document_api(app: FastAPI):
                     id=rag_config.id,
                     name=rag_config.name,
                     description=rag_config.description,
+                    tool_name=rag_config.tool_name,
+                    tool_description=rag_config.tool_description,
                     tags=rag_config.tags,
                     created_at=rag_config.created_at,
                     created_by=rag_config.created_by,
@@ -1382,6 +1409,8 @@ def connect_document_api(app: FastAPI):
             id=rag_config.id,
             name=rag_config.name,
             description=rag_config.description,
+            tool_name=rag_config.tool_name,
+            tool_description=rag_config.tool_description,
             created_at=rag_config.created_at,
             created_by=rag_config.created_by,
             extractor_config=extractor_config,
@@ -1398,10 +1427,12 @@ def connect_document_api(app: FastAPI):
         rag_config_id: str,
     ) -> StreamingResponse:
         project = project_from_id(project_id)
-        runner = await build_rag_workflow_runner(project, rag_config_id)
+
+        async def runner_factory():
+            return await build_rag_workflow_runner(project, rag_config_id)
 
         # the workflow runner handles locking
-        return await run_rag_workflow_runner_with_status(runner)
+        return await run_rag_workflow_runner_with_status(runner_factory)
 
     @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(

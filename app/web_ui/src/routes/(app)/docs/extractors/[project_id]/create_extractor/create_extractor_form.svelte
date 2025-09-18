@@ -8,6 +8,12 @@
   import { createEventDispatcher } from "svelte"
   import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import {
+    default_extractor_document_prompts,
+    default_extractor_image_prompts,
+    default_extractor_video_prompts,
+    default_extractor_audio_prompts,
+  } from "./default_extractor_prompts"
 
   $: project_id = $page.params.project_id
 
@@ -18,42 +24,11 @@
   let selected_extractor_option: string
   let output_format: "text/markdown" | "text/plain" = "text/markdown"
 
-  $: prompt_document = `Transcribe the document into ${output_format}.
+  $: prompt_document = default_extractor_document_prompts(output_format)
+  $: prompt_image = default_extractor_image_prompts(output_format)
+  $: prompt_video = default_extractor_video_prompts(output_format)
+  $: prompt_audio = default_extractor_audio_prompts(output_format)
 
-If the document contains images and figures, describe them in the output. For example, if the
-document contains an image, describe it in the output. If the document contains a table, format it 
-appropriately and add a sentence describing it as a whole.
-
-Format the output as valid ${output_format}.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the document:'.  
-`
-
-  $: prompt_image = `Describe the image in ${output_format}.
-
-If the image contains text, transcribe it into ${output_format}.
-
-Do NOT include any prefatory text such as 'Here is the description of the image:'.
-`
-
-  $: prompt_video = `Describe what happens in the video in ${output_format}.
-
-Take into account the audio as well as the visual content. Your transcription must chronologically
-describe the events in the video and transcribe any speech.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the video:'.
-`
-
-  $: prompt_audio = `Transcribe the document into ${output_format}.
-
-If the document contains images and figures, describe them in the output. For example, if the
-document contains an image, describe it in the output. If the document contains a table, format it 
-appropriately and add a sentence describing it as a whole.
-
-Format the output as valid ${output_format}.
-
-Do NOT include any prefatory text such as 'Here is the transcription of the document:'.
-`
   export let keyboard_submit: boolean = false
 
   const dispatch = createEventDispatcher<{
@@ -120,6 +95,7 @@ Do NOT include any prefatory text such as 'Here is the transcription of the docu
     <AvailableModelsDropdown
       label="Extraction Model"
       description="The model to use to transform your documents into text."
+      info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This model extracts text from these files."
       bind:model={selected_extractor_option}
       filter_models_predicate={(m) => m.supports_doc_extraction}
       suggested_mode="doc_extraction"

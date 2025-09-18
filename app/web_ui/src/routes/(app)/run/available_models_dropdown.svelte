@@ -23,6 +23,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import { mime_type_to_string } from "$lib/utils/formatters"
 
   const LOGPROBS_WARNING =
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
@@ -30,6 +31,7 @@
   export let model: string = $ui_state.selected_model
   export let label: string = "Model"
   export let description: string | undefined = undefined
+  export let info_description: string | undefined = undefined
   // filter out all the models that do not match the predicate
   export let filter_models_predicate: (model: ModelDetails) => boolean = (_) =>
     true
@@ -241,6 +243,32 @@
       })
     }
 
+    if (suggested_mode === "doc_extraction") {
+      for (const option_group of options) {
+        for (const option of option_group.options) {
+          if (typeof option.value !== "string") {
+            continue
+          }
+          const slash_index = option.value.indexOf("/")
+          const option_provider_name = option.value.substring(0, slash_index)
+          const option_model_name = option.value.substring(slash_index + 1)
+          const mime_types =
+            available_model_details(
+              option_model_name,
+              option_provider_name,
+              providers,
+            )?.multimodal_mime_types || []
+
+          if (mime_types.length) {
+            const formatted_mime_types = mime_types.map((mime_type) =>
+              mime_type_to_string(mime_type),
+            )
+            option.description = "Supports " + formatted_mime_types.join(", ")
+          }
+        }
+      }
+    }
+
     return options
   }
 
@@ -280,6 +308,7 @@
   <FormElement
     {label}
     {description}
+    {info_description}
     bind:value={model}
     id="model"
     inputType="fancy_select"
