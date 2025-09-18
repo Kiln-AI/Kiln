@@ -17,9 +17,8 @@
   } from "$lib/utils/formatters"
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
-  // TODO: move to shared folder
-  import TagDropdown from "../../../../../lib/ui/tag_dropdown.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
 
   let upload_file_dialog: UploadFileDialog | null = null
 
