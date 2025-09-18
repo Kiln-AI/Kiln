@@ -5,6 +5,11 @@
   export let on_select: (tag: string) => void = () => {}
   export let on_escape: () => void = () => {}
   export let focus_on_mount: boolean = false
+  export let example_tag_set: "task_run" | "doc" = "task_run"
+  let example_tags: string[] =
+    example_tag_set === "task_run"
+      ? ["needs_rating", "golden", "eval_set", "fine_tune_data"]
+      : ["knowledge_base", "faq", "policies", "research"]
   let error: string | null = null
   let id = crypto.randomUUID()
 
@@ -41,10 +46,9 @@
     on:keyup={handle_keyup}
   />
   <datalist id="tag_options">
-    <option value="needs_rating"></option>
-    <option value="golden"></option>
-    <option value="eval_set"></option>
-    <option value="fine_tune_data"></option>
+    {#each example_tags as tag}
+      <option value={tag}></option>
+    {/each}
   </datalist>
   {#if error}
     <div class="text-error text-sm mt-1">{error}</div>

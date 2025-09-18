@@ -6,6 +6,7 @@
   import { client } from "$lib/api_client"
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
+  import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
 
   $: project_id = $page.params.project_id
 
@@ -147,8 +148,14 @@
       subtitle: "by Kiln",
       description:
         "One click to try out tool calling, for simple math operations.",
-      button_text: "Enable",
       on_click: () => enable_demo_tools(),
+    },
+    {
+      name: "Search Tool (RAG)",
+      subtitle: "by Kiln",
+      description:
+        "Build a search tool to retrieve information from custom documents.",
+      on_click: () => goto(`/docs/rag_configs/${project_id}/add_search_tool`),
     },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
@@ -198,46 +205,19 @@
   ]}
 >
   <div>
-    <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
-    <div
-      class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
-    >
-      {#each sample_tools as tool}
-        <div class="carousel-item">
-          <div
-            class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
-            on:click={tool.on_click}
-            on:keydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                tool.on_click()
-              }
-            }}
-            tabindex="0"
-            role="button"
-            aria-label="Connect {tool.name}"
-          >
-            <div class="p-4">
-              <div class="text-lg font-semibold leading-tight">
-                {tool.name}
-              </div>
-              {#if tool.subtitle}
-                <div class="text-xs text-gray-500 font-medium mt-1">
-                  {tool.subtitle}
-                </div>
-              {/if}
-              <p class="text-base-content/70 text-xs leading-relaxed mt-3">
-                {tool.description}
-              </p>
-            </div>
-          </div>
-        </div>
-      {/each}
-    </div>
+    <h2 class="text-lg font-medium text-gray-900 mb-3">Suggested Tools</h2>
+    <FeatureCarousel features={sample_tools} />
     <div class="max-w-4xl mt-8">
       <SettingsSection
         title="Custom Tools"
         items={[
+          {
+            name: "Search Tools (RAG)",
+            description:
+              "Create a tool to search for information in documents.",
+            button_text: "Create",
+            href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
           {
             name: "Kiln Tasks",
             description: "Add an existing Kiln Task as a tool to your project.",

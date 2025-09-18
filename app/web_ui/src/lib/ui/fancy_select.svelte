@@ -578,7 +578,7 @@
                 aria-selected={multi_select
                   ? selected_values.includes(item.value)
                   : selected === item.value}
-                class="pointer-events-auto {focusedIndex === overallIndex
+                class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
                   : 'hover:bg-transparent'}"
                 on:mousedown={(event) => {
@@ -589,7 +589,7 @@
                   focusedIndex = overallIndex
                 }}
               >
-                <div class="flex flex-row gap-3 items-center">
+                <div class="flex flex-row gap-3 items-center flex-1">
                   {#if multi_select}
                     <input
                       type="checkbox"
@@ -615,7 +615,7 @@
                     </div>
                     {#if item.description}
                       <div
-                        class="text-xs font-medium text-base-content/40 w-full whitespace-pre-line"
+                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"
                       >
                         {item.description}
                       </div>

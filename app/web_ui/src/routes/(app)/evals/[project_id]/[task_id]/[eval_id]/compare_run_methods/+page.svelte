@@ -25,7 +25,8 @@
   } from "$lib/stores"
   import {
     load_task_run_configs,
-    task_run_configs_by_task_id,
+    run_configs_by_task_composite_id,
+    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
     getRunConfigPromptDisplayName,
@@ -62,7 +63,10 @@
   $: loading = eval_loading || eval_configs_loading
   $: error = eval_error || eval_configs_error
 
-  $: current_task_run_configs = $task_run_configs_by_task_id[task_id] || []
+  $: current_task_run_configs =
+    $run_configs_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ] || []
 
   $: should_select_eval_config =
     current_task_run_configs?.length && !evaluator?.current_run_config_id
@@ -438,17 +442,21 @@
             )}
           />
           {#if !has_default_eval_config}
-            <Warning
-              warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
-              warning_color="warning"
-              tight={true}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
+                warning_color="warning"
+                tight={true}
+              />
+            </div>
           {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
-            <Warning
-              warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
-              warning_color="warning"
-              tight={true}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
+                warning_color="warning"
+                tight={true}
+              />
+            </div>
           {/if}
         </div>
         <div

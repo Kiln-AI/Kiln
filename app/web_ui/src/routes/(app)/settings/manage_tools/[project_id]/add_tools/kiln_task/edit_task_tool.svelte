@@ -9,7 +9,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import {
     load_task_run_configs,
-    task_run_configs_by_task_id,
+    run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -61,7 +61,10 @@
     load_existing_tool_server()
   }
 
-  $: task_options = format_task_options(tasks, $task_run_configs_by_task_id)
+  $: task_options = format_task_options(
+    tasks,
+    $run_configs_by_task_composite_id,
+  )
   function format_task_options(
     tasks: Task[],
     run_configs: Record<string, TaskRunConfig[]>,

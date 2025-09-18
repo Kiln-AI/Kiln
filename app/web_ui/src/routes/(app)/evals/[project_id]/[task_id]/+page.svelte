@@ -16,13 +16,17 @@
   } from "$lib/stores"
   import {
     load_task_run_configs,
-    task_run_configs_by_task_id,
+    run_configs_by_task_composite_id,
+    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
-  $: current_task_run_configs = $task_run_configs_by_task_id[task_id] || []
+  $: current_task_run_configs =
+    $run_configs_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ] || []
 
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
@@ -47,7 +51,7 @@
     // Usually cached and fast
     load_model_info()
     // Load the evals and run configs in parallel
-    Promise.all([get_evals(), load_task_run_configs(project_id, task_id)])
+    await Promise.all([get_evals(), load_task_run_configs(project_id, task_id)])
   })
 
   async function get_evals() {

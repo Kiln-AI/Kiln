@@ -104,7 +104,7 @@
         if (tool.properties["server_url"]) {
           properties.push({
             name: "Server URL",
-            value: tool.properties["server_url"],
+            value: String(tool.properties["server_url"]),
           })
         }
         break
@@ -112,7 +112,7 @@
         if (tool.properties["command"]) {
           properties.push({
             name: "Command",
-            value: tool.properties["command"],
+            value: String(tool.properties["command"]),
           })
         }
         const args = tool.properties["args"]
@@ -248,6 +248,17 @@
 
     goto(`/settings/manage_tools/${project_id}`)
   }
+
+  $: headers = tool_server?.properties["headers"] as Record<string, string>
+  $: secret_header_keys = tool_server?.properties[
+    "secret_header_keys"
+  ] as string[]
+  $: env_vars = tool_server?.properties["env_vars"] as
+    | Record<string, string>
+    | undefined
+  $: secret_env_var_keys = tool_server?.properties["secret_env_var_keys"] as
+    | string[]
+    | undefined
 </script>
 
 <div class="max-w-[1400px]">
@@ -300,8 +311,8 @@
             <div class="mt-8">
               <PropertyList
                 properties={buildPropertiesWithSecrets(
-                  tool_server.properties["headers"],
-                  tool_server.properties["secret_header_keys"],
+                  headers,
+                  secret_header_keys,
                   tool_server.missing_secrets,
                 )}
                 title="Headers"
@@ -313,12 +324,12 @@
               title="Run Configuration"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
-            {#if (tool_server.properties["env_vars"] && Object.keys(tool_server.properties["env_vars"]).length > 0) || (tool_server.properties["secret_env_var_keys"] && Object.keys(tool_server.properties["secret_env_var_keys"]).length > 0)}
+            {#if (env_vars && Object.keys(env_vars).length > 0) || (secret_env_var_keys && Object.keys(secret_env_var_keys).length > 0)}
               <div class="mt-8">
                 <PropertyList
                   properties={buildPropertiesWithSecrets(
-                    tool_server.properties["env_vars"],
-                    tool_server.properties["secret_env_var_keys"],
+                    env_vars || {},
+                    secret_env_var_keys || [],
                     tool_server.missing_secrets,
                   )}
                   title="Environment Variables"

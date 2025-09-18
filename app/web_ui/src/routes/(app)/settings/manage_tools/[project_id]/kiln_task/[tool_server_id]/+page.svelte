@@ -79,14 +79,14 @@
     if (tool.properties["task_id"]) {
       properties.push({
         name: "Task ID",
-        value: tool.properties["task_id"],
+        value: String(tool.properties["task_id"]),
       })
     }
 
     if (tool.properties["run_config_id"]) {
       properties.push({
         name: "Run Config ID",
-        value: tool.properties["run_config_id"],
+        value: String(tool.properties["run_config_id"]),
       })
     }
 

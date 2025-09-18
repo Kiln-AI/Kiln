@@ -11,7 +11,9 @@
   } from "$lib/stores"
   import {
     save_new_task_run_config,
-    task_run_configs_by_task_id,
+    run_configs_by_task_composite_id,
+    get_task_composite_id,
+    update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -34,14 +36,16 @@
   import { tick } from "svelte"
   import RunOptionsDropdown from "./run_options_dropdown.svelte"
 
-  let error: KilnError | null = null
+  let run_error: KilnError | null = null
   let submitting = false
   let run_complete = false
+  let save_config_error: KilnError | null = null
+  let set_default_error: KilnError | null = null
 
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
 
-  let selected_run_config: TaskRunConfig | "custom" = "custom"
+  let selected_run_config_id: string | "custom" = "custom"
   let updating_current_run_options = false
 
   let prompt_method = "simple_prompt_builder"
@@ -123,7 +127,7 @@
   async function run_task() {
     try {
       submitting = true
-      error = null
+      run_error = null
       response = null
       run_complete = false
       model_dropdown_error_message = null
@@ -145,7 +149,6 @@
         body: {
           run_config_properties: run_options_as_run_config_properties(),
           plaintext_input: input_form.get_plaintext_input_data(),
-          // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
           structured_input: input_form.get_structured_input_data(),
           tags: ["manual_run"],
         },
@@ -160,7 +163,7 @@
       })
       response = data
     } catch (e) {
-      error = createKilnError(e)
+      run_error = createKilnError(e)
     } finally {
       submitting = false
       await tick() // ensure {#if !submitting && response} has rendered
@@ -187,6 +190,12 @@
   $: if (selected_run_config !== "custom") {
     update_current_run_options()
   }
+
+  $: selected_run_config,
+    (() => {
+      save_config_error = null
+      set_default_error = null
+    })()
 
   async function update_current_run_options() {
     updating_current_run_options = true
@@ -225,7 +234,8 @@
     await tick()
 
     if (selected_run_config !== "custom") {
-      const config_properties = selected_run_config.run_config_properties
+      const config_properties = (selected_run_config as TaskRunConfig)
+        .run_config_properties
       // Check if any values have changed from the saved config properties
       const current_model_name = model
         ? model.split("/").slice(1).join("/")
@@ -240,7 +250,7 @@
         config_properties.structured_output_mode !== structured_output_mode ||
         !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
       ) {
-        selected_run_config = "custom"
+        selected_run_config_id = "custom"
       }
     }
   }
@@ -272,6 +282,7 @@
       return
     }
     try {
+      save_config_error = null
       const saved_config = await save_new_task_run_config(
         $current_project.id,
         $current_task.id,
@@ -284,30 +295,31 @@
       if (saved_config) {
         // Find the matching run config from the loaded options to ensure reference equality
         const loaded_configs =
-          $task_run_configs_by_task_id[$current_task?.id ?? ""] || []
+          $run_configs_by_task_composite_id[
+            get_task_composite_id(
+              $current_project?.id ?? "",
+              $current_task?.id ?? "",
+            )
+          ] || []
         const matching_config = loaded_configs.find(
           (config) => config.id === saved_config.id,
         )
         if (matching_config) {
-          selected_run_config = matching_config
+          selected_run_config_id = matching_config.id ?? "custom"
         } else {
           throw new Error("Saved config not found in loaded options")
         }
       }
     } catch (e) {
-      error = createKilnError(e)
-      // TODO: Show error to user
+      save_config_error = createKilnError(e)
     }
   }
 
   $: show_set_as_default_button = (() => {
-    if (selected_run_config === "custom") {
+    if (selected_run_config_id === "custom") {
       return false
     }
-    return (
-      $current_task?.default_run_config_id !==
-      (selected_run_config as TaskRunConfig).id
-    )
+    return selected_run_config_id !== $current_task?.default_run_config_id
   })()
 
   async function handle_set_as_default() {
@@ -316,41 +328,53 @@
     }
     // Update task default run config
     try {
-      await client.PATCH("/api/projects/{project_id}/task/{task_id}", {
-        params: {
-          path: {
-            project_id: $current_project?.id ?? "",
-            task_id: $current_task?.id ?? "",
-          },
-        },
-        body: {
-          // @ts-expect-error openapi-fetch generates the wrong type for this: Record<string, never>
-          default_run_config_id: (selected_run_config as TaskRunConfig).id,
-        },
-      })
+      set_default_error = null
+      await update_task_default_run_config(
+        $current_project?.id ?? "",
+        $current_task?.id ?? "",
+        (selected_run_config as TaskRunConfig).id ?? "",
+      )
       await load_current_task($current_project)
       await tick()
-      if (default_run_config) {
-        selected_run_config = default_run_config
+      if (default_run_config_id) {
+        selected_run_config_id = default_run_config_id
       }
     } catch (e) {
-      error = createKilnError(e)
-      // TODO: Show error to user
+      set_default_error = createKilnError(e)
     }
   }
 
-  let default_run_config: TaskRunConfig | null
+  let default_run_config_id: string | null
 
-  $: $current_task, $task_run_configs_by_task_id, update_default_run_config()
+  // Map selected ID back to TaskRunConfig object
+  $: selected_run_config = (() => {
+    if (selected_run_config_id === "custom") {
+      return "custom"
+    }
+
+    // Find the config by ID
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(
+          $current_project?.id ?? "",
+          $current_task?.id ?? "",
+        )
+      ] ?? ([] as TaskRunConfig[])
+    return (
+      all_configs.find((config) => config.id === selected_run_config_id) ??
+      "custom"
+    )
+  })()
+
+  $: $current_task,
+    $run_configs_by_task_composite_id,
+    update_default_run_config()
 
   function update_default_run_config() {
     if ($current_task?.default_run_config_id) {
-      let default_task_run_config = $task_run_configs_by_task_id[
-        $current_task?.id ?? ""
-      ]?.find((config) => config.id === $current_task?.default_run_config_id)
-      default_run_config = default_task_run_config ?? null
+      default_run_config_id = $current_task.default_run_config_id
     } else {
-      default_run_config = null
+      default_run_config_id = null
     }
   }
 </script>
@@ -367,7 +391,7 @@
         <FormContainer
           submit_label="Run"
           on:submit={run_task}
-          bind:error
+          bind:error={run_error}
           bind:submitting
           bind:primary={run_focus}
           bind:keyboard_submit={run_focus}
@@ -380,8 +404,8 @@
         <div>
           {#if $current_project?.id && $current_task?.id}
             <RunOptionsDropdown
-              bind:selected_run_config
-              bind:default_run_config
+              bind:selected_run_config_id
+              bind:default_run_config_id
             />
           {/if}
         </div>
@@ -414,8 +438,10 @@
               task_id={$current_task?.id || ""}
               on:saveRunOptions={handle_save_run_options}
               on:setToDefault={handle_set_as_default}
-              show_save_button={selected_run_config === "custom"}
+              show_save_button={selected_run_config_id === "custom"}
               {show_set_as_default_button}
+              {save_config_error}
+              {set_default_error}
             />
           </Collapse>
         {/if}
