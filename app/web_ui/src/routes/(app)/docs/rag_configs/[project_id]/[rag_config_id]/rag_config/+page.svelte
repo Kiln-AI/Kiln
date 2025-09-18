@@ -25,12 +25,15 @@
   import Output from "../../../../../run/output.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { mime_type_to_string } from "$lib/utils/formatters"
+  import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
 
   let loading: boolean = false
   let error: KilnError | null = null
+  let update_error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
   let edit_dialog: EditDialog | null = null
@@ -78,6 +81,37 @@
       }
 
       rag_config = rag_config_data
+    } finally {
+      loading = false
+    }
+  }
+
+  async function update_archived_state(is_archived: boolean) {
+    try {
+      update_error = null
+      const { error: update_archived_state_error } = await client.PATCH(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}",
+        {
+          body: { is_archived },
+          params: {
+            path: {
+              project_id,
+              rag_config_id,
+            },
+          },
+        },
+      )
+
+      if (update_archived_state_error) {
+        throw update_archived_state_error
+      }
+
+      // update the store to make sure state gets reflected everywhere
+      await update_rag_config_archived_state(rag_config_id, is_archived)
+
+      await get_rag_config()
+    } catch (e) {
+      update_error = createKilnError(e)
     } finally {
       loading = false
     }
@@ -180,10 +214,27 @@
       },
     ]}
     action_buttons={[
+      ...(rag_config?.is_archived
+        ? []
+        : [
+            {
+              label: "Edit",
+              handler: () => {
+                edit_dialog?.show()
+              },
+            },
+          ]),
       {
-        label: "Edit",
+        label: rag_config?.is_archived ? "Unarchive" : "Archive",
+        primary: rag_config?.is_archived,
         handler: () => {
-          edit_dialog?.show()
+          if (!rag_config) {
+            return
+          }
+
+          // flip the archived state
+          const new_is_archived = !rag_config.is_archived
+          update_archived_state(new_is_archived)
         },
       },
     ]}
@@ -204,9 +255,24 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="text-error text-sm">RAG config not found</div>
+        <div class="text-error text-sm">
+          Search Tool configuration not found
+        </div>
       </div>
     {:else}
+      {#if update_error}
+        <div class="my-4 text-error">
+          <span>{update_error.getMessage() || "Update failed"}</span>
+        </div>
+      {/if}
+      {#if rag_config?.is_archived}
+        <Warning
+          warning_message="This Search Tool is archived. You may unarchive it to use it again."
+          large_icon={true}
+          warning_color="warning"
+          outline={true}
+        />
+      {/if}
       <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
         <!-- Main Content - Search Section -->
         <div class="flex-1">
@@ -230,7 +296,7 @@
                     bind:value={searchQuery}
                     placeholder="Enter your search query..."
                     class="input input-bordered flex-1"
-                    disabled={searchLoading}
+                    disabled={searchLoading || rag_config?.is_archived}
                   />
                   <button
                     type="submit"
