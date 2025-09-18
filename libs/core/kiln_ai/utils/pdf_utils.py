@@ -17,7 +17,8 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
         page_paths = []
 
         with open(pdf_path, "rb") as file:
-            pdf_reader = PdfReader(file)
+            # Reader init can be heavy; offload to thread
+            pdf_reader = await asyncio.to_thread(PdfReader, file)
 
             for page_num in range(len(pdf_reader.pages)):
                 await asyncio.sleep(0)
@@ -29,7 +30,8 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
                 page_path = Path(temp_dir) / page_filename
 
                 with open(page_path, "wb") as page_file:
-                    pdf_writer.write(page_file)
+                    # Writing/compression can be expensive; offload to thread
+                    await asyncio.to_thread(pdf_writer.write, page_file)
 
                 page_paths.append(page_path)
 
