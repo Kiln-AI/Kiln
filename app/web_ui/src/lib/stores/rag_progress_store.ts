@@ -69,8 +69,7 @@ function createRagProgressStore() {
     )
   }
 
-  async function run_all_rag_configs(project_id: string): Promise<boolean> {
-    // get all rag configs
+  async function run_all_rag_configs(project_id: string): Promise<void> {
     const { data, error } = await client.GET(
       "/api/projects/{project_id}/rag_configs",
       {
@@ -82,32 +81,21 @@ function createRagProgressStore() {
       },
     )
 
+    // we don't want to throw an error in this side effect as it is supposed to be
+    // relatively invisible to the user
     if (error) {
-      return false
+      console.error("Error fetching rag configs", error)
+      return
     }
 
-    // process rag configs with concurrency limit to avoid hitting browser limits
-    const tasks: Promise<unknown>[] = []
-    for (const rag_config of data) {
+    const tasks: Promise<unknown>[] = data.map((rag_config) => {
       if (!rag_config.id) {
-        continue
+        return Promise.resolve()
       }
+      return run_rag_config(project_id, rag_config.id)
+    })
 
-      tasks.push(
-        (async () => {
-          await sseSlots.acquire()
-          try {
-            await run_rag_config(project_id, String(rag_config.id))
-          } finally {
-            sseSlots.release()
-          }
-        })(),
-      )
-    }
-
-    const results = await Promise.allSettled(tasks)
-    const failed = results.filter((r) => r.status === "rejected")
-    return failed.length === 0
+    await Promise.allSettled(tasks)
   }
 
   async function run_rag_config(
@@ -195,6 +183,8 @@ function createRagProgressStore() {
     project_id: string,
     rag_config_id: string,
   ): Promise<void> {
+    // browsers have a limit on the number of concurrent connections, so we need to make sure
+    // we don't ever exceed that limit - you should use run_rag_config instead
     const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
     const eventSource = new EventSource(run_url)
 
