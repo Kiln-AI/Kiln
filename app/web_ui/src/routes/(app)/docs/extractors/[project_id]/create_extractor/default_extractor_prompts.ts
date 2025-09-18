@@ -6,6 +6,7 @@ export function default_extractor_document_prompts(output_format: string) {
 - If the document contains tables, reproduce them in the output using the correct format, and also add a brief descriptive sentence summarizing the table as a whole.
 - Preserve the structure and order of the document.
 - Format the output as valid ${output_format}.
+- Do not transcribe non-informational text such as repetitive whitespace characters, a horizontal rule repeated multiple times.
 - Do NOT include any prefatory or explanatory text outside of the transcription itself.
 `
 }
