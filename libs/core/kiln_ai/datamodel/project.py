@@ -1,13 +1,27 @@
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
+from kiln_ai.datamodel.chunk import ChunkerConfig
+from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
+from kiln_ai.datamodel.extraction import Document, ExtractorConfig
+from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 
 
 class Project(
     KilnParentModel,
-    parent_of={"tasks": Task, "external_tool_servers": ExternalToolServer},
+    parent_of={
+        "tasks": Task,
+        "documents": Document,
+        "extractor_configs": ExtractorConfig,
+        "chunker_configs": ChunkerConfig,
+        "embedding_configs": EmbeddingConfig,
+        "rag_configs": RagConfig,
+        "vector_store_configs": VectorStoreConfig,
+        "external_tool_servers": ExternalToolServer,
+    },
 ):
     """
     A collection of related tasks.
@@ -25,6 +39,24 @@ class Project(
     # Needed for typechecking. We should fix this in KilnParentModel
     def tasks(self) -> list[Task]:
         return super().tasks()  # type: ignore
+
+    def documents(self, readonly: bool = False) -> list[Document]:
+        return super().documents(readonly=readonly)  # type: ignore
+
+    def extractor_configs(self, readonly: bool = False) -> list[ExtractorConfig]:
+        return super().extractor_configs(readonly=readonly)  # type: ignore
+
+    def chunker_configs(self, readonly: bool = False) -> list[ChunkerConfig]:
+        return super().chunker_configs(readonly=readonly)  # type: ignore
+
+    def embedding_configs(self, readonly: bool = False) -> list[EmbeddingConfig]:
+        return super().embedding_configs(readonly=readonly)  # type: ignore
+
+    def vector_store_configs(self, readonly: bool = False) -> list[VectorStoreConfig]:
+        return super().vector_store_configs(readonly=readonly)  # type: ignore
+
+    def rag_configs(self, readonly: bool = False) -> list[RagConfig]:
+        return super().rag_configs(readonly=readonly)  # type: ignore
 
     def external_tool_servers(self, readonly: bool = False) -> list[ExternalToolServer]:
         return super().external_tool_servers(readonly=readonly)  # type: ignore

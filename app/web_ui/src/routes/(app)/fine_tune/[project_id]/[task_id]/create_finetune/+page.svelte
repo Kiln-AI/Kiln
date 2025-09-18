@@ -491,7 +491,7 @@
             bind:value={$model_provider}
           />
           <button
-            class="mt-1 underline decoration-gray-400"
+            class="mt-2 underline decoration-gray-400"
             on:click={go_to_providers_settings}
           >
             <Warning
