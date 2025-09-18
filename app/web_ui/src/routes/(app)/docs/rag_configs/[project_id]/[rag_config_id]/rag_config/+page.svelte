@@ -25,6 +25,8 @@
   import Output from "../../../../../run/output.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { mime_type_to_string } from "$lib/utils/formatters"
+  import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -81,6 +83,56 @@
     } finally {
       loading = false
     }
+  }
+
+  export async function archive_rag_config() {
+    const { error } = await client.PATCH(
+      "/api/projects/{project_id}/rag_configs/{rag_config_id}",
+      {
+        body: {
+          is_archived: true,
+        },
+        params: {
+          path: {
+            project_id,
+            rag_config_id,
+          },
+        },
+      },
+    )
+
+    if (error) {
+      throw error
+    }
+
+    await update_rag_config_archived_state(rag_config_id, true)
+
+    await get_rag_config()
+  }
+
+  export async function unarchive_rag_config() {
+    const { error } = await client.PATCH(
+      "/api/projects/{project_id}/rag_configs/{rag_config_id}",
+      {
+        body: {
+          is_archived: false,
+        },
+        params: {
+          path: {
+            project_id,
+            rag_config_id,
+          },
+        },
+      },
+    )
+
+    if (error) {
+      throw createKilnError(error)
+    }
+
+    await update_rag_config_archived_state(rag_config_id, false)
+
+    await get_rag_config()
   }
 
   function tooltip_for_chunker_type(chunker_type: ChunkerType): string {
@@ -180,10 +232,25 @@
       },
     ]}
     action_buttons={[
+      ...(rag_config?.is_archived
+        ? []
+        : [
+            {
+              label: "Edit",
+              handler: () => {
+                edit_dialog?.show()
+              },
+            },
+          ]),
       {
-        label: "Edit",
+        label: rag_config?.is_archived ? "Unarchive" : "Archive",
+        primary: rag_config?.is_archived,
         handler: () => {
-          edit_dialog?.show()
+          if (rag_config?.is_archived) {
+            unarchive_rag_config()
+          } else {
+            archive_rag_config()
+          }
         },
       },
     ]}
@@ -204,9 +271,19 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="text-error text-sm">RAG config not found</div>
+        <div class="text-error text-sm">
+          Search Tool configuration not found
+        </div>
       </div>
     {:else}
+      {#if rag_config?.is_archived}
+        <Warning
+          warning_message="This Search Tool is archived. You may unarchive it to use it again."
+          large_icon={true}
+          warning_color="warning"
+          outline={true}
+        />
+      {/if}
       <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
         <!-- Main Content - Search Section -->
         <div class="flex-1">
@@ -230,7 +307,7 @@
                     bind:value={searchQuery}
                     placeholder="Enter your search query..."
                     class="input input-bordered flex-1"
-                    disabled={searchLoading}
+                    disabled={searchLoading || rag_config?.is_archived}
                   />
                   <button
                     type="submit"
