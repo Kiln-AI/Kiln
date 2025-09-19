@@ -11,6 +11,7 @@
   import { uncache_available_tools } from "$lib/stores"
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
+  import posthog from "posthog-js"
 
   // The existing tool server, if we're editing
   export let editing_tool_server: ExternalToolServerApiDescription | null = null
@@ -190,6 +191,12 @@
       }
       if (!server_id) {
         throw new Error("Failed to get server id")
+      }
+
+      if (editing_requires_secrets) {
+        posthog.capture("edit_remote_mcp", {})
+      } else {
+        posthog.capture("connect_remote_mcp", {})
       }
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
