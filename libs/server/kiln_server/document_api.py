@@ -57,6 +57,7 @@ from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
+from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -540,6 +541,7 @@ async def build_rag_workflow_runner(
                     extractor_config,
                     concurrency=20,
                     rag_config=rag_config,
+                    filesystem_cache=TemporaryFilesystemCache.shared(),
                 ),
                 RagChunkingStepRunner(
                     project,

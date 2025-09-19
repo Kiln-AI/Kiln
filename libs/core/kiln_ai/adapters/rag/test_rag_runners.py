@@ -2058,7 +2058,9 @@ class TestRagWorkflowIntegration:
 
             # Verify that jobs were collected and runner was created
             mock_adapter_factory.assert_called_once_with(
-                mock_extractor_config.extractor_type, mock_extractor_config
+                mock_extractor_config.extractor_type,
+                mock_extractor_config,
+                None,
             )
             mock_job_runner_class.assert_called_once()
             assert len(progress_values) > 0

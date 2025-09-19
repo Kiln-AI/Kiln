@@ -1,3 +1,5 @@
+import hashlib
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +16,11 @@ from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
+from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.pdf_utils import split_pdf_into_pages
+
+logger = logging.getLogger(__name__)
 
 MIME_TYPES_SUPPORTED = {
     Kind.DOCUMENT: [
@@ -84,6 +89,7 @@ class LitellmExtractor(BaseExtractor):
         self,
         extractor_config: ExtractorConfig,
         litellm_core_config: LiteLlmCoreConfig,
+        filesystem_cache: FilesystemCache | None = None,
     ):
         if extractor_config.extractor_type != ExtractorType.LITELLM:
             raise ValueError(
@@ -105,6 +111,8 @@ class LitellmExtractor(BaseExtractor):
         if prompt_image is None or prompt_image == "":
             raise ValueError("properties.prompt_image is required for LitellmExtractor")
 
+        self.filesystem_cache = filesystem_cache
+
         super().__init__(extractor_config)
         self.prompt_for_kind = {
             Kind.DOCUMENT: prompt_document,
@@ -115,6 +123,34 @@ class LitellmExtractor(BaseExtractor):
 
         self.litellm_core_config = litellm_core_config
 
+    def pdf_page_cache_key(self, pdf_path: Path, page_number: int) -> str:
+        if self.extractor_config.id is None:
+            raise ValueError("Extractor config ID is required for PDF page cache key")
+
+        return (
+            self.extractor_config.id
+            + "_"
+            + hashlib.md5(f"{pdf_path.name}_{page_number}".encode("utf-8")).hexdigest()
+        )
+
+    def get_page_content_from_cache(
+        self, pdf_path: Path, page_number: int
+    ) -> str | None:
+        if self.filesystem_cache is None:
+            return None
+
+        page_bytes = self.filesystem_cache.get(
+            self.pdf_page_cache_key(pdf_path, page_number)
+        )
+
+        if page_bytes is not None:
+            logger.debug(f"Cache hit for page {page_number} of {pdf_path}")
+            content = page_bytes.decode("utf-8")
+            return content
+
+        logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
+        return None
+
     async def _extract_from_pdf_pages(self, pdf_path: Path, prompt: str) -> str:
         combined_content = []
 
@@ -124,6 +160,11 @@ class LitellmExtractor(BaseExtractor):
             # start summarizing the later pages
             for i, page_path in enumerate(page_paths):
                 try:
+                    page_content = self.get_page_content_from_cache(pdf_path, i)
+                    if page_content is not None:
+                        combined_content.append(page_content)
+                        continue
+
                     page_input = ExtractionInput(
                         path=str(page_path), mime_type="application/pdf"
                     )
@@ -155,6 +196,12 @@ class LitellmExtractor(BaseExtractor):
                 if not content:
                     raise ValueError(
                         f"No text returned from extraction model when extracting page {i + 1} for {pdf_path}"
+                    )
+
+                if self.filesystem_cache is not None:
+                    logger.debug(f"Caching page {i + 1} of {pdf_path} in cache")
+                    self.filesystem_cache.set(
+                        self.pdf_page_cache_key(pdf_path, i), content.encode("utf-8")
                     )
 
                 combined_content.append(content)
