@@ -219,7 +219,7 @@
             href: `/docs/rag_configs/${project_id}/add_search_tool`,
           },
           {
-            name: "Kiln Tasks",
+            name: "Kiln Task",
             description: "Add an existing Kiln Task as a tool to your project.",
             button_text: "Add",
             on_click: () =>
