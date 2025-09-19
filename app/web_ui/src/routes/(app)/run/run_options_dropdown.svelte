@@ -94,8 +94,7 @@
           description:
             config.description ||
             `Model: ${model_name(config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})
-            Prompt: ${getRunConfigPromptDisplayName(config, $current_task_prompts)}
-            ...`,
+            Prompt: ${getRunConfigPromptDisplayName(config, $current_task_prompts)}`,
         })),
       })
     }
