@@ -10,6 +10,8 @@
   title="Documents & Search"
   subtitle="Add searchable knowledge to your tasks"
   limit_max_width
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag"
 >
   <MultiIntro
     intros={[
