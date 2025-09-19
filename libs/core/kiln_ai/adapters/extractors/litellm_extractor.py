@@ -183,7 +183,7 @@ class LitellmExtractor(BaseExtractor):
                     ],
                 }
             ],
-            "temperature": 0.1,
+            "temperature": 0.8,
         }
 
         if self.litellm_core_config.base_url:
