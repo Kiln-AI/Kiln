@@ -1,6 +1,6 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import { current_task_prompts } from "$lib/stores"
+  import { current_task_prompts, prompt_name_from_id } from "$lib/stores"
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
@@ -86,7 +86,10 @@
       if (prompt.chain_of_thought_instructions && exclude_cot) {
         continue
       }
-      static_prompts.push({ value: prompt.id, label: prompt.name })
+      static_prompts.push({
+        value: prompt.id,
+        label: `${prompt.name} (${prompt.generator_id ? prompt_name_from_id(prompt.generator_id, current_task_prompts) : "Custom"})`,
+      })
     }
     if (static_prompts.length > 0) {
       grouped_options.push({

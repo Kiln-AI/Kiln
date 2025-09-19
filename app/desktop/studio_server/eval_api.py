@@ -395,7 +395,7 @@ def connect_evals_api(app: FastAPI):
             prompt_name = generate_memorable_name()
             frozen_prompt = BasePrompt(
                 name=prompt_name,
-                description=f"Frozen copy of prompt '{prompt_id}', created for evaluations.",
+                description=f"Frozen copy of prompt '{prompt_id}'.",
                 generator_id=prompt_id,
                 prompt=prompt_builder.build_base_prompt(),
                 chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
