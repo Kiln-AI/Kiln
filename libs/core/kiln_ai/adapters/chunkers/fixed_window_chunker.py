@@ -7,7 +7,6 @@ from kiln_ai.adapters.chunkers.base_chunker import (
     ChunkingResult,
     TextChunk,
 )
-from kiln_ai.adapters.chunkers.helpers import clean_up_text
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 
 
@@ -31,10 +30,6 @@ class FixedWindowChunker(BaseChunker):
         )
 
     async def _chunk(self, text: str) -> ChunkingResult:
-        text = clean_up_text(text)
-        if not text:
-            return ChunkingResult(chunks=[])
-
         sentences = self.splitter.split_text(text)
 
         chunks: List[TextChunk] = []

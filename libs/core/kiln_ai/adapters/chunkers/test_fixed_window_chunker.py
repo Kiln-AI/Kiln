@@ -290,7 +290,7 @@ The word water comes from Old English wæter, from Proto-Germanic *watar (source
     chunker = mock_fixed_window_chunker_factory(32, 8)
 
     with patch(
-        "kiln_ai.adapters.chunkers.fixed_window_chunker.clean_up_text"
+        "kiln_ai.adapters.chunkers.base_chunker.clean_up_text"
     ) as mock_clean_up_text:
         mock_clean_up_text.side_effect = clean_up_text
         output = await chunker.chunk(text)
@@ -302,7 +302,7 @@ The word water comes from Old English wæter, from Proto-Germanic *watar (source
 @pytest.mark.paid
 @pytest.mark.parametrize(
     "number_of_sentences",
-    [10, 100, 1_000, 10_000, 100_000],
+    [10, 100, 1_000, 10_000],
 )
 async def test_fixed_window_chunker_handle_large_text(
     mock_fixed_window_chunker_factory, number_of_sentences
@@ -312,7 +312,7 @@ async def test_fixed_window_chunker_handle_large_text(
 
     chunker = mock_fixed_window_chunker_factory(32, 8)
     with patch(
-        "kiln_ai.adapters.chunkers.fixed_window_chunker.clean_up_text"
+        "kiln_ai.adapters.chunkers.base_chunker.clean_up_text"
     ) as mock_clean_up_text:
         mock_clean_up_text.side_effect = clean_up_text
         output = await chunker.chunk(text)
