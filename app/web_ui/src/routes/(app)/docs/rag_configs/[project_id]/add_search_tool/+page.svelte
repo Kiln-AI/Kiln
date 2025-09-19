@@ -15,6 +15,7 @@
     type RagConfigTemplate,
   } from "./rag_config_templates"
   import Warning from "$lib/ui/warning.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
 
@@ -61,20 +62,30 @@
     }
 
     // Check if the user has the required API keys
-    if (suggestion.required_api_keys === "Openai") {
-      if (!settings["open_ai_api_key"]) {
-        missing_api_keys = "Openai"
-        requires_api_keys_dialog?.show()
-        return
-      }
+    missing_api_keys = null
+    if (
+      suggestion.required_api_keys === "Openai" &&
+      !settings["open_ai_api_key"]
+    ) {
+      missing_api_keys = "Openai"
     }
-    if (suggestion.required_api_keys === "Gemini") {
-      if (!settings["gemini_api_key"]) {
-        missing_api_keys = "Gemini"
-        requires_api_keys_dialog?.show()
-        return
-      }
+    if (
+      suggestion.required_api_keys === "Gemini" &&
+      !settings["gemini_api_key"]
+    ) {
+      missing_api_keys = "Gemini"
     }
+    if (missing_api_keys) {
+      requires_api_keys_dialog?.show()
+      posthog.capture("missing_api_keys_for_search_tool", {
+        template_id,
+      })
+      return
+    }
+
+    posthog.capture("selected_search_tool_template", {
+      template_id,
+    })
 
     // Go to the create search tool page with the template id
     goto(
@@ -155,7 +166,10 @@
             description:
               "Create a custom search tool by specifying the embedding model, index type, document extraction method, and chunking strategy. Only recommended for advanced users.",
             button_text: "Create Custom",
-            href: `/docs/rag_configs/${project_id}/create_rag_config`,
+            on_click: () => {
+              posthog.capture("clicked_custom_search_tool")
+              goto(`/docs/rag_configs/${project_id}/create_rag_config`)
+            },
           },
         ]}
       />

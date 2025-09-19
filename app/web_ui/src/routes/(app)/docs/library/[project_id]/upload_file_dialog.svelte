@@ -6,6 +6,7 @@
   import UploadIcon from "$lib/ui/upload_icon.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
+  import posthog from "posthog-js"
 
   export let onUploadCompleted: () => void
 
@@ -153,12 +154,41 @@
     show_upload_result = true
     show_success_dialog = true
 
+    const uploaded_files = selected_files
     selected_files = []
     onUploadCompleted()
 
     ragProgressStore.run_all_rag_configs(project_id)
 
+    posthog.capture("add_documents", {
+      file_count: uploaded_files.length,
+      file_count_summary: file_count_summary(uploaded_files),
+    })
+
     return true
+  }
+
+  function file_count_summary(files: File[]): Record<string, number> {
+    try {
+      let summary: Record<string, number> = {}
+      let recognized_file_types_count = 0
+      for (const filetype of supported_file_types) {
+        const count = files.filter((file) =>
+          file.name.toLowerCase().endsWith(filetype),
+        ).length
+        if (count > 0) {
+          summary[filetype] = count
+          recognized_file_types_count += count
+        }
+      }
+      let unrecognized_file_types_count =
+        files.length - recognized_file_types_count
+      summary["unknown_type"] = unrecognized_file_types_count
+      return summary
+    } catch (e) {
+      console.error(e)
+      return {}
+    }
   }
 
   let dialog: Dialog | null = null
