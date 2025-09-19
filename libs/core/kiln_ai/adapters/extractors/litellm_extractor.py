@@ -127,11 +127,9 @@ class LitellmExtractor(BaseExtractor):
         if self.extractor_config.id is None:
             raise ValueError("Extractor config ID is required for PDF page cache key")
 
-        return (
-            self.extractor_config.id
-            + "_"
-            + hashlib.md5(f"{pdf_path.name}_{page_number}".encode("utf-8")).hexdigest()
-        )
+        raw_key = f"{pdf_path.resolve()}::{page_number}"
+        digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
+        return f"{self.extractor_config.id}_{digest}"
 
     def get_page_content_from_cache(
         self, pdf_path: Path, page_number: int
