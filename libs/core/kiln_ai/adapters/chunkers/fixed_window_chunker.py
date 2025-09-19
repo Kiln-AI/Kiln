@@ -1,5 +1,8 @@
+import os
+from pathlib import Path
 from typing import List
 
+import nltk
 from llama_index.core.text_splitter import SentenceSplitter
 
 from kiln_ai.adapters.chunkers.base_chunker import (
@@ -8,6 +11,20 @@ from kiln_ai.adapters.chunkers.base_chunker import (
     TextChunk,
 )
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+from kiln_ai.utils.config import Config
+
+
+def setup_nltk_cache_dir():
+    """
+    Setup the nltk cache directory to a directory we know we can write to on all platforms.
+    """
+    nltk_data_dir = Path(Config.shared().settings_dir()) / "cache" / "nltk_data"
+    nltk.data.path = [nltk_data_dir]
+    os.makedirs(nltk_data_dir, exist_ok=True)
+
+    # Download the stopwords corpus, needed by the SentenceSplitter
+    # No-op if the corpus is already downloaded.
+    nltk.download("stopwords", download_dir=nltk_data_dir)
 
 
 class FixedWindowChunker(BaseChunker):
@@ -24,6 +41,9 @@ class FixedWindowChunker(BaseChunker):
             raise ValueError("Chunk overlap must be set")
 
         super().__init__(chunker_config)
+
+        setup_nltk_cache_dir()
+
         self.splitter = SentenceSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
