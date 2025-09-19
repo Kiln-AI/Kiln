@@ -203,6 +203,8 @@
   <AppPage
     title="Search Tool (RAG)"
     subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     breadcrumbs={[
       {
         label: "Docs & Search",
