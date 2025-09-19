@@ -245,20 +245,22 @@ def connect_tool_servers_api(app: FastAPI):
         # Add search tools (RAG)
         rag_configs = project.rag_configs(readonly=True)
         if rag_configs:
-            tool_sets.append(
-                ToolSetApiDescription(
-                    set_name="Search Tools (RAG)",
-                    tools=[
-                        ToolApiDescription(
-                            id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
-                            name=rag_config.tool_name,
-                            description=f"{rag_config.name}: {rag_config.tool_description}",
-                        )
-                        for rag_config in rag_configs
-                        if not rag_config.is_archived
-                    ],
+            tools = [
+                ToolApiDescription(
+                    id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
+                    name=rag_config.tool_name,
+                    description=f"{rag_config.name}: {rag_config.tool_description}",
                 )
-            )
+                for rag_config in rag_configs
+                if not rag_config.is_archived
+            ]
+            if tools and len(tools) > 0:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        set_name="Search Tools (RAG)",
+                        tools=tools,
+                    )
+                )
 
         # Get available tools from MCP servers
         for server in project.external_tool_servers(readonly=True):
