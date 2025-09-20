@@ -197,10 +197,21 @@ class LitellmExtractor(BaseExtractor):
                     )
 
                 if self.filesystem_cache is not None:
-                    logger.debug(f"Caching page {i + 1} of {pdf_path} in cache")
-                    await self.filesystem_cache.set(
-                        self.pdf_page_cache_key(pdf_path, i), content.encode("utf-8")
-                    )
+                    # we don't want to fail the whole extraction just because cache write fails
+                    # as that would block the whole flow
+                    try:
+                        logger.debug(f"Caching page {i + 1} of {pdf_path} in cache")
+                        await self.filesystem_cache.set(
+                            self.pdf_page_cache_key(pdf_path, i),
+                            content.encode("utf-8"),
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to cache page %s of %s; continuing without cache.",
+                            i + 1,
+                            pdf_path,
+                            exc_info=True,
+                        )
 
                 combined_content.append(content)
 
