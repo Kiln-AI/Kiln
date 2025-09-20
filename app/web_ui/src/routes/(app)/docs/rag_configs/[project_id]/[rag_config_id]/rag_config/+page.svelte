@@ -27,6 +27,7 @@
   import { mime_type_to_string } from "$lib/utils/formatters"
   import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
   import Warning from "$lib/ui/warning.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -115,6 +116,11 @@
     } finally {
       loading = false
     }
+
+    posthog.capture(
+      is_archived ? "archive_rag_config" : "unarchive_rag_config",
+      {},
+    )
   }
 
   function tooltip_for_chunker_type(chunker_type: ChunkerType): string {

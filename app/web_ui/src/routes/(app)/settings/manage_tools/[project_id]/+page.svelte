@@ -14,7 +14,10 @@
   import type { SearchToolApiDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id
-  $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
+  $: is_empty =
+    !demo_tools_enabled &&
+    (!tools || tools.length == 0) &&
+    (!search_tools || search_tools.length == 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
