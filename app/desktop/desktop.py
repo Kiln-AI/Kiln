@@ -10,6 +10,7 @@ import sys
 import tkinter as tk
 import webbrowser
 
+from kiln_ai.utils.config import Config
 from PIL import Image
 
 # Unused, but needed for pyinstaller to not miss this import
@@ -18,6 +19,11 @@ from uvicorn import Config as UvicornConfig
 
 from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
+
+# Set the cache directory as soon as we start
+os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
+    Config.settings_dir(), "cache", "llama_index_cache"
+)
 
 
 class DesktopApp:
