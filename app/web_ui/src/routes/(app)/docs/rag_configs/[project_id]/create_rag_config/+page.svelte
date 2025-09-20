@@ -35,6 +35,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { tool_name_validator } from "$lib/utils/input_validators"
   import posthog from "posthog-js"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   const template_id = $page.url.searchParams.get("template_id")
@@ -495,6 +496,8 @@
         vector_store_type: vector_store_type,
       })
 
+      uncache_available_tools(project_id)
+
       goto(`/docs/rag_configs/${project_id}`)
     } finally {
       loading = false
@@ -598,6 +601,8 @@
         custom_name: tool_name !== DEFAULT_TOOL_NAME,
         custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
       })
+
+      uncache_available_tools(project_id)
 
       goto(`/docs/rag_configs/${project_id}`)
     } finally {
