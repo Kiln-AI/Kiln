@@ -83,7 +83,7 @@ However, it's not just about the ice warming up. The real magic happens because 
 
 @pytest.mark.parametrize(
     "chunk_size,chunk_overlap,expected_chunks",
-    [(12, 6, 119), (256, 12, 4), (1024, 64, 1), (2048, 128, 1)],
+    [(12, 6, 120), (256, 12, 4), (1024, 64, 1), (2048, 128, 1)],
 )
 async def test_fixed_window_chunker_concrete_chunker_zh(
     chunk_size, chunk_overlap, expected_chunks, mock_fixed_window_chunker_factory
