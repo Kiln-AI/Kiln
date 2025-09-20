@@ -26,6 +26,13 @@ def setup_nltk_cache_dir():
     # No-op if the corpus is already downloaded.
     nltk.download("stopwords", download_dir=nltk_data_dir)
 
+    # Llama Index cache directory
+    llama_index_cache_dir = os.path.join(
+        Config.shared().settings_dir(), "cache", "llama_index_cache"
+    )
+    os.environ["LLAMA_INDEX_CACHE_DIR"] = llama_index_cache_dir
+    os.makedirs(llama_index_cache_dir, exist_ok=True)
+
 
 class FixedWindowChunker(BaseChunker):
     def __init__(self, chunker_config: ChunkerConfig):
