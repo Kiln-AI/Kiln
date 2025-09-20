@@ -225,7 +225,14 @@
       isPrimary: true,
       label: is_running ? "Running..." : has_error_logs ? "Retry" : "Run RAG",
       asyncAction: async () => {
-        ragProgressStore.run_rag_config(project_id, rag_config_id)
+        // we don't want to await because we show the progress in the UI
+        // and don't need the built-in loading spinner
+        ragProgressStore
+          .run_rag_config(project_id, rag_config_id)
+          .catch((error) => {
+            console.error("Error running rag config", error)
+            return true
+          })
 
         // keep open so the user can see the progress
         return false
