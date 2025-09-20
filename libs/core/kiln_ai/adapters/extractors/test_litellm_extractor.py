@@ -1069,3 +1069,51 @@ async def test_extract_pdf_cache_write_failure_does_not_throw(
     # Verify the extraction completed successfully
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
+
+
+async def test_extract_pdf_cache_decode_failure_does_not_throw(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test that PDF extraction continues successfully even when cache decode fails."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    pdf_path = Path(test_file)
+
+    # Pre-populate cache with invalid UTF-8 bytes that will cause decode failure
+    for i in range(2):
+        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        # Use bytes that are not valid UTF-8 (e.g., some binary data)
+        invalid_utf8_bytes = b"\xff\xfe\x00\x00"  # Invalid UTF-8 sequence
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
+            cache_key, invalid_utf8_bytes
+        )
+
+    # Mock responses for each page (PDF has 2 pages) - should be called due to decode failures
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        # This should not raise an exception despite cache decode failures
+        result = await mock_litellm_extractor_with_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that the completion was called for each page (due to decode failures)
+    assert mock_acompletion.call_count == 2
+
+    # Verify the output contains content from both pages despite cache decode failures
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+    # Verify the extraction completed successfully
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
