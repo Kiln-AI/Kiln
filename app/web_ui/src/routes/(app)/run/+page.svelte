@@ -152,6 +152,11 @@
         model_name: model_name,
         provider: provider,
         prompt_method: prompt_method,
+        tool_count: tools.length,
+        search_tools: tools.filter((tool) =>
+          tool.startsWith("kiln_tool::rag::"),
+        ).length,
+        mcp_tools: tools.filter((tool) => tool.startsWith("mcp::")).length,
       })
       response = data
     } catch (e) {

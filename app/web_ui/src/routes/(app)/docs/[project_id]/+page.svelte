@@ -18,7 +18,7 @@
       {
         title: "Document Library",
         description:
-          "Add or browse documents. Docs can be queried by Search Tools.",
+          "Add or manage documents. Documents can be queried by Search Tools.",
         action_buttons: [
           {
             label: "Manage Documents",

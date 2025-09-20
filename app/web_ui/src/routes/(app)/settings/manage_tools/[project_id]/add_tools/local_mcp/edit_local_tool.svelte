@@ -11,6 +11,7 @@
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
   import type { ExternalToolServerApiDescription } from "$lib/types"
+  import posthog from "posthog-js"
 
   // The existing tool server, if we're editing
   export let editing_tool_server: ExternalToolServerApiDescription | null = null
@@ -219,6 +220,12 @@
       }
       if (!server_id) {
         throw new Error("Failed to get server id")
+      }
+
+      if (editing_tool_server) {
+        posthog.capture("edit_local_mcp", {})
+      } else {
+        posthog.capture("connect_local_mcp", {})
       }
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
