@@ -193,11 +193,10 @@
         throw new Error("Failed to get server id")
       }
 
-      if (editing_requires_secrets) {
-        posthog.capture("edit_remote_mcp", {})
-      } else {
-        posthog.capture("connect_remote_mcp", {})
-      }
+      posthog.capture(
+        editing_tool_server ? "edit_remote_mcp" : "connect_remote_mcp",
+        {},
+      )
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools($page.params.project_id)

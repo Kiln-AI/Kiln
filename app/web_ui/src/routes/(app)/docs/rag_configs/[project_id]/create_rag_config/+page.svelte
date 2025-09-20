@@ -485,7 +485,7 @@
       }
       posthog.capture("create_custom_rag_config", {
         tag_filter: selected_tags.length > 0,
-        custom_name: name !== DEFAULT_TOOL_NAME,
+        custom_name: tool_name !== DEFAULT_TOOL_NAME,
         custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
         extractor_model: extractor_model,
         chunker_type: chunker_type,
@@ -595,7 +595,7 @@
       posthog.capture("create_rag_config_from_template", {
         template_name: template.name,
         tag_filter: selected_tags.length > 0,
-        custom_name: name !== DEFAULT_TOOL_NAME,
+        custom_name: tool_name !== DEFAULT_TOOL_NAME,
         custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
       })
 
