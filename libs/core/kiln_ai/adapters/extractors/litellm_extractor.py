@@ -143,8 +143,15 @@ class LitellmExtractor(BaseExtractor):
 
         if page_bytes is not None:
             logger.debug(f"Cache hit for page {page_number} of {pdf_path}")
-            content = page_bytes.decode("utf-8")
-            return content
+            try:
+                return page_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                logger.warning(
+                    "Cached bytes for page %s of %s are not valid UTF-8; treating as miss.",
+                    page_number,
+                    pdf_path,
+                    exc_info=True,
+                )
 
         logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
         return None
