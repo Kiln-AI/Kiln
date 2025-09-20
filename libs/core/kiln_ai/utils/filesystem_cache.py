@@ -2,6 +2,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+import anyio
+
 from kiln_ai.datamodel.basemodel import name_validator
 
 logger = logging.getLogger(__name__)
@@ -9,33 +11,34 @@ logger = logging.getLogger(__name__)
 
 class FilesystemCache:
     def __init__(self, path: Path):
-        # the key must be a valid filename
-        validate_key = name_validator(min_length=1, max_length=120)
-        self.validate_key = validate_key
         self.cache_dir_path = path
+
+    def validate_key(self, key: str) -> None:
+        # throws if invalid
+        name_validator(min_length=1, max_length=120)(key)
 
     def get_path(self, key: str) -> Path:
         self.validate_key(key)
         return self.cache_dir_path / key
 
-    def get(self, key: str) -> bytes | None:
-        # check if the file exists
+    async def get(self, key: str) -> bytes | None:
+        # check if the file exists - don't need to validate the key
+        # worst case we just return None
         if not self.get_path(key).exists():
             return None
 
         # we don't want to raise because of internal cache corruption issues
         try:
-            with open(self.get_path(key), "rb") as f:
-                return f.read()
+            return await anyio.Path(self.get_path(key)).read_bytes()
         except Exception:
             logger.error(f"Error reading file {self.get_path(key)}", exc_info=True)
             return None
 
-    def set(self, key: str, value: bytes) -> Path:
+    async def set(self, key: str, value: bytes) -> Path:
         logger.debug(f"Caching {key} at {self.get_path(key)}")
         self.validate_key(key)
         path = self.get_path(key)
-        path.write_bytes(value)
+        await anyio.Path(path).write_bytes(value)
         return path
 
 
