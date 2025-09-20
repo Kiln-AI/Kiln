@@ -158,7 +158,9 @@
     selected_files = []
     onUploadCompleted()
 
-    ragProgressStore.run_all_rag_configs(project_id)
+    ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+      console.error("Error running all rag configs", error)
+    })
 
     posthog.capture("add_documents", {
       file_count: uploaded_files.length,
