@@ -219,6 +219,9 @@ class LitellmExtractor(BaseExtractor):
         async with split_pdf_into_pages(pdf_path) as page_paths:
             page_outcomes: List[str | Exception | None] = [None] * len(page_paths)
 
+            batch_completed_count = 0
+            batch_size = 10
+
             extract_page_jobs: list = []
             # we extract from each page individually and then combine the results
             # this ensures the model stays focused on the current page and does not
@@ -233,23 +236,25 @@ class LitellmExtractor(BaseExtractor):
                     self.extract_from_pdf_page(pdf_path, page_path, prompt, i)
                 )
 
-                if len(extract_page_jobs) >= 10 or i == len(page_paths) - 1:
+                if len(extract_page_jobs) >= batch_size or i == len(page_paths) - 1:
                     extraction_results = await asyncio.gather(
                         *extract_page_jobs, return_exceptions=True
                     )
 
-                    for i, extraction_result in enumerate(extraction_results):
+                    for batch_i, extraction_result in enumerate(extraction_results):
+                        page_index = batch_completed_count * batch_size + batch_i
                         # we let it continue even if there is an error - the success results will be cached
                         # and can be reused on the next run
                         if isinstance(extraction_result, Exception):
-                            page_outcomes[i] = extraction_result
+                            page_outcomes[page_index] = extraction_result
                         elif isinstance(extraction_result, str):
-                            page_outcomes[i] = extraction_result
+                            page_outcomes[page_index] = extraction_result
                         else:
                             raise ValueError(
-                                f"Unexpected type {type(extraction_result)} for page {i}"
+                                f"Unexpected type {type(extraction_result)} for page {page_index}"
                             )
                     extract_page_jobs.clear()
+                    batch_completed_count += 1
 
         # check if any of the page outcomes are exceptions
         if any(isinstance(result, Exception) for result in page_outcomes):
