@@ -20,7 +20,7 @@
         {/if}
       </div>
       <div
-        class="flex items-center overflow-x-hidden {property.error
+        class="flex items-start overflow-x-hidden break-words {property.error
           ? 'text-error'
           : 'text-gray-500'}"
       >

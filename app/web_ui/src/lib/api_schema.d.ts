@@ -3661,6 +3661,8 @@ export interface components {
             task_id: string;
             /** Run Config Id */
             run_config_id: string;
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * KilnToolServerDescription
@@ -3676,6 +3678,8 @@ export interface components {
             description: string | null;
             /** Missing Secrets */
             missing_secrets: string[];
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * Kind

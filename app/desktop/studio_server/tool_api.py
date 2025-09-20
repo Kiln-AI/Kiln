@@ -33,6 +33,7 @@ class KilnToolServerDescription(BaseModel):
     type: ToolServerType
     description: str | None
     missing_secrets: list[str]
+    is_archived: bool
 
 
 class ExternalToolServerCreationRequest(BaseModel):
@@ -135,6 +136,7 @@ class KilnTaskToolServerCreationRequest(BaseModel):
     description: str
     task_id: str
     run_config_id: str
+    is_archived: bool
 
     # TODO: Add validation
 
@@ -374,6 +376,7 @@ def connect_tool_servers_api(app: FastAPI):
                     type=tool.type,
                     description=tool.description,
                     missing_secrets=missing_secrets,
+                    is_archived=tool.properties.get("is_archived", False),
                 )
             )
         return results
@@ -570,6 +573,7 @@ def connect_tool_servers_api(app: FastAPI):
                 "description": tool_data.description,
                 "task_id": tool_data.task_id,
                 "run_config_id": tool_data.run_config_id,
+                "is_archived": tool_data.is_archived,
             },
             parent=project,
         )
@@ -601,6 +605,7 @@ def connect_tool_servers_api(app: FastAPI):
             "description": tool_data.description,
             "task_id": tool_data.task_id,
             "run_config_id": tool_data.run_config_id,
+            "is_archived": tool_data.is_archived,
         }
 
         # Save the tool to file

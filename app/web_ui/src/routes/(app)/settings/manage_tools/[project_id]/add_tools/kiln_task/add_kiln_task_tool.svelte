@@ -15,10 +15,6 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { uncache_available_tools } from "$lib/stores"
-  import type { ExternalToolServerApiDescription } from "$lib/types"
-
-  // The existing tool server, if we're editing
-  export let editing_tool_server: ExternalToolServerApiDescription | null = null
 
   let error: KilnError | null = null
   let submitting = false
@@ -35,30 +31,21 @@
       // TODO: Can replace this with a request with a run config id (default)
       await load_task_run_configs($current_project?.id ?? "", task.id ?? "")
     }
-
-    // Load existing tool server data if editing
-    if (editing_tool_server) {
-      load_existing_tool_server()
-    }
   })
 
-  function load_existing_tool_server() {
-    if (!editing_tool_server) return
-
-    // Find the task that matches the tool server's task_id
-    selected_task =
-      tasks.find(
-        (task) => task.id === editing_tool_server.properties["task_id"],
-      ) || null
-
-    // Load the name and description from the tool server
-    name = editing_tool_server.name || ""
-    description = editing_tool_server.description || ""
+  function to_snake_case(str: string): string {
+    return str
+      .replace(/([A-Z])/g, "_$1")
+      .toLowerCase()
+      .replace(/^_/, "")
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "")
   }
 
-  // Reactive statement to reload data when tasks are loaded and we're editing
-  $: if (editing_tool_server && tasks.length > 0) {
-    load_existing_tool_server()
+  $: if (selected_task) {
+    name = to_snake_case(selected_task.name)
   }
 
   $: task_options = format_task_options(
@@ -143,7 +130,7 @@
     }
   }
 
-  async function add_kiln_task() {
+  async function add_kiln_task_tool() {
     try {
       await client.POST("/api/projects/{project_id}/add_kiln_task_tool", {
         params: {
@@ -156,6 +143,7 @@
           description: description,
           task_id: selected_task?.id || "",
           run_config_id: selected_task?.default_run_config_id || "",
+          is_archived: false,
         },
       })
 
@@ -165,40 +153,6 @@
       goto(`/settings/manage_tools/${$page.params.project_id}`)
     } catch (e) {
       // TODO: Handle error
-      error = createKilnError(e)
-    }
-  }
-
-  async function save_kiln_task() {
-    if (!editing_tool_server || !editing_tool_server.id) {
-      error = createKilnError(new Error("No tool server to edit"))
-      return
-    }
-
-    try {
-      await client.PATCH(
-        "/api/projects/{project_id}/edit_kiln_task/{tool_server_id}",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-              tool_server_id: editing_tool_server.id,
-            },
-          },
-          body: {
-            name: name,
-            description: description,
-            task_id: selected_task?.id || "",
-            run_config_id: selected_task?.default_run_config_id || "",
-          },
-        },
-      )
-
-      // Delete the project_id from the available_tools, so next load it loads the updated list.
-      uncache_available_tools($page.params.project_id)
-      // Navigate to the tools page for the updated tool
-      goto(`/settings/manage_tools/${$page.params.project_id}`)
-    } catch (e) {
       error = createKilnError(e)
     }
   }
@@ -250,8 +204,8 @@
   <div class="max-w-4xl">
     {#if task_options.length > 0 && !tasks_loading_error}
       <FormContainer
-        submit_label={editing_tool_server ? "Save" : "Add"}
-        on:submit={editing_tool_server ? save_kiln_task : add_kiln_task}
+        submit_label="Add"
+        on:submit={add_kiln_task_tool}
         bind:error
         bind:submitting
       >
@@ -266,13 +220,9 @@
             : tasks_loading_error
               ? "Error loading tasks"
               : "Select a task"}
-          disabled={tasks_loading || editing_tool_server != null}
-          description={editing_tool_server
-            ? "The task for this tool. This cannot be changed when editing an existing tool."
-            : "The task to add as a tool. The task's current default run options will be frozen in time and won't update if you change the task's default run config later."}
-          info_description={editing_tool_server
-            ? "The task selection is locked when editing an existing tool."
-            : "Only tasks with default run options set will available to add as tools."}
+          disabled={tasks_loading}
+          description="The task to add as a tool. The task's current default run options will be frozen in time and won't update if you change the task's default run config later."
+          info_description="Only tasks with default run options set will available to add as tools."
         />
 
         {#if selected_task}

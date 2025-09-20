@@ -442,6 +442,7 @@ async def test_get_available_tool_servers_with_missing_secrets(client, test_proj
         "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -468,6 +469,8 @@ async def test_get_available_tool_servers_with_missing_secrets(client, test_proj
                 {},
                 ["Authorization", "X-API-Key"],
             )
+            # Mock properties.get to return False for is_archived
+            mock_tool_server.properties = {"is_archived": False}
 
             # Mock the project's external_tool_servers method
             mock_project = Mock()
@@ -500,6 +503,7 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
         "env_vars": {"DATABASE_URL": "postgres://localhost", "API_KEY": "secret"},
         "secret_env_var_keys": ["API_KEY"],
         "description": "Local tool with missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -530,6 +534,8 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
             mock_tool_server.type = ToolServerType.local_mcp
             mock_tool_server.description = "Local tool with missing secrets"
             mock_tool_server.retrieve_secrets.return_value = ({}, ["API_KEY"])
+            # Mock properties.get to return False for is_archived
+            mock_tool_server.properties = {"is_archived": False}
 
             # Mock the project's external_tool_servers method
             mock_project = Mock()

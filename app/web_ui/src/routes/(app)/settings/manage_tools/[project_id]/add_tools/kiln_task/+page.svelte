@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
-  import EditTaskTool from "./edit_task_tool.svelte"
+  import AddKilnTaskTool from "./add_kiln_task_tool.svelte"
   import { page } from "$app/stores"
 </script>
 
@@ -24,5 +24,5 @@
     },
   ]}
 >
-  <EditTaskTool />
+  <AddKilnTaskTool />
 </AppPage>

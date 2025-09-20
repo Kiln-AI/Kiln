@@ -7,7 +7,6 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import EditLocalTool from "../../add_tools/local_mcp/edit_local_tool.svelte"
   import EditRemoteTool from "../../add_tools/remote_mcp/edit_remote_tool.svelte"
-  import EditTaskTool from "../../add_tools/kiln_task/edit_task_tool.svelte"
 
   $: tool_server_id = $page.params.tool_server_id
   $: project_id = $page.params.project_id
@@ -99,7 +98,5 @@
     <EditLocalTool editing_tool_server={tool_server} />
   {:else if tool_server.type === "remote_mcp"}
     <EditRemoteTool editing_tool_server={tool_server} />
-  {:else if tool_server.type === "kiln_task"}
-    <EditTaskTool editing_tool_server={tool_server} />
   {/if}
 </AppPage>

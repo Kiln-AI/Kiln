@@ -230,6 +230,12 @@
                       warning_color="warning"
                       tight={true}
                     />
+                  {:else if tool.is_archived}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      tight={true}
+                    />
                   {:else}
                     <Warning
                       warning_message="Ready"

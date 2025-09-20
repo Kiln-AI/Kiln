@@ -190,42 +190,13 @@
     },
   ]
 
-  function kiln_task_from_tool_id(tool_id: string): [string, string] | null {
-    const KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
-
-    if (!tool_id.startsWith(KILN_TASK_TOOL_ID_PREFIX)) {
-      return null
-    }
-
-    // Remove prefix and split on ::
-    const remaining = tool_id.slice(KILN_TASK_TOOL_ID_PREFIX.length)
-    const parts = remaining.split("::")
-
-    if (parts.length !== 3) {
-      return null
-    }
-
-    return [parts[0], parts[1]] // [project_id, task_id]
-  }
-
   function get_tool_options(
     available_tools: ToolSetApiDescription[],
   ): OptionGroup[] {
     let option_groups: OptionGroup[] = []
-
+    // TODO: Filter out archived Kiln task tools
     available_tools?.forEach((tool_set) => {
       let tools = tool_set.tools
-      if (tool_set.set_name === "Kiln Tasks") {
-        tools = tools.filter((tool) => {
-          const task_info = kiln_task_from_tool_id(tool.id)
-          if (!task_info) {
-            return true
-          }
-          const [tool_project_id, tool_task_id] = task_info
-          // Filter out tools that match the current project and task to avoid circular dependency
-          return !(tool_project_id === project_id && tool_task_id === task_id)
-        })
-      }
       if (tools.length > 0) {
         option_groups.push({
           label: tool_set.set_name,
