@@ -1198,6 +1198,7 @@ name = "kiln-ai"
 version = "0.20.1"
 source = { editable = "libs/core" }
 dependencies = [
+    { name = "anyio" },
     { name = "boto3" },
     { name = "coverage" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
@@ -1232,6 +1233,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "boto3", specifier = ">=1.37.10" },
     { name = "coverage", specifier = ">=7.6.4" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.0.0" },

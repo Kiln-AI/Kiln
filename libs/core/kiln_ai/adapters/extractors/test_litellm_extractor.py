@@ -897,8 +897,10 @@ async def test_extract_pdf_with_cache_storage(
     # Verify content is stored in cache
     pdf_path = Path(test_file)
     for i in range(2):
-        cached_content = mock_litellm_extractor_with_cache.get_page_content_from_cache(
-            pdf_path, i
+        cached_content = (
+            await mock_litellm_extractor_with_cache.get_page_content_from_cache(
+                pdf_path, i
+            )
         )
         assert cached_content == f"Content from page {i + 1}"
 
@@ -917,7 +919,7 @@ async def test_extract_pdf_with_cache_retrieval(
     # Pre-populate cache with content
     for i in range(2):
         cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
-        mock_litellm_extractor_with_cache.filesystem_cache.set(
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
             cache_key, f"Cached content from page {i + 1}".encode("utf-8")
         )
 
@@ -992,7 +994,7 @@ async def test_extract_pdf_mixed_cache_hits_and_misses(
 
     # Pre-populate cache with only page 0 content
     cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, 0)
-    mock_litellm_extractor_with_cache.filesystem_cache.set(
+    await mock_litellm_extractor_with_cache.filesystem_cache.set(
         cache_key, "Cached content from page 1".encode("utf-8")
     )
 

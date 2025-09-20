@@ -131,13 +131,13 @@ class LitellmExtractor(BaseExtractor):
         digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
         return f"{self.extractor_config.id}_{digest}"
 
-    def get_page_content_from_cache(
+    async def get_page_content_from_cache(
         self, pdf_path: Path, page_number: int
     ) -> str | None:
         if self.filesystem_cache is None:
             return None
 
-        page_bytes = self.filesystem_cache.get(
+        page_bytes = await self.filesystem_cache.get(
             self.pdf_page_cache_key(pdf_path, page_number)
         )
 
@@ -158,7 +158,7 @@ class LitellmExtractor(BaseExtractor):
             # start summarizing the later pages
             for i, page_path in enumerate(page_paths):
                 try:
-                    page_content = self.get_page_content_from_cache(pdf_path, i)
+                    page_content = await self.get_page_content_from_cache(pdf_path, i)
                     if page_content is not None:
                         combined_content.append(page_content)
                         continue
@@ -198,7 +198,7 @@ class LitellmExtractor(BaseExtractor):
 
                 if self.filesystem_cache is not None:
                     logger.debug(f"Caching page {i + 1} of {pdf_path} in cache")
-                    self.filesystem_cache.set(
+                    await self.filesystem_cache.set(
                         self.pdf_page_cache_key(pdf_path, i), content.encode("utf-8")
                     )
 
