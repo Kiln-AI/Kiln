@@ -16,6 +16,7 @@ from kiln_ai.adapters.extractors.litellm_extractor import (
 from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.extraction import ExtractorType
+from kiln_ai.utils.filesystem_cache import FilesystemCache
 
 PROMPTS_FOR_KIND: dict[str, str] = {
     "document": "prompt for documents",
@@ -752,3 +753,367 @@ async def test_provider_bad_request(tmp_path, model_name, provider_name):
                 mime_type="application/pdf",
             )
         )
+
+
+# Cache-related tests for PDF processing
+@pytest.fixture
+def mock_litellm_extractor_with_cache(tmp_path):
+    """Create a LitellmExtractor with a filesystem cache for testing."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()  # Ensure cache directory exists
+    cache = FilesystemCache(cache_dir)
+    return LitellmExtractor(
+        ExtractorConfig(
+            id="test_extractor_123",  # Required for cache key generation
+            name="mock_with_cache",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="gpt_4o",
+            model_provider_name="openai",
+            properties={
+                "prompt_document": PROMPTS_FOR_KIND["document"],
+                "prompt_image": PROMPTS_FOR_KIND["image"],
+                "prompt_video": PROMPTS_FOR_KIND["video"],
+                "prompt_audio": PROMPTS_FOR_KIND["audio"],
+            },
+        ),
+        litellm_core_config=LiteLlmCoreConfig(
+            base_url="https://test.com",
+            additional_body_options={"api_key": "test-key"},
+            default_headers={},
+        ),
+        filesystem_cache=cache,
+    )
+
+
+@pytest.fixture
+def mock_litellm_extractor_without_cache():
+    """Create a LitellmExtractor without a filesystem cache for testing."""
+    return LitellmExtractor(
+        ExtractorConfig(
+            id="test_extractor_456",  # Required for cache key generation
+            name="mock_without_cache",
+            extractor_type=ExtractorType.LITELLM,
+            model_name="gpt_4o",
+            model_provider_name="openai",
+            properties={
+                "prompt_document": PROMPTS_FOR_KIND["document"],
+                "prompt_image": PROMPTS_FOR_KIND["image"],
+                "prompt_video": PROMPTS_FOR_KIND["video"],
+                "prompt_audio": PROMPTS_FOR_KIND["audio"],
+            },
+        ),
+        litellm_core_config=LiteLlmCoreConfig(
+            base_url="https://test.com",
+            additional_body_options={"api_key": "test-key"},
+            default_headers={},
+        ),
+        filesystem_cache=None,  # Explicitly no cache
+    )
+
+
+def test_pdf_page_cache_key_generation(mock_litellm_extractor_with_cache):
+    """Test that PDF page cache keys are generated correctly."""
+    pdf_path = Path("test_document.pdf")
+    page_number = 0
+
+    cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(
+        pdf_path, page_number
+    )
+
+    # Should include extractor ID and a hash of the PDF name and page number
+    assert cache_key.startswith("test_extractor_123_")
+    assert len(cache_key) > len("test_extractor_123_")  # Should have hash suffix
+
+    # Same PDF and page should generate same key
+    cache_key2 = mock_litellm_extractor_with_cache.pdf_page_cache_key(
+        pdf_path, page_number
+    )
+    assert cache_key == cache_key2
+
+    # Different page should generate different key
+    cache_key3 = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, 1)
+    assert cache_key != cache_key3
+
+
+def test_pdf_page_cache_key_requires_extractor_id():
+    """Test that PDF page cache key generation requires extractor ID."""
+    extractor_config = ExtractorConfig(
+        id=None,  # No ID
+        name="mock",
+        extractor_type=ExtractorType.LITELLM,
+        model_name="gpt_4o",
+        model_provider_name="openai",
+        properties={
+            "prompt_document": PROMPTS_FOR_KIND["document"],
+            "prompt_image": PROMPTS_FOR_KIND["image"],
+            "prompt_video": PROMPTS_FOR_KIND["video"],
+            "prompt_audio": PROMPTS_FOR_KIND["audio"],
+        },
+    )
+
+    extractor = LitellmExtractor(
+        extractor_config,
+        LiteLlmCoreConfig(
+            base_url="https://test.com",
+            additional_body_options={"api_key": "test-key"},
+            default_headers={},
+        ),
+    )
+
+    with pytest.raises(
+        ValueError, match="Extractor config ID is required for PDF page cache key"
+    ):
+        extractor.pdf_page_cache_key(Path("test.pdf"), 0)
+
+
+async def test_extract_pdf_with_cache_storage(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test that PDF extraction stores content in cache when cache is available."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock responses for each page (PDF has 2 pages)
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        result = await mock_litellm_extractor_with_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that the completion was called for each page
+    assert mock_acompletion.call_count == 2
+
+    # Verify content is stored in cache
+    pdf_path = Path(test_file)
+    for i in range(2):
+        cached_content = (
+            await mock_litellm_extractor_with_cache.get_page_content_from_cache(
+                pdf_path, i
+            )
+        )
+        assert cached_content == f"Content from page {i + 1}"
+
+    # Verify the output contains content from both pages
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+
+async def test_extract_pdf_with_cache_retrieval(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test that PDF extraction retrieves content from cache when available."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    pdf_path = Path(test_file)
+
+    # Pre-populate cache with content
+    for i in range(2):
+        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
+            cache_key, f"Cached content from page {i + 1}".encode("utf-8")
+        )
+
+    # Mock responses (should not be called due to cache hits)
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Fresh content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        result = await mock_litellm_extractor_with_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that litellm.acompletion was NOT called (cache hits)
+    assert mock_acompletion.call_count == 0
+
+    # Verify the output contains cached content, not fresh content
+    assert "Cached content from page 1" in result.content
+    assert "Cached content from page 2" in result.content
+    assert "Fresh content from page 1" not in result.content
+    assert "Fresh content from page 2" not in result.content
+
+
+async def test_extract_pdf_without_cache(
+    mock_file_factory, mock_litellm_extractor_without_cache
+):
+    """Test that PDF extraction works normally when no cache is provided."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock responses for each page (PDF has 2 pages)
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        result = await mock_litellm_extractor_without_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that the completion was called for each page
+    assert mock_acompletion.call_count == 2
+
+    # Verify the output contains content from both pages
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+
+async def test_extract_pdf_mixed_cache_hits_and_misses(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test PDF extraction with some pages cached and others not."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    pdf_path = Path(test_file)
+
+    # Pre-populate cache with only page 0 content
+    cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, 0)
+    await mock_litellm_extractor_with_cache.filesystem_cache.set(
+        cache_key, "Cached content from page 1".encode("utf-8")
+    )
+
+    # Mock responses for page 1 only (page 0 should hit cache)
+    mock_response = AsyncMock(spec=ModelResponse)
+    mock_choice = AsyncMock(spec=Choices)
+    mock_message = AsyncMock()
+    mock_message.content = "Fresh content from page 2"
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
+
+    with patch("litellm.acompletion", return_value=mock_response) as mock_acompletion:
+        result = await mock_litellm_extractor_with_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that litellm.acompletion was called only once (for page 1)
+    assert mock_acompletion.call_count == 1
+
+    # Verify the output contains both cached and fresh content
+    assert "Cached content from page 1" in result.content
+    assert "Fresh content from page 2" in result.content
+
+
+async def test_extract_pdf_cache_write_failure_does_not_throw(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test that PDF extraction continues successfully even when cache write fails."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock responses for each page (PDF has 2 pages)
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    # Mock the cache set method to raise an exception
+    with patch.object(
+        mock_litellm_extractor_with_cache.filesystem_cache,
+        "set",
+        side_effect=Exception("Cache write failed"),
+    ) as mock_cache_set:
+        with patch(
+            "litellm.acompletion", side_effect=mock_responses
+        ) as mock_acompletion:
+            # This should not raise an exception despite cache write failures
+            result = await mock_litellm_extractor_with_cache.extract(
+                ExtractionInput(
+                    path=str(test_file),
+                    mime_type="application/pdf",
+                )
+            )
+
+    # Verify that the completion was called for each page
+    assert mock_acompletion.call_count == 2
+
+    # Verify that cache.set was called for each page (and failed)
+    assert mock_cache_set.call_count == 2
+
+    # Verify the output contains content from both pages despite cache failures
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+    # Verify the extraction completed successfully
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
+
+
+async def test_extract_pdf_cache_decode_failure_does_not_throw(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test that PDF extraction continues successfully even when cache decode fails."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    pdf_path = Path(test_file)
+
+    # Pre-populate cache with invalid UTF-8 bytes that will cause decode failure
+    for i in range(2):
+        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        # Use bytes that are not valid UTF-8 (e.g., some binary data)
+        invalid_utf8_bytes = b"\xff\xfe\x00\x00"  # Invalid UTF-8 sequence
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
+            cache_key, invalid_utf8_bytes
+        )
+
+    # Mock responses for each page (PDF has 2 pages) - should be called due to decode failures
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        # This should not raise an exception despite cache decode failures
+        result = await mock_litellm_extractor_with_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that the completion was called for each page (due to decode failures)
+    assert mock_acompletion.call_count == 2
+
+    # Verify the output contains content from both pages despite cache decode failures
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+    # Verify the extraction completed successfully
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
