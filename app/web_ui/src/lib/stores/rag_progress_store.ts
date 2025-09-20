@@ -3,7 +3,7 @@ import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
 import { progress_ui_state } from "./progress_ui_store"
-import { Semaphore } from "$lib/utils/semaphore"
+import { createLimiter } from "$lib/utils/limiter"
 
 const MAX_CONCURRENT_RAG_CONFIGS = 2
 
@@ -33,7 +33,7 @@ export const allRagConfigs = derived(ragProgressStore, ($store) => {
 
 // cap concurrent EventSource connections browsers have different limits,
 // we keep the limit low enough to be safe for most browsers
-const sseSlots = new Semaphore(MAX_CONCURRENT_RAG_CONFIGS)
+const run_rag_config_with_throttling = createLimiter(MAX_CONCURRENT_RAG_CONFIGS)
 
 function createRagProgressStore() {
   const { subscribe, set, update } = writable<RagConfigurationProgressState>({
@@ -147,7 +147,8 @@ function createRagProgressStore() {
               ...(state.logs[rag_config_id] ?? []),
               {
                 level: "info",
-                message: `A maximum of ${MAX_CONCURRENT_RAG_CONFIGS} configs can run at the same time. This config is queued and will start automatically when a slot is free. Refreshing the browser window will cancel the queue and any config that is currently running or waiting to start.`,
+                message:
+                  "Queued. Will start automatically once other runs finish.",
               },
             ],
           },
@@ -156,31 +157,28 @@ function createRagProgressStore() {
       10_000,
     )
 
-    await sseSlots.acquire()
-    // if we got a slot within 10s, prevent the log from being added
-    if (wait_log_timer) {
-      clearTimeout(wait_log_timer)
-      wait_log_timer = null
-    }
+    await run_rag_config_with_throttling(async () => {
+      // if we got a slot within 10s, prevent the log from being added
+      if (wait_log_timer) {
+        clearTimeout(wait_log_timer)
+        wait_log_timer = null
+      }
 
-    if (showed_queued_log) {
-      update((state) => ({
-        ...state,
-        logs: {
-          ...state.logs,
-          [rag_config_id]: [
-            ...(state.logs[rag_config_id] ?? []),
-            { level: "info", message: "Started running" },
-          ],
-        },
-      }))
-    }
+      if (showed_queued_log) {
+        update((state) => ({
+          ...state,
+          logs: {
+            ...state.logs,
+            [rag_config_id]: [
+              ...(state.logs[rag_config_id] ?? []),
+              { level: "info", message: "Started running" },
+            ],
+          },
+        }))
+      }
 
-    try {
       await run_rag_config_unsafe(project_id, rag_config_id)
-    } finally {
-      sseSlots.release()
-    }
+    })
   }
 
   function run_rag_config_unsafe(
