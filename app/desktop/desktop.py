@@ -24,6 +24,7 @@ from app.desktop.desktop_server import ThreadedServer, server_config
 os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
     Config.settings_dir(), "cache", "llama_index_cache"
 )
+os.environ["NLTK_DATA"] = os.path.join(Config.settings_dir(), "cache", "nltk_data")
 
 
 class DesktopApp:
