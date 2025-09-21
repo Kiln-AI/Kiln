@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import logging
 from pathlib import Path
-from typing import Any, List, Literal
+from typing import Any, List
 
 import litellm
 from litellm.types.utils import Choices, ModelResponse
@@ -20,6 +20,8 @@ from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.pdf_utils import split_pdf_into_pages
+
+MAX_PDF_PAGE_BATCH_SIZE = 8
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +163,7 @@ class LitellmExtractor(BaseExtractor):
         logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
         return None
 
-    async def extract_from_pdf_page(
+    async def _extract_single_pdf_page(
         self, pdf_path: Path, page_path: Path, prompt: str, page_number: int
     ) -> str:
         try:
@@ -215,14 +217,13 @@ class LitellmExtractor(BaseExtractor):
 
         return content
 
-    async def _extract_from_pdf_pages(self, pdf_path: Path, prompt: str) -> str:
+    async def _extract_pdf_page_by_page(self, pdf_path: Path, prompt: str) -> str:
         async with split_pdf_into_pages(pdf_path) as page_paths:
             page_outcomes: List[str | Exception | None] = [None] * len(page_paths)
 
-            batch_completed_count = 0
-            batch_size = 10
-
             extract_page_jobs: list = []
+            page_indices_for_jobs: list = []  # Track which page index each job corresponds to
+
             # we extract from each page individually and then combine the results
             # this ensures the model stays focused on the current page and does not
             # start summarizing the later pages
@@ -233,16 +234,20 @@ class LitellmExtractor(BaseExtractor):
                     continue
 
                 extract_page_jobs.append(
-                    self.extract_from_pdf_page(pdf_path, page_path, prompt, i)
+                    self._extract_single_pdf_page(pdf_path, page_path, prompt, i)
                 )
+                page_indices_for_jobs.append(i)
 
-                if len(extract_page_jobs) >= batch_size or i == len(page_paths) - 1:
+                if (
+                    len(extract_page_jobs) >= MAX_PDF_PAGE_BATCH_SIZE
+                    or i == len(page_paths) - 1
+                ):
                     extraction_results = await asyncio.gather(
                         *extract_page_jobs, return_exceptions=True
                     )
 
                     for batch_i, extraction_result in enumerate(extraction_results):
-                        page_index = batch_completed_count * batch_size + batch_i
+                        page_index = page_indices_for_jobs[batch_i]
                         # we let it continue even if there is an error - the success results will be cached
                         # and can be reused on the next run
                         if isinstance(extraction_result, Exception):
@@ -254,11 +259,18 @@ class LitellmExtractor(BaseExtractor):
                                 f"Unexpected type {type(extraction_result)} for page {page_index}"
                             )
                     extract_page_jobs.clear()
-                    batch_completed_count += 1
+                    page_indices_for_jobs.clear()
 
-        # check if any of the page outcomes are exceptions
-        if any(isinstance(result, Exception) for result in page_outcomes):
-            raise RuntimeError(f"Error extracting PDF {pdf_path}: {page_outcomes}")
+        exceptions: list[tuple[int, Exception]] = [
+            (page_index, result)
+            for page_index, result in enumerate(page_outcomes)
+            if isinstance(result, Exception)
+        ]
+        if len(exceptions) > 0:
+            msg = f"Error extracting PDF {pdf_path}: "
+            for page_index, exception in exceptions:
+                msg += f"Page {page_index}: {exception}\n"
+            raise RuntimeError(msg)
 
         return "\n\n".join(
             [outcome for outcome in page_outcomes if isinstance(outcome, str)]
@@ -315,7 +327,7 @@ class LitellmExtractor(BaseExtractor):
 
         # special handling for PDFs - process each page individually
         if extraction_input.mime_type == "application/pdf":
-            content = await self._extract_from_pdf_pages(
+            content = await self._extract_pdf_page_by_page(
                 Path(extraction_input.path), prompt
             )
             return ExtractionOutput(
