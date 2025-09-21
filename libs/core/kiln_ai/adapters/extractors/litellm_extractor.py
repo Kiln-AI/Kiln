@@ -25,7 +25,7 @@ from kiln_ai.utils.pdf_utils import split_pdf_into_pages
 def max_pdf_page_concurrency_for_model(model_name: str) -> int:
     # we assume each batch takes ~5s to complete (likely more in practice)
     # lowest rate limit is 150 RPM for Tier 1 accounts for gemini-2.5-pro
-    if model_name == "gemini-2.5-pro":
+    if model_name == "gemini/gemini-2.5-pro":
         return 2
     # other models support at least 500 RPM for lowest tier accounts
     return 5
