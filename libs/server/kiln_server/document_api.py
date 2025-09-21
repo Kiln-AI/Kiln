@@ -547,7 +547,7 @@ async def build_rag_workflow_runner(
                     project,
                     extractor_config,
                     chunker_config,
-                    concurrency=50,
+                    concurrency=5,
                     rag_config=rag_config,
                 ),
                 RagEmbeddingStepRunner(
