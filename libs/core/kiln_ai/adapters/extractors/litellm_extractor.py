@@ -21,7 +21,15 @@ from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.pdf_utils import split_pdf_into_pages
 
-MAX_PDF_PAGE_BATCH_SIZE = 8
+
+def max_pdf_page_concurrency_for_model(model_name: str) -> int:
+    # we assume each batch takes ~5s to complete (likely more in practice)
+    # lowest rate limit is 150 RPM for Tier 1 accounts for gemini-2.5-pro
+    if model_name == "gemini-2.5-pro":
+        return 2
+    # other models support at least 500 RPM for lowest tier accounts
+    return 5
+
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +247,8 @@ class LitellmExtractor(BaseExtractor):
                 page_indices_for_jobs.append(i)
 
                 if (
-                    len(extract_page_jobs) >= MAX_PDF_PAGE_BATCH_SIZE
+                    len(extract_page_jobs)
+                    >= max_pdf_page_concurrency_for_model(self.litellm_model_slug())
                     or i == len(page_paths) - 1
                 ):
                     extraction_results = await asyncio.gather(
