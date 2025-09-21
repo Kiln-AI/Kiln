@@ -566,7 +566,7 @@ export function compute_overall_completion_percentage(
     rag_progress.total_document_embedded_count /
     rag_progress.total_document_count
   const indexing_completion_percentage =
-    rag_progress.total_chunk_completed_count /
+    rag_progress.total_chunks_indexed_count /
     (rag_progress?.total_chunk_count || 1)
 
   // arbitrary weights, but roughly based on how long each step takes
