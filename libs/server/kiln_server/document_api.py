@@ -539,7 +539,7 @@ async def build_rag_workflow_runner(
                 RagExtractionStepRunner(
                     project,
                     extractor_config,
-                    concurrency=20,
+                    concurrency=5,
                     rag_config=rag_config,
                     filesystem_cache=TemporaryFilesystemCache.shared(),
                 ),

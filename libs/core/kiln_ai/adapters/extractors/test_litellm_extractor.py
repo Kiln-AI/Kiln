@@ -1117,3 +1117,76 @@ async def test_extract_pdf_cache_decode_failure_does_not_throw(
     # Verify the extraction completed successfully
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
+
+
+async def test_extract_pdf_parallel_processing_error_handling(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test that parallel processing handles errors correctly."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock first page to succeed, second to fail
+    mock_response1 = AsyncMock(spec=ModelResponse)
+    mock_choice1 = AsyncMock(spec=Choices)
+    mock_message1 = AsyncMock()
+    mock_message1.content = "Success from page 1"
+    mock_choice1.message = mock_message1
+    mock_response1.choices = [mock_choice1]
+
+    with patch(
+        "litellm.acompletion",
+        side_effect=[mock_response1, Exception("API Error on page 2")],
+    ) as mock_acompletion:
+        with pytest.raises(ValueError, match=r".*Page 1:.*API Error on page 2"):
+            await mock_litellm_extractor_with_cache.extract(
+                ExtractionInput(
+                    path=str(test_file),
+                    mime_type="application/pdf",
+                )
+            )
+
+    # Verify that both pages were attempted
+    assert mock_acompletion.call_count == 2
+
+
+async def test_extract_pdf_parallel_processing_all_cached(
+    mock_file_factory, mock_litellm_extractor_with_cache
+):
+    """Test parallel processing when all pages are cached."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    pdf_path = Path(test_file)
+
+    # Pre-populate cache with both pages
+    for i in range(2):
+        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
+            cache_key, f"Cached content from page {i + 1}".encode("utf-8")
+        )
+
+    # Mock responses (should not be called due to cache hits)
+    mock_responses = []
+    for i in range(2):
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Fresh content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        result = await mock_litellm_extractor_with_cache.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify that no API calls were made (all pages cached)
+    assert mock_acompletion.call_count == 0
+
+    # Verify the output contains cached content
+    assert "Cached content from page 1" in result.content
+    assert "Cached content from page 2" in result.content
+    assert "Fresh content from page 1" not in result.content
+    assert "Fresh content from page 2" not in result.content
