@@ -28,6 +28,7 @@
   import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
   import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -116,6 +117,8 @@
     } finally {
       loading = false
     }
+
+    uncache_available_tools(project_id)
 
     posthog.capture(
       is_archived ? "archive_rag_config" : "unarchive_rag_config",
