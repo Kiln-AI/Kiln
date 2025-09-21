@@ -539,3 +539,42 @@ export async function update_rag_config_archived_state(
     },
   }))
 }
+
+export function compute_overall_completion_percentage(
+  rag_progress: RagProgress,
+) {
+  if (!rag_progress || rag_progress.total_document_count === 0) {
+    return 0
+  }
+
+  if (
+    rag_progress?.total_document_completed_count ===
+      rag_progress?.total_document_count &&
+    rag_progress?.total_chunk_completed_count ===
+      rag_progress?.total_chunk_count
+  ) {
+    return 100
+  }
+
+  const extraction_completion_percentage =
+    rag_progress.total_document_extracted_count /
+    rag_progress.total_document_count
+  const chunking_completion_percentage =
+    rag_progress.total_document_chunked_count /
+    rag_progress.total_document_count
+  const embedding_completion_percentage =
+    rag_progress.total_document_embedded_count /
+    rag_progress.total_document_count
+  const indexing_completion_percentage =
+    rag_progress.total_chunk_completed_count /
+    (rag_progress?.total_chunk_count || 1)
+
+  // arbitrary weights, but roughly based on how long each step takes
+  const overall_completion_percentage =
+    0.75 * extraction_completion_percentage +
+    0.1 * chunking_completion_percentage +
+    0.1 * embedding_completion_percentage +
+    0.05 * indexing_completion_percentage
+
+  return Math.round(overall_completion_percentage * 100)
+}
