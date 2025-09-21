@@ -137,16 +137,16 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "We suggest Gemini, but if you need to use OpenAI try this template.",
     preview_tooltip:
-      "GPT-4.1 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "GPT-5 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_api_keys: "Openai",
     notice_text: "Does not support audio or video files.",
     notice_tooltip:
-      "GPT 4.1 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
+      "GPT 5 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
     extractor: {
-      config_name: "GPT-4p1 w Default Prompts",
-      description: "GPT-4.1",
+      config_name: "GPT-5 w Default Prompts",
+      description: "GPT-5",
       model_provider_name: "openai",
-      model_name: "gpt_4_1",
+      model_name: "gpt_5",
     },
     chunker: default_chunker,
     embedding: {
@@ -156,7 +156,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       model_name: "openai_text_embedding_3_large",
     },
     vector_store: default_vector_store,
-    rag_config_name: "OpenAI Based - GPT-4_1 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-5 Hybrid Search",
   },
 }
 
