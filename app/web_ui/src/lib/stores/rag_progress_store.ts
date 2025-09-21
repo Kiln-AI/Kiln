@@ -576,5 +576,5 @@ export function compute_overall_completion_percentage(
     0.1 * embedding_completion_percentage +
     0.05 * indexing_completion_percentage
 
-  return Math.round(overall_completion_percentage * 100)
+  return Math.floor(overall_completion_percentage * 100)
 }
