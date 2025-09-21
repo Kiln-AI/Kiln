@@ -72,25 +72,25 @@
   )
 
   $: document_progress_max = config_progress?.total_document_count || 100
-  $: extraction_progress_pct = Math.round(
+  $: extraction_progress_pct = Math.floor(
     (extraction_progress_value / document_progress_max) * 100,
   )
-  $: chunking_progress_pct = Math.round(
+  $: chunking_progress_pct = Math.floor(
     (chunking_progress_value / document_progress_max) * 100,
   )
-  $: embedding_progress_pct = Math.round(
+  $: embedding_progress_pct = Math.floor(
     (embedding_progress_value / document_progress_max) * 100,
   )
 
   $: chunk_progress_max = config_progress?.total_chunk_count || 100
-  $: indexing_progress_pct = Math.round(
+  $: indexing_progress_pct = Math.floor(
     (indexing_progress_value / chunk_progress_max) * 100,
   )
 
   $: total_docs = config_progress?.total_document_count || 0
   $: docs_completed_pct =
     total_docs > 0
-      ? Math.round(
+      ? Math.floor(
           ((config_progress?.total_document_completed_count || 0) /
             total_docs) *
             100,
@@ -100,7 +100,7 @@
   $: total_chunks = config_progress?.total_chunk_count || 0
   $: chunks_completed_pct =
     total_chunks > 0
-      ? Math.round(
+      ? Math.floor(
           ((config_progress?.total_chunk_completed_count || 0) / total_chunks) *
             100,
         )
