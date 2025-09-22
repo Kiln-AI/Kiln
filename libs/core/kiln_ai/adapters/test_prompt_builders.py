@@ -359,7 +359,7 @@ def test_prompt_builder_from_id(task_with_examples):
 
     with pytest.raises(
         ValueError,
-        match="Invalid fine-tune ID format. Expected 'project_id::task_id::fine_tune_id'",
+        match=r"Invalid fine-tune ID format. Expected 'project_id::task_id::fine_tune_id'",
     ):
         prompt_builder_from_id("fine_tune_prompt::123", task)
 

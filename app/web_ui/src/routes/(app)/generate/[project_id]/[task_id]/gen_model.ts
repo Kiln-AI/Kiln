@@ -1,5 +1,8 @@
+import type { TaskRunOutput } from "$lib/types"
+
 export type SampleData = {
   input: string
+  output: TaskRunOutput | null
   saved_id: string | null
   model_name: string
   model_provider: string

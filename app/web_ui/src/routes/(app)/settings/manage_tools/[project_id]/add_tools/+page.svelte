@@ -6,6 +6,8 @@
   import { client } from "$lib/api_client"
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
+  import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
 
@@ -105,7 +107,7 @@
         },
       ],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org",
+        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
     },
     {
       name: "Run Python Code",
@@ -123,7 +125,7 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must have deno, a JavaScript runtime, installed: https://deno.com",
+        "You must have deno, a JavaScript runtime, installed: https://deno.com. If you had to install deno, restart Kiln before connecting the server.",
     },
     {
       name: "Access Files",
@@ -137,7 +139,7 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org",
+        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
     },
   ]
 
@@ -147,8 +149,14 @@
       subtitle: "by Kiln",
       description:
         "One click to try out tool calling, for simple math operations.",
-      button_text: "Enable",
       on_click: () => enable_demo_tools(),
+    },
+    {
+      name: "Search Tool (RAG)",
+      subtitle: "by Kiln",
+      description:
+        "Build a search tool to retrieve information from custom documents.",
+      on_click: () => goto(`/docs/rag_configs/${project_id}/add_search_tool`),
     },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
@@ -172,6 +180,9 @@
       if (error) {
         throw error
       }
+
+      posthog.capture("enable_demo_tools", {})
+
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools(project_id)
       goto(`/settings/manage_tools/${project_id}`)
@@ -198,46 +209,19 @@
   ]}
 >
   <div>
-    <h2 class="text-lg font-medium text-gray-900 mb-3">Example Tools</h2>
-    <div
-      class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
-    >
-      {#each sample_tools as tool}
-        <div class="carousel-item">
-          <div
-            class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
-            on:click={tool.on_click}
-            on:keydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                tool.on_click()
-              }
-            }}
-            tabindex="0"
-            role="button"
-            aria-label="Connect {tool.name}"
-          >
-            <div class="p-4">
-              <div class="text-lg font-semibold leading-tight">
-                {tool.name}
-              </div>
-              {#if tool.subtitle}
-                <div class="text-xs text-gray-500 font-medium mt-1">
-                  {tool.subtitle}
-                </div>
-              {/if}
-              <p class="text-base-content/70 text-xs leading-relaxed mt-3">
-                {tool.description}
-              </p>
-            </div>
-          </div>
-        </div>
-      {/each}
-    </div>
+    <h2 class="text-lg font-medium text-gray-900 mb-3">Suggested Tools</h2>
+    <FeatureCarousel features={sample_tools} />
     <div class="max-w-4xl mt-8">
       <SettingsSection
         title="Custom Tools"
         items={[
+          {
+            name: "Search Tools (RAG)",
+            description:
+              "Create a tool to search for information in documents.",
+            button_text: "Create",
+            href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
           {
             name: "Remote MCP Servers",
             description:

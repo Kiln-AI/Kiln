@@ -9,6 +9,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
 )
@@ -174,6 +175,13 @@ class ToolSetApiDescription(BaseModel):
     tools: list[ToolApiDescription]
 
 
+class SearchToolApiDescription(BaseModel):
+    id: ID_TYPE
+    tool_name: str
+    name: str
+    description: str | None
+
+
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
     project = project_from_id(project_id)
     for tool_server in project.external_tool_servers(readonly=True):
@@ -233,6 +241,26 @@ def connect_tool_servers_api(app: FastAPI):
         project = project_from_id(project_id)
 
         tool_sets = []
+
+        # Add search tools (RAG)
+        rag_configs = project.rag_configs(readonly=True)
+        if rag_configs:
+            tools = [
+                ToolApiDescription(
+                    id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
+                    name=rag_config.tool_name,
+                    description=f"{rag_config.name}: {rag_config.tool_description}",
+                )
+                for rag_config in rag_configs
+                if not rag_config.is_archived
+            ]
+            if tools and len(tools) > 0:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        set_name="Search Tools (RAG)",
+                        tools=tools,
+                    )
+                )
 
         # Get available tools from MCP servers
         for server in project.external_tool_servers(readonly=True):
@@ -493,3 +521,17 @@ def connect_tool_servers_api(app: FastAPI):
     async def set_demo_tools(enable_demo_tools: bool) -> bool:
         Config.shared().enable_demo_tools = enable_demo_tools
         return Config.shared().enable_demo_tools
+
+    @app.get("/api/projects/{project_id}/search_tools")
+    async def get_search_tools(project_id: str) -> list[SearchToolApiDescription]:
+        project = project_from_id(project_id)
+        return [
+            SearchToolApiDescription(
+                id=rag_config.id,
+                tool_name=rag_config.tool_name,
+                name=rag_config.name,
+                description=rag_config.tool_description,
+            )
+            for rag_config in project.rag_configs(readonly=True)
+            if not rag_config.is_archived
+        ]

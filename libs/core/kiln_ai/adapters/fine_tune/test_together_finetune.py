@@ -17,11 +17,7 @@ from kiln_ai.adapters.fine_tune.together_finetune import (
     _pending_statuses,
     _running_statuses,
 )
-from kiln_ai.datamodel import (
-    DatasetSplit,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
 from kiln_ai.utils.config import Config
@@ -105,7 +101,7 @@ def mock_api_key():
 def test_init_missing_api_key(finetune):
     with patch.object(Config, "shared") as mock_config:
         mock_config.return_value.together_api_key = None
-        with pytest.raises(ValueError, match="Together.ai API key not set"):
+        with pytest.raises(ValueError, match=r"Together.ai API key not set"):
             TogetherFinetune(datamodel=finetune)
 
 

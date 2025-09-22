@@ -14,7 +14,7 @@
     load_available_models,
   } from "$lib/stores"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
+  import { onMount, getContext } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, StructuredOutputMode } from "$lib/types"
@@ -27,7 +27,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
-  import { getContext } from "svelte"
+  import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
 
   $: run_id = $page.params.run_id
@@ -127,20 +127,6 @@
         value: provider_name_from_id(
           String(run.output.source.properties.model_provider),
         ),
-      })
-    }
-
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
       })
     }
 
@@ -250,13 +236,6 @@
     load_run()
   }
 
-  function isMac(): boolean {
-    return (
-      typeof window !== "undefined" &&
-      navigator.platform.toUpperCase().indexOf("MAC") >= 0
-    )
-  }
-
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -264,7 +243,7 @@
       buttons.push({
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
-        shortcut: isMac() ? "Backspace" : "Delete",
+        shortcut: isMacOS() ? "Backspace" : "Delete",
       })
     }
     if (list_page.length > 1) {

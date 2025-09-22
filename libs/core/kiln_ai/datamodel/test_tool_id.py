@@ -4,10 +4,12 @@ from pydantic import BaseModel, ValidationError
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
     _check_tool_id,
     mcp_server_and_tool_name_from_id,
+    rag_config_id_from_id,
 )
 
 
@@ -113,6 +115,36 @@ class TestCheckToolId:
         with pytest.raises(ValueError, match="Invalid tool ID"):
             _check_tool_id("mcp::wrong::server::tool")
 
+    def test_valid_rag_tools(self):
+        """Test validation of valid RAG tools."""
+        valid_ids = [
+            "kiln_tool::rag::config1",
+            "kiln_tool::rag::my_rag_config",
+            "kiln_tool::rag::test_config_123",
+        ]
+        for tool_id in valid_ids:
+            result = _check_tool_id(tool_id)
+            assert result == tool_id
+
+    def test_invalid_rag_format(self):
+        """Test validation fails for invalid RAG tool formats."""
+        # These IDs start with the RAG prefix but have invalid formats
+        rag_invalid_ids = [
+            "kiln_tool::rag::",  # Missing config ID
+            "kiln_tool::rag::config::extra",  # Too many parts
+        ]
+
+        for invalid_id in rag_invalid_ids:
+            with pytest.raises(ValueError, match="Invalid RAG tool ID"):
+                _check_tool_id(invalid_id)
+
+    def test_rag_tool_empty_config_id(self):
+        """Test that RAG tool with empty config ID is handled properly."""
+        # This tests the case where rag_config_id_from_id returns empty string
+        # which should trigger line 66 in the source
+        with pytest.raises(ValueError, match="Invalid RAG tool ID"):
+            _check_tool_id("kiln_tool::rag::")
+
 
 class TestMcpServerAndToolNameFromId:
     """Test the mcp_server_and_tool_name_from_id function."""
@@ -197,6 +229,9 @@ class TestToolIdPydanticType:
             # Local MCP tools
             "mcp::local::server1::tool1",
             "mcp::local::my_server::my_tool",
+            # RAG tools
+            "kiln_tool::rag::config1",
+            "kiln_tool::rag::my_rag_config",
         ]
 
         for tool_id in valid_ids:
@@ -212,6 +247,8 @@ class TestToolIdPydanticType:
             "mcp::remote::server",
             "mcp::local::",
             "mcp::local::server",
+            "kiln_tool::rag::",
+            "kiln_tool::rag::config::extra",
         ]
 
         for invalid_id in invalid_ids:
@@ -237,3 +274,47 @@ class TestConstants:
     def test_mcp_local_tool_id_prefix(self):
         """Test the MCP local tool ID prefix constant."""
         assert MCP_LOCAL_TOOL_ID_PREFIX == "mcp::local::"
+
+    def test_rag_tool_id_prefix(self):
+        """Test the RAG tool ID prefix constant."""
+        assert RAG_TOOL_ID_PREFIX == "kiln_tool::rag::"
+
+
+class TestRagConfigIdFromId:
+    """Test the rag_config_id_from_id function."""
+
+    def test_valid_rag_ids(self):
+        """Test parsing valid RAG tool IDs."""
+        test_cases = [
+            ("kiln_tool::rag::config1", "config1"),
+            ("kiln_tool::rag::my_rag_config", "my_rag_config"),
+            ("kiln_tool::rag::test_config_123", "test_config_123"),
+            ("kiln_tool::rag::a", "a"),  # Minimal valid case
+        ]
+
+        for tool_id, expected in test_cases:
+            result = rag_config_id_from_id(tool_id)
+            assert result == expected
+
+    def test_invalid_rag_ids(self):
+        """Test parsing fails for invalid RAG tool IDs."""
+        # Test various invalid formats that should trigger line 104
+        invalid_ids = [
+            "kiln_tool::rag::config::extra",  # Too many parts (4 parts)
+            "wrong::rag::config",  # Wrong prefix
+            "kiln_tool::wrong::config",  # Wrong middle part
+            "rag::config",  # Too few parts (2 parts)
+            "",  # Empty string
+            "single_part",  # Only 1 part
+        ]
+
+        for invalid_id in invalid_ids:
+            with pytest.raises(ValueError, match="Invalid RAG tool ID"):
+                rag_config_id_from_id(invalid_id)
+
+    def test_rag_id_with_empty_config_id(self):
+        """Test that RAG tool ID with empty config ID returns empty string."""
+        # This is actually valid according to the parser - it returns empty string
+        # The validation for empty config ID happens in _check_tool_id
+        result = rag_config_id_from_id("kiln_tool::rag::")
+        assert result == ""

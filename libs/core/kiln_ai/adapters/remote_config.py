@@ -3,28 +3,53 @@ import json
 import logging
 import os
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List
 
 import requests
 from pydantic import ValidationError
 
+from kiln_ai.adapters.ml_embedding_model_list import (
+    KilnEmbeddingModel,
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+)
+from kiln_ai.datamodel.datamodel_enums import KilnMimeType
+
 from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
 
 logger = logging.getLogger(__name__)
 
 
-def serialize_config(models: List[KilnModel], path: str | Path) -> None:
-    data = {"model_list": [m.model_dump(mode="json") for m in models]}
+@dataclass
+class KilnRemoteConfig:
+    model_list: List[KilnModel]
+    embedding_model_list: List[KilnEmbeddingModel]
+
+
+def serialize_config(
+    models: List[KilnModel],
+    embedding_models: List[KilnEmbeddingModel],
+    path: str | Path,
+) -> None:
+    data = {
+        "model_list": [m.model_dump(mode="json") for m in models],
+        "embedding_model_list": [m.model_dump(mode="json") for m in embedding_models],
+    }
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True))
 
 
-def deserialize_config_at_path(path: str | Path) -> List[KilnModel]:
+def deserialize_config_at_path(
+    path: str | Path,
+) -> KilnRemoteConfig:
     raw = json.loads(Path(path).read_text())
     return deserialize_config_data(raw)
 
 
-def deserialize_config_data(config_data: Any) -> List[KilnModel]:
+def deserialize_config_data(
+    config_data: Any,
+) -> KilnRemoteConfig:
     if not isinstance(config_data, dict):
         raise ValueError(f"Remote config expected dict, got {type(config_data)}")
 
@@ -32,6 +57,12 @@ def deserialize_config_data(config_data: Any) -> List[KilnModel]:
     if not isinstance(model_list, list):
         raise ValueError(
             f"Remote config expected list of models, got {type(model_list)}"
+        )
+
+    embedding_model_data = config_data.get("embedding_model_list", [])
+    if not isinstance(embedding_model_data, list):
+        raise ValueError(
+            f"Remote config expected list of embedding models, got {type(embedding_model_data)}"
         )
 
     # We must be careful here, because some of the JSON data may be generated from a forward
@@ -48,6 +79,14 @@ def deserialize_config_data(config_data: Any) -> List[KilnModel]:
             providers = []
             for provider_data in providers_list:
                 try:
+                    # we filter out the mime types that we don't support
+                    mime_types = provider_data.get("multimodal_mime_types")
+                    if mime_types is not None:
+                        provider_data["multimodal_mime_types"] = [
+                            mime_type
+                            for mime_type in mime_types
+                            if mime_type in list(KilnMimeType)
+                        ]
                     provider = KilnModelProvider.model_validate(provider_data)
                     providers.append(provider)
                 except ValidationError as e:
@@ -72,10 +111,38 @@ def deserialize_config_data(config_data: Any) -> List[KilnModel]:
                 model_data,
                 e,
             )
-    return models
+
+    embedding_models = []
+    for embedding_model_data in embedding_model_data:
+        try:
+            provider_list = embedding_model_data.get("providers", [])
+            providers = []
+            for provider_data in provider_list:
+                try:
+                    provider = KilnEmbeddingModelProvider.model_validate(provider_data)
+                    providers.append(provider)
+                except ValidationError as e:
+                    logger.warning(
+                        "Failed to validate an embedding model provider from remote config. Upgrade Kiln to use this model. Details %s: %s",
+                        provider_data,
+                        e,
+                    )
+
+            embedding_model_data["providers"] = []
+            embedding_model = KilnEmbeddingModel.model_validate(embedding_model_data)
+            embedding_model.providers = providers
+            embedding_models.append(embedding_model)
+        except ValidationError as e:
+            logger.warning(
+                "Failed to validate an embedding model from remote config. Upgrade Kiln to use this model. Details %s: %s",
+                embedding_model_data,
+                e,
+            )
+
+    return KilnRemoteConfig(model_list=models, embedding_model_list=embedding_models)
 
 
-def load_from_url(url: str) -> List[KilnModel]:
+def load_from_url(url: str) -> KilnRemoteConfig:
     response = requests.get(url, timeout=10)
     response.raise_for_status()
     data = response.json()
@@ -83,7 +150,11 @@ def load_from_url(url: str) -> List[KilnModel]:
 
 
 def dump_builtin_config(path: str | Path) -> None:
-    serialize_config(built_in_models, path)
+    serialize_config(
+        models=built_in_models,
+        embedding_models=built_in_embedding_models,
+        path=path,
+    )
 
 
 def load_remote_models(url: str) -> None:
@@ -93,7 +164,8 @@ def load_remote_models(url: str) -> None:
     def fetch_and_replace() -> None:
         try:
             models = load_from_url(url)
-            built_in_models[:] = models
+            built_in_models[:] = models.model_list
+            built_in_embedding_models[:] = models.embedding_model_list
         except Exception as exc:
             # Do not crash startup, but surface the issue
             logger.warning("Failed to fetch remote model list from %s: %s", url, exc)

@@ -34,7 +34,7 @@
 
 {#if $state}
   <button
-    class="bg-white border border-primary flex flex-col gap-1 items-start relative"
+    class="bg-white border border-primary flex flex-col gap-1 items-start relative text-xs 2xl:text-sm"
     on:click={openLink}
   >
     <button
@@ -45,7 +45,7 @@
     <div class="font-medium pr-6">
       {$state?.title}
     </div>
-    <div class="text-sm font-light">
+    <div class="font-light">
       {$state?.body}
       <a href={$state?.link} class="text-primary font-medium">{$state?.cta}</a>.
     </div>

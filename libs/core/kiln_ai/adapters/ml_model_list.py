@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
+    KilnMimeType,
     ModelProviderName,
     StructuredOutputMode,
 )
@@ -39,6 +40,8 @@ class ModelFamily(str, Enum):
     ernie = "ernie"
     minimax = "minimax"
     pangu = "pangu"
+    bytedance = "bytedance"
+    stepfun = "stepfun"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -136,6 +139,9 @@ class ModelName(str, Enum):
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
     grok_4 = "grok_4"
+    qwen_3_next_80b_a3b = "qwen_3_next_80b_a3b"
+    qwen_3_next_80b_a3b_thinking = "qwen_3_next_80b_a3b_thinking"
+    qwen_3_max = "qwen_3_max"
     qwen_3_0p6b = "qwen_3_0p6b"
     qwen_3_0p6b_no_thinking = "qwen_3_0p6b_no_thinking"
     qwen_3_1p7b = "qwen_3_1p7b"
@@ -158,6 +164,7 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
+    kimi_k2_0905 = "kimi_k2_0905"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_5 = "glm_4_5"
     glm_4_5_air = "glm_4_5_air"
@@ -169,6 +176,8 @@ class ModelName(str, Enum):
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
+    bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
+    stepfun_step3 = "stepfun_step3"
 
 
 class ModelParserID(str, Enum):
@@ -202,6 +211,10 @@ class KilnModelProvider(BaseModel):
         parser: A parser to use for the model, if applicable
         reasoning_capable: Whether the model is designed to output thinking in a structured format (eg <think></think>). If so we don't use COT across 2 calls, and ask for thinking and final response in the same call.
         tuned_chat_strategy: Used when a model is finetuned with a specific chat strategy, and it's best to use it at call time.
+        supports_doc_extraction: Whether the provider is meant to support document extraction
+        suggested_for_doc_extraction: Whether the model is suggested for document extraction
+        multimodal_capable: Whether the model supports multimodal inputs (e.g. images, audio, video, PDFs, etc.)
+        multimodal_mime_types: The mime types that the model supports for multimodal inputs (e.g. image/jpeg, video/mp4, application/pdf, etc.)
     """
 
     name: ModelProviderName
@@ -221,6 +234,10 @@ class KilnModelProvider(BaseModel):
     uncensored: bool = False
     suggested_for_uncensored_data_gen: bool = False
     tuned_chat_strategy: ChatStrategy | None = None
+    supports_doc_extraction: bool = False
+    suggested_for_doc_extraction: bool = False
+    multimodal_capable: bool = False
+    multimodal_mime_types: List[str] | None = None
 
     # We need a more generalized way to handle custom provider parameters.
     # Making them quite declarative here for now, isolating provider specific logic
@@ -275,6 +292,15 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -297,6 +323,15 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -317,6 +352,15 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -354,6 +398,15 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -362,12 +415,30 @@ built_in_models: List[KilnModel] = [
                 supports_logprobs=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -933,6 +1004,20 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 reasoning_capable=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
@@ -942,6 +1027,27 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
@@ -969,6 +1075,20 @@ built_in_models: List[KilnModel] = [
                 model_id="google/gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
                 gemini_reasoning_enabled=True,
             ),
             KilnModelProvider(
@@ -977,6 +1097,27 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 thinking_level="medium",
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
@@ -996,11 +1137,44 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-2.0-flash-001",
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash",
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
@@ -1020,11 +1194,44 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-2.0-flash-lite-001",
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.0-flash-lite",
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
@@ -2107,13 +2314,19 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="deepseek/deepseek-chat-v3.1",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v3p1",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/deepseek-ai/DeepSeek-V3.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
         ],
@@ -2518,6 +2731,53 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Qwen 3 Next 80B A3B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_next_80b_a3b,
+        friendly_name="Qwen 3 Next 80B A3B (Instruct)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-next-80b-a3b-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+        ],
+    ),
+    # Qwen 3 Next 80B A3B (Thinking)
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_next_80b_a3b_thinking,
+        friendly_name="Qwen 3 Next 80B A3B (Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-next-80b-a3b-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+            ),
+        ],
+    ),
+    # Qwen 3 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_max,
+        friendly_name="Qwen 3 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
             ),
         ],
     ),
@@ -3222,6 +3482,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-4.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
         ],
     ),
     # GLM 4.5 AIR
@@ -3249,6 +3516,13 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-4.5-Air",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
         ],
     ),
     # Kimi K2 Instruct
@@ -3260,8 +3534,9 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k2-instruct",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                # Ignoring json mode for now, so not suggested for evals
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3281,12 +3556,57 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.groq,
                 model_id="moonshotai/kimi-k2-instruct",
                 supports_data_gen=True,
-                structured_output_mode=StructuredOutputMode.function_calling,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/moonshotai/Kimi-K2-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
+    # Kimi K2 Instruct 0905
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_0905,
+        friendly_name="Kimi K2 0905",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2-0905",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-instruct-0905",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K2-Instruct-0905",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+                # this model on this provider currently fails the tool call test, but might work in the future
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="moonshotai/kimi-k2-instruct-0905",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/moonshotai/Kimi-K2-Instruct-0905",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 suggested_for_evals=True,
@@ -3442,6 +3762,53 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Bytedance
+    KilnModel(
+        family=ModelFamily.bytedance,
+        name=ModelName.bytedance_seed_oss_36b,
+        friendly_name="ByteDance Seed OSS 36B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="bytedance/seed-oss-36b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="ByteDance-Seed/Seed-OSS-36B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                supports_function_calling=False,
+                reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # StepFun
+    KilnModel(
+        family=ModelFamily.stepfun,
+        name=ModelName.stepfun_step3,
+        friendly_name="StepFun Step3",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="stepfun-ai/step3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="stepfun-ai/step3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
 ]
 
 
@@ -3450,6 +3817,17 @@ def get_model_by_name(name: ModelName) -> KilnModel:
         if model.name == name:
             return model
     raise ValueError(f"Model {name} not found in the list of built-in models")
+
+
+def built_in_models_from_provider(
+    provider_name: ModelProviderName, model_name: str
+) -> KilnModelProvider | None:
+    for model in built_in_models:
+        if model.name == model_name:
+            for p in model.providers:
+                if p.name == provider_name:
+                    return p
+    return None
 
 
 def default_structured_output_mode_for_model_provider(

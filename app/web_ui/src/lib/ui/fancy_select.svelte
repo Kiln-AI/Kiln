@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation"
   import type { OptionGroup } from "./fancy_select_types"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
@@ -6,6 +7,9 @@
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
+  export let empty_state_message: string = "No options available"
+  export let empty_state_subtitle: string | null = null
+  export let empty_state_link: string | null = null
   export let multi_select: boolean = false
 
   // Add this variable to track scrollability
@@ -550,6 +554,29 @@
         </div>
       {/if}
 
+      {#if options.length === 0}
+        <!-- Empty state -->
+        <button
+          class="px-4 pt-4 pb-2 text-center text-base-content/60 {empty_state_link
+            ? 'cursor-pointer'
+            : 'cursor-default'}"
+          on:mousedown={() => {
+            if (empty_state_link) {
+              goto(empty_state_link)
+            }
+          }}
+        >
+          <div>
+            {empty_state_message}
+          </div>
+          {#if empty_state_subtitle}
+            <div class="text-sm {empty_state_link ? 'link' : ''}">
+              {empty_state_subtitle}
+            </div>
+          {/if}
+        </button>
+      {/if}
+
       <ul
         class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
         use:scrollableCheck
@@ -572,7 +599,7 @@
                 aria-selected={multi_select
                   ? selected_values.includes(item.value)
                   : selected === item.value}
-                class="pointer-events-auto {focusedIndex === overallIndex
+                class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
                   : 'hover:bg-transparent'}"
                 on:mousedown={(event) => {
@@ -583,7 +610,7 @@
                   focusedIndex = overallIndex
                 }}
               >
-                <div class="flex flex-row gap-3 items-center">
+                <div class="flex flex-row gap-3 items-center flex-1">
                   {#if multi_select}
                     <input
                       type="checkbox"
@@ -609,7 +636,7 @@
                     </div>
                     {#if item.description}
                       <div
-                        class="text-xs font-medium text-base-content/40 w-full"
+                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3"
                       >
                         {item.description}
                       </div>
