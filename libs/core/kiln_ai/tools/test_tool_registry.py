@@ -119,9 +119,11 @@ class TestToolRegistry:
             name="local_server",
             type=ToolServerType.local_mcp,
             properties=LocalServerProperties(
-                command="python",
-                args=["server.py", "--port", "8080"],
-                env_vars={},
+                **{
+                    "command": "python",
+                    "args": ["server.py", "--port", "8080"],
+                    "env_vars": {},
+                }
             ),
         )
 

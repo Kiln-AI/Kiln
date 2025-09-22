@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
-    LocalServerProperties,
     RemoteServerProperties,
     ToolServerType,
 )
@@ -46,12 +45,12 @@ def create_local_server(
         name="test_server",
         type=ToolServerType.local_mcp,
         description="Test server",
-        properties=LocalServerProperties(
-            command=command,
-            args=args or [],
-            env_vars=env_vars or {},
-            secret_env_var_keys=secret_env_var_keys or [],
-        ),
+        properties={
+            "command": command,
+            "args": args or [],
+            "env_vars": env_vars or {},
+            "secret_env_var_keys": secret_env_var_keys or [],
+        },
     )
 
 
@@ -933,11 +932,11 @@ class TestMCPSessionManager:
             name="test_local_server_defaults",
             type=ToolServerType.local_mcp,
             description="Test local server with defaults",
-            properties=LocalServerProperties(
-                command="node",
-                args=["server.js"],
+            properties={
+                "command": "node",
+                "args": ["server.js"],
                 # No env_vars provided
-            ),
+            },
         )
 
         manager = MCPSessionManager.shared()
@@ -971,11 +970,11 @@ class TestMCPSessionManager:
                 name="missing_command_server",
                 type=ToolServerType.local_mcp,
                 description="Server missing command",
-                properties=LocalServerProperties(
-                    command="",  # Empty command to trigger validation error
-                    args=["arg1"],
-                    env_vars={},
-                ),
+                properties={
+                    "command": "",  # Empty command to trigger validation error
+                    "args": ["arg1"],
+                    "env_vars": {},
+                },
             )
 
     async def test_local_mcp_empty_args_allowed(self):
@@ -985,11 +984,11 @@ class TestMCPSessionManager:
             name="empty_args_server",
             type=ToolServerType.local_mcp,
             description="Server with empty args",
-            properties=LocalServerProperties(
-                command="python",
-                args=[],  # Empty args list should now be allowed
-                env_vars={},
-            ),
+            properties={
+                "command": "python",
+                "args": [],  # Empty args list should now be allowed
+                "env_vars": {},
+            },
         )
 
         assert tool_server.name == "empty_args_server"
@@ -1130,11 +1129,11 @@ class TestMCPSessionManager:
             name="test_server",
             type=ToolServerType.local_mcp,
             description="Test server",
-            properties=LocalServerProperties(
-                command="python",
-                args=["-m", "broken_server"],
-                env_vars={},
-            ),
+            properties={
+                "command": "python",
+                "args": ["-m", "broken_server"],
+                "env_vars": {},
+            },
         )
 
         manager = MCPSessionManager.shared()
@@ -1203,12 +1202,12 @@ class TestMCPSessionManager:
             name="no_secrets_config_server",
             type=ToolServerType.local_mcp,
             description="Server with no secrets in config",
-            properties=LocalServerProperties(
-                command="python",
-                args=["-m", "my_server"],
-                env_vars={"PUBLIC_VAR": "public_value"},
-                secret_env_var_keys=["SECRET_API_KEY"],
-            ),
+            properties={
+                "command": "python",
+                "args": ["-m", "my_server"],
+                "env_vars": {"PUBLIC_VAR": "public_value"},
+                "secret_env_var_keys": ["SECRET_API_KEY"],
+            },
         )
         tool_server.id = "test_server_id"
 
@@ -1507,11 +1506,11 @@ class TestMCPServerIntegration:
             name="Firecrawl",
             type=ToolServerType.local_mcp,
             description="Firecrawl MCP Server for testing",
-            properties=LocalServerProperties(
-                command="npx",
-                args=["-y", "firecrawl-mcp"],
-                env_vars={"FIRECRAWL_API_KEY": "REPLACE_WITH_YOUR_API_KEY"},
-            ),
+            properties={
+                "command": "npx",
+                "args": ["-y", "firecrawl-mcp"],
+                "env_vars": {"FIRECRAWL_API_KEY": "REPLACE_WITH_YOUR_API_KEY"},
+            },
         )
 
         async with MCPSessionManager.shared().mcp_client(

@@ -395,12 +395,12 @@ def connect_tool_servers_api(app: FastAPI):
     def _local_tool_server_properties(
         tool_data: LocalToolServerCreationRequest,
     ) -> LocalServerProperties:
-        return LocalServerProperties(
-            command=tool_data.command,
-            args=tool_data.args,
-            env_vars=tool_data.env_vars,
-            secret_env_var_keys=tool_data.secret_env_var_keys,
-        )
+        return {
+            "command": tool_data.command,
+            "args": tool_data.args,
+            "env_vars": tool_data.env_vars,
+            "secret_env_var_keys": tool_data.secret_env_var_keys,
+        }
 
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):

@@ -57,11 +57,11 @@ class TestExternalToolServer:
     @pytest.fixture
     def local_mcp_base_props(self) -> LocalServerProperties:
         """Base properties for local MCP server."""
-        return LocalServerProperties(
-            command="python",
-            args=["-m", "mcp_server"],
-            env_vars={},
-        )
+        return {
+            "command": "python",
+            "args": ["-m", "mcp_server"],
+            "env_vars": {},
+        }
 
     @pytest.mark.parametrize(
         "server_type, properties",
@@ -399,16 +399,16 @@ class TestExternalToolServer:
         assert server.get_secret_keys() == []
 
         # With secret env var keys
-        props_with_secrets = LocalServerProperties(
-            command=local_mcp_base_props["command"],
-            args=local_mcp_base_props.get("args", []),
-            env_vars=local_mcp_base_props.get("env_vars", {}),
-            secret_env_var_keys=["API_KEY", "SECRET_TOKEN"],
-        )
+        props_with_secrets = {
+            "command": local_mcp_base_props["command"],
+            "args": local_mcp_base_props.get("args", []),
+            "env_vars": local_mcp_base_props.get("env_vars", {}),
+            "secret_env_var_keys": ["API_KEY", "SECRET_TOKEN"],
+        }
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.local_mcp,
-            properties=props_with_secrets,
+            properties=LocalServerProperties(**props_with_secrets),
         )
         assert server.get_secret_keys() == ["API_KEY", "SECRET_TOKEN"]
 
@@ -431,19 +431,21 @@ class TestExternalToolServer:
 
     def test_secret_processing_local_mcp_initialization(self):
         """Test secret processing during local MCP server initialization."""
-        properties = LocalServerProperties(
-            command="python",
-            args=["-m", "server"],
-            env_vars={
+        properties = {
+            "command": "python",
+            "args": ["-m", "server"],
+            "env_vars": {
                 "PATH": "/usr/bin",
                 "API_KEY": "secret123",
                 "DB_PASSWORD": "db-secret-456",
             },
-            secret_env_var_keys=["API_KEY", "DB_PASSWORD"],
-        )
+            "secret_env_var_keys": ["API_KEY", "DB_PASSWORD"],
+        }
 
         server = ExternalToolServer(
-            name="test-server", type=ToolServerType.local_mcp, properties=properties
+            name="test-server",
+            type=ToolServerType.local_mcp,
+            properties=LocalServerProperties(**properties),
         )
 
         # Secrets should be extracted to _unsaved_secrets
