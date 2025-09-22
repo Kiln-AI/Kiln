@@ -4,17 +4,26 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import type { Task, TaskRunConfig } from "$lib/types"
-  import { current_project } from "$lib/stores"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import Warning from "$lib/ui/warning.svelte"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
+    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import { uncache_available_tools } from "$lib/stores"
+  import {
+    current_task_prompts,
+    load_available_models,
+    load_available_prompts,
+    load_model_info,
+    model_info,
+    model_name,
+    provider_name_from_id,
+    uncache_available_tools,
+  } from "$lib/stores"
+  import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
 
   let error: KilnError | null = null
   let submitting = false
@@ -22,15 +31,23 @@
   let description = ""
   let selected_task: Task | null = null
   let tasks: Task[] = []
-  let tasks_loading = false
   let tasks_loading_error: string | null = null
+  let data_loaded = false
 
   onMount(async () => {
-    await load_tasks($current_project?.id || "")
+    const project_id = $page.params.project_id ?? ""
+
+    await load_tasks(project_id)
     for (const task of tasks) {
       // TODO: Can replace this with a request with a run config id (default)
-      await load_task_run_configs($current_project?.id ?? "", task.id ?? "")
+      await load_task_run_configs(project_id, task.id ?? "")
     }
+
+    await load_available_prompts()
+    await load_available_models()
+    await load_model_info()
+
+    data_loaded = true
   })
 
   function to_snake_case(str: string): string {
@@ -48,10 +65,9 @@
     name = to_snake_case(selected_task.name)
   }
 
-  $: task_options = format_task_options(
-    tasks,
-    $run_configs_by_task_composite_id,
-  )
+  $: task_options = data_loaded
+    ? format_task_options(tasks, $run_configs_by_task_composite_id)
+    : []
   function format_task_options(
     tasks: Task[],
     run_configs: Record<string, TaskRunConfig[]>,
@@ -65,6 +81,7 @@
         label: task.name,
         value: task,
         description: default_run_config_description(task, run_configs),
+        disabled: !task.default_run_config_id,
       })),
     })
     return option_groups
@@ -75,38 +92,33 @@
     run_configs: Record<string, TaskRunConfig[]>,
   ) {
     if (task.default_run_config_id) {
-      let default_task_run_config = run_configs[task.id ?? ""]?.find(
+      const project_id = $page.params.project_id ?? ""
+      const composite_key = get_task_composite_id(project_id, task.id ?? "")
+      let run_config = run_configs[composite_key]?.find(
         (config) => config.id === task.default_run_config_id,
       )
-      if (default_task_run_config != null) {
-        let properties = default_task_run_config.run_config_properties
-        // TODO: Make this more readable
+      if (run_config != null) {
         return (
-          (default_task_run_config.name ?? "") +
-          ` | ${properties.model_name} (${properties.model_provider_name})` +
-          ` | ${properties.prompt_id}` +
-          ` | ${properties.tools_config?.tools.join(", ")}`
+          (run_config.name ?? "") +
+          ` | ${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})` +
+          ` | ${getRunConfigPromptDisplayName(run_config, $current_task_prompts)}`
         )
       } else {
         return ""
       }
     } else {
-      return ""
+      return "⚠️ No default run config set"
     }
   }
-
-  $: load_tasks($current_project?.id || "")
 
   // TODO: Move this to a shared component since select_tasks_menu.svelte uses it too
   async function load_tasks(project_id: string) {
     if (!project_id) {
-      tasks_loading = false
       tasks_loading_error = "No project selected"
       tasks = []
       return
     }
     try {
-      tasks_loading = true
       tasks_loading_error = null
       const {
         data: tasks_data, // only present if 2XX response
@@ -121,12 +133,10 @@
       if (fetch_error) {
         throw fetch_error
       }
-      tasks = tasks_data.filter((task) => task.default_run_config_id !== null)
+      tasks = tasks_data
     } catch (error) {
       tasks_loading_error = "Tasks failed to load: " + error
       tasks = []
-    } finally {
-      tasks_loading = false
     }
   }
 
@@ -202,7 +212,7 @@
 
 <div>
   <div class="max-w-4xl">
-    {#if task_options.length > 0 && !tasks_loading_error}
+    {#if !tasks_loading_error}
       <FormContainer
         submit_label="Add"
         on:submit={add_kiln_task_tool}
@@ -215,47 +225,37 @@
           id="task"
           inputType="fancy_select"
           fancy_select_options={task_options}
-          placeholder={tasks_loading
-            ? "Loading tasks..."
-            : tasks_loading_error
-              ? "Error loading tasks"
-              : "Select a task"}
-          disabled={tasks_loading}
-          description="The task to add as a tool. The task's current default run options will be frozen in time and won't update if you change the task's default run config later."
-          info_description="Only tasks with default run options set will available to add as tools."
+          placeholder={!data_loaded ? "Loading tasks..." : "Select a task"}
+          disabled={!data_loaded}
+          description="The task to add as a tool, using the task's current default run options."
+          info_description="The task's default run options will be frozen in time for this task and won't update if you change the task's default run config later."
         />
 
         {#if selected_task}
           <FormElement
-            label="Name"
+            label="Kiln Task Tool Name"
             id="task_name"
-            description="The name for this tool. Used to identify the tool by the model. Must be unique within the project and be valid snake case (e.g. 'my_task_name')."
+            description="A unique short tool name such as 'research_agent'. Be descriptive about what role this tool is for."
+            info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
             bind:value={name}
             max_length={120}
             validator={validate_name}
           />
 
           <FormElement
-            label="Description"
+            label="Kiln Task Tool Description"
             inputType="textarea"
             id="task_description"
-            description="A description of this tool. Used to describe the tool to the model."
+            description="A description for the model to understand what this tool can do, and when to use it."
+            info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Performs research on a topic using reasoning and tools to provide expert insights.'"
             bind:value={description}
             validator={validate_description}
           />
         {/if}
       </FormContainer>
-    {:else if tasks_loading_error}
+    {:else}
       <div class="text-sm text-error">
         {tasks_loading_error}
-      </div>
-    {:else}
-      <div class="flex flex-row gap-2">
-        <Warning
-          large_icon={true}
-          warning_color="warning"
-          warning_message="No tasks with default run options set available to add as tools."
-        />
       </div>
     {/if}
   </div>
