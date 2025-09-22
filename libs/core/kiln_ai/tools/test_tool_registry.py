@@ -90,7 +90,6 @@ class TestToolRegistry:
             type=ToolServerType.remote_mcp,
             properties=RemoteServerProperties(
                 server_url="https://example.com",
-                headers={},
             ),
         )
 
@@ -162,7 +161,6 @@ class TestToolRegistry:
             type=ToolServerType.remote_mcp,
             properties=RemoteServerProperties(
                 server_url="https://example.com",
-                headers={},
             ),
         )
 
@@ -426,7 +424,6 @@ class TestToolRegistry:
             description="Test MCP server",
             properties=RemoteServerProperties(
                 server_url="https://example.com",
-                headers={},
             ),
         )
 
@@ -457,7 +454,6 @@ class TestToolRegistry:
             description="Different MCP server",
             properties=RemoteServerProperties(
                 server_url="https://example.com",
-                headers={},
             ),
         )
 
