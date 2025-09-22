@@ -384,7 +384,7 @@ class TestExternalToolServer:
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties=RemoteServerProperties(**props_with_secrets),
+            properties=props_with_secrets,  # type: ignore
         )
         assert server.get_secret_keys() == ["Authorization", "X-API-Key"]
 
@@ -480,7 +480,7 @@ class TestExternalToolServer:
             "secret_header_keys": ["New-Secret-Header"],
         }
 
-        server.properties = RemoteServerProperties(**new_properties)
+        server.properties = new_properties  # type: ignore
 
         # Secret should be processed (extracted and removed from headers)
         assert server._unsaved_secrets == {"New-Secret-Header": "Bearer new-token"}
@@ -840,7 +840,7 @@ class TestExternalToolServer:
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties=RemoteServerProperties(**properties),
+            properties=properties,  # type: ignore
         )
 
         assert server.get_secret_keys() == []
