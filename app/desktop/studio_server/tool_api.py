@@ -337,11 +337,11 @@ def connect_tool_servers_api(app: FastAPI):
         tool_data: ExternalToolServerCreationRequest,
     ) -> RemoteServerProperties:
         # Create the ExternalToolServer with all data for validation
-        return RemoteServerProperties(
-            server_url=tool_data.server_url,
-            headers=tool_data.headers,
-            secret_header_keys=tool_data.secret_header_keys,
-        )
+        return {
+            "server_url": tool_data.server_url,
+            "headers": tool_data.headers,
+            "secret_header_keys": tool_data.secret_header_keys,
+        }
 
     @app.post("/api/projects/{project_id}/connect_local_mcp")
     async def connect_local_mcp(

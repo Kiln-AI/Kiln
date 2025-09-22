@@ -5,7 +5,6 @@ import pytest
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     LocalServerProperties,
-    RemoteServerProperties,
     ToolServerType,
 )
 from kiln_ai.datamodel.project import Project
@@ -88,9 +87,9 @@ class TestToolRegistry:
         mock_server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
-            properties=RemoteServerProperties(
-                server_url="https://example.com",
-            ),
+            properties={
+                "server_url": "https://example.com",
+            },
         )
 
         # Create mock project with the external tool server
@@ -159,9 +158,9 @@ class TestToolRegistry:
         mock_server = ExternalToolServer(
             name="different_server",
             type=ToolServerType.remote_mcp,
-            properties=RemoteServerProperties(
-                server_url="https://example.com",
-            ),
+            properties={
+                "server_url": "https://example.com",
+            },
         )
 
         # Create mock project with the external tool server
@@ -422,9 +421,9 @@ class TestToolRegistry:
             name="test_server",
             type=ToolServerType.remote_mcp,
             description="Test MCP server",
-            properties=RemoteServerProperties(
-                server_url="https://example.com",
-            ),
+            properties={
+                "server_url": "https://example.com",
+            },
         )
 
         # Create mock project with the external tool server
@@ -452,9 +451,9 @@ class TestToolRegistry:
             name="different_server",
             type=ToolServerType.remote_mcp,
             description="Different MCP server",
-            properties=RemoteServerProperties(
-                server_url="https://example.com",
-            ),
+            properties={
+                "server_url": "https://example.com",
+            },
         )
 
         # Create mock project with the external tool server

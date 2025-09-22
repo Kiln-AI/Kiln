@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
-    RemoteServerProperties,
     ToolServerType,
 )
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
@@ -26,11 +25,11 @@ def create_remote_server(
         name="test_server",
         type=ToolServerType.remote_mcp,
         description="Test server",
-        properties=RemoteServerProperties(
-            server_url="http://example.com/mcp",
-            headers=headers or {},
-            secret_header_keys=secret_header_keys or [],
-        ),
+        properties={
+            "server_url": "http://example.com/mcp",
+            "headers": headers or {},
+            "secret_header_keys": secret_header_keys or [],
+        },
     )
 
 
@@ -550,11 +549,11 @@ class TestMCPSessionManager:
             name="partial_secret_server",
             type=ToolServerType.remote_mcp,
             description="Server with partial secret headers",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
-                secret_header_keys=["Authorization", "X-API-Key"],
-            ),
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
         )
         tool_server.id = "test_server_id"
 
@@ -608,11 +607,11 @@ class TestMCPSessionManager:
             name="no_secrets_config_server",
             type=ToolServerType.remote_mcp,
             description="Server with no secrets in config",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
-                secret_header_keys=["Authorization"],
-            ),
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization"],
+            },
         )
 
         manager = MCPSessionManager.shared()
@@ -653,11 +652,11 @@ class TestMCPSessionManager:
             name="empty_secret_keys_server",
             type=ToolServerType.remote_mcp,
             description="Server with empty secret header keys",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
-                secret_header_keys=[],  # Empty list
-            ),
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": [],  # Empty list
+            },
         )
 
         manager = MCPSessionManager.shared()
@@ -698,11 +697,11 @@ class TestMCPSessionManager:
             name="missing_secret_keys_server",
             type=ToolServerType.remote_mcp,
             description="Server without secret header keys property",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
                 # No secret_header_keys property
-            ),
+            },
         )
 
         manager = MCPSessionManager.shared()
@@ -754,11 +753,11 @@ class TestMCPSessionManager:
             name="bug_test_server",
             type=ToolServerType.remote_mcp,
             description="Server to test the secret headers bug",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
-                secret_header_keys=["Authorization", "X-API-Key"],
-            ),
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
         )
         # Set the server ID to match our mock secrets
         tool_server.id = "test_server_id"
@@ -838,11 +837,11 @@ class TestMCPSessionManager:
             name="bug_demo_server",
             type=ToolServerType.remote_mcp,
             description="Server to demonstrate the bug",
-            properties=RemoteServerProperties(
-                server_url="http://example.com/mcp",
-                headers={"Content-Type": "application/json"},
-                secret_header_keys=["Authorization"],
-            ),
+            properties={
+                "server_url": "http://example.com/mcp",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": ["Authorization"],
+            },
         )
         tool_server.id = "test_server_id"
 
@@ -1482,10 +1481,9 @@ class TestMCPServerIntegration:
             name="postman_echo",
             type=ToolServerType.remote_mcp,
             description="Postman Echo MCP Server for testing",
-            properties=RemoteServerProperties(
-                server_url="https://postman-echo-mcp.fly.dev/",
-                headers={},
-            ),
+            properties={
+                "server_url": "https://postman-echo-mcp.fly.dev/",
+            },
         )
 
         async with MCPSessionManager.shared().mcp_client(
