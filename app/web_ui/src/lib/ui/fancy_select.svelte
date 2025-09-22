@@ -97,14 +97,16 @@
       }
       // Update selected, which is what we expose outside the component
       selected = selected_values
+
+      // Note: we don't close the dropdown for multi-select
     } else {
       selected = option
-    }
 
-    // Delay hiding the dropdown to ensure the click event is fully processed
-    setTimeout(() => {
-      listVisible = false
-    }, 0)
+      // Delay hiding the dropdown to ensure the click event is fully processed
+      setTimeout(() => {
+        listVisible = false
+      }, 0)
+    }
   }
 
   // Make it reactive, when selected changes, update the selected_values
@@ -434,6 +436,9 @@
       listVisible = true
     }}
     on:blur={(_) => {
+      if (multi_select) {
+        return
+      }
       // Only close if focus is not moving to the dropdown
       setTimeout(() => {
         if (
