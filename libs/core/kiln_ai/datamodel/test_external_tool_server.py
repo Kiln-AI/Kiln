@@ -408,7 +408,7 @@ class TestExternalToolServer:
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.local_mcp,
-            properties=LocalServerProperties(**props_with_secrets),
+            properties=props_with_secrets,  # type: ignore
         )
         assert server.get_secret_keys() == ["API_KEY", "SECRET_TOKEN"]
 
@@ -445,7 +445,7 @@ class TestExternalToolServer:
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.local_mcp,
-            properties=LocalServerProperties(**properties),
+            properties=properties,  # type: ignore
         )
 
         # Secrets should be extracted to _unsaved_secrets

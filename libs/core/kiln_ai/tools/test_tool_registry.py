@@ -4,7 +4,6 @@ import pytest
 
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
-    LocalServerProperties,
     ToolServerType,
 )
 from kiln_ai.datamodel.project import Project
@@ -116,13 +115,11 @@ class TestToolRegistry:
         mock_server = ExternalToolServer(
             name="local_server",
             type=ToolServerType.local_mcp,
-            properties=LocalServerProperties(
-                **{
-                    "command": "python",
-                    "args": ["server.py", "--port", "8080"],
-                    "env_vars": {},
-                }
-            ),
+            properties={
+                "command": "python",
+                "args": ["server.py", "--port", "8080"],
+                "env_vars": {},
+            },
         )
 
         # Create mock project with the external tool server
