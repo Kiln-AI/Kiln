@@ -319,7 +319,7 @@ def connect_tool_servers_api(app: FastAPI):
                     task_tools.append(
                         # TODO: Should project id be stored in server.properties?
                         ToolApiDescription(
-                            id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.properties.get('server_id')}",
+                            id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.id}",
                             name=server.properties.get("name") or "",
                             description=server.properties.get("description") or "",
                         )
