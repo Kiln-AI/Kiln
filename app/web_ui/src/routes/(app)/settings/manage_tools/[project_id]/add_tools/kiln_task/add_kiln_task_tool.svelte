@@ -50,6 +50,22 @@
     await load_available_models()
     await load_model_info()
 
+    // Check for URL parameters to pre-fill form (for cloning)
+    const urlParams = new URLSearchParams($page.url.search)
+    const cloneName = urlParams.get("name")
+    const cloneDescription = urlParams.get("description")
+    const cloneTaskId = urlParams.get("task_id")
+
+    if (cloneName) {
+      name = cloneName
+    }
+    if (cloneDescription) {
+      description = cloneDescription
+    }
+    if (cloneTaskId) {
+      selected_task_id = cloneTaskId
+    }
+
     data_loaded = true
   })
 
@@ -59,6 +75,7 @@
       .toLowerCase()
       .replace(/^_/, "")
       .replace(/\s+/g, "_")
+      .replace(/-/g, "_")
       .replace(/[^a-z0-9_]/g, "")
       .replace(/_+/g, "_")
       .replace(/^_|_$/g, "")
@@ -73,6 +90,14 @@
     const task = tasks.find((t) => t.id === selected_task_id)
     if (task) {
       name = to_snake_case(task.name)
+    }
+  }
+
+  // Handle cloning - if we have a pre-filled name from URL params, modify it
+  $: if (name && $page.url.search.includes("name=")) {
+    // This is a clone operation, modify the name to indicate it's a copy
+    if (!name.startsWith("copy_of_")) {
+      name = `copy_of_${name}`
     }
   }
 

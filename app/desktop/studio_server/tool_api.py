@@ -317,14 +317,15 @@ def connect_tool_servers_api(app: FastAPI):
                         # Skip the tool when we can't connect to the server
                         continue
                 case ToolServerType.kiln_task:
-                    task_tools.append(
-                        # TODO: Should project id be stored in server.properties?
-                        ToolApiDescription(
-                            id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.id}",
-                            name=server.properties.get("name") or "",
-                            description=server.properties.get("description") or "",
+                    if not server.properties.get("is_archived", False):
+                        task_tools.append(
+                            # TODO: Should project id be stored in server.properties?
+                            ToolApiDescription(
+                                id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.id}",
+                                name=server.properties.get("name") or "",
+                                description=server.properties.get("description") or "",
+                            )
                         )
-                    )
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
@@ -337,13 +338,12 @@ def connect_tool_servers_api(app: FastAPI):
                 )
 
         # Add task tools
-        if len(task_tools) > 0:
-            tool_sets.append(
-                ToolSetApiDescription(
-                    set_name="Kiln Tasks",
-                    tools=task_tools,
-                )
+        tool_sets.append(
+            ToolSetApiDescription(
+                set_name="Kiln Tasks",
+                tools=task_tools,
             )
+        )
 
         # Add MCP tool sets
         if len(mcp_tool_sets) > 0:

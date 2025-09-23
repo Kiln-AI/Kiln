@@ -160,7 +160,8 @@
     {
       name: "Kiln Task Tool",
       subtitle: "by Kiln",
-      description: "Add an existing Kiln Task as a tool to your project.",
+      description:
+        "Enable your tasks to call other specialized tasks to get the job done.",
       on_click: () =>
         goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
     },
@@ -227,8 +228,9 @@
           },
           {
             name: "Kiln Task Tool",
-            description: "Add an existing Kiln Task as a tool to your project.",
-            button_text: "Add",
+            description:
+              "Allow your tasks to call another Kiln task, as a tool call.",
+            button_text: "Create",
             on_click: () =>
               goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
           },

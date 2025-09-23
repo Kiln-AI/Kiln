@@ -18,6 +18,7 @@
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
+  import ToolsSelector from "./tools_selector.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
   import { client } from "$lib/api_client"
@@ -487,18 +488,19 @@
           />
         </div>
         {#if $current_project?.id}
-          <Collapse
-            title="Advanced Options"
-            badge={tools.length > 0 ? "" + tools.length : null}
-          >
+          <ToolsSelector
+            bind:tools
+            project_id={$current_project.id}
+            task_id={$current_task?.id || ""}
+          />
+        {/if}
+        {#if $current_project?.id}
+          <Collapse title="Advanced Options">
             <AdvancedRunOptions
-              bind:tools
               bind:temperature
               bind:top_p
               bind:structured_output_mode
               has_structured_output={requires_structured_output}
-              project_id={$current_project?.id}
-              task_id={$current_task?.id || ""}
             />
           </Collapse>
         {/if}

@@ -16,6 +16,7 @@
   import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import AdvancedRunOptions from "../../../../../run/advanced_run_options.svelte"
+  import ToolsSelector from "../../../../../run/tools_selector.svelte"
   import type { TaskRunConfig } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -142,15 +143,13 @@
       bind:prompt_method={task_run_config_prompt_method}
       bind:linked_model_selection={task_run_config_long_prompt_name_provider}
     />
+    <ToolsSelector bind:tools={task_run_config_tools} {project_id} {task_id} />
     <Collapse title="Advanced Options">
       <AdvancedRunOptions
-        bind:tools={task_run_config_tools}
         bind:temperature={task_run_config_temperature}
         bind:top_p={task_run_config_top_p}
         bind:structured_output_mode={task_run_config_structured_output_mode}
         has_structured_output={!!$current_task?.output_json_schema}
-        {project_id}
-        {task_id}
       />
     </Collapse>
     {#if add_task_config_error}

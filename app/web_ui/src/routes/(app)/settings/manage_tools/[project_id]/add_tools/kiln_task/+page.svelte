@@ -5,8 +5,8 @@
 </script>
 
 <AppPage
-  title="Add Kiln Task"
-  subtitle="Add an existing Kiln Task as a tool to your project."
+  title="Create Tool from Kiln Task"
+  subtitle="Allow your tasks to call another Kiln task, as a tool call."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#connecting-kiln-tasks"
   breadcrumbs={[

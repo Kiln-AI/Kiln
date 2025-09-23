@@ -32,7 +32,7 @@
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
 
-  let task_name = ""
+  let task: Task | null = null
   let run_config: TaskRunConfig | null = null
   let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
@@ -54,8 +54,8 @@
     const task_id = tool_server.properties["task_id"] as string
     if (task_id) {
       get_task(task_id)
-        .then((task) => {
-          task_name = task.name
+        .then((fetched_task) => {
+          task = fetched_task
         })
         .catch((err) => {
           console.error("Failed to fetch task:", err)
@@ -142,7 +142,25 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function get_task_properties(tool: ExternalToolServerApiDescription) {
+  function clone_tool() {
+    if (!tool_server) {
+      return
+    }
+
+    // Navigate to the add tool page with pre-filled data
+    const params = new URLSearchParams({
+      name: String(tool_server.properties["name"] || ""),
+      description: String(tool_server.properties["description"] || ""),
+      task_id: String(tool_server.properties["task_id"] || ""),
+      run_config_id: String(tool_server.properties["run_config_id"] || ""),
+    })
+
+    goto(
+      `/settings/manage_tools/${project_id}/add_tools/kiln_task?${params.toString()}`,
+    )
+  }
+
+  function get_tool_properties(tool: ExternalToolServerApiDescription) {
     return [
       { name: "ID", value: tool.id || "N/A" },
       {
@@ -160,6 +178,82 @@
         value: formatDate(tool.created_at ?? undefined),
       },
       { name: "Created By", value: tool.created_by || "N/A" },
+    ]
+  }
+
+  function get_task_properties(task: Task | null) {
+    if (!task) {
+      return [{ name: "Status", value: "Task Not Found", error: true }]
+    }
+
+    let input_schema_display = JSON.stringify(
+      {
+        type: "object",
+        properties: {
+          input: {
+            type: "string",
+            description: `Plaintext input for the task: ${task.instruction}`,
+          },
+        },
+        required: ["input"],
+      },
+      null,
+      2,
+    )
+
+    if (task.input_json_schema) {
+      try {
+        const parsed_schema = JSON.parse(task.input_json_schema)
+        input_schema_display = JSON.stringify(parsed_schema, null, 2)
+      } catch (e) {
+        input_schema_display = task.input_json_schema
+      }
+    }
+
+    return [
+      { name: "ID", value: task.id || "N/A" },
+      { name: "Task Name", value: task.name || "N/A" },
+      {
+        name: "Input Schema",
+        value: input_schema_display,
+        tooltip:
+          "The JSON schema that defines the expected input format for this task. For plaintext tasks, we created this input schema for you.",
+      },
+    ]
+  }
+
+  function get_run_config_properties(run_config: TaskRunConfig | null) {
+    if (!run_config || !$model_info) {
+      return [{ name: "Status", value: "Run Config Not Found", error: true }]
+    }
+
+    return [
+      {
+        name: "Model",
+        value: `${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
+      },
+      {
+        name: "Prompt",
+        value: getRunConfigPromptDisplayName(run_config, $current_task_prompts),
+      },
+      {
+        name: "Tools",
+        value:
+          run_config.run_config_properties.tools_config?.tools &&
+          run_config.run_config_properties.tools_config.tools.length > 0
+            ? run_config.run_config_properties.tools_config.tools.length === 1
+              ? `One tool (${run_config.run_config_properties.tools_config.tools.join(", ")})`
+              : `${run_config.run_config_properties.tools_config.tools.length} tools (${run_config.run_config_properties.tools_config.tools.join(", ")})`
+            : "None",
+      },
+      {
+        name: "Temperature",
+        value: run_config.run_config_properties.temperature.toString(),
+      },
+      {
+        name: "Top P",
+        value: run_config.run_config_properties.top_p.toString(),
+      },
     ]
   }
 
@@ -231,6 +325,10 @@
     ]}
     action_buttons={[
       {
+        label: "Clone",
+        handler: clone_tool,
+      },
+      {
         label: tool_server?.properties["is_archived"] ? "Unarchive" : "Archive",
         handler: tool_server?.properties["is_archived"] ? unarchive : archive,
       },
@@ -261,35 +359,23 @@
         </button>
       </div>
     {:else if tool_server}
-      <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
-        <div class="flex-1">
-          <div class="text-xl font-bold mb-1">
-            Task: {task_name}
-          </div>
-          {#if run_config && $model_info}
-            <div class="text-sm text-gray-500 mt-2 mb-2">
-              {`Model: ${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`}
-            </div>
-            <div class="text-sm text-gray-500 mb-2">
-              {`Prompt: ${getRunConfigPromptDisplayName(run_config, $current_task_prompts)}`}
-            </div>
-            <div class="text-sm text-gray-500 mb-2">
-              {`Tools: ${run_config.run_config_properties.tools_config?.tools && run_config.run_config_properties.tools_config.tools.length > 0 ? run_config.run_config_properties.tools_config.tools.join(", ") : "None"}`}
-            </div>
-            <div class="text-sm text-gray-500 mb-2">
-              {`Temperature: ${run_config.run_config_properties.temperature}`}
-            </div>
-            <div class="text-sm text-gray-500 mb-2">
-              {`Top P: ${run_config.run_config_properties.top_p}`}
-            </div>
-          {:else}
-            <div class="text-sm text-gray-500 mb-2">Run Config Not Found</div>
-          {/if}
-        </div>
-        <div class="w-full lg:w-80 xl:w-96 flex-shrink-0 flex flex-col gap-6">
+      <div class="flex flex-col xl:flex-row gap-8 xl:gap-6">
+        <div class="w-full xl:flex-shrink-0 xl:max-w-96 flex flex-col gap-6">
           <PropertyList
-            properties={get_task_properties(tool_server)}
-            title="Properties"
+            properties={get_tool_properties(tool_server)}
+            title="Tool Properties"
+          />
+        </div>
+        <div
+          class="w-full xl:flex-shrink-0 xl:max-w-96 flex flex-col gap-6 xl:ml-auto"
+        >
+          <PropertyList
+            properties={get_task_properties(task)}
+            title="Task Properties"
+          />
+          <PropertyList
+            properties={get_run_config_properties(run_config)}
+            title="Run Configuration"
           />
         </div>
       </div>

@@ -64,7 +64,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Kiln Task Tools"
-    subtitle="Manage your Kiln Task tools and their associated tasks"
+    subtitle="Manage your Kiln Task tools."
     breadcrumbs={[
       {
         label: "Settings",
@@ -77,7 +77,7 @@
     ]}
     action_buttons={[
       {
-        label: "Add Kiln Task Tool",
+        label: "Create New",
         href: `/settings/manage_tools/${project_id}/add_tools/kiln_task`,
         primary: true,
       },

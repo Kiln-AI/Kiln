@@ -5,4 +5,5 @@ export type UiProperty = {
   link?: string
   error?: boolean
   warn_icon?: boolean
+  info_description?: string
 }
