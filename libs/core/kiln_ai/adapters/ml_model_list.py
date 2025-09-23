@@ -276,6 +276,7 @@ class KilnModel(BaseModel):
     family: str
     name: str
     friendly_name: str
+    type: Literal["llm", "extractor"] = "llm"
     providers: List[KilnModelProvider]
 
 

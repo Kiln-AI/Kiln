@@ -45,6 +45,7 @@ class OutputFormat(str, Enum):
 
 class ExtractorType(str, Enum):
     LITELLM = "litellm"
+    MISTRAL_OCR = "mistral-ocr"
 
 
 SUPPORTED_MIME_TYPES = {
@@ -164,6 +165,7 @@ class ExtractorConfig(KilnParentedModel):
     def validate_properties(
         cls, properties: dict[str, Any], info: ValidationInfo
     ) -> dict[str, Any]:
+        # TODO: validation for non-litellm extractors
         def get_property(key: str) -> str:
             value = properties.get(key)
             if value is None or value == "" or not isinstance(value, str):

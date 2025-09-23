@@ -7,6 +7,7 @@ from typing import Annotated, Awaitable, Callable, Dict, List
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
+from kiln_ai.adapters.extractor_list import built_in_extractors_from_provider
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
@@ -346,22 +347,31 @@ class CreateExtractorConfigRequest(BaseModel):
             raise ValueError(f"Invalid model provider name: {self.model_provider_name}")
 
         # check the model exists and is suitable as an extractor
-        model = built_in_models_from_provider(
+        extractor = built_in_extractors_from_provider(
             provider_name=typed_model_provider_name,
-            model_name=self.model_name,
+            extractor_name=self.model_name,
         )
 
-        if model is None:
+        if extractor is None:
             raise ValueError(
                 f"Model {self.model_name} not found in {self.model_provider_name}"
             )
 
-        if not model.supports_doc_extraction:
+        return self
+
+    @property
+    def extractor_type(self) -> ExtractorType:
+        extractor = built_in_extractors_from_provider(
+            provider_name=self.model_provider_name,
+            extractor_name=self.model_name,
+        )
+
+        if extractor is None:
             raise ValueError(
-                f"Model {self.model_name} does not support document extraction"
+                f"Model {self.model_name} not found in {self.model_provider_name}"
             )
 
-        return self
+        return extractor.extractor_type
 
 
 class PatchDocumentRequest(BaseModel):
@@ -780,7 +790,7 @@ def connect_document_api(app: FastAPI):
             model_name=request.model_name,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=ExtractorType.LITELLM,
+            extractor_type=request.extractor_type,
             properties=request.properties,
         )
         extractor_config.save_to_file()

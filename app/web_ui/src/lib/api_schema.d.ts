@@ -904,6 +904,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/providers/extractors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Extractors */
+        get: operations["get_providers_extractors_api_providers_extractors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_extractors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Extractors */
+        get: operations["get_available_extractors_api_available_extractors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/available_embedding_models": {
         parameters: {
             query?: never;
@@ -1825,6 +1859,15 @@ export interface components {
         Audio: {
             /** Id */
             id: string;
+        };
+        /** AvailableExtractors */
+        AvailableExtractors: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Extractors */
+            extractors: components["schemas"]["ExtractorDetails"][];
         };
         /** AvailableModels */
         AvailableModels: {
@@ -3196,7 +3239,7 @@ export interface components {
             source: string;
             /** Output Content */
             output_content: string;
-            extractor: components["schemas"]["ExtractorSummary"];
+            extractor: components["schemas"]["kiln_server__document_api__ExtractorSummary"];
         };
         /** ExtractorConfig */
         ExtractorConfig: {
@@ -3266,24 +3309,22 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** ExtractorSummary */
-        ExtractorSummary: {
+        /** ExtractorDetails */
+        ExtractorDetails: {
             /** Id */
             id: string;
             /** Name */
             name: string;
-            /** Description */
-            description: string | null;
-            output_format: components["schemas"]["OutputFormat"];
-            /** Passthrough Mimetypes */
-            passthrough_mimetypes: components["schemas"]["OutputFormat"][];
-            extractor_type: components["schemas"]["ExtractorType"];
+            /** Extractor Type */
+            extractor_type: string;
+            /** Supported Mime Types */
+            supported_mime_types?: string[] | null;
         };
         /**
          * ExtractorType
          * @enum {string}
          */
-        ExtractorType: "litellm";
+        ExtractorType: "litellm" | "mistral-ocr";
         /** File */
         File: {
             file: components["schemas"]["FileFile"];
@@ -3726,7 +3767,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "mistral";
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -3963,6 +4004,13 @@ export interface components {
             /** Models */
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
+            };
+        };
+        /** ProviderExtractors */
+        ProviderExtractors: {
+            /** Extractors */
+            extractors: {
+                [key: string]: components["schemas"]["app__desktop__studio_server__provider_api__connect_provider_api___locals___ExtractorSummary"];
             };
         };
         /** ProviderModel */
@@ -4917,6 +4965,26 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /** ExtractorSummary */
+        app__desktop__studio_server__provider_api__connect_provider_api___locals___ExtractorSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** ExtractorSummary */
+        kiln_server__document_api__ExtractorSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            output_format: components["schemas"]["OutputFormat"];
+            /** Passthrough Mimetypes */
+            passthrough_mimetypes: components["schemas"]["OutputFormat"][];
+            extractor_type: components["schemas"]["ExtractorType"];
+        };
     };
     responses: never;
     parameters: never;
@@ -6950,6 +7018,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderEmbeddingModels"];
+                };
+            };
+        };
+    };
+    get_providers_extractors_api_providers_extractors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderExtractors"];
+                };
+            };
+        };
+    };
+    get_available_extractors_api_available_extractors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableExtractors"][];
                 };
             };
         };
