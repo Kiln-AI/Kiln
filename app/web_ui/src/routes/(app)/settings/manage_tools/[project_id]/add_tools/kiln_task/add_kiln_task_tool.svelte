@@ -11,7 +11,7 @@
     run_configs_by_task_composite_id,
     get_task_composite_id,
   } from "$lib/stores/run_configs_store"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import {
@@ -30,11 +30,12 @@
   let submitting = false
   let name: string | null = null
   let description = ""
-  let selected_task: Task | null = null
+  let selected_task_id: string | null = null
   let tasks: Task[] = []
   let tasks_loading_error: string | null = null
   let data_loaded = false
   let no_default_config_dialog: Dialog | null = null
+  let task_name_for_dialog: string | null = null
 
   onMount(async () => {
     const project_id = $page.params.project_id ?? ""
@@ -63,21 +64,30 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: if (selected_task && selected_task.default_run_config_id === null) {
-    no_default_config_dialog?.show()
-    // Reset selection since we can't proceed without a run config
-    reset_selection()
+  $: if (selected_task_id) {
+    show_dialog_if_needed()
   }
 
-  $: if (selected_task && name === null) {
+  $: if (selected_task_id && name === null) {
     // Only set name if it's null (initial selection)
-    name = to_snake_case(selected_task.name)
+    const task = tasks.find((t) => t.id === selected_task_id)
+    if (task) {
+      name = to_snake_case(task.name)
+    }
   }
 
-  function reset_selection() {
-    selected_task = null
-    name = null
-    description = ""
+  async function show_dialog_if_needed() {
+    const task = tasks.find((t) => t.id === selected_task_id)
+    if (task && task.default_run_config_id === null) {
+      // Capture the task name before resetting selected_task_id
+      task_name_for_dialog = task.name
+      no_default_config_dialog?.show()
+      // Reset selection since we can't proceed without a run config
+      await tick()
+      selected_task_id = null
+      name = null
+      description = ""
+    }
   }
 
   $: task_options = data_loaded
@@ -94,7 +104,7 @@
     option_groups.push({
       options: tasks.map((task) => ({
         label: task.name,
-        value: task,
+        value: task.id ?? "",
         description: default_run_config_description(task, run_configs),
       })),
     })
@@ -164,9 +174,18 @@
   async function add_kiln_task_tool() {
     try {
       clearErrorIfPresent()
-      if (!selected_task) {
+      if (!selected_task_id) {
         error = createKilnError({
           message: "Please select a task.",
+          status: 400,
+        })
+        return
+      }
+
+      const task = tasks.find((t) => t.id === selected_task_id)
+      if (!task) {
+        error = createKilnError({
+          message: "Selected task not found.",
           status: 400,
         })
         return
@@ -181,8 +200,8 @@
         body: {
           name: name ?? "",
           description: description,
-          task_id: selected_task?.id || "",
-          run_config_id: selected_task?.default_run_config_id || "",
+          task_id: selected_task_id || "",
+          run_config_id: task.default_run_config_id || "",
           is_archived: false,
         },
       })
@@ -253,7 +272,7 @@
       >
         <FormElement
           label="Kiln Task"
-          bind:value={selected_task}
+          bind:value={selected_task_id}
           id="task"
           inputType="fancy_select"
           fancy_select_options={task_options}
@@ -263,7 +282,7 @@
           on:change={clearErrorIfPresent}
         />
 
-        {#if selected_task}
+        {#if selected_task_id}
           <FormElement
             label="Kiln Task Tool Name"
             id="task_name"
@@ -298,7 +317,9 @@
 <Dialog
   bind:this={no_default_config_dialog}
   title="⚠️ No default run config set"
-  subtitle="This task doesn't have a default run config set. You need to set a default run config for the task before it can be added as a tool."
+  subtitle={task_name_for_dialog
+    ? `The task "${task_name_for_dialog}" doesn't have a default run config set. You need to set a default run config for the task before it can be added as a tool.`
+    : "This task doesn't have a default run config set. You need to set a default run config for the task before it can be added as a tool."}
   action_buttons={[
     {
       label: "OK",
