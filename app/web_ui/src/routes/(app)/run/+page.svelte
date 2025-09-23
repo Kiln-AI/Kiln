@@ -45,7 +45,7 @@
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
 
-  let selected_run_config_id: string | "custom" = "custom"
+  let selected_run_config_id: string | "custom" | null = null
   let updating_current_run_options = false
 
   let prompt_method = "simple_prompt_builder"
@@ -366,15 +366,19 @@
     )
   })()
 
-  $: $current_task,
-    $run_configs_by_task_composite_id,
-    update_default_run_config()
-
-  function update_default_run_config() {
+  $: if ($current_task != null) {
+    // Initialization of selected_run_config_id
+    // Until this runs the dropdown will show "Select an option"
     if ($current_task?.default_run_config_id) {
       default_run_config_id = $current_task.default_run_config_id
+      if (selected_run_config_id === null) {
+        selected_run_config_id = default_run_config_id
+      }
     } else {
       default_run_config_id = null
+      if (selected_run_config_id === null) {
+        selected_run_config_id = "custom"
+      }
     }
   }
 </script>

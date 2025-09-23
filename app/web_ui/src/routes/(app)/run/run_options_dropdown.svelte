@@ -20,15 +20,12 @@
     get_task_composite_id,
   } from "$lib/stores/run_configs_store"
 
-  export let selected_run_config_id: string | "custom"
+  export let selected_run_config_id: string | "custom" | null
   export let default_run_config_id: string | null
 
   onMount(async () => {
     await load_available_prompts()
     await load_model_info()
-    if (default_run_config_id) {
-      selected_run_config_id = default_run_config_id
-    }
   })
 
   $: if ($current_project?.id && $current_task?.id) {
@@ -94,8 +91,7 @@
           description:
             config.description ||
             `Model: ${model_name(config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})
-            Prompt: ${getRunConfigPromptDisplayName(config, $current_task_prompts)}
-            ...`,
+            Prompt: ${getRunConfigPromptDisplayName(config, $current_task_prompts)}`,
         })),
       })
     }
