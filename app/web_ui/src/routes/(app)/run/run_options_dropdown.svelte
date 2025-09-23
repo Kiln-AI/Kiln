@@ -42,8 +42,8 @@
       options: [
         {
           value: "custom",
-          label: "Custom",
-          description: "Choose your own model, prompt, and more.",
+          label: "None",
+          description: "Run with your current manually selected options.",
         },
       ],
     })
@@ -104,7 +104,7 @@
 
 <FormElement
   label="Run Configuration"
-  info_description="Choose a saved run configuration to use for this task run or create a custom one."
+  info_description="Select a saved run configuration to automatically apply its settings, or choose None to manually configure run options and save them for future use."
   inputType="fancy_select"
   bind:value={selected_run_config_id}
   id="run_config"

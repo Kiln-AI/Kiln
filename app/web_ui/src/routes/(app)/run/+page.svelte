@@ -45,7 +45,7 @@
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
 
-  let selected_run_config_id: string | "custom" | null = null
+  let selected_run_config_id: string | "custom" | null = "custom"
   let updating_current_run_options = false
 
   let prompt_method = "simple_prompt_builder"
@@ -191,12 +191,6 @@
     update_current_run_options()
   }
 
-  $: selected_run_config,
-    (() => {
-      save_config_error = null
-      set_default_error = null
-    })()
-
   async function update_current_run_options() {
     updating_current_run_options = true
 
@@ -232,6 +226,8 @@
 
     // Wait for all reactive statements to complete
     await tick()
+
+    clear_run_options_errors()
 
     if (selected_run_config !== "custom") {
       const config_properties = (selected_run_config as TaskRunConfig)
@@ -276,7 +272,7 @@
     }
   }
 
-  // Handle save run options button clicked from AdvancedRunOptions component
+  // Handle save run options button clicked
   async function handle_save_run_options() {
     if (!$current_project?.id || !$current_task?.id) {
       return
@@ -321,6 +317,17 @@
     }
     return selected_run_config_id !== $current_task?.default_run_config_id
   })()
+
+  $: selected_run_config_id, clear_run_options_errors()
+
+  function clear_run_options_errors() {
+    if (save_config_error) {
+      save_config_error = null
+    }
+    if (set_default_error) {
+      set_default_error = null
+    }
+  }
 
   async function handle_set_as_default() {
     if (!$current_project?.id || !$current_task?.id) {
@@ -410,7 +417,59 @@
             <RunOptionsDropdown
               bind:selected_run_config_id
               bind:default_run_config_id
+              on:change={clear_run_options_errors}
             />
+          {/if}
+        </div>
+
+        <!-- Save and Set as Default Links -->
+        <div class="flex flex-col">
+          <!-- Save Current Options Link -->
+          {#if selected_run_config_id === "custom"}
+            <div class="text-right -mt-3">
+              <button
+                type="button"
+                class="link link-primary text-sm py-1 px-2"
+                on:click={handle_save_run_options}
+              >
+                Save current options
+              </button>
+            </div>
+            {#if save_config_error}
+              <div class="text-sm text-error text-right">
+                {#each save_config_error.getErrorMessages() as error_line}
+                  <div>{error_line}</div>
+                {/each}
+              </div>
+            {/if}
+            <!-- Set as Task Default Link -->
+          {:else if show_set_as_default_button}
+            <div class="text-right -mt-3">
+              <button
+                type="button"
+                class="link link-primary text-sm py-1 px-2"
+                on:click={handle_set_as_default}
+              >
+                Set as task default
+              </button>
+            </div>
+            {#if set_default_error}
+              <div class="text-sm text-error text-right">
+                {#each set_default_error.getErrorMessages() as error_line}
+                  <div>{error_line}</div>
+                {/each}
+              </div>
+            {/if}
+          {:else}
+            <!-- Placeholder to maintain consistent spacing when neither button shows -->
+            <div class="text-right -mt-3">
+              <button
+                type="button"
+                class="link link-primary text-sm py-1 px-2 invisible"
+              >
+                placeholder
+              </button>
+            </div>
           {/if}
         </div>
         <AvailableModelsDropdown
@@ -440,12 +499,6 @@
               has_structured_output={requires_structured_output}
               project_id={$current_project?.id}
               task_id={$current_task?.id || ""}
-              on:saveRunOptions={handle_save_run_options}
-              on:setToDefault={handle_set_as_default}
-              show_save_button={selected_run_config_id === "custom"}
-              {show_set_as_default_button}
-              {save_config_error}
-              {set_default_error}
             />
           </Collapse>
         {/if}
