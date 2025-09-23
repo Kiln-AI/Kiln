@@ -2,6 +2,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import Dialog from "$lib/ui/dialog.svelte"
   import { client } from "$lib/api_client"
   import type { Task, TaskRunConfig } from "$lib/types"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -27,12 +28,13 @@
 
   let error: KilnError | null = null
   let submitting = false
-  let name = ""
+  let name: string | null = null
   let description = ""
   let selected_task: Task | null = null
   let tasks: Task[] = []
   let tasks_loading_error: string | null = null
   let data_loaded = false
+  let no_default_config_dialog: Dialog | null = null
 
   onMount(async () => {
     const project_id = $page.params.project_id ?? ""
@@ -61,8 +63,21 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: if (selected_task) {
+  $: if (selected_task && selected_task.default_run_config_id === null) {
+    no_default_config_dialog?.show()
+    // Reset selection since we can't proceed without a run config
+    reset_selection()
+  }
+
+  $: if (selected_task && name === null) {
+    // Only set name if it's null (initial selection)
     name = to_snake_case(selected_task.name)
+  }
+
+  function reset_selection() {
+    selected_task = null
+    name = null
+    description = ""
   }
 
   $: task_options = data_loaded
@@ -139,8 +154,24 @@
     }
   }
 
+  // Clear error when form fields change
+  function clearErrorIfPresent() {
+    if (error) {
+      error = null
+    }
+  }
+
   async function add_kiln_task_tool() {
     try {
+      clearErrorIfPresent()
+      if (!selected_task) {
+        error = createKilnError({
+          message: "Please select a task.",
+          status: 400,
+        })
+        return
+      }
+
       await client.POST("/api/projects/{project_id}/add_kiln_task_tool", {
         params: {
           path: {
@@ -148,7 +179,7 @@
           },
         },
         body: {
-          name: name,
+          name: name ?? "",
           description: description,
           task_id: selected_task?.id || "",
           run_config_id: selected_task?.default_run_config_id || "",
@@ -163,6 +194,8 @@
     } catch (e) {
       // TODO: Handle error
       error = createKilnError(e)
+    } finally {
+      submitting = false
     }
   }
 
@@ -224,10 +257,10 @@
           id="task"
           inputType="fancy_select"
           fancy_select_options={task_options}
-          placeholder={!data_loaded ? "Loading tasks..." : "Select a task"}
           disabled={!data_loaded}
           description="The task to add as a tool, using the task's current default run options."
           info_description="The task's default run options will be frozen in time for this task and won't update if you change the task's default run config later."
+          on:change={clearErrorIfPresent}
         />
 
         {#if selected_task}
@@ -239,6 +272,7 @@
             bind:value={name}
             max_length={120}
             validator={validate_name}
+            on:change={clearErrorIfPresent}
           />
 
           <FormElement
@@ -249,6 +283,7 @@
             info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Performs research on a topic using reasoning and tools to provide expert insights.'"
             bind:value={description}
             validator={validate_description}
+            on:change={clearErrorIfPresent}
           />
         {/if}
       </FormContainer>
@@ -259,3 +294,27 @@
     {/if}
   </div>
 </div>
+
+<Dialog
+  bind:this={no_default_config_dialog}
+  title="⚠️ No default run config set"
+  subtitle="This task doesn't have a default run config set. You need to set a default run config for the task before it can be added as a tool."
+  action_buttons={[
+    {
+      label: "OK",
+      isPrimary: true,
+    },
+  ]}
+>
+  <div class="flex flex-col gap-4">
+    <p class="text-sm text-base-content/70">
+      To add this task as a tool, you first need to:
+    </p>
+    <ol class="list-decimal list-inside text-sm text-base-content/70 space-y-2">
+      <li>Go to the task's run page</li>
+      <li>Configure the run options you want to use</li>
+      <li>Set it as the default run config for the task</li>
+      <li>Then return here to add it as a tool</li>
+    </ol>
+  </div>
+</Dialog>
