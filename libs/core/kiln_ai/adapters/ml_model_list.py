@@ -298,6 +298,8 @@ built_in_models: List[KilnModel] = [
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
@@ -309,6 +311,17 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -329,6 +342,8 @@ built_in_models: List[KilnModel] = [
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
@@ -340,6 +355,17 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -358,6 +384,8 @@ built_in_models: List[KilnModel] = [
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
@@ -367,6 +395,17 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -431,15 +470,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-4.1",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
-                supports_doc_extraction=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.PDF,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
             ),
         ],
     ),
@@ -3844,6 +3874,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 supports_function_calling=False,
+                # image only is not sufficient for doc extraction
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),

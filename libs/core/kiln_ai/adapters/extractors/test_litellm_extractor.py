@@ -7,13 +7,17 @@ from litellm.types.utils import Choices, ModelResponse
 from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.base_extractor import ExtractionInput, OutputFormat
 from kiln_ai.adapters.extractors.encoding import to_base64_url
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.litellm_extractor import (
     ExtractorConfig,
     Kind,
     LitellmExtractor,
     encode_file_litellm_format,
 )
-from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    built_in_models,
+    built_in_models_from_provider,
+)
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.utils.filesystem_cache import FilesystemCache
@@ -473,30 +477,23 @@ def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_conf
 
 
 def paid_litellm_extractor(model_name: str, provider_name: str):
-    return LitellmExtractor(
-        extractor_config=ExtractorConfig(
+    extractor = extractor_adapter_from_type(
+        ExtractorType.LITELLM,
+        ExtractorConfig(
             name="paid-litellm",
             extractor_type=ExtractorType.LITELLM,
             model_provider_name=provider_name,
             model_name=model_name,
             properties={
-                # in the paid tests, we can check which prompt is used by checking if the Kind shows up
-                # in the output - not ideal but usually works
                 "prompt_document": "Ignore the file and only respond with the word 'document'",
                 "prompt_image": "Ignore the file and only respond with the word 'image'",
                 "prompt_video": "Ignore the file and only respond with the word 'video'",
                 "prompt_audio": "Ignore the file and only respond with the word 'audio'",
             },
-            passthrough_mimetypes=[
-                # we want all mimetypes to go to litellm to be sure we're testing the API call
-            ],
-        ),
-        litellm_core_config=LiteLlmCoreConfig(
-            base_url="https://test.com",
-            additional_body_options={"api_key": "test-key"},
-            default_headers={},
+            passthrough_mimetypes=[OutputFormat.MARKDOWN, OutputFormat.TEXT],
         ),
     )
+    return extractor
 
 
 @pytest.mark.parametrize(
@@ -560,6 +557,7 @@ def get_all_models_support_doc_extraction(
                     provider.multimodal_mime_types is None
                     or must_support_mime_types is None
                 ):
+                    model_provider_pairs.append((model.name, provider.name))
                     continue
                 # check that the model supports all the mime types
                 if all(
@@ -573,23 +571,7 @@ def get_all_models_support_doc_extraction(
 @pytest.mark.paid
 @pytest.mark.parametrize(
     "model_name,provider_name",
-    get_all_models_support_doc_extraction(
-        must_support_mime_types=[
-            MockFileFactoryMimeType.PDF,
-            MockFileFactoryMimeType.TXT,
-            MockFileFactoryMimeType.MD,
-            MockFileFactoryMimeType.HTML,
-            MockFileFactoryMimeType.CSV,
-            MockFileFactoryMimeType.PNG,
-            MockFileFactoryMimeType.JPEG,
-            MockFileFactoryMimeType.JPG,
-            MockFileFactoryMimeType.MP4,
-            MockFileFactoryMimeType.MOV,
-            MockFileFactoryMimeType.MP3,
-            MockFileFactoryMimeType.OGG,
-            MockFileFactoryMimeType.WAV,
-        ]
-    ),
+    get_all_models_support_doc_extraction(must_support_mime_types=None),
 )
 @pytest.mark.parametrize(
     "mime_type,expected_substring_in_output",
@@ -620,41 +602,17 @@ async def test_extract_document_success(
     expected_substring_in_output,
     mock_file_factory,
 ):
-    test_file = mock_file_factory(mime_type)
-    extractor = paid_litellm_extractor(
-        model_name=model_name, provider_name=provider_name
-    )
-    output = await extractor.extract(
-        extraction_input=ExtractionInput(
-            path=str(test_file),
-            mime_type=mime_type,
-        )
-    )
-    assert not output.is_passthrough
-    assert output.content_format == OutputFormat.MARKDOWN
-    assert expected_substring_in_output.lower() in output.content.lower()
+    # get model
+    model = built_in_models_from_provider(provider_name, model_name)
+    assert model is not None
+    if mime_type not in model.multimodal_mime_types:
+        pytest.skip(f"Model {model_name} configured to not support {mime_type}")
+    if (
+        mime_type == MockFileFactoryMimeType.MD
+        or mime_type == MockFileFactoryMimeType.TXT
+    ):
+        pytest.skip(f"Model {model_name} configured to passthrough {mime_type}")
 
-
-@pytest.mark.paid
-@pytest.mark.parametrize(
-    "model_name,provider_name",
-    get_all_models_support_doc_extraction(
-        must_support_mime_types=[MockFileFactoryMimeType.PDF]
-    ),
-)
-@pytest.mark.parametrize(
-    "mime_type,expected_substring_in_output",
-    [
-        (MockFileFactoryMimeType.PDF, "document"),
-    ],
-)
-async def test_extract_document_success_pdf(
-    model_name,
-    provider_name,
-    mime_type,
-    expected_substring_in_output,
-    mock_file_factory,
-):
     test_file = mock_file_factory(mime_type)
     extractor = paid_litellm_extractor(
         model_name=model_name, provider_name=provider_name
