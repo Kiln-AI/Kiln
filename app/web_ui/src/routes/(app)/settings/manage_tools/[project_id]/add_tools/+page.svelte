@@ -157,6 +157,13 @@
         "Build a search tool to retrieve information from custom documents.",
       on_click: () => goto(`/docs/rag_configs/${project_id}/add_search_tool`),
     },
+    {
+      name: "Kiln Task Tool",
+      subtitle: "by Kiln",
+      description: "Add an existing Kiln Task as a tool to your project.",
+      on_click: () =>
+        goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
+    },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
       on_click: () => connectLocalMcp(tool),
@@ -219,7 +226,7 @@
             href: `/docs/rag_configs/${project_id}/add_search_tool`,
           },
           {
-            name: "Kiln Task",
+            name: "Kiln Task Tool",
             description: "Add an existing Kiln Task as a tool to your project.",
             button_text: "Add",
             on_click: () =>
