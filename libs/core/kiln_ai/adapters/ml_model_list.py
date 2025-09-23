@@ -124,6 +124,7 @@ class ModelName(str, Enum):
     qwen_2p5_72b = "qwen_2p5_72b"
     qwq_32b = "qwq_32b"
     deepseek_3_1 = "deepseek_3_1"
+    deepseek_3_1_terminus = "deepseek_3_1_terminus"
     deepseek_3 = "deepseek_3"
     deepseek_r1 = "deepseek_r1"
     deepseek_r1_0528 = "deepseek_r1_0528"
@@ -2331,6 +2332,20 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek 3.1 Terminus
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_3_1_terminus,
+        friendly_name="DeepSeek 3.1 Terminus",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v3.1-terminus",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # DeepSeek 3
     KilnModel(
         family=ModelFamily.deepseek,
@@ -2747,6 +2762,20 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 supports_function_calling=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen3-Next-80B-A3B-Instruct",
+                supports_data_gen=True,
+                supports_function_calling=False,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3-Next-80B-A3B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # Qwen 3 Next 80B A3B (Thinking)
@@ -2763,6 +2792,15 @@ built_in_models: List[KilnModel] = [
                 supports_function_calling=True,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3-Next-80B-A3B-Thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                reasoning_capable=True,
+                siliconflow_enable_thinking=True,
             ),
         ],
     ),
