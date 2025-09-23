@@ -304,8 +304,9 @@ def connect_tool_servers_api(app: FastAPI):
                 )
             )
 
-        # Get available tools from MCP servers and Kiln task tools
+        # Get available tools from Kiln task tools and MCP servers
         task_tools = []
+        mcp_tool_sets = []
         for server in project.external_tool_servers(readonly=True):
             server_tools = []
             match server.type:
@@ -328,7 +329,7 @@ def connect_tool_servers_api(app: FastAPI):
                     raise_exhaustive_enum_error(server.type)
 
             if server_tools:
-                tool_sets.append(
+                mcp_tool_sets.append(
                     ToolSetApiDescription(
                         set_name="MCP Server: " + server.name,
                         tools=server_tools,
@@ -343,6 +344,10 @@ def connect_tool_servers_api(app: FastAPI):
                     tools=task_tools,
                 )
             )
+
+        # Add MCP tool sets
+        if len(mcp_tool_sets) > 0:
+            tool_sets.extend(mcp_tool_sets)
 
         # Add demo tools if enabled
         if Config.shared().enable_demo_tools:
