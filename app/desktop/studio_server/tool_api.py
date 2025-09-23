@@ -19,6 +19,7 @@ from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
+from kiln_server.task_api import task_from_id
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 
@@ -34,6 +35,21 @@ class KilnToolServerDescription(BaseModel):
     description: str | None
     missing_secrets: list[str]
     is_archived: bool
+
+
+class KilnTaskToolDescription(BaseModel):
+    """
+    This class is used to describe Kiln Task tools with their associated task information.
+    """
+
+    tool_server_id: str
+    tool_name: str
+    tool_description: str | None
+    task_id: str
+    task_name: str
+    task_description: str | None
+    is_archived: bool
+    created_at: str
 
 
 class ExternalToolServerCreationRequest(BaseModel):
@@ -379,6 +395,40 @@ def connect_tool_servers_api(app: FastAPI):
                     is_archived=tool.properties.get("is_archived", False),
                 )
             )
+        return results
+
+    @app.get("/api/projects/{project_id}/kiln_task_tools")
+    async def get_kiln_task_tools(
+        project_id: str,
+    ) -> List[KilnTaskToolDescription]:
+        project = project_from_id(project_id)
+
+        results = []
+        for tool_server in project.external_tool_servers():
+            if tool_server.type == ToolServerType.kiln_task:
+                try:
+                    task_id = tool_server.properties.get("task_id")
+                    if task_id:
+                        task = task_from_id(project_id, task_id)
+                        results.append(
+                            KilnTaskToolDescription(
+                                tool_server_id=str(tool_server.id),
+                                tool_name=tool_server.properties.get("name", ""),
+                                tool_description=tool_server.properties.get(
+                                    "description"
+                                ),
+                                task_id=task_id,
+                                task_name=task.name,
+                                task_description=task.description,
+                                is_archived=tool_server.properties.get(
+                                    "is_archived", False
+                                ),
+                                created_at=tool_server.created_at.isoformat(),
+                            )
+                        )
+                except HTTPException:
+                    # Skip tools with invalid task references
+                    continue
         return results
 
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")

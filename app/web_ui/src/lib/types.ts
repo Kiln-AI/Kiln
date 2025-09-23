@@ -67,6 +67,8 @@ export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
 export type KilnToolServerDescription =
   components["schemas"]["KilnToolServerDescription"]
+export type KilnTaskToolDescription =
+  components["schemas"]["KilnTaskToolDescription"]
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]

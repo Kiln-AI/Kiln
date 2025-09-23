@@ -1662,6 +1662,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/kiln_task_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Kiln Task Tools */
+        get: operations["get_kiln_task_tools_api_projects__project_id__kiln_task_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tool_servers/{tool_server_id}": {
         parameters: {
             query?: never;
@@ -3650,6 +3667,28 @@ export interface components {
         KilnFileResponse: {
             /** File Path */
             file_path: string | null;
+        };
+        /**
+         * KilnTaskToolDescription
+         * @description This class is used to describe Kiln Task tools with their associated task information.
+         */
+        KilnTaskToolDescription: {
+            /** Tool Server Id */
+            tool_server_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string | null;
+            /** Task Id */
+            task_id: string;
+            /** Task Name */
+            task_name: string;
+            /** Task Description */
+            task_description: string | null;
+            /** Is Archived */
+            is_archived: boolean;
+            /** Created At */
+            created_at: string;
         };
         /** KilnTaskToolServerCreationRequest */
         KilnTaskToolServerCreationRequest: {
@@ -8677,6 +8716,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KilnToolServerDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_kiln_task_tools_api_projects__project_id__kiln_task_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnTaskToolDescription"][];
                 };
             };
             /** @description Validation Error */

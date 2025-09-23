@@ -14,11 +14,16 @@
   import type { SearchToolApiDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id
-  $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
+  $: is_empty =
+    !demo_tools_enabled &&
+    (!tools || tools.length == 0) &&
+    kiln_task_tools_count === 0 &&
+    (!search_tools || search_tools.length === 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
   let search_tools: SearchToolApiDescription[] | null = null
+  let kiln_task_tools_count: number = 0
   let loading = true
   let error: KilnError | null = null
 
@@ -26,6 +31,7 @@
     await fetch_available_tool_servers()
     await load_demo_tools()
     await load_rag_configs()
+    await load_kiln_task_tools_count()
     loading = false
   })
 
@@ -90,6 +96,28 @@
     } catch (err) {
       error = createKilnError(err)
       console.error("Error loading search tools", err)
+    }
+  }
+
+  async function load_kiln_task_tools_count() {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/kiln_task_tools",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      kiln_task_tools_count = data?.length || 0
+    } catch (err) {
+      console.error("Error loading kiln task tools count", err)
+      kiln_task_tools_count = 0
     }
   }
 
@@ -209,7 +237,39 @@
                 </td>
               </tr>
             {/if}
-            {#each tools || [] as tool}
+            {#if kiln_task_tools_count > 0}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() =>
+                  goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)}
+                on:keydown={(e) =>
+                  e.key === "enter" &&
+                  goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)}
+                role="button"
+                tabindex="0"
+              >
+                <td class="font-medium">Kiln Task Tools</td>
+                <td class="text-sm">Kiln Tasks</td>
+                <td class="text-sm"
+                  >Tools that execute Kiln tasks with specific run
+                  configurations.
+                  {#if kiln_task_tools_count == 1}
+                    One Kiln task tool available
+                  {:else}
+                    {kiln_task_tools_count} Kiln task tools available
+                  {/if}
+                </td>
+                <td class="text-sm">
+                  <Warning
+                    warning_message="Ready"
+                    warning_color="success"
+                    warning_icon="check"
+                    tight={true}
+                  />
+                </td>
+              </tr>
+            {/if}
+            {#each (tools || []).filter((tool) => tool.type !== "kiln_task") as tool}
               {@const missing_secrets =
                 tool.missing_secrets && tool.missing_secrets.length > 0}
               <tr

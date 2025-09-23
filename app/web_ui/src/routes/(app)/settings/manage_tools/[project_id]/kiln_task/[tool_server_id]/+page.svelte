@@ -214,6 +214,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title={"Kiln Task Tool"}
+    subtitle={`Name: ${tool_server?.name || ""}`}
     breadcrumbs={[
       {
         label: "Settings",
@@ -222,6 +223,10 @@
       {
         label: "Manage Tools",
         href: `/settings/manage_tools/${project_id}`,
+      },
+      {
+        label: "Kiln Task Tools",
+        href: `/settings/manage_tools/${project_id}/kiln_task_tools`,
       },
     ]}
     action_buttons={[
@@ -261,12 +266,21 @@
           <div class="text-xl font-bold mb-1">
             Task: {task_name}
           </div>
-          {#if run_config}
-            <div class="text-sm text-gray-500">
+          {#if run_config && $model_info}
+            <div class="text-sm text-gray-500 mt-2 mb-2">
               {`Model: ${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`}
             </div>
             <div class="text-sm text-gray-500 mb-2">
               {`Prompt: ${getRunConfigPromptDisplayName(run_config, $current_task_prompts)}`}
+            </div>
+            <div class="text-sm text-gray-500 mb-2">
+              {`Tools: ${run_config.run_config_properties.tools_config?.tools && run_config.run_config_properties.tools_config.tools.length > 0 ? run_config.run_config_properties.tools_config.tools.join(", ") : "None"}`}
+            </div>
+            <div class="text-sm text-gray-500 mb-2">
+              {`Temperature: ${run_config.run_config_properties.temperature}`}
+            </div>
+            <div class="text-sm text-gray-500 mb-2">
+              {`Top P: ${run_config.run_config_properties.top_p}`}
             </div>
           {:else}
             <div class="text-sm text-gray-500 mb-2">Run Config Not Found</div>
