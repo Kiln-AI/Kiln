@@ -265,7 +265,7 @@
         class="link link-primary text-sm"
         on:click={saveRunOptions}
       >
-        Save new run options
+        Save current options
       </button>
     </div>
     {#if save_config_error}
