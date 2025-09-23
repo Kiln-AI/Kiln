@@ -81,7 +81,6 @@
         label: task.name,
         value: task,
         description: default_run_config_description(task, run_configs),
-        disabled: !task.default_run_config_id,
       })),
     })
     return option_groups
