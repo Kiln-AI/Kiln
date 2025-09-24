@@ -232,7 +232,7 @@
 <Dialog
   bind:this={dialog}
   title={show_success_dialog
-    ? "Upload Completed"
+    ? "Completed"
     : upload_in_progress
       ? "Processing Documents"
       : "Add Documents"}
@@ -246,8 +246,8 @@
         {
           label:
             selected_files.length > 1
-              ? `Upload ${selected_files.length} Files`
-              : "Upload",
+              ? `Add ${selected_files.length} Files`
+              : "Add",
           asyncAction: () => handleUpload(),
           disabled: selected_files.length === 0,
           isPrimary: true,
@@ -263,7 +263,7 @@
             {upload_result.created_documents.length} file{upload_result
               .created_documents.length === 1
               ? ""
-              : "s"} uploaded successfully
+              : "s"} added successfully
             {#if upload_result.failed_files.length > 0}
               <br />
               {upload_result.failed_files.length} file{upload_result
@@ -334,7 +334,7 @@
               {upload_result.created_documents.length} document{upload_result
                 .created_documents.length === 1
                 ? ""
-                : "s"} uploaded successfully
+                : "s"} added successfully
             </div>
           {/if}
           {#if upload_result.failed_files.length > 0}
@@ -342,7 +342,7 @@
               {upload_result.failed_files.length} document{upload_result
                 .failed_files.length === 1
                 ? ""
-                : "s"} failed to upload
+                : "s"} failed to be added
             </div>
           {/if}
         {/if}
@@ -389,7 +389,7 @@
         {#if upload_in_progress && upload_total > 0}
           <div class="space-y-2">
             <div class="flex justify-between text-sm">
-              <span>Uploading files...</span>
+              <span>Adding files...</span>
               <span>{upload_progress}/{upload_total}</span>
             </div>
             <progress
