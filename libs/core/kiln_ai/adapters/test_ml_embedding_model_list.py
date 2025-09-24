@@ -1,4 +1,4 @@
-from typing import Callable, List
+from typing import List
 
 import pytest
 
@@ -29,15 +29,11 @@ def litellm_adapter():
     return adapter
 
 
-def get_all_embedding_models_and_providers(
-    filter: Callable[[KilnEmbeddingModel, KilnEmbeddingModelProvider], bool] = lambda _,
-    __: True,
-) -> List[tuple[str, str]]:
+def get_all_embedding_models_and_providers() -> List[tuple[str, str]]:
     return [
         (model.name, provider.name)
         for model in built_in_embedding_models
         for provider in model.providers
-        if filter(model, provider)
     ]
 
 
