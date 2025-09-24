@@ -60,12 +60,7 @@ async def _build_tool_context(resolution: ToolResolution) -> ToolContext:
     function_def = definition.get("function", {})
 
     name = function_def.get("name")
-    if not name or not isinstance(name, str) or not name.strip():
-        name = await tool.name()
-
     description = function_def.get("description")
-    if not description or not isinstance(description, str) or not description.strip():
-        description = await tool.description()
 
     if not isinstance(name, str) or not name.strip():
         raise ValueError(f"Tool {resolution.tool_id} returned an invalid name")
