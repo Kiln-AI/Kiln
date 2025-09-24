@@ -342,12 +342,12 @@ def test_delete_no_path():
         ("Hello 👍", "Hello 👍"),
         # Invalid characters are replaced
         ("Hello@World!", "Hello@World!"),
-        ("File.name.txt", "File_name_txt"),
-        ("Special%%%Chars", "Special_Chars"),
-        ("Special#$%Chars", "Special#$_Chars"),
+        ("File.name.txt", "File name txt"),
+        ("Special%%%Chars", "Special Chars"),
+        ("Special#$%Chars", "Special#$ Chars"),
         # Consecutive invalid characters are replaced
-        ("Special%%%Chars", "Special_Chars"),
-        ("path/to/file", "path_to_file"),
+        ("Special%%%Chars", "Special Chars"),
+        ("path/to/file", "path to file"),
         # Leading/trailing special characters are removed
         ("__test__", "test"),
         ("...test...", "test"),
@@ -360,14 +360,14 @@ def test_delete_no_path():
         ("你好_世界", "你好_世界"),
         ("你好_世界_你好", "你好_世界_你好"),
         # Newlines, tabs, and other control characters are replaced
-        ("Hello\nworld", "Hello_world"),
-        ("Hello\tworld", "Hello_world"),
-        ("Hello\rworld", "Hello_world"),
-        ("Hello\fworld", "Hello_world"),
-        ("Hello\bworld", "Hello_world"),
-        ("Hello\vworld", "Hello_world"),
-        ("Hello\0world", "Hello_world"),
-        ("Hello\x00world", "Hello_world"),
+        ("Hello\nworld", "Hello world"),
+        ("Hello\tworld", "Hello world"),
+        ("Hello\rworld", "Hello world"),
+        ("Hello\fworld", "Hello world"),
+        ("Hello\bworld", "Hello world"),
+        ("Hello\vworld", "Hello world"),
+        ("Hello\0world", "Hello world"),
+        ("Hello\x00world", "Hello world"),
     ],
 )
 def test_string_to_valid_name(tmp_path, name, expected):
