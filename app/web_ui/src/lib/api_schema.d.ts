@@ -2763,7 +2763,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
