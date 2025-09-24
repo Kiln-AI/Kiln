@@ -9,7 +9,7 @@ from typing import Any, Literal, Sequence
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent
 
-from .tool_registry import ToolContext
+from .mcp_server_tool_utils import ToolContext
 
 logger = logging.getLogger(__name__)
 

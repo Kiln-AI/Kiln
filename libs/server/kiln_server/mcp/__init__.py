@@ -1,7 +1,7 @@
 """MCP server utilities for exposing Kiln tools."""
 
+from .mcp_server_tool_utils import ToolContext, prepare_tool_contexts
 from .runtime import create_fastmcp_server, run_transport
-from .tool_registry import ToolContext, prepare_tool_contexts
 from .tool_selection import collect_project_tools
 
 __all__ = [

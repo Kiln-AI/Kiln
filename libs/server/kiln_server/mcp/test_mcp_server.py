@@ -12,8 +12,8 @@ from mcp.types import (
 )
 
 from kiln_server.mcp import mcp
+from kiln_server.mcp.mcp_server_tool_utils import prepare_tool_contexts
 from kiln_server.mcp.runtime import create_fastmcp_server, run_transport
-from kiln_server.mcp.tool_registry import prepare_tool_contexts
 from kiln_server.mcp.tool_selection import ToolResolution, collect_project_tools
 
 

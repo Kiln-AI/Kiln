@@ -10,8 +10,8 @@ from typing import Sequence
 
 from kiln_ai.datamodel.project import Project
 
+from .mcp_server_tool_utils import prepare_tool_contexts
 from .runtime import Transport, create_fastmcp_server, run_transport
-from .tool_registry import prepare_tool_contexts
 from .tool_selection import collect_project_tools
 
 logger = logging.getLogger(__name__)
