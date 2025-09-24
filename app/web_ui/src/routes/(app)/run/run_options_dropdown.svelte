@@ -1,7 +1,6 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
-  import type { TaskRunConfig } from "$lib/types"
   import {
     model_name,
     model_info,
@@ -22,28 +21,52 @@
 
   export let selected_run_config_id: string | "custom" | null
   export let default_run_config_id: string | null
+  export let label = "Run Configuration"
+  export let description = ""
+  export let info_description =
+    "Select a saved run configuration to automatically apply its settings, or create a new one with custom options."
+  export let task_id: string | null = null
+  export let project_id: string | null = null
 
   onMount(async () => {
     await load_available_prompts()
     await load_model_info()
   })
 
-  $: if ($current_project?.id && $current_task?.id) {
-    load_task_run_configs($current_project.id, $current_task.id)
+  // Use props if provided, otherwise fall back to store values
+  $: effective_project_id = project_id ?? $current_project?.id
+  $: effective_task_id = task_id ?? $current_task?.id
+
+  $: if (effective_project_id && effective_task_id) {
+    load_task_run_configs(effective_project_id, effective_task_id)
   }
+
+  // Get the current run configs for the task
+  $: current_run_configs =
+    effective_project_id && effective_task_id
+      ? $run_configs_by_task_composite_id[
+          get_task_composite_id(effective_project_id, effective_task_id)
+        ] ?? []
+      : []
 
   // Build the options for the dropdown
   $: options = (() => {
+    if (!effective_project_id || !effective_task_id) {
+      return []
+    }
+
     const options: OptionGroup[] = []
 
-    // Add new custom configuration option
+    // Add new configuration option at the top
     options.push({
       label: "",
       options: [
         {
-          value: "custom",
-          label: "None",
-          description: "Run with your current manually selected options.",
+          value: "__create_new_run_config__",
+          label: "Create New Run Configuration",
+          description: "Create a new run configuration with custom settings.",
+          badge: "+",
+          badge_color: "primary",
         },
       ],
     })
@@ -53,14 +76,9 @@
 
     // Add default configuration first if it exists
     if (default_run_config_id) {
-      const default_config = (
-        $run_configs_by_task_composite_id[
-          get_task_composite_id(
-            $current_project?.id ?? "",
-            $current_task?.id ?? "",
-          )
-        ] ?? ([] as TaskRunConfig[])
-      ).find((config) => config.id === default_run_config_id)
+      const default_config = current_run_configs.find(
+        (config) => config.id === default_run_config_id,
+      )
 
       if (default_config) {
         saved_configuration_options.push({
@@ -72,14 +90,9 @@
       }
     }
 
-    const other_task_run_configs = (
-      $run_configs_by_task_composite_id[
-        get_task_composite_id(
-          $current_project?.id ?? "",
-          $current_task?.id ?? "",
-        )
-      ] ?? ([] as TaskRunConfig[])
-    ).filter((config) => config.id !== default_run_config_id)
+    const other_task_run_configs = current_run_configs.filter(
+      (config) => config.id !== default_run_config_id,
+    )
     if (other_task_run_configs.length > 0) {
       saved_configuration_options.push(
         ...other_task_run_configs.map((config) => ({
@@ -103,8 +116,9 @@
 </script>
 
 <FormElement
-  label="Run Configuration"
-  info_description="Select a saved run configuration to automatically apply its settings, or choose None to manually configure run options and save them for future use."
+  {label}
+  {description}
+  {info_description}
   inputType="fancy_select"
   bind:value={selected_run_config_id}
   id="run_config"

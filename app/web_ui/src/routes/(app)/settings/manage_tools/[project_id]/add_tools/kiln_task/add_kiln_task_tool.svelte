@@ -2,40 +2,56 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import Dialog from "$lib/ui/dialog.svelte"
   import { client } from "$lib/api_client"
-  import type { Task, TaskRunConfig } from "$lib/types"
+  import type { Task } from "$lib/types"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import {
-    load_task_run_configs,
-    run_configs_by_task_composite_id,
-    get_task_composite_id,
-  } from "$lib/stores/run_configs_store"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import {
-    current_task_prompts,
     load_available_models,
     load_available_prompts,
     load_model_info,
-    model_info,
-    model_name,
-    provider_name_from_id,
     uncache_available_tools,
   } from "$lib/stores"
-  import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
+  import RunOptionsDropdown from "../../../../../run/run_options_dropdown.svelte"
+  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
+  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
+  import ToolsSelector from "../../../../../run/tools_selector.svelte"
+  import AdvancedRunOptions from "../../../../../run/advanced_run_options.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import type { RunConfigProperties, StructuredOutputMode } from "$lib/types"
+  import type { components } from "$lib/api_schema"
+  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
 
   let error: KilnError | null = null
   let submitting = false
   let name: string | null = null
   let description = ""
   let selected_task_id: string | null = null
+  let selected_run_config_id: string | "custom" | null = null
   let tasks: Task[] = []
   let tasks_loading_error: string | null = null
   let data_loaded = false
-  let no_default_config_dialog: Dialog | null = null
-  let task_name_for_dialog: string | null = null
+
+  // Modal for creating new run config
+  let create_run_config_dialog: Dialog | null = null
+  let create_run_config_error: KilnError | null = null
+  let new_run_config_name = ""
+  let new_run_config_description = ""
+  let new_run_config_model_name = ""
+  let new_run_config_provider_name:
+    | components["schemas"]["ModelProviderName"]
+    | "" = ""
+  let new_run_config_prompt_method = "simple_prompt_builder"
+  let new_run_config_tools: string[] = []
+  let new_run_config_temperature = 1.0
+  let new_run_config_top_p = 1.0
+  let new_run_config_structured_output_mode: StructuredOutputMode = "default"
+  let previous_run_config_id: string | "custom" | null = null
+  let is_canceling = false
 
   onMount(async () => {
     const project_id = $page.params.project_id ?? ""
@@ -81,16 +97,49 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: if (selected_task_id) {
-    show_dialog_if_needed()
-  }
-
   $: if (selected_task_id && name === null) {
     // Only set name if it's null (initial selection)
     const task = tasks.find((t) => t.id === selected_task_id)
     if (task) {
       name = to_snake_case(task.name)
     }
+  }
+
+  // Load run configs when task is selected
+  $: if (selected_task_id && $page.params.project_id) {
+    load_task_run_configs($page.params.project_id, selected_task_id)
+    // Only reset run config selection if it's not already set to a valid value
+    if (
+      selected_run_config_id === null ||
+      selected_run_config_id === "custom"
+    ) {
+      selected_run_config_id = default_run_config_id
+    }
+  }
+
+  // Get the default run config ID for the selected task
+  $: default_run_config_id = (() => {
+    if (selected_task_id) {
+      const task = tasks.find((t) => t.id === selected_task_id)
+      return task?.default_run_config_id || null
+    }
+    return null
+  })()
+
+  // Track previous selection for cancel functionality
+  $: if (
+    selected_run_config_id &&
+    selected_run_config_id !== "__create_new_run_config__"
+  ) {
+    console.log("Tracking previous selection:", selected_run_config_id)
+    previous_run_config_id = selected_run_config_id
+  }
+
+  // Handle special case when "Create New Run Configuration" is selected
+  $: if (selected_run_config_id === "__create_new_run_config__") {
+    show_create_run_config_modal()
+    // Reset the selection after showing modal
+    selected_run_config_id = null
   }
 
   // Handle cloning - if we have a pre-filled name from URL params, modify it
@@ -101,63 +150,19 @@
     }
   }
 
-  async function show_dialog_if_needed() {
-    const task = tasks.find((t) => t.id === selected_task_id)
-    if (task && task.default_run_config_id === null) {
-      // Capture the task name before resetting selected_task_id
-      task_name_for_dialog = task.name
-      no_default_config_dialog?.show()
-      // Reset selection since we can't proceed without a run config
-      await tick()
-      selected_task_id = null
-      name = null
-      description = ""
-    }
-  }
-
-  $: task_options = data_loaded
-    ? format_task_options(tasks, $run_configs_by_task_composite_id)
-    : []
-  function format_task_options(
-    tasks: Task[],
-    run_configs: Record<string, TaskRunConfig[]>,
-  ): OptionGroup[] {
+  $: task_options = data_loaded ? format_task_options(tasks) : []
+  function format_task_options(tasks: Task[]): OptionGroup[] {
     if (tasks.length === 0) {
       return []
     }
     let option_groups: OptionGroup[] = []
     option_groups.push({
       options: tasks.map((task) => ({
-        label: task.name,
+        label: `${task.name} (ID: ${task.id})`,
         value: task.id ?? "",
-        description: default_run_config_description(task, run_configs),
       })),
     })
     return option_groups
-  }
-
-  function default_run_config_description(
-    task: Task,
-    run_configs: Record<string, TaskRunConfig[]>,
-  ) {
-    if (task.default_run_config_id) {
-      const project_id = $page.params.project_id ?? ""
-      const composite_key = get_task_composite_id(project_id, task.id ?? "")
-      let run_config = run_configs[composite_key]?.find(
-        (config) => config.id === task.default_run_config_id,
-      )
-      if (run_config != null) {
-        return (
-          (run_config.name ?? "") +
-          ` | ${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})` +
-          ` | ${getRunConfigPromptDisplayName(run_config, $current_task_prompts)}`
-        )
-      } else {
-        return ""
-      }
-    } else {
-      return "⚠️ No default run config set"
-    }
   }
 
   // TODO: Move this to a shared component since select_tasks_menu.svelte uses it too
@@ -196,12 +201,115 @@
     }
   }
 
+  // Functions for creating new run config
+  function show_create_run_config_modal() {
+    create_run_config_error = null
+    new_run_config_name = ""
+    new_run_config_description = ""
+    new_run_config_model_name = ""
+    new_run_config_provider_name = ""
+    new_run_config_prompt_method = "simple_prompt_builder"
+    new_run_config_tools = []
+    new_run_config_temperature = 1.0
+    new_run_config_top_p = 1.0
+    new_run_config_structured_output_mode = "default"
+
+    // Ensure dialog is properly bound before showing
+    if (create_run_config_dialog) {
+      create_run_config_dialog.show()
+    } else {
+      console.error("create_run_config_dialog is not bound")
+    }
+  }
+
+  async function cancel_create_run_config(): Promise<boolean> {
+    // Restore the previous selection
+    console.log(
+      "Canceling, restoring previous selection:",
+      previous_run_config_id,
+    )
+    await tick()
+    // Use a timeout to ensure the restoration happens after all reactive statements
+    setTimeout(() => {
+      selected_run_config_id = previous_run_config_id
+      previous_run_config_id = null
+    }, 0)
+    await tick()
+    return true
+  }
+
+  async function create_new_run_config(): Promise<boolean> {
+    create_run_config_error = null
+
+    if (!new_run_config_name.trim()) {
+      create_run_config_error = createKilnError({
+        message: "Run config name is required.",
+        status: 400,
+      })
+      return false
+    }
+
+    if (!new_run_config_model_name || !new_run_config_provider_name) {
+      create_run_config_error = createKilnError({
+        message: "Model selection is required.",
+        status: 400,
+      })
+      return false
+    }
+
+    if (!selected_task_id || !$page.params.project_id) {
+      create_run_config_error = createKilnError({
+        message: "No task selected.",
+        status: 400,
+      })
+      return false
+    }
+
+    try {
+      const run_config_properties: RunConfigProperties = {
+        model_name: new_run_config_model_name,
+        model_provider_name: new_run_config_provider_name,
+        prompt_id: new_run_config_prompt_method,
+        temperature: new_run_config_temperature,
+        top_p: new_run_config_top_p,
+        structured_output_mode: new_run_config_structured_output_mode,
+        tools_config: {
+          tools: new_run_config_tools,
+        },
+      }
+
+      const new_config = await save_new_task_run_config(
+        $page.params.project_id,
+        selected_task_id,
+        run_config_properties,
+        new_run_config_name.trim(),
+        new_run_config_description.trim() || undefined,
+      )
+
+      // Select the newly created run config
+      selected_run_config_id = new_config.id ?? ""
+
+      return true
+    } catch (e) {
+      create_run_config_error = createKilnError(e)
+      return false
+    }
+  }
+
   async function add_kiln_task_tool() {
     try {
       clearErrorIfPresent()
       if (!selected_task_id) {
         error = createKilnError({
           message: "Please select a task.",
+          status: 400,
+        })
+        return
+      }
+
+      if (!selected_run_config_id) {
+        error = createKilnError({
+          message: "Please select a run configuration.",
           status: 400,
         })
         return
@@ -226,7 +334,7 @@
           name: name ?? "",
           description: description,
           task_id: selected_task_id || "",
-          run_config_id: task.default_run_config_id || "",
+          run_config_id: selected_run_config_id,
           is_archived: false,
         },
       })
@@ -302,10 +410,21 @@
           inputType="fancy_select"
           fancy_select_options={task_options}
           disabled={!data_loaded}
-          description="The task to add as a tool, using the task's current default run options."
-          info_description="The task's default run options will be frozen in time for this task and won't update if you change the task's default run config later."
+          description="The task to add as a tool."
+          info_description="Select the task that will be used as a tool."
           on:change={clearErrorIfPresent}
         />
+
+        {#if selected_task_id}
+          <RunOptionsDropdown
+            bind:selected_run_config_id
+            {default_run_config_id}
+            task_id={selected_task_id}
+            project_id={$page.params.project_id}
+            label="Run Configuration"
+            description="The run configuration to use for task calls when using this tool."
+          />
+        {/if}
 
         {#if selected_task_id}
           <FormElement
@@ -340,27 +459,50 @@
 </div>
 
 <Dialog
-  bind:this={no_default_config_dialog}
-  title="⚠️ No default run config set"
-  subtitle={task_name_for_dialog
-    ? `The task "${task_name_for_dialog}" doesn't have a default run config set. You need to set a default run config for the task before it can be added as a tool.`
-    : "This task doesn't have a default run config set. You need to set a default run config for the task before it can be added as a tool."}
+  bind:this={create_run_config_dialog}
+  title="Create New Run Configuration"
   action_buttons={[
     {
-      label: "OK",
+      label: "Cancel",
+      isCancel: true,
+      asyncAction: cancel_create_run_config,
+    },
+    {
+      label: "Create",
       isPrimary: true,
+      asyncAction: create_new_run_config,
     },
   ]}
 >
   <div class="flex flex-col gap-4">
-    <p class="text-sm text-base-content/70">
-      To add this task as a tool, you first need to:
-    </p>
-    <ol class="list-decimal list-inside text-sm text-base-content/70 space-y-2">
-      <li>Go to the task's run page</li>
-      <li>Configure the run options you want to use</li>
-      <li>Set it as the default run config for the task</li>
-      <li>Then return here to add it as a tool</li>
-    </ol>
+    <AvailableModelsDropdown
+      bind:model_name={new_run_config_model_name}
+      bind:provider_name={new_run_config_provider_name}
+    />
+
+    <PromptTypeSelector bind:prompt_method={new_run_config_prompt_method} />
+
+    {#if selected_task_id}
+      <ToolsSelector
+        bind:tools={new_run_config_tools}
+        project_id={$page.params.project_id}
+        task_id={selected_task_id}
+      />
+    {/if}
+
+    <Collapse title="Advanced Options">
+      <AdvancedRunOptions
+        bind:temperature={new_run_config_temperature}
+        bind:top_p={new_run_config_top_p}
+        bind:structured_output_mode={new_run_config_structured_output_mode}
+        has_structured_output={false}
+      />
+    </Collapse>
+
+    {#if create_run_config_error}
+      <div class="text-error text-sm">
+        {create_run_config_error.getMessage() || "An unknown error occurred"}
+      </div>
+    {/if}
   </div>
 </Dialog>

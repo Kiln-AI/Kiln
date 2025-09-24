@@ -19,6 +19,8 @@
     model_info,
     model_name,
     provider_name_from_id,
+    available_tools,
+    load_available_tools,
   } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -48,6 +50,9 @@
     await load_available_prompts()
     await load_available_models()
     await load_model_info()
+    if (project_id) {
+      await load_available_tools(project_id)
+    }
   })
 
   $: if (tool_server) {
@@ -160,6 +165,19 @@
     )
   }
 
+  function get_tool_names_from_ids(tool_ids: string[]): string[] {
+    if (!project_id || !$available_tools[project_id]) {
+      return tool_ids // Return IDs if we don't have the tools loaded
+    }
+
+    const all_tools = $available_tools[project_id].flatMap(
+      (tool_set) => tool_set.tools,
+    )
+    const tool_map = new Map(all_tools.map((tool) => [tool.id, tool.name]))
+
+    return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
+  }
+
   function get_tool_properties(tool: ExternalToolServerApiDescription) {
     return [
       { name: "ID", value: tool.id || "N/A" },
@@ -229,6 +247,14 @@
 
     return [
       {
+        name: "ID",
+        value: run_config.id || "N/A",
+      },
+      {
+        name: "Name",
+        value: run_config.name || "N/A",
+      },
+      {
         name: "Model",
         value: `${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
       },
@@ -241,9 +267,15 @@
         value:
           run_config.run_config_properties.tools_config?.tools &&
           run_config.run_config_properties.tools_config.tools.length > 0
-            ? run_config.run_config_properties.tools_config.tools.length === 1
-              ? `One tool (${run_config.run_config_properties.tools_config.tools.join(", ")})`
-              : `${run_config.run_config_properties.tools_config.tools.length} tools (${run_config.run_config_properties.tools_config.tools.join(", ")})`
+            ? (() => {
+                const tool_names = get_tool_names_from_ids(
+                  run_config.run_config_properties.tools_config.tools,
+                )
+                return run_config.run_config_properties.tools_config.tools
+                  .length === 1
+                  ? `One tool (${tool_names.join(", ")})`
+                  : `${run_config.run_config_properties.tools_config.tools.length} tools (${tool_names.join(", ")})`
+              })()
             : "None",
       },
       {
