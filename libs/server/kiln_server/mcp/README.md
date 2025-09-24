@@ -1,8 +1,10 @@
-# Kiln MCP Server
+# Kiln MCP Server [Beta]
 
 > If you're looking for our MCP client to integrate third party MCP servers into the Kiln app, see https://docs.kiln.tech/docs/tools-and-mcp
 
 This MCP server allows you to call Kiln tools, such as a Kiln Search Tool, from any MCP client.
+
+**Beta** This is a beta intended for local usage. It isn't designed for production workloads.
 
 ### Installation
 
@@ -11,6 +13,8 @@ We suggest installing with uv:
 ```bash
 uv tool install kiln_server
 ```
+
+**Important** You must have run search indexing from the Kiln app before starting a Kiln search tool via this MCP server.
 
 ### Running kiln_mcp
 
@@ -39,7 +43,7 @@ Many MCP clients require running MCP server over the stdio transport. See this e
 }
 ```
 
-### kiln_mcp man page
+### kiln_mcp Command Options
 
 ```
 usage: kiln_mcp [-h] [--tool-ids TOOL_IDS] [--transport {stdio,sse,streamable-http}] [--host HOST] [--port PORT] [--mount-path MOUNT_PATH] [--log-level LOG_LEVEL]

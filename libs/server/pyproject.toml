@@ -1,6 +1,6 @@
 [project]
 name = "kiln-server"
-version = "0.21.0"
+version = "0.21.2"
 requires-python = ">=3.10"
 description = 'Kiln AI Server'
 readme = "README.md"
@@ -29,6 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
+kiln_server = "kiln_server.server:main"
 kiln_mcp = "kiln_server.mcp.mcp:main"
 
 [dependency-groups]
