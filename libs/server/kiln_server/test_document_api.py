@@ -16,6 +16,8 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
+    Extraction,
+    ExtractionSource,
     ExtractorConfig,
     ExtractorType,
     FileInfo,
@@ -3526,3 +3528,86 @@ async def test_create_rag_config_invalid_tool_fields(
     assert response.status_code == 422
     error_detail = response.json()
     assert "error_messages" in error_detail
+
+
+async def test_delete_extraction_success(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test DELETE extraction endpoint success"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.extractor_adapter_from_type"
+        ) as mock_extractor_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        mock_extractor = MagicMock()
+        mock_extractor.clear_cache_for_file_path = AsyncMock()
+        mock_extractor_factory.return_value = mock_extractor
+
+        # Create an extraction on disk so the DELETE endpoint can find it
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.delete(
+            f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
+        )
+
+        assert response.status_code == 200
+
+        # Assert cache clear called with resolved attachment path
+        document = mock_document["document"]
+        expected_path = document.original_file.attachment.resolve_path(
+            document.path.parent
+        )
+        mock_extractor.clear_cache_for_file_path.assert_awaited_once_with(expected_path)
+
+
+async def test_delete_extraction_failed_to_clear_cache(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Deletion of extraction should not fail if failed to clear cache"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.extractor_adapter_from_type"
+        ) as mock_extractor_factory,
+        patch("kiln_server.document_api.logger") as mock_logger,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        mock_extractor = MagicMock()
+        mock_extractor.clear_cache_for_file_path = AsyncMock(
+            side_effect=Exception("Deleting cache for file path failed"),
+        )
+        mock_extractor_factory.return_value = mock_extractor
+
+        # Create an extraction on disk so the DELETE endpoint can find it
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.delete(
+            f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
+        )
+
+        assert response.status_code == 200
+
+        mock_logger.warning.assert_called_once()
+        warning_args, _ = mock_logger.warning.call_args
+        assert (
+            warning_args[0]
+            == "Failed to clear extractor cache for document %s (extraction %s): %s"
+        )
