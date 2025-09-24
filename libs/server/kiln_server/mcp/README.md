@@ -33,11 +33,7 @@ Many MCP clients require running MCP server over the stdio transport. See this e
   "mcpServers": {
     "kilnMCP": {
       "command": "kiln_mcp",
-      "args": [
-        "--transport",
-        "stdio",
-        "/Users/username/Kiln Projects/Project Name/project.kiln"
-      ]
+      "args": ["/Users/username/Kiln Projects/Project Name/project.kiln"]
     }
   }
 }
