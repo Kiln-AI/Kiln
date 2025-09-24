@@ -27,7 +27,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the Kiln MCP server for a project."
     )
-    parser.add_argument("project", type=Path, help="Path to the kiln.project file")
+    parser.add_argument("project", type=Path, help="Path to the project.kiln file")
     parser.add_argument(
         "--tool-ids",
         dest="tool_ids",
@@ -70,7 +70,7 @@ async def _async_main(
     log_level: str,
 ) -> None:
     project = Project.load_from_file(project_path)
-    project_name = getattr(project, "name", None)
+    project_name = project.name
 
     tool_resolutions = collect_project_tools(project, tool_ids)
     if not tool_resolutions:

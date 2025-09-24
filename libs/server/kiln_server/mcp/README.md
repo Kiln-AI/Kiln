@@ -1,0 +1,64 @@
+# Kiln MCP Server
+
+> If you're looking for our MCP client to integrate third party MCP servers into the Kiln app, see https://docs.kiln.tech/docs/tools-and-mcp
+
+This MCP server allows you to call Kiln tools, such as a Kiln Search Tool, from any MCP client.
+
+### Installation
+
+We suggest installing with uv:
+
+```bash
+uv tool install kiln_server
+```
+
+### Running kiln_mcp
+
+Once installed, you can run `kiln_mcp` from your terminal. The last parameter must be the path to the project.kiln file you wish to use. Example:
+
+```bash
+kiln_mcp --transport streamable-http "/Users/username/Kiln Projects/Project Name/project.kiln"
+```
+
+### Running kiln_mcp in Cursor, VSCode, etc
+
+Many MCP clients require running MCP server over the stdio transport. See this example `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kilnMCP": {
+      "command": "kiln_mcp",
+      "args": [
+        "--transport",
+        "stdio",
+        "/Users/username/Kiln Projects/Project Name/project.kiln"
+      ]
+    }
+  }
+}
+```
+
+### kiln_mcp man page
+
+```
+usage: kiln_mcp [-h] [--tool-ids TOOL_IDS] [--transport {stdio,sse,streamable-http}] [--host HOST] [--port PORT] [--mount-path MOUNT_PATH] [--log-level LOG_LEVEL]
+                project
+
+Run the Kiln MCP server for a project.
+
+positional arguments:
+  project               Path to the kiln.project file
+
+options:
+  -h, --help            show this help message and exit
+  --tool-ids TOOL_IDS   Comma-separated list of tool IDs to expose. Defaults to all project tools.
+  --transport {stdio,sse,streamable-http}
+                        Transport mechanism for the MCP server.
+  --host HOST           Host for network transports.
+  --port PORT           Port for network transports.
+  --mount-path MOUNT_PATH
+                        Optional mount path for SSE or streamable HTTP transports.
+  --log-level LOG_LEVEL
+                        Log level for the server when using network transports.
+```
