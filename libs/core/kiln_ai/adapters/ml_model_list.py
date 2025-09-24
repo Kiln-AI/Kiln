@@ -2374,6 +2374,15 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v3p1-terminus",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                # the model page states it supports function calling, but our test fails
+                # for this particular provider
+                supports_function_calling=False,
+            ),
         ],
     ),
     # DeepSeek 3
