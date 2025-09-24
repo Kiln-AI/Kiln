@@ -263,6 +263,43 @@ class TestFilesystemCache:
         with pytest.raises(ValueError):
             await cache.set(invalid_key, b"content")
 
+    async def test_delete_by_prefix(self, cache):
+        key1 = "test1"
+        key2 = "test2"
+        key3 = "test3"
+        non_target_key = "non_target_key"
+
+        await cache.set(key1, b"content1")
+        await cache.set(key2, b"content2")
+        await cache.set(key3, b"content3")
+        await cache.set(non_target_key, b"content4")
+
+        await cache.delete_by_prefix("test")
+
+        # should delete target keys
+        assert not (cache.cache_dir_path / key1).exists()
+        assert not (cache.cache_dir_path / key2).exists()
+        assert not (cache.cache_dir_path / key3).exists()
+
+        # should not delete non-target key
+        assert (cache.cache_dir_path / non_target_key).exists()
+
+    async def test_delete_by_prefix_no_match(self, cache):
+        key1 = "test1"
+        key2 = "test2"
+        key3 = "test3"
+
+        await cache.set(key1, b"content1")
+        await cache.set(key2, b"content2")
+        await cache.set(key3, b"content3")
+
+        await cache.delete_by_prefix("nonexistent")
+
+        # should not delete anything
+        assert (cache.cache_dir_path / key1).exists()
+        assert (cache.cache_dir_path / key2).exists()
+        assert (cache.cache_dir_path / key3).exists()
+
 
 class TestTemporaryFilesystemCache:
     def test_temporary_cache_creation(self):
