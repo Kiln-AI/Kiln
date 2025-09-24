@@ -165,6 +165,7 @@
     posthog.capture("add_documents", {
       file_count: uploaded_files.length,
       file_count_summary: file_count_summary(uploaded_files),
+      kind_counts: kind_counts(uploaded_files),
     })
 
     return true
@@ -186,6 +187,47 @@
       let unrecognized_file_types_count =
         files.length - recognized_file_types_count
       summary["unknown_type"] = unrecognized_file_types_count
+      return summary
+    } catch (e) {
+      console.error(e)
+      return {}
+    }
+  }
+
+  function infer_kind(file: File): string {
+    const mime = file.type || ""
+    if (mime.startsWith("image/")) return "image"
+    if (mime.startsWith("video/")) return "video"
+    if (mime.startsWith("audio/")) return "audio"
+
+    // documents by mime
+    if (
+      mime === "application/pdf" ||
+      mime === "text/plain" ||
+      mime === "text/markdown" ||
+      mime === "text/html" ||
+      mime === "text/csv"
+    ) {
+      return "document"
+    }
+
+    // fallback by extension
+    const ext = ("." + (file.name.split(".").pop() || "")).toLowerCase()
+    if ([".pdf", ".txt", ".md", ".html"].includes(ext)) return "document"
+    if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image"
+    if ([".mp4", ".mov"].includes(ext)) return "video"
+    if ([".mp3", ".wav", ".ogg"].includes(ext)) return "audio"
+
+    return "unknown"
+  }
+
+  function kind_counts(files: File[]): Record<string, number> {
+    try {
+      let summary: Record<string, number> = {}
+      for (const file of files) {
+        const kind = infer_kind(file)
+        summary[kind] = (summary[kind] || 0) + 1
+      }
       return summary
     } catch (e) {
       console.error(e)
