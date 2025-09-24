@@ -7,7 +7,7 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
   import { load_task_run_configs } from "$lib/stores/run_configs_store"
-  import { onMount, tick } from "svelte"
+  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import {
@@ -23,8 +23,8 @@
   import AdvancedRunOptions from "../../../../../run/advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import type { RunConfigProperties, StructuredOutputMode } from "$lib/types"
-  import type { components } from "$lib/api_schema"
   import { save_new_task_run_config } from "$lib/stores/run_configs_store"
+  import type { components } from "$lib/api_schema"
 
   let error: KilnError | null = null
   let submitting = false
@@ -39,16 +39,20 @@
   // Modal for creating new run config
   let create_run_config_dialog: Dialog | null = null
   let create_run_config_error: KilnError | null = null
-  let new_run_config_model_name = ""
-  let new_run_config_provider_name:
-    | components["schemas"]["ModelProviderName"]
-    | "" = ""
+  let new_run_config_model = ""
   let new_run_config_prompt_method = "simple_prompt_builder"
   let new_run_config_tools: string[] = []
   let new_run_config_temperature = 1.0
   let new_run_config_top_p = 1.0
   let new_run_config_structured_output_mode: StructuredOutputMode = "default"
-  let previous_run_config_id: string | "custom" | null = null
+
+  // Extract model name and provider from the model string
+  $: new_run_config_model_name = new_run_config_model
+    ? new_run_config_model.split("/").slice(1).join("/")
+    : ""
+  $: new_run_config_provider_name = new_run_config_model
+    ? new_run_config_model.split("/")[0]
+    : ""
 
   onMount(async () => {
     const project_id = $page.params.project_id ?? ""
@@ -105,13 +109,6 @@
   // Load run configs when task is selected
   $: if (selected_task_id && $page.params.project_id) {
     load_task_run_configs($page.params.project_id, selected_task_id)
-    // Only reset run config selection if it's not already set to a valid value
-    if (
-      selected_run_config_id === null ||
-      selected_run_config_id === "custom"
-    ) {
-      selected_run_config_id = default_run_config_id
-    }
   }
 
   // Get the default run config ID for the selected task
@@ -123,19 +120,23 @@
     return null
   })()
 
-  // Track previous selection for cancel functionality
-  $: if (
-    selected_run_config_id &&
-    selected_run_config_id !== "__create_new_run_config__"
-  ) {
-    previous_run_config_id = selected_run_config_id
+  // Set default run config when task changes and no run config is selected
+  $: if (selected_task_id && !selected_run_config_id && default_run_config_id) {
+    selected_run_config_id = default_run_config_id
   }
+
+  let should_show_create_modal = false
 
   // Handle special case when "Create New Run Configuration" is selected
   $: if (selected_run_config_id === "__create_new_run_config__") {
-    show_create_run_config_modal()
-    // Reset the selection after showing modal
+    should_show_create_modal = true
     selected_run_config_id = null
+  }
+
+  // Show modal when flag is set
+  $: if (should_show_create_modal) {
+    should_show_create_modal = false
+    show_create_run_config_modal()
   }
 
   // Handle cloning - if we have a pre-filled name from URL params, modify it
@@ -200,8 +201,7 @@
   // Functions for creating new run config
   function show_create_run_config_modal() {
     create_run_config_error = null
-    new_run_config_model_name = ""
-    new_run_config_provider_name = ""
+    new_run_config_model = ""
     new_run_config_prompt_method = "simple_prompt_builder"
     new_run_config_tools = []
     new_run_config_temperature = 1.0
@@ -217,14 +217,6 @@
   }
 
   async function cancel_create_run_config(): Promise<boolean> {
-    // Restore the previous selection
-    await tick()
-    // Use a timeout to ensure the restoration happens after all reactive statements
-    setTimeout(() => {
-      selected_run_config_id = previous_run_config_id
-      previous_run_config_id = null
-    }, 0)
-    await tick()
     return true
   }
 
@@ -250,7 +242,8 @@
     try {
       const run_config_properties: RunConfigProperties = {
         model_name: new_run_config_model_name,
-        model_provider_name: new_run_config_provider_name,
+        model_provider_name:
+          new_run_config_provider_name as components["schemas"]["ModelProviderName"],
         prompt_id: new_run_config_prompt_method,
         temperature: new_run_config_temperature,
         top_p: new_run_config_top_p,
@@ -449,17 +442,14 @@
       asyncAction: cancel_create_run_config,
     },
     {
-      label: "Create",
+      label: "Save",
       isPrimary: true,
       asyncAction: create_new_run_config,
     },
   ]}
 >
   <div class="flex flex-col gap-4">
-    <AvailableModelsDropdown
-      bind:model_name={new_run_config_model_name}
-      bind:provider_name={new_run_config_provider_name}
-    />
+    <AvailableModelsDropdown bind:model={new_run_config_model} />
 
     <PromptTypeSelector bind:prompt_method={new_run_config_prompt_method} />
 

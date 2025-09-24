@@ -73,6 +73,7 @@
 
     // Add "Create New Run Configuration" option if requested (for Add Kiln Task Tool)
     if (show_create_new_option) {
+      console.log("Adding Create New Run Configuration option")
       top_options.push({
         value: "__create_new_run_config__",
         label: "Create New Run Configuration",
@@ -80,6 +81,11 @@
         badge: "+",
         badge_color: "primary",
       })
+    } else {
+      console.log(
+        "NOT adding Create New Run Configuration option, show_create_new_option:",
+        show_create_new_option,
+      )
     }
 
     options.push({
