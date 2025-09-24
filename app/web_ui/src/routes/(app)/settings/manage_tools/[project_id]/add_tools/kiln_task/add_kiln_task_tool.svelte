@@ -39,8 +39,6 @@
   // Modal for creating new run config
   let create_run_config_dialog: Dialog | null = null
   let create_run_config_error: KilnError | null = null
-  let new_run_config_name = ""
-  let new_run_config_description = ""
   let new_run_config_model_name = ""
   let new_run_config_provider_name:
     | components["schemas"]["ModelProviderName"]
@@ -51,7 +49,6 @@
   let new_run_config_top_p = 1.0
   let new_run_config_structured_output_mode: StructuredOutputMode = "default"
   let previous_run_config_id: string | "custom" | null = null
-  let is_canceling = false
 
   onMount(async () => {
     const project_id = $page.params.project_id ?? ""
@@ -131,7 +128,6 @@
     selected_run_config_id &&
     selected_run_config_id !== "__create_new_run_config__"
   ) {
-    console.log("Tracking previous selection:", selected_run_config_id)
     previous_run_config_id = selected_run_config_id
   }
 
@@ -204,8 +200,6 @@
   // Functions for creating new run config
   function show_create_run_config_modal() {
     create_run_config_error = null
-    new_run_config_name = ""
-    new_run_config_description = ""
     new_run_config_model_name = ""
     new_run_config_provider_name = ""
     new_run_config_prompt_method = "simple_prompt_builder"
@@ -224,10 +218,6 @@
 
   async function cancel_create_run_config(): Promise<boolean> {
     // Restore the previous selection
-    console.log(
-      "Canceling, restoring previous selection:",
-      previous_run_config_id,
-    )
     await tick()
     // Use a timeout to ensure the restoration happens after all reactive statements
     setTimeout(() => {
@@ -240,14 +230,6 @@
 
   async function create_new_run_config(): Promise<boolean> {
     create_run_config_error = null
-
-    if (!new_run_config_name.trim()) {
-      create_run_config_error = createKilnError({
-        message: "Run config name is required.",
-        status: 400,
-      })
-      return false
-    }
 
     if (!new_run_config_model_name || !new_run_config_provider_name) {
       create_run_config_error = createKilnError({
@@ -282,8 +264,6 @@
         $page.params.project_id,
         selected_task_id,
         run_config_properties,
-        new_run_config_name.trim(),
-        new_run_config_description.trim() || undefined,
       )
 
       // Select the newly created run config
@@ -421,6 +401,7 @@
             {default_run_config_id}
             task_id={selected_task_id}
             project_id={$page.params.project_id}
+            show_create_new_option={true}
             label="Run Configuration"
             description="The run configuration to use for task calls when using this tool."
           />

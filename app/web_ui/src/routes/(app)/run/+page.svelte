@@ -418,6 +418,7 @@
             <RunOptionsDropdown
               bind:selected_run_config_id
               bind:default_run_config_id
+              show_none_option={true}
               on:change={clear_run_options_errors}
             />
           {/if}

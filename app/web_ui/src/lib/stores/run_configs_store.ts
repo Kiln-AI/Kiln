@@ -79,8 +79,6 @@ export async function save_new_task_run_config(
   project_id: string,
   task_id: string,
   run_config_properties: RunConfigProperties,
-  name?: string,
-  description?: string,
 ): Promise<TaskRunConfig> {
   const { error, data } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
@@ -92,8 +90,6 @@ export async function save_new_task_run_config(
         },
       },
       body: {
-        name,
-        description,
         run_config_properties,
       },
     },

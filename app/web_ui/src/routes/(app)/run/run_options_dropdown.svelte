@@ -24,9 +24,11 @@
   export let label = "Run Configuration"
   export let description = ""
   export let info_description =
-    "Select a saved run configuration to automatically apply its settings, or create a new one with custom options."
+    "Select a saved run configuration to quickly apply its settings, or choose None to manually configure run options and save them for future use."
   export let task_id: string | null = null
   export let project_id: string | null = null
+  export let show_none_option = false
+  export let show_create_new_option = false
 
   onMount(async () => {
     await load_available_prompts()
@@ -57,18 +59,32 @@
 
     const options: OptionGroup[] = []
 
-    // Add new configuration option at the top
+    // Add options at the top
+    const top_options: Option[] = []
+
+    // Add "None" option if requested (for Run page)
+    if (show_none_option) {
+      top_options.push({
+        value: "custom",
+        label: "None",
+        description: "Run with your current manually selected options.",
+      })
+    }
+
+    // Add "Create New Run Configuration" option if requested (for Add Kiln Task Tool)
+    if (show_create_new_option) {
+      top_options.push({
+        value: "__create_new_run_config__",
+        label: "Create New Run Configuration",
+        description: "Create a new run configuration with custom settings.",
+        badge: "+",
+        badge_color: "primary",
+      })
+    }
+
     options.push({
       label: "",
-      options: [
-        {
-          value: "__create_new_run_config__",
-          label: "Create New Run Configuration",
-          description: "Create a new run configuration with custom settings.",
-          badge: "+",
-          badge_color: "primary",
-        },
-      ],
+      options: top_options,
     })
 
     // Add saved configurations if they exist
