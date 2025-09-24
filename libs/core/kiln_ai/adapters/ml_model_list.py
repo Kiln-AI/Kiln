@@ -260,6 +260,11 @@ class KilnModelProvider(BaseModel):
     # this is not uniform nor documented, so we need to test each model
     reasoning_optional_for_structured_output: bool | None = None
 
+    # models have rate limits, which become very relevant when doing heavy processing like in RAG
+    # this RPM gives a rough estimate of how many requests we should allow to run in parallel, it is
+    # not exact and real rate limit rules are much more complex
+    max_parallel_requests: int | None = None
+
 
 class KilnModel(BaseModel):
     """
@@ -1051,6 +1056,7 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
+                max_parallel_requests=2,
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,

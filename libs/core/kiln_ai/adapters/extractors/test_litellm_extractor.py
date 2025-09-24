@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from litellm.types.utils import Choices, ModelResponse
@@ -405,13 +405,45 @@ def test_litellm_model_slug_success(mock_litellm_extractor):
             return_value=mock_provider_info,
         ) as mock_get_provider_info,
     ):
-        result = mock_litellm_extractor.litellm_model_slug()
+        result = mock_litellm_extractor.litellm_model_slug
 
         assert result == "test-provider/test-model"
 
         # Verify the functions were called with correct arguments
         mock_built_in_models.assert_called_once()
         mock_get_provider_info.assert_called_once_with(mock_model_provider)
+
+
+@pytest.mark.parametrize(
+    "max_parallel_requests, expected_result",
+    [
+        (10, 10),
+        (0, 0),
+        # 5 is the current default, it may change in the future if we have
+        # a better modeling of rate limit constraints
+        (None, 5),
+    ],
+)
+def test_litellm_model_max_parallel_requests(
+    mock_litellm_extractor, max_parallel_requests, expected_result
+):
+    """Test that max_parallel_requests_for_model returns the provider's limit."""
+    # Mock the built_in_models_from_provider function to return a valid model provider
+    mock_model_provider = MagicMock()
+    mock_model_provider.name = "test-provider"
+    mock_model_provider.max_parallel_requests = max_parallel_requests
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.built_in_models_from_provider",
+            return_value=mock_model_provider,
+        ) as mock_built_in_models,
+    ):
+        result = mock_litellm_extractor.max_parallel_requests_for_model
+
+        assert result == expected_result
+
+        mock_built_in_models.assert_called_once()
 
 
 def test_litellm_model_slug_model_provider_not_found(mock_litellm_extractor):
@@ -424,7 +456,7 @@ def test_litellm_model_slug_model_provider_not_found(mock_litellm_extractor):
             ValueError,
             match="Model provider openai not found in the list of built-in models",
         ):
-            mock_litellm_extractor.litellm_model_slug()
+            mock_litellm_extractor.litellm_model_slug
 
 
 def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_config):
@@ -468,7 +500,7 @@ def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_conf
                 return_value=mock_provider_info,
             ),
         ):
-            result = extractor.litellm_model_slug()
+            result = extractor.litellm_model_slug
             assert result == expected_slug
 
 
