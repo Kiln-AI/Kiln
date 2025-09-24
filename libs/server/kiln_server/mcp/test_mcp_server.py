@@ -18,7 +18,9 @@ from kiln_server.mcp.tool_selection import ToolResolution, collect_project_tools
 
 
 class FakeTool(KilnToolInterface):
-    def __init__(self, tool_id: str, name: str = "search", description: str = "desc") -> None:
+    def __init__(
+        self, tool_id: str, name: str = "search", description: str = "desc"
+    ) -> None:
         self._tool_id = tool_id
         self._name = name
         self._description = description
@@ -76,7 +78,9 @@ class FakeProject:
 
 def _make_tool_factory(tools: dict[str, FakeTool]):
     def factory(tool_id: str, rag_config: FakeRagConfig) -> FakeTool:
-        tool = FakeTool(tool_id, name=rag_config.tool_name, description=rag_config.tool_description)
+        tool = FakeTool(
+            tool_id, name=rag_config.tool_name, description=rag_config.tool_description
+        )
         tools[tool_id] = tool
         return tool
 
@@ -87,7 +91,12 @@ class TestCollectProjectTools:
     def test_filters_archived_and_missing(self) -> None:
         configs = [
             FakeRagConfig(id="active", tool_name="active", tool_description="Active"),
-            FakeRagConfig(id="archived", tool_name="archived", tool_description="Archived", is_archived=True),
+            FakeRagConfig(
+                id="archived",
+                tool_name="archived",
+                tool_description="Archived",
+                is_archived=True,
+            ),
         ]
         project = FakeProject(configs)
         created: dict[str, FakeTool] = {}
@@ -97,7 +106,9 @@ class TestCollectProjectTools:
             rag_tool_factory=_make_tool_factory(created),
         )
 
-        assert [resolution.tool_id for resolution in resolutions] == ["kiln_tool::rag::active"]
+        assert [resolution.tool_id for resolution in resolutions] == [
+            "kiln_tool::rag::active"
+        ]
         assert "kiln_tool::rag::active" in created
         assert "kiln_tool::rag::archived" not in created
 
@@ -114,7 +125,9 @@ class TestCollectProjectTools:
             ["kiln_tool::rag::two"],
             rag_tool_factory=_make_tool_factory(created),
         )
-        assert [resolution.tool_id for resolution in selected] == ["kiln_tool::rag::two"]
+        assert [resolution.tool_id for resolution in selected] == [
+            "kiln_tool::rag::two"
+        ]
 
         with pytest.raises(ValueError):
             collect_project_tools(
@@ -142,7 +155,11 @@ async def test_prepare_tool_contexts_uses_definition() -> None:
 @pytest.mark.asyncio
 async def test_prepare_tool_contexts_includes_output_schema() -> None:
     tool = FakeTool("kiln_tool::rag::demo", name="demo_tool", description="Demo tool")
-    tool.output_schema = {"type": "object", "properties": {"context": {"type": "string"}}, "required": ["context"]}
+    tool.output_schema = {
+        "type": "object",
+        "properties": {"context": {"type": "string"}},
+        "required": ["context"],
+    }
     resolutions = [ToolResolution(tool_id="kiln_tool::rag::demo", tool=tool)]
 
     contexts = await prepare_tool_contexts(resolutions)
@@ -215,8 +232,14 @@ async def test_create_server_enforces_structured_output() -> None:
             return {"answer": 42}
 
     tool = DictTool("kiln_tool::rag::demo", name="demo_tool", description="Demo tool")
-    tool.output_schema = {"type": "object", "properties": {"answer": {"type": "number"}}, "required": ["answer"]}
-    contexts = await prepare_tool_contexts([ToolResolution(tool_id="kiln_tool::rag::demo", tool=tool)])
+    tool.output_schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "number"}},
+        "required": ["answer"],
+    }
+    contexts = await prepare_tool_contexts(
+        [ToolResolution(tool_id="kiln_tool::rag::demo", tool=tool)]
+    )
 
     server = create_fastmcp_server(
         contexts,
@@ -243,9 +266,13 @@ async def test_create_server_errors_when_structured_output_missing() -> None:
         async def run(self, **kwargs: Any) -> Any:
             return "not a dict"
 
-    tool = BadDictTool("kiln_tool::rag::demo", name="demo_tool", description="Demo tool")
+    tool = BadDictTool(
+        "kiln_tool::rag::demo", name="demo_tool", description="Demo tool"
+    )
     tool.output_schema = {"type": "object"}
-    contexts = await prepare_tool_contexts([ToolResolution(tool_id="kiln_tool::rag::demo", tool=tool)])
+    contexts = await prepare_tool_contexts(
+        [ToolResolution(tool_id="kiln_tool::rag::demo", tool=tool)]
+    )
 
     server = create_fastmcp_server(
         contexts,

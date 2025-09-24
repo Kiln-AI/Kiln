@@ -84,13 +84,18 @@ def collect_project_tools(
 
     for rag_config in _iterate_rag_configs(project):
         if _is_archived(rag_config):
-            logger.debug("Skipping archived RAG config %s", getattr(rag_config, "id", "<unknown>"))
+            logger.debug(
+                "Skipping archived RAG config %s",
+                getattr(rag_config, "id", "<unknown>"),
+            )
             continue
 
         tool_id = _build_rag_tool_id(rag_config)
 
         if allowed_set and tool_id not in allowed_set:
-            logger.debug("Skipping tool %s because it is not in the allowed list", tool_id)
+            logger.debug(
+                "Skipping tool %s because it is not in the allowed list", tool_id
+            )
             continue
 
         tool = factory(tool_id, rag_config)
@@ -99,7 +104,8 @@ def collect_project_tools(
 
     if missing_ids:
         raise ValueError(
-            "Requested tool IDs were not found or are not eligible: " + ", ".join(sorted(missing_ids))
+            "Requested tool IDs were not found or are not eligible: "
+            + ", ".join(sorted(missing_ids))
         )
 
     return resolutions

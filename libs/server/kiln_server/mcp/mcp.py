@@ -1,4 +1,5 @@
 """CLI entry point for the Kiln MCP server."""
+
 from __future__ import annotations
 
 import argparse
@@ -23,7 +24,9 @@ def _parse_tool_ids(raw: str | None) -> list[str] | None:
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Kiln MCP server for a project.")
+    parser = argparse.ArgumentParser(
+        description="Run the Kiln MCP server for a project."
+    )
     parser.add_argument("project", type=Path, help="Path to the kiln.project file")
     parser.add_argument(
         "--tool-ids",
@@ -37,8 +40,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default="stdio",
         help="Transport mechanism for the MCP server.",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="Host for network transports.")
-    parser.add_argument("--port", type=int, default=8000, help="Port for network transports.")
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Host for network transports."
+    )
+    parser.add_argument(
+        "--port", type=int, default=8000, help="Port for network transports."
+    )
     parser.add_argument(
         "--mount-path",
         default=None,

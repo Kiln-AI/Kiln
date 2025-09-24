@@ -90,7 +90,9 @@ def create_fastmcp_server(
     return server
 
 
-async def run_transport(server: FastMCP, transport: Transport, mount_path: str | None) -> None:
+async def run_transport(
+    server: FastMCP, transport: Transport, mount_path: str | None
+) -> None:
     """Run the server using the selected transport."""
 
     if transport == "stdio":

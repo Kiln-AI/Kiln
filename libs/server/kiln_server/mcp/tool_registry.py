@@ -83,7 +83,7 @@ async def _build_tool_context(resolution: ToolResolution) -> ToolContext:
         description=description,
         inputSchema=parameters,
         outputSchema=output_schema,
-        meta={"kiln_tool_id": resolution.tool_id},
+        _meta={"kiln_tool_id": resolution.tool_id},
     )
 
     return ToolContext(
@@ -93,7 +93,9 @@ async def _build_tool_context(resolution: ToolResolution) -> ToolContext:
     )
 
 
-async def prepare_tool_contexts(resolutions: Sequence[ToolResolution]) -> list[ToolContext]:
+async def prepare_tool_contexts(
+    resolutions: Sequence[ToolResolution],
+) -> list[ToolContext]:
     """Prepare ``ToolContext`` objects for the provided tool resolutions."""
 
     contexts: list[ToolContext] = []
