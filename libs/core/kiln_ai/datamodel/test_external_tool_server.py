@@ -16,6 +16,7 @@ class TestExternalToolServer:
             config_instance = Mock()
             config_instance.get_value.return_value = {}
             config_instance.update_settings = Mock()
+            config_instance.user_id = "test-user"
             mock_shared.return_value = config_instance
             yield config_instance
 
