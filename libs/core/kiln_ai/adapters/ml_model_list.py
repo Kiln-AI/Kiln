@@ -2336,6 +2336,29 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek 3.1 Terminus
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_3_1_terminus,
+        friendly_name="DeepSeek 3.1 Terminus",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v3.1-terminus",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v3p1-terminus",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                # the model page states it supports function calling, but our test fails
+                # for this particular provider
+                supports_function_calling=False,
+            ),
+        ],
+    ),
     # DeepSeek 3.1
     KilnModel(
         family=ModelFamily.deepseek,
@@ -2359,29 +2382,6 @@ built_in_models: List[KilnModel] = [
                 model_id="Pro/deepseek-ai/DeepSeek-V3.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
-            ),
-        ],
-    ),
-    # DeepSeek 3.1 Terminus
-    KilnModel(
-        family=ModelFamily.deepseek,
-        name=ModelName.deepseek_3_1_terminus,
-        friendly_name="DeepSeek 3.1 Terminus",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="deepseek/deepseek-v3.1-terminus",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/deepseek-v3p1-terminus",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=True,
-                # the model page states it supports function calling, but our test fails
-                # for this particular provider
-                supports_function_calling=False,
             ),
         ],
     ),
