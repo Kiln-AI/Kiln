@@ -194,7 +194,8 @@ class ExternalToolServer(KilnParentedModel):
         try:
             return ToolServerType(raw_type)
         except ValueError:
-            raise ValueError(f"type must be one of: {', '.join(ToolServerType)}")
+            valid_types = ", ".join(type.value for type in ToolServerType)
+            raise ValueError(f"type must be one of: {valid_types}")
 
     @model_validator(mode="before")
     def validate_required_fields(cls, data: dict) -> dict:

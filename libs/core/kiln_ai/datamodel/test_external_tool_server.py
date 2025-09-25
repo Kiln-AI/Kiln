@@ -931,7 +931,8 @@ class TestExternalToolServer:
 
     def test_type_from_data_invalid(self):
         """Test type_from_data with invalid data."""
-        invalid_type_error = f"type must be one of: {', '.join(ToolServerType)}"
+        valid_types = ", ".join(type.value for type in ToolServerType)
+        invalid_type_error = f"type must be one of: {valid_types}"
 
         test_cases = [
             ({}, "type is required"),
