@@ -158,7 +158,10 @@ class TestExternalToolServer:
             ExternalToolServer(
                 name="test-server",
                 type=ToolServerType.remote_mcp,
-                properties={"headers": headers},
+                properties={
+                    "server_url": "https://test.com",
+                    "headers": headers,
+                },
             )
 
     @pytest.mark.parametrize(
@@ -203,7 +206,11 @@ class TestExternalToolServer:
             ExternalToolServer(
                 name="test-server",
                 type=ToolServerType.remote_mcp,
-                properties={"secret_header_keys": secret_header_keys},
+                properties={
+                    "server_url": "https://test.com",
+                    "headers": {},
+                    "secret_header_keys": secret_header_keys,
+                },
             )
 
     def test_validate_secret_header_keys_valid(self):

@@ -218,10 +218,21 @@
     return typeof value === "string"
   }
 
+  // Helper function to check if properties is a valid object
+  function isValidPropertiesObject(
+    properties: LocalServerProperties | RemoteServerProperties,
+  ): properties is LocalServerProperties | RemoteServerProperties {
+    return properties !== null && typeof properties === "object"
+  }
+
   // Type guards for server properties
   function isLocalServerProperties(
     properties: LocalServerProperties | RemoteServerProperties,
   ): properties is LocalServerProperties {
+    if (!isValidPropertiesObject(properties)) {
+      return false
+    }
+
     return (
       "command" in properties ||
       "args" in properties ||
@@ -233,6 +244,10 @@
   function isRemoteServerProperties(
     properties: LocalServerProperties | RemoteServerProperties,
   ): properties is RemoteServerProperties {
+    if (!isValidPropertiesObject(properties)) {
+      return false
+    }
+
     return (
       "server_url" in properties ||
       "headers" in properties ||
