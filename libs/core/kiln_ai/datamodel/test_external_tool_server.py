@@ -103,7 +103,11 @@ class TestExternalToolServer:
     def test_validate_server_url_invalid(self, server_url, expected_error):
         """Test validate_server_url."""
         with pytest.raises(ValueError, match=expected_error):
-            ExternalToolServer.validate_server_url(server_url)
+            ExternalToolServer(
+                name="test-server",
+                type=ToolServerType.remote_mcp,
+                properties={"server_url": server_url},
+            )
 
     @pytest.mark.parametrize(
         "server_url",
@@ -115,7 +119,11 @@ class TestExternalToolServer:
     def test_validate_server_url_valid(self, server_url):
         """Test validate_server_url with valid inputs."""
         # Should not raise any exception
-        ExternalToolServer.validate_server_url(server_url)
+        ExternalToolServer(
+            name="test-server",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": server_url},
+        )
 
     @pytest.mark.parametrize(
         "headers, expected_error",
@@ -140,7 +148,11 @@ class TestExternalToolServer:
     def test_validate_headers_invalid(self, headers, expected_error):
         """Test validate_headers."""
         with pytest.raises(ValueError, match=expected_error):
-            ExternalToolServer.validate_headers(headers)
+            ExternalToolServer(
+                name="test-server",
+                type=ToolServerType.remote_mcp,
+                properties={"headers": headers},
+            )
 
     @pytest.mark.parametrize(
         "headers",
@@ -152,7 +164,14 @@ class TestExternalToolServer:
     def test_validate_headers_valid(self, headers):
         """Test validate_headers with valid inputs."""
         # Should not raise any exception
-        ExternalToolServer.validate_headers(headers)
+        ExternalToolServer(
+            name="test-server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://test.com",
+                "headers": headers,
+            },
+        )
 
     @pytest.mark.parametrize(
         "secret_header_keys, expected_error",
@@ -174,21 +193,26 @@ class TestExternalToolServer:
     ):
         """Test validate_secret_header_keys with invalid inputs."""
         with pytest.raises(ValueError, match=expected_error):
-            ExternalToolServer.validate_secret_keys(
-                secret_header_keys, "secret_header_keys", "remote_mcp"
+            ExternalToolServer(
+                name="test-server",
+                type=ToolServerType.remote_mcp,
+                properties={"secret_header_keys": secret_header_keys},
             )
 
-    @pytest.mark.parametrize(
-        "secret_header_keys",
-        [
-            ["Authorization", "X-API-Key"],
-        ],
-    )
-    def test_validate_secret_header_keys_valid(self, secret_header_keys):
+    def test_validate_secret_header_keys_valid(self):
         """Test validate_secret_header_keys with valid inputs."""
         # Should not raise any exception
-        ExternalToolServer.validate_secret_keys(
-            secret_header_keys, "secret_header_keys", "remote_mcp"
+        ExternalToolServer(
+            name="test-server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://test.com",
+                "headers": {
+                    "Authorization": "Bearer token123",
+                    "X-API-Key": "api-key-456",
+                },
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+            },
         )
 
     @pytest.mark.parametrize(
@@ -197,7 +221,6 @@ class TestExternalToolServer:
             # Non-dictionary inputs
             (123, "environment variables must be a dictionary"),
             ("not-a-dict", "environment variables must be a dictionary"),
-            (None, "environment variables must be a dictionary"),
             # Empty key
             (
                 {"": "value"},
@@ -246,7 +269,15 @@ class TestExternalToolServer:
     def test_validate_env_vars_invalid(self, env_vars, expected_error):
         """Test validate_env_vars with invalid inputs."""
         with pytest.raises(ValueError, match=expected_error):
-            ExternalToolServer.validate_env_vars(env_vars)
+            ExternalToolServer(
+                name="test-server",
+                type=ToolServerType.local_mcp,
+                properties={
+                    "command": "python",
+                    "args": [],
+                    "env_vars": env_vars,
+                },
+            )
 
     @pytest.mark.parametrize(
         "env_vars",
@@ -265,7 +296,15 @@ class TestExternalToolServer:
     def test_validate_env_vars_valid(self, env_vars):
         """Test validate_env_vars with valid inputs."""
         # Should not raise any exception
-        ExternalToolServer.validate_env_vars(env_vars)
+        ExternalToolServer(
+            name="test-server",
+            type=ToolServerType.local_mcp,
+            properties={
+                "command": "python",
+                "args": [],
+                "env_vars": env_vars,
+            },
+        )
 
     @pytest.mark.parametrize(
         "server_type, invalid_props, expected_error",
