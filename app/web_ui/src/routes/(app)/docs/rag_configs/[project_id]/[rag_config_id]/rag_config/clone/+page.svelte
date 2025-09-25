@@ -11,7 +11,7 @@
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
 
-  let loading: boolean = false
+  let loading: boolean = true
   let error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
