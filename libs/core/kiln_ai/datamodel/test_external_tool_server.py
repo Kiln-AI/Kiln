@@ -909,3 +909,31 @@ class TestExternalToolServer:
 
         assert secrets == {}
         assert missing == ["Authorization", "X-API-Key"]
+
+    @pytest.mark.parametrize(
+        "data, expected_type",
+        [
+            ({"type": "remote_mcp"}, ToolServerType.remote_mcp),
+            ({"type": "local_mcp"}, ToolServerType.local_mcp),
+        ],
+    )
+    def test_type_from_data_valid(self, data, expected_type):
+        """Test type_from_data with valid data."""
+        result = ExternalToolServer.type_from_data(data)
+        assert result == expected_type
+
+    def test_type_from_data_invalid(self):
+        """Test type_from_data with invalid data."""
+        invalid_type_error = f"type must be one of: {', '.join(ToolServerType)}"
+
+        test_cases = [
+            ({}, "type is required"),
+            ({"type": None}, "type is required"),
+            ({"type": "invalid_type"}, invalid_type_error),
+            ({"type": 123}, invalid_type_error),
+            ({"type": ""}, invalid_type_error),
+        ]
+
+        for data, expected_error in test_cases:
+            with pytest.raises(ValueError, match=expected_error):
+                ExternalToolServer.type_from_data(data)

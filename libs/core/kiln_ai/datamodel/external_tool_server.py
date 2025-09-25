@@ -185,10 +185,21 @@ class ExternalToolServer(KilnParentedModel):
                     f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
                 )
 
+    @classmethod
+    def type_from_data(cls, data: dict) -> ToolServerType:
+        """Get the tool server type from the data for the the validators"""
+        raw_type = data.get("type")
+        if raw_type is None:
+            raise ValueError("type is required")
+        try:
+            return ToolServerType(raw_type)
+        except ValueError:
+            raise ValueError(f"type must be one of: {', '.join(ToolServerType)}")
+
     @model_validator(mode="before")
     def validate_required_fields(cls, data: dict) -> dict:
         """Validate that each tool type has the required configuration."""
-        server_type = data.get("type")
+        server_type = ExternalToolServer.type_from_data(data)
         properties = data.get("properties", {})
 
         if not server_type:
@@ -235,9 +246,7 @@ class ExternalToolServer(KilnParentedModel):
         """
         Validate secrets, these needs to be validated before model initlization because secrets will be processed and stripped
         """
-        type = data.get("type", None)
-        if not type:
-            raise ValueError("type is required")
+        type = ExternalToolServer.type_from_data(data)
 
         properties = data.get("properties", {})
         if properties is None:
