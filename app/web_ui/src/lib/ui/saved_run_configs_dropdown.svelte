@@ -64,15 +64,21 @@
     }
   }
 
+  let info_description: string = ""
+
   let cold_start_info_description =
     "You can save your run configuration including model, prompt, tools and properties. This makes it easy to return to later."
   let saved_configs_info_description =
     "Select a saved run configuration which includes model, prompt, tools and properties. Alternatively choose 'Custom' to manually configure this run."
 
-  $: info_description =
-    options.length === 1
-      ? cold_start_info_description
-      : saved_configs_info_description
+  $: if (options.length > 0) {
+    info_description =
+      options.length === 1
+        ? cold_start_info_description
+        : saved_configs_info_description
+  }
+
+  let options: OptionGroup[] = []
 
   $: options = build_options(
     default_run_config_id,
@@ -178,6 +184,8 @@
         handler: handle_set_default,
         label: "Set as task default",
       }
+    } else {
+      inline_action = null
     }
   }
 </script>

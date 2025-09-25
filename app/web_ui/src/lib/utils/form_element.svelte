@@ -121,8 +121,10 @@
         >
         {#if inline_action}
           <button
-            class="link font-normal text-grey-500"
-            on:click={inline_action.handler}>{inline_action.label}</button
+            type="button"
+            class="link font-normal text-gray-500"
+            on:click|stopPropagation={inline_action.handler}
+            >{inline_action.label}</button
           >
         {/if}
         {#if info_description}

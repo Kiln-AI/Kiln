@@ -28,7 +28,7 @@
   const LOGPROBS_WARNING =
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
 
-  export let task_id: string
+  export let task_id: string | null = null
   export let model: string = $ui_state.selected_model
   export let label: string = "Model"
   export let description: string | undefined = undefined

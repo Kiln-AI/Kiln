@@ -8,7 +8,6 @@
   import { createEventDispatcher } from "svelte"
   import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import { ui_state } from "$lib/stores"
   import {
     default_extractor_document_prompts,
     default_extractor_image_prompts,
@@ -94,7 +93,6 @@
 >
   <div class="flex flex-col gap-4">
     <AvailableModelsDropdown
-      task_id={$ui_state.current_task_id ?? ""}
       label="Extraction Model"
       description="The model to use to transform your documents into text."
       info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This model extracts text from these files."

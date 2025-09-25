@@ -134,15 +134,15 @@ export async function save_new_task_run_config(
     },
   )
 
+  if (error) {
+    throw error
+  }
+
   // Reload the run configs to include the new one (force refresh to get fresh data)
   try {
     await load_task_run_configs(project_id, task_id, true)
   } catch (reloadErr) {
     console.warn("Reload of task run configs after save failed:", reloadErr)
-  }
-
-  if (error) {
-    throw error
   }
 
   return data
