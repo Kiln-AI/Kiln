@@ -12,10 +12,10 @@
     load_task,
   } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
+  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
+  import PromptTypeSelector from "$lib/ui/prompt_type_selector.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import AdvancedRunOptions from "../../../../../run/advanced_run_options.svelte"
+  import AdvancedRunOptions from "$lib/ui/advanced_run_options.svelte"
   import type { TaskRunConfig } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -133,6 +133,7 @@
   </h4>
   <div class="flex flex-col gap-2 pt-6">
     <AvailableModelsDropdown
+      {task_id}
       bind:model_name={task_run_config_model_name}
       bind:provider_name={task_run_config_provider_name}
       bind:model={task_run_config_long_prompt_name_provider}

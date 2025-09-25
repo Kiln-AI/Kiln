@@ -111,6 +111,7 @@
         <span class="pl-1 text-xs text-gray-500 flex-none"
           >{info_msg || (optional ? "Optional" : "")}</span
         >
+        <slot name="inline-actions"></slot>
         {#if info_description}
           <div class="text-gray-500 {light_label ? 'h-4 mt-[-4px]' : ''}">
             <InfoTooltip tooltip_text={info_description} />

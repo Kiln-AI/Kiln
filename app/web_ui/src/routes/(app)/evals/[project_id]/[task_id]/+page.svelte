@@ -26,7 +26,7 @@
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
-    ] || []
+    ] || null
 
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
@@ -51,8 +51,22 @@
     // Usually cached and fast
     load_model_info()
     // Load the evals and run configs in parallel
-    await Promise.all([get_evals(), load_task_run_configs(project_id, task_id)])
+    await Promise.all([get_evals(), get_task_run_configs()])
   })
+
+  let run_configs_error: KilnError | null = null
+  let run_configs_loading = true
+
+  async function get_task_run_configs() {
+    run_configs_loading = true
+    try {
+      await load_task_run_configs(project_id, task_id)
+    } catch (err) {
+      run_configs_error = createKilnError(err)
+    } finally {
+      run_configs_loading = false
+    }
+  }
 
   async function get_evals() {
     try {
@@ -81,8 +95,8 @@
 
   let toggle_eval_favourite_error: KilnError | null = null
 
-  $: loading = evals_loading
-  $: error = evals_error || toggle_eval_favourite_error
+  $: loading = evals_loading || run_configs_loading
+  $: error = evals_error || toggle_eval_favourite_error || run_configs_error
 
   async function toggle_eval_favourite(evaluator: Eval) {
     try {

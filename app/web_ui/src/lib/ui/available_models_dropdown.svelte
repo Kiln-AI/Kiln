@@ -28,6 +28,7 @@
   const LOGPROBS_WARNING =
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
 
+  export let task_id: string
   export let model: string = $ui_state.selected_model
   export let label: string = "Model"
   export let description: string | undefined = undefined
@@ -57,7 +58,7 @@
     requires_logprobs,
     requires_doc_extraction,
     requires_tool_support,
-    $ui_state.current_task_id,
+    task_id,
     $recent_model_store,
     $model_info,
   )
@@ -114,7 +115,7 @@
     requires_logprobs: boolean,
     requires_doc_extraction: boolean,
     requires_tool_support: boolean,
-    current_task_id: string | null,
+    task_id: string,
     recent_models: RecentModel[],
     model_data: ProviderModels | null,
   ): OptionGroup[] {
@@ -159,8 +160,8 @@
         if (
           model &&
           model.task_filter &&
-          current_task_id &&
-          !model.task_filter.includes(current_task_id)
+          task_id &&
+          !model.task_filter.includes(task_id)
         ) {
           continue
         }

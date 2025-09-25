@@ -1,5 +1,24 @@
-import type { TaskRunConfig, PromptResponse } from "$lib/types"
-import { prompt_name_from_id } from "$lib/stores"
+import type { TaskRunConfig, PromptResponse, ProviderModels } from "$lib/types"
+import {
+  model_name,
+  prompt_name_from_id,
+  provider_name_from_id,
+} from "$lib/stores"
+
+export function getDetailedModelMame(
+  config: TaskRunConfig,
+  model_info: ProviderModels | null,
+): string {
+  return `${model_name(config.run_config_properties.model_name, model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})`
+}
+
+export function getStaticPromptDisplayName(
+  prompt_name: string,
+  prompt_generator_id: string | null | undefined,
+  current_task_prompts: PromptResponse | null,
+): string {
+  return `${prompt_name} (${prompt_generator_id ? prompt_name_from_id(prompt_generator_id, current_task_prompts) : "Custom"})`
+}
 
 export function getRunConfigPromptDisplayName(
   task_run_config: TaskRunConfig,

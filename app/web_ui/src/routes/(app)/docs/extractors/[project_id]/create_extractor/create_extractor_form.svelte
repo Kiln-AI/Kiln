@@ -6,7 +6,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createEventDispatcher } from "svelte"
-  import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import {
     default_extractor_document_prompts,
@@ -16,6 +16,7 @@
   } from "./default_extractor_prompts"
 
   $: project_id = $page.params.project_id
+  $: task_id = $page.params.task_id
 
   let loading: boolean = false
   let error: KilnError | null = null
@@ -93,6 +94,7 @@
 >
   <div class="flex flex-col gap-4">
     <AvailableModelsDropdown
+      {task_id}
       label="Extraction Model"
       description="The model to use to transform your documents into text."
       info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This model extracts text from these files."
