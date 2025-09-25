@@ -34,7 +34,6 @@
   export let requires_structured_output: boolean = false
 
   // Expose reactive values for parent component
-  export let selected_run_config: TaskRunConfig | "custom" | null = null
   export let model_name: string = ""
   export let provider: string = ""
   export let prompt_method: string = "simple_prompt_builder"
@@ -94,13 +93,32 @@
   }
 
   // Update form values from saved config change if needed
-  $: if (selected_run_config !== null && selected_run_config !== "custom") {
-    update_current_run_options(selected_run_config)
+  $: selected_run_config_id, update_current_run_options_if_needed()
+
+  function get_selected_run_config(): TaskRunConfig | "custom" | null {
+    // Map selected ID back to TaskRunConfig object
+    if (!selected_run_config_id) {
+      return null
+    } else if (selected_run_config_id === "custom") {
+      return "custom"
+    } else {
+      // Find the config by ID
+      const all_configs =
+        $run_configs_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ] ?? []
+      return (
+        all_configs.find((config) => config.id === selected_run_config_id) ??
+        "custom"
+      )
+    }
   }
 
-  async function update_current_run_options(
-    selected_run_config: TaskRunConfig,
-  ) {
+  async function update_current_run_options_if_needed() {
+    const selected_run_config = get_selected_run_config()
+    if (!selected_run_config || selected_run_config === "custom") {
+      return
+    }
     model =
       selected_run_config.run_config_properties.model_provider_name +
       "/" +
@@ -116,19 +134,20 @@
   }
 
   // Check for manual changes when options change when on a saved config to set back to custom
-  $: if (selected_run_config !== null && selected_run_config !== "custom") {
-    model,
-      prompt_method,
-      temperature,
-      top_p,
-      structured_output_mode,
-      tools,
-      reset_to_custom_options_if_needed(selected_run_config)
-  }
+  $: model,
+    prompt_method,
+    temperature,
+    top_p,
+    structured_output_mode,
+    tools,
+    reset_to_custom_options_if_needed()
 
-  async function reset_to_custom_options_if_needed(
-    selected_run_config: TaskRunConfig,
-  ) {
+  async function reset_to_custom_options_if_needed() {
+    const selected_run_config = get_selected_run_config()
+    if (!selected_run_config || selected_run_config === "custom") {
+      return
+    }
+
     // Wait for all reactive statements to complete
     await tick()
 
@@ -226,22 +245,6 @@
     }
     if (set_default_error) {
       set_default_error = null
-    }
-  }
-
-  // Map selected ID back to TaskRunConfig object
-  $: if (selected_run_config_id) {
-    if (selected_run_config_id === "custom") {
-      selected_run_config = "custom"
-    } else {
-      // Find the config by ID
-      const all_configs =
-        $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, task_id)
-        ] ?? []
-      selected_run_config =
-        all_configs.find((config) => config.id === selected_run_config_id) ??
-        "custom"
     }
   }
 

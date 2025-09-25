@@ -134,9 +134,12 @@ export async function save_new_task_run_config(
     },
   )
 
-  // TODO: This will throw an error different than the existing error if exists. combine the two?
   // Reload the run configs to include the new one (force refresh to get fresh data)
-  await load_task_run_configs(project_id, task_id, true)
+  try {
+    await load_task_run_configs(project_id, task_id, true)
+  } catch (reloadErr) {
+    console.warn("Reload of task run configs after save failed:", reloadErr)
+  }
 
   if (error) {
     throw error

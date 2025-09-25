@@ -38,11 +38,6 @@
       response = null
       run_complete = false
       run_config_component.clear_model_dropdown_error()
-
-      if (!run_config_component.selected_run_config) {
-        throw new Error("Run config not initialized")
-      }
-
       if (!run_config_component.get_selected_model()) {
         run_config_component.set_model_dropdown_error("Required")
         throw new Error("You must select a model before running")
