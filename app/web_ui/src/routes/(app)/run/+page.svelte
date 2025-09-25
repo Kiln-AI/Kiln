@@ -1,16 +1,12 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
-  import { current_task, current_project, ui_state } from "$lib/stores"
+  import { current_task, current_project } from "$lib/stores"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
   import { client } from "$lib/api_client"
-  import type {
-    TaskRun,
-    RunConfigProperties,
-    StructuredOutputMode,
-  } from "$lib/types"
+  import type { TaskRun } from "$lib/types"
   import RunInputForm from "./run_input_form.svelte"
   import posthog from "posthog-js"
   import { tick } from "svelte"
@@ -24,24 +20,81 @@
   let output_section: HTMLElement | null = null
   let run_config_component: RunConfigComponent
 
-  let prompt_method = "simple_prompt_builder"
-  let model: string = $ui_state.selected_model
-  // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
-  let temperature: number = 1.0
-  let top_p: number = 1.0
-  let structured_output_mode: StructuredOutputMode = "default"
-  let tools: string[] = []
-
-  $: model_name = model ? model.split("/").slice(1).join("/") : ""
-  $: provider = model ? model.split("/")[0] : ""
-
   let response: TaskRun | null = null
   $: run_focus = !response
 
-  $: subtitle = $current_task ? "Task: " + $current_task.name : ""
+  $: project_id = $current_project?.id ?? ""
+  $: task_id = $current_task?.id ?? ""
   $: input_schema = $current_task?.input_json_schema
   $: requires_structured_output = !!$current_task?.output_json_schema
-  $: requires_tool_support = tools.length > 0
+  $: default_run_config_id = $current_task?.default_run_config_id ?? null
+
+  $: subtitle = $current_task ? "Task: " + $current_task.name : ""
+
+  async function run_task() {
+    try {
+      submitting = true
+      run_error = null
+      response = null
+      run_complete = false
+      run_config_component.clear_model_dropdown_error()
+
+      if (!run_config_component.selected_run_config) {
+        throw new Error("Run config not initialized")
+      }
+
+      if (!run_config_component.get_selected_model()) {
+        run_config_component.set_model_dropdown_error("Required")
+        throw new Error("You must select a model before running")
+      }
+      const {
+        data, // only present if 2XX response
+        error: fetch_error, // only present if 4XX or 5XX response
+      } = await client.POST("/api/projects/{project_id}/tasks/{task_id}/run", {
+        params: {
+          path: {
+            project_id: project_id,
+            task_id: task_id,
+          },
+        },
+        body: {
+          run_config_properties:
+            run_config_component.run_options_as_run_config_properties(),
+          plaintext_input: input_form.get_plaintext_input_data(),
+          structured_input: input_form.get_structured_input_data(),
+          tags: ["manual_run"],
+        },
+      })
+      if (fetch_error) {
+        throw fetch_error
+      }
+      posthog.capture("run_task", {
+        model_name: run_config_component.model_name,
+        provider: run_config_component.provider,
+        prompt_method: run_config_component.prompt_method,
+      })
+      response = data
+    } catch (e) {
+      run_error = createKilnError(e)
+    } finally {
+      submitting = false
+      await tick() // ensure {#if !submitting && response} has rendered
+      if (response) scroll_to_output_if_needed()
+    }
+  }
+
+  function clear_all() {
+    input_form.clear_input()
+    response = null
+    run_complete = false
+  }
+
+  function next_task_run() {
+    // Keep the input, but clear the response
+    response = null
+    run_complete = false
+    clear_all()
+  }
 
   // Check if the Output section headers are visible in the viewport
   // We only care about the top portion being visible (headers + some buffer)
@@ -80,82 +133,6 @@
       })
     }
   }
-
-  async function run_task() {
-    try {
-      submitting = true
-      run_error = null
-      response = null
-      run_complete = false
-      run_config_component.clear_model_dropdown_error()
-      let selected_model = run_config_component.get_selected_model()
-      if (!selected_model || selected_model != model) {
-        run_config_component.set_model_dropdown_error("Required")
-        throw new Error("You must select a model before running")
-      }
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST("/api/projects/{project_id}/tasks/{task_id}/run", {
-        params: {
-          path: {
-            project_id: $current_project?.id || "",
-            task_id: $current_task?.id || "",
-          },
-        },
-        body: {
-          run_config_properties: run_options_as_run_config_properties(),
-          plaintext_input: input_form.get_plaintext_input_data(),
-          structured_input: input_form.get_structured_input_data(),
-          tags: ["manual_run"],
-        },
-      })
-      if (fetch_error) {
-        throw fetch_error
-      }
-      posthog.capture("run_task", {
-        model_name: model_name,
-        provider: provider,
-        prompt_method: prompt_method,
-      })
-      response = data
-    } catch (e) {
-      run_error = createKilnError(e)
-    } finally {
-      submitting = false
-      await tick() // ensure {#if !submitting && response} has rendered
-      if (response) scroll_to_output_if_needed()
-    }
-  }
-
-  function clear_all() {
-    input_form.clear_input()
-    response = null
-    run_complete = false
-  }
-
-  function next_task_run() {
-    // Keep the input, but clear the response
-    response = null
-    run_complete = false
-    clear_all()
-  }
-
-  // Helper function to convert run options to server run_config_properties format
-  function run_options_as_run_config_properties(): RunConfigProperties {
-    return {
-      model_name: model_name,
-      // @ts-expect-error server will catch if enum is not valid
-      model_provider_name: provider,
-      prompt_id: prompt_method,
-      temperature: temperature,
-      top_p: top_p,
-      structured_output_mode: structured_output_mode,
-      tools_config: {
-        tools: tools,
-      },
-    }
-  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -180,34 +157,20 @@
       </div>
       <RunConfigComponent
         bind:this={run_config_component}
-        project_id={$current_project?.id ?? ""}
-        task_id={$current_task?.id ?? ""}
-        default_run_config_id={$current_task?.default_run_config_id ?? null}
-        bind:model
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        bind:tools
-        bind:prompt_method
+        {project_id}
+        {task_id}
+        {default_run_config_id}
         {requires_structured_output}
-        {requires_tool_support}
-        onModelChange={(newModel) => (model = newModel)}
-        onTemperatureChange={(newTemp) => (temperature = newTemp)}
-        onTopPChange={(newTopP) => (top_p = newTopP)}
-        onStructuredOutputModeChange={(newMode) =>
-          (structured_output_mode = newMode)}
-        onToolsChange={(newTools) => (tools = newTools)}
-        onPromptMethodChange={(newMethod) => (prompt_method = newMethod)}
       />
     </div>
-    {#if $current_task && !submitting && response != null && $current_project?.id}
+    {#if $current_task && !submitting && response != null && project_id}
       <div class="mt-8 xl:mt-12" bind:this={output_section} id="output-section">
         <Run
           initial_run={response}
           task={$current_task}
-          project_id={$current_project.id}
-          bind:model_name
-          bind:provider
+          {project_id}
+          bind:model_name={run_config_component.model_name}
+          bind:provider={run_config_component.provider}
           bind:run_complete
           focus_repair_on_appear={true}
         />

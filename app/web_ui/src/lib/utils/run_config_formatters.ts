@@ -5,7 +5,7 @@ import {
   provider_name_from_id,
 } from "$lib/stores"
 
-export function getDetailedModelMame(
+export function getDetailedModelName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {

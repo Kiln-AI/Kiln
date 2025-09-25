@@ -1,5 +1,7 @@
 <script lang="ts">
-  import FormElement from "$lib/utils/form_element.svelte"
+  import FormElement, {
+    type InlineAction,
+  } from "$lib/utils/form_element.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import type {
     PromptResponse,
@@ -14,7 +16,7 @@
   } from "$lib/stores"
   import {
     getRunConfigPromptDisplayName,
-    getDetailedModelMame,
+    getDetailedModelName,
   } from "$lib/utils/run_config_formatters"
   import { onMount } from "svelte"
   import {
@@ -22,19 +24,24 @@
     run_configs_by_task_composite_id,
     get_task_composite_id,
   } from "$lib/stores/run_configs_store"
+  import type { KilnError } from "$lib/utils/error_handlers"
+  import { createEventDispatcher } from "svelte"
+
+  const dispatch = createEventDispatcher<{
+    save_run_options: void
+    set_run_config_as_default: void
+  }>()
 
   export let project_id: string
   export let task_id: string
-  export let selected_run_config_id: string | null
-  export let default_run_config_id: string | null
+  export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
+  export let default_run_config_id: string | null = null
 
-  // Button props for inline actions
-  export let show_save_button: boolean = false
-  export let show_set_default_button: boolean = false
-  export let on_save: (() => void) | null = null
-  export let on_set_default: (() => void) | null = null
-  export let save_error: { getErrorMessages(): string[] } | null = null
-  export let set_default_error: { getErrorMessages(): string[] } | null = null
+  export let save_config_error: KilnError | null = null
+  export let set_default_error: KilnError | null = null
+
+  $: show_save_button = selected_run_config_id === "custom"
+  $: show_set_default_button = selected_run_config_id !== default_run_config_id
 
   onMount(async () => {
     Promise.all([load_available_prompts(), load_model_info()])
@@ -44,10 +51,28 @@
     load_task_run_configs(project_id, task_id)
   }
 
+  // Initialization of selected_run_config_id
+  $: if (default_run_config_id !== null) {
+    if (default_run_config_id) {
+      if (selected_run_config_id === null) {
+        selected_run_config_id = default_run_config_id
+      }
+    } else {
+      if (selected_run_config_id === null) {
+        selected_run_config_id = "custom"
+      }
+    }
+  }
+
+  let cold_start_info_description =
+    "You can save your run configuration including model, prompt, tools and properties. This makes it easy to return to later."
+  let saved_configs_info_description =
+    "Select a saved run configuration which includes model, prompt, tools and properties. Alternatively choose 'Custom' to manually configure this run."
+
   $: info_description =
     options.length === 1
-      ? "You can save your run configuration including model, prompt, tools and properties. This makes it easy to return to later."
-      : "Select a saved run configuration which includes model, prompt, tools and properties. Alternatively choose 'Custom' to manually configure this run."
+      ? cold_start_info_description
+      : saved_configs_info_description
 
   $: options = build_options(
     default_run_config_id,
@@ -92,7 +117,7 @@
         saved_configuration_options.push({
           value: default_run_config_id,
           label: `${default_config.name} (Default)`,
-          description: `Model: ${getDetailedModelMame(default_config, model_info)}
+          description: `Model: ${getDetailedModelName(default_config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`,
         })
       }
@@ -108,7 +133,7 @@
         ...other_task_run_configs.map((config) => ({
           value: config.id ?? "",
           label: config.name,
-          description: `Model: ${getDetailedModelMame(config, model_info)}
+          description: `Model: ${getDetailedModelName(config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
         })),
       )
@@ -123,6 +148,38 @@
 
     return options
   }
+
+  function handle_save() {
+    dispatch("save_run_options")
+  }
+
+  function handle_set_default() {
+    dispatch("set_run_config_as_default")
+  }
+
+  let inline_action: InlineAction | null = null
+
+  $: show_save_button,
+    show_set_default_button,
+    save_config_error,
+    set_default_error,
+    update_inline_action()
+
+  function update_inline_action() {
+    if (save_config_error || set_default_error) {
+      inline_action = null
+    } else if (show_save_button) {
+      inline_action = {
+        handler: handle_save,
+        label: "Save current options",
+      }
+    } else if (show_set_default_button) {
+      inline_action = {
+        handler: handle_set_default,
+        label: "Set as task default",
+      }
+    }
+  }
 </script>
 
 <FormElement
@@ -132,48 +189,5 @@
   bind:value={selected_run_config_id}
   id="run_config"
   bind:fancy_select_options={options}
->
-  <svelte:fragment slot="inline-actions">
-    {#if show_save_button}
-      <button
-        type="button"
-        class="link text-gray-500 text-sm font-normal"
-        on:click={on_save}
-      >
-        Save current options
-      </button>
-    {:else if show_set_default_button}
-      <button
-        type="button"
-        class="link text-gray-500 text-sm font-normal"
-        on:click={on_set_default}
-      >
-        Set as task default
-      </button>
-    {:else}
-      <button
-        type="button"
-        class="link text-gray-500 text-sm invisible font-normal"
-        on:click={on_set_default}
-      >
-        Placeholder
-      </button>
-    {/if}
-  </svelte:fragment>
-</FormElement>
-
-<!-- Error messages -->
-{#if save_error}
-  <div class="text-sm text-error text-right -mt-3">
-    {#each save_error.getErrorMessages() as error_line}
-      <div>{error_line}</div>
-    {/each}
-  </div>
-{/if}
-{#if set_default_error}
-  <div class="text-sm text-error text-right -mt-3">
-    {#each set_default_error.getErrorMessages() as error_line}
-      <div>{error_line}</div>
-    {/each}
-  </div>
-{/if}
+  {inline_action}
+/>
