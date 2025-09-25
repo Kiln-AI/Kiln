@@ -10,18 +10,25 @@
   import EmptyTools from "./empty_tools.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { uncache_available_tools } from "$lib/stores"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import type { SearchToolApiDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id
-  $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
+  $: is_empty =
+    !demo_tools_enabled &&
+    (!tools || tools.length == 0) &&
+    (!search_tools || search_tools.length == 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
+  let search_tools: SearchToolApiDescription[] | null = null
   let loading = true
   let error: KilnError | null = null
 
   onMount(async () => {
     await fetch_available_tool_servers()
     await load_demo_tools()
+    await load_rag_configs()
     loading = false
   })
 
@@ -61,8 +68,31 @@
         throw error
       }
       demo_tools_enabled = data
-    } catch (error) {
-      console.error(error)
+    } catch (err) {
+      console.error("Error loading demo tools", err)
+      error = createKilnError(err)
+    }
+  }
+
+  async function load_rag_configs() {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/search_tools",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      search_tools = data
+    } catch (err) {
+      error = createKilnError(err)
+      console.error("Error loading search tools", err)
     }
   }
 
@@ -98,7 +128,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Manage Tools"
-    subtitle="Connect your project to tools with MCP servers"
+    subtitle="Connect to tools such as RAG systems and MCP servers"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp"
     breadcrumbs={[
@@ -113,6 +143,7 @@
           {
             label: "Add Tools",
             href: `/settings/manage_tools/${project_id}/add_tools`,
+            primary: true,
           },
         ]}
   >
@@ -141,6 +172,42 @@
             </tr>
           </thead>
           <tbody>
+            {#if search_tools && search_tools.length > 0}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() => goto(`/docs/rag_configs/${project_id}`)}
+                on:keydown={(e) =>
+                  e.key === "enter" && goto(`/docs/rag_configs/${project_id}`)}
+                role="button"
+                tabindex="0"
+              >
+                <td class="font-medium">Search Tools (RAG)</td>
+                <td class="text-sm">Kiln Search Tools</td>
+                <td class="text-sm"
+                  >Search tools retrieve information from your Kiln document
+                  library.
+                  {#if search_tools.length == 1}
+                    One search tool available
+                  {:else}
+                    {search_tools.length} search tools available
+                  {/if}
+                  <InfoTooltip
+                    tooltip_text="Tools: {search_tools
+                      .map((tool) => tool.name + ' (' + tool.tool_name + ')')
+                      .join(', ')}"
+                    no_pad={true}
+                  />
+                </td>
+                <td class="text-sm">
+                  <Warning
+                    warning_message="Ready"
+                    warning_color="success"
+                    warning_icon="check"
+                    tight={true}
+                  />
+                </td>
+              </tr>
+            {/if}
             {#each tools || [] as tool}
               {@const missing_secrets =
                 tool.missing_secrets && tool.missing_secrets.length > 0}

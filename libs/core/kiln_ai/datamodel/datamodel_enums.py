@@ -100,3 +100,30 @@ class ModelProviderName(str, Enum):
     siliconflow_cn = "siliconflow_cn"
     cerebras = "cerebras"
     docker_model_runner = "docker_model_runner"
+
+
+class KilnMimeType(str, Enum):
+    """
+    Enumeration of supported mime types.
+    """
+
+    # documents
+    PDF = "application/pdf"
+    CSV = "text/csv"
+    TXT = "text/plain"
+    HTML = "text/html"
+    MD = "text/markdown"
+
+    # images
+    PNG = "image/png"
+    JPG = "image/jpeg"
+    JPEG = "image/jpeg"
+
+    # audio
+    MP3 = "audio/mpeg"
+    WAV = "audio/wav"
+    OGG = "audio/ogg"
+
+    # video
+    MP4 = "video/mp4"
+    MOV = "video/quicktime"

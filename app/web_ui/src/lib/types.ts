@@ -4,6 +4,7 @@ import type { components } from "./api_schema"
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
 export type TaskRun = components["schemas"]["TaskRun-Input"]
+export type TaskRunOutput = components["schemas"]["TaskRun-Output"]
 export type TaskRequirement = components["schemas"]["TaskRequirement"]
 export type TaskOutputRating = components["schemas"]["TaskOutputRating-Output"]
 export type TaskOutputRatingType = components["schemas"]["TaskOutputRatingType"]
@@ -40,7 +41,29 @@ export type RatingOption = components["schemas"]["RatingOption"]
 export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
 export type FinetuneDatasetInfo = components["schemas"]["FinetuneDatasetInfo"]
 export type StructuredOutputMode = components["schemas"]["StructuredOutputMode"]
+export type KilnDocument = components["schemas"]["Document"]
+export type KilnDocumentKind = components["schemas"]["Kind"]
+export type ExtractorConfig = components["schemas"]["ExtractorConfig"]
+export type ExtractionSummary = components["schemas"]["ExtractionSummary"]
+export type ExtractorType = components["schemas"]["ExtractorType"]
+export type OutputFormat = components["schemas"]["OutputFormat"]
+export type ExtractionProgress = components["schemas"]["ExtractionProgress"]
+export type EmbeddingConfig = components["schemas"]["EmbeddingConfig"]
+export type EmbeddingModelDetails =
+  components["schemas"]["EmbeddingModelDetails"]
+export type EmbeddingProvider = components["schemas"]["EmbeddingProvider"]
+export type EmbeddingModelName = components["schemas"]["EmbeddingModelName"]
+export type ChunkerConfig = components["schemas"]["ChunkerConfig"]
+export type ChunkerType = components["schemas"]["ChunkerType"]
 export type ModelProviderName = components["schemas"]["ModelProviderName"]
+export type RagProgress = components["schemas"]["RagProgress"]
+export type RagConfigWithSubConfigs =
+  components["schemas"]["RagConfigWithSubConfigs"]
+export type VectorStoreConfig = components["schemas"]["VectorStoreConfig"]
+export type VectorStoreType = components["schemas"]["VectorStoreType"]
+export type LogMessage = components["schemas"]["LogMessage"]
+export type BulkCreateDocumentsResponse =
+  components["schemas"]["BulkCreateDocumentsResponse"]
 export type KilnToolServerDescription =
   components["schemas"]["KilnToolServerDescription"]
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
@@ -54,3 +77,16 @@ export type LocalServerProperties =
   components["schemas"]["LocalServerProperties"]
 export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
+
+export type TraceMessage =
+  | components["schemas"]["ChatCompletionDeveloperMessageParam"]
+  | components["schemas"]["ChatCompletionSystemMessageParam"]
+  | components["schemas"]["ChatCompletionUserMessageParam-Input"]
+  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
+  | components["schemas"]["ChatCompletionToolMessageParam"]
+  | components["schemas"]["ChatCompletionFunctionMessageParam"]
+export type Trace = TraceMessage[]
+export type ToolCallMessageParam =
+  components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
+export type SearchToolApiDescription =
+  components["schemas"]["SearchToolApiDescription"]

@@ -112,7 +112,7 @@ class ExternalToolServer(KilnParentedModel):
     # Validation Helpers
 
     @classmethod
-    def validate_server_url(cls, server_url: str) -> None:
+    def check_server_url(cls, server_url: str) -> None:
         """Validate Server URL"""
         if not isinstance(server_url, str):
             raise ValueError("Server URL must be a string")
@@ -128,7 +128,7 @@ class ExternalToolServer(KilnParentedModel):
             raise ValueError("Server URL must start with http:// or https://")
 
     @classmethod
-    def validate_headers(cls, headers: dict) -> None:
+    def check_headers(cls, headers: dict) -> None:
         """Validate Headers"""
         if not isinstance(headers, dict):
             raise ValueError("headers must be a dictionary")
@@ -149,7 +149,7 @@ class ExternalToolServer(KilnParentedModel):
                 )
 
     @classmethod
-    def validate_secret_keys(
+    def check_secret_keys(
         cls, secret_keys: list, key_type: str, tool_type: str
     ) -> None:
         """Validate Secret Keys (generic method for both header and env var keys)"""
@@ -163,7 +163,7 @@ class ExternalToolServer(KilnParentedModel):
             raise ValueError("Secret key is required")
 
     @classmethod
-    def validate_env_vars(cls, env_vars: dict) -> None:
+    def check_env_vars(cls, env_vars: dict) -> None:
         """Validate Environment Variables"""
         if not isinstance(env_vars, dict):
             raise ValueError("environment variables must be a dictionary")
@@ -231,7 +231,7 @@ class ExternalToolServer(KilnParentedModel):
         return data
 
     @model_validator(mode="before")
-    def validate_secrets(cls, data: dict) -> dict:
+    def validate_headers_and_env_vars(cls, data: dict) -> dict:
         """
         Validate secrets, these needs to be validated before model initlization because secrets will be processed and stripped
         """
@@ -248,12 +248,12 @@ class ExternalToolServer(KilnParentedModel):
                 # Validate headers
                 headers = properties.get("headers", None)
                 if headers is not None:
-                    ExternalToolServer.validate_headers(headers)
+                    ExternalToolServer.check_headers(headers)
 
                 # Secret header keys are optional, validate if they are set
                 secret_header_keys = properties.get("secret_header_keys", None)
                 if secret_header_keys is not None:
-                    ExternalToolServer.validate_secret_keys(
+                    ExternalToolServer.check_secret_keys(
                         secret_header_keys, "secret_header_keys", "remote_mcp"
                     )
 
@@ -261,12 +261,12 @@ class ExternalToolServer(KilnParentedModel):
                 # Validate secret environment variable keys
                 env_vars = properties.get("env_vars", {})
                 if env_vars is not None:
-                    ExternalToolServer.validate_env_vars(env_vars)
+                    ExternalToolServer.check_env_vars(env_vars)
 
                 # Secret env var keys are optional, but if they are set, they must be a list of strings
                 secret_env_var_keys = properties.get("secret_env_var_keys", None)
                 if secret_env_var_keys is not None:
-                    ExternalToolServer.validate_secret_keys(
+                    ExternalToolServer.check_secret_keys(
                         secret_env_var_keys, "secret_env_var_keys", "local_mcp"
                     )
 
