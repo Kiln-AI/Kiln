@@ -42,8 +42,9 @@
       options: [
         {
           value: "custom",
-          label: "None",
-          description: "Run with your current manually selected options.",
+          label: "Custom",
+          description:
+            "Manually choose a model, prompt, and tools for this run.",
         },
       ],
     })
