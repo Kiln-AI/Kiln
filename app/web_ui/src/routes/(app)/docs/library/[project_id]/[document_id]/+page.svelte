@@ -460,7 +460,6 @@
     get_extractions()
   }}
   name="Document"
-  subtitle="REPLACE THIS"
   patch_url={`/api/projects/${project_id}/documents/${document_id}`}
   fields={[
     {
@@ -471,6 +470,7 @@
       value: document?.friendly_name || "",
       input_type: "input",
       optional: true, // if empty, we revert to the original name
+      info_description: "If empty, the original file name will be used.",
     },
     {
       label: "Description",
