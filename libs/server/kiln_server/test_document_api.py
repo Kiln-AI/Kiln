@@ -3530,6 +3530,29 @@ async def test_create_rag_config_invalid_tool_fields(
     assert "error_messages" in error_detail
 
 
+@pytest.mark.asyncio
+async def test_delete_extraction_extractor_config_not_found(
+    client, mock_project, mock_document
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id="nonexistent-id",
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.delete(
+            f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
+        )
+
+    assert response.status_code == 404
+
+
 async def test_delete_extraction_success(
     client, mock_project, mock_document, mock_extractor_config
 ):

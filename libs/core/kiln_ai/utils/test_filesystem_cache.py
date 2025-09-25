@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
 
 from kiln_ai.utils.filesystem_cache import FilesystemCache, TemporaryFilesystemCache
@@ -299,6 +300,44 @@ class TestFilesystemCache:
         assert (cache.cache_dir_path / key1).exists()
         assert (cache.cache_dir_path / key2).exists()
         assert (cache.cache_dir_path / key3).exists()
+
+    async def test_delete_by_prefix_handles_file_not_found(self, cache):
+        # Seed a few files
+        await cache.set("test1", b"1")
+        await cache.set("test2", b"2")
+
+        # Simulate a race: files disappear between discovery and unlink
+        original_unlink = anyio.Path.unlink
+
+        async def flaky_unlink(self):  # type: ignore[no-redef]
+            raise FileNotFoundError("gone")
+
+        try:
+            anyio.Path.unlink = flaky_unlink  # type: ignore[assignment]
+            # Should not raise despite FileNotFoundError
+            await cache.delete_by_prefix("test")
+        finally:
+            anyio.Path.unlink = original_unlink  # type: ignore[assignment]
+
+    async def test_delete_by_prefix_logs_other_errors(self, cache, monkeypatch):
+        # Seed a target file
+        await cache.set("test_err", b"x")
+
+        # Make unlink raise a generic Exception and verify we log an error but do not raise
+        async def bad_unlink(self):  # type: ignore[no-redef]
+            raise RuntimeError("unexpected")
+
+        monkeypatch.setattr(
+            anyio,
+            "Path",
+            lambda p: type(
+                "P", (), {"__init__": lambda self, q: None, "unlink": bad_unlink}
+            )(),
+        )
+
+        with patch("kiln_ai.utils.filesystem_cache.logger") as mock_logger:
+            await cache.delete_by_prefix("test_")
+            assert mock_logger.error.called
 
 
 class TestTemporaryFilesystemCache:

@@ -1113,6 +1113,13 @@ def connect_document_api(app: FastAPI):
                 detail=f"Document {document_id} not found",
             )
 
+        # should not happen
+        if document.path is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Document path not found",
+            )
+
         extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
         if not extraction:
             raise HTTPException(
@@ -1143,12 +1150,6 @@ def connect_document_api(app: FastAPI):
             extractor_config,
             filesystem_cache=TemporaryFilesystemCache.shared(),
         )
-
-        if document.path is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Document path not found",
-            )
 
         try:
             await extractor.clear_cache_for_file_path(
