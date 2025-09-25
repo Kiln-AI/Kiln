@@ -169,6 +169,17 @@ def kiln_model_provider_from(
     # For custom registry, get the provider name and model name from the model id
     if provider_name == ModelProviderName.kiln_custom_registry:
         provider_name, name = parse_custom_model_id(name)
+        custom_providers = Config.shared().custom_model_providers or []
+        provider_data = next(
+            (
+                p
+                for p in custom_providers
+                if p.get("name") == provider_name.value and p.get("model_id") == name
+            ),
+            None,
+        )
+        if provider_data:
+            return KilnModelProvider.model_validate(provider_data)
     else:
         logger.warning(
             f"Unexpected model/provider pair. Will treat as custom model but check your model settings. Provider: {provider_name}/{name}"

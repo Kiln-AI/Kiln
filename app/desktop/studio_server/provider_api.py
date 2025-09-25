@@ -1151,35 +1151,59 @@ def models_from_ollama_tag(
 
 
 def custom_models() -> AvailableModels | None:
-    custom_model_ids = Config.shared().custom_models
-    if not custom_model_ids or len(custom_model_ids) == 0:
+    provider_configs = Config.shared().custom_model_providers or []
+
+    if not provider_configs:
+        old_ids = Config.shared().custom_models or []
+        for model_id in old_ids:
+            try:
+                provider_id, model_name = model_id.split("::", 1)
+                provider_configs.append({"name": provider_id, "model_id": model_name})
+            except Exception:
+                logger.error(
+                    "Error processing custom model %s", model_id, exc_info=True
+                )
+
+    if not provider_configs:
         return None
 
     models: List[ModelDetails] = []
-    for model_id in custom_model_ids:
+    for provider_data in provider_configs:
         try:
-            provider_id = model_id.split("::", 1)[0]
-            model_name = model_id.split("::", 1)[1]
+            provider = KilnModelProvider.model_validate(provider_data)
+            provider_prefix = (
+                provider.name.value
+                if hasattr(provider.name, "value")
+                else str(provider.name)
+            )
+            model_id = (
+                f"{provider_prefix}::{provider.model_id}"
+                if provider.model_id
+                else provider_prefix
+            )
             models.append(
                 ModelDetails(
                     id=model_id,
-                    name=f"{provider_name_from_id(provider_id)}: {model_name}",
-                    supports_structured_output=False,
-                    supports_data_gen=False,
-                    supports_logprobs=False,
-                    supports_function_calling=False,
-                    untested_model=True,
-                    suggested_for_data_gen=False,
-                    suggested_for_evals=False,
-                    uncensored=False,
-                    suggested_for_uncensored_data_gen=False,
-                    # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
-                    structured_output_mode=StructuredOutputMode.json_instructions,
+                    name=f"{provider_name_from_id(provider.name)}: {provider.model_id}",
+                    supports_structured_output=provider.supports_structured_output,
+                    supports_data_gen=provider.supports_data_gen,
+                    suggested_for_data_gen=provider.suggested_for_data_gen,
+                    supports_logprobs=provider.supports_logprobs,
+                    suggested_for_evals=provider.suggested_for_evals,
+                    supports_function_calling=provider.supports_function_calling,
+                    uncensored=provider.uncensored,
+                    suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
+                    structured_output_mode=provider.structured_output_mode,
+                    untested_model=provider.untested_model,
                 )
             )
         except Exception:
-            # Continue on to the rest
-            logger.error("Error processing custom model %s", model_id, exc_info=True)
+            logger.error(
+                "Error processing custom model %s", provider_data, exc_info=True
+            )
+
+    if len(models) == 0:
+        return None
 
     return AvailableModels(
         provider_name="Custom Models",

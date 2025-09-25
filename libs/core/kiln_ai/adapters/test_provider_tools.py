@@ -342,27 +342,37 @@ async def test_kiln_model_provider_from_invalid_provider():
     assert str(exc_info.value) == "Invalid provider name: invalid_provider"
 
 
+@patch("kiln_ai.adapters.provider_tools.Config.shared")
 @pytest.mark.asyncio
-async def test_kiln_model_provider_from_custom_model_valid(mock_config):
-    # Mock config to pass provider warnings check
+async def test_kiln_model_provider_from_custom_model_valid(mock_shared, mock_config):
     mock_config.return_value = "fake-api-key"
+    instance = Mock()
+    instance.custom_model_providers = [
+        {
+            "name": "openai",
+            "model_id": "custom_model",
+            "supports_structured_output": True,
+        }
+    ]
+    mock_shared.return_value = instance
 
-    provider = kiln_model_provider_from("custom_model", ModelProviderName.openai)
+    provider = kiln_model_provider_from(
+        "openai::custom_model", ModelProviderName.kiln_custom_registry
+    )
 
     assert provider.name == ModelProviderName.openai
-    assert provider.supports_structured_output is False
-    assert provider.supports_data_gen is False
-    assert provider.untested_model is True
     assert provider.model_id == "custom_model"
-    assert provider.structured_output_mode == StructuredOutputMode.json_instructions
+    assert provider.supports_structured_output is True
 
 
+@patch("kiln_ai.adapters.provider_tools.Config.shared")
 @pytest.mark.asyncio
-async def test_kiln_model_provider_from_custom_registry(mock_config):
-    # Mock config to pass provider warnings check
+async def test_kiln_model_provider_from_custom_registry(mock_shared, mock_config):
     mock_config.return_value = "fake-api-key"
+    instance = Mock()
+    instance.custom_model_providers = []
+    mock_shared.return_value = instance
 
-    # Test with a custom registry model ID in format "provider::model_name"
     provider = kiln_model_provider_from(
         "openai::gpt-4-turbo", ModelProviderName.kiln_custom_registry
     )

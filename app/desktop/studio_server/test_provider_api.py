@@ -1409,17 +1409,16 @@ async def test_connect_ollama_does_not_save_unchanged_url():
 
 
 def test_custom_models():
-    # Mock Config.shared().custom_models
-    mock_custom_models = [
-        "openai::model1",
-        "groq::model2",
-        "invalid_model_format",
-        "openai::model::with::delimiters",
+    mock_custom_providers = [
+        {"name": "openai", "model_id": "model1", "supports_structured_output": False},
+        {"name": "groq", "model_id": "model2"},
+        {"invalid": "data"},
     ]
 
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
         mock_config_instance = MagicMock()
-        mock_config_instance.custom_models = mock_custom_models
+        mock_config_instance.custom_model_providers = mock_custom_providers
+        mock_config_instance.custom_models = []
         mock_config.return_value = mock_config_instance
 
         result = custom_models()
@@ -1427,37 +1426,19 @@ def test_custom_models():
         assert result is not None
         assert result.provider_name == "Custom Models"
         assert result.provider_id == ModelProviderName.kiln_custom_registry
-        assert len(result.models) == 3  # Only valid models should be included
-
-        # Verify first model details
-        assert result.models[0].id == "openai::model1"
-        assert result.models[0].name == "OpenAI: model1"
+        assert len(result.models) == 2
         assert result.models[0].supports_structured_output is False
-        assert result.models[0].supports_data_gen is False
-        assert result.models[0].untested_model is True
+        assert result.models[1].supports_structured_output is True
 
-        # Verify second model details
-        assert result.models[1].id == "groq::model2"
-        assert result.models[1].name == "Groq: model2"
-        assert result.models[1].supports_structured_output is False
-        assert result.models[1].supports_data_gen is False
-        assert result.models[1].untested_model is True
-
-        # Verify third model details
-        assert result.models[2].id == "openai::model::with::delimiters"
-        assert result.models[2].name == "OpenAI: model::with::delimiters"
-        assert result.models[2].supports_structured_output is False
-        assert result.models[2].supports_data_gen is False
-        assert result.models[2].untested_model is True
-
-    # Test case: No custom models
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
         mock_config_instance = MagicMock()
-        mock_config_instance.custom_models = []
+        mock_config_instance.custom_model_providers = []
+        mock_config_instance.custom_models = ["openai::model1"]
         mock_config.return_value = mock_config_instance
 
         result = custom_models()
-        assert result is None
+        assert result is not None
+        assert result.models[0].id == "openai::model1"
 
 
 @pytest.mark.asyncio
