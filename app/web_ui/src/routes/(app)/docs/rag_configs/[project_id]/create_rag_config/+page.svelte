@@ -636,7 +636,13 @@
       <div class="loading loading-spinner loading-lg"></div>
     </div>
   {:else}
-    <div class="max-w-[900px]">
+    <div class="max-w-[900px] flex flex-col gap-2">
+      <div>
+        <div class="text-xl font-bold">Tool Definition</div>
+        <div class="text-xs text-gray-500">
+          The tool will be used by the model to search your documents.
+        </div>
+      </div>
       <FormContainer
         submit_visible={true}
         submit_label="Create Search Tool"
@@ -666,14 +672,23 @@
           bind:value={tool_description}
         />
 
-        <!-- Tag Selection -->
-        <div class="flex flex-col gap-2">
-          <TagSelector
-            {project_id}
-            bind:selected_tags
-            on:change={(e) => (selected_tags = e.detail.selected_tags)}
-          />
+        <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+          <div class="text-xl font-bold" id="requirements_part">
+            Search & Retrieval
+          </div>
+          <div class="text-xs text-gray-500">
+            Define the parameters for how the search tool will extract, index,
+            and search your documents.
+          </div>
         </div>
+
+        <!-- Tag Selection -->
+        <TagSelector
+          {project_id}
+          bind:selected_tags
+          on:change={(e) => (selected_tags = e.detail.selected_tags)}
+        />
+
         {#if template && !customize_template_mode}
           <div class="flex flex-col mt-4">
             <FormElement
