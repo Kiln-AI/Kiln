@@ -202,10 +202,6 @@ class ExternalToolServer(KilnParentedModel):
         server_type = ExternalToolServer.type_from_data(data)
         properties = data.get("properties", {})
 
-        if not server_type:
-            # pydantic will catch this but the not None check is needed to support `raise_exhaustive_enum_error`
-            raise ValueError("Server type is required")
-
         match server_type:
             case ToolServerType.remote_mcp:
                 server_url = properties.get("server_url", None)
@@ -219,12 +215,10 @@ class ExternalToolServer(KilnParentedModel):
                 command = properties.get("command", None)
                 if command is None:
                     raise ValueError("command is required to start a local MCP server")
-
                 if not isinstance(command, str):
                     raise ValueError(
                         "command must be a string to start a local MCP server"
                     )
-
                 # Reject empty/whitespace-only command strings
                 if command.strip() == "":
                     raise ValueError("command must be a non-empty string")
