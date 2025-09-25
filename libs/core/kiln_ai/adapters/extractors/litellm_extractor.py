@@ -151,7 +151,7 @@ class LitellmExtractor(BaseExtractor):
             raise ValueError("Extractor config ID is required for page cache key")
         return f"{self._cache_prefix_for_file_path(file_path)}{page_number}"
 
-    async def clear_cache_for_file_path(self, file_path: Path):
+    async def clear_cache_for_file_path(self, file_path: Path) -> None:
         prefix = self._cache_prefix_for_file_path(file_path)
         if self.filesystem_cache is None:
             return
