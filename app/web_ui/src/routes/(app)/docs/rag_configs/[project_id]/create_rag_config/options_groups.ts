@@ -161,7 +161,7 @@ export function build_vector_store_options(
               value: config.id,
               description:
                 config.name +
-                ` (${config.properties.similarity_top_k || 10} results)`,
+                ` (${config.properties.similarity_top_k ?? 10} results)`,
             })),
           },
         ]
