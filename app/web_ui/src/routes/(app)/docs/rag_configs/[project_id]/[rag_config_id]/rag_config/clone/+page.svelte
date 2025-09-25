@@ -77,9 +77,16 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="text-red-500">{error.message}</div>
       </div>
+    {:else if !rag_config}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="text-red-500">Search Tool not found</div>
+      </div>
     {:else}
       <EditRagConfigForm
-        initial_rag_config={rag_config}
+        initial_rag_config={{
+          ...rag_config,
+          name: `Copy of ${rag_config.name}`,
+        }}
         on:success={() => {
           goto(`/docs/rag_configs/${project_id}`)
         }}
