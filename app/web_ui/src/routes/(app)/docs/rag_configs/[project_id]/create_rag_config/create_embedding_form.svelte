@@ -18,13 +18,14 @@
   $: project_id = $page.params.project_id
 
   let loading: boolean = false
+  let loadingModels = true
   let error: KilnError | null = null
+
   let name: string = ""
   let description: string = ""
   let selectedModel: EmbeddingOptionValue | null = null
   let customDimensions: number | null = null
   let embeddingModels: OptionGroup[] = []
-  let loadingModels = true
   export let keyboard_submit: boolean = false
 
   type EmbeddingOptionValue = {
@@ -46,13 +47,12 @@
   async function loadEmbeddingModels() {
     try {
       loadingModels = true
-      const { error: modelsError, data } = await client.GET(
+      const { error: load_models_error, data } = await client.GET(
         "/api/available_embedding_models",
       )
 
-      if (modelsError) {
-        error = createKilnError(modelsError)
-        return
+      if (load_models_error) {
+        throw load_models_error
       }
 
       // Transform the API response into OptionGroup format
@@ -133,24 +133,25 @@
   }
 </script>
 
-<FormContainer
-  submit_visible={true}
-  submit_label="Create Embedding Config"
-  on:submit={async () => {
-    await create_embedding_config()
-  }}
-  {error}
-  gap={4}
-  bind:submitting={loading}
-  {keyboard_submit}
->
+{#if loading || loadingModels}
   <div class="flex flex-col gap-4">
-    {#if loadingModels}
-      <div class="flex items-center gap-2">
-        <div class="loading loading-spinner loading-sm"></div>
-        <span>Loading embedding models...</span>
-      </div>
-    {:else}
+    <div class="flex justify-center items-center gap-2">
+      <div class="loading loading-spinner loading-lg"></div>
+    </div>
+  </div>
+{:else}
+  <FormContainer
+    submit_visible={true}
+    submit_label="Create Embedding Config"
+    on:submit={async () => {
+      await create_embedding_config()
+    }}
+    {error}
+    gap={4}
+    bind:submitting={loading}
+    {keyboard_submit}
+  >
+    <div class="flex flex-col gap-4">
       <FormElement
         label="Embedding Model"
         description="The embedding model to use to convert your text into vectors."
@@ -160,43 +161,43 @@
         bind:value={selectedModel}
         id="embedding_model"
       />
-    {/if}
-  </div>
-  <Collapse title="Advanced Options">
-    <FormElement
-      label="Embedding Config Name"
-      description="A name to identify this embedding config. Leave blank and we'll generate one for you."
-      optional={true}
-      inputType="input"
-      id="name"
-      bind:value={name}
-    />
-    <FormElement
-      label="Description"
-      description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
-      optional={true}
-      inputType="textarea"
-      id="description"
-      bind:value={description}
-    />
-
-    {#if selectedModel && selectedModel.supports_custom_dimensions}
+    </div>
+    <Collapse title="Advanced Options">
       <FormElement
-        label="Custom Embedding Dimensions"
-        description="Leave blank to use the default, or set a custom embedding size."
-        info_description="This controls the size of the vector embedding which is generated. Leave blank for the default unless you understand how to tune this."
+        label="Embedding Config Name"
+        description="A name to identify this embedding config. Leave blank and we'll generate one for you."
         optional={true}
-        inputType="input_number"
-        id="custom_dimensions"
-        bind:value={customDimensions}
-        validator={number_validator({
-          min: 1,
-          max: selectedModel.n_dimensions || undefined,
-          integer: true,
-          label: "Custom Dimensions",
-          optional: true,
-        })}
+        inputType="input"
+        id="name"
+        bind:value={name}
       />
-    {/if}
-  </Collapse>
-</FormContainer>
+      <FormElement
+        label="Description"
+        description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
+        optional={true}
+        inputType="textarea"
+        id="description"
+        bind:value={description}
+      />
+
+      {#if selectedModel && selectedModel.supports_custom_dimensions}
+        <FormElement
+          label="Custom Embedding Dimensions"
+          description="Leave blank to use the default, or set a custom embedding size."
+          info_description="This controls the size of the vector embedding which is generated. Leave blank for the default unless you understand how to tune this."
+          optional={true}
+          inputType="input_number"
+          id="custom_dimensions"
+          bind:value={customDimensions}
+          validator={number_validator({
+            min: 1,
+            max: selectedModel.n_dimensions || undefined,
+            integer: true,
+            label: "Custom Dimensions",
+            optional: true,
+          })}
+        />
+      {/if}
+    </Collapse>
+  </FormContainer>
+{/if}
