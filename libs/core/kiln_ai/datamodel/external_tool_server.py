@@ -202,7 +202,7 @@ class ExternalToolServer(KilnParentedModel):
                     raise ValueError(
                         "Server URL is required to connect to a remote MCP server"
                     )
-                ExternalToolServer.validate_server_url(server_url)
+                ExternalToolServer.check_server_url(server_url)
 
             case ToolServerType.local_mcp:
                 command = properties.get("command", None)

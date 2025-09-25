@@ -1945,7 +1945,7 @@ export interface components {
             /** Refusal */
             refusal?: string | null;
             /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -1973,7 +1973,7 @@ export interface components {
             /** Refusal */
             refusal?: string | null;
             /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageToolCallParam"][];
+            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -2037,8 +2037,8 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageToolCallParam */
-        ChatCompletionMessageToolCallParam: {
+        /** ChatCompletionMessageFunctionToolCallParam */
+        ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
             function: components["schemas"]["Function"];
@@ -2223,7 +2223,9 @@ export interface components {
             name?: string | null;
             type: components["schemas"]["EvalConfigType"];
             /** Properties */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Name */
             model_name: string;
             provider: components["schemas"]["ModelProviderName"];
@@ -2468,7 +2470,9 @@ export interface components {
              * Input
              * @description Input for this sample
              */
-            input: string | Record<string, never>;
+            input: string | {
+                [key: string]: unknown;
+            };
             /**
              * Topic Path
              * @description The path to the topic for this sample. Empty is the root topic.
@@ -2889,7 +2893,9 @@ export interface components {
              * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
              * @default {}
              */
-            properties: Record<string, never>;
+            properties: {
+                [key: string]: unknown;
+            };
             /** Model Type */
             readonly model_type: string;
         };
@@ -3076,7 +3082,9 @@ export interface components {
             /** Description */
             description: string | null;
             /** Inputschema */
-            inputSchema?: Record<string, never>;
+            inputSchema?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ExternalToolServer
@@ -3307,7 +3315,9 @@ export interface components {
              */
             mime_type: string;
             /** @description The attachment to the file */
-            attachment: Record<string, never>;
+            attachment: {
+                [key: string]: unknown;
+            };
         };
         /**
          * FineTuneParameter
@@ -3579,7 +3589,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        "KilnBaseModel-Input": {
+        KilnBaseModel: {
             /**
              * V
              * @default 1
@@ -3596,37 +3606,6 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-        };
-        /**
-         * KilnBaseModel
-         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
-         *
-         *     Attributes:
-         *         v (int): Schema version number for migration support
-         *         id (str): Unique identifier for the model instance
-         *         path (Path): File system path where the model is stored
-         *         created_at (datetime): Timestamp when the model was created
-         *         created_by (str): User ID of the creator
-         */
-        "KilnBaseModel-Output": {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -4341,7 +4320,9 @@ export interface components {
             /** Plaintext Input */
             plaintext_input?: string | null;
             /** Structured Input */
-            structured_input?: Record<string, never> | null;
+            structured_input?: {
+                [key: string]: unknown;
+            } | null;
             /** Tags */
             tags?: string[] | null;
         };
@@ -4671,7 +4652,7 @@ export interface components {
             created_at?: string;
             /** Created By */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
+            parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
@@ -5028,7 +5009,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -5120,7 +5103,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -5176,7 +5161,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -5244,7 +5231,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -5580,7 +5569,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -5959,7 +5950,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6166,7 +6159,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6296,7 +6291,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6395,7 +6392,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -7129,7 +7128,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -7306,7 +7307,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
