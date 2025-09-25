@@ -85,13 +85,12 @@
   }
 
   async function create_embedding_config() {
-    if (!selectedModel) {
-      error = createKilnError(new Error("Please select an embedding model"))
-      return
-    }
-
     try {
       loading = true
+
+      if (!selectedModel) {
+        throw new Error("Please select an embedding model")
+      }
 
       const properties: Record<string, string | number | boolean> = {}
       if (customDimensions && selectedModel.supports_custom_dimensions) {
@@ -118,16 +117,16 @@
       )
 
       if (create_embedding_error) {
-        error = createKilnError(create_embedding_error)
-        return
+        throw create_embedding_error
       }
 
       if (!data.id) {
-        error = createKilnError(new Error("Failed to create embedding config"))
-        return
+        throw new Error("Failed to create embedding config")
       }
 
       dispatch("success", { embedding_config_id: data.id })
+    } catch (err) {
+      error = createKilnError(err)
     } finally {
       loading = false
     }
