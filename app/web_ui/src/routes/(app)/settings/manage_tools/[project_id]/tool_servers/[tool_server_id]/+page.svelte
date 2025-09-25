@@ -318,42 +318,38 @@
           />
         </div>
         <div class="flex-1">
-          {#if tool_server.type === "remote_mcp"}
+          {#if tool_server.type === "remote_mcp" && isRemoteServerProperties(tool_server.properties)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Connection Details"
             />
             <!-- Manually add a gap between the connection details and the headers -->
             <div class="mt-8">
-              {#if isRemoteServerProperties(tool_server.properties)}
-                <PropertyList
-                  properties={buildPropertiesWithSecrets(
-                    tool_server.properties.headers || {},
-                    tool_server.properties.secret_header_keys || [],
-                    tool_server.missing_secrets,
-                  )}
-                  title="Headers"
-                />
-              {/if}
+              <PropertyList
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties.headers || {},
+                  tool_server.properties.secret_header_keys || [],
+                  tool_server.missing_secrets,
+                )}
+                title="Headers"
+              />
             </div>
-          {:else if tool_server.type === "local_mcp"}
+          {:else if tool_server.type === "local_mcp" && isLocalServerProperties(tool_server.properties)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
-            {#if isLocalServerProperties(tool_server.properties) && ((tool_server.properties.env_vars && Object.keys(tool_server.properties.env_vars).length > 0) || (tool_server.properties.secret_env_var_keys && tool_server.properties.secret_env_var_keys.length > 0))}
-              <div class="mt-8">
-                <PropertyList
-                  properties={buildPropertiesWithSecrets(
-                    tool_server.properties.env_vars || {},
-                    tool_server.properties.secret_env_var_keys || [],
-                    tool_server.missing_secrets,
-                  )}
-                  title="Environment Variables"
-                />
-              </div>
-            {/if}
+            <div class="mt-8">
+              <PropertyList
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties.env_vars || {},
+                  tool_server.properties.secret_env_var_keys || [],
+                  tool_server.missing_secrets,
+                )}
+                title="Environment Variables"
+              />
+            </div>
           {/if}
         </div>
       </div>
