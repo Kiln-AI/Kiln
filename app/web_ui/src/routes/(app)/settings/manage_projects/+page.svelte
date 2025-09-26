@@ -93,7 +93,11 @@
         </thead>
         <tbody>
           {#each $projects.projects as project}
-            {@const path = project.path || "Unknown"}
+            {@const path = project.path
+              ? project.path
+                  .replace("/project.kiln", "")
+                  .replace("\\project.kiln", "")
+              : "Unknown"}
             <tr>
               <td class="font-medium">{project.name}</td>
               <td>{project.description}</td>
