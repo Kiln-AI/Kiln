@@ -5,6 +5,7 @@
 
   export let inputType:
     | "input"
+    | "input_number"
     | "textarea"
     | "select"
     | "fancy_select"
@@ -29,6 +30,10 @@
   export let disabled: boolean = false
   export let info_msg: string | null = null
   export let tall: boolean | "medium" | "xl" = false
+  export let empty_label: string = "Select an option"
+  export let empty_state_message: string = "No options available"
+  export let empty_state_subtitle: string | null = null
+  export let empty_state_link: string | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -162,6 +167,21 @@
         data-op-ignore="true"
         {disabled}
       />
+    {:else if inputType === "input_number"}
+      <input
+        type="number"
+        placeholder={error_message || placeholder || label}
+        {id}
+        class="input text-base input-bordered w-full font-base {error_message ||
+        inline_error
+          ? 'input-error'
+          : ''}"
+        bind:value
+        on:input={run_validator}
+        autocomplete="off"
+        data-op-ignore="true"
+        {disabled}
+      />
     {:else if inputType === "select"}
       <select
         {id}
@@ -199,6 +219,10 @@
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
+        {empty_label}
+        {empty_state_message}
+        {empty_state_subtitle}
+        {empty_state_link}
       />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}

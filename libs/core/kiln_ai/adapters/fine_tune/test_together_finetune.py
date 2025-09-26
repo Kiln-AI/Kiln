@@ -17,11 +17,7 @@ from kiln_ai.adapters.fine_tune.together_finetune import (
     _pending_statuses,
     _running_statuses,
 )
-from kiln_ai.datamodel import (
-    DatasetSplit,
-    StructuredOutputMode,
-    Task,
-)
+from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
 from kiln_ai.utils.config import Config

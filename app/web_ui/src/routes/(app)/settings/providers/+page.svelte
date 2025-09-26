@@ -19,5 +19,8 @@
 >
   <ConnectProviders
     highlight_finetune={$page.url.searchParams.get("highlight") === "finetune"}
+    required_providers={$page.url.searchParams
+      .get("required_providers")
+      ?.split(",") || []}
   />
 </AppPage>
