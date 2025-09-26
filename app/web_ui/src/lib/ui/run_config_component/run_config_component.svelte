@@ -22,6 +22,7 @@
   import SavedRunConfigurationsDropdown from "./saved_run_configs_dropdown.svelte"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
+  import ToolsSelector from "./tools_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import { tick, onMount } from "svelte"
@@ -30,6 +31,7 @@
   // Props
   export let project_id: string
   export let current_task: Task
+  export let selected_run_config_id: string | null = null
   export let requires_structured_output: boolean = false
 
   // Expose reactive values for parent component
@@ -37,7 +39,6 @@
   export let provider: string = ""
   export let prompt_method: string = "simple_prompt_builder"
 
-  let selected_run_config_id: string | null = null
   let model: string = $ui_state.selected_model
   let tools: string[] = []
 
@@ -256,25 +257,21 @@
   {:else}
     <div class="text-sm text-gray-500">Loading models...</div>
   {/if}
-  <div>
-    <PromptTypeSelector
-      bind:prompt_method
-      info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-      bind:linked_model_selection={model}
-    />
-  </div>
+  <PromptTypeSelector
+    bind:prompt_method
+    info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+    bind:linked_model_selection={model}
+  />
+  <ToolsSelector bind:tools {project_id} task_id={current_task.id ?? ""} />
   <Collapse
     title="Advanced Options"
     badge={tools.length > 0 ? "" + tools.length : null}
   >
     <AdvancedRunOptions
-      bind:tools
       bind:temperature
       bind:top_p
       bind:structured_output_mode
       has_structured_output={requires_structured_output}
-      {project_id}
-      task_id={current_task.id ?? ""}
     />
   </Collapse>
 </div>

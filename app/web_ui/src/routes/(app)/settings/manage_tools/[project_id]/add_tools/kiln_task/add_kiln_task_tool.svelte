@@ -6,19 +6,13 @@
   import type { Task } from "$lib/types"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { load_task_run_configs } from "$lib/stores/run_configs_store"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import {
-    load_available_models,
-    load_available_prompts,
-    load_model_info,
-    uncache_available_tools,
-  } from "$lib/stores"
-  import RunConfigComponent from "$lib/ui/run_config_component.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import type { RunConfigProperties, StructuredOutputMode } from "$lib/types"
+  import { uncache_available_tools } from "$lib/stores"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import type { RunConfigProperties } from "$lib/types"
   import { save_new_task_run_config } from "$lib/stores/run_configs_store"
   import type { components } from "$lib/api_schema"
 
@@ -27,41 +21,17 @@
   let name: string | null = null
   let description = ""
   let selected_task_id: string | null = null
-  let selected_run_config_id: string | "custom" | null = null
-  let tasks: Task[] = []
-  let tasks_loading_error: string | null = null
-  let data_loaded = false
+  let selected_run_config_id: string | null = null
 
   // Modal for creating new run config
   let create_run_config_dialog: Dialog | null = null
   let create_run_config_error: KilnError | null = null
-  let new_run_config_model = ""
-  let new_run_config_prompt_method = "simple_prompt_builder"
-  let new_run_config_tools: string[] = []
-  let new_run_config_temperature = 1.0
-  let new_run_config_top_p = 1.0
-  let new_run_config_structured_output_mode: StructuredOutputMode = "default"
 
-  // Extract model name and provider from the model string
-  $: new_run_config_model_name = new_run_config_model
-    ? new_run_config_model.split("/").slice(1).join("/")
-    : ""
-  $: new_run_config_provider_name = new_run_config_model
-    ? new_run_config_model.split("/")[0]
-    : ""
+  $: project_id = $page.params.project_id
+  $: selected_task = tasks.find((t) => t.id === selected_task_id)
 
   onMount(async () => {
-    const project_id = $page.params.project_id ?? ""
-
-    await load_tasks(project_id)
-    for (const task of tasks) {
-      // TODO: Can replace this with a request with a run config id (default)
-      await load_task_run_configs(project_id, task.id ?? "")
-    }
-
-    await load_available_prompts()
-    await load_available_models()
-    await load_model_info()
+    await load_tasks($page.params.project_id ?? "")
 
     // Check for URL parameters to pre-fill form (for cloning)
     const urlParams = new URLSearchParams($page.url.search)
@@ -94,57 +64,13 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: if (selected_task_id && name === null) {
-    // Only set name if it's null (initial selection)
-    const task = tasks.find((t) => t.id === selected_task_id)
-    if (task) {
-      name = to_snake_case(task.name)
-    }
+  $: if (selected_task && name === null) {
+    name = to_snake_case(selected_task.name)
   }
 
-  // Load run configs when task is selected
-  $: if (selected_task_id && $page.params.project_id) {
-    load_task_run_configs($page.params.project_id, selected_task_id)
-  }
+  $: task_options = data_loaded ? create_task_options(tasks) : []
 
-  // Get the default run config ID for the selected task
-  $: default_run_config_id = (() => {
-    if (selected_task_id) {
-      const task = tasks.find((t) => t.id === selected_task_id)
-      return task?.default_run_config_id || null
-    }
-    return null
-  })()
-
-  // Set default run config when task changes and no run config is selected
-  $: if (selected_task_id && !selected_run_config_id && default_run_config_id) {
-    selected_run_config_id = default_run_config_id
-  }
-
-  let should_show_create_modal = false
-
-  // Handle special case when "Create New Run Configuration" is selected
-  $: if (selected_run_config_id === "__create_new_run_config__") {
-    should_show_create_modal = true
-    selected_run_config_id = null
-  }
-
-  // Show modal when flag is set
-  $: if (should_show_create_modal) {
-    should_show_create_modal = false
-    show_create_run_config_modal()
-  }
-
-  // Handle cloning - if we have a pre-filled name from URL params, modify it
-  $: if (name && $page.url.search.includes("name=")) {
-    // This is a clone operation, modify the name to indicate it's a copy
-    if (!name.startsWith("copy_of_")) {
-      name = `copy_of_${name}`
-    }
-  }
-
-  $: task_options = data_loaded ? format_task_options(tasks) : []
-  function format_task_options(tasks: Task[]): OptionGroup[] {
+  function create_task_options(tasks: Task[]): OptionGroup[] {
     if (tasks.length === 0) {
       return []
     }
@@ -157,6 +83,10 @@
     })
     return option_groups
   }
+
+  let tasks: Task[] = []
+  let tasks_loading_error: string | null = null
+  let data_loaded = false
 
   // TODO: Move this to a shared component since select_tasks_menu.svelte uses it too
   async function load_tasks(project_id: string) {
@@ -187,28 +117,24 @@
     }
   }
 
-  // Clear error when form fields change
-  function clearErrorIfPresent() {
-    if (error) {
-      error = null
-    }
+  let should_show_create_modal = false
+
+  // Handle special case when "Create New Run Configuration" is selected
+  $: if (selected_run_config_id === "__create_new_run_config__") {
+    should_show_create_modal = true
+    selected_run_config_id = null
   }
 
-  // Functions for creating new run config
-  function show_create_run_config_modal() {
-    create_run_config_error = null
-    new_run_config_model = ""
-    new_run_config_prompt_method = "simple_prompt_builder"
-    new_run_config_tools = []
-    new_run_config_temperature = 1.0
-    new_run_config_top_p = 1.0
-    new_run_config_structured_output_mode = "default"
+  // Show modal when flag is set
+  $: if (should_show_create_modal) {
+    should_show_create_modal = false
+    show_create_new_run_config_modal()
+  }
 
-    // Ensure dialog is properly bound before showing
+  function show_create_new_run_config_modal() {
+    create_run_config_error = null
     if (create_run_config_dialog) {
       create_run_config_dialog.show()
-    } else {
-      console.error("create_run_config_dialog is not bound")
     }
   }
 
@@ -265,9 +191,16 @@
     }
   }
 
+  // Clear error when form fields change
+  function clear_error_if_present() {
+    if (error) {
+      error = null
+    }
+  }
+
   async function add_kiln_task_tool() {
     try {
-      clearErrorIfPresent()
+      clear_error_if_present()
       if (!selected_task_id) {
         error = createKilnError({
           message: "Please select a task.",
@@ -381,18 +314,14 @@
           disabled={!data_loaded}
           description="The task to add as a tool."
           info_description="Select the task that will be used as a tool."
-          on:change={clearErrorIfPresent}
+          on:change={clear_error_if_present}
         />
 
-        {#if selected_task_id}
-          <RunOptionsDropdown
+        {#if selected_task}
+          <SavedRunConfigurationsDropdown
+            {project_id}
+            current_task={selected_task}
             bind:selected_run_config_id
-            {default_run_config_id}
-            task_id={selected_task_id}
-            project_id={$page.params.project_id}
-            show_create_new_option={true}
-            label="Run Configuration"
-            description="The run configuration to use for task calls when using this tool."
           />
         {/if}
 
@@ -405,7 +334,7 @@
             bind:value={name}
             max_length={120}
             validator={validate_name}
-            on:change={clearErrorIfPresent}
+            on:change={clear_error_if_present}
           />
 
           <FormElement
@@ -416,7 +345,7 @@
             info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Performs research on a topic using reasoning and tools to provide expert insights.'"
             bind:value={description}
             validator={validate_description}
-            on:change={clearErrorIfPresent}
+            on:change={clear_error_if_present}
           />
         {/if}
       </FormContainer>
@@ -445,26 +374,13 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <AvailableModelsDropdown bind:model={new_run_config_model} />
-
-    <PromptTypeSelector bind:prompt_method={new_run_config_prompt_method} />
-
-    {#if selected_task_id}
-      <ToolsSelector
-        bind:tools={new_run_config_tools}
-        project_id={$page.params.project_id}
-        task_id={selected_task_id}
+    {#if selected_task}
+      <RunConfigComponent
+        {project_id}
+        current_task={selected_task}
+        bind:selected_run_config_id
       />
     {/if}
-
-    <Collapse title="Advanced Options">
-      <AdvancedRunOptions
-        bind:temperature={new_run_config_temperature}
-        bind:top_p={new_run_config_top_p}
-        bind:structured_output_mode={new_run_config_structured_output_mode}
-        has_structured_output={false}
-      />
-    </Collapse>
 
     {#if create_run_config_error}
       <div class="text-error text-sm">
