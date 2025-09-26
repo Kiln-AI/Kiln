@@ -3,7 +3,7 @@
 Here's an example of our table styling:
 
 ```
-<div class="overflow-x-auto rounded-lg border">
+<div class="rounded-lg border">
   <table class="table">
     <thead>
       <tr>

@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.filesystem import open_folder
+from kiln_server.project_api import project_from_id
 
 from app.desktop.log_config import get_log_file_path
 
@@ -33,6 +34,19 @@ def connect_settings(app: FastAPI):
     def open_logs():
         try:
             open_logs_folder()
+            return {"message": "opened"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/api/open_project_folder/{project_id}")
+    def open_project_folder(project_id: str):
+        try:
+            project = project_from_id(project_id)
+            path = project.path
+            if not path:
+                raise HTTPException(status_code=500, detail="Project path not found")
+
+            open_folder(path)
             return {"message": "opened"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
