@@ -254,7 +254,7 @@ def test_run_config_upgrade_old_entries():
         },
         "prompt": {
             "name": "Dazzling Unicorn",
-            "description": "Frozen copy of prompt 'simple_prompt_builder', created for evaluations.",
+            "description": "Frozen copy of prompt 'simple_prompt_builder'.",
             "generator_id": "simple_prompt_builder",
             "prompt": "Generate a joke, given a theme. The theme will be provided as a word or phrase as the input to the model. The assistant should output a joke that is funny and relevant to the theme. If a style is provided, the joke should be in that style. The output should include a setup and punchline.\n\nYour response should respect the following requirements:\n1) Keep the joke on topic. If the user specifies a theme, the joke must be related to that theme.\n2) Avoid any jokes that are offensive or inappropriate. Keep the joke clean and appropriate for all audiences.\n3) Make the joke funny and engaging. It should be something that someone would want to tell to their friends. Something clever, not just a simple pun.\n",
             "chain_of_thought_instructions": None,

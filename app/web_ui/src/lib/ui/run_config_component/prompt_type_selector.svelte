@@ -4,6 +4,7 @@
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import { getStaticPromptDisplayName } from "$lib/utils/run_config_formatters"
 
   export let prompt_method: string
   export let linked_model_selection: string | undefined = undefined
@@ -86,7 +87,14 @@
       if (prompt.chain_of_thought_instructions && exclude_cot) {
         continue
       }
-      static_prompts.push({ value: prompt.id, label: prompt.name })
+      static_prompts.push({
+        value: prompt.id,
+        label: getStaticPromptDisplayName(
+          prompt.name,
+          prompt.generator_id,
+          current_task_prompts,
+        ),
+      })
     }
     if (static_prompts.length > 0) {
       grouped_options.push({

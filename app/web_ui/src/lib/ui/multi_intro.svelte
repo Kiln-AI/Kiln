@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ActionButton } from "../../routes/(app)/types"
+  import ButtonList from "./button_list.svelte"
 
   type MultiIntro = {
     title: string
@@ -10,7 +11,10 @@
   export let intros: MultiIntro[]
 </script>
 
-<div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
+<!-- Desktop version -->
+<div
+  class="hidden md:flex flex-col items-center justify-center min-h-[50vh] mt-12"
+>
   <div class="flex justify-center">
     <!-- Hidden div to force the compiler to find these classes -->
     <span
@@ -71,33 +75,19 @@
 
       <!-- Action Buttons Row -->
       {#each intros as intro}
-        <div class="">
-          {#each intro.action_buttons as button}
-            {#if button.href}
-              <a
-                href={button.href}
-                class="btn {button.primary ? 'btn-primary' : ''} {button.notice
-                  ? 'btn-warning'
-                  : ''} w-full mt-4"
-                class:btn-disabled={button.disabled}
-              >
-                {button.label}
-              </a>
-            {:else}
-              <button
-                class="btn {button.primary ? 'btn-primary' : ''} {button.notice
-                  ? 'btn-warning'
-                  : ''} w-full mt-4"
-                class:btn-disabled={button.disabled}
-                on:click={button.handler}
-                disabled={button.disabled}
-              >
-                {button.label}
-              </button>
-            {/if}
-          {/each}
-        </div>
+        <ButtonList buttons={intro.action_buttons} />
       {/each}
     </div>
   </div>
+</div>
+
+<!-- Mobile version -->
+<div class="flex md:hidden flex-col mt-12 gap-y-12">
+  {#each intros as intro}
+    <div class="flex flex-col">
+      <h2 class="font-medium text-lg mb-1">{intro.title}</h2>
+      <p class="font-light">{intro.description}</p>
+      <ButtonList buttons={intro.action_buttons} />
+    </div>
+  {/each}
 </div>

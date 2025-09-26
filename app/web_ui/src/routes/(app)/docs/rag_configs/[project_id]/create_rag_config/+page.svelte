@@ -34,6 +34,8 @@
   } from "../add_search_tool/rag_config_templates"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { tool_name_validator } from "$lib/utils/input_validators"
+  import posthog from "posthog-js"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   const template_id = $page.url.searchParams.get("template_id")
@@ -42,8 +44,10 @@
 
   let loading: boolean = false
   let error: KilnError | null = null
-  let tool_name: string = "search_docs"
-  let tool_description: string = "Search documents for knowledge."
+  const DEFAULT_TOOL_NAME = "search_docs"
+  const DEFAULT_TOOL_DESCRIPTION = "Search documents for knowledge."
+  let tool_name: string = DEFAULT_TOOL_NAME
+  let tool_description: string = DEFAULT_TOOL_DESCRIPTION
   let name: string | null = null
   let description: string = ""
   let selected_tags: string[] = []
@@ -452,6 +456,48 @@
         return
       }
 
+      let extractor_model: string | undefined = undefined
+      let chunker_type: "fixed_window" | undefined = undefined
+      let chunker_size: unknown = undefined
+      let chunker_overlap: unknown = undefined
+      let embedding_model: string | undefined = undefined
+      let vector_store_type: string | undefined = undefined
+      try {
+        extractor_model = extractor_configs.find(
+          (config) => config.id === selected_extractor_config_id,
+        )?.model_name
+        chunker_type = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )?.chunker_type
+        chunker_size = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )?.properties.chunk_size
+        chunker_overlap = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )?.properties.chunk_overlap
+        embedding_model = embedding_configs.find(
+          (config) => config.id === selected_embedding_config_id,
+        )?.model_name
+        vector_store_type = vector_store_configs.find(
+          (config) => config.id === selected_vector_store_config_id,
+        )?.store_type
+      } catch (e) {
+        console.error(e)
+      }
+      posthog.capture("create_custom_rag_config", {
+        tag_filter: selected_tags.length > 0,
+        custom_name: tool_name !== DEFAULT_TOOL_NAME,
+        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
+        extractor_model: extractor_model,
+        chunker_type: chunker_type,
+        chunker_size: chunker_size,
+        chunker_overlap: chunker_overlap,
+        embedding_model: embedding_model,
+        vector_store_type: vector_store_type,
+      })
+
+      uncache_available_tools(project_id)
+
       goto(`/docs/rag_configs/${project_id}`)
     } finally {
       loading = false
@@ -549,6 +595,15 @@
         return
       }
 
+      posthog.capture("create_rag_config_from_template", {
+        template_name: template.name,
+        tag_filter: selected_tags.length > 0,
+        custom_name: tool_name !== DEFAULT_TOOL_NAME,
+        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
+      })
+
+      uncache_available_tools(project_id)
+
       goto(`/docs/rag_configs/${project_id}`)
     } finally {
       loading = false
@@ -559,6 +614,8 @@
 <AppPage
   title="Create Search Tool (RAG)"
   subtitle="Define parameters for how this tool will search and retrieve your documents"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   breadcrumbs={[
     {
       label: "Docs & Search",

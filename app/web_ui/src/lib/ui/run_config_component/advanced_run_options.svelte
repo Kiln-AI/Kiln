@@ -8,11 +8,10 @@
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
 
-  // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
-  export let temperature: number = 1.0
-  export let top_p: number = 1.0
-  export let structured_output_mode: StructuredOutputMode = "default"
-  export let has_structured_output: boolean = false
+  export let temperature: number
+  export let top_p: number
+  export let structured_output_mode: StructuredOutputMode
+  export let has_structured_output: boolean
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
@@ -185,8 +184,12 @@
   ]
 
   function get_tool_options(
-    available_tools: ToolSetApiDescription[],
+    available_tools: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
+    if (!available_tools) {
+      return []
+    }
+
     let option_groups: OptionGroup[] = []
 
     available_tools?.forEach((tool_set) => {
@@ -204,22 +207,25 @@
 </script>
 
 <div>
-  {#if $available_tools[project_id]?.length > 0}
-    <FormElement
-      id="tools"
-      label="Tools"
-      inputType="multi_select"
-      info_description="Select the tools available to the model. The model may or may not choose to use them."
-      bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
-    />
-  {/if}
+  <FormElement
+    id="tools"
+    label="Tools & Search"
+    inputType="multi_select"
+    info_description={"Select the tools available to the model.\nThe model may or may not choose to use them."}
+    bind:value={tools}
+    fancy_select_options={get_tool_options($available_tools[project_id])}
+    empty_state_message={$available_tools[project_id] === undefined
+      ? "Loading tools..."
+      : "No Tools Available"}
+    empty_state_subtitle="Add Tools"
+    empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
+  />
 
   <FormElement
     id="temperature"
     label="Temperature"
     inputType="input"
-    info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    info_description={"A value from 0.0 to 2.0.\nTemperature is a parameter that controls the randomness of the model's output.\nLower values make the output more focused and deterministic, while higher values make it more creative and varied."}
     bind:value={temperature}
     validator={validate_temperature}
   />
@@ -228,7 +234,7 @@
     id="top_p"
     label="Top P"
     inputType="input"
-    info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    info_description={"A value from 0.0 to 1.0.\nTop P is a parameter that controls the diversity of the model's output.\nLower values make the output more focused and deterministic, while higher values make it more creative and varied."}
     bind:value={top_p}
     validator={validate_top_p}
   />

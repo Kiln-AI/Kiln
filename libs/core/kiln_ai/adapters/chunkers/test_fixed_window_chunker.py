@@ -6,6 +6,7 @@ from llama_index.core.text_splitter import SentenceSplitter
 
 from kiln_ai.adapters.chunkers.base_chunker import ChunkingResult
 from kiln_ai.adapters.chunkers.fixed_window_chunker import FixedWindowChunker
+from kiln_ai.adapters.chunkers.helpers import clean_up_text
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 
 
@@ -30,7 +31,7 @@ async def test_fixed_window_chunker_wrong_chunker_type(
         FixedWindowChunker(
             ChunkerConfig(
                 name="test-chunker",
-                chunker_type="wrong-chunker-type",
+                chunker_type="wrong-chunker-type",  # type: ignore
                 properties={"chunk_size": 100, "chunk_overlap": 10},
             )
         )
@@ -270,3 +271,76 @@ async def test_fixed_window_chunker_very_large_text(mock_fixed_window_chunker_fa
     # All chunks should have content
     for chunk in output.chunks:
         assert chunk.text.strip() != ""
+
+
+@pytest.mark.parametrize(
+    "whitespace_length",
+    [10_000],
+)
+async def test_fixed_window_chunker_removes_consecutive_whitespace(
+    mock_fixed_window_chunker_factory, whitespace_length
+):
+    # this is a very large text due to 1M+ consecutive whitespace characters
+    # the chunker crashes with a rust error
+    text = """Water plays an important role in the world economy. Approximately 70% of the fresh water used by humans goes to agriculture.[26] Fishing in salt and fresh water bodies has been, and continues to be, a major source of food for many parts of the world, providing 6.5% of global protein.[27] Much of the long-distance trade of commodities (such as oil, natural gas, and manufactured products) is transported by boats through seas, rivers, lakes, and canals. Large quantities of water, ice, and steam are used for cooling and heating in industry and homes. Water is an excellent solvent for a wide variety of substances, both mineral and organic; as such, it is widely used in industrial processes and in cooking and washing. Water, ice, and snow are also central to many sports and other forms of entertainment, such as swimming, pleasure boating, boat racing, surfing, sport fishing, diving, ice skating, snowboarding, and skiing.
+{WHITESPACE_PROBLEM_HERE}
+The word water comes from Old English wæter, from Proto-Germanic *watar (source also of Old Saxon watar, Old Frisian wetir, Dutch water, Old High German wazzar, German Wasser, vatn, Gothic 𐍅𐌰𐍄𐍉 (wato)), from Proto-Indo-European *wod-or, suffixed form of root *wed- ('water'; 'wet').[28] Also cognate, through the Indo-European root, with Greek ύδωρ (ýdor; from Ancient Greek ὕδωρ (hýdōr), whence English 'hydro-'), Russian вода́ (vodá), Irish uisce, and Albanian ujë.
+""".replace("{WHITESPACE_PROBLEM_HERE}", " " * whitespace_length)
+
+    chunker = mock_fixed_window_chunker_factory(32, 8)
+
+    with patch(
+        "kiln_ai.adapters.chunkers.base_chunker.clean_up_text"
+    ) as mock_clean_up_text:
+        mock_clean_up_text.side_effect = clean_up_text
+        output = await chunker.chunk(text)
+        mock_clean_up_text.assert_called_once_with(text)
+        assert len(output.chunks) > 1
+
+
+@pytest.mark.parametrize(
+    "whitespace_length",
+    [100_000, 1_000_000, 5_000_000, 10_000_000],
+)
+@pytest.mark.paid
+async def test_fixed_window_chunker_removes_consecutive_whitespace_heavy_load(
+    mock_fixed_window_chunker_factory, whitespace_length
+):
+    # this is a very large text due to 1M+ consecutive whitespace characters
+    # the chunker crashes with a rust error
+    text = """Water plays an important role in the world economy. Approximately 70% of the fresh water used by humans goes to agriculture.[26] Fishing in salt and fresh water bodies has been, and continues to be, a major source of food for many parts of the world, providing 6.5% of global protein.[27] Much of the long-distance trade of commodities (such as oil, natural gas, and manufactured products) is transported by boats through seas, rivers, lakes, and canals. Large quantities of water, ice, and steam are used for cooling and heating in industry and homes. Water is an excellent solvent for a wide variety of substances, both mineral and organic; as such, it is widely used in industrial processes and in cooking and washing. Water, ice, and snow are also central to many sports and other forms of entertainment, such as swimming, pleasure boating, boat racing, surfing, sport fishing, diving, ice skating, snowboarding, and skiing.
+{WHITESPACE_PROBLEM_HERE}
+The word water comes from Old English wæter, from Proto-Germanic *watar (source also of Old Saxon watar, Old Frisian wetir, Dutch water, Old High German wazzar, German Wasser, vatn, Gothic 𐍅𐌰𐍄𐍉 (wato)), from Proto-Indo-European *wod-or, suffixed form of root *wed- ('water'; 'wet').[28] Also cognate, through the Indo-European root, with Greek ύδωρ (ýdor; from Ancient Greek ὕδωρ (hýdōr), whence English 'hydro-'), Russian вода́ (vodá), Irish uisce, and Albanian ujë.
+""".replace("{WHITESPACE_PROBLEM_HERE}", " " * whitespace_length)
+
+    chunker = mock_fixed_window_chunker_factory(32, 8)
+
+    with patch(
+        "kiln_ai.adapters.chunkers.base_chunker.clean_up_text"
+    ) as mock_clean_up_text:
+        mock_clean_up_text.side_effect = clean_up_text
+        output = await chunker.chunk(text)
+        mock_clean_up_text.assert_called_once_with(text)
+        assert len(output.chunks) > 1
+
+
+# this test takes a long time to run
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "number_of_sentences",
+    [10, 100, 1_000, 10_000],
+)
+async def test_fixed_window_chunker_handle_large_text(
+    mock_fixed_window_chunker_factory, number_of_sentences
+):
+    sentence = """Water plays an important role in the world economy. Approximately 70% of the fresh water used by humans goes to agriculture.[26] Fishing in salt and fresh water bodies has been, and continues to be, a major source of food for many parts of the world, providing 6.5% of global protein.[27] Much of the long-distance trade of commodities (such as oil, natural gas, and manufactured products) is transported by boats through seas, rivers, lakes, and canals. Large quantities of water, ice, and steam are used for cooling and heating in industry and homes. Water is an excellent solvent for a wide variety of substances, both mineral and organic; as such, it is widely used in industrial processes and in cooking and washing. Water, ice, and snow are also central to many sports and other forms of entertainment, such as swimming, pleasure boating, boat racing, surfing, sport fishing, diving, ice skating, snowboarding, and skiing."""
+    text = sentence * number_of_sentences
+
+    chunker = mock_fixed_window_chunker_factory(32, 8)
+    with patch(
+        "kiln_ai.adapters.chunkers.base_chunker.clean_up_text"
+    ) as mock_clean_up_text:
+        mock_clean_up_text.side_effect = clean_up_text
+        output = await chunker.chunk(text)
+        mock_clean_up_text.assert_called_once_with(text)
+        assert len(output.chunks) > 1

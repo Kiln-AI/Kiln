@@ -41,18 +41,6 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
 
 3. Open the app: http://localhost:5173/run
 
-
-### Logs
-
-The default log level for the development server is `INFO`. You may override the log level by setting the `KILN_LOG_LEVEL` environment variable.
-
-For example, to capture logs for the `DEBUG` level and up, run:
-```sh
-KILN_LOG_LEVEL=DEBUG uv run python -m app.desktop.dev_server
-```
-
-During development, logs go to stdout as well as into files prefixed with `dev_` in `~/.kiln_ai/logs/*.log`.
-
 ### Running and Building the Desktop App
 
 See the [desktop README](app/desktop/README.md) instructions for running the desktop app locally.

@@ -80,7 +80,7 @@
       }
       // we have a current project, but no current task.
       // Go to setup to create one (or select one)
-      await load_current_task($current_project)
+      await load_current_task($current_project?.id)
       if (!$current_task) {
         goto("/setup/select_task")
         return

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -243,12 +244,21 @@ def connect_run_api(app: FastAPI):
         remove_tags: list[str] | None = None,
     ):
         task = task_from_id(project_id, task_id)
-        failed_runs: list[str] = []
-        for run_id in run_ids:
-            run = TaskRun.from_id_and_parent_path(run_id, task.path)
-            if not run:
-                failed_runs.append(run_id)
-            else:
+
+        # all the runs we need to tag
+        run_ids_set: set[str] = set(run_ids)
+        runs_found_set: set[str] = set()
+
+        batch_size = 500
+        for i in range(0, len(run_ids), batch_size):
+            # release the event loop to prevent blocking other operations for too long
+            await asyncio.sleep(0)
+
+            batch_run_ids = run_ids[i : i + batch_size]
+            batch_runs = TaskRun.from_ids_and_parent_path(set(batch_run_ids), task.path)
+            runs_found_set.update(batch_runs.keys())
+
+            for run in batch_runs.values():
                 modified = False
                 if remove_tags and any(tag in (run.tags or []) for tag in remove_tags):
                     run.tags = list(
@@ -261,6 +271,8 @@ def connect_run_api(app: FastAPI):
                 if modified:
                     run.save_to_file()
 
+        # all the runs we needed to tag minus the runs we did tag
+        failed_runs = list(run_ids_set - runs_found_set)
         if failed_runs:
             raise HTTPException(
                 status_code=500,
@@ -321,6 +333,17 @@ def connect_run_api(app: FastAPI):
             filename=file_name,
             imported_count=imported_count,
         )
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/tags")
+    async def get_tags(project_id: str, task_id: str) -> dict[str, int]:
+        tags_count = {}
+        task = task_from_id(project_id, task_id)
+        # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
+        # We also cache the result client side
+        for run in task.runs(readonly=True):
+            for tag in run.tags:
+                tags_count[tag] = tags_count.get(tag, 0) + 1
+        return tags_count
 
 
 async def update_run_util(

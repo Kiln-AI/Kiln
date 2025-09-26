@@ -66,7 +66,7 @@ ui_state.subscribe((state) => {
     current_task.set(null)
     current_task_rating_options.set(null)
     current_task_prompts.set(null)
-    load_current_task(get(current_project))
+    load_current_task(get(current_project)?.id)
   }
   previous_ui_state = { ...state }
 })
@@ -74,7 +74,7 @@ ui_state.subscribe((state) => {
 projects.subscribe((all_projects) => {
   if (all_projects) {
     current_project.set(get_current_project())
-    load_current_task(get(current_project))
+    load_current_task(get(current_project)?.id)
   }
 })
 
@@ -171,14 +171,14 @@ export async function load_task(
   return data
 }
 
-export async function load_current_task(project: Project | null) {
+export async function load_current_task(project_id: string | null | undefined) {
   let task: Task | null = null
   try {
     const task_id = get(ui_state).current_task_id
-    if (!project || !project?.id || !task_id) {
+    if (!project_id || !task_id) {
       return
     }
-    task = await load_task(project.id, task_id)
+    task = await load_task(project_id, task_id)
 
     // Load the current task's prompts after 50ms, as it's not the most critical data
     setTimeout(() => {

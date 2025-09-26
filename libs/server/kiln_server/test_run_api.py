@@ -1,3 +1,5 @@
+import logging
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1438,3 +1440,113 @@ def test_parse_splits_invalid(input_str, expected_error):
         parse_splits(input_str)
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail == expected_error
+
+
+@pytest.mark.asyncio
+async def test_get_tags_success(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+
+    # Set tags on the existing run
+    task_run.tags = ["tag1", "tag2", "tag3"]
+    task_run.save_to_file()
+
+    # Create a second run with overlapping tags
+    second_run = TaskRun(
+        parent=task,
+        input="Test input 2",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Test output 2",
+            source=DataSource(
+                type=DataSourceType.human,
+                properties={"created_by": "Test User"},
+            ),
+        ),
+        tags=["tag2", "tag3", "tag4"],
+    )
+    second_run.save_to_file()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task = MagicMock()
+        mock_task.runs.return_value = [task_run, second_run]
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")
+
+    assert response.status_code == 200
+    result = response.json()
+
+    # Verify tag counts: tag1(1), tag2(2), tag3(2), tag4(1)
+    expected_counts = {"tag1": 1, "tag2": 2, "tag3": 2, "tag4": 1}
+    assert result == expected_counts
+
+
+def create_multiple_task_runs(task: Task, count: int) -> list[TaskRun]:
+    """Helper function to create multiple TaskRuns for benchmarking."""
+    runs = []
+    for i in range(count):
+        run = TaskRun(
+            parent=task,
+            input=f"Test input {i}",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "Test User"}
+            ),
+            output=TaskOutput(
+                output=f"Test output {i}",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "gpt_4o",
+                        "model_provider": "ollama",
+                        "adapter_name": "kiln_langchain_adapter",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                ),
+            ),
+        )
+        run.save_to_file()
+        runs.append(run)
+    return runs
+
+
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+@pytest.mark.parametrize("run_count", [100, 1000, 10000, 50000])
+async def test_benchmark_tag_runs(client, task_run_setup, run_count):
+    """Benchmark test for tagging TaskRuns with different counts."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    # Create TaskRuns
+    runs = create_multiple_task_runs(task, run_count)
+    run_ids = [run.id for run in runs]
+
+    # Benchmark the tagging operation
+    start_time = time.perf_counter()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/edit_tags",
+            json={"run_ids": run_ids, "add_tags": ["benchmark_tag"], "remove_tags": []},
+        )
+
+    end_time = time.perf_counter()
+    duration = end_time - start_time
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+
+    # Calculate performance statistics
+    runs_per_second = run_count / duration if duration > 0 else 0
+    avg_time_per_run = duration / run_count if run_count > 0 else 0
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Tagging {run_count} runs took: {duration:.3f} seconds")
+    logger.info(
+        f"Performance: {runs_per_second:.1f} runs/second, {avg_time_per_run * 1000:.2f}ms per run"
+    )

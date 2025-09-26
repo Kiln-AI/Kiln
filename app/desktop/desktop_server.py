@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from kiln_ai.adapters.remote_config import load_remote_models
 from kiln_ai.utils.logging import setup_litellm_logging
 
-from app.desktop.log_config import log_config, validate_log_level
+from app.desktop.log_config import log_config
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
@@ -48,8 +48,8 @@ async def lifespan(app: FastAPI):
     datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
-def make_app(tk_root: tk.Tk | None = None, litellm_log_filename: str | None = None):
-    setup_litellm_logging(litellm_log_filename)
+def make_app(tk_root: tk.Tk | None = None):
+    setup_litellm_logging()
 
     load_remote_models(REMOTE_MODEL_LIST_URL)
 
@@ -71,14 +71,11 @@ def make_app(tk_root: tk.Tk | None = None, litellm_log_filename: str | None = No
 
 def server_config(port=8757, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
-        make_app(tk_root=tk_root, litellm_log_filename="model_calls.log"),
+        make_app(tk_root=tk_root),
         host="127.0.0.1",
         port=port,
         use_colors=False,
-        log_config=log_config(
-            log_level=validate_log_level(os.getenv("KILN_LOG_LEVEL", "WARNING")),
-            log_file_name="kiln_desktop.log",
-        ),
+        log_config=log_config(),
     )
 
 

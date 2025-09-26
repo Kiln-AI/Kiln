@@ -119,7 +119,7 @@
                     {:else if prompt.id.startsWith("fine_tune_prompt::")}
                       Fine Tuning Prompt
                     {:else if prompt.id.startsWith("task_run_config::")}
-                      Eval Prompt
+                      Frozen Prompt
                     {:else}
                       Unknown
                     {/if}

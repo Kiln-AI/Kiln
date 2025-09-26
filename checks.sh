@@ -36,7 +36,7 @@ uvx ruff format --check .
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
 if command -v misspell >/dev/null 2>&1; then
-    find . -type f | grep -v "/node_modules/" | grep  -v "/\." | grep -v "/dist/" | grep -v "/desktop/build/" | xargs misspell -error
+    find . -type f | grep -v "/node_modules/" | grep  -v "/\." | grep -v "/dist/" | grep -v "/desktop/build/" | grep -v "/app/web_ui/build/" | xargs misspell -error
     echo "No misspellings found"
 else
     echo "\033[31mWarning: misspell command not found. Skipping misspelling check.\033[0m"

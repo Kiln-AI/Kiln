@@ -10,6 +10,13 @@ from uvicorn import Config as UvicornConfig
 import app.desktop.desktop_server as desktop_server
 from app.desktop.desktop import DesktopApp, DesktopServer
 
+# Suppress third-party DeprecationWarnings from websockets during this test module
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::DeprecationWarning:websockets\\.legacy",
+    "ignore::DeprecationWarning:websockets\\.server",
+    "ignore:.*WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn\\.protocols\\.websockets\\.websockets_impl",
+)
+
 
 @pytest.fixture(autouse=True)
 def mock_gui_modules():

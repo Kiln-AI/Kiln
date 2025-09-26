@@ -57,6 +57,7 @@ from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.filesystem import open_folder
+from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, model_validator
@@ -538,14 +539,15 @@ async def build_rag_workflow_runner(
                 RagExtractionStepRunner(
                     project,
                     extractor_config,
-                    concurrency=20,
+                    concurrency=5,
                     rag_config=rag_config,
+                    filesystem_cache=TemporaryFilesystemCache.shared(),
                 ),
                 RagChunkingStepRunner(
                     project,
                     extractor_config,
                     chunker_config,
-                    concurrency=50,
+                    concurrency=5,
                     rag_config=rag_config,
                 ),
                 RagEmbeddingStepRunner(
@@ -553,7 +555,7 @@ async def build_rag_workflow_runner(
                     extractor_config,
                     chunker_config,
                     embedding_config,
-                    concurrency=20,
+                    concurrency=5,
                     rag_config=rag_config,
                 ),
                 RagIndexingStepRunner(
@@ -727,12 +729,23 @@ def connect_document_api(app: FastAPI):
         remove_tags: list[str] | None = None,
     ) -> dict[str, bool]:
         project = project_from_id(project_id)
-        failed_documents: list[str] = []
-        for document_id in document_ids:
-            document = Document.from_id_and_parent_path(document_id, project.path)
-            if not document:
-                failed_documents.append(document_id)
-            else:
+
+        # all the runs we need to tag
+        doc_ids_set: set[str] = set(document_ids)
+        docs_found_set: set[str] = set()
+
+        batch_size = 500
+        for i in range(0, len(document_ids), batch_size):
+            # release the event loop to prevent blocking other operations for too long
+            await asyncio.sleep(0)
+
+            batch_doc_ids = document_ids[i : i + batch_size]
+            batch_docs = Document.from_ids_and_parent_path(
+                set(batch_doc_ids), project.path
+            )
+            docs_found_set.update(batch_docs.keys())
+
+            for document in batch_docs.values():
                 modified = False
                 if remove_tags and any(
                     tag in (document.tags or []) for tag in remove_tags
@@ -753,6 +766,8 @@ def connect_document_api(app: FastAPI):
                 if modified:
                     document.save_to_file()
 
+        # all the runs we needed to tag minus the runs we did tag
+        failed_documents = list(doc_ids_set - docs_found_set)
         if failed_documents:
             raise HTTPException(
                 status_code=500,

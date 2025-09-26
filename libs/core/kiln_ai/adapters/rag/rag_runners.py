@@ -37,6 +37,7 @@ from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.lock import shared_async_lock_manager
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -229,12 +230,14 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         extractor_config: ExtractorConfig,
         concurrency: int = 10,
         rag_config: RagConfig | None = None,
+        filesystem_cache: FilesystemCache | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
         self.lock_key = f"docs:extract:{self.extractor_config.id}"
         self.concurrency = concurrency
         self.rag_config = rag_config
+        self.filesystem_cache = filesystem_cache
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.EXTRACTING
@@ -281,6 +284,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
             extractor = extractor_adapter_from_type(
                 self.extractor_config.extractor_type,
                 self.extractor_config,
+                self.filesystem_cache,
             )
 
             observer = GenericErrorCollector()

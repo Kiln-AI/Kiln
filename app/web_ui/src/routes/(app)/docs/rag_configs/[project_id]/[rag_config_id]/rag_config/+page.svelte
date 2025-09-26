@@ -27,6 +27,8 @@
   import { mime_type_to_string } from "$lib/utils/formatters"
   import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
   import Warning from "$lib/ui/warning.svelte"
+  import posthog from "posthog-js"
+  import { uncache_available_tools } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -115,6 +117,13 @@
     } finally {
       loading = false
     }
+
+    uncache_available_tools(project_id)
+
+    posthog.capture(
+      is_archived ? "archive_rag_config" : "unarchive_rag_config",
+      {},
+    )
   }
 
   function tooltip_for_chunker_type(chunker_type: ChunkerType): string {
@@ -203,6 +212,8 @@
   <AppPage
     title="Search Tool (RAG)"
     subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     breadcrumbs={[
       {
         label: "Docs & Search",

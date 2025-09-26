@@ -44,26 +44,9 @@
     }
   }
 
-  function get_fancy_select_options(
-    document_tags: string[],
-    loading_tags: boolean,
-  ) {
-    if (loading_tags) {
-      return [
-        {
-          label: "Loading document tags. Please wait...",
-          options: [],
-        },
-      ]
-    }
+  function get_fancy_select_options(document_tags: string[]) {
     if (document_tags.length === 0) {
-      return [
-        {
-          label:
-            "No documents have tags. Add tags in the document library to create a filter.",
-          options: [],
-        },
-      ]
+      return []
     }
     return [
       {
@@ -88,11 +71,15 @@
       info_description="If a tag filter is applied, only documents with those tags will be searched by this tool. You can add tags to your documents in the document library."
       inputType="multi_select"
       empty_label="All Documents in Library"
-      fancy_select_options={get_fancy_select_options(
-        available_tags,
-        loading_tags,
-      )}
+      fancy_select_options={get_fancy_select_options(available_tags)}
       bind:value={selected_tags}
+      empty_state_message={loading_tags
+        ? "Loading document tags..."
+        : "No documents have tags."}
+      empty_state_subtitle={loading_tags
+        ? null
+        : "Add tags in the document library to create a filter."}
+      empty_state_link={loading_tags ? null : `/docs/library/${project_id}`}
     />
   {/if}
 </div>

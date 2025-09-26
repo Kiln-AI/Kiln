@@ -1,4 +1,5 @@
 import os
+from importlib.metadata import version
 
 import uvicorn
 from fastapi import FastAPI
@@ -12,11 +13,20 @@ from .run_api import connect_run_api
 from .task_api import connect_task_api
 
 
+def _get_version() -> str:
+    """Get the version of the kiln-server package."""
+    try:
+        return version("kiln-server")
+    except Exception:
+        return "unknown"
+
+
 def make_app(lifespan=None):
     app = FastAPI(
         title="Kiln AI Server",
         summary="A REST API for the Kiln AI datamodel.",
         description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln",
+        version=_get_version(),
         lifespan=lifespan,
     )
 
