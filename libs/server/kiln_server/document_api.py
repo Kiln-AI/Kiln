@@ -736,6 +736,9 @@ def connect_document_api(app: FastAPI):
 
         batch_size = 500
         for i in range(0, len(document_ids), batch_size):
+            # release the event loop to prevent blocking other operations for too long
+            await asyncio.sleep(0)
+
             batch_doc_ids = document_ids[i : i + batch_size]
             batch_docs = Document.from_ids_and_parent_path(
                 set(batch_doc_ids), project.path

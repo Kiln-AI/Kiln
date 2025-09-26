@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -250,6 +251,9 @@ def connect_run_api(app: FastAPI):
 
         batch_size = 500
         for i in range(0, len(run_ids), batch_size):
+            # release the event loop to prevent blocking other operations for too long
+            await asyncio.sleep(0)
+
             batch_run_ids = run_ids[i : i + batch_size]
             batch_runs = TaskRun.from_ids_and_parent_path(set(batch_run_ids), task.path)
             runs_found_set.update(batch_runs.keys())
