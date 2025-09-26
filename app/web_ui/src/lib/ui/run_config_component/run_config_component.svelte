@@ -25,16 +25,15 @@
   // Props
   export let project_id: string
   export let current_task: Task
-  export let requires_structured_output: boolean = false
-
-  // Expose reactive values for parent component
   export let model_name: string = ""
   export let provider: string = ""
-  export let prompt_method: string = "simple_prompt_builder"
+  export let requires_structured_output: boolean = false
 
   let selected_run_config_id: string | null = null
   let model: string = $ui_state.selected_model
+  let prompt_method: string = "simple_prompt_builder"
   let tools: string[] = []
+  let requires_tool_support: boolean = false
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -207,8 +206,8 @@
   }
 
   // Expose methods for run parent component
-  export function get_selected_model() {
-    return model_dropdown.get_selected_model()
+  export function get_selected_model(): string | null {
+    return model_dropdown ? model_dropdown.get_selected_model() : null
   }
 
   export function clear_model_dropdown_error() {
@@ -217,6 +216,10 @@
 
   export function set_model_dropdown_error(message: string) {
     model_dropdown_error_message = message
+  }
+
+  export function get_prompt_method(): string {
+    return prompt_method
   }
 </script>
 

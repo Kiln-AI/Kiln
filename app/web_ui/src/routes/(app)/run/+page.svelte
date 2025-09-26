@@ -18,6 +18,8 @@
 
   let input_form: RunInputForm
   let output_section: HTMLElement | null = null
+  let model_name: string = ""
+  let provider: string = ""
   let run_config_component: RunConfigComponent
 
   let response: TaskRun | null = null
@@ -36,6 +38,11 @@
       run_error = null
       response = null
       run_complete = false
+      if (!run_config_component) {
+        throw new Error(
+          "Task configuration is still loading. Please wait a moment and try again.",
+        )
+      }
       run_config_component.clear_model_dropdown_error()
       if (!run_config_component.get_selected_model()) {
         run_config_component.set_model_dropdown_error("Required")
@@ -63,9 +70,9 @@
         throw fetch_error
       }
       posthog.capture("run_task", {
-        model_name: run_config_component.model_name,
-        provider: run_config_component.provider,
-        prompt_method: run_config_component.prompt_method,
+        model_name: model_name,
+        provider: provider,
+        prompt_method: run_config_component.get_prompt_method(),
       })
       response = data
     } catch (e) {
@@ -164,8 +171,8 @@
           initial_run={response}
           task={$current_task}
           {project_id}
-          bind:model_name={run_config_component.model_name}
-          bind:provider={run_config_component.provider}
+          bind:model_name
+          bind:provider
           bind:run_complete
           focus_repair_on_appear={true}
         />
