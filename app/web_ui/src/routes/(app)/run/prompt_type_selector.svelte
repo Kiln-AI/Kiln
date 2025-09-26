@@ -28,12 +28,7 @@
     fine_tune_prompt_id: string | undefined,
   ): OptionGroup[] {
     if (!current_task_prompts) {
-      return [
-        {
-          label: "Loading...",
-          options: [],
-        },
-      ]
+      return []
     }
 
     const grouped_options: OptionGroup[] = []
@@ -130,6 +125,8 @@
 <FormElement
   label="Prompt Method"
   inputType="fancy_select"
+  empty_state_message="Loading prompts..."
+  empty_state_subtitle="Please wait."
   {description}
   {info_description}
   bind:value={prompt_method}
