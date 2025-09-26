@@ -27,7 +27,6 @@
   $: task_id = $current_task?.id ?? ""
   $: input_schema = $current_task?.input_json_schema
   $: requires_structured_output = !!$current_task?.output_json_schema
-  $: default_run_config_id = $current_task?.default_run_config_id ?? null
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
 
@@ -150,13 +149,14 @@
           <RunInputForm bind:input_schema bind:this={input_form} />
         </FormContainer>
       </div>
-      <RunConfigComponent
-        bind:this={run_config_component}
-        {project_id}
-        {task_id}
-        {default_run_config_id}
-        {requires_structured_output}
-      />
+      {#if $current_task}
+        <RunConfigComponent
+          bind:this={run_config_component}
+          {project_id}
+          current_task={$current_task}
+          {requires_structured_output}
+        />
+      {/if}
     </div>
     {#if $current_task && !submitting && response != null && project_id}
       <div class="mt-8 xl:mt-12" bind:this={output_section} id="output-section">

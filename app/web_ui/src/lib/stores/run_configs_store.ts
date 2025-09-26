@@ -2,6 +2,7 @@ import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
 import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+import { load_current_task } from "$lib/stores"
 
 type TaskCompositeId = string & { __brand: "TaskCompositeId" }
 
@@ -172,4 +173,7 @@ export async function update_task_default_run_config(
   if (error) {
     throw error
   }
+
+  // Reload the current task to get the updated default_run_config_id
+  await load_current_task(project_id)
 }

@@ -6,6 +6,7 @@
   import type {
     PromptResponse,
     ProviderModels,
+    Task,
     TaskRunConfig,
   } from "$lib/types"
   import {
@@ -23,21 +24,18 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
     get_task_composite_id,
+    update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
-  import type { KilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { createEventDispatcher } from "svelte"
 
   const dispatch = createEventDispatcher<{
     save_run_options: void
-    set_run_config_as_default: void
   }>()
 
   export let project_id: string
-  export let task_id: string
+  export let current_task: Task
   export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
-  export let default_run_config_id: string | null = null
-
-  export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
 
   $: show_save_button = selected_run_config_id === "custom"
@@ -47,12 +45,14 @@
     Promise.all([load_available_prompts(), load_model_info()])
   })
 
-  $: if (project_id && task_id) {
-    load_task_run_configs(project_id, task_id)
+  $: default_run_config_id = current_task.default_run_config_id ?? null
+
+  $: if (project_id && current_task.id) {
+    load_task_run_configs(project_id, current_task.id)
   }
 
   // Initialization of selected_run_config_id
-  $: if (default_run_config_id !== null) {
+  $: if (selected_run_config_id === null) {
     if (default_run_config_id) {
       if (selected_run_config_id === null) {
         selected_run_config_id = default_run_config_id
@@ -89,7 +89,7 @@
 
   // Build the options for the dropdown
   function build_options(
-    default_run_config_id: string | null,
+    default_run_config_id: string | null | undefined,
     run_configs_by_task_composite_id: Record<string, TaskRunConfig[]>,
     model_info: ProviderModels | null,
     current_task_prompts: PromptResponse | null,
@@ -115,7 +115,7 @@
     if (default_run_config_id) {
       const default_config = (
         run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, task_id)
+          get_task_composite_id(project_id, current_task.id ?? "")
         ] ?? []
       ).find((config) => config.id === default_run_config_id)
 
@@ -131,7 +131,7 @@
 
     const other_task_run_configs = (
       run_configs_by_task_composite_id[
-        get_task_composite_id(project_id, task_id)
+        get_task_composite_id(project_id, current_task.id ?? "")
       ] ?? []
     ).filter((config) => config.id !== default_run_config_id)
     if (other_task_run_configs.length > 0) {
@@ -159,29 +159,36 @@
     dispatch("save_run_options")
   }
 
-  function handle_set_default() {
-    dispatch("set_run_config_as_default")
+  async function set_run_config_as_default() {
+    if (!project_id || !current_task.id || !selected_run_config_id) {
+      return
+    }
+    // Update task default run config
+    try {
+      set_default_error = null
+      await update_task_default_run_config(
+        project_id,
+        current_task.id,
+        selected_run_config_id,
+      )
+    } catch (e) {
+      set_default_error = createKilnError(e)
+    }
   }
 
   let inline_action: InlineAction | null = null
 
-  $: show_save_button,
-    show_set_default_button,
-    save_config_error,
-    set_default_error,
-    update_inline_action()
+  $: show_save_button, show_set_default_button, update_inline_action()
 
   function update_inline_action() {
-    if (save_config_error || set_default_error) {
-      inline_action = null
-    } else if (show_save_button) {
+    if (show_save_button) {
       inline_action = {
         handler: handle_save,
         label: "Save current options",
       }
     } else if (show_set_default_button) {
       inline_action = {
-        handler: handle_set_default,
+        handler: set_run_config_as_default,
         label: "Set as task default",
       }
     } else {

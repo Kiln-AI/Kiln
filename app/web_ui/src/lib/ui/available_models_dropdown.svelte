@@ -115,7 +115,7 @@
     requires_logprobs: boolean,
     requires_doc_extraction: boolean,
     requires_tool_support: boolean,
-    task_id: string,
+    task_id: string | null,
     recent_models: RecentModel[],
     model_data: ProviderModels | null,
   ): OptionGroup[] {
