@@ -17,7 +17,8 @@
     sortRagConfigs,
   } from "$lib/stores/rag_progress_store"
 
-  let error: KilnError | null = $currentProjectRagProgressStore.error
+  let error: KilnError | null = null
+  $: error = $currentProjectRagProgressStore.error
   let loading = true
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
