@@ -334,6 +334,17 @@ def connect_run_api(app: FastAPI):
             imported_count=imported_count,
         )
 
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/tags")
+    async def get_tags(project_id: str, task_id: str) -> dict[str, int]:
+        tags_count = {}
+        task = task_from_id(project_id, task_id)
+        # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
+        # We also cache the result client side
+        for run in task.runs(readonly=True):
+            for tag in run.tags:
+                tags_count[tag] = tags_count.get(tag, 0) + 1
+        return tags_count
+
 
 async def update_run_util(
     project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
