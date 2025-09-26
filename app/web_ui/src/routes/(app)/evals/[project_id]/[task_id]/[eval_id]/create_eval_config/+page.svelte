@@ -8,7 +8,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import type { Eval, Task, EvalConfigType } from "$lib/types"
   import { tick } from "svelte"
   import { load_task } from "$lib/stores"

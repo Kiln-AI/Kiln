@@ -11,7 +11,6 @@
     get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
-  import PromptTypeSelector from "./prompt_type_selector.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
     TaskRunConfig,
@@ -20,11 +19,12 @@
     AvailableModels,
     Task,
   } from "$lib/types"
+  import SavedRunConfigurationsDropdown from "./saved_run_configs_dropdown.svelte"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
-  import AdvancedRunOptions from "$lib/ui/advanced_run_options.svelte"
+  import PromptTypeSelector from "./prompt_type_selector.svelte"
+  import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import { tick, onMount } from "svelte"
-  import SavedRunConfigurationsDropdown from "./saved_run_configs_dropdown.svelte"
   import { ui_state } from "$lib/stores"
 
   // Props

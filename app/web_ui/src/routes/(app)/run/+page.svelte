@@ -10,7 +10,7 @@
   import RunInputForm from "./run_input_form.svelte"
   import posthog from "posthog-js"
   import { tick } from "svelte"
-  import RunConfigComponent from "$lib/ui/run_config_component.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
   let run_error: KilnError | null = null
   let submitting = false

@@ -12,10 +12,10 @@
     load_task,
   } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
-  import PromptTypeSelector from "$lib/ui/prompt_type_selector.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
+  import AdvancedRunOptions from "$lib/ui/run_config_component/advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import AdvancedRunOptions from "$lib/ui/advanced_run_options.svelte"
   import type { TaskRunConfig } from "$lib/types"
   import posthog from "posthog-js"
 
