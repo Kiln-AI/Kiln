@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SampleDataNode, SampleData } from "./gen_model"
-  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { tick } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
