@@ -20,17 +20,21 @@
 
   function handle_keyup(event: KeyboardEvent) {
     if (event.key === "Enter") {
-      if (tag === null || tag.length === 0) {
-        error = "Tags cannot be empty"
-      } else if (tag.includes(" ")) {
-        error = "Tags cannot contain spaces. Use underscores."
-      } else {
-        increment_tag_set(task_id, tag)
-        on_select(tag)
-        error = null
-      }
+      add_tag()
     } else if (event.key === "Escape") {
       on_escape()
+    }
+  }
+
+  function add_tag() {
+    if (tag === null || tag.length === 0) {
+      error = "Tags cannot be empty"
+    } else if (tag.includes(" ")) {
+      error = "Tags cannot contain spaces. Use underscores."
+    } else {
+      increment_tag_set(task_id, tag)
+      on_select(tag)
+      error = null
     }
   }
 
@@ -117,15 +121,26 @@
 </script>
 
 <div class="w-full">
-  <input
-    {id}
-    list={datalist_id}
-    type="text"
-    class="w-full input input-bordered py-2 {error ? 'input-error' : ''}"
-    placeholder="Add a tag"
-    bind:value={tag}
-    on:keyup={handle_keyup}
-  />
+  <div class="flex flex-row gap-2 items-center">
+    <input
+      {id}
+      list={datalist_id}
+      type="text"
+      autocomplete="off"
+      autocapitalize="none"
+      spellcheck="false"
+      class="w-full input input-bordered py-2 {error ? 'input-error' : ''}"
+      placeholder="Add a tag"
+      bind:value={tag}
+      on:keyup={handle_keyup}
+    />
+    <button
+      class="btn btn-sm {tag && tag.length > 0
+        ? 'btn-primary'
+        : 'btn-disabled'} btn-circle text-xl font-medium"
+      on:click={() => add_tag()}>+</button
+    >
+  </div>
   <datalist id={datalist_id}>
     {#each sorted_tag_counts as tag}
       <option value={tag} />
