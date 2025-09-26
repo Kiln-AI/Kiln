@@ -83,9 +83,6 @@
     }
   }
 
-  // Update form values from saved config change if needed
-  $: selected_run_config_id, update_current_run_options_if_needed()
-
   function get_selected_run_config(): TaskRunConfig | "custom" | null {
     // Map selected ID back to TaskRunConfig object
     if (!selected_run_config_id) {
@@ -105,12 +102,16 @@
     }
   }
 
+  // Update form values from saved config change if needed
+  $: if (selected_run_config_id !== null) {
+    update_current_run_options_if_needed()
+  }
+
   async function update_current_run_options_if_needed() {
     const selected_run_config = get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-
     model =
       selected_run_config.run_config_properties.model_provider_name +
       "/" +

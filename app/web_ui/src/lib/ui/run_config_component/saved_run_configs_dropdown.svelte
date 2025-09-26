@@ -53,14 +53,11 @@
 
   // Initialization of selected_run_config_id
   $: if (selected_run_config_id === null) {
+    console.log("Initializing selected_run_config_id")
     if (default_run_config_id) {
-      if (selected_run_config_id === null) {
-        selected_run_config_id = default_run_config_id
-      }
+      selected_run_config_id = default_run_config_id
     } else {
-      if (selected_run_config_id === null) {
-        selected_run_config_id = "custom"
-      }
+      selected_run_config_id = "custom"
     }
   }
 
