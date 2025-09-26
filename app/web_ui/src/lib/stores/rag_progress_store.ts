@@ -1,4 +1,4 @@
-import { get, writable, derived } from "svelte/store"
+import { get, writable } from "svelte/store"
 import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
@@ -26,10 +26,6 @@ interface RagConfigurationProgressState {
 }
 
 export const ragProgressStore = createRagProgressStore()
-
-export const allRagConfigs = derived(ragProgressStore, ($store) => {
-  return sortRagConfigs(Object.values($store.rag_configs), "created_at")
-})
 
 // cap concurrent EventSource connections browsers have different limits,
 // we keep the limit low enough to be safe for most browsers
@@ -357,7 +353,7 @@ function createRagProgressStore() {
   }
 }
 
-function sortRagConfigs(
+export function sortRagConfigs(
   rag_configs: RagConfigWithSubConfigs[],
   sortKey: keyof RagConfigWithSubConfigs = "created_at",
 ): RagConfigWithSubConfigs[] {

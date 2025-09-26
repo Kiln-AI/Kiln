@@ -14,7 +14,7 @@
     load_all_rag_config_progress,
     ragProgressStore,
     load_rag_configs,
-    allRagConfigs,
+    sortRagConfigs,
   } from "$lib/stores/rag_progress_store"
 
   let error: KilnError | null = $ragProgressStore.error
@@ -42,7 +42,10 @@
     loading = false
   })
 
-  $: all_rag_configs = $allRagConfigs
+  $: all_rag_configs = sortRagConfigs(
+    Object.values($ragProgressStore.rag_configs),
+    "created_at",
+  )
 
   $: active_rag_configs = (all_rag_configs || [])
     .filter((rag_config) => !rag_config.is_archived)
