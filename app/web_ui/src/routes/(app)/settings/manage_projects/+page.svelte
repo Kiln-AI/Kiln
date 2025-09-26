@@ -100,7 +100,7 @@
               : "Unknown"}
             <tr>
               <td class="font-medium">{project.name}</td>
-              <td>{project.description}</td>
+              <td>{project.description || "N/A"}</td>
               <td>
                 {formatDate(project.created_at)}
               </td>
