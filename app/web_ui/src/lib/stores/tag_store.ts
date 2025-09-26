@@ -2,7 +2,7 @@ import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
 import { get } from "svelte/store"
 
-export type TagCounts = Record<string, number> | null
+export type TagCounts = Record<string, number>
 
 export const tag_store_by_task_id = writable<Record<string, TagCounts>>({})
 
@@ -49,6 +49,10 @@ export async function load_tags(
 export function increment_tag(task_id: string, tag: string): TagCounts {
   const tag_counts = get(tag_store_by_task_id)[task_id]
   if (!tag_counts) {
+    console.error(
+      "Attempted to increment a tag, but no tag counts found for task",
+      task_id,
+    )
     return {}
   }
 
