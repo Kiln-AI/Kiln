@@ -5,15 +5,10 @@
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
-  import {
-    save_new_task_run_config,
-    run_configs_by_task_composite_id,
-    get_task_composite_id,
-  } from "$lib/stores/run_configs_store"
+  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
-    TaskRunConfig,
     RunConfigProperties,
     StructuredOutputMode,
     AvailableModels,
@@ -51,6 +46,8 @@
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
 
+  let saved_run_configs_dropdown: SavedRunConfigurationsDropdown
+
   let save_config_error: KilnError | null = null
   let set_default_error: KilnError | null = null
 
@@ -83,32 +80,17 @@
     }
   }
 
-  function get_selected_run_config(): TaskRunConfig | "custom" | null {
-    // Map selected ID back to TaskRunConfig object
-    if (!selected_run_config_id) {
-      return null
-    } else if (selected_run_config_id === "custom") {
-      return "custom"
-    } else {
-      // Find the config by ID
-      const all_configs =
-        $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id ?? "")
-        ] ?? []
-      let run_config = all_configs.find(
-        (config) => config.id === selected_run_config_id,
-      )
-      return run_config ?? "custom"
-    }
-  }
-
   // Update form values from saved config change if needed
   $: if (selected_run_config_id !== null) {
     update_current_run_options_if_needed()
   }
 
   async function update_current_run_options_if_needed() {
-    const selected_run_config = get_selected_run_config()
+    if (!saved_run_configs_dropdown) {
+      return
+    }
+    const selected_run_config =
+      await saved_run_configs_dropdown.get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
@@ -136,11 +118,14 @@
     reset_to_custom_options_if_needed()
 
   async function reset_to_custom_options_if_needed() {
-    const selected_run_config = get_selected_run_config()
+    if (!saved_run_configs_dropdown) {
+      return
+    }
+    const selected_run_config =
+      await saved_run_configs_dropdown.get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-
     // Wait for all reactive statements to complete
     await tick()
 
@@ -244,6 +229,7 @@
     {set_default_error}
     on:change={clear_run_options_errors}
     on:save_run_options={save_run_options}
+    bind:this={saved_run_configs_dropdown}
   />
   {#if $available_models.length > 0}
     <AvailableModelsDropdown

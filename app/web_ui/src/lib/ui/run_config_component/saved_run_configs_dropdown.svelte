@@ -151,6 +151,30 @@
     return options
   }
 
+  export async function get_selected_run_config(): Promise<
+    TaskRunConfig | "custom" | null
+  > {
+    // Make sure the task run configs are loaded, will be quick if they already are
+    await load_task_run_configs(project_id, current_task.id ?? "")
+
+    // Map selected ID back to TaskRunConfig object
+    if (!selected_run_config_id) {
+      return null
+    } else if (selected_run_config_id === "custom") {
+      return "custom"
+    } else {
+      // Find the config by ID
+      const all_configs =
+        $run_configs_by_task_composite_id[
+          get_task_composite_id(project_id, current_task.id ?? "")
+        ] ?? []
+      let run_config = all_configs.find(
+        (config) => config.id === selected_run_config_id,
+      )
+      return run_config ?? "custom"
+    }
+  }
+
   function handle_save() {
     dispatch("save_run_options")
   }
