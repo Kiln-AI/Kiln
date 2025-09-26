@@ -12,12 +12,12 @@
   import TableRagConfigRow from "./table_rag_config_row.svelte"
   import {
     load_all_rag_config_progress,
-    ragProgressStore,
+    currentProjectRagProgressStore,
     load_rag_configs,
     sortRagConfigs,
   } from "$lib/stores/rag_progress_store"
 
-  let error: KilnError | null = $ragProgressStore.error
+  let error: KilnError | null = $currentProjectRagProgressStore.error
   let loading = true
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
@@ -43,7 +43,7 @@
   })
 
   $: all_rag_configs = sortRagConfigs(
-    Object.values($ragProgressStore.rag_configs),
+    Object.values($currentProjectRagProgressStore.rag_configs),
     "created_at",
   )
 
