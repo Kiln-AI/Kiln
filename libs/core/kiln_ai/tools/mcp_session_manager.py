@@ -173,7 +173,7 @@ class MCPSessionManager:
         try:
             async with stdio_client(server_params) as (read, write):
                 async with ClientSession(
-                    read, write, read_timeout_seconds=timedelta(seconds=8)
+                    read, write, read_timeout_seconds=timedelta(seconds=30)
                 ) as session:
                     await session.initialize()
                     yield session
