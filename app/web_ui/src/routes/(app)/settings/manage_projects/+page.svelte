@@ -32,6 +32,27 @@
       alert("Failed to remove project.\n\nReason: " + e)
     }
   }
+
+  async function open_project_folder(project: Project) {
+    if (!project.id) {
+      throw new Error("Project ID is required")
+    }
+    try {
+      const { error } = await client.POST(
+        "/api/open_project_folder/{project_id}",
+        {
+          params: {
+            path: { project_id: project.id },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+    } catch (e) {
+      alert("Failed to open project folder.\n\nReason: " + e)
+    }
+  }
 </script>
 
 <AppPage
@@ -77,26 +98,30 @@
                 {project.path}
               </div>
             </div>
-            <div
-              class="grid grid-cols-[repeat(auto-fill,minmax(6rem,1fr))] gap-2 w-full mt-6"
-            >
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 w-full mt-6">
               <a
                 href={`/settings/create_task/${project.id}`}
-                class="btn btn-xs w-full"
+                class="btn btn-sm w-full"
               >
                 Add Task
               </a>
               <a
                 href={`/settings/edit_project/${project.id}`}
-                class="btn btn-xs w-full"
+                class="btn btn-sm w-full"
               >
                 Edit Project
               </a>
               <button
                 on:click={() => remove_project(project)}
-                class="btn btn-xs w-full"
+                class="btn btn-sm w-full"
               >
                 Remove
+              </button>
+              <button
+                on:click={() => open_project_folder(project)}
+                class="btn btn-sm w-full"
+              >
+                Open Folder
               </button>
             </div>
           </div>
