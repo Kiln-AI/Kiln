@@ -6,7 +6,11 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServerApiDescription } from "$lib/types"
+  import type {
+    ExternalToolServerApiDescription,
+    LocalServerProperties,
+    RemoteServerProperties,
+  } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
@@ -101,26 +105,31 @@
 
     switch (tool.type) {
       case "remote_mcp":
-        if (tool.properties["server_url"]) {
+        if (
+          isRemoteServerProperties(tool.properties) &&
+          tool.properties.server_url
+        ) {
           properties.push({
             name: "Server URL",
-            value: String(tool.properties["server_url"]),
+            value: tool.properties.server_url,
           })
         }
         break
       case "local_mcp": {
-        if (tool.properties["command"]) {
-          properties.push({
-            name: "Command",
-            value: String(tool.properties["command"]),
-          })
-        }
-        const args = tool.properties["args"]
-        if (args && isStringArray(args)) {
-          properties.push({
-            name: "Arguments",
-            value: (args as string[]).join(" ") || "None",
-          })
+        if (isLocalServerProperties(tool.properties)) {
+          if (tool.properties.command) {
+            properties.push({
+              name: "Command",
+              value: tool.properties.command,
+            })
+          }
+          const args = tool.properties.args
+          if (args && isStringArray(args)) {
+            properties.push({
+              name: "Arguments",
+              value: args.join(" ") || "None",
+            })
+          }
         }
         break
       }
@@ -209,6 +218,43 @@
     return typeof value === "string"
   }
 
+  // Helper function to check if properties is a valid object
+  function isValidPropertiesObject(
+    properties: LocalServerProperties | RemoteServerProperties,
+  ): properties is LocalServerProperties | RemoteServerProperties {
+    return properties !== null && typeof properties === "object"
+  }
+
+  // Type guards for server properties
+  function isLocalServerProperties(
+    properties: LocalServerProperties | RemoteServerProperties,
+  ): properties is LocalServerProperties {
+    if (!isValidPropertiesObject(properties)) {
+      return false
+    }
+
+    return (
+      "command" in properties ||
+      "args" in properties ||
+      "env_vars" in properties ||
+      "secret_env_var_keys" in properties
+    )
+  }
+
+  function isRemoteServerProperties(
+    properties: LocalServerProperties | RemoteServerProperties,
+  ): properties is RemoteServerProperties {
+    if (!isValidPropertiesObject(properties)) {
+      return false
+    }
+
+    return (
+      "server_url" in properties ||
+      "headers" in properties ||
+      "secret_header_keys" in properties
+    )
+  }
+
   function formatToolArguments(
     inputSchema: Record<string, unknown>,
   ): Argument[] {
@@ -244,17 +290,6 @@
 
     goto(`/settings/manage_tools/${project_id}`)
   }
-
-  $: headers = tool_server?.properties["headers"] as Record<string, string>
-  $: secret_header_keys = tool_server?.properties[
-    "secret_header_keys"
-  ] as string[]
-  $: env_vars = tool_server?.properties["env_vars"] as
-    | Record<string, string>
-    | undefined
-  $: secret_env_var_keys = tool_server?.properties["secret_env_var_keys"] as
-    | string[]
-    | undefined
 </script>
 
 <div class="max-w-[1400px]">
@@ -298,7 +333,7 @@
           />
         </div>
         <div class="flex-1">
-          {#if tool_server.type === "remote_mcp"}
+          {#if tool_server.type === "remote_mcp" && isRemoteServerProperties(tool_server.properties)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Connection Details"
@@ -307,31 +342,29 @@
             <div class="mt-8">
               <PropertyList
                 properties={buildPropertiesWithSecrets(
-                  headers,
-                  secret_header_keys,
+                  tool_server.properties.headers || {},
+                  tool_server.properties.secret_header_keys || [],
                   tool_server.missing_secrets,
                 )}
                 title="Headers"
               />
             </div>
-          {:else if tool_server.type === "local_mcp"}
+          {:else if tool_server.type === "local_mcp" && isLocalServerProperties(tool_server.properties)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
-            {#if (env_vars && Object.keys(env_vars).length > 0) || (secret_env_var_keys && Object.keys(secret_env_var_keys).length > 0)}
-              <div class="mt-8">
-                <PropertyList
-                  properties={buildPropertiesWithSecrets(
-                    env_vars || {},
-                    secret_env_var_keys || [],
-                    tool_server.missing_secrets,
-                  )}
-                  title="Environment Variables"
-                />
-              </div>
-            {/if}
+            <div class="mt-8">
+              <PropertyList
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties.env_vars || {},
+                  tool_server.properties.secret_env_var_keys || [],
+                  tool_server.missing_secrets,
+                )}
+                title="Environment Variables"
+              />
+            </div>
           {/if}
         </div>
       </div>

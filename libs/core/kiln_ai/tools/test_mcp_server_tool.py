@@ -10,7 +10,10 @@ from mcp.types import (
     Tool,
 )
 
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    ToolServerType,
+)
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
@@ -27,7 +30,6 @@ class TestMCPServerTool:
             description="Test server",
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
 
@@ -60,7 +62,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -90,7 +91,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -116,7 +116,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -143,7 +142,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -170,7 +168,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -196,7 +193,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -231,7 +227,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "target_tool")
@@ -258,7 +253,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "missing_tool")
@@ -287,7 +281,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -321,7 +314,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -347,7 +339,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -365,7 +356,6 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -415,7 +405,6 @@ class TestMCPServerToolIntegration:
         description="Postman Echo MCP Server for testing",
         properties={
             "server_url": "https://postman-echo-mcp.fly.dev/",
-            "headers": {},
         },
     )
 
