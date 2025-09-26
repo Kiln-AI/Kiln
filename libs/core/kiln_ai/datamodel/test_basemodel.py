@@ -1,5 +1,7 @@
 import datetime
 import json
+import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -703,6 +705,89 @@ def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
         assert bulk_child.id == individual_child.id
         assert bulk_child.name == individual_child.name
         assert bulk_child.model_type == individual_child.model_type
+
+
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+@pytest.mark.parametrize("num_children", [100, 1000, 2500, 5000])
+def test_from_ids_and_parent_path_benchmark(
+    test_base_parented_file, tmp_model_cache, num_children
+):
+    """Benchmark test for from_ids_and_parent_path method performance at scale"""
+    # Set up parent and many children
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    children = []
+    for i in range(num_children):
+        child = DefaultParentedModel(parent=parent, name=f"Child{i:05d}")
+        child.save_to_file()
+        children.append(child)
+
+    # look up all children
+    lookup_count = num_children
+    target_ids = {child.id for child in children[:lookup_count] if child.id is not None}
+    assert len(target_ids) == lookup_count
+
+    # Benchmark the bulk method using manual timing
+    def bulk_lookup():
+        return DefaultParentedModel.from_ids_and_parent_path(
+            target_ids, test_base_parented_file
+        )
+
+    # Run bulk method once and time it
+    start_time = time.perf_counter()
+    bulk_result = bulk_lookup()
+    end_time = time.perf_counter()
+    bulk_time = end_time - start_time
+
+    # Verify we got the expected results
+    assert len(bulk_result) == lookup_count
+
+    # Calculate bulk method stats
+    bulk_ops_per_second = lookup_count / bulk_time
+
+    # Benchmark the individual lookup method using manual timing
+    def individual_lookups():
+        results = {}
+        for target_id in target_ids:
+            result = DefaultParentedModel.from_id_and_parent_path(
+                target_id, test_base_parented_file
+            )
+            if result:
+                results[target_id] = result
+        return results
+
+    # Run individual lookup method
+    start_time = time.perf_counter()
+    individual_result = individual_lookups()
+    end_time = time.perf_counter()
+    individual_time = end_time - start_time
+
+    assert len(individual_result) == lookup_count
+    individual_ops_per_second = lookup_count / individual_time
+
+    # Calculate performance comparison
+    speedup = individual_time / bulk_time
+    time_savings_pct = (individual_time - bulk_time) / individual_time * 100
+
+    # Use logging to display results (will show with -s flag or --log-cli-level=INFO)
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"Benchmark results for {num_children} children, {lookup_count} lookups:"
+    )
+    logger.info(f"  Bulk method: {bulk_time:.4f}s ({bulk_ops_per_second:.2f} ops/sec)")
+    logger.info(
+        f"  Individual method: {individual_time:.4f}s ({individual_ops_per_second:.2f} ops/sec)"
+    )
+    logger.info(
+        f"  Speedup: {speedup:.2f}x faster, {time_savings_pct:.1f}% time savings"
+    )
+
+    assert bulk_time > 0, "Bulk method should complete successfully"
+    assert individual_time > 0, "Individual method should complete successfully"
+    assert speedup >= 1.0, (
+        f"Expected bulk method to be faster, but got {speedup:.2f}x speedup"
+    )
 
 
 class MockAdapter(BaseAdapter):
