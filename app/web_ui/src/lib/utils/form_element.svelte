@@ -38,6 +38,9 @@
   export let info_msg: string | null = null
   export let tall: boolean | "medium" | "xl" = false
   export let empty_label: string = "Select an option"
+  export let empty_state_message: string = "No options available"
+  export let empty_state_subtitle: string | null = null
+  export let empty_state_link: string | null = null
   export let inline_action: InlineAction | null = null
 
   function is_empty(value: unknown): boolean {
@@ -233,6 +236,9 @@
         bind:selected={value}
         multi_select={inputType === "multi_select"}
         {empty_label}
+        {empty_state_message}
+        {empty_state_subtitle}
+        {empty_state_link}
       />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}

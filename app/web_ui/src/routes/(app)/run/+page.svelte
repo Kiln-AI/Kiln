@@ -73,6 +73,13 @@
         model_name: model_name,
         provider: provider,
         prompt_method: run_config_component.get_prompt_method(),
+        tool_count: run_config_component.get_tools().length,
+        search_tools: run_config_component
+          .get_tools()
+          .filter((tool) => tool.startsWith("kiln_tool::rag::")).length,
+        mcp_tools: run_config_component
+          .get_tools()
+          .filter((tool) => tool.startsWith("mcp::")).length,
       })
       response = data
     } catch (e) {

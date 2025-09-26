@@ -221,6 +221,10 @@
   export function get_prompt_method(): string {
     return prompt_method
   }
+
+  export function get_tools(): string[] {
+    return tools
+  }
 </script>
 
 <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">

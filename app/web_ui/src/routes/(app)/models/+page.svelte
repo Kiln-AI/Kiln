@@ -30,6 +30,8 @@
       "Uncensored model which will produce any outputs (biased, malicious). Useful for adversarial evals.",
     reasoning_capable:
       "Best suited for tasks that require multi-step reasoning or complex decision-making.",
+    supports_doc_extraction:
+      "Supports document extraction, used for RAG (Retrieval-Augmented Generation).",
   }
 
   interface Provider {
@@ -43,6 +45,7 @@
     suggested_for_data_gen: boolean
     suggested_for_evals: boolean
     suggested_for_uncensored_data_gen: boolean
+    supports_doc_extraction: boolean
     uncensored: boolean
     untested_model: boolean
     structured_output_mode: string
@@ -83,6 +86,7 @@
     { value: "tools", label: "Tools" },
     { value: "uncensored", label: "Uncensored" },
     { value: "finetune", label: "Finetune" },
+    { value: "doc_extraction", label: "Doc Extraction (RAG)" },
     { value: "reasoning_capable", label: "Reasoning" },
     { value: "suggested_for_evals", label: "Suggested for Evals" },
   ]
@@ -211,6 +215,8 @@
               return p.supports_logprobs
             case "tools":
               return p.supports_function_calling
+            case "doc_extraction":
+              return p.supports_doc_extraction
             case "uncensored":
               return p.uncensored
             case "finetune":
@@ -362,6 +368,13 @@
         text: "Logprobs",
         color: "bg-orange-100 text-orange-800",
         tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_logprobs,
+      })
+    }
+    if (providers.some((p) => p.supports_doc_extraction)) {
+      trailing_badges.push({
+        text: "Doc Extraction",
+        color: "bg-amber-100 text-amber-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_doc_extraction,
       })
     }
 
@@ -803,6 +816,12 @@
                             <span
                               class="w-2 h-2 bg-indigo-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
                               data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_function_calling}
+                            ></span>
+                          {/if}
+                          {#if provider.supports_doc_extraction}
+                            <span
+                              class="w-2 h-2 bg-amber-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_doc_extraction}
                             ></span>
                           {/if}
                           {#if provider.supports_logprobs}

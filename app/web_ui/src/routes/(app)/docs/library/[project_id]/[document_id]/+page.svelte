@@ -13,7 +13,8 @@
   import { goto } from "$app/navigation"
   import Output from "../../../../run/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
-  import TagDropdown from "../../../../../../lib/ui/tag_dropdown.svelte"
+  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   let initial_document: KilnDocument | null = null
@@ -120,6 +121,9 @@
   let delete_document_dialog: DeleteDialog | null = null
   $: delete_document_url = `/api/projects/${project_id}/documents/${document_id}`
   function after_document_delete() {
+    ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+      console.error("Error running all rag configs", error)
+    })
     goto(`/docs/library/${project_id}`)
   }
 
@@ -185,6 +189,8 @@
 <AppPage
   title="Document"
   subtitle={`${document?.name || document?.original_file.filename}`}
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width
   breadcrumbs={[
     {
@@ -192,7 +198,7 @@
       href: `/docs/${project_id}`,
     },
     {
-      label: "Doc Library",
+      label: "Document Library",
       href: `/docs/library/${project_id}`,
     },
   ]}
@@ -371,6 +377,7 @@
                 : 'hidden'}"
             >
               <TagDropdown
+                {project_id}
                 on_select={(tag) => add_tags([tag])}
                 on_escape={() => (show_create_tag = false)}
                 focus_on_mount={true}
