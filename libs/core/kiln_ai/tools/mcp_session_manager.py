@@ -163,11 +163,16 @@ class MCPSessionManager:
         if "PATH" not in env_vars:
             env_vars["PATH"] = self._get_path()
 
+        # Set the cwd to a writeable Kiln cache directory
+        cwd = os.path.join(Config.settings_dir(), "cache", "mcp_cwd")
+        os.makedirs(cwd, exist_ok=True)
+
         # Set the server parameters
         server_params = StdioServerParameters(
             command=command,
             args=args,
             env=env_vars,
+            cwd=cwd,
         )
 
         try:
