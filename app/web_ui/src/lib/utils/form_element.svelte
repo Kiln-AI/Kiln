@@ -1,3 +1,10 @@
+<script context="module" lang="ts">
+  export type InlineAction = {
+    handler: () => void
+    label: string
+  }
+</script>
+
 <script lang="ts">
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
@@ -31,6 +38,7 @@
   export let info_msg: string | null = null
   export let tall: boolean | "medium" | "xl" = false
   export let empty_label: string = "Select an option"
+  export let inline_action: InlineAction | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -111,6 +119,14 @@
         <span class="pl-1 text-xs text-gray-500 flex-none"
           >{info_msg || (optional ? "Optional" : "")}</span
         >
+        {#if inline_action}
+          <button
+            type="button"
+            class="link font-normal text-gray-500"
+            on:click|stopPropagation={inline_action.handler}
+            >{inline_action.label}</button
+          >
+        {/if}
         {#if info_description}
           <div class="text-gray-500 {light_label ? 'h-4 mt-[-4px]' : ''}">
             <InfoTooltip tooltip_text={info_description} />

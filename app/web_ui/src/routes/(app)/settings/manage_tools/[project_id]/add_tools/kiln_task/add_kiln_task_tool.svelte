@@ -16,11 +16,7 @@
     load_model_info,
     uncache_available_tools,
   } from "$lib/stores"
-  import RunOptionsDropdown from "../../../../../run/run_options_dropdown.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
-  import ToolsSelector from "../../../../../run/tools_selector.svelte"
-  import AdvancedRunOptions from "../../../../../run/advanced_run_options.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import type { RunConfigProperties, StructuredOutputMode } from "$lib/types"
   import { save_new_task_run_config } from "$lib/stores/run_configs_store"

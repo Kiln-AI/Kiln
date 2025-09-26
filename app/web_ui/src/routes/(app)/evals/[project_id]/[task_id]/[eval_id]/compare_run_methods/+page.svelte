@@ -56,17 +56,20 @@
   let eval_configs_loading = true
   let current_eval_config_id: string | null = null
 
+  let run_configs_error: KilnError | null = null
+  let run_configs_loading = true
+
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
 
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
-  $: loading = eval_loading || eval_configs_loading
-  $: error = eval_error || eval_configs_error
+  $: loading = eval_loading || eval_configs_loading || run_configs_loading
+  $: error = eval_error || eval_configs_error || run_configs_error
 
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
-    ] || []
+    ] || null
 
   $: should_select_eval_config =
     current_task_run_configs?.length && !evaluator?.current_run_config_id
@@ -96,10 +99,7 @@
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
     // These two can be parallel
-    await Promise.all([
-      get_eval_configs(),
-      load_task_run_configs(project_id, task_id),
-    ])
+    await Promise.all([get_eval_configs(), get_task_run_configs()])
     // This needs the selected eval config id, set from above requests
     get_score_summary()
   })
@@ -168,6 +168,17 @@
       eval_configs_error = createKilnError(error)
     } finally {
       eval_configs_loading = false
+    }
+  }
+
+  async function get_task_run_configs() {
+    run_configs_loading = true
+    try {
+      await load_task_run_configs(project_id, task_id)
+    } catch (err) {
+      run_configs_error = createKilnError(err)
+    } finally {
+      run_configs_loading = false
     }
   }
 
@@ -717,6 +728,6 @@
   {project_id}
   {task_id}
   run_method_added={(_) => {
-    load_task_run_configs(project_id, task_id)
+    get_task_run_configs()
   }}
 />

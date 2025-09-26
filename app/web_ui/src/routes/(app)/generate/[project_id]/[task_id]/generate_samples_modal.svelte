@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SampleDataNode } from "./gen_model"
-  import AvailableModelsDropdown from "../../../run/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
   import IncrementUi from "./increment_ui.svelte"
   import { KilnError } from "../../../../../lib/utils/error_handlers"
   import { client } from "$lib/api_client"
@@ -269,6 +269,7 @@
           <SynthDataGuidance guidance_type="inputs" {guidance_data} />
         </div>
         <AvailableModelsDropdown
+          task_id={guidance_data.task_id}
           requires_data_gen={true}
           requires_uncensored_data_gen={guidance_data.suggest_uncensored(
             $selected_template,

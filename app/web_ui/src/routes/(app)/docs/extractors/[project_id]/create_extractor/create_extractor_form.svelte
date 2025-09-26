@@ -6,7 +6,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createEventDispatcher } from "svelte"
-  import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/available_models_dropdown.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import {
     default_extractor_document_prompts,

@@ -9,7 +9,7 @@
   import type { ChatStrategy } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
-  import PromptTypeSelector from "../../../../run/prompt_type_selector.svelte"
+  import PromptTypeSelector from "$lib/ui/prompt_type_selector.svelte"
   import { fine_tune_target_model as model_provider } from "$lib/stores"
   import {
     available_tuning_models,
