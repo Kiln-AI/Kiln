@@ -38,8 +38,15 @@ export async function load_task_run_configs(
 
   if (composite_key in loading_task_run_configs) {
     if (force_refresh) {
-      // If forcing refresh and there's an existing request, wait for it to complete first
-      await loading_task_run_configs[composite_key]
+      // If forcing refresh and there's an existing request, wait for it to complete first (still retry even on failure)
+      try {
+        await loading_task_run_configs[composite_key]
+      } catch (error) {
+        console.warn(
+          "Previous run config load failed; retrying due to force refresh: ",
+          error,
+        )
+      }
     } else {
       // Return existing promise if already loading this specific task
       return loading_task_run_configs[composite_key]
