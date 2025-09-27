@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { RagConfigWithSubConfigs } from "$lib/types"
-  import { formatDate } from "$lib/utils/formatters"
   import RunRagControl from "./run_rag_control.svelte"
   import {
     embedding_model_name,
@@ -78,6 +77,14 @@
   function open() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
   }
+
+  $: chunk_size = rag_config.chunker_config.properties.chunk_size as number
+  $: chunk_overlap = rag_config.chunker_config.properties
+    .chunk_overlap as number
+
+  function format_chunking(chunk_size: number, chunk_overlap: number) {
+    return `${chunk_size} words, ${chunk_overlap} overlap`
+  }
 </script>
 
 {#if rag_progress && rag_config}
@@ -104,12 +111,7 @@
             ) || ""})
           </div>
           <div>
-            Chunk size: {rag_config.chunker_config.properties?.chunk_size ||
-              "N/A"}
-          </div>
-          <div>
-            Chunk overlap: {rag_config.chunker_config.properties
-              ?.chunk_overlap || "N/A"}
+            Chunking: {format_chunking(chunk_size, chunk_overlap) || "N/A"}
           </div>
           <div>
             Embedding: {embedding_model_name(
@@ -122,9 +124,6 @@
               rag_config.vector_store_config.store_type,
             ) || "N/A"}
           </div>
-          <div class="text-xs text-gray-500">
-            Created {formatDate(rag_config.created_at)}
-          </div>
           <div class="text-xs text-gray-500 flex flex-row flex-wrap gap-2 w-80">
             {#each rag_config.tags || [] as tag}
               <div class="badge bg-gray-200 text-gray-500 text-xs">
@@ -134,6 +133,11 @@
           </div>
         </div>
       </div>
+    </td>
+
+    <!-- Tool info -->
+    <td class="p-4 align-top text-gray-500">
+      {rag_config.tool_name}
     </td>
 
     <!-- Progress Section -->

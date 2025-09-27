@@ -114,7 +114,8 @@
           <table class="table table-fixed">
             <thead>
               <tr>
-                <th class="w-auto">Details</th>
+                <th class="w-[300px]">Details</th>
+                <th class="w-[300px]">Tool Name</th>
                 <th class="w-[300px]">Processing Status</th>
               </tr>
             </thead>
