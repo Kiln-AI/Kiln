@@ -100,6 +100,7 @@ class ModelProviderName(str, Enum):
     siliconflow_cn = "siliconflow_cn"
     cerebras = "cerebras"
     docker_model_runner = "docker_model_runner"
+    mistral = "mistral"
 
 
 class KilnMimeType(str, Enum):
