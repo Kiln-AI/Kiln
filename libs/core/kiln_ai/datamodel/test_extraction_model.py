@@ -468,3 +468,34 @@ def test_document_invalid_mime_type(
 )
 def test_get_kind_from_mime_type(mime_type, expected_kind):
     assert get_kind_from_mime_type(mime_type) == expected_kind
+
+
+def test_document_friendly_name(mock_project, mock_attachment_factory):
+    name = f"Test Document {uuid.uuid4()!s}"
+    document = Document(
+        name=name,
+        description=f"Test description {uuid.uuid4()!s}",
+        kind=Kind.DOCUMENT,
+        original_file=FileInfo(
+            filename=f"test_{name}.txt",
+            size=100,
+            mime_type="text/plain",
+            attachment=mock_attachment_factory(),
+        ),
+        parent=mock_project,
+    )
+    document.save_to_file()
+
+    # backward compatibility: old documents did not have name_override
+    assert document.name_override is None
+    assert document.friendly_name == name
+
+    # new documents have name_override
+    document.name_override = "Test Document Override"
+    assert document.friendly_name == "Test Document Override"
+
+    document.save_to_file()
+
+    document = Document.from_id_and_parent_path(str(document.id), mock_project.path)
+    assert document is not None
+    assert document.friendly_name == "Test Document Override"

@@ -16,6 +16,7 @@
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -30,6 +31,8 @@
   // dialog state
   let output_dialog: Dialog | null = null
   let dialog_extraction: ExtractionSummary | null = null
+
+  let edit_dialog: EditDialog | null = null
 
   $: download_document_url = `${base_url}/api/projects/${project_id}/documents/${document_id}/download`
 
@@ -188,7 +191,7 @@
 
 <AppPage
   title="Document"
-  subtitle={`${document?.name || document?.original_file.filename}`}
+  subtitle={document?.friendly_name}
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width
@@ -203,6 +206,12 @@
     },
   ]}
   action_buttons={[
+    {
+      label: "Edit",
+      handler: () => {
+        edit_dialog?.show()
+      },
+    },
     {
       icon: "/images/download.svg",
       href: download_document_url || "",
@@ -319,13 +328,12 @@
         <PropertyList
           properties={[
             { name: "ID", value: document.id || "Unknown" },
-            { name: "Name", value: document.name },
             {
-              name: "Original Filename",
-              value: document.original_file.filename,
+              name: "Name",
+              value: document.friendly_name,
             },
             {
-              name: "Original File Size",
+              name: "File Size",
               value: formatSize(document.original_file.size),
             },
             {
@@ -444,4 +452,34 @@
   bind:this={delete_extraction_dialog}
   delete_url={delete_extraction_url}
   after_delete={after_delete_extraction}
+/>
+
+<EditDialog
+  bind:this={edit_dialog}
+  after_save={() => {
+    get_document()
+    get_extractions()
+  }}
+  name="Document"
+  patch_url={`/api/projects/${project_id}/documents/${document_id}`}
+  fields={[
+    {
+      label: "Name",
+      description:
+        "A name for your own reference. It does not need to contain the file extension or be unique.",
+      api_name: "name_override",
+      value: document?.friendly_name || "",
+      input_type: "input",
+      optional: true, // if empty, we revert to the original name
+      info_description: "If empty, the original file name will be used.",
+    },
+    {
+      label: "Description",
+      description: "A description of the document for your own reference.",
+      api_name: "description",
+      value: document?.description || "",
+      input_type: "textarea",
+      optional: true,
+    },
+  ]}
 />

@@ -2875,8 +2875,12 @@ async def test_create_documents_bulk_without_names(client, mock_project):
     assert len(result["failed_files"]) == 0
 
     # Should use filenames as names (with dots converted to underscores)
-    assert result["created_documents"][0]["name"] == "test1_txt"
-    assert result["created_documents"][1]["name"] == "test2_txt"
+    assert result["created_documents"][0]["name"] == "test1 txt"
+    assert result["created_documents"][1]["name"] == "test2 txt"
+
+    # Should have dots converted to spaces
+    assert result["created_documents"][0]["friendly_name"] == "test1.txt"
+    assert result["created_documents"][1]["friendly_name"] == "test2.txt"
 
 
 @pytest.mark.asyncio
@@ -2955,7 +2959,8 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
     # Should only have the valid file
     assert len(result["created_documents"]) == 1
     assert len(result["failed_files"]) == 2  # Two invalid files
-    assert result["created_documents"][0]["name"] == "valid_txt"
+    assert result["created_documents"][0]["name"] == "valid txt"
+    assert result["created_documents"][0]["friendly_name"] == "valid.txt"
     assert result["created_documents"][0]["kind"] == "document"
 
 
@@ -3058,8 +3063,10 @@ async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
     # Both files should be processed (they have different content)
     assert len(result["created_documents"]) == 2
     assert len(result["failed_files"]) == 0
-    assert result["created_documents"][0]["name"] == "duplicate_txt"
-    assert result["created_documents"][1]["name"] == "duplicate_txt"
+    assert result["created_documents"][0]["name"] == "duplicate txt"
+    assert result["created_documents"][1]["name"] == "duplicate txt"
+    assert result["created_documents"][0]["friendly_name"] == "duplicate.txt"
+    assert result["created_documents"][1]["friendly_name"] == "duplicate.txt"
 
 
 @pytest.mark.parametrize(
@@ -3216,12 +3223,12 @@ def test_patch_document_success_name_only(client, mock_project, mock_document):
 
         response = client.patch(
             f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
-            json={"name": "Updated Document Name"},
+            json={"name_override": "Updated Document Name"},
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["name"] == "Updated Document Name"
+        assert data["friendly_name"] == "Updated Document Name"
         assert (
             data["description"] == mock_document["document"].description
         )  # Should remain unchanged
@@ -3276,12 +3283,16 @@ def test_patch_document_success_all_fields(client, mock_project, mock_document):
 
         response = client.patch(
             f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
-            json={"name": new_name, "description": new_description, "tags": new_tags},
+            json={
+                "name_override": new_name,
+                "description": new_description,
+                "tags": new_tags,
+            },
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["name"] == new_name
+        assert data["friendly_name"] == new_name
         assert data["description"] == new_description
         assert data["tags"] == new_tags
 
@@ -3293,7 +3304,7 @@ def test_patch_document_not_found(client, mock_project):
 
         response = client.patch(
             f"/api/projects/{mock_project.id}/documents/nonexistent_id",
-            json={"name": "Updated Name"},
+            json={"name_override": "Updated Name"},
         )
 
         assert response.status_code == 404
@@ -3329,6 +3340,34 @@ def test_patch_document_invalid_tags_empty_string(client, mock_project, mock_doc
         assert response.status_code == 422
         data = response.json()
         assert "Tags cannot be empty strings" in data["message"]
+
+
+def test_patch_document_name_revert_to_original_name(
+    client, mock_project, mock_document
+):
+    """Test PATCH document endpoint with name revert to original name"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        original_name = mock_document["document"].original_file.filename
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name_override": "modified name"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["friendly_name"] == "modified name"
+
+        response = client.patch(
+            f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
+            json={"name_override": ""},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["friendly_name"] == original_name
 
 
 def test_patch_document_invalid_tags_with_spaces(client, mock_project, mock_document):
@@ -3398,7 +3437,7 @@ def test_patch_document_partial_update_preserves_other_fields(
         # First update just the name
         response1 = client.patch(
             f"/api/projects/{mock_project.id}/documents/{mock_document['document'].id}",
-            json={"name": "Updated Name Only"},
+            json={"name_override": "Updated Name Only"},
         )
         assert response1.status_code == 200
 
@@ -3411,7 +3450,7 @@ def test_patch_document_partial_update_preserves_other_fields(
 
         data = response2.json()
         assert (
-            data["name"] == "Updated Name Only"
+            data["friendly_name"] == "Updated Name Only"
         )  # Should be preserved from first update
         assert data["description"] == "Updated Description Only"  # Should be updated
         assert data["tags"] == mock_document["document"].tags  # Should remain original

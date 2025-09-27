@@ -365,7 +365,7 @@ class CreateExtractorConfigRequest(BaseModel):
 
 
 class PatchDocumentRequest(BaseModel):
-    name: FilenameString | None = Field(
+    name_override: str | None = Field(
         description="A name for this document.",
         default=None,
     )
@@ -380,7 +380,9 @@ class PatchDocumentRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_at_least_one_field(self):
-        if all(field is None for field in [self.name, self.description, self.tags]):
+        if all(
+            field is None for field in [self.name_override, self.description, self.tags]
+        ):
             raise ValueError("At least one field must be provided")
         return self
 
@@ -631,6 +633,7 @@ def connect_document_api(app: FastAPI):
                 document = Document(
                     parent=project,
                     name=string_to_valid_name(document_name),
+                    name_override=document_name,
                     description="",  # No description support in bulk upload
                     kind=kind,
                     original_file=FileInfo(
@@ -710,8 +713,12 @@ def connect_document_api(app: FastAPI):
                 detail="Document not found",
             )
 
-        if request.name is not None:
-            document.name = request.name
+        if request.name_override is not None:
+            if request.name_override == "":
+                # revert to the original name
+                document.name_override = document.original_file.filename
+            else:
+                document.name_override = request.name_override
         if request.description is not None:
             document.description = request.description
         if request.tags is not None:

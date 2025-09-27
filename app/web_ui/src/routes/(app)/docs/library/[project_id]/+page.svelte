@@ -28,7 +28,7 @@
   let loading = true
   let sortColumn = ($page.url.searchParams.get("sort") || "created_at") as
     | keyof KilnDocument
-    | "name"
+    | "friendly_name"
     | "kind"
     | "created_at"
     | "original_file.size"
@@ -57,7 +57,7 @@
 
   const columns = [
     { key: "kind", label: "Type" },
-    { key: "name", label: "Name" },
+    { key: "friendly_name", label: "Name" },
     { key: "original_file.size", label: "Size" },
     { key: "created_at", label: "Created At" },
   ]
@@ -115,9 +115,9 @@
         aValue = a.created_at
         bValue = b.created_at
         break
-      case "name":
-        aValue = a.name
-        bValue = b.name
+      case "friendly_name":
+        aValue = a.friendly_name
+        bValue = b.friendly_name
         break
       case "kind":
         aValue = a.kind + a.original_file.mime_type
@@ -629,7 +629,7 @@
                       </span>
                     </div>
                   </td>
-                  <td>{document.name}</td>
+                  <td>{document.friendly_name}</td>
                   <td>{formatSize(document.original_file.size)}</td>
                   <td>{formatDate(document.created_at)}</td>
                 </tr>

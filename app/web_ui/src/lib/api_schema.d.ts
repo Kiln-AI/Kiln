@@ -2699,6 +2699,11 @@ export interface components {
              */
             name: string;
             /**
+             * Name Override
+             * @description A friendly name to identify the document. This is used for display purposes and can be different from the name.
+             */
+            name_override?: string | null;
+            /**
              * Description
              * @description A description for the file
              */
@@ -2714,6 +2719,8 @@ export interface components {
             tags?: string[];
             /** Model Type */
             readonly model_type: string;
+            /** Friendly Name */
+            readonly friendly_name: string;
         };
         /** EmbeddingConfig */
         EmbeddingConfig: {
@@ -3770,10 +3777,10 @@ export interface components {
         /** PatchDocumentRequest */
         PatchDocumentRequest: {
             /**
-             * Name
+             * Name Override
              * @description A name for this document.
              */
-            name?: string | null;
+            name_override?: string | null;
             /**
              * Description
              * @description The description of the document
