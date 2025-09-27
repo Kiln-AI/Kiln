@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte"
   import hljs from "highlight.js/lib/core"
   import json from "highlight.js/lib/languages/json"
   hljs.registerLanguage("json", json)
@@ -12,6 +13,7 @@
   let is_expanded = false
   let content_element: HTMLElement
   let is_content_overflowing = false
+  let resize_observer: ResizeObserver | null = null
 
   $: {
     try {
@@ -28,21 +30,49 @@
     }
   }
 
-  // Check if content overflows when max_height is set
-  $: if (content_element && max_height && !is_expanded) {
-    const temp_element = content_element.cloneNode(true) as HTMLElement
+  function compute_overflow(
+    elem: HTMLElement | undefined,
+    maxHeight: string | null,
+    expanded: boolean,
+  ) {
+    if (!elem || !maxHeight || expanded) {
+      is_content_overflowing = false
+      return
+    }
+
+    const temp_element = elem.cloneNode(true) as HTMLElement
     temp_element.style.maxHeight = "none"
     temp_element.style.position = "absolute"
     temp_element.style.visibility = "hidden"
     temp_element.style.pointerEvents = "none"
+    // Match current rendered width so wrapping matches the on-screen layout
+    temp_element.style.width = `${elem.clientWidth}px`
     document.body.appendChild(temp_element)
 
     const natural_height = temp_element.scrollHeight
     document.body.removeChild(temp_element)
 
-    const max_height_px = parseInt(max_height.replace("px", ""))
+    const max_height_px = parseInt(maxHeight.replace("px", ""))
     is_content_overflowing = natural_height > max_height_px
   }
+
+  // Recompute when inputs change
+  $: compute_overflow(content_element, max_height, is_expanded)
+
+  onMount(() => {
+    if (content_element) {
+      // scenario where this matters: content initially fits when the container is at full width,
+      // but on smaller viewport, the container is narrower and the content now overflows
+      resize_observer = new ResizeObserver(() => {
+        compute_overflow(content_element, max_height, is_expanded)
+      })
+      resize_observer.observe(content_element)
+    }
+  })
+
+  onDestroy(() => {
+    resize_observer?.disconnect()
+  })
 
   function copy_to_clipboard() {
     navigator.clipboard.writeText(raw_output)
