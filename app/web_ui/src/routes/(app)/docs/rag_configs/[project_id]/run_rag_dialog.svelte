@@ -5,7 +5,10 @@
     RagProgress,
   } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import {
+    currentProjectRagProgressStore,
+    ragProgressStore,
+  } from "$lib/stores/rag_progress_store"
   import Checkmark from "$lib/ui/checkmark.svelte"
 
   export let dialog: Dialog | null = null
@@ -13,11 +16,13 @@
   export let rag_config_id: string
   export let rag_config: RagConfigWithSubConfigs
 
-  $: config_progress = $ragProgressStore.progress[rag_config_id] || null
-  $: is_running = $ragProgressStore.running_rag_configs[rag_config_id] || false
+  $: config_progress =
+    $currentProjectRagProgressStore.progress[rag_config_id] || null
+  $: is_running =
+    $currentProjectRagProgressStore.running_rag_configs[rag_config_id] || false
 
   let log_container: HTMLPreElement
-  $: log_messages = $ragProgressStore.logs[rag_config_id] || []
+  $: log_messages = $currentProjectRagProgressStore.logs[rag_config_id] || []
   let end_of_logs: HTMLDivElement | null = null
 
   // user can override the default behavior of showing logs when there are error logs
