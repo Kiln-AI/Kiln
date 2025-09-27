@@ -17,6 +17,7 @@ class KilnEmbeddingModelFamily(str, Enum):
     gemini = "gemini"
     gemma = "gemma"
     nomic = "nomic"
+    qwen = "qwen"
 
 
 class EmbeddingModelName(str, Enum):
@@ -33,6 +34,9 @@ class EmbeddingModelName(str, Enum):
     gemini_embedding_001 = "gemini_embedding_001"
     embedding_gemma_300m = "embedding_gemma_300m"
     nomic_text_embedding_v1_5 = "nomic_text_embedding_v1_5"
+    qwen_3_embedding_0p6b = "qwen_3_embedding_0p6b"
+    qwen_3_embedding_4b = "qwen_3_embedding_4b"
+    qwen_3_embedding_8b = "qwen_3_embedding_8b"
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -165,9 +169,70 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=768,
                 max_input_tokens=2048,
                 # the model itself does support custom dimensions, but
-                # not sure if ollama supports it
+                # currently param gets rejected by litellm
                 supports_custom_dimensions=False,
                 ollama_model_aliases=["nomic-embed-text"],
+            ),
+        ],
+    ),
+    # qwen 3
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.qwen,
+        name=EmbeddingModelName.qwen_3_embedding_0p6b,
+        friendly_name="Qwen 3 Embedding 0.6B",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3-embedding:0.6b",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but
+                # currently param gets rejected by litellm
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.qwen,
+        name=EmbeddingModelName.qwen_3_embedding_4b,
+        friendly_name="Qwen 3 Embedding 4B",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3-embedding:4b",
+                n_dimensions=2560,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but
+                # currently param gets rejected by litellm
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.qwen,
+        name=EmbeddingModelName.qwen_3_embedding_8b,
+        friendly_name="Qwen 3 Embedding 8B",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3-embedding:8b",
+                n_dimensions=4096,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but
+                # currently param gets rejected by litellm
+                supports_custom_dimensions=False,
+                ollama_model_aliases=[
+                    # 8b is default
+                    "qwen3-embedding",
+                ],
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3-embedding-8b",
+                n_dimensions=4096,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but not working
+                supports_custom_dimensions=False,
             ),
         ],
     ),

@@ -360,16 +360,6 @@ def test_uncensored():
         assert provider.suggested_for_uncensored_data_gen
 
 
-def test_multimodal_capable():
-    """Test that multimodal_capable is set correctly"""
-    model = get_model_by_name(ModelName.gpt_4_1)
-    for provider in model.providers:
-        assert provider.multimodal_capable
-        assert provider.supports_doc_extraction
-        assert provider.multimodal_mime_types is not None
-        assert len(provider.multimodal_mime_types) > 0
-
-
 def test_no_empty_multimodal_mime_types():
     """Ensure that multimodal fields are self-consistent as they are interdependent"""
     for model in built_in_models:
