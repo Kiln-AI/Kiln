@@ -6,10 +6,10 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type {
-    ExternalToolServerApiDescription,
-    LocalServerProperties,
-    RemoteServerProperties,
+  import {
+    type ExternalToolServerApiDescription,
+    toolIsType,
+    isToolType,
   } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
@@ -104,32 +104,30 @@
     ]
 
     switch (tool.type) {
-      case "remote_mcp":
-        if (
-          isRemoteServerProperties(tool.properties) &&
-          tool.properties.server_url
-        ) {
+      case "remote_mcp": {
+        toolIsType(tool, tool.type)
+        if (tool.properties.server_url) {
           properties.push({
             name: "Server URL",
             value: tool.properties.server_url,
           })
         }
         break
+      }
       case "local_mcp": {
-        if (isLocalServerProperties(tool.properties)) {
-          if (tool.properties.command) {
-            properties.push({
-              name: "Command",
-              value: tool.properties.command,
-            })
-          }
-          const args = tool.properties.args
-          if (args && isStringArray(args)) {
-            properties.push({
-              name: "Arguments",
-              value: args.join(" ") || "None",
-            })
-          }
+        toolIsType(tool, tool.type)
+        if (tool.properties.command) {
+          properties.push({
+            name: "Command",
+            value: tool.properties.command,
+          })
+        }
+        const args = tool.properties.args
+        if (args && isStringArray(args)) {
+          properties.push({
+            name: "Arguments",
+            value: args.join(" ") || "None",
+          })
         }
         break
       }
@@ -218,43 +216,6 @@
     return typeof value === "string"
   }
 
-  // Helper function to check if properties is a valid object
-  function isValidPropertiesObject(
-    properties: LocalServerProperties | RemoteServerProperties,
-  ): properties is LocalServerProperties | RemoteServerProperties {
-    return properties !== null && typeof properties === "object"
-  }
-
-  // Type guards for server properties
-  function isLocalServerProperties(
-    properties: LocalServerProperties | RemoteServerProperties,
-  ): properties is LocalServerProperties {
-    if (!isValidPropertiesObject(properties)) {
-      return false
-    }
-
-    return (
-      "command" in properties ||
-      "args" in properties ||
-      "env_vars" in properties ||
-      "secret_env_var_keys" in properties
-    )
-  }
-
-  function isRemoteServerProperties(
-    properties: LocalServerProperties | RemoteServerProperties,
-  ): properties is RemoteServerProperties {
-    if (!isValidPropertiesObject(properties)) {
-      return false
-    }
-
-    return (
-      "server_url" in properties ||
-      "headers" in properties ||
-      "secret_header_keys" in properties
-    )
-  }
-
   function formatToolArguments(
     inputSchema: Record<string, unknown>,
   ): Argument[] {
@@ -333,7 +294,7 @@
           />
         </div>
         <div class="flex-1">
-          {#if tool_server.type === "remote_mcp" && isRemoteServerProperties(tool_server.properties)}
+          {#if tool_server.type === "remote_mcp" && isToolType(tool_server, tool_server.type)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Connection Details"
@@ -349,7 +310,7 @@
                 title="Headers"
               />
             </div>
-          {:else if tool_server.type === "local_mcp" && isLocalServerProperties(tool_server.properties)}
+          {:else if tool_server.type === "local_mcp" && isToolType(tool_server, tool_server.type)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Run Configuration"
