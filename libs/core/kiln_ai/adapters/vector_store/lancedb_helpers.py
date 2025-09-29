@@ -40,12 +40,12 @@ def lancedb_construct_from_config(
 
     return LanceDBVectorStore(
         mode="create",
-        uri=uri,
         query_type=store_type_to_lancedb_query_type(vector_store_config.store_type),
         overfetch_factor=vector_store_config.lancedb_properties.overfetch_factor,
         vector_column_name=vector_store_config.lancedb_properties.vector_column_name,
         text_key=vector_store_config.lancedb_properties.text_key,
         doc_id_key=vector_store_config.lancedb_properties.doc_id_key,
+        uri=uri,
         **kwargs,
     )
 

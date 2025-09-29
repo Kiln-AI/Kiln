@@ -209,7 +209,11 @@ def mock_attachment_factory(mock_file_factory):
 
     def create_attachment(
         mime_type: MockFileFactoryMimeType,
+        text: str | None = None,
     ) -> KilnAttachmentModel:
+        if text is not None:
+            return KilnAttachmentModel.from_data(text, mime_type)
+
         path = mock_file_factory(mime_type)
         return KilnAttachmentModel.from_file(path)
 
