@@ -1,9 +1,14 @@
-from typing import Any, Dict
+from typing import Dict
 from unittest.mock import Mock, patch
 
 import pytest
 
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    LocalServerProperties,
+    RemoteServerProperties,
+    ToolServerType,
+)
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -21,7 +26,7 @@ class TestExternalToolServer:
             yield config_instance
 
     @pytest.fixture
-    def remote_mcp_base_props(self) -> Dict[str, Any]:
+    def remote_mcp_base_props(self) -> RemoteServerProperties:
         """Base properties for remote MCP server."""
         return {
             "server_url": "https://api.example.com/mcp",
@@ -38,19 +43,20 @@ class TestExternalToolServer:
     @pytest.fixture
     def remote_mcp_props_with_secrets(
         self, remote_mcp_base_props, sample_remote_mcp_secrets
-    ) -> Dict[str, Any]:
+    ) -> RemoteServerProperties:
         """Properties for remote MCP server with secrets."""
+        base_headers = remote_mcp_base_props.get("headers", {})
         return {
-            **remote_mcp_base_props,
+            "server_url": remote_mcp_base_props["server_url"],
             "headers": {
-                **remote_mcp_base_props["headers"],
+                **base_headers,
                 **sample_remote_mcp_secrets,
             },
             "secret_header_keys": list(sample_remote_mcp_secrets.keys()),
         }
 
     @pytest.fixture
-    def local_mcp_base_props(self) -> Dict[str, Any]:
+    def local_mcp_base_props(self) -> LocalServerProperties:
         """Base properties for local MCP server."""
         return {
             "command": "python",
@@ -152,7 +158,10 @@ class TestExternalToolServer:
             ExternalToolServer(
                 name="test-server",
                 type=ToolServerType.remote_mcp,
-                properties={"headers": headers},
+                properties={
+                    "server_url": "https://test.com",
+                    "headers": headers,
+                },
             )
 
     @pytest.mark.parametrize(
@@ -197,7 +206,11 @@ class TestExternalToolServer:
             ExternalToolServer(
                 name="test-server",
                 type=ToolServerType.remote_mcp,
-                properties={"secret_header_keys": secret_header_keys},
+                properties={
+                    "server_url": "https://test.com",
+                    "headers": {},
+                    "secret_header_keys": secret_header_keys,
+                },
             )
 
     def test_validate_secret_header_keys_valid(self):
@@ -310,11 +323,23 @@ class TestExternalToolServer:
     @pytest.mark.parametrize(
         "server_type, invalid_props, expected_error",
         [
+            # Missing type entirely
+            (
+                None,
+                {},
+                "type is required",  # Required by pydantic in RemoteServerProperties
+            ),
+            # Remote MCP missing server_url
+            (
+                ToolServerType.remote_mcp,
+                {},
+                "Server URL is required to connect to a remote MCP server",
+            ),
             # Remote MCP validation errors
             (
                 ToolServerType.remote_mcp,
                 {"server_url": ""},
-                "Server URL is required to connect to a remote MCP server",
+                "Server URL is not a valid URL",
             ),
             (
                 ToolServerType.remote_mcp,
@@ -335,14 +360,17 @@ class TestExternalToolServer:
                 "secret_header_keys must contain only strings",
             ),
             # Local MCP validation errors
-            (ToolServerType.local_mcp, {}, "command must be a string"),
-            (ToolServerType.local_mcp, {"command": ""}, "command is required"),
-            (ToolServerType.local_mcp, {"command": 123}, "command must be a string"),
             (
                 ToolServerType.local_mcp,
-                {"command": "python"},
-                "arguments must be a list",
+                {},
+                "command is required to start a local MCP server",
             ),
+            (
+                ToolServerType.local_mcp,
+                {"command": ""},
+                "command must be a non-empty string",
+            ),  # Required by pydantic in LocalServerProperties
+            (ToolServerType.local_mcp, {"command": 123}, "command must be a string"),
             (
                 ToolServerType.local_mcp,
                 {"command": "python", "args": "not-a-list"},
@@ -396,13 +424,14 @@ class TestExternalToolServer:
 
         # With secret header keys
         props_with_secrets = {
-            **remote_mcp_base_props,
+            "server_url": remote_mcp_base_props["server_url"],
+            "headers": remote_mcp_base_props.get("headers", {}),
             "secret_header_keys": ["Authorization", "X-API-Key"],
         }
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties=props_with_secrets,
+            properties=props_with_secrets,  # type: ignore
         )
         assert server.get_secret_keys() == ["Authorization", "X-API-Key"]
 
@@ -418,13 +447,15 @@ class TestExternalToolServer:
 
         # With secret env var keys
         props_with_secrets = {
-            **local_mcp_base_props,
+            "command": local_mcp_base_props["command"],
+            "args": local_mcp_base_props.get("args", []),
+            "env_vars": local_mcp_base_props.get("env_vars", {}),
             "secret_env_var_keys": ["API_KEY", "SECRET_TOKEN"],
         }
         server = ExternalToolServer(
             name="test-server",
             type=ToolServerType.local_mcp,
-            properties=props_with_secrets,
+            properties=props_with_secrets,  # type: ignore
         )
         assert server.get_secret_keys() == ["API_KEY", "SECRET_TOKEN"]
 
@@ -442,7 +473,8 @@ class TestExternalToolServer:
         assert server._unsaved_secrets == sample_remote_mcp_secrets
 
         # Secrets should be removed from headers
-        assert server.properties["headers"] == {"Content-Type": "application/json"}
+        headers = server.properties.get("headers", {})
+        assert headers == {"Content-Type": "application/json"}
 
     def test_secret_processing_local_mcp_initialization(self):
         """Test secret processing during local MCP server initialization."""
@@ -458,7 +490,9 @@ class TestExternalToolServer:
         }
 
         server = ExternalToolServer(
-            name="test-server", type=ToolServerType.local_mcp, properties=properties
+            name="test-server",
+            type=ToolServerType.local_mcp,
+            properties=properties,  # type: ignore
         )
 
         # Secrets should be extracted to _unsaved_secrets
@@ -468,7 +502,8 @@ class TestExternalToolServer:
         }
 
         # Secrets should be removed from env_vars
-        assert server.properties["env_vars"] == {"PATH": "/usr/bin"}
+        env_vars = server.properties.get("env_vars", {})
+        assert env_vars == {"PATH": "/usr/bin"}
 
     def test_secret_processing_property_update_remote_mcp(
         self, remote_mcp_props_with_secrets
@@ -485,19 +520,19 @@ class TestExternalToolServer:
 
         # Update properties with new secrets
         new_properties = {
-            **remote_mcp_props_with_secrets,
-            # Overwrite headers and secret header keys
+            "server_url": remote_mcp_props_with_secrets["server_url"],
             "headers": {
                 "New-Secret-Header": "Bearer new-token",
             },
             "secret_header_keys": ["New-Secret-Header"],
         }
 
-        server.properties = new_properties
+        server.properties = new_properties  # type: ignore
 
         # Secret should be processed (extracted and removed from headers)
         assert server._unsaved_secrets == {"New-Secret-Header": "Bearer new-token"}
-        assert "New-Secret-Header" not in server.properties["headers"]
+        headers = server.properties.get("headers", {})
+        assert "New-Secret-Header" not in headers
 
     def test_secret_processing_clears_existing_secrets(
         self,
@@ -581,7 +616,8 @@ class TestExternalToolServer:
             name="test-server",
             type=ToolServerType.remote_mcp,
             properties={
-                **remote_mcp_base_props,
+                "server_url": remote_mcp_base_props["server_url"],
+                "headers": remote_mcp_base_props.get("headers", {}),
                 "secret_header_keys": ["Authorization"],
             },
         )
@@ -606,7 +642,8 @@ class TestExternalToolServer:
             name="test-server",
             type=ToolServerType.remote_mcp,
             properties={
-                **remote_mcp_base_props,
+                "server_url": remote_mcp_base_props["server_url"],
+                "headers": remote_mcp_base_props.get("headers", {}),
                 "secret_header_keys": ["Authorization", "X-API-Key", "Missing-Key"],
             },
         )
@@ -845,10 +882,16 @@ class TestExternalToolServer:
 
     def test_empty_secret_keys_list(self, remote_mcp_base_props):
         """Test behavior with empty secret_header_keys list."""
-        properties = {**remote_mcp_base_props, "secret_header_keys": []}
+        properties = {
+            "server_url": remote_mcp_base_props["server_url"],
+            "headers": remote_mcp_base_props.get("headers", {}),
+            "secret_header_keys": [],
+        }
 
         server = ExternalToolServer(
-            name="test-server", type=ToolServerType.remote_mcp, properties=properties
+            name="test-server",
+            type=ToolServerType.remote_mcp,
+            properties=properties,  # type: ignore
         )
 
         assert server.get_secret_keys() == []
@@ -877,3 +920,32 @@ class TestExternalToolServer:
 
         assert secrets == {}
         assert missing == ["Authorization", "X-API-Key"]
+
+    @pytest.mark.parametrize(
+        "data, expected_type",
+        [
+            ({"type": "remote_mcp"}, ToolServerType.remote_mcp),
+            ({"type": "local_mcp"}, ToolServerType.local_mcp),
+        ],
+    )
+    def test_type_from_data_valid(self, data, expected_type):
+        """Test type_from_data with valid data."""
+        result = ExternalToolServer.type_from_data(data)
+        assert result == expected_type
+
+    def test_type_from_data_invalid(self):
+        """Test type_from_data with invalid data."""
+        valid_types = ", ".join(type.value for type in ToolServerType)
+        invalid_type_error = f"type must be one of: {valid_types}"
+
+        test_cases = [
+            ({}, "type is required"),
+            ({"type": None}, "type is required"),
+            ({"type": "invalid_type"}, invalid_type_error),
+            ({"type": 123}, invalid_type_error),
+            ({"type": ""}, invalid_type_error),
+        ]
+
+        for data, expected_error in test_cases:
+            with pytest.raises(ValueError, match=expected_error):
+                ExternalToolServer.type_from_data(data)
