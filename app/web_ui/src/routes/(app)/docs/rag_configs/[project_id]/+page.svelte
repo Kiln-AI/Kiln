@@ -86,6 +86,8 @@
   <AppPage
     title="Search Tools (RAG)"
     subtitle="Enable tasks to search documents for knowledge."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     no_y_padding={!!(all_rag_configs && all_rag_configs.length == 0)}
     breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={all_rag_configs && all_rag_configs.length == 0

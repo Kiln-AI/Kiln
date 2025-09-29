@@ -118,7 +118,7 @@
     id="temperature"
     label="Temperature"
     inputType="input"
-    info_description="A value from 0.0 to 2.0. Temperature is a parameter that controls the randomness of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    info_description={"A value from 0.0 to 2.0.\nTemperature is a parameter that controls the randomness of the model's output.\nLower values make the output more focused and deterministic, while higher values make it more creative and varied."}
     bind:value={temperature}
     validator={validate_temperature}
   />
@@ -127,7 +127,7 @@
     id="top_p"
     label="Top P"
     inputType="input"
-    info_description="A value from 0.0 to 1.0. Top P is a parameter that controls the diversity of the model's output. Lower values make the output more focused and deterministic, while higher values make it more creative and varied."
+    info_description={"A value from 0.0 to 1.0.\nTop P is a parameter that controls the diversity of the model's output.\nLower values make the output more focused and deterministic, while higher values make it more creative and varied."}
     bind:value={top_p}
     validator={validate_top_p}
   />

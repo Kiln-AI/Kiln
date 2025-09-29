@@ -109,6 +109,7 @@
         let options: Option[] = tools.map((tool) => ({
           value: tool.id,
           label: tool.name,
+          description: tool.description || undefined,
         }))
         option_groups.push({
           label: tool_set.set_name,
@@ -125,11 +126,16 @@
   {#if $available_tools[project_id]?.length > 0}
     <FormElement
       id="tools"
-      label="Tools"
+      label="Tools & Search"
       inputType="multi_select"
-      info_description="Select the tools available to the model. The model may or may not choose to use them."
+      info_description="Select the tools available to the model.\nThe model may or may not choose to use them."
       bind:value={tools}
       fancy_select_options={get_tool_options($available_tools[project_id])}
+      empty_state_message={$available_tools[project_id] === undefined
+        ? "Loading tools..."
+        : "No Tools Available"}
+      empty_state_subtitle="Add Tools"
+      empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
     />
   {/if}
 </div>

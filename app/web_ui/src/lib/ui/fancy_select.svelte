@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation"
   import type { OptionGroup } from "./fancy_select_types"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
@@ -6,6 +7,9 @@
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
+  export let empty_state_message: string = "No options available"
+  export let empty_state_subtitle: string | null = null
+  export let empty_state_link: string | null = null
   export let multi_select: boolean = false
   export let disabled: boolean = false
 
@@ -94,14 +98,16 @@
       }
       // Update selected, which is what we expose outside the component
       selected = selected_values
+
+      // Note: we don't close the dropdown for multi-select
     } else {
       selected = option
-    }
 
-    // Delay hiding the dropdown to ensure the click event is fully processed
-    setTimeout(() => {
-      listVisible = false
-    }, 0)
+      // Delay hiding the dropdown to ensure the click event is fully processed
+      setTimeout(() => {
+        listVisible = false
+      }, 0)
+    }
   }
 
   // Make it reactive, when selected changes, update the selected_values
@@ -433,6 +439,9 @@
       }
     }}
     on:blur={(_) => {
+      if (multi_select) {
+        return
+      }
       // Only close if focus is not moving to the dropdown
       setTimeout(() => {
         if (
@@ -554,6 +563,29 @@
             </svg>
           </button>
         </div>
+      {/if}
+
+      {#if options.length === 0}
+        <!-- Empty state -->
+        <button
+          class="px-4 pt-4 pb-2 text-center text-base-content/60 {empty_state_link
+            ? 'cursor-pointer'
+            : 'cursor-default'}"
+          on:mousedown={() => {
+            if (empty_state_link) {
+              goto(empty_state_link)
+            }
+          }}
+        >
+          <div>
+            {empty_state_message}
+          </div>
+          {#if empty_state_subtitle}
+            <div class="text-sm {empty_state_link ? 'link' : ''}">
+              {empty_state_subtitle}
+            </div>
+          {/if}
+        </button>
       {/if}
 
       <ul

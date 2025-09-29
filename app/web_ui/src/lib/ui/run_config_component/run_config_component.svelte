@@ -5,15 +5,10 @@
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
-  import {
-    save_new_task_run_config,
-    run_configs_by_task_composite_id,
-    get_task_composite_id,
-  } from "$lib/stores/run_configs_store"
+  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
-    TaskRunConfig,
     RunConfigProperties,
     StructuredOutputMode,
     AvailableModels,
@@ -31,16 +26,15 @@
   // Props
   export let project_id: string
   export let current_task: Task
-  export let selected_run_config_id: string | null = null
-  export let requires_structured_output: boolean = false
-
-  // Expose reactive values for parent component
   export let model_name: string = ""
   export let provider: string = ""
-  export let prompt_method: string = "simple_prompt_builder"
+  export let requires_structured_output: boolean = false
 
+  let selected_run_config_id: string | null = null
   let model: string = $ui_state.selected_model
+  let prompt_method: string = "simple_prompt_builder"
   let tools: string[] = []
+  let requires_tool_support: boolean = false
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -51,6 +45,8 @@
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
+
+  let saved_run_configs_dropdown: SavedRunConfigurationsDropdown
 
   let save_config_error: KilnError | null = null
   let set_default_error: KilnError | null = null
@@ -85,33 +81,19 @@
   }
 
   // Update form values from saved config change if needed
-  $: selected_run_config_id, update_current_run_options_if_needed()
-
-  function get_selected_run_config(): TaskRunConfig | "custom" | null {
-    // Map selected ID back to TaskRunConfig object
-    if (!selected_run_config_id) {
-      return null
-    } else if (selected_run_config_id === "custom") {
-      return "custom"
-    } else {
-      // Find the config by ID
-      const all_configs =
-        $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id ?? "")
-        ] ?? []
-      let run_config = all_configs.find(
-        (config) => config.id === selected_run_config_id,
-      )
-      return run_config ?? "custom"
-    }
+  $: if (selected_run_config_id !== null) {
+    update_current_run_options_if_needed()
   }
 
   async function update_current_run_options_if_needed() {
-    const selected_run_config = get_selected_run_config()
+    if (!saved_run_configs_dropdown) {
+      return
+    }
+    const selected_run_config =
+      await saved_run_configs_dropdown.get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-
     model =
       selected_run_config.run_config_properties.model_provider_name +
       "/" +
@@ -136,11 +118,14 @@
     reset_to_custom_options_if_needed()
 
   async function reset_to_custom_options_if_needed() {
-    const selected_run_config = get_selected_run_config()
+    if (!saved_run_configs_dropdown) {
+      return
+    }
+    const selected_run_config =
+      await saved_run_configs_dropdown.get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-
     // Wait for all reactive statements to complete
     await tick()
 
@@ -222,8 +207,8 @@
   }
 
   // Expose methods for run parent component
-  export function get_selected_model() {
-    return model_dropdown.get_selected_model()
+  export function get_selected_model(): string | null {
+    return model_dropdown ? model_dropdown.get_selected_model() : null
   }
 
   export function clear_model_dropdown_error() {
@@ -232,6 +217,14 @@
 
   export function set_model_dropdown_error(message: string) {
     model_dropdown_error_message = message
+  }
+
+  export function get_prompt_method(): string {
+    return prompt_method
+  }
+
+  export function get_tools(): string[] {
+    return tools
   }
 </script>
 
@@ -244,6 +237,7 @@
     {set_default_error}
     on:change={clear_run_options_errors}
     on:save_run_options={save_run_options}
+    bind:this={saved_run_configs_dropdown}
   />
   {#if $available_models.length > 0}
     <AvailableModelsDropdown

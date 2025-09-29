@@ -17,7 +17,7 @@
   $: is_empty =
     !demo_tools_enabled &&
     (!tools || tools.length == 0) &&
-    kiln_task_tools_count === 0 &&
+    kiln_task_tools_count === 0 && // TODO: store kiln_tools?
     (!search_tools || search_tools.length === 0)
 
   let tools: KilnToolServerDescription[] | null = null

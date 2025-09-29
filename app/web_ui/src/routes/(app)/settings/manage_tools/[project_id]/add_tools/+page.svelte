@@ -7,6 +7,7 @@
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
 
@@ -187,6 +188,9 @@
       if (error) {
         throw error
       }
+
+      posthog.capture("enable_demo_tools", {})
+
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools(project_id)
       goto(`/settings/manage_tools/${project_id}`)

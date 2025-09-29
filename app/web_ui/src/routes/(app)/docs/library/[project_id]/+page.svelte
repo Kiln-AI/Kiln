@@ -17,6 +17,7 @@
   } from "$lib/utils/formatters"
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
 
   let upload_file_dialog: UploadFileDialog | null = null
@@ -457,6 +458,12 @@
       // Hide the dropdown (safari bug shows it when hidden)
       show_add_tag_dropdown = false
 
+      // trigger all rag configs to re-run because tagging documents may
+      // have changed which documents are targeted by which rag configs
+      ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+        console.error("Error running all rag configs", error)
+      })
+
       // Close modal on success
       return true
     } finally {
@@ -473,6 +480,8 @@
     title="Document Library"
     subtitle="Add or Browse Documents"
     no_y_padding
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#document-library"
     breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={documents && documents.length == 0
       ? []

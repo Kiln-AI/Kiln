@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version < '3.11'",
@@ -1195,9 +1195,10 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.20.1"
+version = "0.21.0"
 source = { editable = "libs/core" }
 dependencies = [
+    { name = "anyio" },
     { name = "boto3" },
     { name = "coverage" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
@@ -1232,6 +1233,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "boto3", specifier = ">=1.37.10" },
     { name = "coverage", specifier = ">=7.6.4" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.0.0" },
@@ -1313,7 +1315,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "0.20.1"
+version = "0.21.0"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
