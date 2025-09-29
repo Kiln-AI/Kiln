@@ -641,7 +641,7 @@
                     </div>
                     {#if item.description}
                       <div
-                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3"
+                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"
                       >
                         {item.description}
                       </div>

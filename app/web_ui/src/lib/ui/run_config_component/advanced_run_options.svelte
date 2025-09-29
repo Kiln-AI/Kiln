@@ -8,11 +8,10 @@
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
 
-  // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
-  export let temperature: number = 1.0
-  export let top_p: number = 1.0
-  export let structured_output_mode: StructuredOutputMode = "default"
-  export let has_structured_output: boolean = false
+  export let temperature: number
+  export let top_p: number
+  export let structured_output_mode: StructuredOutputMode
+  export let has_structured_output: boolean
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
