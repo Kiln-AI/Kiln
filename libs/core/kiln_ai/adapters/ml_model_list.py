@@ -108,7 +108,9 @@ class ModelName(str, Enum):
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
     claude_sonnet_4 = "claude_sonnet_4"
+    claude_sonnet_4_5 = "claude_sonnet_4_5"
     claude_opus_4 = "claude_opus_4"
+    claude_opus_4_1 = "claude_opus_4_1"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -250,6 +252,8 @@ class KilnModelProvider(BaseModel):
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
     gemini_reasoning_enabled: bool = False
+    # Can only specify top_p or temp, not both. Opus 4.1 and Sonnet 4.5 for example.
+    temp_top_p_exclusive: bool = False
 
     # some models on siliconflow allow dynamically disabling thinking
     # currently only supported by Qwen3 and tencent/Hunyuan-A13B-Instruct
@@ -887,6 +891,29 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Sonnet 4.5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_4_5,
+        friendly_name="Claude 4.5 Sonnet",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-4.5-sonnet",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-sonnet-4-5-20250929",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
     # Claude Sonnet 4
     KilnModel(
         family=ModelFamily.claude,
@@ -970,6 +997,25 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="claude-3-5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    # Claude Opus 4.1
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_1,
+        friendly_name="Claude Opus 4.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.1",
+                structured_output_mode=StructuredOutputMode.function_calling,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-1-20250805",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                temp_top_p_exclusive=True,
             ),
         ],
     ),
