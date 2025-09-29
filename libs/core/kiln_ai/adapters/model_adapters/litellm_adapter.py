@@ -488,6 +488,21 @@ class LiteLlmAdapter(BaseAdapter):
             completion_kwargs["tools"] = tool_calls
             completion_kwargs["tool_choice"] = "auto"
 
+        # Special condition for Claude Opus 4.1 and Sonnet 4.5, where we can only specify top_p or temp, not both.
+        # Remove default values (1.0) prioritizing anything the user customized, then error with helpful message if they are both custom.
+        if provider.temp_top_p_exclusive:
+            if "top_p" in completion_kwargs and completion_kwargs["top_p"] == 1.0:
+                del completion_kwargs["top_p"]
+            if (
+                "temperature" in completion_kwargs
+                and completion_kwargs["temperature"] == 1.0
+            ):
+                del completion_kwargs["temperature"]
+            if "top_p" in completion_kwargs and "temperature" in completion_kwargs:
+                raise ValueError(
+                    "top_p and temperature can not both have custom values for this model. This is a restriction from the model provider. Please set only one of them to a custom value (not 1.0)."
+                )
+
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
             response_format_options = await self.response_format_options()
