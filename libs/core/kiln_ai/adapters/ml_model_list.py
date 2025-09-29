@@ -91,6 +91,7 @@ class ModelName(str, Enum):
     mistral_large = "mistral_large"
     mistral_nemo = "mistral_nemo"
     mistral_small_3 = "mistral_small_3"
+    mistral_medium_3_1 = "mistral_medium_3_1"
     magistral_medium = "magistral_medium"
     magistral_medium_thinking = "magistral_medium_thinking"
     gemma_2_2b = "gemma_2_2b"
@@ -901,16 +902,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-4.5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-sonnet-4-5-20250929",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
@@ -1572,6 +1569,19 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    # Mistral Medium 3.1
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_medium_3_1,
+        friendly_name="Mistral Medium 3.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-medium-3.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
     ),
