@@ -4450,6 +4450,11 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.
              */
             thinking_instruction?: string | null;
+            /**
+             * Default Run Config Id
+             * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
+             */
+            default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
