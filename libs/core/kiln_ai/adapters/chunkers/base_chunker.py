@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel, Field
 
+from kiln_ai.adapters.chunkers.helpers import clean_up_text
 from kiln_ai.datamodel.chunk import ChunkerConfig
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,11 @@ class BaseChunker(ABC):
         if not text:
             return ChunkingResult(chunks=[])
 
-        return await self._chunk(text)
+        sanitized_text = clean_up_text(text)
+        if not sanitized_text:
+            return ChunkingResult(chunks=[])
+
+        return await self._chunk(sanitized_text)
 
     @abstractmethod
     async def _chunk(self, text: str) -> ChunkingResult:

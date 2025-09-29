@@ -1,11 +1,14 @@
-import re
 from datetime import datetime
 from typing import Any, Dict, List
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    LocalServerProperties,
+    RemoteServerProperties,
+    ToolServerType,
+)
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
@@ -18,7 +21,7 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class KilnToolServerDescription(BaseModel):
@@ -40,48 +43,6 @@ class ExternalToolServerCreationRequest(BaseModel):
     headers: Dict[str, str] = Field(default_factory=dict)
     secret_header_keys: List[str] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def validate_server_details(self):
-        """Validate server URL and headers format."""
-        # Validate server URL
-        server_url = self.server_url
-        if not server_url:
-            raise ValueError("Server URL is required to connect to a remote MCP server")
-        # Check for leading whitespace in URL
-        if server_url != server_url.lstrip():
-            raise ValueError("Server URL must not have leading whitespace")
-        if urlparse(server_url).scheme not in ["http", "https"]:
-            raise ValueError("Server URL must start with http:// or https://")
-        if not urlparse(server_url).netloc:
-            raise ValueError("Server URL is not a valid URL")
-
-        # Validate headers
-        for key, value in self.headers.items():
-            if not key:
-                raise ValueError("Header name is required")
-            if not value:
-                raise ValueError("Header value is required")
-
-            # Reject invalid header names and CR/LF in names/values
-            token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
-            if not token_re.match(key):
-                raise ValueError(f'Invalid header name: "{key}"')
-            if re.search(r"\r|\n", key) or re.search(r"\r|\n", value):
-                raise ValueError(
-                    "Header names/values must not contain invalid characters"
-                )
-
-        # Validate secret header keys
-        for key in self.secret_header_keys:
-            key = key if isinstance(key, str) else str(key)
-            if not key:
-                raise ValueError("Secret header key is required")
-            # Check if the key is in the headers
-            if key not in self.headers:
-                raise ValueError(f"Secret header key {key} is not in the headers")
-
-        return self
-
 
 class LocalToolServerCreationRequest(BaseModel):
     name: str
@@ -90,42 +51,6 @@ class LocalToolServerCreationRequest(BaseModel):
     args: List[str]
     env_vars: Dict[str, str] = Field(default_factory=dict)
     secret_env_var_keys: List[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def validate_command(self):
-        """Validate command format."""
-        if not self.command:
-            raise ValueError("Command is required to start a local MCP server")
-
-        # Validate env_vars keys are in the correct format for Environment Variables
-        # According to POSIX specification, environment variable names must:
-        # - Start with a letter (a-z, A-Z) or underscore (_)
-        # - Contain only ASCII letters, digits, and underscores
-        for key, value in self.env_vars.items():
-            if not key or not (
-                key[0].isascii() and (key[0].isalpha() or key[0] == "_")
-            ):
-                raise ValueError(
-                    f"Invalid environment variable key: {key}. Must start with a letter or underscore."
-                )
-
-            if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
-                raise ValueError(
-                    f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
-                )
-
-        # Validate secret environment variable keys
-        for key in self.secret_env_var_keys:
-            key_str = key if isinstance(key, str) else str(key)
-            if not key_str:
-                raise ValueError("Secret environment variable key is required")
-            # Check if the key is in the env_vars
-            if key_str not in self.env_vars:
-                raise ValueError(
-                    f"Secret environment variable key {key_str} is not in the list of environment variables"
-                )
-
-        return self
 
 
 class ExternalToolApiDescription(BaseModel):
@@ -159,7 +84,7 @@ class ExternalToolServerApiDescription(BaseModel):
     description: str | None
     created_at: datetime | None
     created_by: str | None
-    properties: Dict[str, Any]
+    properties: LocalServerProperties | RemoteServerProperties
     available_tools: list[ExternalToolApiDescription]
     missing_secrets: list[str]
 
@@ -245,20 +170,22 @@ def connect_tool_servers_api(app: FastAPI):
         # Add search tools (RAG)
         rag_configs = project.rag_configs(readonly=True)
         if rag_configs:
-            tool_sets.append(
-                ToolSetApiDescription(
-                    set_name="Search Tools (RAG)",
-                    tools=[
-                        ToolApiDescription(
-                            id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
-                            name=rag_config.tool_name,
-                            description=f"{rag_config.name}: {rag_config.tool_description}",
-                        )
-                        for rag_config in rag_configs
-                        if not rag_config.is_archived
-                    ],
+            tools = [
+                ToolApiDescription(
+                    id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
+                    name=rag_config.tool_name,
+                    description=f"{rag_config.name}: {rag_config.tool_description}",
                 )
-            )
+                for rag_config in rag_configs
+                if not rag_config.is_archived
+            ]
+            if tools and len(tools) > 0:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        set_name="Search Tools (RAG)",
+                        tools=tools,
+                    )
+                )
 
         # Get available tools from MCP servers
         for server in project.external_tool_servers(readonly=True):
@@ -436,7 +363,7 @@ def connect_tool_servers_api(app: FastAPI):
 
     def _remote_tool_server_properties(
         tool_data: ExternalToolServerCreationRequest,
-    ) -> dict[str, str | Dict[str, str] | List[str]]:
+    ) -> RemoteServerProperties:
         # Create the ExternalToolServer with all data for validation
         return {
             "server_url": tool_data.server_url,
@@ -495,7 +422,7 @@ def connect_tool_servers_api(app: FastAPI):
 
     def _local_tool_server_properties(
         tool_data: LocalToolServerCreationRequest,
-    ) -> dict[str, str | Dict[str, str] | List[str]]:
+    ) -> LocalServerProperties:
         return {
             "command": tool_data.command,
             "args": tool_data.args,

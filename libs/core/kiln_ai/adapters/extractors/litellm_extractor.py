@@ -1,5 +1,8 @@
+import asyncio
+import hashlib
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import litellm
 from litellm.types.utils import Choices, ModelResponse
@@ -14,8 +17,21 @@ from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
+from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.pdf_utils import split_pdf_into_pages
+
+
+def max_pdf_page_concurrency_for_model(model_name: str) -> int:
+    # we assume each batch takes ~5s to complete (likely more in practice)
+    # lowest rate limit is 150 RPM for Tier 1 accounts for gemini-2.5-pro
+    if model_name == "gemini/gemini-2.5-pro":
+        return 2
+    # other models support at least 500 RPM for lowest tier accounts
+    return 5
+
+
+logger = logging.getLogger(__name__)
 
 MIME_TYPES_SUPPORTED = {
     Kind.DOCUMENT: [
@@ -84,6 +100,7 @@ class LitellmExtractor(BaseExtractor):
         self,
         extractor_config: ExtractorConfig,
         litellm_core_config: LiteLlmCoreConfig,
+        filesystem_cache: FilesystemCache | None = None,
     ):
         if extractor_config.extractor_type != ExtractorType.LITELLM:
             raise ValueError(
@@ -105,6 +122,8 @@ class LitellmExtractor(BaseExtractor):
         if prompt_image is None or prompt_image == "":
             raise ValueError("properties.prompt_image is required for LitellmExtractor")
 
+        self.filesystem_cache = filesystem_cache
+
         super().__init__(extractor_config)
         self.prompt_for_kind = {
             Kind.DOCUMENT: prompt_document,
@@ -115,51 +134,156 @@ class LitellmExtractor(BaseExtractor):
 
         self.litellm_core_config = litellm_core_config
 
-    async def _extract_from_pdf_pages(self, pdf_path: Path, prompt: str) -> str:
-        combined_content = []
+    def pdf_page_cache_key(self, pdf_path: Path, page_number: int) -> str:
+        """
+        Generate a cache key for a page of a PDF. The PDF path must be the full path to the PDF file,
+        not the path to the page - since page path is temporary and changes on each run.
+        """
+        if self.extractor_config.id is None:
+            raise ValueError("Extractor config ID is required for PDF page cache key")
 
+        raw_key = f"{pdf_path.resolve()}::{page_number}"
+        digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
+        return f"{self.extractor_config.id}_{digest}"
+
+    async def get_page_content_from_cache(
+        self, pdf_path: Path, page_number: int
+    ) -> str | None:
+        if self.filesystem_cache is None:
+            return None
+
+        page_bytes = await self.filesystem_cache.get(
+            self.pdf_page_cache_key(pdf_path, page_number)
+        )
+
+        if page_bytes is not None:
+            logger.debug(f"Cache hit for page {page_number} of {pdf_path}")
+            try:
+                return page_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                logger.warning(
+                    "Cached bytes for page %s of %s are not valid UTF-8; treating as miss.",
+                    page_number,
+                    pdf_path,
+                    exc_info=True,
+                )
+
+        logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
+        return None
+
+    async def _extract_single_pdf_page(
+        self, pdf_path: Path, page_path: Path, prompt: str, page_number: int
+    ) -> str:
+        try:
+            page_input = ExtractionInput(
+                path=str(page_path), mime_type="application/pdf"
+            )
+            completion_kwargs = self._build_completion_kwargs(prompt, page_input)
+            response = await litellm.acompletion(**completion_kwargs)
+        except Exception as e:
+            raise RuntimeError(
+                f"Error extracting page {page_number} in file {page_path}: {e}"
+            ) from e
+
+        if (
+            not isinstance(response, ModelResponse)
+            or not response.choices
+            or len(response.choices) == 0
+            or not isinstance(response.choices[0], Choices)
+        ):
+            raise RuntimeError(
+                f"Expected ModelResponse with Choices for page {page_number}, got {type(response)}."
+            )
+
+        if response.choices[0].message.content is None:
+            raise ValueError(
+                f"No text returned from LiteLLM when extracting page {page_number}"
+            )
+
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError(
+                f"No text returned from extraction model when extracting page {page_number} for {page_path}"
+            )
+
+        if self.filesystem_cache is not None:
+            # we don't want to fail the whole extraction just because cache write fails
+            # as that would block the whole flow
+            try:
+                logger.debug(f"Caching page {page_number} of {page_path} in cache")
+                await self.filesystem_cache.set(
+                    self.pdf_page_cache_key(pdf_path, page_number),
+                    content.encode("utf-8"),
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to cache page %s of %s; continuing without cache.",
+                    page_number,
+                    page_path,
+                    exc_info=True,
+                )
+
+        return content
+
+    async def _extract_pdf_page_by_page(self, pdf_path: Path, prompt: str) -> str:
         async with split_pdf_into_pages(pdf_path) as page_paths:
+            page_outcomes: List[str | Exception | None] = [None] * len(page_paths)
+
+            extract_page_jobs: list = []
+            page_indices_for_jobs: list = []  # Track which page index each job corresponds to
+
             # we extract from each page individually and then combine the results
             # this ensures the model stays focused on the current page and does not
             # start summarizing the later pages
             for i, page_path in enumerate(page_paths):
-                try:
-                    page_input = ExtractionInput(
-                        path=str(page_path), mime_type="application/pdf"
-                    )
-                    completion_kwargs = self._build_completion_kwargs(
-                        prompt, page_input
-                    )
-                    response = await litellm.acompletion(**completion_kwargs)
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Error extracting page {i + 1} in file {pdf_path}: {e}"
-                    ) from e
+                page_content = await self.get_page_content_from_cache(pdf_path, i)
+                if page_content is not None:
+                    page_outcomes[i] = page_content
+                    continue
+
+                extract_page_jobs.append(
+                    self._extract_single_pdf_page(pdf_path, page_path, prompt, i)
+                )
+                page_indices_for_jobs.append(i)
 
                 if (
-                    not isinstance(response, ModelResponse)
-                    or not response.choices
-                    or len(response.choices) == 0
-                    or not isinstance(response.choices[0], Choices)
+                    len(extract_page_jobs)
+                    >= max_pdf_page_concurrency_for_model(self.litellm_model_slug())
+                    or i == len(page_paths) - 1
                 ):
-                    raise RuntimeError(
-                        f"Expected ModelResponse with Choices for page {i + 1}, got {type(response)}."
+                    extraction_results = await asyncio.gather(
+                        *extract_page_jobs, return_exceptions=True
                     )
 
-                if response.choices[0].message.content is None:
-                    raise ValueError(
-                        f"No text returned from LiteLLM when extracting page {i + 1}"
-                    )
+                    for batch_i, extraction_result in enumerate(extraction_results):
+                        page_index = page_indices_for_jobs[batch_i]
+                        # we let it continue even if there is an error - the success results will be cached
+                        # and can be reused on the next run
+                        if isinstance(extraction_result, Exception):
+                            page_outcomes[page_index] = extraction_result
+                        elif isinstance(extraction_result, str):
+                            page_outcomes[page_index] = extraction_result
+                        else:
+                            raise ValueError(
+                                f"Unexpected type {type(extraction_result)} for page {page_index}"
+                            )
+                    extract_page_jobs.clear()
+                    page_indices_for_jobs.clear()
 
-                content = response.choices[0].message.content
-                if not content:
-                    raise ValueError(
-                        f"No text returned from extraction model when extracting page {i + 1} for {pdf_path}"
-                    )
+        exceptions: list[tuple[int, Exception]] = [
+            (page_index, result)
+            for page_index, result in enumerate(page_outcomes)
+            if isinstance(result, Exception)
+        ]
+        if len(exceptions) > 0:
+            msg = f"Error extracting PDF {pdf_path}: "
+            for page_index, exception in exceptions:
+                msg += f"Page {page_index}: {exception}\n"
+            raise RuntimeError(msg)
 
-                combined_content.append(content)
-
-        return "\n\n".join(combined_content)
+        return "\n\n".join(
+            [outcome for outcome in page_outcomes if isinstance(outcome, str)]
+        )
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
@@ -183,7 +307,6 @@ class LitellmExtractor(BaseExtractor):
                     ],
                 }
             ],
-            "temperature": 0.1,
         }
 
         if self.litellm_core_config.base_url:
@@ -212,7 +335,7 @@ class LitellmExtractor(BaseExtractor):
 
         # special handling for PDFs - process each page individually
         if extraction_input.mime_type == "application/pdf":
-            content = await self._extract_from_pdf_pages(
+            content = await self._extract_pdf_page_by_page(
                 Path(extraction_input.path), prompt
             )
             return ExtractionOutput(

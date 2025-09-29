@@ -9,6 +9,7 @@
     vector_store_name,
   } from "$lib/stores"
   import {
+    compute_overall_completion_percentage,
     ragProgressStore,
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
@@ -22,13 +23,7 @@
 
   // Calculate percentages for progress bar
   $: total_docs = rag_progress?.total_document_count || 0
-  $: completed_pct =
-    total_docs > 0
-      ? Math.round(
-          ((rag_progress?.total_document_completed_count || 0) / total_docs) *
-            100,
-        )
-      : 0
+  $: completed_pct = compute_overall_completion_percentage(rag_progress)
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 
@@ -54,6 +49,7 @@
         return {
           text: "Incomplete",
           warning: true,
+          show_percentage: true,
         }
       }
       case "running": {
@@ -66,6 +62,7 @@
         return {
           text: "Complete with Errors",
           error: true,
+          show_percentage: true,
         }
       }
       default: {
@@ -157,6 +154,9 @@
                 : ''} {status_badge_props?.archived ? 'badge-secondary' : ''}"
             >
               {status_badge_props?.text}
+              {#if status_badge_props?.show_percentage}
+                ({completed_pct}%)
+              {/if}
             </div>
           </div>
 
@@ -172,8 +172,8 @@
               </div>
               <progress
                 class="progress progress-primary bg-base-200 w-full h-2"
-                value={rag_progress.total_document_completed_count || 0}
-                max={total_docs || 100}
+                value={completed_pct || 0}
+                max={100}
               ></progress>
             </div>
           {:else if total_docs > 0 && !rag_config.is_archived}

@@ -258,17 +258,10 @@ async def test_edit_tags_add_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
     document.tags = ["existing_tag"]
+    document.save_to_file()
 
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_ai.datamodel.extraction.Document.from_id_and_parent_path"
-        ) as mock_document_from_id,
-        patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-    ):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = project
-        mock_document_from_id.return_value = document
-        mock_save.return_value = None
 
         response = client.post(
             f"/api/projects/{project.id}/documents/edit_tags",
@@ -280,8 +273,12 @@ async def test_edit_tags_add_success(client, mock_document):
 
     assert response.status_code == 200
     assert response.json()["success"] is True
-    assert "new_tag" in document.tags
-    assert "existing_tag" in document.tags
+
+    # Verify tags were added by reloading from disk
+    updated_document = Document.from_id_and_parent_path(document.id, project.path)
+    assert updated_document is not None
+    assert "new_tag" in updated_document.tags
+    assert "existing_tag" in updated_document.tags
 
 
 @pytest.mark.asyncio
@@ -289,17 +286,10 @@ async def test_edit_tags_remove_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
     document.tags = ["tag1", "tag2", "tag_to_remove"]
+    document.save_to_file()
 
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_ai.datamodel.extraction.Document.from_id_and_parent_path"
-        ) as mock_document_from_id,
-        patch("kiln_ai.datamodel.extraction.Document.save_to_file") as mock_save,
-    ):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = project
-        mock_document_from_id.return_value = document
-        mock_save.return_value = None
 
         response = client.post(
             f"/api/projects/{project.id}/documents/edit_tags",
@@ -311,8 +301,13 @@ async def test_edit_tags_remove_success(client, mock_document):
 
     assert response.status_code == 200
     assert response.json()["success"] is True
-    assert "tag_to_remove" not in document.tags
-    assert "tag1" in document.tags
+
+    # Verify tags were removed by reloading from disk
+    updated_document = Document.from_id_and_parent_path(document.id, project.path)
+    assert updated_document is not None
+    assert "tag_to_remove" not in updated_document.tags
+    assert "tag1" in updated_document.tags
+    assert "tag2" in updated_document.tags
 
 
 @pytest.mark.asyncio
@@ -320,12 +315,13 @@ async def test_edit_tags_document_not_found(client, mock_project):
     project = mock_project
 
     with (
-        patch("kiln_server.document_api.project_from_id"),
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch(
-            "kiln_ai.datamodel.extraction.Document.from_id_and_parent_path"
-        ) as mock_document_from_id,
+            "kiln_ai.datamodel.extraction.Document.from_ids_and_parent_path"
+        ) as mock_documents_from_ids,
     ):
-        mock_document_from_id.return_value = None
+        mock_project_from_id.return_value = project
+        mock_documents_from_ids.return_value = {}  # Empty dict means no documents found
 
         response = client.post(
             f"/api/projects/{project.id}/documents/edit_tags",

@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tags */
+        get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -3125,11 +3142,8 @@ export interface components {
             /**
              * Properties
              * @description Configuration properties specific to the tool type.
-             * @default {}
              */
-            properties: {
-                [key: string]: unknown;
-            };
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3150,9 +3164,7 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: {
-                [key: string]: unknown;
-            };
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
@@ -3637,6 +3649,19 @@ export interface components {
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LocalServerProperties */
+        LocalServerProperties: {
+            /** Command */
+            command: string;
+            /** Args */
+            args?: string[];
+            /** Env Vars */
+            env_vars?: {
+                [key: string]: string;
+            };
+            /** Secret Env Var Keys */
+            secret_env_var_keys?: string[];
+        };
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
             /** Name */
@@ -4187,6 +4212,17 @@ export interface components {
         RatingOptionResponse: {
             /** Options */
             options: components["schemas"]["RatingOption"][];
+        };
+        /** RemoteServerProperties */
+        RemoteServerProperties: {
+            /** Server Url */
+            server_url: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /** Secret Header Keys */
+            secret_header_keys?: string[];
         };
         /** RepairRunPost */
         RepairRunPost: {
@@ -5776,6 +5812,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tags_api_projects__project_id__tasks__task_id__tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
             /** @description Validation Error */
