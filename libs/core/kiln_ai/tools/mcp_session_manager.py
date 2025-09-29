@@ -164,15 +164,10 @@ class MCPSessionManager:
             env_vars["PATH"] = self._get_path()
 
         # Set the server parameters
-        # On Windows, set cwd to cache directory to avoid permission issues
-        cwd = None
-        if sys.platform in ("win32", "Windows"):
-            cache_path = os.path.join(Config.settings_dir(), "cache", "mcp_cache")
-            os.makedirs(cache_path, exist_ok=True)
-            cwd = cache_path
-
+        cache_path = os.path.join(Config.settings_dir(), "cache", "mcp_cache")
+        os.makedirs(cache_path, exist_ok=True)
         server_params = StdioServerParameters(
-            command=command, args=args, env=env_vars, cwd=cwd
+            command=command, args=args, env=env_vars, cwd=cache_path
         )
 
         try:
