@@ -1,8 +1,11 @@
+import tempfile
+from pathlib import Path
+
 import pytest
 from pypdf import PdfReader
 
 from conftest import MockFileFactoryMimeType
-from kiln_ai.utils.pdf_utils import split_pdf_into_pages
+from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
 
 
 async def test_split_pdf_into_pages_success(mock_file_factory):
@@ -71,3 +74,13 @@ async def test_split_pdf_into_pages_temporary_directory_creation(mock_file_facto
     # Verify the temporary directory is cleaned up
     for temp_dir in captured_temp_dirs:
         assert not temp_dir.exists()
+
+
+async def test_convert_pdf_to_images(mock_file_factory):
+    """Test that convert_pdf_to_images successfully converts a PDF into individual images."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        images = convert_pdf_to_images(test_file, Path(temp_dir))
+        assert len(images) == 2
+        assert all(image.exists() for image in images)
+        assert all(image.suffix == ".png" for image in images)

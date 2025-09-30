@@ -694,6 +694,110 @@ async def test_extract_pdf_page_by_page(mock_file_factory, mock_litellm_extracto
     assert result.content_format == OutputFormat.MARKDOWN
 
 
+async def test_extract_pdf_page_by_page_pdf_as_image(
+    mock_file_factory, mock_litellm_extractor, tmp_path
+):
+    """Test that PDFs are processed page by page as images if the model requires it."""
+
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock responses for each page (PDF has 2 pages)
+    mock_responses = []
+    for i in range(2):  # PDF has 2 pages
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    mock_image_path = tmp_path / "img-test_document-mock.png"
+    mock_image_path.write_bytes(b"test image")
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        # this model requires PDFs to be processed as images
+        mock_litellm_extractor.model_provider.multimodal_requires_pdf_as_image = True
+
+        with patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
+            return_value=[mock_image_path],
+        ) as mock_convert:
+            result = await mock_litellm_extractor.extract(
+                ExtractionInput(
+                    path=str(test_file),
+                    mime_type="application/pdf",
+                )
+            )
+
+    # Verify image conversion called once per page
+    assert mock_convert.call_count == 2
+
+    # Verify LiteLLM was called with image inputs (not PDF) for each page
+    for call in mock_acompletion.call_args_list:
+        kwargs = call.kwargs
+        content = kwargs["messages"][0]["content"]
+        assert content[1]["type"] == "image_url"
+
+    # Verify that the completion was called multiple times (once per page)
+    assert mock_acompletion.call_count == 2
+
+    # Verify the output contains content from both pages
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
+
+
+async def test_convert_pdf_page_to_image_input_success(
+    mock_litellm_extractor, tmp_path
+):
+    page_dir = tmp_path / "pages"
+    page_dir.mkdir()
+    page_path = page_dir / "page_1.pdf"
+    page_path.write_bytes(b"%PDF-1.4 test")
+
+    mock_image_path = page_dir / "img-page_1.pdf-0.png"
+    mock_image_path.write_bytes(b"image-bytes")
+
+    with patch(
+        "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
+        return_value=[mock_image_path],
+    ):
+        extraction_input = await mock_litellm_extractor.convert_pdf_page_to_image_input(
+            page_path, 0
+        )
+
+    assert extraction_input.mime_type == "image/png"
+    assert Path(extraction_input.path) == mock_image_path
+
+
+@pytest.mark.parametrize("returned_count", [0, 2])
+async def test_convert_pdf_page_to_image_input_error_on_invalid_count(
+    mock_litellm_extractor, tmp_path, returned_count
+):
+    page_dir = tmp_path / "pages"
+    page_dir.mkdir()
+    page_path = page_dir / "page_1.pdf"
+    page_path.write_bytes(b"%PDF-1.4 test")
+
+    image_paths = []
+    if returned_count == 2:
+        img1 = page_dir / "img-page_1.pdf-0.png"
+        img2 = page_dir / "img-page_1.pdf-1.png"
+        img1.write_bytes(b"i1")
+        img2.write_bytes(b"i2")
+        image_paths = [img1, img2]
+
+    with patch(
+        "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
+        return_value=image_paths,
+    ):
+        with pytest.raises(ValueError, match=r"Expected 1 image, got "):
+            await mock_litellm_extractor.convert_pdf_page_to_image_input(page_path, 0)
+
+
 async def test_extract_pdf_page_by_page_error_handling(
     mock_file_factory, mock_litellm_extractor
 ):
@@ -884,15 +988,19 @@ async def test_extract_pdf_with_cache_storage(
     # Verify that the completion was called for each page
     assert mock_acompletion.call_count == 2
 
-    # Verify content is stored in cache
+    # Verify content is stored in cache - note that order is not guaranteed since
+    # we batch the page extraction requests in parallel
     pdf_path = Path(test_file)
+    cached_contents = []
     for i in range(2):
         cached_content = (
             await mock_litellm_extractor_with_cache.get_page_content_from_cache(
                 pdf_path, i
             )
         )
-        assert cached_content == f"Content from page {i + 1}"
+        assert cached_content is not None
+        cached_contents.append(cached_content)
+    assert set(cached_contents) == {"Content from page 1", "Content from page 2"}
 
     # Verify the output contains content from both pages
     assert "Content from page 1" in result.content
@@ -1127,7 +1235,7 @@ async def test_extract_pdf_parallel_processing_error_handling(
         "litellm.acompletion",
         side_effect=[mock_response1, Exception("API Error on page 2")],
     ) as mock_acompletion:
-        with pytest.raises(ValueError, match=r".*Page 1:.*API Error on page 2"):
+        with pytest.raises(ValueError, match=r".*API Error on page 2"):
             await mock_litellm_extractor_with_cache.extract(
                 ExtractionInput(
                     path=str(test_file),

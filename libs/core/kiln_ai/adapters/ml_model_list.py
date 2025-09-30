@@ -125,6 +125,10 @@ class ModelName(str, Enum):
     qwen_2p5_7b = "qwen_2p5_7b"
     qwen_2p5_14b = "qwen_2p5_14b"
     qwen_2p5_72b = "qwen_2p5_72b"
+    qwen_2p5_vl_3b = "qwen_2p5_vl_3b"
+    qwen_2p5_vl_7b = "qwen_2p5_vl_7b"
+    qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
+    qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
     deepseek_3_1 = "deepseek_3_1"
     deepseek_3_1_terminus = "deepseek_3_1_terminus"
@@ -219,6 +223,7 @@ class KilnModelProvider(BaseModel):
         suggested_for_doc_extraction: Whether the model is suggested for document extraction
         multimodal_capable: Whether the model supports multimodal inputs (e.g. images, audio, video, PDFs, etc.)
         multimodal_mime_types: The mime types that the model supports for multimodal inputs (e.g. image/jpeg, video/mp4, application/pdf, etc.)
+        multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
     """
 
     name: ModelProviderName
@@ -242,6 +247,7 @@ class KilnModelProvider(BaseModel):
     suggested_for_doc_extraction: bool = False
     multimodal_capable: bool = False
     multimodal_mime_types: List[str] | None = None
+    multimodal_requires_pdf_as_image: bool = False
 
     # We need a more generalized way to handle custom provider parameters.
     # Making them quite declarative here for now, isolating provider specific logic
@@ -2305,6 +2311,114 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.together_ai,
                 provider_finetune_id="Qwen/Qwen2.5-72B-Instruct",
             ),
+        ],
+    ),
+    # Qwen 2.5 VL 3B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_vl_3b,
+        friendly_name="Qwen 2.5 VL 3B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:3b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            # openrouter has the model, but annotation format returned by this model is rejected
+            # by litellm internal validation
+        ],
+    ),
+    # Qwen 2.5 VL 7B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_vl_7b,
+        friendly_name="Qwen 2.5 VL 7B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:7b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            # openrouter has the model, but annotation format returned by this model is rejected
+            # by litellm internal validation
+        ],
+    ),
+    # Qwen 2.5 VL 32B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_vl_32b,
+        friendly_name="Qwen 2.5 VL 32B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:32b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            # openrouter has the model, but annotation format returned by this model is rejected
+            # by litellm internal validation
+        ],
+    ),
+    # Qwen 2.5 VL 72B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_vl_72b,
+        friendly_name="Qwen 2.5 VL 72B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:72b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            # openrouter has the model, but annotation format returned by this model is rejected
+            # by litellm internal validation
         ],
     ),
     # Mistral Small 3

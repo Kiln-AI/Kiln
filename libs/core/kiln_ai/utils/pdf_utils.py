@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
+import pypdfium2
 from pypdf import PdfReader, PdfWriter
 
 
@@ -36,3 +37,22 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
                 page_paths.append(page_path)
 
         yield page_paths
+
+
+def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+    image_paths = []
+
+    # note: doing this in a thread causes a segfault - but this is slow and blocking
+    # so we should try to find a better way
+    pdf = pypdfium2.PdfDocument(pdf_path)
+    try:
+        for idx, page in enumerate(pdf):
+            # scale=2 is legible for ~A4 pages (research papers, etc.) - lower than this is blurry
+            bitmap = page.render(scale=2).to_pil()
+            target_path = output_dir / f"img-{pdf_path.name}-{idx}.png"
+            bitmap.save(target_path)
+            image_paths.append(target_path)
+
+        return image_paths
+    finally:
+        pdf.close()
