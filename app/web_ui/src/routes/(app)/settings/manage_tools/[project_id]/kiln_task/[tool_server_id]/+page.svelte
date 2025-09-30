@@ -57,41 +57,44 @@
     }
   })
 
-  $: tool_server, fetch_tool_server_prompts()
-
-  async function fetch_tool_server_prompts() {
-    if (!tool_server) {
-      return
-    }
-    const properties = tool_server.properties as KilnTaskServerProperties
-    const task_id = properties.task_id
-    if (task_id) {
-      load_task_prompts(project_id, task_id)
-    }
+  // Use a separate reactive statement to trigger data loading when tool_server changes
+  $: if (tool_server) {
+    load_tool_server_data(tool_server)
   }
 
-  $: if (tool_server) {
+  async function load_tool_server_data(
+    tool_server: ExternalToolServerApiDescription,
+  ) {
+    console.log("loading tool server data", tool_server)
     const properties = tool_server.properties as KilnTaskServerProperties
     const task_id = properties.task_id
-    if (task_id) {
-      get_task(task_id)
-        .then((fetched_task) => {
-          task = fetched_task
-        })
-        .catch((err) => {
-          console.error("Failed to fetch task:", err)
-        })
 
+    if (task_id) {
+      // Load task data
+      try {
+        const fetched_task = await get_task(task_id)
+        task = fetched_task
+      } catch (err) {
+        console.error("Failed to fetch task:", err)
+      }
+
+      // Load prompts for the task
+      await load_task_prompts(project_id, task_id)
+
+      // Load run configs and find the specific one
       const run_config_id = properties.run_config_id
       if (run_config_id) {
-        load_task_run_configs(project_id, task_id).then(() => {
+        try {
+          await load_task_run_configs(project_id, task_id)
           const run_configs =
             $run_configs_by_task_composite_id[
               get_task_composite_id(project_id, task_id)
             ]
           run_config =
             run_configs?.find((rc) => rc.id === run_config_id) || null
-        })
+        } catch (err) {
+          console.error("Failed to load run configs:", err)
+        }
       }
     }
   }
