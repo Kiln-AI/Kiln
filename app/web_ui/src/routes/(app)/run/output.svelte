@@ -60,7 +60,7 @@
   $: compute_overflow(content_element, max_height, is_expanded)
 
   onMount(() => {
-    if (!hide_toggle || max_height === null) {
+    if (!hide_toggle && max_height !== null) {
       // scenario where this matters: content initially fits when the container is at full width,
       // but on smaller viewport, the container is narrower and the content now overflows
       resize_observer = new ResizeObserver(() => {
