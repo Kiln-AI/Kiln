@@ -636,8 +636,9 @@
                       </div>
                       {#if item.badge}
                         <div
-                          class="badge badge-sm px-2 {item.badge_color ===
-                          'primary'
+                          class="badge badge-sm text-xs {item.badge.length <= 2
+                            ? 'rounded-full w-5 h-5'
+                            : 'px-2'} {item.badge_color === 'primary'
                             ? 'badge-primary'
                             : 'badge-ghost'}"
                         >

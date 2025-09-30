@@ -24,6 +24,11 @@ export function getRunConfigPromptDisplayName(
   task_run_config: TaskRunConfig,
   current_task_prompts: PromptResponse | null,
 ): string {
+  const prompt_name = prompt_name_from_id(
+    task_run_config?.run_config_properties?.prompt_id,
+    current_task_prompts,
+  )
+
   // Special case: description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
   if (
     task_run_config.prompt?.generator_id &&
@@ -31,16 +36,13 @@ export function getRunConfigPromptDisplayName(
       "task_run_config::",
     )
   ) {
-    return prompt_name_from_id(
-      task_run_config?.prompt?.generator_id,
+    return getStaticPromptDisplayName(
+      prompt_name,
+      task_run_config.prompt.generator_id,
       current_task_prompts,
     )
   }
 
-  const prompt_name = prompt_name_from_id(
-    task_run_config?.run_config_properties?.prompt_id,
-    current_task_prompts,
-  )
   if (prompt_name) {
     return prompt_name
   }

@@ -41,6 +41,18 @@
       ],
     },
     {
+      category: "Tools & MCP",
+      items: [
+        {
+          name: "Manage Tools",
+          description:
+            "Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
+          button_text: "Manage Tools",
+        },
+      ],
+    },
+    {
       category: "Models & Providers",
       items: [
         {
@@ -56,18 +68,6 @@
             "Add or remove custom models from one of your connected AI providers.",
           href: "/settings/providers/add_models",
           button_text: "Custom Models",
-        },
-      ],
-    },
-    {
-      category: "Tools & MCP",
-      items: [
-        {
-          name: "Manage Tools",
-          description:
-            "Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
-          button_text: "Manage Tools",
         },
       ],
     },

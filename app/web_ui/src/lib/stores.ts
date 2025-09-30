@@ -19,6 +19,16 @@ import { createKilnError } from "$lib/utils/error_handlers"
 import type { Writable } from "svelte/store"
 import type { ProviderModel } from "./types"
 
+export type TaskCompositeId = string & { __brand: "TaskCompositeId" }
+
+// Helper function to create composite keys for a task
+export function get_task_composite_id(
+  project_id: string,
+  task_id: string,
+): TaskCompositeId {
+  return `${project_id}:${task_id}` as TaskCompositeId
+}
+
 export type AllProjects = {
   projects: Project[]
   error: string | null

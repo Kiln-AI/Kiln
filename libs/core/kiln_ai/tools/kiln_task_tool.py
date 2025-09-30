@@ -125,9 +125,9 @@ class KilnTaskTool(KilnToolInterface):
         if self._parameters_schema is None:
             task = await self._get_task()
 
-            # TODO: The user should control the input schema, especially for plaintext tasks.
+            # V2: The user should control the input schema, especially for plaintext tasks.
             if task.input_json_schema:
-                # Use the task's input schema directly
+                # Use the task's input schema directly if it exists
                 self._parameters_schema = task.input_schema()
             else:
                 # For plaintext tasks, create a simple string input parameter

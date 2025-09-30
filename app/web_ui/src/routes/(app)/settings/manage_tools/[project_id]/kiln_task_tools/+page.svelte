@@ -64,7 +64,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Kiln Task Tools"
-    subtitle="Manage your Kiln Task tools."
+    subtitle="Allow your tasks to call another Kiln task, as a tool call."
     breadcrumbs={[
       {
         label: "Settings",

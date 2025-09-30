@@ -2,7 +2,6 @@
   import {
     available_models,
     available_model_details,
-    load_available_prompts,
     load_available_models,
   } from "$lib/stores"
   import {
@@ -27,6 +26,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
 
   // Props
   export let project_id: string
@@ -37,6 +37,7 @@
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
+  export let hide_create_kiln_task_tool_button: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -57,8 +58,12 @@
   let model_dropdown_error_message: string | null = null
 
   onMount(async () => {
-    Promise.all([load_available_models(), load_available_prompts()])
+    await load_available_models()
   })
+
+  $: if (project_id && current_task.id) {
+    load_task_prompts(project_id, current_task.id)
+  }
 
   $: update_structured_output_mode_if_needed(
     model_name,
@@ -174,7 +179,7 @@
         run_options_as_run_config_properties(),
       )
       // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
-      await load_available_prompts()
+      await load_task_prompts(project_id, current_task.id)
       if (saved_config.id) {
         selected_run_config_id = saved_config.id
       } else {
@@ -254,7 +259,12 @@
     info_description="Choose a prompt. Learn more on the 'Prompts' tab."
     bind:linked_model_selection={model}
   />
-  <ToolsSelector bind:tools {project_id} task_id={current_task.id ?? ""} />
+  <ToolsSelector
+    bind:tools
+    {project_id}
+    task_id={current_task.id ?? ""}
+    {hide_create_kiln_task_tool_button}
+  />
   <Collapse
     title="Advanced Options"
     badge={tools.length > 0 ? "" + tools.length : null}

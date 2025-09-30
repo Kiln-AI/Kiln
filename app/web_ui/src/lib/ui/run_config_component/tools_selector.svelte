@@ -10,6 +10,7 @@
   export let project_id: string
   export let task_id: string
   export let tools: string[] = []
+  export let hide_create_kiln_task_tool_button: boolean = false
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -91,7 +92,11 @@
     available_tools?.forEach((tool_set) => {
       let tools = tool_set.tools
       // Track if we have Kiln Tasks tools
-      if (tool_set.set_name === "Kiln Tasks" && tools.length == 0) {
+      if (
+        tool_set.set_name === "Kiln Tasks" &&
+        tools.length == 0 &&
+        !hide_create_kiln_task_tool_button
+      ) {
         // Add "Create Tool from Kiln Task" button only if no Kiln Tasks tools exist
         option_groups.push({
           label: "Kiln Tasks",

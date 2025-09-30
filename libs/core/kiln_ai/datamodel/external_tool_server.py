@@ -37,6 +37,14 @@ class RemoteServerProperties(TypedDict, total=True):
     secret_header_keys: NotRequired[list[str]]
 
 
+class KilnTaskServerProperties(TypedDict, total=True):
+    task_id: str
+    run_config_id: str
+    name: str
+    description: str
+    is_archived: bool
+
+
 class ExternalToolServer(KilnParentedModel):
     """
     Configuration for communicating with a external MCP (Model Context Protocol) Server for LLM tool calls. External tool servers can be remote or local.
@@ -54,7 +62,9 @@ class ExternalToolServer(KilnParentedModel):
         description="A description of the external tool for you and your team. Will not be used in prompts/training/validation.",
     )
 
-    properties: LocalServerProperties | RemoteServerProperties = Field(
+    properties: (
+        LocalServerProperties | RemoteServerProperties | KilnTaskServerProperties
+    ) = Field(
         description="Configuration properties specific to the tool type.",
     )
 
@@ -280,6 +290,9 @@ class ExternalToolServer(KilnParentedModel):
                     ExternalToolServer.check_secret_keys(
                         secret_env_var_keys, "secret_env_var_keys", "local_mcp"
                     )
+
+            case ToolServerType.kiln_task:
+                pass
 
             case _:
                 raise_exhaustive_enum_error(type)

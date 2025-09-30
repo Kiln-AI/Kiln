@@ -10,10 +10,9 @@
     ExternalToolServerApiDescription,
     Task,
     TaskRunConfig,
+    KilnTaskServerProperties,
   } from "$lib/types"
   import {
-    current_task_prompts,
-    load_available_prompts,
     load_available_models,
     load_model_info,
     model_info,
@@ -30,24 +29,27 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
+  import {
+    load_task_prompts,
+    prompts_by_task_composite_id,
+  } from "$lib/stores/prompts_store"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
+  $: is_archived = tool_server
+    ? (tool_server.properties as KilnTaskServerProperties).is_archived
+    : false
 
   let task: Task | null = null
   let run_config: TaskRunConfig | null = null
   let tool_server: ExternalToolServerApiDescription | null = null
   let loading = true
   let loading_error: KilnError | null = null
-  // TODO: Use these errors
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let archive_error: KilnError | null = null
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let unarchive_error: KilnError | null = null
 
   onMount(async () => {
     await fetch_tool_server()
-    await load_available_prompts()
     await load_available_models()
     await load_model_info()
     if (project_id) {
@@ -55,8 +57,22 @@
     }
   })
 
+  $: tool_server, fetch_tool_server_prompts()
+
+  async function fetch_tool_server_prompts() {
+    if (!tool_server) {
+      return
+    }
+    const properties = tool_server.properties as KilnTaskServerProperties
+    const task_id = properties.task_id
+    if (task_id) {
+      load_task_prompts(project_id, task_id)
+    }
+  }
+
   $: if (tool_server) {
-    const task_id = tool_server.properties["task_id"] as string
+    const properties = tool_server.properties as KilnTaskServerProperties
+    const task_id = properties.task_id
     if (task_id) {
       get_task(task_id)
         .then((fetched_task) => {
@@ -66,7 +82,7 @@
           console.error("Failed to fetch task:", err)
         })
 
-      const run_config_id = tool_server.properties["run_config_id"] as string
+      const run_config_id = properties.run_config_id
       if (run_config_id) {
         load_task_run_configs(project_id, task_id).then(() => {
           const run_configs =
@@ -153,11 +169,12 @@
     }
 
     // Navigate to the add tool page with pre-filled data
+    const properties = tool_server.properties as KilnTaskServerProperties
     const params = new URLSearchParams({
-      name: String(tool_server.properties["name"] || ""),
-      description: String(tool_server.properties["description"] || ""),
-      task_id: String(tool_server.properties["task_id"] || ""),
-      run_config_id: String(tool_server.properties["run_config_id"] || ""),
+      name: String(properties.name || ""),
+      description: String(properties.description || ""),
+      task_id: String(properties.task_id || ""),
+      run_config_id: String(properties.run_config_id || ""),
     })
 
     goto(
@@ -188,7 +205,8 @@
       },
       {
         name: "Tool Description",
-        value: tool.description || "",
+        value:
+          "this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.", // tool.description || "",
         tooltip: "The tool description the model sees.",
       },
       {
@@ -204,39 +222,9 @@
       return [{ name: "Status", value: "Task Not Found", error: true }]
     }
 
-    let input_schema_display = JSON.stringify(
-      {
-        type: "object",
-        properties: {
-          input: {
-            type: "string",
-            description: `Plaintext input for the task: ${task.instruction}`,
-          },
-        },
-        required: ["input"],
-      },
-      null,
-      2,
-    )
-
-    if (task.input_json_schema) {
-      try {
-        const parsed_schema = JSON.parse(task.input_json_schema)
-        input_schema_display = JSON.stringify(parsed_schema, null, 2)
-      } catch (e) {
-        input_schema_display = task.input_json_schema
-      }
-    }
-
     return [
       { name: "ID", value: task.id || "N/A" },
       { name: "Task Name", value: task.name || "N/A" },
-      {
-        name: "Input Schema",
-        value: input_schema_display,
-        tooltip:
-          "The JSON schema that defines the expected input format for this task. For plaintext tasks, we created this input schema for you.",
-      },
     ]
   }
 
@@ -260,7 +248,12 @@
       },
       {
         name: "Prompt",
-        value: getRunConfigPromptDisplayName(run_config, $current_task_prompts),
+        value: getRunConfigPromptDisplayName(
+          run_config,
+          $prompts_by_task_composite_id[
+            get_task_composite_id(project_id, task?.id ?? "")
+          ],
+        ),
       },
       {
         name: "Tools",
@@ -302,13 +295,14 @@
       return
     }
 
-    if (!tool_server) {
-      return
-    }
+    const properties = tool_server.properties as KilnTaskServerProperties
 
     try {
+      archive_error = null
+      unarchive_error = null
+
       await client.PATCH(
-        "/api/projects/{project_id}/edit_kiln_task/{tool_server_id}",
+        "/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}",
         {
           params: {
             path: {
@@ -317,10 +311,10 @@
             },
           },
           body: {
-            name: String(tool_server.properties["name"]),
-            description: String(tool_server.properties["description"]),
-            task_id: String(tool_server.properties["task_id"]),
-            run_config_id: String(tool_server.properties["run_config_id"]),
+            name: String(properties.name || ""),
+            description: String(properties.description || ""),
+            task_id: String(properties.task_id || ""),
+            run_config_id: String(properties.run_config_id || ""),
             is_archived: is_archived,
           },
         },
@@ -333,13 +327,17 @@
       }
     } finally {
       fetch_tool_server()
+      // Re-load available tools to make sure archived tools aren't shown
+      if (project_id) {
+        load_available_tools(project_id, true)
+      }
     }
   }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
-    title={"Kiln Task Tool"}
+    title={"Kiln Task as Tool"}
     subtitle={`Name: ${tool_server?.name || ""}`}
     breadcrumbs={[
       {
@@ -361,12 +359,30 @@
         handler: clone_tool,
       },
       {
-        label: tool_server?.properties["is_archived"] ? "Unarchive" : "Archive",
-        handler: tool_server?.properties["is_archived"] ? unarchive : archive,
+        label: is_archived ? "Unarchive" : "Archive",
+        handler: is_archived ? unarchive : archive,
       },
     ]}
   >
-    {#if tool_server?.properties["is_archived"]}
+    {#if archive_error}
+      <Warning
+        warning_message={archive_error.getMessage() ||
+          "An unknown error occurred"}
+        large_icon={true}
+        warning_color="error"
+        outline={true}
+      />
+    {/if}
+    {#if unarchive_error}
+      <Warning
+        warning_message={unarchive_error.getMessage() ||
+          "An unknown error occurred"}
+        large_icon={true}
+        warning_color="error"
+        outline={true}
+      />
+    {/if}
+    {#if is_archived}
       <Warning
         warning_message="This Kiln Task tool is archived. You may unarchive it to use it again."
         large_icon={true}
@@ -392,15 +408,13 @@
       </div>
     {:else if tool_server}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-6">
-        <div class="w-full xl:flex-shrink-0 xl:max-w-96 flex flex-col gap-6">
+        <div class="w-full xl:flex-1 flex flex-col gap-6">
           <PropertyList
             properties={get_tool_properties(tool_server)}
             title="Tool Properties"
           />
         </div>
-        <div
-          class="w-full xl:flex-shrink-0 xl:max-w-96 flex flex-col gap-6 xl:ml-auto"
-        >
+        <div class="w-full xl:flex-shrink-0 xl:max-w-96 flex flex-col gap-6">
           <PropertyList
             properties={get_task_properties(task)}
             title="Task Properties"

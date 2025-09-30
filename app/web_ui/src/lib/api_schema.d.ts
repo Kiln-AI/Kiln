@@ -1799,7 +1799,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/edit_kiln_task/{tool_server_id}": {
+    "/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1812,8 +1812,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Edit Kiln Task */
-        patch: operations["edit_kiln_task_api_projects__project_id__edit_kiln_task__tool_server_id__patch"];
+        /** Edit Kiln Task Tool */
+        patch: operations["edit_kiln_task_tool_api_projects__project_id__edit_kiln_task_tool__tool_server_id__patch"];
         trace?: never;
     };
     "/api/demo_tools": {
@@ -3194,7 +3194,7 @@ export interface components {
              * Properties
              * @description Configuration properties specific to the tool type.
              */
-            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"] | components["schemas"]["KilnTaskServerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3215,7 +3215,7 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"] | components["schemas"]["KilnTaskServerProperties"];
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
@@ -3679,6 +3679,19 @@ export interface components {
         KilnFileResponse: {
             /** File Path */
             file_path: string | null;
+        };
+        /** KilnTaskServerProperties */
+        KilnTaskServerProperties: {
+            /** Task Id */
+            task_id: string;
+            /** Run Config Id */
+            run_config_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * KilnTaskToolDescription
@@ -9071,7 +9084,7 @@ export interface operations {
             };
         };
     };
-    edit_kiln_task_api_projects__project_id__edit_kiln_task__tool_server_id__patch: {
+    edit_kiln_task_tool_api_projects__project_id__edit_kiln_task_tool__tool_server_id__patch: {
         parameters: {
             query?: never;
             header?: never;

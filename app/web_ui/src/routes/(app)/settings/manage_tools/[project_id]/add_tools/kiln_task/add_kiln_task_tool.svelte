@@ -6,15 +6,12 @@
   import type { Task } from "$lib/types"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { uncache_available_tools } from "$lib/stores"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
-  import type { RunConfigProperties } from "$lib/types"
-  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
-  import type { components } from "$lib/api_schema"
 
   let error: KilnError | null = null
   let submitting = false
@@ -39,15 +36,20 @@
     const clone_name = url_params.get("name")
     const clone_description = url_params.get("description")
     const clone_task_id = url_params.get("task_id")
-
+    const clone_run_config_id = url_params.get("run_config_id")
+    if (clone_task_id) {
+      selected_task_id = clone_task_id
+    }
+    // Wait for reactive statements so we can update name to the clone name
+    await tick()
     if (clone_name) {
       name = clone_name
     }
+    if (clone_run_config_id) {
+      selected_run_config_id = clone_run_config_id
+    }
     if (clone_description) {
       description = clone_description
-    }
-    if (clone_task_id) {
-      selected_task_id = clone_task_id
     }
 
     data_loaded = true
@@ -65,7 +67,12 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: if (selected_task && name === null) {
+  $: selected_task, update_name()
+
+  function update_name() {
+    if (!selected_task) {
+      return
+    }
     name = to_snake_case(selected_task.name)
   }
 
@@ -89,7 +96,7 @@
   let tasks_loading_error: string | null = null
   let data_loaded = false
 
-  // TODO: Move this to a shared component since select_tasks_menu.svelte uses it too
+  // TODO: Move this to a shared component since select_tasks_menu.svelte and add_tools/+page.svelte uses it too
   async function load_tasks(project_id: string) {
     if (!project_id) {
       tasks_loading_error = "No project selected"
@@ -267,8 +274,7 @@
           inputType="fancy_select"
           fancy_select_options={task_options}
           disabled={!data_loaded}
-          description="The task to add as a tool."
-          info_description="Select the task that will be used as a tool."
+          description="The Kiln task the tool will call."
           on:change={clear_error_if_present}
         />
 
@@ -278,12 +284,12 @@
             current_task={selected_task}
             bind:selected_run_config_id
             run_page={false}
-            info_description="Select the run configuration to use for the tool."
+            description="A configuration defining options the Kiln task will use when called, such as the model and prompt."
           />
           <FormElement
-            label="Kiln Task Tool Name"
+            label="Tool Name"
             id="task_name"
-            description="A unique short tool name such as 'research_agent'. Be descriptive about what role this tool is for."
+            description="A unique short tool name such as 'web_researcher'. Be descriptive about what this task does."
             info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
             bind:value={name}
             max_length={120}
@@ -292,11 +298,11 @@
           />
 
           <FormElement
-            label="Kiln Task Tool Description"
+            label="Tool Description"
             inputType="textarea"
             id="task_description"
-            description="A description for the model to understand what this tool can do, and when to use it."
-            info_description="It should be descriptive of what the tool does as the model will see it. Example of a high quality description: 'Performs research on a topic using reasoning and tools to provide expert insights.'"
+            description="A description for the model to understand what this task does, and when to use it."
+            info_description="It should be descriptive of what the task does as the model will see it. Example of a high quality description: 'Performs research on a topic using reasoning and access to the web to provide expert insights.'"
             bind:value={description}
             validator={validate_description}
             on:change={clear_error_if_present}
@@ -333,6 +339,7 @@
         {project_id}
         bind:selected_run_config_id
         current_task={selected_task}
+        hide_create_kiln_task_tool_button={true}
       />
     {/if}
 

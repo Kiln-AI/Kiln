@@ -5,7 +5,10 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { KilnToolServerDescription } from "$lib/types"
+  import type {
+    KilnTaskToolDescription,
+    KilnToolServerDescription,
+  } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -17,13 +20,13 @@
   $: is_empty =
     !demo_tools_enabled &&
     (!tools || tools.length == 0) &&
-    kiln_task_tools_count === 0 && // TODO: store kiln_tools?
+    (!kiln_task_tools || kiln_task_tools.length === 0) &&
     (!search_tools || search_tools.length === 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
   let search_tools: SearchToolApiDescription[] | null = null
-  let kiln_task_tools_count: number = 0
+  let kiln_task_tools: KilnTaskToolDescription[] | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -31,9 +34,13 @@
     await fetch_available_tool_servers()
     await load_demo_tools()
     await load_rag_configs()
-    await load_kiln_task_tools_count()
+    await load_kiln_task_tools()
     loading = false
   })
+
+  $: unarchived_kiln_task_tools = kiln_task_tools?.filter(
+    (tool) => !tool.is_archived,
+  )
 
   async function fetch_available_tool_servers() {
     try {
@@ -99,7 +106,7 @@
     }
   }
 
-  async function load_kiln_task_tools_count() {
+  async function load_kiln_task_tools() {
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/kiln_task_tools",
@@ -114,10 +121,10 @@
       if (error) {
         throw error
       }
-      kiln_task_tools_count = data?.length || 0
+      kiln_task_tools = data
     } catch (err) {
+      error = createKilnError(err)
       console.error("Error loading kiln task tools count", err)
-      kiln_task_tools_count = 0
     }
   }
 
@@ -237,7 +244,7 @@
                 </td>
               </tr>
             {/if}
-            {#if kiln_task_tools_count > 0}
+            {#if kiln_task_tools && kiln_task_tools.length > 0 && unarchived_kiln_task_tools}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() =>
@@ -248,24 +255,41 @@
                 role="button"
                 tabindex="0"
               >
-                <td class="font-medium">Kiln Task Tools</td>
+                <td class="font-medium">Kiln Tasks as Tools</td>
                 <td class="text-sm">Kiln Tasks</td>
                 <td class="text-sm"
-                  >Tools that execute Kiln tasks with specific run
-                  configurations.
-                  {#if kiln_task_tools_count == 1}
+                  >Tools that run Kiln tasks using specified configurations.
+                  {#if unarchived_kiln_task_tools.length == 0}
+                    No Kiln task tools available
+                  {:else if unarchived_kiln_task_tools.length == 1}
                     One Kiln task tool available
                   {:else}
-                    {kiln_task_tools_count} Kiln task tools available
+                    {unarchived_kiln_task_tools.length} Kiln task tools available
+                  {/if}
+                  {#if unarchived_kiln_task_tools.length > 0}
+                    <InfoTooltip
+                      tooltip_text="Tools: {unarchived_kiln_task_tools
+                        .map((tool) => tool.tool_name)
+                        .join(', ')}"
+                      no_pad={true}
+                    />
                   {/if}
                 </td>
                 <td class="text-sm">
-                  <Warning
-                    warning_message="Ready"
-                    warning_color="success"
-                    warning_icon="check"
-                    tight={true}
-                  />
+                  {#if unarchived_kiln_task_tools.length == 0}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      tight={true}
+                    />
+                  {/if}
                 </td>
               </tr>
             {/if}

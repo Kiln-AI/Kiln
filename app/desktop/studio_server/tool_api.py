@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
+    KilnTaskServerProperties,
     LocalServerProperties,
     RemoteServerProperties,
     ToolServerType,
@@ -123,7 +124,9 @@ class ExternalToolServerApiDescription(BaseModel):
     description: str | None
     created_at: datetime | None
     created_by: str | None
-    properties: LocalServerProperties | RemoteServerProperties
+    properties: (
+        LocalServerProperties | RemoteServerProperties | KilnTaskServerProperties
+    )
     available_tools: list[ExternalToolApiDescription]
     missing_secrets: list[str]
 
@@ -359,6 +362,7 @@ def connect_tool_servers_api(app: FastAPI):
                             )
                         )
                 except HTTPException:
+                    # TODO: Do we want to still show it and not allow unarchiving?
                     # Skip tools with invalid task references
                     continue
         return results
@@ -565,8 +569,8 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.patch("/api/projects/{project_id}/edit_kiln_task/{tool_server_id}")
-    async def edit_kiln_task(
+    @app.patch("/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}")
+    async def edit_kiln_task_tool(
         project_id: str,
         tool_server_id: str,
         tool_data: KilnTaskToolServerCreationRequest,

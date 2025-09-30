@@ -3,6 +3,10 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import Task, TaskRequirement
+from kiln_ai.datamodel.external_tool_server import (
+    KilnTaskServerProperties,
+    ToolServerType,
+)
 from pydantic import BaseModel
 
 from kiln_server.project_api import project_from_id
@@ -94,6 +98,30 @@ def connect_task_api(app: FastAPI):
     async def delete_task(project_id: str, task_id: str) -> None:
         task = task_from_id(project_id, task_id)
         task.delete()
+
+        # Archive any kiln task tools that have this task set as their task_id
+        parent_project = task.parent_project()
+        if parent_project is not None:
+            for tool_server in parent_project.external_tool_servers(readonly=True):
+                if (
+                    tool_server.type == ToolServerType.kiln_task
+                    and tool_server.properties.get("task_id") == task_id
+                ):
+                    # For kiln task tools, we know the properties are KilnTaskServerProperties
+                    # Create a copy and update the is_archived flag
+                    updated_properties: KilnTaskServerProperties = {
+                        "task_id": tool_server.properties.get("task_id", ""),
+                        "run_config_id": tool_server.properties.get(
+                            "run_config_id", ""
+                        ),
+                        "name": tool_server.properties.get("name", ""),
+                        "description": tool_server.properties.get("description", ""),
+                        "is_archived": True,
+                    }
+
+                    # Update the tool server properties and save
+                    tool_server.properties = updated_properties
+                    tool_server.save_to_file()
 
     @app.get("/api/projects/{project_id}/tasks")
     async def get_tasks(project_id: str) -> List[Task]:

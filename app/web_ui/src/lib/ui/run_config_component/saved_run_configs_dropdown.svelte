@@ -9,12 +9,11 @@
     Task,
     TaskRunConfig,
   } from "$lib/types"
+  import { model_info, load_model_info } from "$lib/stores"
   import {
-    model_info,
-    load_available_prompts,
-    current_task_prompts,
-    load_model_info,
-  } from "$lib/stores"
+    load_task_prompts,
+    prompts_by_task_composite_id,
+  } from "$lib/stores/prompts_store"
   import {
     getRunConfigPromptDisplayName,
     getDetailedModelName,
@@ -35,6 +34,7 @@
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let info_description: string = ""
+  export let description: string = ""
   export let run_page: boolean = true
 
   $: show_save_button = run_page && selected_run_config_id === "custom"
@@ -42,13 +42,14 @@
     run_page && selected_run_config_id !== default_run_config_id
 
   onMount(async () => {
-    Promise.all([load_available_prompts(), load_model_info()])
+    load_model_info()
   })
 
   $: default_run_config_id = current_task.default_run_config_id ?? null
 
   $: if (project_id && current_task.id) {
     load_task_run_configs(project_id, current_task.id)
+    load_task_prompts(project_id, current_task.id)
   }
 
   // Initialization of selected_run_config_id
@@ -78,7 +79,9 @@
     default_run_config_id,
     $run_configs_by_task_composite_id,
     $model_info,
-    $current_task_prompts,
+    $prompts_by_task_composite_id[
+      get_task_composite_id(project_id, current_task.id ?? "")
+    ],
     run_page,
   )
 
@@ -110,7 +113,7 @@
         options: [
           {
             value: "__create_new_run_config__",
-            label: "Create New Run Configuration",
+            label: "New",
             description: "Create a new run configuration with custom settings.",
             badge: "+",
             badge_color: "primary",
@@ -220,6 +223,7 @@
 <div>
   <FormElement
     label="Run Configuration"
+    {description}
     {info_description}
     inputType="fancy_select"
     bind:value={selected_run_config_id}

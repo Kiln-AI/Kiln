@@ -21,9 +21,10 @@
       </div>
       <div class="flex flex-col">
         <div
-          class="flex items-start overflow-x-hidden break-words {property.error
+          class="flex items-start overflow-x-hidden {property.error
             ? 'text-error'
             : 'text-gray-500'}"
+          style="overflow-wrap: anywhere;"
         >
           {#if property.warn_icon}
             <Warning

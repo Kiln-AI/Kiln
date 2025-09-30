@@ -80,6 +80,8 @@ export type LocalServerProperties =
   components["schemas"]["LocalServerProperties"]
 export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
+export type KilnTaskServerProperties =
+  components["schemas"]["KilnTaskServerProperties"]
 
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
