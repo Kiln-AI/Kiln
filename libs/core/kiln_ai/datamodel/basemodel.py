@@ -78,9 +78,9 @@ def string_to_valid_name(name: str) -> str:
     # https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
     valid_name = unicodedata.normalize("NFKD", name)
     # Replace any forbidden chars with an underscore
-    valid_name = re.sub(FORBIDDEN_CHARS_REGEX, "_", valid_name)
+    valid_name = re.sub(FORBIDDEN_CHARS_REGEX, " ", valid_name)
     # Replace control characters with an underscore
-    valid_name = re.sub(r"[\x00-\x1F]", "_", valid_name)
+    valid_name = re.sub(r"[\x00-\x1F]", " ", valid_name)
     # Replace consecutive whitespace with a single space
     valid_name = re.sub(r"\s+", " ", valid_name)
     # Replace consecutive underscores with a single underscore
