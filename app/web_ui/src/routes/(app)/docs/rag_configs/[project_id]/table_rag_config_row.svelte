@@ -78,11 +78,18 @@
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
   }
 
-  $: chunk_size = rag_config.chunker_config.properties.chunk_size as number
-  $: chunk_overlap = rag_config.chunker_config.properties
-    .chunk_overlap as number
+  $: chunk_size = rag_config.chunker_config.properties.chunk_size
+  $: chunk_overlap = rag_config.chunker_config.properties.chunk_overlap
 
-  function format_chunking(chunk_size: number, chunk_overlap: number) {
+  function format_chunking(chunk_size: unknown, chunk_overlap: unknown) {
+    // we expect a non-nullable number for both, but we validate because we
+    // do not have typing on the properties object
+    const is_chunk_size_valid = typeof chunk_size === "number"
+    const is_chunk_overlap_valid = typeof chunk_overlap === "number"
+    if (!is_chunk_size_valid || !is_chunk_overlap_valid) {
+      return "Invalid chunk size or overlap, not a number"
+    }
+
     return `${chunk_size} words, ${chunk_overlap} overlap`
   }
 </script>
