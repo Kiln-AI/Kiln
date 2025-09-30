@@ -112,6 +112,29 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     vector_store: default_vector_store,
     rag_config_name: "Cost Optimized - Gemini Flash Hybrid Search",
   },
+  local_qwen: {
+    name: "All Local",
+    preview_subtitle: "Qwen 2.5 VL with Ollama",
+    preview_description: "Qwen 2.5 VL on your computer using Ollama.",
+    preview_tooltip:
+      "Qwen 2.5 VL 7B via Ollama for extraction and Qwen 3 Embedding 0.6B for embeddings.",
+    required_api_keys: "Gemini",
+    extractor: {
+      config_name: "Qwen 2p5 VL 7B via Ollama",
+      description: "Qwen 2.5 VL 7B via Ollama",
+      model_provider_name: "ollama",
+      model_name: "qwen_2p5_vl_7b",
+    },
+    chunker: default_chunker,
+    embedding: {
+      config_name: "Qwen 3 Embedding 0p6B (1024 dimensions)",
+      description: "Qwen 3 Embedding 0.6B (1024 dimensions)",
+      model_provider_name: "ollama",
+      model_name: "qwen_3_embedding_0p6b",
+    },
+    vector_store: default_vector_store,
+    rag_config_name: "Ollama - Qwen 2p5 VL",
+  },
   vector_only: {
     name: "Vector Only",
     preview_subtitle: "No Full-Text Search",
