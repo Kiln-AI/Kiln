@@ -68,11 +68,11 @@ def encode_file_litellm_format(path: Path, mime_type: str) -> dict[str, Any]:
         "text/markdown",
         "text/plain",
     ] or any(mime_type.startswith(m) for m in ["video/", "audio/"]):
-        pdf_bytes = path.read_bytes()
+        file_bytes = path.read_bytes()
         return {
             "type": "file",
             "file": {
-                "file_data": to_base64_url(mime_type, pdf_bytes),
+                "file_data": to_base64_url(mime_type, file_bytes),
             },
         }
 

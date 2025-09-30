@@ -14,7 +14,7 @@ from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
 
 
 class ModelWithAttachment(KilnBaseModel):
-    attachment: KilnAttachmentModel = Field(default=None)
+    attachment: KilnAttachmentModel | None = Field(default=None)
     attachment_list: Optional[List[KilnAttachmentModel]] = Field(default=None)
     attachment_dict: Optional[Dict[str, KilnAttachmentModel]] = Field(default=None)
 
@@ -516,7 +516,7 @@ class ModelWithAttachmentNameOverrideList(KilnBaseModel):
     @field_serializer("attachment_list")
     def serialize_attachment_list(
         self, attachment_list: List[KilnAttachmentModel], info: SerializationInfo
-    ) -> dict:
+    ) -> List[dict]:
         context = info.context or {}
         context["filename_prefix"] = "attachment_override"
         return [
@@ -555,7 +555,7 @@ def test_attachment_filename_override_list(test_base_kiln_file, mock_file_factor
 
 
 class ModelWithAttachmentNoNameOverride(KilnBaseModel):
-    attachment: KilnAttachmentModel = Field(default=None)
+    attachment: KilnAttachmentModel | None = Field(default=None)
 
 
 def test_attachment_filename_no_override(test_base_kiln_file, mock_file_factory):

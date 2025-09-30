@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tags */
+        get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -1104,6 +1121,23 @@ export interface paths {
         put?: never;
         /** Open Logs */
         post: operations["open_logs_api_open_logs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/open_project_folder/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Project Folder */
+        post: operations["open_project_folder_api_open_project_folder__project_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2682,6 +2716,11 @@ export interface components {
              */
             name: string;
             /**
+             * Name Override
+             * @description A friendly name to identify the document. This is used for display purposes and can be different from the name.
+             */
+            name_override?: string | null;
+            /**
              * Description
              * @description A description for the file
              */
@@ -2697,6 +2736,8 @@ export interface components {
             tags?: string[];
             /** Model Type */
             readonly model_type: string;
+            /** Friendly Name */
+            readonly friendly_name: string;
         };
         /** EmbeddingConfig */
         EmbeddingConfig: {
@@ -2763,7 +2804,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -3125,11 +3166,8 @@ export interface components {
             /**
              * Properties
              * @description Configuration properties specific to the tool type.
-             * @default {}
              */
-            properties: {
-                [key: string]: unknown;
-            };
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3150,9 +3188,7 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: {
-                [key: string]: unknown;
-            };
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"];
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
@@ -3637,6 +3673,19 @@ export interface components {
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LocalServerProperties */
+        LocalServerProperties: {
+            /** Command */
+            command: string;
+            /** Args */
+            args?: string[];
+            /** Env Vars */
+            env_vars?: {
+                [key: string]: string;
+            };
+            /** Secret Env Var Keys */
+            secret_env_var_keys?: string[];
+        };
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
             /** Name */
@@ -3753,10 +3802,10 @@ export interface components {
         /** PatchDocumentRequest */
         PatchDocumentRequest: {
             /**
-             * Name
+             * Name Override
              * @description A name for this document.
              */
-            name?: string | null;
+            name_override?: string | null;
             /**
              * Description
              * @description The description of the document
@@ -4187,6 +4236,17 @@ export interface components {
         RatingOptionResponse: {
             /** Options */
             options: components["schemas"]["RatingOption"][];
+        };
+        /** RemoteServerProperties */
+        RemoteServerProperties: {
+            /** Server Url */
+            server_url: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /** Secret Header Keys */
+            secret_header_keys?: string[];
         };
         /** RepairRunPost */
         RepairRunPost: {
@@ -5771,6 +5831,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tags_api_projects__project_id__tasks__task_id__tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -7377,6 +7471,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    open_project_folder_api_open_project_folder__project_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

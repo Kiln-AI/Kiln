@@ -3,7 +3,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.datamodel.external_tool_server import (
+    ExternalToolServer,
+    ToolServerType,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
@@ -87,7 +90,6 @@ class TestToolRegistry:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
 
@@ -157,7 +159,6 @@ class TestToolRegistry:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
 
@@ -508,7 +509,6 @@ class TestToolRegistry:
             description="Test MCP server",
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
 
@@ -539,7 +539,6 @@ class TestToolRegistry:
             description="Different MCP server",
             properties={
                 "server_url": "https://example.com",
-                "headers": {},
             },
         )
 

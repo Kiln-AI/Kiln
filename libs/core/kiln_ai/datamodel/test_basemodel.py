@@ -1,5 +1,7 @@
 import datetime
 import json
+import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -342,12 +344,12 @@ def test_delete_no_path():
         ("Hello 👍", "Hello 👍"),
         # Invalid characters are replaced
         ("Hello@World!", "Hello@World!"),
-        ("File.name.txt", "File_name_txt"),
-        ("Special%%%Chars", "Special_Chars"),
-        ("Special#$%Chars", "Special#$_Chars"),
+        ("File.name.txt", "File name txt"),
+        ("Special%%%Chars", "Special Chars"),
+        ("Special#$%Chars", "Special#$ Chars"),
         # Consecutive invalid characters are replaced
-        ("Special%%%Chars", "Special_Chars"),
-        ("path/to/file", "path_to_file"),
+        ("Special%%%Chars", "Special Chars"),
+        ("path/to/file", "path to file"),
         # Leading/trailing special characters are removed
         ("__test__", "test"),
         ("...test...", "test"),
@@ -360,14 +362,14 @@ def test_delete_no_path():
         ("你好_世界", "你好_世界"),
         ("你好_世界_你好", "你好_世界_你好"),
         # Newlines, tabs, and other control characters are replaced
-        ("Hello\nworld", "Hello_world"),
-        ("Hello\tworld", "Hello_world"),
-        ("Hello\rworld", "Hello_world"),
-        ("Hello\fworld", "Hello_world"),
-        ("Hello\bworld", "Hello_world"),
-        ("Hello\vworld", "Hello_world"),
-        ("Hello\0world", "Hello_world"),
-        ("Hello\x00world", "Hello_world"),
+        ("Hello\nworld", "Hello world"),
+        ("Hello\tworld", "Hello world"),
+        ("Hello\rworld", "Hello world"),
+        ("Hello\fworld", "Hello world"),
+        ("Hello\bworld", "Hello world"),
+        ("Hello\vworld", "Hello world"),
+        ("Hello\0world", "Hello world"),
+        ("Hello\x00world", "Hello world"),
     ],
 )
 def test_string_to_valid_name(tmp_path, name, expected):
@@ -491,6 +493,7 @@ def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
     child3.save_to_file()
 
     # Test finding existing child by ID
+    assert child2.id is not None  # Type safety
     found_child = DefaultParentedModel.from_id_and_parent_path(
         child2.id, test_base_parented_file
     )
@@ -513,6 +516,7 @@ def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_c
     child.save_to_file()
 
     # First load to populate cache
+    assert child.id is not None  # Type safety
     _ = DefaultParentedModel.from_id_and_parent_path(child.id, test_base_parented_file)
 
     # Mock cache to verify it's used
@@ -532,6 +536,258 @@ def test_from_id_and_parent_path_without_parent():
     # Test with None parent_path
     not_found = DefaultParentedModel.from_id_and_parent_path("any-id", None)
     assert not_found is None
+
+
+def test_from_ids_and_parent_path_basic(test_base_parented_file, tmp_model_cache):
+    """Test basic functionality of from_ids_and_parent_path method"""
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+    child3 = DefaultParentedModel(parent=parent, name="Child3")
+
+    # Save all children
+    child1.save_to_file()
+    child2.save_to_file()
+    child3.save_to_file()
+
+    # Test finding multiple children by IDs
+    assert child1.id is not None and child2.id is not None  # Type safety
+    target_ids = {child1.id, child3.id}
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        target_ids, test_base_parented_file
+    )
+
+    # Verify correct children were found
+    assert len(found_children) == 2
+    assert child1.id in found_children
+    assert child3.id in found_children
+    assert child2.id not in found_children
+
+    # Verify the returned models have correct data
+    assert found_children[child1.id].name == "Child1"
+    assert found_children[child3.id].name == "Child3"
+
+    # Verify they are not the same instances (deep copies)
+    assert found_children[child1.id] is not child1
+    assert found_children[child3.id] is not child3
+
+
+def test_from_ids_and_parent_path_empty_list(test_base_parented_file):
+    """Test from_ids_and_parent_path with empty ID list"""
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        set(), test_base_parented_file
+    )
+    assert found_children == {}
+
+
+def test_from_ids_and_parent_path_none_parent():
+    """Test from_ids_and_parent_path with None parent_path"""
+    found_children = DefaultParentedModel.from_ids_and_parent_path({"any-id"}, None)
+    assert found_children == {}
+
+
+def test_from_ids_and_parent_path_no_matches(test_base_parented_file, tmp_model_cache):
+    """Test from_ids_and_parent_path when no IDs match existing children"""
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child1.save_to_file()
+
+    # Test with non-existent IDs
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        {"nonexistent1", "nonexistent2"}, test_base_parented_file
+    )
+    assert found_children == {}
+
+
+def test_from_ids_and_parent_path_partial_matches(
+    test_base_parented_file, tmp_model_cache
+):
+    """Test from_ids_and_parent_path when only some IDs match"""
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+
+    # Save children
+    child1.save_to_file()
+    child2.save_to_file()
+
+    # Test with mix of existing and non-existent IDs
+    assert child1.id is not None and child2.id is not None  # Type safety
+    target_ids = {child1.id, "nonexistent", child2.id, "another_nonexistent"}
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        target_ids, test_base_parented_file
+    )
+
+    # Should only find the existing children
+    assert len(found_children) == 2
+    assert child1.id in found_children
+    assert child2.id in found_children
+    assert "nonexistent" not in found_children
+    assert "another_nonexistent" not in found_children
+
+
+def test_from_ids_and_parent_path_with_cache_fallback(
+    test_base_parented_file, tmp_model_cache
+):
+    """Test from_ids_and_parent_path when cache returns None and needs to load file"""
+    # Set up parent and child
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    child = DefaultParentedModel(parent=parent, name="Child")
+    child.save_to_file()
+
+    # Mock cache to return None for get_model_id, forcing file load
+    tmp_model_cache.get_model_id = MagicMock(return_value=None)
+
+    # Test should still work by loading the file
+    assert child.id is not None  # Type safety
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        {child.id}, test_base_parented_file
+    )
+
+    assert len(found_children) == 1
+    assert child.id in found_children
+    assert found_children[child.id].name == "Child"
+
+    # Verify cache was checked
+    tmp_model_cache.get_model_id.assert_called()
+
+
+def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
+    test_base_parented_file, tmp_model_cache
+):
+    """Test that from_ids_and_parent_path returns the same results as individual lookups"""
+    # Set up parent and multiple children
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    children = []
+    for i in range(10):
+        child = DefaultParentedModel(parent=parent, name=f"Child{i}")
+        child.save_to_file()
+        children.append(child)
+
+    # Select 5 children to lookup
+    target_ids = {
+        child.id for child in children[::2] if child.id is not None
+    }  # Every other child
+    assert len(target_ids) == 5  # Ensure we have 5 children to test
+
+    # Test bulk method
+    bulk_results = DefaultParentedModel.from_ids_and_parent_path(
+        target_ids, test_base_parented_file
+    )
+
+    # Test individual method
+    individual_results = {}
+    for target_id in target_ids:
+        result = DefaultParentedModel.from_id_and_parent_path(
+            target_id, test_base_parented_file
+        )
+        if result:
+            individual_results[target_id] = result
+
+    # Results should be equivalent
+    assert len(bulk_results) == len(individual_results) == 5
+
+    for target_id in target_ids:
+        assert target_id in bulk_results
+        assert target_id in individual_results
+
+        # Compare the key attributes
+        bulk_child = bulk_results[target_id]
+        individual_child = individual_results[target_id]
+
+        assert bulk_child.id == individual_child.id
+        assert bulk_child.name == individual_child.name
+        assert bulk_child.model_type == individual_child.model_type
+
+
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+@pytest.mark.parametrize("num_children", [100, 1000, 2500, 5000])
+def test_from_ids_and_parent_path_benchmark(
+    test_base_parented_file, tmp_model_cache, num_children
+):
+    """Benchmark test for from_ids_and_parent_path method performance at scale"""
+    # Set up parent and many children
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    children = []
+    for i in range(num_children):
+        child = DefaultParentedModel(parent=parent, name=f"Child{i:05d}")
+        child.save_to_file()
+        children.append(child)
+
+    # look up all children
+    lookup_count = num_children
+    target_ids = {child.id for child in children[:lookup_count] if child.id is not None}
+    assert len(target_ids) == lookup_count
+
+    # Benchmark the bulk method using manual timing
+    def bulk_lookup():
+        return DefaultParentedModel.from_ids_and_parent_path(
+            target_ids, test_base_parented_file
+        )
+
+    # Run bulk method once and time it
+    start_time = time.perf_counter()
+    bulk_result = bulk_lookup()
+    end_time = time.perf_counter()
+    bulk_time = end_time - start_time
+
+    # Verify we got the expected results
+    assert len(bulk_result) == lookup_count
+
+    # Calculate bulk method stats
+    bulk_ops_per_second = lookup_count / bulk_time
+
+    # Benchmark the individual lookup method using manual timing
+    def individual_lookups():
+        results = {}
+        for target_id in target_ids:
+            result = DefaultParentedModel.from_id_and_parent_path(
+                target_id, test_base_parented_file
+            )
+            if result:
+                results[target_id] = result
+        return results
+
+    # Run individual lookup method
+    start_time = time.perf_counter()
+    individual_result = individual_lookups()
+    end_time = time.perf_counter()
+    individual_time = end_time - start_time
+
+    assert len(individual_result) == lookup_count
+    individual_ops_per_second = lookup_count / individual_time
+
+    # Calculate performance comparison
+    speedup = individual_time / bulk_time
+    time_savings_pct = (individual_time - bulk_time) / individual_time * 100
+
+    # Use logging to display results (will show with -s flag or --log-cli-level=INFO)
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"Benchmark results for {num_children} children, {lookup_count} lookups:"
+    )
+    logger.info(f"  Bulk method: {bulk_time:.4f}s ({bulk_ops_per_second:.2f} ops/sec)")
+    logger.info(
+        f"  Individual method: {individual_time:.4f}s ({individual_ops_per_second:.2f} ops/sec)"
+    )
+    logger.info(
+        f"  Speedup: {speedup:.2f}x faster, {time_savings_pct:.1f}% time savings"
+    )
+
+    assert bulk_time > 0, "Bulk method should complete successfully"
+    assert individual_time > 0, "Individual method should complete successfully"
+    assert speedup >= 1.0, (
+        f"Expected bulk method to be faster, but got {speedup:.2f}x speedup"
+    )
 
 
 class MockAdapter(BaseAdapter):

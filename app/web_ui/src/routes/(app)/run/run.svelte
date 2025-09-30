@@ -684,6 +684,8 @@
               : 'hidden'}"
           >
             <TagDropdown
+              {project_id}
+              task_id={task.id || null}
               on_select={(tag) => add_tags([tag])}
               on_escape={() => (show_create_tag = false)}
               focus_on_mount={true}
