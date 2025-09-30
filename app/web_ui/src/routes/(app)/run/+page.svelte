@@ -11,6 +11,7 @@
   import posthog from "posthog-js"
   import { tick } from "svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
 
   let run_error: KilnError | null = null
   let submitting = false
@@ -20,7 +21,11 @@
   let output_section: HTMLElement | null = null
   let model_name: string = ""
   let provider: string = ""
+  let selected_run_config_id: string | null = null
+
   let run_config_component: RunConfigComponent
+  let save_config_error: KilnError | null = null
+  let set_default_error: KilnError | null = null
 
   let response: TaskRun | null = null
   $: run_focus = !response
@@ -43,6 +48,7 @@
           "Task configuration is still loading. Please wait a moment and try again.",
         )
       }
+      run_config_component.clear_run_options_errors()
       run_config_component.clear_model_dropdown_error()
       if (!run_config_component.get_selected_model()) {
         run_config_component.set_model_dropdown_error("Required")
@@ -141,6 +147,17 @@
       })
     }
   }
+
+  async function handle_save_new_run_config() {
+    try {
+      if (!run_config_component) {
+        throw new Error("Run config component is not loaded")
+      }
+      await run_config_component.save_new_run_config()
+    } catch (e) {
+      save_config_error = createKilnError(e)
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -164,12 +181,26 @@
         </FormContainer>
       </div>
       {#if $current_task}
-        <RunConfigComponent
-          bind:this={run_config_component}
-          {project_id}
-          current_task={$current_task}
-          {requires_structured_output}
-        />
+        <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
+          <div class="text-xl font-bold">Options</div>
+          <SavedRunConfigurationsDropdown
+            {project_id}
+            current_task={$current_task}
+            bind:selected_run_config_id
+            bind:save_config_error
+            bind:set_default_error
+            save_new_run_config={handle_save_new_run_config}
+          />
+          <RunConfigComponent
+            bind:this={run_config_component}
+            {project_id}
+            current_task={$current_task}
+            {requires_structured_output}
+            bind:selected_run_config_id
+            bind:save_config_error
+            bind:set_default_error
+          />
+        </div>
       {/if}
     </div>
     {#if $current_task && !submitting && response != null && project_id}

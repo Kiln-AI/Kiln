@@ -26,6 +26,7 @@
   // Modal for creating new run config
   let create_run_config_dialog: Dialog | null = null
   let create_run_config_error: KilnError | null = null
+  let run_config_component: RunConfigComponent | null = null
 
   $: project_id = $page.params.project_id
   $: selected_task = tasks.find((t) => t.id === selected_task_id)
@@ -34,19 +35,19 @@
     await load_tasks($page.params.project_id ?? "")
 
     // Check for URL parameters to pre-fill form (for cloning)
-    const urlParams = new URLSearchParams($page.url.search)
-    const cloneName = urlParams.get("name")
-    const cloneDescription = urlParams.get("description")
-    const cloneTaskId = urlParams.get("task_id")
+    const url_params = new URLSearchParams($page.url.search)
+    const clone_name = url_params.get("name")
+    const clone_description = url_params.get("description")
+    const clone_task_id = url_params.get("task_id")
 
-    if (cloneName) {
-      name = cloneName
+    if (clone_name) {
+      name = clone_name
     }
-    if (cloneDescription) {
-      description = cloneDescription
+    if (clone_description) {
+      description = clone_description
     }
-    if (cloneTaskId) {
-      selected_task_id = cloneTaskId
+    if (clone_task_id) {
+      selected_task_id = clone_task_id
     }
 
     data_loaded = true
@@ -138,57 +139,11 @@
     }
   }
 
-  async function cancel_create_run_config(): Promise<boolean> {
-    return true
-  }
-
   async function create_new_run_config(): Promise<boolean> {
-    create_run_config_error = null
-
-    if (!new_run_config_model_name || !new_run_config_provider_name) {
-      create_run_config_error = createKilnError({
-        message: "Model selection is required.",
-        status: 400,
-      })
-      return false
+    if (run_config_component) {
+      await run_config_component.save_new_run_config()
     }
-
-    if (!selected_task_id || !$page.params.project_id) {
-      create_run_config_error = createKilnError({
-        message: "No task selected.",
-        status: 400,
-      })
-      return false
-    }
-
-    try {
-      const run_config_properties: RunConfigProperties = {
-        model_name: new_run_config_model_name,
-        model_provider_name:
-          new_run_config_provider_name as components["schemas"]["ModelProviderName"],
-        prompt_id: new_run_config_prompt_method,
-        temperature: new_run_config_temperature,
-        top_p: new_run_config_top_p,
-        structured_output_mode: new_run_config_structured_output_mode,
-        tools_config: {
-          tools: new_run_config_tools,
-        },
-      }
-
-      const new_config = await save_new_task_run_config(
-        $page.params.project_id,
-        selected_task_id,
-        run_config_properties,
-      )
-
-      // Select the newly created run config
-      selected_run_config_id = new_config.id ?? ""
-
-      return true
-    } catch (e) {
-      create_run_config_error = createKilnError(e)
-      return false
-    }
+    return true
   }
 
   // Clear error when form fields change
@@ -322,10 +277,9 @@
             {project_id}
             current_task={selected_task}
             bind:selected_run_config_id
+            run_page={false}
+            info_description="Select the run configuration to use for the tool."
           />
-        {/if}
-
-        {#if selected_task_id}
           <FormElement
             label="Kiln Task Tool Name"
             id="task_name"
@@ -364,7 +318,6 @@
     {
       label: "Cancel",
       isCancel: true,
-      asyncAction: cancel_create_run_config,
     },
     {
       label: "Save",
@@ -376,9 +329,10 @@
   <div class="flex flex-col gap-4">
     {#if selected_task}
       <RunConfigComponent
+        bind:this={run_config_component}
         {project_id}
-        current_task={selected_task}
         bind:selected_run_config_id
+        current_task={selected_task}
       />
     {/if}
 

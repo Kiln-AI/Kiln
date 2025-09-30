@@ -5,7 +5,12 @@
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
-  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
+  import {
+    get_task_composite_id,
+    load_task_run_configs,
+    run_configs_by_task_composite_id,
+    save_new_task_run_config,
+  } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
@@ -13,8 +18,8 @@
     StructuredOutputMode,
     AvailableModels,
     Task,
+    TaskRunConfig,
   } from "$lib/types"
-  import SavedRunConfigurationsDropdown from "./saved_run_configs_dropdown.svelte"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
@@ -29,8 +34,10 @@
   export let model_name: string = ""
   export let provider: string = ""
   export let requires_structured_output: boolean = false
+  export let selected_run_config_id: string | null = null
+  export let save_config_error: KilnError | null = null
+  export let set_default_error: KilnError | null = null
 
-  let selected_run_config_id: string | null = null
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
   let tools: string[] = []
@@ -45,11 +52,6 @@
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
-
-  let saved_run_configs_dropdown: SavedRunConfigurationsDropdown
-
-  let save_config_error: KilnError | null = null
-  let set_default_error: KilnError | null = null
 
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
@@ -86,11 +88,7 @@
   }
 
   async function update_current_run_options_if_needed() {
-    if (!saved_run_configs_dropdown) {
-      return
-    }
-    const selected_run_config =
-      await saved_run_configs_dropdown.get_selected_run_config()
+    const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
@@ -118,18 +116,12 @@
     reset_to_custom_options_if_needed()
 
   async function reset_to_custom_options_if_needed() {
-    if (!saved_run_configs_dropdown) {
-      return
-    }
-    const selected_run_config =
-      await saved_run_configs_dropdown.get_selected_run_config()
+    const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
     // Wait for all reactive statements to complete
     await tick()
-
-    clear_run_options_errors()
 
     const config_properties = selected_run_config.run_config_properties
 
@@ -170,8 +162,7 @@
     }
   }
 
-  // Handle save run options button clicked
-  async function save_run_options() {
+  export async function save_new_run_config() {
     if (!project_id || !current_task.id) {
       return
     }
@@ -194,21 +185,38 @@
     }
   }
 
-  // Clear any errors when changing selected_run_config_id
-  $: selected_run_config_id, clear_run_options_errors()
+  async function get_selected_run_config(): Promise<
+    TaskRunConfig | "custom" | null
+  > {
+    // Make sure the task run configs are loaded, will be quick if they already are
+    await load_task_run_configs(project_id, current_task.id ?? "")
 
-  function clear_run_options_errors() {
-    if (save_config_error) {
-      save_config_error = null
-    }
-    if (set_default_error) {
-      set_default_error = null
+    // Map selected ID back to TaskRunConfig object
+    if (!selected_run_config_id) {
+      return null
+    } else if (selected_run_config_id === "custom") {
+      return "custom"
+    } else {
+      // Find the config by ID
+      const all_configs =
+        $run_configs_by_task_composite_id[
+          get_task_composite_id(project_id, current_task.id ?? "")
+        ] ?? []
+      let run_config = all_configs.find(
+        (config) => config.id === selected_run_config_id,
+      )
+      return run_config ?? "custom"
     }
   }
 
   // Expose methods for run parent component
   export function get_selected_model(): string | null {
     return model_dropdown ? model_dropdown.get_selected_model() : null
+  }
+
+  export function clear_run_options_errors() {
+    save_config_error = null
+    set_default_error = null
   }
 
   export function clear_model_dropdown_error() {
@@ -229,16 +237,6 @@
 </script>
 
 <div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
-  <div class="text-xl font-bold">Options</div>
-  <SavedRunConfigurationsDropdown
-    {project_id}
-    {current_task}
-    bind:selected_run_config_id
-    {set_default_error}
-    on:change={clear_run_options_errors}
-    on:save_run_options={save_run_options}
-    bind:this={saved_run_configs_dropdown}
-  />
   {#if $available_models.length > 0}
     <AvailableModelsDropdown
       task_id={current_task.id ?? ""}
