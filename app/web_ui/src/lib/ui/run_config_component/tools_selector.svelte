@@ -116,7 +116,7 @@
           })),
         )
         option_groups.push({
-          label: "Kiln Tasks",
+          label: tool_set.set_name,
           options: kiln_tasks_options,
         })
       } else if (tools.length > 0) {
