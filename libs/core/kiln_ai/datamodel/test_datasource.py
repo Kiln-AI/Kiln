@@ -38,6 +38,17 @@ def test_valid_file_import_data_source():
     assert data_source.properties["file_name"] == "test.txt"
 
 
+def test_valid_tool_call_data_source():
+    data_source = DataSource(
+        type=DataSourceType.tool_call,
+        properties={
+            "tool_name": "calculator",
+        },
+    )
+    assert data_source.type == DataSourceType.tool_call
+    assert data_source.properties["tool_name"] == "calculator"
+
+
 def test_missing_required_property():
     with pytest.raises(ValidationError, match="'created_by' is required for"):
         DataSource(type=DataSourceType.human)
@@ -46,6 +57,11 @@ def test_missing_required_property():
 def test_missing_required_property_file_import():
     with pytest.raises(ValidationError, match="'file_name' is required for"):
         DataSource(type=DataSourceType.file_import)
+
+
+def test_missing_required_property_tool_call():
+    with pytest.raises(ValidationError, match="'tool_name' is required for"):
+        DataSource(type=DataSourceType.tool_call)
 
 
 def test_not_allowed_property_file_import():
@@ -75,6 +91,48 @@ def test_not_allowed_property():
                 "model_name": "GPT-4",
                 "model_provider": "OpenAI",
                 "created_by": "John Doe",
+            },
+        )
+
+
+def test_not_allowed_property_tool_call():
+    with pytest.raises(
+        ValidationError,
+        match="'created_by' is not allowed for",
+    ):
+        DataSource(
+            type=DataSourceType.tool_call,
+            properties={
+                "tool_name": "calculator",
+                "created_by": "John Doe",
+            },
+        )
+
+
+def test_not_allowed_model_name_tool_call():
+    with pytest.raises(
+        ValidationError,
+        match="'model_name' is not allowed for",
+    ):
+        DataSource(
+            type=DataSourceType.tool_call,
+            properties={
+                "tool_name": "calculator",
+                "model_name": "GPT-4",
+            },
+        )
+
+
+def test_not_allowed_file_name_tool_call():
+    with pytest.raises(
+        ValidationError,
+        match="'file_name' is not allowed for",
+    ):
+        DataSource(
+            type=DataSourceType.tool_call,
+            properties={
+                "tool_name": "calculator",
+                "file_name": "test.txt",
             },
         )
 

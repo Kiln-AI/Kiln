@@ -57,7 +57,9 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
         # Check MCP Server Tools
         if is_mcp_tool:
             # Get the tool server ID and tool name from the ID
-            tool_server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
+            tool_server_id, tool_name = mcp_server_and_tool_name_from_id(
+                tool_id
+            )  # Fixed function name
 
             server = next(
                 (

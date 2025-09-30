@@ -90,14 +90,18 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: Dict | str,
         input_source: DataSource | None = None,
+        output_source: DataSource | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, output_source
+        )
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: Dict | str,
         input_source: DataSource | None = None,
+        output_source: DataSource | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input
         if self.input_schema is not None:
@@ -169,7 +173,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
         # Generate the run and output
         run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace
+            input, input_source, output_source, parsed_output, usage, run_output.trace
         )
 
         # Save the run if configured to do so, and we have a path to save to
@@ -260,6 +264,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: Dict | str,
         input_source: DataSource | None,
+        output_source: DataSource | None,
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
@@ -281,16 +286,22 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
+        # If no output source is provided, default to synthetic since an adapter, not a human, is creating this
+        output_source_type = DataSourceType.synthetic
+        if output_source is not None:
+            output_source_type = output_source.type
+
         new_task_run = TaskRun(
             parent=self.task,
             input=input_str,
             input_source=input_source,
             output=TaskOutput(
                 output=output_str,
-                # Synthetic since an adapter, not a human, is creating this
                 source=DataSource(
-                    type=DataSourceType.synthetic,
-                    properties=self._properties_for_task_output(),
+                    type=output_source_type,
+                    properties=self._properties_for_task_output(
+                        output_source_type, output_source
+                    ),
                     run_config=self.run_config,
                 ),
             ),
@@ -302,9 +313,23 @@ class BaseAdapter(metaclass=ABCMeta):
 
         return new_task_run
 
-    def _properties_for_task_output(self) -> Dict[str, str | int | float]:
-        props = {}
+    def _properties_for_task_output(
+        self,
+        data_source_type: DataSourceType = DataSourceType.synthetic,
+        output_source: DataSource | None = None,
+    ) -> Dict[str, str | int | float]:
+        if data_source_type == DataSourceType.synthetic:
+            return self._properties_for_synthetic_output()
+        elif data_source_type == DataSourceType.tool_call:
+            return self._properties_for_tool_call_output(output_source)
+        elif data_source_type == DataSourceType.human:
+            return self._properties_for_human_output()
+        else:
+            return {}
 
+    def _properties_for_synthetic_output(self) -> Dict[str, str | int | float]:
+        """Properties for synthetic data sources (default behavior)."""
+        props = {}
         props["adapter_name"] = self.adapter_name()
 
         # Legacy properties where we save the run_config details into custom properties.
@@ -317,6 +342,23 @@ class BaseAdapter(metaclass=ABCMeta):
         props["top_p"] = self.run_config.top_p
 
         return props
+
+    def _properties_for_tool_call_output(
+        self, output_source: DataSource | None = None
+    ) -> Dict[str, str | int | float]:
+        """Properties for tool call data sources (default behavior)."""
+        props = {}
+        if (
+            output_source
+            and output_source.properties
+            and "tool_id" in output_source.properties
+        ):
+            props["tool_id"] = output_source.properties["tool_id"]
+        return props
+
+    def _properties_for_human_output(self) -> Dict[str, str | int | float]:
+        """Properties for human data sources."""
+        return {"created_by": Config.shared().user_id}
 
     def update_run_config_unknown_structured_output_mode(self) -> None:
         structured_output_mode = self.run_config.structured_output_mode

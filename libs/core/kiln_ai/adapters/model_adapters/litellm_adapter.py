@@ -609,7 +609,13 @@ class LiteLlmAdapter(BaseAdapter):
                     f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
                 ) from e
 
-            result = await tool.run(**parsed_args)
+            # Create context with the calling task's allow_saving setting
+            from kiln_ai.tools.base_tool import ToolCallContext
+
+            context = ToolCallContext(
+                allow_saving=self.base_adapter_config.allow_saving
+            )
+            result = await tool.run_with_context(context, **parsed_args)
 
             tool_call_response_messages.append(
                 ChatCompletionToolMessageParam(

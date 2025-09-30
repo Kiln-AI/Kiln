@@ -80,8 +80,6 @@ class KilnTaskToolServerCreationRequest(BaseModel):
     run_config_id: str
     is_archived: bool
 
-    # TODO: Add validation
-
 
 class ExternalToolApiDescription(BaseModel):
     """

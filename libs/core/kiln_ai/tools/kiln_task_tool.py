@@ -4,8 +4,9 @@ from typing import Any, Dict
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
 from kiln_ai.utils.project_utils import project_from_id
 
 
@@ -56,7 +57,17 @@ class KilnTaskTool(KilnToolInterface):
         }
 
     async def run(self, **kwargs) -> str:
-        """Execute the wrapped Kiln task with the given parameters."""
+        """Execute the wrapped Kiln task with the given parameters.
+
+        This method is kept for backward compatibility but should not be used
+        for Kiln Task Tools as it doesn't have access to the calling context.
+        """
+        # Default to False for backward compatibility when no context is provided
+        context = ToolCallContext(allow_saving=False)
+        return await self.run_with_context(context, **kwargs)
+
+    async def run_with_context(self, context: ToolCallContext, **kwargs) -> str:
+        """Execute the wrapped Kiln task with the given parameters and calling context."""
         task = await self._get_task()
         run_config = await self._get_run_config()
 
@@ -76,15 +87,34 @@ class KilnTaskTool(KilnToolInterface):
         from kiln_ai.adapters.adapter_registry import adapter_for_task
         from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 
-        # Create adapter and run the task
+        # Create adapter and run the task using the calling task's allow_saving setting
         adapter = adapter_for_task(
             task,
             run_config_properties=run_config.run_config_properties,
-            base_adapter_config=AdapterConfig(allow_saving=False),
+            base_adapter_config=AdapterConfig(
+                allow_saving=context.allow_saving,
+                default_tags=["tool_call"],
+            ),
         )
-        task_run = await adapter.invoke(input)
+        task_run = await adapter.invoke(
+            input,
+            input_source=DataSource(
+                type=DataSourceType.tool_call, properties={"tool_id": self._tool_id}
+            ),
+            output_source=DataSource(
+                type=DataSourceType.tool_call, properties={"tool_id": self._tool_id}
+            ),
+        )
 
-        return task_run.output.output
+        # Return structured information about the created task run
+        return json.dumps(
+            {
+                "output": task_run.output.output,
+                "task_run_id": task_run.id,
+                "task_id": task_run.parent.id if task_run.parent else None,
+                "project_id": self._project_id,
+            }
+        )
 
     async def _get_task(self) -> Task:
         """Lazy load the task."""
