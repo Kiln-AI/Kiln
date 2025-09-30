@@ -23,7 +23,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.pdf_utils import split_pdf_into_pages
+from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
 
 logger = logging.getLogger(__name__)
 
@@ -168,12 +168,29 @@ class LitellmExtractor(BaseExtractor):
         return None
 
     async def _extract_single_pdf_page(
-        self, pdf_path: Path, page_path: Path, prompt: str, page_number: int
+        self,
+        pdf_path: Path,
+        page_path: Path,
+        prompt: str,
+        page_number: int,
     ) -> str:
         try:
-            page_input = ExtractionInput(
-                path=str(page_path), mime_type="application/pdf"
-            )
+            if self.model_provider.multimodal_requires_pdf_as_image:
+                image_paths = convert_pdf_to_images(
+                    page_path, output_dir=page_path.parent
+                )
+                if len(image_paths) != 1:
+                    raise ValueError(
+                        f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
+                    )
+                image_path = image_paths[0]
+                page_input = ExtractionInput(
+                    path=str(image_path), mime_type="image/png"
+                )
+            else:
+                page_input = ExtractionInput(
+                    path=str(page_path), mime_type="application/pdf"
+                )
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
             response = await litellm.acompletion(**completion_kwargs)
         except Exception as e:
@@ -232,13 +249,16 @@ class LitellmExtractor(BaseExtractor):
             # this ensures the model stays focused on the current page and does not
             # start summarizing the later pages
             for i, page_path in enumerate(page_paths):
+                await asyncio.sleep(0)
                 page_content = await self.get_page_content_from_cache(pdf_path, i)
                 if page_content is not None:
                     page_outcomes[i] = page_content
                     continue
 
                 extract_page_jobs.append(
-                    self._extract_single_pdf_page(pdf_path, page_path, prompt, i)
+                    self._extract_single_pdf_page(
+                        pdf_path, page_path, prompt, page_number=i
+                    )
                 )
                 page_indices_for_jobs.append(i)
 

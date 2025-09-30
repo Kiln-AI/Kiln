@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
+import pymupdf
+from pymupdf import utils
 from pypdf import PdfReader, PdfWriter
 
 
@@ -36,3 +38,16 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
                 page_paths.append(page_path)
 
         yield page_paths
+
+
+def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+    image_paths = []
+
+    pdf = pymupdf.open(pdf_path)
+    for page in pdf:
+        pix = utils.get_pixmap(page, dpi=300)
+        target_path = output_dir / f"img-{pdf_path.name}-{page.number}.png"
+        pix.save(target_path)
+        image_paths.append(target_path)
+
+    return image_paths

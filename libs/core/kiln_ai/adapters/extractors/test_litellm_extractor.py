@@ -694,6 +694,62 @@ async def test_extract_pdf_page_by_page(mock_file_factory, mock_litellm_extracto
     assert result.content_format == OutputFormat.MARKDOWN
 
 
+async def test_extract_pdf_page_by_page_pdf_as_image(
+    mock_file_factory, mock_litellm_extractor, tmp_path
+):
+    """Test that PDFs are processed page by page as images if the model requires it."""
+
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Mock responses for each page (PDF has 2 pages)
+    mock_responses = []
+    for i in range(2):  # PDF has 2 pages
+        mock_response = AsyncMock(spec=ModelResponse)
+        mock_choice = AsyncMock(spec=Choices)
+        mock_message = AsyncMock()
+        mock_message.content = f"Content from page {i + 1}"
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_responses.append(mock_response)
+
+    mock_image_path = tmp_path / "img-test_document-mock.png"
+    mock_image_path.write_bytes(b"test image")
+
+    with patch("litellm.acompletion", side_effect=mock_responses) as mock_acompletion:
+        # this model requires PDFs to be processed as images
+        mock_litellm_extractor.model_provider.multimodal_requires_pdf_as_image = True
+
+        with patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
+            return_value=[mock_image_path],
+        ) as mock_convert:
+            result = await mock_litellm_extractor.extract(
+                ExtractionInput(
+                    path=str(test_file),
+                    mime_type="application/pdf",
+                )
+            )
+
+    # Verify image conversion called once per page
+    assert mock_convert.call_count == 2
+
+    # Verify LiteLLM was called with image inputs (not PDF) for each page
+    for call in mock_acompletion.call_args_list:
+        kwargs = call.kwargs
+        content = kwargs["messages"][0]["content"]
+        assert content[1]["type"] == "image_url"
+
+    # Verify that the completion was called multiple times (once per page)
+    assert mock_acompletion.call_count == 2
+
+    # Verify the output contains content from both pages
+    assert "Content from page 1" in result.content
+    assert "Content from page 2" in result.content
+
+    assert not result.is_passthrough
+    assert result.content_format == OutputFormat.MARKDOWN
+
+
 async def test_extract_pdf_page_by_page_error_handling(
     mock_file_factory, mock_litellm_extractor
 ):
