@@ -247,7 +247,6 @@ def connect_tool_servers_api(app: FastAPI):
                 case ToolServerType.kiln_task:
                     if not server.properties.get("is_archived", False):
                         task_tools.append(
-                            # TODO: Should project id be stored in server.properties?
                             ToolApiDescription(
                                 id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.id}",
                                 name=server.properties.get("name") or "",
@@ -268,7 +267,7 @@ def connect_tool_servers_api(app: FastAPI):
         # Add task tools
         tool_sets.append(
             ToolSetApiDescription(
-                set_name="Kiln Tasks",
+                set_name="Kiln Tasks as Tools",
                 tools=task_tools,
             )
         )

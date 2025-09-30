@@ -241,19 +241,15 @@
   }
 </script>
 
-<div class="w-72 2xl:w-96 flex-none flex flex-col gap-4">
-  {#if $available_models.length > 0}
-    <AvailableModelsDropdown
-      task_id={current_task.id ?? ""}
-      bind:model
-      bind:requires_structured_output
-      bind:requires_tool_support
-      bind:error_message={model_dropdown_error_message}
-      bind:this={model_dropdown}
-    />
-  {:else}
-    <div class="text-sm text-gray-500">Loading models...</div>
-  {/if}
+<div class="w-full flex flex-col gap-4">
+  <AvailableModelsDropdown
+    task_id={current_task.id ?? ""}
+    bind:model
+    bind:requires_structured_output
+    bind:requires_tool_support
+    bind:error_message={model_dropdown_error_message}
+    bind:this={model_dropdown}
+  />
   <PromptTypeSelector
     bind:prompt_method
     info_description="Choose a prompt. Learn more on the 'Prompts' tab."

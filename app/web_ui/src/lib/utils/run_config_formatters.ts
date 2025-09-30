@@ -17,7 +17,7 @@ export function getStaticPromptDisplayName(
   prompt_generator_id: string | null | undefined,
   current_task_prompts: PromptResponse | null,
 ): string {
-  return `${prompt_name} (${prompt_generator_id ? prompt_name_from_id(prompt_generator_id, current_task_prompts) : "Custom"})`
+  return `${prompt_name} — ${prompt_generator_id ? prompt_name_from_id(prompt_generator_id, current_task_prompts) : "Custom"}`
 }
 
 export function getRunConfigPromptDisplayName(

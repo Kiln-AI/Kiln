@@ -85,30 +85,39 @@
   $: filter_unavailable_tools($available_tools[project_id], tools)
 
   function get_tool_options(
-    available_tools: ToolSetApiDescription[],
+    available_tools: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
+    if (!available_tools) {
+      return []
+    }
+
     let option_groups: OptionGroup[] = []
 
     available_tools?.forEach((tool_set) => {
       let tools = tool_set.tools
       // Track if we have Kiln Tasks tools
       if (
-        tool_set.set_name === "Kiln Tasks" &&
-        tools.length == 0 &&
+        tool_set.set_name === "Kiln Tasks as Tools" &&
         !hide_create_kiln_task_tool_button
       ) {
-        // Add "Create Tool from Kiln Task" button only if no Kiln Tasks tools exist
+        let kiln_tasks_options: Option[] = []
+        kiln_tasks_options.push({
+          value: "__add_new_kiln_task__",
+          label: "Create New",
+          description: "Create a new tool from a Kiln task.",
+          badge: "+",
+          badge_color: "primary",
+        })
+        kiln_tasks_options.push(
+          ...tools.map((tool) => ({
+            value: tool.id,
+            label: tool.name,
+            description: tool.description || undefined,
+          })),
+        )
         option_groups.push({
           label: "Kiln Tasks",
-          options: [
-            {
-              value: "__add_new_kiln_task__",
-              label: "Create Tool from Kiln Task",
-              description: "Create a tool from an existing Kiln task",
-              badge: "+",
-              badge_color: "primary",
-            },
-          ],
+          options: kiln_tasks_options,
         })
       } else if (tools.length > 0) {
         let options: Option[] = tools.map((tool) => ({
@@ -128,19 +137,17 @@
 </script>
 
 <div>
-  {#if $available_tools[project_id]?.length > 0}
-    <FormElement
-      id="tools"
-      label="Tools & Search"
-      inputType="multi_select"
-      info_description="Select the tools available to the model.\nThe model may or may not choose to use them."
-      bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
-      empty_state_message={$available_tools[project_id] === undefined
-        ? "Loading tools..."
-        : "No Tools Available"}
-      empty_state_subtitle="Add Tools"
-      empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
-    />
-  {/if}
+  <FormElement
+    id="tools"
+    label="Tools & Search"
+    inputType="multi_select"
+    info_description="Select the tools available to the model.\nThe model may or may not choose to use them."
+    bind:value={tools}
+    fancy_select_options={get_tool_options($available_tools[project_id])}
+    empty_state_message={$available_tools[project_id] === undefined
+      ? "Loading tools..."
+      : "No Tools Available"}
+    empty_state_subtitle="Add Tools"
+    empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
+  />
 </div>

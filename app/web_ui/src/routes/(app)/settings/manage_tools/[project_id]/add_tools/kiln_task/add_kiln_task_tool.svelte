@@ -19,6 +19,7 @@
   let description = ""
   let selected_task_id: string | null = null
   let selected_run_config_id: string | null = null
+  let loading = false
 
   // Modal for creating new run config
   let create_run_config_dialog: Dialog | null = null
@@ -26,7 +27,9 @@
   let run_config_component: RunConfigComponent | null = null
 
   $: project_id = $page.params.project_id
-  $: selected_task = tasks.find((t) => t.id === selected_task_id)
+
+  let selected_task: Task | null = null
+  $: selected_task = tasks.find((t) => t.id === selected_task_id) || null
 
   onMount(async () => {
     await load_tasks($page.params.project_id ?? "")
@@ -84,6 +87,18 @@
     }
     let option_groups: OptionGroup[] = []
     option_groups.push({
+      label: "",
+      options: [
+        {
+          label: "New Kiln Task",
+          value: "__create_new_kiln_task__",
+          badge: "+",
+          badge_color: "primary",
+        },
+      ],
+    })
+    option_groups.push({
+      label: "Project Tasks",
       options: tasks.map((task) => ({
         label: `${task.name} (ID: ${task.id})`,
         value: task.id ?? "",
@@ -125,31 +140,25 @@
     }
   }
 
-  let should_show_create_modal = false
-
-  // Handle special case when "Create New Run Configuration" is selected
+  // Show the create dialog when the user clicks the create new button
   $: if (selected_run_config_id === "__create_new_run_config__") {
-    should_show_create_modal = true
-    selected_run_config_id = null
-  }
-
-  // Show modal when flag is set
-  $: if (should_show_create_modal) {
-    should_show_create_modal = false
-    show_create_new_run_config_modal()
-  }
-
-  function show_create_new_run_config_modal() {
     create_run_config_error = null
-    if (create_run_config_dialog) {
-      create_run_config_dialog.show()
-    }
+    create_run_config_dialog?.show()
+  } else {
+    create_run_config_error = null
+    create_run_config_dialog?.close()
+  }
+
+  $: if (selected_task_id === "__create_new_kiln_task__") {
+    goto(`/settings/create_task/${project_id}`)
   }
 
   async function create_new_run_config(): Promise<boolean> {
+    loading = true
     if (run_config_component) {
       await run_config_component.save_new_run_config()
     }
+    loading = false
     return true
   }
 
@@ -260,7 +269,11 @@
 
 <div>
   <div class="max-w-4xl">
-    {#if !tasks_loading_error}
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if !tasks_loading_error}
       <FormContainer
         submit_label="Add"
         on:submit={add_kiln_task_tool}
@@ -319,34 +332,41 @@
 
 <Dialog
   bind:this={create_run_config_dialog}
-  title="Create New Run Configuration"
-  action_buttons={[
-    {
-      label: "Cancel",
-      isCancel: true,
-    },
-    {
-      label: "Save",
-      isPrimary: true,
-      asyncAction: create_new_run_config,
-    },
-  ]}
+  title="Run Configuration"
+  on:close={() => {
+    create_run_config_dialog?.close()
+    if (selected_run_config_id === "__create_new_run_config__") {
+      selected_run_config_id = null
+    }
+  }}
 >
-  <div class="flex flex-col gap-4">
-    {#if selected_task}
-      <RunConfigComponent
-        bind:this={run_config_component}
-        {project_id}
-        bind:selected_run_config_id
-        current_task={selected_task}
-        hide_create_kiln_task_tool_button={true}
-      />
-    {/if}
+  <FormContainer
+    submit_visible={true}
+    submit_label="Create"
+    on:submit={async (_) => {
+      await create_new_run_config()
+    }}
+    {error}
+    gap={4}
+    bind:submitting={loading}
+    keyboard_submit={false}
+  >
+    <div class="flex flex-col gap-4">
+      {#if selected_task}
+        <RunConfigComponent
+          bind:this={run_config_component}
+          {project_id}
+          bind:selected_run_config_id
+          current_task={selected_task}
+          hide_create_kiln_task_tool_button={true}
+        />
+      {/if}
 
-    {#if create_run_config_error}
-      <div class="text-error text-sm">
-        {create_run_config_error.getMessage() || "An unknown error occurred"}
-      </div>
-    {/if}
-  </div>
+      {#if create_run_config_error}
+        <div class="text-error text-sm">
+          {create_run_config_error.getMessage() || "An unknown error occurred"}
+        </div>
+      {/if}
+    </div>
+  </FormContainer>
 </Dialog>

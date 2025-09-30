@@ -113,8 +113,7 @@
         options: [
           {
             value: "__create_new_run_config__",
-            label: "New",
-            description: "Create a new run configuration with custom settings.",
+            label: "New Run Configuration",
             badge: "+",
             badge_color: "primary",
           },
