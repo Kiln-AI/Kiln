@@ -44,10 +44,13 @@ def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
     image_paths = []
 
     pdf = pymupdf.open(pdf_path)
-    for page in pdf:
-        pix = utils.get_pixmap(page, dpi=300)
-        target_path = output_dir / f"img-{pdf_path.name}-{page.number}.png"
-        pix.save(target_path)
-        image_paths.append(target_path)
+    try:
+        for page in pdf:
+            pix = utils.get_pixmap(page, dpi=300)
+            target_path = output_dir / f"img-{pdf_path.name}-{page.number}.png"
+            pix.save(target_path)
+            image_paths.append(target_path)
 
-    return image_paths
+        return image_paths
+    finally:
+        pdf.close()

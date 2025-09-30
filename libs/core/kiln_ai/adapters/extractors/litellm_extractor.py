@@ -167,6 +167,20 @@ class LitellmExtractor(BaseExtractor):
         logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
         return None
 
+    async def convert_pdf_page_to_image_input(
+        self, page_path: Path, page_number: int
+    ) -> ExtractionInput:
+        image_paths = await asyncio.to_thread(
+            convert_pdf_to_images, page_path, page_path.parent
+        )
+        if len(image_paths) != 1:
+            raise ValueError(
+                f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
+            )
+        image_path = image_paths[0]
+        page_input = ExtractionInput(path=str(image_path), mime_type="image/png")
+        return page_input
+
     async def _extract_single_pdf_page(
         self,
         pdf_path: Path,
@@ -176,21 +190,14 @@ class LitellmExtractor(BaseExtractor):
     ) -> str:
         try:
             if self.model_provider.multimodal_requires_pdf_as_image:
-                image_paths = convert_pdf_to_images(
-                    page_path, output_dir=page_path.parent
-                )
-                if len(image_paths) != 1:
-                    raise ValueError(
-                        f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
-                    )
-                image_path = image_paths[0]
-                page_input = ExtractionInput(
-                    path=str(image_path), mime_type="image/png"
+                page_input = await self.convert_pdf_page_to_image_input(
+                    page_path, page_number
                 )
             else:
                 page_input = ExtractionInput(
                     path=str(page_path), mime_type="application/pdf"
                 )
+
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
             response = await litellm.acompletion(**completion_kwargs)
         except Exception as e:
@@ -249,7 +256,6 @@ class LitellmExtractor(BaseExtractor):
             # this ensures the model stays focused on the current page and does not
             # start summarizing the later pages
             for i, page_path in enumerate(page_paths):
-                await asyncio.sleep(0)
                 page_content = await self.get_page_content_from_cache(pdf_path, i)
                 if page_content is not None:
                     page_outcomes[i] = page_content
