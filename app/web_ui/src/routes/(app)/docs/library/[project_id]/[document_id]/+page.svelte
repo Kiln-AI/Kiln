@@ -16,6 +16,7 @@
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   let initial_document: KilnDocument | null = null
@@ -256,14 +257,15 @@
                   <tr>
                     <th>Extraction Details</th>
                     <th>Extraction Output</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each results as result}
                     <tr>
-                      <td>
+                      <td class="flex justify-start">
                         <div
-                          class="grid grid-cols-[auto_1fr] gap-y-2 gap-x-4 text-sm"
+                          class="grid grid-cols-[auto_1fr] gap-y-2 gap-x-4 text-sm items-start"
                         >
                           <div>ID</div>
                           <div class="text-gray-500">{result.id}</div>
@@ -286,18 +288,6 @@
                               {result.extractor.name}
                             </a>
                           </div>
-                          <div>Actions</div>
-                          <div class="text-gray-500">
-                            <button
-                              class="link"
-                              on:click={() => {
-                                delete_extraction_id = result.id || null
-                                delete_extraction_dialog?.show()
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
                         </div>
                       </td>
                       <td>
@@ -314,6 +304,27 @@
                             hide_toggle={true}
                           />
                         </button>
+                      </td>
+                      <td class="flex justify-start">
+                        <div class="dropdown dropdown-end dropdown-hover">
+                          <TableButton />
+                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                          <ul
+                            tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                          >
+                            <li>
+                              <button
+                                on:click={() => {
+                                  delete_extraction_id = result.id || null
+                                  delete_extraction_dialog?.show()
+                                }}
+                              >
+                                Delete Extraction</button
+                              >
+                            </li>
+                          </ul>
+                        </div>
                       </td>
                     </tr>
                   {/each}
