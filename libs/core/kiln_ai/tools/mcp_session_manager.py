@@ -172,11 +172,10 @@ class MCPSessionManager:
         )
 
         # Create temporary file to capture MCP server stderr
-        err_log_fd, err_log_path = tempfile.mkstemp(suffix="_mcp_stderr.log")
-        err_log_file = open(err_log_fd, "w+")
+        err_log = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
 
         try:
-            async with stdio_client(server_params, errlog=err_log_file) as (
+            async with stdio_client(server_params, errlog=err_log) as (
                 read,
                 write,
             ):
@@ -187,7 +186,8 @@ class MCPSessionManager:
                     yield session
         except Exception as e:
             # Read stderr content from temporary file for debugging
-            stderr_content = self._read_tmp_file(err_log_fd, err_log_path)
+            err_log.seek(0)  # Read from the start of the file
+            stderr_content = err_log.read()
             if stderr_content:
                 logger.error(
                     f"MCP server '{tool_server.name}' stderr output: {stderr_content}"
@@ -201,9 +201,8 @@ class MCPSessionManager:
             # Re-raise the original error but with a friendlier message
             self._raise_local_mcp_error(e)
         finally:
-            # Close the file object and clean up
-            err_log_file.close()
-            self._clean_tmp_file(err_log_fd, err_log_path)
+            # Close and delete the temp file
+            err_log.close()
 
     def _raise_local_mcp_error(self, e: Exception):
         """
@@ -263,22 +262,3 @@ class MCPSessionManager:
     def clear_shell_path_cache(self):
         """Clear the cached shell path. Typically used when adding a new tool, which might have just been installed."""
         self._shell_path = None
-
-    def _read_tmp_file(self, fd: int, path: str) -> str:
-        """Read a temporary file."""
-        try:
-            with open(path, "r") as f:
-                return f.read()
-        except Exception:
-            logger.error("Failed to read file")
-            return ""
-
-    def _clean_tmp_file(self, fd: int, path: str):
-        """Clean up a temporary file."""
-        try:
-            # close and delete the file
-            os.close(fd)
-            os.unlink(path)
-        except Exception:
-            logger.error("Failed to clean up file")
-            pass
