@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import AsyncGenerator
@@ -170,14 +171,28 @@ class MCPSessionManager:
             command=command, args=args, env=env_vars, cwd=cwd
         )
 
+        # Create temporary file to capture MCP server stderr
+        err_log_fd, err_log_path = tempfile.mkstemp(suffix="_mcp_stderr.log")
+        err_log_file = open(err_log_fd, "w+")
+
         try:
-            async with stdio_client(server_params) as (read, write):
+            async with stdio_client(server_params, errlog=err_log_file) as (
+                read,
+                write,
+            ):
                 async with ClientSession(
                     read, write, read_timeout_seconds=timedelta(seconds=30)
                 ) as session:
                     await session.initialize()
                     yield session
         except Exception as e:
+            # Read stderr content from temporary file for debugging
+            stderr_content = self._read_tmp_file(err_log_fd, err_log_path)
+            if stderr_content:
+                logger.error(
+                    f"MCP server '{tool_server.name}' stderr output: {stderr_content}"
+                )
+
             # Check for MCP errors. Things like wrong arguments would fall here.
             mcp_error = self._extract_first_exception(e, McpError)
             if mcp_error and isinstance(mcp_error, McpError):
@@ -185,6 +200,10 @@ class MCPSessionManager:
 
             # Re-raise the original error but with a friendlier message
             self._raise_local_mcp_error(e)
+        finally:
+            # Close the file object and clean up
+            err_log_file.close()
+            self._clean_tmp_file(err_log_fd, err_log_path)
 
     def _raise_local_mcp_error(self, e: Exception):
         """
@@ -244,3 +263,22 @@ class MCPSessionManager:
     def clear_shell_path_cache(self):
         """Clear the cached shell path. Typically used when adding a new tool, which might have just been installed."""
         self._shell_path = None
+
+    def _read_tmp_file(self, fd: int, path: str) -> str:
+        """Read a temporary file."""
+        try:
+            with open(path, "r") as f:
+                return f.read()
+        except Exception:
+            logger.error("Failed to read file")
+            return ""
+
+    def _clean_tmp_file(self, fd: int, path: str):
+        """Clean up a temporary file."""
+        try:
+            # close and delete the file
+            os.close(fd)
+            os.unlink(path)
+        except Exception:
+            logger.error("Failed to clean up file")
+            pass
