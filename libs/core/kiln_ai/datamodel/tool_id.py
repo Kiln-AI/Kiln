@@ -70,7 +70,7 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
-    # Kiln task tools must have format: kiln_task::<project_id>::<task_id>::<run_config_id>
+    # Kiln task tools must have format: kiln_task::<server_id>
     if id.startswith(KILN_TASK_TOOL_ID_PREFIX):
         server_id = kiln_task_server_id_from_tool_id(id)
         if not server_id:
@@ -122,7 +122,7 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
     """
     if not tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
         raise ValueError(
-            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<project_id>::<task_id>::<run_config_id>'."
+            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
         )
 
     # Remove prefix and split on ::
@@ -131,7 +131,7 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
 
     if len(parts) != 1:
         raise ValueError(
-            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<project_id>::<task_id>::<run_config_id>'."
+            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
         )
 
     return parts[0]  # server_id

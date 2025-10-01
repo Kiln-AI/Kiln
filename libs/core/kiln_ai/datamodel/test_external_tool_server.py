@@ -874,7 +874,6 @@ class TestExternalToolServer:
                     assert "API_KEY" not in data["properties"]["env_vars"]
 
                 case ToolServerType.kiln_task:
-                    # TODO: Add test for kiln task
                     pass
 
                 case _:

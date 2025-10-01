@@ -64,7 +64,6 @@
   function kiln_task_tool_link(project_id: string, tool_id: string) {
     // Extract tool_server_id from tool_id
     // Kiln task tool IDs have format: "kiln_task::{tool_server_id}"
-    // TODO: Seems hacky.
     if (tool_id.startsWith("kiln_task::")) {
       const tool_server_id = tool_id.substring("kiln_task::".length)
       return `/settings/manage_tools/${project_id}/kiln_task/${tool_server_id}`

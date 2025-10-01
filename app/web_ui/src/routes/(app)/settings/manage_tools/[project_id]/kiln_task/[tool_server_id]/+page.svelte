@@ -98,7 +98,6 @@
     }
   }
 
-  // TODO: Move this to a shared component since other places use it too
   async function get_task(task_id: string): Promise<Task> {
     if (!project_id || !task_id) {
       throw new Error("Project or task ID not set.")

@@ -197,7 +197,6 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
                 # Use list tools to validate the server is reachable
                 await session.list_tools()
         case ToolServerType.kiln_task:
-            # TODO: Validate the task and run config are still valid (e.g. task is not deleted, run config is not deleted, etc.)
             pass
         case _:
             raise_exhaustive_enum_error(tool_server.type)
@@ -359,7 +358,6 @@ def connect_tool_servers_api(app: FastAPI):
                             )
                         )
                 except HTTPException:
-                    # TODO: Do we want to still show it and not allow unarchiving?
                     # Skip tools with invalid task references
                     continue
         return results

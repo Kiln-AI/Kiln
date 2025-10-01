@@ -23,7 +23,6 @@ export const prompts_loading_by_task_composite_id = writable<
 // Promise map to avoid parallel requests for run configs per task
 const loading_task_prompts: Record<TaskCompositeId, Promise<void>> = {}
 
-// TODO: Remove load_task_prompts from store.ts
 export async function load_task_prompts(
   project_id: string,
   task_id: string,

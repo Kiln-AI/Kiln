@@ -111,7 +111,6 @@
   let tasks_loading_error: string | null = null
   let data_loaded = false
 
-  // TODO: Move this to a shared component since select_tasks_menu.svelte and add_tools/+page.svelte uses it too
   async function load_tasks(project_id: string) {
     if (!project_id) {
       tasks_loading_error = "No project selected"
@@ -217,7 +216,6 @@
       // Navigate to the tools page for the created tool
       goto(`/settings/manage_tools/${$page.params.project_id}`)
     } catch (e) {
-      // TODO: Handle error
       error = createKilnError(e)
     } finally {
       submitting = false

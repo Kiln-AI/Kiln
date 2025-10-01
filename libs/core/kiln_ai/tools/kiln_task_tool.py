@@ -83,7 +83,7 @@ class KilnTaskTool(KilnToolInterface):
                 # Convert kwargs to a descriptive string
                 input = json.dumps(kwargs, indent=2)
 
-        # TODO: Moving these imports here to avoid circular imports, do we need to re-architect something to avoid this?
+        # These imports are here to avoid circular chains
         from kiln_ai.adapters.adapter_registry import adapter_for_task
         from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 
