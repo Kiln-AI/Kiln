@@ -8,6 +8,7 @@ from pydantic import (
     Field,
     SerializationInfo,
     ValidationInfo,
+    computed_field,
     field_serializer,
     field_validator,
     model_validator,
@@ -259,8 +260,15 @@ class FileInfo(BaseModel):
 class Document(
     KilnParentedModel, KilnParentModel, parent_of={"extractions": Extraction}
 ):
+    # this field should not be changed after creation
     name: FilenameString = Field(
         description="A name to identify the document.",
+    )
+
+    # this field can be changed after creation
+    name_override: str | None = Field(
+        description="A friendly name to identify the document. This is used for display purposes and can be different from the name.",
+        default=None,
     )
 
     description: str = Field(description="A description for the file")
@@ -294,6 +302,12 @@ class Document(
 
     def extractions(self, readonly: bool = False) -> list[Extraction]:
         return super().extractions(readonly=readonly)  # type: ignore
+
+    @computed_field
+    @property
+    def friendly_name(self) -> str:
+        # backward compatibility: old documents did not have name_override
+        return self.name_override or self.name
 
 
 def get_kind_from_mime_type(mime_type: str) -> Kind | None:

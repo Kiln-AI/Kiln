@@ -166,10 +166,10 @@ class MCPSessionManager:
             env_vars["PATH"] = self._get_path()
 
         # Set the server parameters
+        cwd = os.path.join(Config.settings_dir(), "cache", "mcp_cache")
+        os.makedirs(cwd, exist_ok=True)
         server_params = StdioServerParameters(
-            command=command,
-            args=args,
-            env=env_vars,
+            command=command, args=args, env=env_vars, cwd=cwd
         )
 
         try:
