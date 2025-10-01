@@ -252,7 +252,6 @@ class DataSource(BaseModel):
             not_allowed_for=[
                 DataSourceType.human,
                 DataSourceType.file_import,
-                DataSourceType.tool_call,
             ],
         ),
         DataSourceProperty(
@@ -262,7 +261,6 @@ class DataSource(BaseModel):
             not_allowed_for=[
                 DataSourceType.human,
                 DataSourceType.file_import,
-                DataSourceType.tool_call,
             ],
         ),
         DataSourceProperty(

@@ -28,11 +28,11 @@
     load_available_prompts,
     load_available_models,
     available_models,
+    get_task_composite_id,
   } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
-    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
     getRunConfigPromptDisplayName,

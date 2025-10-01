@@ -18,6 +18,7 @@ from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -782,7 +783,7 @@ class MockTool:
             raise self._raise_on_run
         return self._return_value
 
-    async def run_with_context(self, context, **kwargs) -> str:
+    async def run_with_context(self, context: ToolCallContext, **kwargs) -> str:
         """Mock implementation of run_with_context for testing."""
         return await self.run(**kwargs)
 

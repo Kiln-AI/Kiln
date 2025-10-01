@@ -13,11 +13,11 @@
     model_name,
     prompt_name_from_id,
     current_task_prompts,
+    get_task_composite_id,
   } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
-    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
 

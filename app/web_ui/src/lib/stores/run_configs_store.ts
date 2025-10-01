@@ -2,17 +2,11 @@ import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
 import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-import { load_current_task } from "$lib/stores"
-
-type TaskCompositeId = string & { __brand: "TaskCompositeId" }
-
-// Helper function to create composite keys for a task
-export function get_task_composite_id(
-  project_id: string,
-  task_id: string,
-): TaskCompositeId {
-  return `${project_id}:${task_id}` as TaskCompositeId
-}
+import {
+  load_current_task,
+  get_task_composite_id,
+  type TaskCompositeId,
+} from "$lib/stores"
 
 export const run_configs_by_task_composite_id = writable<
   Record<TaskCompositeId, TaskRunConfig[]>

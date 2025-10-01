@@ -127,9 +127,13 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
 
     # Remove prefix and split on ::
     remaining = tool_id[len(KILN_TASK_TOOL_ID_PREFIX) :]
+    if not remaining:
+        raise ValueError(
+            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
+        )
     parts = remaining.split("::")
 
-    if len(parts) != 1:
+    if len(parts) != 1 or not parts[0]:
         raise ValueError(
             f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
         )

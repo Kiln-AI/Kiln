@@ -98,7 +98,15 @@ class KilnTaskTool(KilnToolInterface):
         )
         task_run = await adapter.invoke(
             input,
-            input_source=DataSource(type=DataSourceType.tool_call),
+            input_source=DataSource(
+                type=DataSourceType.tool_call,
+                properties={
+                    "model_name": run_config.run_config_properties.model_name,
+                    "model_provider": run_config.run_config_properties.model_provider_name,
+                    "adapter_name": adapter.adapter_name(),
+                },
+                run_config=run_config.run_config_properties,
+            ),
             output_source_type=DataSourceType.tool_call,
         )
 

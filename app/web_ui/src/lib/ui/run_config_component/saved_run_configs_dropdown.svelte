@@ -9,7 +9,11 @@
     Task,
     TaskRunConfig,
   } from "$lib/types"
-  import { model_info, load_model_info } from "$lib/stores"
+  import {
+    model_info,
+    load_model_info,
+    get_task_composite_id,
+  } from "$lib/stores"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,
@@ -22,7 +26,6 @@
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
-    get_task_composite_id,
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -81,7 +84,7 @@
     $model_info,
     $prompts_by_task_composite_id[
       get_task_composite_id(project_id, current_task.id ?? "")
-    ],
+    ] ?? { generators: [], prompts: [] },
     run_page,
   )
 

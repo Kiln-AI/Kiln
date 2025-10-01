@@ -100,12 +100,12 @@
         (tool_set) => tool_set.type === tool_set_type,
       )
       if (tool_set) {
+        let options: Option[] = []
         if (
           tool_set_type === "kiln_task" &&
           !hide_create_kiln_task_tool_button
         ) {
-          let kiln_tasks_options: Option[] = []
-          kiln_tasks_options.push({
+          options.push({
             value: "__add_new_kiln_task__",
             label: "Create New",
             description: "Create a new tool from a Kiln task.",
@@ -115,11 +115,15 @@
         }
         let tools = tool_set.tools
         if (tools.length > 0) {
-          let options: Option[] = tools.map((tool) => ({
-            value: tool.id,
-            label: tool.name,
-            description: tool.description || undefined,
-          }))
+          options.push(
+            ...tools.map((tool) => ({
+              value: tool.id,
+              label: tool.name,
+              description: tool.description || undefined,
+            })),
+          )
+        }
+        if (options.length > 0) {
           option_groups.push({
             label: tool_set.set_name,
             options: options,

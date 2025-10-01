@@ -20,11 +20,11 @@
     provider_name_from_id,
     available_tools,
     load_available_tools,
+    get_task_composite_id,
   } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import {
-    get_task_composite_id,
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
@@ -206,8 +206,7 @@
       },
       {
         name: "Tool Description",
-        value:
-          "this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.this is a really long tool description.", // tool.description || "",
+        value: tool.description || "",
         tooltip: "The tool description the model sees.",
       },
       {
@@ -253,7 +252,7 @@
           run_config,
           $prompts_by_task_composite_id[
             get_task_composite_id(project_id, task?.id ?? "")
-          ],
+          ] ?? { generators: [], prompts: [] },
         ),
       },
       {
