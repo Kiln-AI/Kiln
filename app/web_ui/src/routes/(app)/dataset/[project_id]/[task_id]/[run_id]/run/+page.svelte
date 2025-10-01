@@ -12,8 +12,6 @@
     current_task_prompts,
     provider_name_from_id,
     load_available_models,
-    load_available_tools,
-    available_tools,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount, getContext } from "svelte"
@@ -44,34 +42,6 @@
   let load_error: KilnError | null = null
   let see_all_properties = false
 
-  $: if (project_id) {
-    load_available_tools(project_id)
-  }
-
-  function tool_name_from_id(tool_id: string) {
-    const tool_sets = $available_tools[project_id]
-    if (!tool_sets) return tool_id // fallback to ID if tools not loaded
-
-    for (const tool_set of tool_sets) {
-      const tool = tool_set.tools.find((t) => t.id === tool_id)
-      if (tool) {
-        return tool.name
-      }
-    }
-    return tool_id // fallback to ID if tool not found
-  }
-
-  function kiln_task_tool_link(project_id: string, tool_id: string) {
-    // Extract tool_server_id from tool_id
-    // Kiln task tool IDs have format: "kiln_task::{tool_server_id}"
-    if (tool_id.startsWith("kiln_task::")) {
-      const tool_server_id = tool_id.substring("kiln_task::".length)
-      return `/settings/manage_tools/${project_id}/kiln_task/${tool_server_id}`
-    }
-    // Fallback for other tool types or malformed IDs
-    return `/settings/manage_tools/${project_id}`
-  }
-
   function get_properties(
     run: TaskRun | null,
     current_task_prompts: PromptResponse | null,
@@ -92,16 +62,6 @@
         value:
           run.input_source.type.charAt(0).toUpperCase() +
           run.input_source.type.slice(1),
-      })
-    }
-
-    const tool_id = run?.output?.source?.properties?.tool_id
-    if (tool_id && typeof tool_id === "string") {
-      const tool_name = tool_name_from_id(tool_id)
-      properties.push({
-        name: "Tool",
-        value: tool_name,
-        link: kiln_task_tool_link(project_id, tool_id),
       })
     }
 

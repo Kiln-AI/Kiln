@@ -60,7 +60,7 @@ def test_save_run_isolation(test_task, adapter):
     )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data, input_source=None, output_source=None, run_output=run_output
     )
     task_run.save_to_file()
 
@@ -110,7 +110,7 @@ def test_save_run_isolation(test_task, adapter):
     different_run_output = RunOutput(
         output="Different output", intermediate_outputs=None
     )
-    task_output = adapter.generate_run(input_data, None, different_run_output)
+    task_output = adapter.generate_run(input_data, None, None, different_run_output)
     task_output.save_to_file()
     assert len(test_task.runs()) == 2
     assert "Different output" in set(run.output.output for run in test_task.runs())
@@ -127,6 +127,7 @@ def test_save_run_isolation(test_task, adapter):
                 "adapter_name": "mock_adapter",
             },
         ),
+        None,
         run_output,
     )
     task_output.save_to_file()
@@ -146,7 +147,7 @@ def test_generate_run_non_ascii(test_task, adapter):
     )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data, input_source=None, output_source=None, run_output=run_output
     )
     task_run.save_to_file()
 
@@ -256,7 +257,7 @@ def test_properties_for_task_output_custom_values(test_task):
     run_output = RunOutput(output=output_data, intermediate_outputs=None)
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data, input_source=None, output_source=None, run_output=run_output
     )
     task_run.save_to_file()
 

@@ -98,15 +98,11 @@ class KilnTaskTool(KilnToolInterface):
         )
         task_run = await adapter.invoke(
             input,
-            input_source=DataSource(
-                type=DataSourceType.tool_call, properties={"tool_id": self._tool_id}
-            ),
-            output_source=DataSource(
-                type=DataSourceType.tool_call, properties={"tool_id": self._tool_id}
-            ),
+            input_source=DataSource(type=DataSourceType.tool_call),
+            output_source_type=DataSourceType.tool_call,
         )
 
-        # Return structured information about the created task run
+        # Return structured information about the created task as tool run
         return json.dumps(
             {
                 "output": task_run.output.output,
