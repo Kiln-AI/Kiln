@@ -109,7 +109,7 @@
             value: "__add_new_kiln_task__",
             label: "Create New",
             description: "Create a new tool from a Kiln task.",
-            badge: "+",
+            badge: "＋",
             badge_color: "primary",
           })
         }

@@ -104,7 +104,7 @@
         {
           label: "New Extractor Configuration",
           value: "create_new",
-          badge: "+",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -134,7 +134,7 @@
         {
           label: "New Chunker Configuration",
           value: "create_new",
-          badge: "+",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -173,7 +173,7 @@
         {
           label: "New Embedding Configuration",
           value: "create_new",
-          badge: "+",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -204,7 +204,7 @@
         {
           label: "New Search Index Configuration",
           value: "create_new",
-          badge: "+",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
