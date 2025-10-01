@@ -11,6 +11,8 @@
     Task,
     TaskRunConfig,
     KilnTaskServerProperties,
+    ProviderModels,
+    PromptResponse,
   } from "$lib/types"
   import {
     load_available_models,
@@ -23,16 +25,13 @@
   } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
   import { formatDate } from "$lib/utils/formatters"
-  import {
-    get_task_composite_id,
-    load_task_run_configs,
-    run_configs_by_task_composite_id,
-  } from "$lib/stores/run_configs_store"
+  import { get_task_run_configs } from "$lib/stores/run_configs_store"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import {
+    get_task_prompts_store,
     load_task_prompts,
-    prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
+  import { get_task } from "$lib/stores/tasks_store"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -49,13 +48,17 @@
   let unarchive_error: KilnError | null = null
 
   onMount(async () => {
-    await fetch_tool_server()
-    await load_available_models()
-    await load_model_info()
+    await Promise.all([
+      fetch_tool_server(),
+      load_available_models(),
+      load_model_info(),
+    ])
     if (project_id) {
       await load_available_tools(project_id)
     }
   })
+
+  $: task_prompts = get_task_prompts_store(project_id, task?.id ?? "")
 
   // Use a separate reactive statement to trigger data loading when tool_server changes
   $: if (tool_server) {
@@ -69,58 +72,24 @@
     const task_id = properties.task_id
 
     if (task_id) {
-      // Load task data
       try {
-        const fetched_task = await get_task(task_id)
-        task = fetched_task
-      } catch (err) {
-        console.error("Failed to fetch task:", err)
-      }
+        // Load task data
+        task = await get_task(project_id, task_id)
 
-      // Load prompts for the task
-      await load_task_prompts(project_id, task_id)
+        // Load prompts for the task
+        await load_task_prompts(project_id, task_id)
 
-      // Load run configs and find the specific one
-      const run_config_id = properties.run_config_id
-      if (run_config_id) {
-        try {
-          await load_task_run_configs(project_id, task_id)
-          const run_configs =
-            $run_configs_by_task_composite_id[
-              get_task_composite_id(project_id, task_id)
-            ]
+        // Load run configs and find the specific one
+        const run_config_id = properties.run_config_id
+        if (run_config_id) {
+          const run_configs = await get_task_run_configs(project_id, task_id)
           run_config =
             run_configs?.find((rc) => rc.id === run_config_id) || null
-        } catch (err) {
-          console.error("Failed to load run configs:", err)
         }
+      } catch (err) {
+        console.error("Failed to load tool server data:", err)
       }
     }
-  }
-
-  // TODO: Move this to a shared component since other places use it too
-  async function get_task(task_id: string): Promise<Task> {
-    if (!project_id || !task_id) {
-      throw new Error("Project or task ID not set.")
-    }
-    const { data: task_response, error: get_error } = await client.GET(
-      "/api/projects/{project_id}/tasks/{task_id}",
-      {
-        params: {
-          path: {
-            project_id,
-            task_id,
-          },
-        },
-      },
-    )
-    if (get_error) {
-      throw get_error
-    }
-    if (!task_response) {
-      throw new Error("No task data returned from API.")
-    }
-    return task_response
   }
 
   async function fetch_tool_server() {
@@ -230,11 +199,31 @@
     ]
   }
 
-  function get_run_config_properties(run_config: TaskRunConfig | null) {
-    if (!run_config || !$model_info) {
-      return [{ name: "Status", value: "Run Config Not Found", error: true }]
-    }
+  let run_config_properties: Array<{
+    name: string
+    value: string
+    tooltip?: string
+    error?: boolean
+  }> | null = null
 
+  $: if (run_config && $model_info && $task_prompts) {
+    run_config_properties = get_run_config_properties(
+      run_config,
+      $model_info,
+      $task_prompts,
+    )
+  }
+
+  function get_run_config_properties(
+    run_config: TaskRunConfig,
+    model_info: ProviderModels,
+    task_prompts: PromptResponse,
+  ): Array<{
+    name: string
+    value: string
+    tooltip?: string
+    error?: boolean
+  }> {
     return [
       {
         name: "ID",
@@ -246,16 +235,11 @@
       },
       {
         name: "Model",
-        value: `${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
+        value: `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
       },
       {
         name: "Prompt",
-        value: getRunConfigPromptDisplayName(
-          run_config,
-          $prompts_by_task_composite_id[
-            get_task_composite_id(project_id, task?.id ?? "")
-          ],
-        ),
+        value: getRunConfigPromptDisplayName(run_config, task_prompts),
       },
       {
         name: "Tools",
@@ -422,7 +406,9 @@
             title="Task Properties"
           />
           <PropertyList
-            properties={get_run_config_properties(run_config)}
+            properties={run_config_properties || [
+              { name: "Loading...", value: "" },
+            ]}
             title="Run Configuration"
           />
         </div>

@@ -5,9 +5,8 @@
     load_available_models,
   } from "$lib/stores"
   import {
-    get_task_composite_id,
+    get_task_run_configs_store,
     load_task_run_configs,
-    run_configs_by_task_composite_id,
     save_new_task_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError } from "$lib/utils/error_handlers"
@@ -60,6 +59,11 @@
   onMount(async () => {
     await load_available_models()
   })
+
+  $: task_run_configs = get_task_run_configs_store(
+    project_id,
+    current_task.id ?? "",
+  )
 
   $: if (project_id && current_task.id) {
     load_task_prompts(project_id, current_task.id)
@@ -203,11 +207,7 @@
       return "custom"
     } else {
       // Find the config by ID
-      const all_configs =
-        $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id ?? "")
-        ] ?? []
-      let run_config = all_configs.find(
+      let run_config = $task_run_configs?.find(
         (config) => config.id === selected_run_config_id,
       )
       return run_config ?? "custom"

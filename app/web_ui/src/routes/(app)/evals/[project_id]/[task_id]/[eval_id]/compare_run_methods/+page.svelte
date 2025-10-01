@@ -21,13 +21,14 @@
     current_task_prompts,
     load_available_prompts,
     load_available_models,
-    load_task,
   } from "$lib/stores"
+  import { get_task_composite_id } from "$lib/stores/task_store_factory"
   import {
+    get_task_run_configs_store,
     load_task_run_configs,
-    run_configs_by_task_composite_id,
-    get_task_composite_id,
+    run_configs_data,
   } from "$lib/stores/run_configs_store"
+  import { get_task } from "$lib/stores/tasks_store"
   import {
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
@@ -66,13 +67,13 @@
   $: loading = eval_loading || eval_configs_loading || run_configs_loading
   $: error = eval_error || eval_configs_error || run_configs_error
 
-  $: current_task_run_configs =
-    $run_configs_by_task_composite_id[
-      get_task_composite_id(project_id, task_id)
-    ] || null
+  const current_task_run_configs = get_task_run_configs_store(
+    project_id,
+    task_id,
+  )
 
   $: should_select_eval_config =
-    current_task_run_configs?.length && !evaluator?.current_run_config_id
+    $current_task_run_configs?.length && !evaluator?.current_run_config_id
 
   // Check if all run configs are 100% complete
   $: all_run_configs_complete = score_summary?.run_config_percent_complete

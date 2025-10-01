@@ -7,7 +7,8 @@
   import type { Task } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
-  import { load_task, load_rating_options } from "$lib/stores"
+  import { load_rating_options } from "$lib/stores"
+  import { get_task } from "$lib/stores/tasks_store"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -26,7 +27,7 @@
     // Need to wait for the page params to be available
     await tick()
     try {
-      task = await load_task($page.params.project_id, $page.params.task_id)
+      task = await get_task($page.params.project_id, $page.params.task_id)
       eval_dataset_custom_tag = suggested_eval_set_tag
       config_dataset_custom_tag = suggested_config_set_tag
     } catch (e) {

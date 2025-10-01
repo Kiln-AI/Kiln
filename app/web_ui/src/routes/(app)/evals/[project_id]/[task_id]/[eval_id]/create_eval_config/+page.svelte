@@ -11,7 +11,7 @@
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import type { Eval, Task, EvalConfigType } from "$lib/types"
   import { tick } from "svelte"
-  import { load_task } from "$lib/stores"
+  import { get_task } from "$lib/stores/tasks_store"
   import { goto } from "$app/navigation"
   import { get_eval_steps } from "./eval_steps_utils"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -57,7 +57,7 @@
     }
     try {
       loading_task = true
-      task = await load_task($page.params.project_id, $page.params.task_id)
+      task = await get_task($page.params.project_id, $page.params.task_id)
       if (!task) {
         throw new Error("Task not found")
       }

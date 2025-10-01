@@ -12,7 +12,7 @@
   import { model_info, load_model_info } from "$lib/stores"
   import {
     load_task_prompts,
-    prompts_by_task_composite_id,
+    get_task_prompts_store,
   } from "$lib/stores/prompts_store"
   import {
     getRunConfigPromptDisplayName,
@@ -21,8 +21,7 @@
   import { onMount } from "svelte"
   import {
     load_task_run_configs,
-    run_configs_by_task_composite_id,
-    get_task_composite_id,
+    get_task_run_configs_store,
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -44,6 +43,13 @@
   onMount(async () => {
     load_model_info()
   })
+
+  $: task_run_configs = get_task_run_configs_store(
+    project_id,
+    current_task.id ?? "",
+  )
+
+  $: task_prompts = get_task_prompts_store(project_id, current_task.id ?? "")
 
   $: default_run_config_id = current_task.default_run_config_id ?? null
 
@@ -77,20 +83,18 @@
 
   $: options = build_options(
     default_run_config_id,
-    $run_configs_by_task_composite_id,
+    $task_run_configs,
     $model_info,
-    $prompts_by_task_composite_id[
-      get_task_composite_id(project_id, current_task.id ?? "")
-    ],
+    $task_prompts,
     run_page,
   )
 
   // Build the options for the dropdown
   function build_options(
     default_run_config_id: string | null | undefined,
-    run_configs_by_task_composite_id: Record<string, TaskRunConfig[]>,
+    task_run_configs: TaskRunConfig[] | null,
     model_info: ProviderModels | null,
-    current_task_prompts: PromptResponse | null,
+    task_prompts: PromptResponse | null,
     run_page: boolean,
   ): OptionGroup[] {
     const options: OptionGroup[] = []
@@ -126,26 +130,23 @@
 
     // Add default configuration first if it exists
     if (default_run_config_id) {
-      const default_config = (
-        run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id ?? "")
-        ] ?? []
-      ).find((config) => config.id === default_run_config_id)
-
+      const default_config = task_run_configs?.find(
+        (config) => config.id === default_run_config_id,
+      )
       if (default_config) {
         saved_configuration_options.push({
           value: default_run_config_id,
           label: `${default_config.name} (Default)`,
           description: `Model: ${getDetailedModelName(default_config, model_info)}
-            Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`,
+            Prompt: ${getRunConfigPromptDisplayName(default_config, task_prompts)}`,
         })
       }
     }
 
     const other_task_run_configs = (
-      run_configs_by_task_composite_id[
-        get_task_composite_id(project_id, current_task.id ?? "")
-      ] ?? []
+      task_run_configs?.filter(
+        (config) => config.id !== default_run_config_id,
+      ) ?? []
     ).filter((config) => config.id !== default_run_config_id)
     if (other_task_run_configs.length > 0) {
       saved_configuration_options.push(
@@ -153,7 +154,7 @@
           value: config.id ?? "",
           label: config.name,
           description: `Model: ${getDetailedModelName(config, model_info)}
-            Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
+            Prompt: ${getRunConfigPromptDisplayName(config, task_prompts)}`,
         })),
       )
     }

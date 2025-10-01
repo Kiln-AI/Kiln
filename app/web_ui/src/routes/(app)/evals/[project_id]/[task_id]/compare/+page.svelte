@@ -29,10 +29,10 @@
     load_available_models,
     available_models,
   } from "$lib/stores"
+  import { get_task_composite_id } from "$lib/stores/task_store_factory"
   import {
     load_task_run_configs,
-    run_configs_by_task_composite_id,
-    get_task_composite_id,
+    run_configs_data,
   } from "$lib/stores/run_configs_store"
   import {
     getRunConfigPromptDisplayName,
@@ -284,9 +284,7 @@
 
   // Generate dropdown options from run configs
   $: current_task_run_configs =
-    $run_configs_by_task_composite_id[
-      get_task_composite_id(project_id, task_id)
-    ] || null
+    $run_configs_data[get_task_composite_id(project_id, task_id)] || null
 
   $: modelOptions = generateRunConfigOptions(
     current_task_run_configs,

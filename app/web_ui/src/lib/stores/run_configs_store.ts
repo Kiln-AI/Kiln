@@ -1,126 +1,23 @@
 import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
-import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
-import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 import { load_current_task } from "$lib/stores"
+import { create_task_store, type TaskStoreConfig } from "./task_store_factory"
 
-type TaskCompositeId = string & { __brand: "TaskCompositeId" }
-
-// Helper function to create composite keys for a task
-export function get_task_composite_id(
-  project_id: string,
-  task_id: string,
-): TaskCompositeId {
-  return `${project_id}:${task_id}` as TaskCompositeId
+// Create singleton store instance that's shared across all pages
+const run_configs_store_config: TaskStoreConfig<TaskRunConfig[]> = {
+  api_endpoint: "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
+  default_value: [],
+  store_name: "task_run_configs",
 }
 
-export const run_configs_by_task_composite_id = writable<
-  Record<TaskCompositeId, TaskRunConfig[]>
->({})
+const run_configs_store = create_task_store(run_configs_store_config)
 
-export const run_configs_errors_by_task_composite_id = writable<
-  Record<TaskCompositeId, KilnError>
->({})
+export const load_task_run_configs = run_configs_store.load
+export const get_task_run_configs = run_configs_store.get
+export const get_task_run_configs_store = run_configs_store.get_task_store
 
-export const run_configs_loading_by_task_composite_id = writable<
-  Record<TaskCompositeId, boolean>
->({})
-
-// Promise map to avoid parallel requests for run configs per task
-const loading_task_run_configs: Record<TaskCompositeId, Promise<void>> = {}
-
-export async function load_task_run_configs(
-  project_id: string,
-  task_id: string,
-  force_refresh: boolean = false,
-): Promise<void> {
-  const composite_key = get_task_composite_id(project_id, task_id)
-
-  if (composite_key in loading_task_run_configs) {
-    if (force_refresh) {
-      // If forcing refresh and there's an existing request, wait for it to complete first (still retry even on failure)
-      try {
-        await loading_task_run_configs[composite_key]
-      } catch (error) {
-        console.warn(
-          "Previous run config load failed; retrying due to force refresh: ",
-          error,
-        )
-      }
-    } else {
-      // Return existing promise if already loading this specific task
-      return loading_task_run_configs[composite_key]
-    }
-  }
-
-  // Create and store the promise
-  const promise = (async () => {
-    // Set loading state to true
-    run_configs_loading_by_task_composite_id.update((loading) => ({
-      ...loading,
-      [composite_key]: true,
-    }))
-
-    try {
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id: project_id,
-              task_id: task_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-
-      // Update the store with the new data for this specific task using composite key
-      run_configs_by_task_composite_id.update((configs) => ({
-        ...configs,
-        [composite_key]: data || [],
-      }))
-
-      // Clear any previous error for this task
-      run_configs_errors_by_task_composite_id.update((errors) => {
-        const new_errors = { ...errors }
-        delete new_errors[composite_key]
-        return new_errors
-      })
-    } catch (error) {
-      console.error("Failed to load task run configs: ", error)
-
-      // Store the error for this task
-      run_configs_errors_by_task_composite_id.update((errors) => ({
-        ...errors,
-        [composite_key]: createKilnError(error),
-      }))
-
-      // Remove any existing data for this task since we have an error
-      run_configs_by_task_composite_id.update((configs) => {
-        const new_configs = { ...configs }
-        delete new_configs[composite_key]
-        return new_configs
-      })
-
-      throw error
-    } finally {
-      // Set loading state to false
-      run_configs_loading_by_task_composite_id.update((loading) => ({
-        ...loading,
-        [composite_key]: false,
-      }))
-
-      // Clean up the promise from the map
-      delete loading_task_run_configs[composite_key]
-    }
-  })()
-
-  loading_task_run_configs[composite_key] = promise
-  return promise
-}
+// Export individual stores for direct reactive access
+export const run_configs_data = run_configs_store.data
 
 // Save a new task run configuration
 export async function save_new_task_run_config(
