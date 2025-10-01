@@ -88,9 +88,10 @@ async def run_simple_task_with_tools(
         if simplified:
             run = await adapter.invoke("what is 2+2")
 
-            # Verify that AddTool.run was called with correct parameters
+            # Verify that AddTool.run_with_context was called with correct parameters
             add_spy.run_with_context.assert_called()
-            add_call_args = add_spy.run.call_args
+            add_call_args = add_spy.run_with_context.call_args
+            assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
             add_kwargs = add_call_args.kwargs
             assert add_kwargs.get("a") == 2
             assert add_kwargs.get("b") == 2
@@ -123,9 +124,12 @@ async def run_simple_task_with_tools(
                 "You should answer the following question: four plus six times 10"
             )
 
-            # Verify that MultiplyTool.run was called with correct parameters
+            # Verify that MultiplyTool.run_with_context was called with correct parameters
             multiply_spy.run_with_context.assert_called()
-            multiply_call_args = multiply_spy.run.call_args
+            multiply_call_args = multiply_spy.run_with_context.call_args
+            assert multiply_call_args.args[
+                0
+            ].allow_saving  # First arg is ToolCallContext
             multiply_kwargs = multiply_call_args.kwargs
             # Check that multiply was called with a=6, b=10 (or vice versa)
             assert (
@@ -134,9 +138,10 @@ async def run_simple_task_with_tools(
                 f"Expected multiply to be called with a=6, b=10 or a=10, b=6, but got {multiply_kwargs}"
             )
 
-            # Verify that AddTool.run was called with correct parameters
+            # Verify that AddTool.run_with_context was called with correct parameters
             add_spy.run_with_context.assert_called()
-            add_call_args = add_spy.run.call_args
+            add_call_args = add_spy.run_with_context.call_args
+            assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
             add_kwargs = add_call_args.kwargs
             # Check that add was called with a=60, b=4 (or vice versa)
             assert (add_kwargs.get("a") == 60 and add_kwargs.get("b") == 4) or (
@@ -482,8 +487,16 @@ async def test_run_model_turn_parallel_tools(tmp_path):
                     )
 
     # Verify both tools were called in parallel
-    multiply_spy.run_with_context.assert_called_once_with(a=6, b=10)
-    add_spy.run_with_context.assert_called_once_with(a=2, b=3)
+    # The context is passed as the first positional argument, not as a keyword argument
+    multiply_spy.run_with_context.assert_called_once()
+    multiply_call_args = multiply_spy.run_with_context.call_args
+    assert multiply_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert multiply_call_args.kwargs == {"a": 6, "b": 10}
+
+    add_spy.run_with_context.assert_called_once()
+    add_call_args = add_spy.run_with_context.call_args
+    assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert add_call_args.kwargs == {"a": 2, "b": 3}
 
     # Verify the result structure
     assert isinstance(result, ModelTurnResult)
@@ -596,8 +609,16 @@ async def test_run_model_turn_sequential_tools(tmp_path):
                     )
 
     # Verify tools were called sequentially
-    multiply_spy.run_with_context.assert_called_once_with(a=6, b=10)
-    add_spy.run_with_context.assert_called_once_with(a=60, b=4)
+    # The context is passed as the first positional argument, not as a keyword argument
+    multiply_spy.run_with_context.assert_called_once()
+    multiply_call_args = multiply_spy.run_with_context.call_args
+    assert multiply_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert multiply_call_args.kwargs == {"a": 6, "b": 10}
+
+    add_spy.run_with_context.assert_called_once()
+    add_call_args = add_spy.run_with_context.call_args
+    assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert add_call_args.kwargs == {"a": 60, "b": 4}
 
     # Verify the result structure
     assert isinstance(result, ModelTurnResult)
