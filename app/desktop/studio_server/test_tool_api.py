@@ -1731,6 +1731,31 @@ async def test_available_mcp_tools_local_success():
         assert echo_tool.description == "Local echo tool"
 
 
+@pytest.mark.asyncio
+async def test_available_mcp_tools_kiln_task_raises_value_error():
+    """Test available_mcp_tools raises ValueError when called with kiln_task server type"""
+
+    # Create a mock ExternalToolServer with kiln_task type
+    server = ExternalToolServer(
+        name="test_kiln_task",
+        type=ToolServerType.kiln_task,
+        description="Test Kiln task server",
+        properties={
+            "name": "test_task",
+            "description": "Test task description",
+            "is_archived": False,
+            "task_id": "test_task_id",
+            "run_config_id": "test_run_config_id",
+        },
+    )
+
+    # Test that ValueError is raised
+    with pytest.raises(
+        ValueError, match="Kiln task tools are not available from an MCP server"
+    ):
+        await available_mcp_tools(server)
+
+
 # Unit tests for validate_tool_server_connectivity function
 @pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_success():
