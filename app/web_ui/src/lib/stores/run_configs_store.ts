@@ -16,9 +16,6 @@ export const load_task_run_configs = run_configs_store.load
 export const get_task_run_configs = run_configs_store.get
 export const get_task_run_configs_store = run_configs_store.get_task_store
 
-// Export individual stores for direct reactive access
-export const run_configs_data = run_configs_store.data
-
 // Save a new task run configuration
 export async function save_new_task_run_config(
   project_id: string,
