@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
@@ -135,7 +136,15 @@ class ToolApiDescription(BaseModel):
     description: str | None
 
 
+class ToolSetType(Enum):
+    SEARCH = "search"
+    MCP = "mcp"
+    KILN_TASK = "kiln_task"
+    DEMO = "demo"
+
+
 class ToolSetApiDescription(BaseModel):
+    type: ToolSetType
     set_name: str
     tools: list[ToolApiDescription]
 
@@ -226,6 +235,7 @@ def connect_tool_servers_api(app: FastAPI):
             if tools and len(tools) > 0:
                 tool_sets.append(
                     ToolSetApiDescription(
+                        type=ToolSetType.SEARCH,
                         set_name="Search Tools (RAG)",
                         tools=tools,
                     )
@@ -258,18 +268,21 @@ def connect_tool_servers_api(app: FastAPI):
             if server_tools:
                 mcp_tool_sets.append(
                     ToolSetApiDescription(
+                        type=ToolSetType.MCP,
                         set_name="MCP Server: " + server.name,
                         tools=server_tools,
                     )
                 )
 
         # Add task tools
-        tool_sets.append(
-            ToolSetApiDescription(
-                set_name="Kiln Tasks as Tools",
-                tools=task_tools,
+        if task_tools:
+            tool_sets.append(
+                ToolSetApiDescription(
+                    type=ToolSetType.KILN_TASK,
+                    set_name="Kiln Tasks as Tools",
+                    tools=task_tools,
+                )
             )
-        )
 
         # Add MCP tool sets
         if len(mcp_tool_sets) > 0:
@@ -279,6 +292,7 @@ def connect_tool_servers_api(app: FastAPI):
         if Config.shared().enable_demo_tools:
             tool_sets.append(
                 ToolSetApiDescription(
+                    type=ToolSetType.DEMO,
                     set_name="Kiln Demo Tools",
                     tools=[
                         ToolApiDescription(

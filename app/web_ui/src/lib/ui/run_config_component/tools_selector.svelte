@@ -3,7 +3,7 @@
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-  import type { ToolSetApiDescription } from "$lib/types"
+  import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
 
@@ -84,6 +84,8 @@
   }
   $: filter_unavailable_tools($available_tools[project_id], tools)
 
+  const tool_set_order: ToolSetType[] = ["search", "kiln_task", "mcp", "demo"]
+
   function get_tool_options(
     available_tools: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
@@ -93,42 +95,36 @@
 
     let option_groups: OptionGroup[] = []
 
-    available_tools?.forEach((tool_set) => {
-      let tools = tool_set.tools
-      // Track if we have Kiln Tasks tools
-      if (
-        tool_set.set_name === "Kiln Tasks as Tools" &&
-        !hide_create_kiln_task_tool_button
-      ) {
-        let kiln_tasks_options: Option[] = []
-        kiln_tasks_options.push({
-          value: "__add_new_kiln_task__",
-          label: "Create New",
-          description: "Create a new tool from a Kiln task.",
-          badge: "+",
-          badge_color: "primary",
-        })
-        kiln_tasks_options.push(
-          ...tools.map((tool) => ({
+    tool_set_order.forEach((tool_set_type) => {
+      const tool_set = available_tools.find(
+        (tool_set) => tool_set.type === tool_set_type,
+      )
+      if (tool_set) {
+        if (
+          tool_set_type === "kiln_task" &&
+          !hide_create_kiln_task_tool_button
+        ) {
+          let kiln_tasks_options: Option[] = []
+          kiln_tasks_options.push({
+            value: "__add_new_kiln_task__",
+            label: "Create New",
+            description: "Create a new tool from a Kiln task.",
+            badge: "+",
+            badge_color: "primary",
+          })
+        }
+        let tools = tool_set.tools
+        if (tools.length > 0) {
+          let options: Option[] = tools.map((tool) => ({
             value: tool.id,
             label: tool.name,
             description: tool.description || undefined,
-          })),
-        )
-        option_groups.push({
-          label: tool_set.set_name,
-          options: kiln_tasks_options,
-        })
-      } else if (tools.length > 0) {
-        let options: Option[] = tools.map((tool) => ({
-          value: tool.id,
-          label: tool.name,
-          description: tool.description || undefined,
-        }))
-        option_groups.push({
-          label: tool_set.set_name,
-          options: options,
-        })
+          }))
+          option_groups.push({
+            label: tool_set.set_name,
+            options: options,
+          })
+        }
       }
     })
 

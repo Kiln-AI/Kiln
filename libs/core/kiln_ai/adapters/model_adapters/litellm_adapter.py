@@ -662,7 +662,6 @@ class LiteLlmAdapter(BaseAdapter):
                     raise ValueError(
                         "The model requested a tool call, without providing a function name (required)."
                     )
-
                 open_ai_tool_calls.append(
                     ChatCompletionMessageToolCallParam(
                         id=litellm_tool_call.id,

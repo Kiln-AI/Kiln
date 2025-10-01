@@ -4961,11 +4961,17 @@ export interface components {
         ToolServerType: "remote_mcp" | "local_mcp" | "kiln_task";
         /** ToolSetApiDescription */
         ToolSetApiDescription: {
+            type: components["schemas"]["ToolSetType"];
             /** Set Name */
             set_name: string;
             /** Tools */
             tools: components["schemas"]["ToolApiDescription"][];
         };
+        /**
+         * ToolSetType
+         * @enum {string}
+         */
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.

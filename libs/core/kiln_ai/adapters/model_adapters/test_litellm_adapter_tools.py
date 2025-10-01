@@ -89,7 +89,7 @@ async def run_simple_task_with_tools(
             run = await adapter.invoke("what is 2+2")
 
             # Verify that AddTool.run was called with correct parameters
-            add_spy.run.assert_called()
+            add_spy.run_with_context.assert_called()
             add_call_args = add_spy.run.call_args
             add_kwargs = add_call_args.kwargs
             assert add_kwargs.get("a") == 2
@@ -124,7 +124,7 @@ async def run_simple_task_with_tools(
             )
 
             # Verify that MultiplyTool.run was called with correct parameters
-            multiply_spy.run.assert_called()
+            multiply_spy.run_with_context.assert_called()
             multiply_call_args = multiply_spy.run.call_args
             multiply_kwargs = multiply_call_args.kwargs
             # Check that multiply was called with a=6, b=10 (or vice versa)
@@ -135,7 +135,7 @@ async def run_simple_task_with_tools(
             )
 
             # Verify that AddTool.run was called with correct parameters
-            add_spy.run.assert_called()
+            add_spy.run_with_context.assert_called()
             add_call_args = add_spy.run.call_args
             add_kwargs = add_call_args.kwargs
             # Check that add was called with a=60, b=4 (or vice versa)
@@ -482,8 +482,8 @@ async def test_run_model_turn_parallel_tools(tmp_path):
                     )
 
     # Verify both tools were called in parallel
-    multiply_spy.run.assert_called_once_with(a=6, b=10)
-    add_spy.run.assert_called_once_with(a=2, b=3)
+    multiply_spy.run_with_context.assert_called_once_with(a=6, b=10)
+    add_spy.run_with_context.assert_called_once_with(a=2, b=3)
 
     # Verify the result structure
     assert isinstance(result, ModelTurnResult)
@@ -596,8 +596,8 @@ async def test_run_model_turn_sequential_tools(tmp_path):
                     )
 
     # Verify tools were called sequentially
-    multiply_spy.run.assert_called_once_with(a=6, b=10)
-    add_spy.run.assert_called_once_with(a=60, b=4)
+    multiply_spy.run_with_context.assert_called_once_with(a=6, b=10)
+    add_spy.run_with_context.assert_called_once_with(a=60, b=4)
 
     # Verify the result structure
     assert isinstance(result, ModelTurnResult)
