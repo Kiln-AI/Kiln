@@ -93,7 +93,7 @@
         {
           label: "New Kiln Task",
           value: "__create_new_kiln_task__",
-          badge: "+",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
