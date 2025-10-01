@@ -9,7 +9,6 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import ToolsRunConfig
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.datamodel.task_output import DataSourceType
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
 
@@ -257,7 +256,7 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
     run_config_properties_fields = set(RunConfigProperties.model_fields.keys())
 
     # Get the properties saved by the adapter
-    saved_properties = adapter._properties_for_task_output(DataSourceType.synthetic)
+    saved_properties = adapter._properties_for_task_output()
     saved_property_keys = set(saved_properties.keys())
 
     # Check which RunConfigProperties fields are missing from saved properties
@@ -304,7 +303,7 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
         run_config_properties_fields = set(RunConfigProperties.model_fields.keys())
 
         # Get the properties saved by the adapter (won't include our fake property)
-        saved_properties = adapter._properties_for_task_output(DataSourceType.synthetic)
+        saved_properties = adapter._properties_for_task_output()
         saved_property_keys = set(saved_properties.keys())
 
         # The mappings don't include our fake property

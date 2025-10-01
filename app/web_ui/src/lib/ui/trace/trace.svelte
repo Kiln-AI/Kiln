@@ -2,7 +2,7 @@
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "../../../routes/(app)/run/output.svelte"
   import ToolCall from "./tool_call.svelte"
-  import { dataset_item_link } from "$lib/utils/link_builder"
+  import ToolMessagesDialog from "./tool_messages_dialog.svelte"
 
   export let trace: Trace
   export let project_id: string | undefined = undefined
@@ -128,9 +128,12 @@
     return undefined
   }
 
-  function kiln_task_data_from_message(
-    message: TraceMessage,
-  ): { task_run_id: string; project_id: string; task_id: string } | null {
+  function kiln_task_tool_data_from_message(message: TraceMessage): {
+    tool_id: string
+    task_run_id: string
+    project_id: string
+    task_id: string
+  } | null {
     if (message.role === "tool" && "content" in message && message.content) {
       try {
         // Try to parse the content as JSON to extract Kiln task data
@@ -138,11 +141,13 @@
         if (
           parsed &&
           typeof parsed === "object" &&
+          "tool_id" in parsed &&
           "task_run_id" in parsed &&
           "project_id" in parsed &&
           "task_id" in parsed
         ) {
           return {
+            tool_id: parsed.tool_id,
             task_run_id: parsed.task_run_id,
             project_id: parsed.project_id,
             task_id: parsed.task_id,
@@ -155,32 +160,7 @@
     return null
   }
 
-  function tool_id_from_message(message: TraceMessage): string | undefined {
-    if (message.role === "tool" && "content" in message && message.content) {
-      try {
-        // Try to parse the content as JSON to extract tool_id
-        const parsed = JSON.parse(message.content as string)
-        if (parsed && typeof parsed === "object" && "tool_id" in parsed) {
-          return parsed.tool_id
-        }
-      } catch (e) {
-        // Content is not JSON, return undefined
-      }
-    }
-    return undefined
-  }
-
-  function get_dataset_run_link(message: TraceMessage): string | null {
-    const kiln_data = kiln_task_data_from_message(message)
-    if (kiln_data) {
-      return dataset_item_link(
-        kiln_data.project_id,
-        kiln_data.task_id,
-        kiln_data.task_run_id,
-      )
-    }
-    return null
-  }
+  let tool_messages_dialog: ToolMessagesDialog | null = null
 </script>
 
 <div class="flex flex-col gap-3 w-full">
@@ -252,7 +232,8 @@
                 {@const origin_tool_call = origin_tool_call_by_id(
                   message.tool_call_id,
                 )}
-                {@const run_link = get_dataset_run_link(message)}
+                {@const kiln_task_tool_data =
+                  kiln_task_tool_data_from_message(message)}
                 {#if origin_tool_call}
                   <div>
                     <div class="text-xs text-gray-500 font-bold mb-1">
@@ -261,23 +242,21 @@
                     <ToolCall
                       tool_call={origin_tool_call}
                       {project_id}
-                      persistent_tool_id={tool_id_from_message(message)}
+                      persistent_tool_id={kiln_task_tool_data?.tool_id}
                     />
                   </div>
                 {/if}
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Tool Result
-                    {#if run_link}
-                      <a
-                        href={run_link}
-                        class="text-blue-500 hover:text-blue-700 ml-2 underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Dataset Run
-                      </a>
-                    {/if}
+                    <button
+                      class="text-primary link ml-2"
+                      on:click={() => {
+                        tool_messages_dialog?.show(kiln_task_tool_data)
+                      }}
+                    >
+                      Messages
+                    </button>
                   </div>
                   <Output raw_output={content} no_padding={true} />
                 </div>
@@ -299,3 +278,5 @@
     </div>
   {/each}
 </div>
+
+<ToolMessagesDialog bind:this={tool_messages_dialog} {project_id} />

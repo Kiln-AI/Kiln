@@ -384,7 +384,7 @@
     {/if}
     {#if is_archived}
       <Warning
-        warning_message="This Kiln Task tool is archived. You may unarchive it to use it again."
+        warning_message="This Kiln task tool is archived. You may unarchive it to use it again."
         large_icon={true}
         warning_color="warning"
         outline={true}

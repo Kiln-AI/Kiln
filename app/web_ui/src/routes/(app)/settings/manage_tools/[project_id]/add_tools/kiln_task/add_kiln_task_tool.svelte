@@ -24,7 +24,7 @@
 
   // Modal for creating new run config
   let create_run_config_dialog: Dialog | null = null
-  let create_run_config_error: KilnError | null = null
+  let save_config_error: KilnError | null = null
   let run_config_component: RunConfigComponent | null = null
 
   $: project_id = $page.params.project_id
@@ -142,10 +142,10 @@
 
   // Show the create dialog when the user clicks the create new button
   $: if (selected_run_config_id === "__create_new_run_config__") {
-    create_run_config_error = null
+    save_config_error = null
     create_run_config_dialog?.show()
   } else {
-    create_run_config_error = null
+    save_config_error = null
     create_run_config_dialog?.close()
   }
 
@@ -153,13 +153,12 @@
     goto(`/settings/create_task/${project_id}`)
   }
 
-  async function create_new_run_config(): Promise<boolean> {
+  async function create_new_run_config() {
     loading = true
     if (run_config_component) {
       await run_config_component.save_new_run_config()
     }
     loading = false
-    return true
   }
 
   // Clear error when form fields change
@@ -197,7 +196,7 @@
         return
       }
 
-      await client.POST("/api/projects/{project_id}/add_kiln_task_tool", {
+      await client.POST("/api/projects/{project_id}/kiln_task_tool", {
         params: {
           path: {
             project_id: $page.params.project_id,
@@ -214,8 +213,8 @@
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools($page.params.project_id)
-      // Navigate to the tools page for the created tool
-      goto(`/settings/manage_tools/${$page.params.project_id}`)
+      // Navigate to the manage tools page for the created tool
+      goto(`/settings/manage_tools/${$page.params.project_id}/kiln_task_tools`)
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -312,9 +311,7 @@
   <FormContainer
     submit_visible={true}
     submit_label="Create"
-    on:submit={async (_) => {
-      await create_new_run_config()
-    }}
+    on:submit={create_new_run_config}
     {error}
     gap={4}
     bind:submitting={loading}
@@ -328,12 +325,13 @@
           bind:selected_run_config_id
           current_task={selected_task}
           hide_create_kiln_task_tool_button={true}
+          {save_config_error}
         />
       {/if}
 
-      {#if create_run_config_error}
+      {#if save_config_error}
         <div class="text-error text-sm">
-          {create_run_config_error.getMessage() || "An unknown error occurred"}
+          {save_config_error.getMessage() || "An unknown error occurred"}
         </div>
       {/if}
     </div>

@@ -73,13 +73,13 @@
       ),
     )
 
-    const unavailable_tools = tools.filter(
+    const unavailable_tools = current_tools.filter(
       (tool_id) => !available_tool_ids.has(tool_id),
     )
 
     if (unavailable_tools.length > 0) {
       console.warn("Removing unavailable tools:", unavailable_tools)
-      tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
+      tools = current_tools.filter((tool_id) => available_tool_ids.has(tool_id))
     }
   }
   $: filter_unavailable_tools($available_tools[project_id], tools)

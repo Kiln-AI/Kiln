@@ -54,7 +54,7 @@ class KilnTaskToolDescription(BaseModel):
     task_name: str
     task_description: str | None
     is_archived: bool
-    created_at: str
+    created_at: datetime
 
 
 class ExternalToolServerCreationRequest(BaseModel):
@@ -158,9 +158,11 @@ class SearchToolApiDescription(BaseModel):
 
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
     project = project_from_id(project_id)
-    for tool_server in project.external_tool_servers(readonly=True):
-        if tool_server.id == tool_server_id:
-            return tool_server
+    tool_server = ExternalToolServer.from_id_and_parent_path(
+        tool_server_id, project.path
+    )
+    if tool_server is not None:
+        return tool_server
 
     raise HTTPException(status_code=404, detail="Tool server not found")
 
@@ -368,7 +370,7 @@ def connect_tool_servers_api(app: FastAPI):
                                 is_archived=tool_server.properties.get(
                                     "is_archived", False
                                 ),
-                                created_at=tool_server.created_at.isoformat(),
+                                created_at=tool_server.created_at,
                             )
                         )
                 except HTTPException:
@@ -415,7 +417,7 @@ def connect_tool_servers_api(app: FastAPI):
             case ToolServerType.kiln_task:
                 available_tools = [
                     await ExternalToolApiDescription.tool_from_kiln_task_tool(
-                        KilnTaskTool(project_id, tool_server.id or "", tool_server)
+                        KilnTaskTool(project_id, tool_server_id, tool_server)
                     )
                 ]
                 pass
@@ -470,8 +472,6 @@ def connect_tool_servers_api(app: FastAPI):
                 detail="Existing tool server is not a remote MCP server. You can't edit a non-remote MCP server with this endpoint.",
             )
 
-        # Create a deep copy of the existing tool server so if any validation fails we don't cache the bad data in memory
-        existing_tool_server = existing_tool_server.model_copy(deep=True)
         existing_tool_server.name = tool_data.name
         existing_tool_server.description = tool_data.description
         existing_tool_server.properties = _remote_tool_server_properties(tool_data)
@@ -553,10 +553,35 @@ def connect_tool_servers_api(app: FastAPI):
             "secret_env_var_keys": tool_data.secret_env_var_keys,
         }
 
-    @app.post("/api/projects/{project_id}/add_kiln_task_tool")
+    def _validate_kiln_task_tool_task_and_run_config(
+        project_id: str, tool_data: KilnTaskToolServerCreationRequest
+    ):
+        task = task_from_id(project_id, tool_data.task_id)
+        if task is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Task not found for the specified task ID.",
+            )
+        run_config = next(
+            (
+                rc
+                for rc in task.run_configs(readonly=True)
+                if rc.id == tool_data.run_config_id
+            ),
+            None,
+        )
+        if run_config is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Run config not found for the specified task.",
+            )
+
+    @app.post("/api/projects/{project_id}/kiln_task_tool")
     async def add_kiln_task_tool(
         project_id: str, tool_data: KilnTaskToolServerCreationRequest
     ) -> ExternalToolServer:
+        _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
+
         project = project_from_id(project_id)
 
         tool_server = ExternalToolServer(
@@ -584,6 +609,8 @@ def connect_tool_servers_api(app: FastAPI):
         tool_server_id: str,
         tool_data: KilnTaskToolServerCreationRequest,
     ) -> ExternalToolServer:
+        _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
+
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
         if existing_tool_server.type != ToolServerType.kiln_task:
             raise HTTPException(
@@ -591,11 +618,9 @@ def connect_tool_servers_api(app: FastAPI):
                 detail="Existing tool server is not a kiln task tool. You can't edit a non-kiln task tool with this endpoint.",
             )
 
-        # Create a deep copy of the existing tool server so if any validation fails we don't cache the bad data in memory
-        tool_server = existing_tool_server.model_copy(deep=True)
-        tool_server.name = tool_data.name
-        tool_server.description = tool_data.description
-        tool_server.properties = {
+        existing_tool_server.name = tool_data.name
+        existing_tool_server.description = tool_data.description
+        existing_tool_server.properties = {
             "name": tool_data.name,
             "description": tool_data.description,
             "task_id": tool_data.task_id,
@@ -604,9 +629,9 @@ def connect_tool_servers_api(app: FastAPI):
         }
 
         # Save the tool to file
-        tool_server.save_to_file()
+        existing_tool_server.save_to_file()
 
-        return tool_server
+        return existing_tool_server
 
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):

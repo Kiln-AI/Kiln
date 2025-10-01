@@ -261,10 +261,7 @@
     task_id={current_task.id ?? ""}
     {hide_create_kiln_task_tool_button}
   />
-  <Collapse
-    title="Advanced Options"
-    badge={tools.length > 0 ? "" + tools.length : null}
-  >
+  <Collapse title="Advanced Options">
     <AdvancedRunOptions
       bind:temperature
       bind:top_p

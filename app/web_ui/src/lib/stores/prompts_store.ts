@@ -86,7 +86,7 @@ export async function load_task_prompts(
         return new_errors
       })
     } catch (error) {
-      console.error("Failed to load task run configs: ", error)
+      console.error("Failed to load task prompts: ", error)
 
       // Store the error for this task
       prompts_errors_by_task_composite_id.update((errors) => ({

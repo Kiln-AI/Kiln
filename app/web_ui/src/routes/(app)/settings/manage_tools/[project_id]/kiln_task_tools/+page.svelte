@@ -63,8 +63,10 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Kiln Task Tools"
+    title="Manage Kiln Tasks as Tools"
     subtitle="Allow your tasks to call another Kiln task, as a tool call."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/agents"
     breadcrumbs={[
       {
         label: "Settings",

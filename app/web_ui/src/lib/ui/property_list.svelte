@@ -19,31 +19,23 @@
           <InfoTooltip tooltip_text={property.tooltip} />
         {/if}
       </div>
-      <div class="flex flex-col">
-        <div
-          class="flex items-start overflow-x-hidden {property.error
-            ? 'text-error'
-            : 'text-gray-500'}"
-          style="overflow-wrap: anywhere;"
-        >
-          {#if property.warn_icon}
-            <Warning
-              warning_message=" "
-              warning_icon="exclaim"
-              warning_color="warning"
-              tight={true}
-            />
-          {/if}
-          {#if property.link}
-            <a href={property.link} class="link">{property.value}</a>
-          {:else}
-            {property.value}
-          {/if}
-        </div>
-        {#if property.info_description}
-          <div class="text-xs text-gray-400 mt-1 break-words">
-            {property.info_description}
-          </div>
+      <div
+        class="flex items-center overflow-x-hidden {property.error
+          ? 'text-error'
+          : 'text-gray-500'}"
+      >
+        {#if property.warn_icon}
+          <Warning
+            warning_message=" "
+            warning_icon="exclaim"
+            warning_color="warning"
+            tight={true}
+          />
+        {/if}
+        {#if property.link}
+          <a href={property.link} class="link">{property.value}</a>
+        {:else}
+          {property.value}
         {/if}
       </div>
     {/each}

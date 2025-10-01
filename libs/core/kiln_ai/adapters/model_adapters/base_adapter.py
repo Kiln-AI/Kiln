@@ -90,18 +90,14 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: Dict | str,
         input_source: DataSource | None = None,
-        output_source_type: DataSourceType | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, output_source_type
-        )
+        run_output, _ = await self.invoke_returning_run_output(input, input_source)
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: Dict | str,
         input_source: DataSource | None = None,
-        output_source_type: DataSourceType | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input
         if self.input_schema is not None:
@@ -175,7 +171,6 @@ class BaseAdapter(metaclass=ABCMeta):
         run = self.generate_run(
             input,
             input_source,
-            output_source_type,
             parsed_output,
             usage,
             run_output.trace,
@@ -269,7 +264,6 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: Dict | str,
         input_source: DataSource | None,
-        output_source_type: DataSourceType | None,
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
@@ -291,10 +285,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
-        # If no output source is provided, default to synthetic
-        if output_source_type is None:
-            output_source_type = DataSourceType.synthetic
-
         new_task_run = TaskRun(
             parent=self.task,
             input=input_str,
@@ -302,8 +292,9 @@ class BaseAdapter(metaclass=ABCMeta):
             output=TaskOutput(
                 output=output_str,
                 source=DataSource(
-                    type=output_source_type,
-                    properties=self._properties_for_task_output(output_source_type),
+                    # Synthetic since an adapter, not a human, is creating this
+                    type=DataSourceType.synthetic,
+                    properties=self._properties_for_task_output(),
                     run_config=self.run_config,
                 ),
             ),
@@ -315,24 +306,19 @@ class BaseAdapter(metaclass=ABCMeta):
 
         return new_task_run
 
-    def _properties_for_task_output(
-        self, output_source_type: DataSourceType
-    ) -> Dict[str, str | int | float]:
+    def _properties_for_task_output(self) -> Dict[str, str | int | float]:
         props = {}
-        if (
-            output_source_type == DataSourceType.synthetic
-            or output_source_type == DataSourceType.tool_call
-        ):
-            props["adapter_name"] = self.adapter_name()
 
-            # Legacy properties where we save the run_config details into custom properties.
-            # These are now also be saved in the run_config field.
-            props["model_name"] = self.run_config.model_name
-            props["model_provider"] = self.run_config.model_provider_name
-            props["prompt_id"] = self.run_config.prompt_id
-            props["structured_output_mode"] = self.run_config.structured_output_mode
-            props["temperature"] = self.run_config.temperature
-            props["top_p"] = self.run_config.top_p
+        props["adapter_name"] = self.adapter_name()
+
+        # Legacy properties where we save the run_config details into custom properties.
+        # These are now also be saved in the run_config field.
+        props["model_name"] = self.run_config.model_name
+        props["model_provider"] = self.run_config.model_provider_name
+        props["prompt_id"] = self.run_config.prompt_id
+        props["structured_output_mode"] = self.run_config.structured_output_mode
+        props["temperature"] = self.run_config.temperature
+        props["top_p"] = self.run_config.top_p
 
         return props
 

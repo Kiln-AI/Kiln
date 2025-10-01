@@ -63,11 +63,6 @@ def test_missing_required_property_file_import():
         DataSource(type=DataSourceType.file_import)
 
 
-def test_missing_required_property_tool_call():
-    with pytest.raises(ValidationError, match="'model_name' is required for"):
-        DataSource(type=DataSourceType.tool_call)
-
-
 def test_not_allowed_property_file_import():
     with pytest.raises(ValidationError, match="'model_name' is not allowed for"):
         DataSource(type=DataSourceType.file_import, properties={"model_name": "GPT-4"})

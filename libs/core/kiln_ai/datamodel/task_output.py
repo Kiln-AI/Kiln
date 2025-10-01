@@ -221,7 +221,7 @@ class DataSource(BaseModel):
         DataSourceProperty(
             name="model_name",
             type=str,
-            required_for=[DataSourceType.synthetic, DataSourceType.tool_call],
+            required_for=[DataSourceType.synthetic],
             not_allowed_for=[
                 DataSourceType.human,
                 DataSourceType.file_import,
@@ -230,7 +230,7 @@ class DataSource(BaseModel):
         DataSourceProperty(
             name="model_provider",
             type=str,
-            required_for=[DataSourceType.synthetic, DataSourceType.tool_call],
+            required_for=[DataSourceType.synthetic],
             not_allowed_for=[
                 DataSourceType.human,
                 DataSourceType.file_import,
@@ -239,7 +239,7 @@ class DataSource(BaseModel):
         DataSourceProperty(
             name="adapter_name",
             type=str,
-            required_for=[DataSourceType.synthetic, DataSourceType.tool_call],
+            required_for=[DataSourceType.synthetic],
             not_allowed_for=[
                 DataSourceType.human,
                 DataSourceType.file_import,

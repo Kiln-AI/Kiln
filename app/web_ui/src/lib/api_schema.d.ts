@@ -1799,7 +1799,7 @@ export interface paths {
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/add_kiln_task_tool": {
+    "/api/projects/{project_id}/kiln_task_tool": {
         parameters: {
             query?: never;
             header?: never;
@@ -1809,7 +1809,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Add Kiln Task Tool */
-        post: operations["add_kiln_task_tool_api_projects__project_id__add_kiln_task_tool_post"];
+        post: operations["add_kiln_task_tool_api_projects__project_id__kiln_task_tool_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3738,7 +3738,10 @@ export interface components {
             task_description: string | null;
             /** Is Archived */
             is_archived: boolean;
-            /** Created At */
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
         };
         /** KilnTaskToolServerCreationRequest */
@@ -9112,7 +9115,7 @@ export interface operations {
             };
         };
     };
-    add_kiln_task_tool_api_projects__project_id__add_kiln_task_tool_post: {
+    add_kiln_task_tool_api_projects__project_id__kiln_task_tool_post: {
         parameters: {
             query?: never;
             header?: never;
