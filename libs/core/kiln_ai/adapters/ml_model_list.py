@@ -170,6 +170,7 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_2507_no_thinking = "qwen_3_235b_a22b_2507_no_thinking"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
+    qwen_3_vl_235b_a22b_no_thinking = "qwen_3_vl_235b_a22b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
@@ -2322,7 +2323,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="qwen2.5vl:3b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_structured_output=False,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
@@ -2349,7 +2350,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="qwen2.5vl:7b",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_structured_output=False,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
@@ -2363,8 +2364,38 @@ built_in_models: List[KilnModel] = [
                 multimodal_requires_pdf_as_image=True,
                 max_parallel_requests=1,
             ),
-            # openrouter has the model, but annotation format returned by this model is rejected
-            # by litellm internal validation
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen-2.5-vl-7b-instruct",
+                supports_structured_output=False,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+                supports_structured_output=False,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
         ],
     ),
     # Qwen 2.5 VL 32B
@@ -2390,8 +2421,54 @@ built_in_models: List[KilnModel] = [
                 multimodal_requires_pdf_as_image=True,
                 max_parallel_requests=1,
             ),
-            # openrouter has the model, but annotation format returned by this model is rejected
-            # by litellm internal validation
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen2.5-vl-32b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen2.5-VL-32B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen2p5-vl-32b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
         ],
     ),
     # Qwen 2.5 VL 72B
@@ -2417,8 +2494,55 @@ built_in_models: List[KilnModel] = [
                 multimodal_requires_pdf_as_image=True,
                 max_parallel_requests=1,
             ),
-            # openrouter has the model, but annotation format returned by this model is rejected
-            # by litellm internal validation
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen2.5-vl-72b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen2.5-VL-72B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen2.5-VL-72B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # supports video, but LiteLLM fails request validation
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
         ],
     ),
     # Mistral Small 3
@@ -3698,6 +3822,34 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 siliconflow_enable_thinking=False,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Qwen 3 235B (22B Active) VL Non-Thinking
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_vl_235b_a22b_no_thinking,
+        friendly_name="Qwen 3 235B (22B Active) VL Non-Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-vl-235b-a22b-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                formatter=ModelFormatterID.qwen3_style_no_think,
+                supports_data_gen=False,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
