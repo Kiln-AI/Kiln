@@ -12,6 +12,7 @@
   import { uncache_available_tools } from "$lib/stores"
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import posthog from "posthog-js"
+  import { view_logs } from "$lib/utils/logs"
 
   // The existing tool server, if we're editing
   export let editing_tool_server: ExternalToolServerApiDescription | null = null
@@ -380,7 +381,15 @@
               {args}" runs in your terminal.
             </li>
             <li>Restart the Kiln App.</li>
-            <li>Check the application logs for additional error details.</li>
+            <li>
+              Check application logs for additional error details. <button
+                type="button"
+                class="link"
+                on:click={view_logs}
+              >
+                View Logs
+              </button>
+            </li>
           </ol>
         </div>
       {/if}

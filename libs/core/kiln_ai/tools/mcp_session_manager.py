@@ -20,7 +20,6 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
 
-# Error message constants for local MCP server failures
 LOCAL_MCP_ERROR_INSTRUCTION = "Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup."
 
 
