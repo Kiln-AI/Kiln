@@ -99,21 +99,7 @@ class KilnEmbeddingModel(BaseModel):
 
 
 built_in_embedding_models: List[KilnEmbeddingModel] = [
-    # openai
-    KilnEmbeddingModel(
-        family=KilnEmbeddingModelFamily.openai,
-        name=EmbeddingModelName.openai_text_embedding_3_small,
-        friendly_name="Text Embedding 3 Small",
-        providers=[
-            KilnEmbeddingModelProvider(
-                name=ModelProviderName.openai,
-                model_id="text-embedding-3-small",
-                n_dimensions=1536,
-                max_input_tokens=8192,
-                supports_custom_dimensions=True,
-            ),
-        ],
-    ),
+    # OpenAI Text Embedding 3 Large
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.openai,
         name=EmbeddingModelName.openai_text_embedding_3_large,
@@ -129,20 +115,22 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
-    # gemini
+    # OpenAI Text Embedding 3 Small
     KilnEmbeddingModel(
-        family=KilnEmbeddingModelFamily.gemini,
-        name=EmbeddingModelName.gemini_text_embedding_004,
-        friendly_name="Text Embedding 004",
+        family=KilnEmbeddingModelFamily.openai,
+        name=EmbeddingModelName.openai_text_embedding_3_small,
+        friendly_name="Text Embedding 3 Small",
         providers=[
             KilnEmbeddingModelProvider(
-                name=ModelProviderName.gemini_api,
-                model_id="text-embedding-004",
-                n_dimensions=768,
-                max_input_tokens=2048,
+                name=ModelProviderName.openai,
+                model_id="text-embedding-3-small",
+                n_dimensions=1536,
+                max_input_tokens=8192,
+                supports_custom_dimensions=True,
             ),
         ],
     ),
+    # Gemini Embedding 001
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemini,
         name=EmbeddingModelName.gemini_embedding_001,
@@ -158,7 +146,21 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
-    # gemma
+    # Gemini Text Embedding 004
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.gemini,
+        name=EmbeddingModelName.gemini_text_embedding_004,
+        friendly_name="Text Embedding 004",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="text-embedding-004",
+                n_dimensions=768,
+                max_input_tokens=2048,
+            ),
+        ],
+    ),
+    # Embedding Gemma 300m
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.gemma,
         name=EmbeddingModelName.embedding_gemma_300m,
@@ -177,7 +179,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
-    # nomic
+    # Nomic Embed Text v1.5
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.nomic,
         name=EmbeddingModelName.nomic_text_embedding_v1_5,
@@ -203,61 +205,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             ),
         ],
     ),
-    # qwen 3
-    KilnEmbeddingModel(
-        family=KilnEmbeddingModelFamily.qwen,
-        name=EmbeddingModelName.qwen_3_embedding_0p6b,
-        friendly_name="Qwen 3 Embedding 0.6B",
-        providers=[
-            KilnEmbeddingModelProvider(
-                name=ModelProviderName.ollama,
-                model_id="qwen3-embedding:0.6b",
-                n_dimensions=1024,
-                max_input_tokens=32_000,
-                # the model itself does support custom dimensions, but not working
-                # because litellm rejects the param:
-                # https://github.com/BerriAI/litellm/issues/11940
-                supports_custom_dimensions=False,
-            ),
-            KilnEmbeddingModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Qwen/Qwen3-Embedding-0.6B",
-                n_dimensions=1024,
-                max_input_tokens=32_000,
-                # the model itself does support custom dimensions, but not working
-                # because litellm rejects the param:
-                # https://github.com/BerriAI/litellm/issues/11940
-                supports_custom_dimensions=False,
-            ),
-        ],
-    ),
-    KilnEmbeddingModel(
-        family=KilnEmbeddingModelFamily.qwen,
-        name=EmbeddingModelName.qwen_3_embedding_4b,
-        friendly_name="Qwen 3 Embedding 4B",
-        providers=[
-            KilnEmbeddingModelProvider(
-                name=ModelProviderName.ollama,
-                model_id="qwen3-embedding:4b",
-                n_dimensions=2560,
-                max_input_tokens=32_000,
-                # the model itself does support custom dimensions, but not working
-                # because litellm rejects the param:
-                # https://github.com/BerriAI/litellm/issues/11940
-                supports_custom_dimensions=False,
-            ),
-            KilnEmbeddingModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Qwen/Qwen3-Embedding-4B",
-                n_dimensions=2560,
-                max_input_tokens=32_000,
-                # the model itself does support custom dimensions, but not working
-                # because litellm rejects the param:
-                # https://github.com/BerriAI/litellm/issues/11940
-                supports_custom_dimensions=False,
-            ),
-        ],
-    ),
+    # Qwen3 Embedding 8B
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.qwen,
         name=EmbeddingModelName.qwen_3_embedding_8b,
@@ -289,6 +237,62 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Qwen/Qwen3-Embedding-8B",
                 n_dimensions=4096,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but not working
+                # because litellm rejects the param:
+                # https://github.com/BerriAI/litellm/issues/11940
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Qwen3 Embedding 4B
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.qwen,
+        name=EmbeddingModelName.qwen_3_embedding_4b,
+        friendly_name="Qwen 3 Embedding 4B",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3-embedding:4b",
+                n_dimensions=2560,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but not working
+                # because litellm rejects the param:
+                # https://github.com/BerriAI/litellm/issues/11940
+                supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3-Embedding-4B",
+                n_dimensions=2560,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but not working
+                # because litellm rejects the param:
+                # https://github.com/BerriAI/litellm/issues/11940
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Qwen3 Embedding 0.6B
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.qwen,
+        name=EmbeddingModelName.qwen_3_embedding_0p6b,
+        friendly_name="Qwen 3 Embedding 0.6B",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3-embedding:0.6b",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # the model itself does support custom dimensions, but not working
+                # because litellm rejects the param:
+                # https://github.com/BerriAI/litellm/issues/11940
+                supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen3-Embedding-0.6B",
+                n_dimensions=1024,
                 max_input_tokens=32_000,
                 # the model itself does support custom dimensions, but not working
                 # because litellm rejects the param:
