@@ -265,7 +265,6 @@
     <FormContainer
       submit_label={editing_tool_server ? "Save" : "Connect"}
       on:submit={save_or_connect}
-      bind:error
       bind:submitting
     >
       <FormElement
@@ -364,6 +363,27 @@
           </div>
         </div>
       </FormList>
+
+      {#if error}
+        <div class="mb-6 flex flex-col gap-2 text-center max-w-[600px] mx-auto">
+          <span class="text-lg text-error">Could Not Connect to MCP Server</span
+          >
+          {#each error.getErrorMessages() as error_line}
+            <div class="text-sm text-left whitespace-pre-line">
+              {error_line}
+            </div>
+          {/each}
+          <span class="text-lg text-center mt-6">Troubleshooting Steps:</span>
+          <ol class="text-sm list-decimal list-inside text-left">
+            <li>
+              Ensure your command "{command}
+              {args}" runs in your terminal.
+            </li>
+            <li>Restart the Kiln App.</li>
+            <li>Check the application logs for additional error details.</li>
+          </ol>
+        </div>
+      {/if}
     </FormContainer>
   </div>
 </div>

@@ -20,6 +20,9 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
 
+# Error message constants for local MCP server failures
+LOCAL_MCP_ERROR_INSTRUCTION = "Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup."
+
 
 class MCPSessionManager:
     """
@@ -196,21 +199,26 @@ class MCPSessionManager:
             # Check for MCP errors. Things like wrong arguments would fall here.
             mcp_error = self._extract_first_exception(e, McpError)
             if mcp_error and isinstance(mcp_error, McpError):
-                self._raise_local_mcp_error(mcp_error)
+                self._raise_local_mcp_error(mcp_error, stderr_content)
 
             # Re-raise the original error but with a friendlier message
-            self._raise_local_mcp_error(e)
+            self._raise_local_mcp_error(e, stderr_content)
         finally:
             # Close and delete the temp file
             err_log.close()
 
-    def _raise_local_mcp_error(self, e: Exception):
+    def _raise_local_mcp_error(self, e: Exception, stderr: str):
         """
-        Raise a ValueError with a friendlier message for local MCP errors.
+        Raise a RuntimeError with a friendlier message for local MCP errors.
         """
-        raise RuntimeError(
-            f"MCP server failed to start. Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup. Original error: {e}"
-        ) from e
+        error_msg = f"'{e}'"
+
+        if stderr:
+            error_msg += f"\nMCP server error: {stderr}"
+
+        error_msg += f"\n{LOCAL_MCP_ERROR_INSTRUCTION}"
+
+        raise RuntimeError(error_msg) from e
 
     def _get_path(self) -> str:
         """

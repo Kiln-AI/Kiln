@@ -12,7 +12,10 @@ from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     ToolServerType,
 )
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import (
+    LOCAL_MCP_ERROR_INSTRUCTION,
+    MCPSessionManager,
+)
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 
 
@@ -1103,7 +1106,7 @@ class TestMCPSessionManager:
         manager = MCPSessionManager.shared()
 
         # All local errors should now use the simplified message format
-        with pytest.raises(RuntimeError, match="MCP server failed to start"):
+        with pytest.raises(RuntimeError, match=LOCAL_MCP_ERROR_INSTRUCTION):
             async with manager.mcp_client(basic_local_server):
                 pass
 
@@ -1138,7 +1141,7 @@ class TestMCPSessionManager:
         manager = MCPSessionManager.shared()
 
         # Should extract the McpError from the nested structure and use simplified message
-        with pytest.raises(RuntimeError, match="MCP server failed to start"):
+        with pytest.raises(RuntimeError, match=LOCAL_MCP_ERROR_INSTRUCTION):
             async with manager.mcp_client(tool_server):
                 pass
 
@@ -1156,14 +1159,10 @@ class TestMCPSessionManager:
 
         for original_error in test_exceptions:
             with pytest.raises(RuntimeError) as exc_info:
-                manager._raise_local_mcp_error(original_error)
+                manager._raise_local_mcp_error(original_error, "")
 
             # Check that the error message contains expected text
-            assert "MCP server failed to start" in str(exc_info.value)
-            assert (
-                "Please verify your command, arguments, and environment variables"
-                in str(exc_info.value)
-            )
+            assert LOCAL_MCP_ERROR_INSTRUCTION in str(exc_info.value)
             assert str(original_error) in str(exc_info.value)
 
             # Check that the original exception is chained
