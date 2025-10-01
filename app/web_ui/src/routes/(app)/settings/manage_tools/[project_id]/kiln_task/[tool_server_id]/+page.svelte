@@ -65,7 +65,6 @@
   async function load_tool_server_data(
     tool_server: ExternalToolServerApiDescription,
   ) {
-    console.log("loading tool server data", tool_server)
     const properties = tool_server.properties as KilnTaskServerProperties
     const task_id = properties.task_id
 
