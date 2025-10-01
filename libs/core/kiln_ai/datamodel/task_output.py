@@ -192,15 +192,15 @@ class DataSource(BaseModel):
     """
     Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
 
-    Properties vary based on the source type - for synthetic sources this includes
+    Properties vary based on the source type - for synthetic/tool_call sources this includes
     model information, for human sources this includes creator information, for file imports
-    this includes file information, and for tool calls this includes model and tool information.
+    this includes file information.
     """
 
     type: DataSourceType
     properties: Dict[str, str | int | float] = Field(
         default={},
-        description="Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information. For tool_call: tool name.",
+        description="Properties describing the data source. For synthetic/tool_call things like model. For human: the human's name. For file_import: file information.",
     )
     run_config: Optional[RunConfigProperties] = Field(
         default=None,

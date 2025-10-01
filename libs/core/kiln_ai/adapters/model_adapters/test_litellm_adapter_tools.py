@@ -761,6 +761,14 @@ class MockTool:
             raise self._raise_on_run
         return self._return_value
 
+    async def run_with_context(self, context, **kwargs) -> str:
+        """Mock implementation of run_with_context for testing."""
+        return await self.run(**kwargs)
+
+    async def id(self) -> str:
+        """Mock implementation of id for testing."""
+        return f"mock_tool_{self._name}"
+
 
 async def test_process_tool_calls_none_input(tmp_path):
     """Test process_tool_calls with None input"""

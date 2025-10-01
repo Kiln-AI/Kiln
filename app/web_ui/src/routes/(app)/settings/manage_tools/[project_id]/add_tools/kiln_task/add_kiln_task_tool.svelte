@@ -12,6 +12,7 @@
   import { uncache_available_tools } from "$lib/stores"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import { tool_name_validator } from "$lib/utils/input_validators"
 
   let error: KilnError | null = null
   let submitting = false
@@ -222,36 +223,6 @@
     }
   }
 
-  let validate_name: (value: unknown) => string | null = (value: unknown) => {
-    if (typeof value !== "string") {
-      return "Tool name must be a string."
-    }
-    if (value.trim() === "") {
-      return "Tool name must not be empty."
-    }
-    // Check for uppercase letters first
-    if (/[A-Z]/.test(value)) {
-      return "Tool name letters must be lowercase."
-    }
-    // Check for spaces
-    if (value.includes(" ")) {
-      return "Tool name cannot contain spaces. Use underscores instead (e.g. 'my_task_name')."
-    }
-    // Check if it starts or ends with underscore
-    if (value.startsWith("_") || value.endsWith("_")) {
-      return "Tool name cannot start or end with an underscore."
-    }
-    // Check if it contains consecutive underscores
-    if (value.includes("__")) {
-      return "Tool name cannot contain consecutive underscores."
-    }
-    // Check for any other invalid characters (special chars, etc.)
-    if (!/^[a-z0-9_]+$/.test(value)) {
-      return "Tool name cannot contain other characters besides lowercase letters, numbers, and underscores."
-    }
-    return null
-  }
-
   let validate_description: (value: unknown) => string | null = (
     value: unknown,
   ) => {
@@ -304,7 +275,7 @@
             info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
             bind:value={name}
             max_length={120}
-            validator={validate_name}
+            validator={tool_name_validator}
             on:change={clear_error_if_present}
           />
 

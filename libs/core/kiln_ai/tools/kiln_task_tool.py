@@ -113,6 +113,7 @@ class KilnTaskTool(KilnToolInterface):
                 "task_run_id": task_run.id,
                 "task_id": task_run.parent.id if task_run.parent else None,
                 "project_id": self._project_id,
+                "tool_id": self._tool_id,
             }
         )
 

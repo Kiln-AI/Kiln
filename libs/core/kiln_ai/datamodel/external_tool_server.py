@@ -12,6 +12,7 @@ from kiln_ai.datamodel.basemodel import (
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.validation import tool_name_validator, validate_return_dict_prop
 
 
 class ToolServerType(str, Enum):
@@ -246,7 +247,18 @@ class ExternalToolServer(KilnParentedModel):
                         )
 
             case ToolServerType.kiln_task:
-                pass
+                tool_name_validator(properties.get("name", ""))
+                err_msg_prefix = "Kiln task server properties:"
+                validate_return_dict_prop(
+                    properties, "description", str, err_msg_prefix
+                )
+                validate_return_dict_prop(
+                    properties, "is_archived", bool, err_msg_prefix
+                )
+                validate_return_dict_prop(properties, "task_id", str, err_msg_prefix)
+                validate_return_dict_prop(
+                    properties, "run_config_id", str, err_msg_prefix
+                )
 
             case _:
                 # Type checking will catch missing cases
