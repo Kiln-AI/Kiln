@@ -274,7 +274,7 @@
             description="A unique short tool name such as 'web_researcher'. Be descriptive about what this task does."
             info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
             bind:value={name}
-            max_length={120}
+            max_length={128}
             validator={tool_name_validator}
             on:change={clear_error_if_present}
           />
