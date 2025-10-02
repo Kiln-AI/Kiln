@@ -76,12 +76,12 @@ class KilnTaskTool(KilnToolInterface):
             # Structured input - pass kwargs directly
             input = kwargs
         else:
-            # Plaintext input - extract from 'input' parameter or convert kwargs
+            print(kwargs)
+            # Plaintext input - extract from 'input' parameter
             if "input" in kwargs:
                 input = kwargs["input"]
             else:
-                # Convert kwargs to a descriptive string
-                input = json.dumps(kwargs, indent=2)
+                raise ValueError(f"Input not found in kwargs: {kwargs}")
 
         # These imports are here to avoid circular chains
         from kiln_ai.adapters.adapter_registry import adapter_for_task
@@ -165,7 +165,7 @@ class KilnTaskTool(KilnToolInterface):
                     "properties": {
                         "input": {
                             "type": "string",
-                            "description": f"Plaintext input for the task: {task.instruction}",
+                            "description": "Plaintext input for the tool.",
                         }
                     },
                     "required": ["input"],

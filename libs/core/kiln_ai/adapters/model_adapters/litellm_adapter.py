@@ -32,7 +32,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.open_ai_types import (
@@ -610,8 +610,6 @@ class LiteLlmAdapter(BaseAdapter):
                 ) from e
 
             # Create context with the calling task's allow_saving setting
-            from kiln_ai.tools.base_tool import ToolCallContext
-
             context = ToolCallContext(
                 allow_saving=self.base_adapter_config.allow_saving
             )
