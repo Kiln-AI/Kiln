@@ -13,6 +13,7 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import posthog from "posthog-js"
   import { view_logs } from "$lib/utils/logs"
+  import Output from "../../../../../run/output.svelte"
 
   // The existing tool server, if we're editing
   export let editing_tool_server: ExternalToolServerApiDescription | null = null
@@ -366,31 +367,52 @@
       </FormList>
 
       {#if error}
-        <div class="mb-6 flex flex-col gap-2 text-center max-w-[600px] mx-auto">
-          <span class="text-lg text-error">Could Not Connect to MCP Server</span
+        <div
+          class="mb-6 flex flex-col gap-4 max-w-[600px] mx-auto border p-4 rounded-md"
+        >
+          <span class="font-bold text-error"
+            >Could Not Connect to MCP Server</span
           >
-          {#each error.getErrorMessages() as error_line}
-            <div class="text-sm text-left whitespace-pre-line">
-              {error_line}
-            </div>
-          {/each}
-          <span class="text-lg text-center mt-6">Troubleshooting Steps:</span>
-          <ol class="text-sm list-decimal list-inside text-left">
-            <li>
-              Ensure your command "{command}
-              {args}" runs in your terminal.
-            </li>
-            <li>Restart the Kiln App.</li>
-            <li>
-              Check application logs for additional error details. <button
-                type="button"
-                class="link"
-                on:click={view_logs}
-              >
-                View Logs
-              </button>
-            </li>
-          </ol>
+
+          <div class="flex flex-col gap-2">
+            <span class="font-medium">Troubleshooting Steps</span>
+            <ol
+              class="text-sm list-decimal list-outside pl-6 flex flex-col gap-2"
+            >
+              <li>
+                Check the Error Details below for information about the issue.
+              </li>
+              <li>
+                Check the server's documentation for the correct setup
+                (dependencies, etc.).
+              </li>
+              <li>
+                Ensure your command <span
+                  class="font-mono text-xs font-bold bg-base-200 p-1 rounded-sm"
+                  >{command}
+                  {args}</span
+                > runs in your terminal. If you had to install libraries or dependencies,
+                restart the Kiln app before trying again.
+              </li>
+              <li>
+                Check Kiln logs for additional details. <button
+                  type="button"
+                  class="link"
+                  on:click={view_logs}
+                >
+                  View Logs
+                </button>
+              </li>
+            </ol>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="font-medium">Error Details</span>
+            <Output
+              raw_output={error.getErrorMessages().join("\n\n")}
+              hide_toggle={false}
+              max_height="120px"
+            />
+          </div>
         </div>
       {/if}
     </FormContainer>
