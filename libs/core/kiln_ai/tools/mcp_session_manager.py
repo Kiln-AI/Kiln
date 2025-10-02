@@ -174,7 +174,8 @@ class MCPSessionManager:
         )
 
         # Create temporary file to capture MCP server stderr
-        err_log = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+        # Use errors="replace" to handle non-UTF-8 bytes gracefully
+        err_log = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
 
         try:
             async with stdio_client(server_params, errlog=err_log) as (
