@@ -6,7 +6,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createEventDispatcher } from "svelte"
-  import AvailableModelsDropdown from "../../../../run/available_models_dropdown.svelte"
+  import AvailableExtractorsDropdown from "./available_extractors_dropdown.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import {
     default_extractor_document_prompts,
@@ -92,13 +92,11 @@
   {keyboard_submit}
 >
   <div class="flex flex-col gap-4">
-    <AvailableModelsDropdown
-      label="Extraction Model"
-      description="The model to use to transform your documents into text."
-      info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This model extracts text from these files."
-      bind:model={selected_extractor_option}
-      filter_models_predicate={(m) => m.supports_doc_extraction}
-      suggested_mode="doc_extraction"
+    <AvailableExtractorsDropdown
+      label="Extractor"
+      description="The extractor used to transform your documents into text."
+      info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This extractor converts them to text."
+      bind:extractor={selected_extractor_option}
     />
     <FormElement
       label="Output Format"
@@ -126,6 +124,7 @@
     />
   </div>
   <Collapse title="Advanced Options">
+    <!-- TODO: hide prompts for non-model extractors -->
     <div>
       <div class="font-medium">Prompt Options</div>
       <div class="text-sm text-gray-500 mt-1">

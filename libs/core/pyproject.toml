@@ -39,6 +39,7 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.3.3",
     "llama-index>=0.13.3",
     "anyio>=4.10.0",
+    "mistralai>=1.9.10",
 ]
 
 [dependency-groups]

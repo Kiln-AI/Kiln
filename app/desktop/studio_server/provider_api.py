@@ -13,6 +13,7 @@ from kiln_ai.adapters.docker_model_runner_tools import (
     DockerModelRunnerConnection,
     get_docker_model_runner_connection,
 )
+from kiln_ai.adapters.extractor_list import ExtractorProviderName, built_in_extractors
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
     KilnEmbeddingModel,
@@ -32,6 +33,7 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
+from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -292,6 +294,133 @@ def connect_provider_api(app: FastAPI):
             models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
         return ProviderEmbeddingModels(models=models)
 
+    # ============== Extractors (new) ==============
+
+    class ExtractorSummary(BaseModel):
+        id: str
+        name: str
+
+    class ProviderExtractors(BaseModel):
+        extractors: Dict[str, ExtractorSummary]
+
+    class ExtractorDetails(BaseModel):
+        id: str
+        name: str
+        extractor_type: str
+        supported_mime_types: List[str] | None = None
+
+    class AvailableExtractors(BaseModel):
+        provider_name: str
+        provider_id: str
+        extractors: List[ExtractorDetails]
+
+    @app.get("/api/providers/extractors")
+    async def get_providers_extractors() -> ProviderExtractors:
+        extractors: Dict[str, ExtractorSummary] = {}
+
+        # Model-based extractors derived from built_in_models with extraction support
+        for model in built_in_models:
+            for provider in model.providers:
+                if provider.supports_doc_extraction:
+                    extractors[model.name] = ExtractorSummary(
+                        id=model.name, name=model.friendly_name
+                    )
+                    break
+
+        # All extractors (non-model + model-backed)
+        for extractor in built_in_extractors:
+            extractors[extractor.name] = ExtractorSummary(
+                id=extractor.name, name=extractor.friendly_name
+            )
+
+        return ProviderExtractors(extractors=extractors)
+
+    @app.get("/api/available_extractors")
+    async def get_available_extractors() -> List[AvailableExtractors]:
+        results: List[AvailableExtractors] = []
+
+        # Key-based providers: include only if keys present
+        key_providers: List[str] = []
+        for provider, provider_warning in provider_warnings.items():
+            has_keys = True
+            for required_key in provider_warning.required_config_keys:
+                if Config.shared().get_value(required_key) is None:
+                    has_keys = False
+                    break
+            if has_keys:
+                key_providers.append(provider)
+
+        # Model-based extractors grouped by provider
+        for provider_id in key_providers:
+            provider_display = provider_name_from_id(provider_id)
+            provider_extractors: List[ExtractorDetails] = []
+            for model in built_in_models:
+                for provider in model.providers:
+                    if (
+                        provider.name == provider_id
+                        and provider.supports_doc_extraction
+                        and provider.model_id
+                    ):
+                        provider_extractors.append(
+                            ExtractorDetails(
+                                id=model.name,
+                                name=model.friendly_name,
+                                extractor_type=ExtractorType.LITELLM.value,
+                                supported_mime_types=provider.multimodal_mime_types
+                                if provider.multimodal_mime_types
+                                else None,
+                            )
+                        )
+                        break
+            if provider_extractors:
+                results.append(
+                    AvailableExtractors(
+                        provider_name=provider_display,
+                        provider_id=provider_id,
+                        extractors=provider_extractors,
+                    )
+                )
+
+        # Non-model extractors availability (e.g., Mistral OCR)
+        mistral_available = (
+            Config.shared().mistral_api_key is not None
+            and len(str(Config.shared().mistral_api_key).strip()) > 0
+        )
+        if mistral_available:
+            mistral_extractors: List[ExtractorDetails] = []
+            for extractor in built_in_extractors:
+                # Currently only mistral provider
+                mistral_provider = next(
+                    (
+                        p
+                        for p in extractor.providers
+                        if getattr(p, "name", None)
+                        == ExtractorProviderName.mistral.value
+                    ),
+                    None,
+                )
+                if mistral_provider is not None:
+                    mistral_extractors.append(
+                        ExtractorDetails(
+                            id=extractor.name,
+                            name=extractor.friendly_name,
+                            extractor_type=mistral_provider.extractor_type.value,
+                            supported_mime_types=mistral_provider.supported_mime_types,
+                        )
+                    )
+
+            if mistral_extractors:
+                results.insert(
+                    0,
+                    AvailableExtractors(
+                        provider_name="Mistral",
+                        provider_id=ExtractorProviderName.mistral.value,
+                        extractors=mistral_extractors,
+                    ),
+                )
+
+        return results
+
     # returns map, of provider name to list of model names
     @app.get("/api/available_embedding_models")
     async def get_available_embedding_models() -> List[EmbeddingProvider]:
@@ -463,6 +592,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
+            case ModelProviderName.mistral:
+                return await connect_mistral(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -523,6 +654,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
+                case ModelProviderName.mistral:
+                    Config.shared().mistral_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1031,6 +1164,45 @@ async def connect_cerebras(key: str):
             status_code=400,
             content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
         )
+
+
+async def connect_mistral(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.get("https://api.mistral.ai/v1/models", headers=headers)
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Mistral. Invalid API key."},
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Mistral. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().mistral_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Mistral"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Mistral. Error: {e!s}"},
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={"message": "Connected to Mistral"},
+    )
 
 
 async def connect_bedrock(key_data: dict):
