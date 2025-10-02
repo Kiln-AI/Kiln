@@ -141,7 +141,7 @@
     id="tools"
     label="Tools & Search"
     inputType="multi_select"
-    info_description="Select the tools available to the model.\nThe model may or may not choose to use them."
+    info_description="Select the tools available to the model. The model may or may not choose to use them."
     bind:value={tools}
     fancy_select_options={get_tool_options($available_tools[project_id])}
     empty_state_message={$available_tools[project_id] === undefined
