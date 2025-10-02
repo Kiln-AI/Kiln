@@ -219,11 +219,6 @@ class LitellmExtractor(BaseExtractor):
             )
 
         content = response.choices[0].message.content
-        if not content:
-            raise ValueError(
-                f"No text returned from extraction model when extracting page {page_number} for {page_path}"
-            )
-
         if self.filesystem_cache is not None:
             # we don't want to fail the whole extraction just because cache write fails
             # as that would block the whole flow
