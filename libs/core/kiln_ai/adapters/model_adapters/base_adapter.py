@@ -169,11 +169,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
         # Generate the run and output
         run = self.generate_run(
-            input,
-            input_source,
-            parsed_output,
-            usage,
-            run_output.trace,
+            input, input_source, parsed_output, usage, run_output.trace
         )
 
         # Save the run if configured to do so, and we have a path to save to
@@ -291,8 +287,8 @@ class BaseAdapter(metaclass=ABCMeta):
             input_source=input_source,
             output=TaskOutput(
                 output=output_str,
+                # Synthetic since an adapter, not a human, is creating this
                 source=DataSource(
-                    # Synthetic since an adapter, not a human, is creating this
                     type=DataSourceType.synthetic,
                     properties=self._properties_for_task_output(),
                     run_config=self.run_config,
