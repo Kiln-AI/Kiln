@@ -253,10 +253,8 @@ class ExternalToolServer(KilnParentedModel):
                     properties, "description", str, err_msg_prefix
                 )
                 description = properties.get("description", "")
-                if len(description) > 128:
-                    raise ValueError(
-                        "description must be less than 128 characters long"
-                    )
+                if len(description) >= 128:
+                    raise ValueError("description must be 128 characters or less")
                 validate_return_dict_prop(
                     properties, "is_archived", bool, err_msg_prefix
                 )

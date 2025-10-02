@@ -38,19 +38,13 @@ def test_valid_file_import_data_source():
     assert data_source.properties["file_name"] == "test.txt"
 
 
-def test_valid_tool_call_data_source():
+def test_empty_valid_tool_call_data_source():
     data_source = DataSource(
         type=DataSourceType.tool_call,
-        properties={
-            "model_name": "GPT-4",
-            "model_provider": "OpenAI",
-            "adapter_name": "langchain",
-        },
+        properties={},
     )
     assert data_source.type == DataSourceType.tool_call
-    assert data_source.properties["model_name"] == "GPT-4"
-    assert data_source.properties["model_provider"] == "OpenAI"
-    assert data_source.properties["adapter_name"] == "langchain"
+    assert data_source.properties == {}
 
 
 def test_missing_required_property():
@@ -118,9 +112,6 @@ def test_not_allowed_file_name_tool_call():
         DataSource(
             type=DataSourceType.tool_call,
             properties={
-                "model_name": "GPT-4",
-                "model_provider": "OpenAI",
-                "adapter_name": "langchain",
                 "file_name": "test.txt",
             },
         )
@@ -145,9 +136,6 @@ def test_extra_properties_tool_call():
     data_source = DataSource(
         type=DataSourceType.tool_call,
         properties={
-            "model_name": "GPT-4",
-            "model_provider": "OpenAI",
-            "adapter_name": "langchain",
             "temperature": 0.7,
             "max_tokens": 100,
         },
@@ -159,19 +147,6 @@ def test_extra_properties_tool_call():
 def test_prompt_type_optional_for_synthetic():
     data_source = DataSource(
         type=DataSourceType.synthetic,
-        properties={
-            "model_name": "GPT-4",
-            "model_provider": "OpenAI",
-            "adapter_name": "langchain",
-        },
-    )
-    assert "prompt_builder_name" not in data_source.properties
-    assert "prompt_id" not in data_source.properties
-
-
-def test_prompt_type_optional_for_tool_call():
-    data_source = DataSource(
-        type=DataSourceType.tool_call,
         properties={
             "model_name": "GPT-4",
             "model_provider": "OpenAI",

@@ -105,12 +105,6 @@
           <div class="text-gray-500 mb-6">
             You haven't created any Kiln Task tools yet.
           </div>
-          <a
-            href="/settings/manage_tools/{project_id}/add_tools/kiln_task"
-            class="btn btn-primary"
-          >
-            Add Your First Kiln Task Tool
-          </a>
         </div>
       </div>
     {:else}

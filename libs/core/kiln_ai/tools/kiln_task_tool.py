@@ -76,7 +76,6 @@ class KilnTaskTool(KilnToolInterface):
             # Structured input - pass kwargs directly
             input = kwargs
         else:
-            print(kwargs)
             # Plaintext input - extract from 'input' parameter
             if "input" in kwargs:
                 input = kwargs["input"]

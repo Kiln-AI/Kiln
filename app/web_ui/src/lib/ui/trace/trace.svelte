@@ -249,14 +249,16 @@
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Tool Result
-                    <button
-                      class="text-primary link ml-2"
-                      on:click={() => {
-                        tool_messages_dialog?.show(kiln_task_tool_data)
-                      }}
-                    >
-                      Messages
-                    </button>
+                    {#if kiln_task_tool_data}
+                      <button
+                        class="text-primary link ml-2"
+                        on:click={() => {
+                          tool_messages_dialog?.show(kiln_task_tool_data)
+                        }}
+                      >
+                        Messages
+                      </button>
+                    {/if}
                   </div>
                   <Output raw_output={content} no_padding={true} />
                 </div>

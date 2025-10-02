@@ -556,12 +556,8 @@ def connect_tool_servers_api(app: FastAPI):
     def _validate_kiln_task_tool_task_and_run_config(
         project_id: str, tool_data: KilnTaskToolServerCreationRequest
     ):
+        # This will raise an exception if the task is not found
         task = task_from_id(project_id, tool_data.task_id)
-        if task is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Task not found for the specified task ID.",
-            )
         run_config = next(
             (
                 rc
