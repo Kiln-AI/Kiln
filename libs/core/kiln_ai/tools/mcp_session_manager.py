@@ -175,37 +175,35 @@ class MCPSessionManager:
 
         # Create temporary file to capture MCP server stderr
         # Use errors="replace" to handle non-UTF-8 bytes gracefully
-        err_log = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+        with tempfile.TemporaryFile(
+            mode="w+", encoding="utf-8", errors="replace"
+        ) as err_log:
+            try:
+                async with stdio_client(server_params, errlog=err_log) as (
+                    read,
+                    write,
+                ):
+                    async with ClientSession(
+                        read, write, read_timeout_seconds=timedelta(seconds=30)
+                    ) as session:
+                        await session.initialize()
+                        yield session
+            except Exception as e:
+                # Read stderr content from temporary file for debugging
+                err_log.seek(0)  # Read from the start of the file
+                stderr_content = err_log.read()
+                if stderr_content:
+                    logger.error(
+                        f"MCP server '{tool_server.name}' stderr output: {stderr_content}"
+                    )
 
-        try:
-            async with stdio_client(server_params, errlog=err_log) as (
-                read,
-                write,
-            ):
-                async with ClientSession(
-                    read, write, read_timeout_seconds=timedelta(seconds=30)
-                ) as session:
-                    await session.initialize()
-                    yield session
-        except Exception as e:
-            # Read stderr content from temporary file for debugging
-            err_log.seek(0)  # Read from the start of the file
-            stderr_content = err_log.read()
-            if stderr_content:
-                logger.error(
-                    f"MCP server '{tool_server.name}' stderr output: {stderr_content}"
-                )
+                # Check for MCP errors. Things like wrong arguments would fall here.
+                mcp_error = self._extract_first_exception(e, McpError)
+                if mcp_error and isinstance(mcp_error, McpError):
+                    self._raise_local_mcp_error(mcp_error, stderr_content)
 
-            # Check for MCP errors. Things like wrong arguments would fall here.
-            mcp_error = self._extract_first_exception(e, McpError)
-            if mcp_error and isinstance(mcp_error, McpError):
-                self._raise_local_mcp_error(mcp_error, stderr_content)
-
-            # Re-raise the original error but with a friendlier message
-            self._raise_local_mcp_error(e, stderr_content)
-        finally:
-            # Close and delete the temp file
-            err_log.close()
+                # Re-raise the original error but with a friendlier message
+                self._raise_local_mcp_error(e, stderr_content)
 
     def _raise_local_mcp_error(self, e: Exception, stderr: str):
         """
