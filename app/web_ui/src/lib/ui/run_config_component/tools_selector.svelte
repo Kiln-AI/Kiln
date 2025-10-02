@@ -33,23 +33,27 @@
   // Load tools if project_id or task_id changes
   $: load_tools(project_id, task_id)
 
+  // Handle special navigation case immediately, do not save to tools_store
+  $: if (tools && tools.includes("__add_new_kiln_task__")) {
+    // Remove the add new option and navigate immediately
+    tools = tools.filter((tool) => tool !== "__add_new_kiln_task__")
+    goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
+  }
+
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
-  $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
-    // Check if the special "Create Tool from Kiln Task" option was selected
-    if (tools.includes("__add_new_kiln_task__")) {
-      // Remove the special option from the tools array
-      tools = tools.filter((tool) => tool !== "__add_new_kiln_task__")
-      // Navigate to create Kiln Task Tool page
-      goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
-    } else {
-      tools_store.update((state) => ({
-        ...state,
-        selected_tool_ids_by_task_id: {
-          ...state.selected_tool_ids_by_task_id,
-          [task_id]: tools,
-        },
-      }))
-    }
+  $: if (
+    task_id &&
+    tools &&
+    tools_store_loaded_task_id === task_id &&
+    !tools.includes("__add_new_kiln_task__")
+  ) {
+    tools_store.update((state) => ({
+      ...state,
+      selected_tool_ids_by_task_id: {
+        ...state.selected_tool_ids_by_task_id,
+        [task_id]: tools,
+      },
+    }))
   }
 
   // filter out tools that are not in the available tools (server offline, tool removed, etc)
@@ -73,13 +77,13 @@
       ),
     )
 
-    const unavailable_tools = current_tools.filter(
+    const unavailable_tools = tools.filter(
       (tool_id) => !available_tool_ids.has(tool_id),
     )
 
     if (unavailable_tools.length > 0) {
       console.warn("Removing unavailable tools:", unavailable_tools)
-      tools = current_tools.filter((tool_id) => available_tool_ids.has(tool_id))
+      tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
     }
   }
   $: filter_unavailable_tools($available_tools[project_id], tools)

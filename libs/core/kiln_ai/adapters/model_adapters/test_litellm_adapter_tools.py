@@ -89,9 +89,9 @@ async def run_simple_task_with_tools(
         if simplified:
             run = await adapter.invoke("what is 2+2")
 
-            # Verify that AddTool.run_with_context was called with correct parameters
-            add_spy.run_with_context.assert_called()
-            add_call_args = add_spy.run_with_context.call_args
+            # Verify that AddTool.run was called with correct parameters
+            add_spy.run.assert_called()
+            add_call_args = add_spy.run.call_args
             assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
             add_kwargs = add_call_args.kwargs
             assert add_kwargs.get("a") == 2
@@ -125,9 +125,9 @@ async def run_simple_task_with_tools(
                 "You should answer the following question: four plus six times 10"
             )
 
-            # Verify that MultiplyTool.run_with_context was called with correct parameters
-            multiply_spy.run_with_context.assert_called()
-            multiply_call_args = multiply_spy.run_with_context.call_args
+            # Verify that MultiplyTool.run was called with correct parameters
+            multiply_spy.run.assert_called()
+            multiply_call_args = multiply_spy.run.call_args
             assert multiply_call_args.args[
                 0
             ].allow_saving  # First arg is ToolCallContext
@@ -139,9 +139,9 @@ async def run_simple_task_with_tools(
                 f"Expected multiply to be called with a=6, b=10 or a=10, b=6, but got {multiply_kwargs}"
             )
 
-            # Verify that AddTool.run_with_context was called with correct parameters
-            add_spy.run_with_context.assert_called()
-            add_call_args = add_spy.run_with_context.call_args
+            # Verify that AddTool.run was called with correct parameters
+            add_spy.run.assert_called()
+            add_call_args = add_spy.run.call_args
             assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
             add_kwargs = add_call_args.kwargs
             # Check that add was called with a=60, b=4 (or vice versa)
@@ -489,13 +489,13 @@ async def test_run_model_turn_parallel_tools(tmp_path):
 
     # Verify both tools were called in parallel
     # The context is passed as the first positional argument, not as a keyword argument
-    multiply_spy.run_with_context.assert_called_once()
-    multiply_call_args = multiply_spy.run_with_context.call_args
+    multiply_spy.run.assert_called_once()
+    multiply_call_args = multiply_spy.run.call_args
     assert multiply_call_args.args[0].allow_saving  # First arg is ToolCallContext
     assert multiply_call_args.kwargs == {"a": 6, "b": 10}
 
-    add_spy.run_with_context.assert_called_once()
-    add_call_args = add_spy.run_with_context.call_args
+    add_spy.run.assert_called_once()
+    add_call_args = add_spy.run.call_args
     assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
     assert add_call_args.kwargs == {"a": 2, "b": 3}
 
@@ -611,13 +611,13 @@ async def test_run_model_turn_sequential_tools(tmp_path):
 
     # Verify tools were called sequentially
     # The context is passed as the first positional argument, not as a keyword argument
-    multiply_spy.run_with_context.assert_called_once()
-    multiply_call_args = multiply_spy.run_with_context.call_args
+    multiply_spy.run.assert_called_once()
+    multiply_call_args = multiply_spy.run.call_args
     assert multiply_call_args.args[0].allow_saving  # First arg is ToolCallContext
     assert multiply_call_args.kwargs == {"a": 6, "b": 10}
 
-    add_spy.run_with_context.assert_called_once()
-    add_call_args = add_spy.run_with_context.call_args
+    add_spy.run.assert_called_once()
+    add_call_args = add_spy.run.call_args
     assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
     assert add_call_args.kwargs == {"a": 60, "b": 4}
 
@@ -778,7 +778,7 @@ class MockTool:
             }
         }
 
-    async def run(self, **kwargs) -> str:
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
         if self._raise_on_run:
             raise self._raise_on_run
         return self._return_value
@@ -909,6 +909,7 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
         "role": "tool",
         "tool_call_id": "call_1",
         "content": "5",
+        "kiln_task_tool_data": None,
     }
 
 
@@ -945,8 +946,10 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     assert len(tool_messages) == 2
     assert tool_messages[0]["tool_call_id"] == "call_1"
     assert tool_messages[0]["content"] == "5"
+    assert tool_messages[0]["kiln_task_tool_data"] is None
     assert tool_messages[1]["tool_call_id"] == "call_2"
     assert tool_messages[1]["content"] == "6"
+    assert tool_messages[1]["kiln_task_tool_data"] is None
 
 
 async def test_process_tool_calls_tool_not_found(tmp_path):
@@ -1102,6 +1105,7 @@ async def test_process_tool_calls_complex_result(tmp_path):
     assert assistant_output is None
     assert len(tool_messages) == 1
     assert tool_messages[0]["content"] == complex_result
+    assert tool_messages[0]["kiln_task_tool_data"] is None
 
 
 async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):

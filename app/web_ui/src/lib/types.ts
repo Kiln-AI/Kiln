@@ -89,7 +89,7 @@ export type TraceMessage =
   | components["schemas"]["ChatCompletionSystemMessageParam"]
   | components["schemas"]["ChatCompletionUserMessageParam-Input"]
   | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
-  | components["schemas"]["ChatCompletionToolMessageParam"]
+  | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
 export type ToolCallMessageParam =

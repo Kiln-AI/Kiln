@@ -20,17 +20,9 @@ class KilnToolInterface(ABC):
     """
 
     @abstractmethod
-    async def run(self, **kwargs) -> Any:
-        """Execute the tool with the given parameters."""
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> Any:
+        """Execute the tool with the given parameters and calling context if provided."""
         pass
-
-    async def run_with_context(self, context: ToolCallContext, **kwargs) -> Any:
-        """Execute the tool with the given parameters and calling context.
-
-        Default implementation calls run() for backward compatibility.
-        Tools that need context should override this method.
-        """
-        return await self.run(**kwargs)
 
     @abstractmethod
     async def toolcall_definition(self) -> Dict[str, Any]:
@@ -93,6 +85,6 @@ class KilnTool(KilnToolInterface):
         }
 
     @abstractmethod
-    async def run(self, **kwargs) -> str:
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> Any:
         """Subclasses must implement the actual tool logic."""
         pass

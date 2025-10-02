@@ -8,9 +8,13 @@ from openai.types.chat import (
 from openai.types.chat import (
     ChatCompletionMessageParam as OpenAIChatCompletionMessageParam,
 )
+from openai.types.chat import (
+    ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
+)
 
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
+    ChatCompletionToolMessageParamWrapper,
 )
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam as KilnChatCompletionMessageParam,
@@ -45,10 +49,40 @@ def test_assistant_message_param_properties_match():
     )
 
 
+def test_tool_message_param_properties_match():
+    """
+    Test that ChatCompletionToolMessageParamWrapper has all the same properties
+    as OpenAI's ChatCompletionToolMessageParam, plus the kiln_task_tool_data property.
+
+    This will catch any changes to the OpenAI types that we haven't updated our wrapper for.
+    """
+    # Get annotations for both types
+    openai_annotations = OpenAIChatCompletionToolMessageParam.__annotations__
+    kiln_annotations = ChatCompletionToolMessageParamWrapper.__annotations__
+
+    # Check that both have the same property names
+    openai_properties = set(openai_annotations.keys())
+    kiln_properties = set(kiln_annotations.keys())
+
+    # Kiln task tool data is an added property. Confirm it's there and remove it from the comparison.
+    assert "kiln_task_tool_data" in kiln_properties, (
+        "Kiln should have kiln_task_tool_data"
+    )
+    kiln_properties.remove("kiln_task_tool_data")
+
+    assert openai_properties == kiln_properties, (
+        f"Property names don't match. "
+        f"OpenAI has: {openai_properties}, "
+        f"Kiln has: {kiln_properties}, "
+        f"Missing from Kiln: {openai_properties - kiln_properties}, "
+        f"Extra in Kiln: {kiln_properties - openai_properties}"
+    )
+
+
 def test_chat_completion_message_param_union_compatibility():
     """
     Test that our ChatCompletionMessageParam union contains the same types as OpenAI's,
-    except with our wrapper instead of the original assistant message param.
+    except with our wrappers instead of the original assistant and tool message params.
     """
     # Get the union members for both types
     openai_union_args = get_args(OpenAIChatCompletionMessageParam)
@@ -70,10 +104,16 @@ def test_chat_completion_message_param_union_compatibility():
     openai_type_names = {arg.__name__ for arg in openai_union_args}
     kiln_type_names = {arg.__name__ for arg in kiln_union_args}
 
-    # Expected difference: OpenAI has ChatCompletionAssistantMessageParam,
-    # Kiln has ChatCompletionAssistantMessageParamWrapper
-    expected_openai_only = {"ChatCompletionAssistantMessageParam"}
-    expected_kiln_only = {"ChatCompletionAssistantMessageParamWrapper"}
+    # Expected differences: OpenAI has ChatCompletionAssistantMessageParam and ChatCompletionToolMessageParam,
+    # Kiln has ChatCompletionAssistantMessageParamWrapper and ChatCompletionToolMessageParamWrapper
+    expected_openai_only = {
+        "ChatCompletionAssistantMessageParam",
+        "ChatCompletionToolMessageParam",
+    }
+    expected_kiln_only = {
+        "ChatCompletionAssistantMessageParamWrapper",
+        "ChatCompletionToolMessageParamWrapper",
+    }
 
     openai_only = openai_type_names - kiln_type_names
     kiln_only = kiln_type_names - openai_type_names
@@ -91,7 +131,6 @@ def test_chat_completion_message_param_union_compatibility():
         "ChatCompletionDeveloperMessageParam",
         "ChatCompletionSystemMessageParam",
         "ChatCompletionUserMessageParam",
-        "ChatCompletionToolMessageParam",
         "ChatCompletionFunctionMessageParam",
     }
 
@@ -100,17 +139,17 @@ def test_chat_completion_message_param_union_compatibility():
     )
 
 
-def test_wrapper_can_be_instantiated():
-    """Test that our wrapper can be instantiated with the same data as the original."""
-    # Create a sample message that should work with both types
-    sample_message: ChatCompletionAssistantMessageParamWrapper = {
+def test_assistant_message_wrapper_can_be_instantiated():
+    """Test that our assistant message wrapper can be instantiated with the same data as the original."""
+    # Test basic assistant message
+    sample_assistant_message: ChatCompletionAssistantMessageParamWrapper = {
         "role": "assistant",
         "content": "Hello, world!",
     }
 
     # This should work without type errors (runtime test)
-    assert sample_message["role"] == "assistant"
-    assert sample_message.get("content") == "Hello, world!"
+    assert sample_assistant_message["role"] == "assistant"
+    assert sample_assistant_message.get("content") == "Hello, world!"
 
     # Test with tool calls using List instead of Iterable
     sample_with_tools: ChatCompletionAssistantMessageParamWrapper = {
@@ -129,3 +168,40 @@ def test_wrapper_can_be_instantiated():
     tool_calls = sample_with_tools.get("tool_calls", [])
     if tool_calls:
         assert tool_calls[0]["id"] == "call_123"
+
+
+def test_tool_message_wrapper_can_be_instantiated():
+    """Test that our tool message wrapper can be instantiated with the same data as the original."""
+    # Test basic tool message
+    sample_tool_message: ChatCompletionToolMessageParamWrapper = {
+        "role": "tool",
+        "content": "Tool response",
+        "tool_call_id": "call_123",
+    }
+
+    assert sample_tool_message["role"] == "tool"
+    assert sample_tool_message.get("content") == "Tool response"
+    assert sample_tool_message.get("tool_call_id") == "call_123"
+
+    # Test with kiln_task_tool_data
+    sample_with_kiln_data: ChatCompletionToolMessageParamWrapper = {
+        "role": "tool",
+        "content": "Tool response",
+        "tool_call_id": "call_123",
+        "kiln_task_tool_data": "project_123::tool_456::task_789::run_101",
+    }
+
+    assert (
+        sample_with_kiln_data.get("kiln_task_tool_data")
+        == "project_123::tool_456::task_789::run_101"
+    )
+
+    # Test with kiln_task_tool_data as None
+    sample_with_none_kiln_data: ChatCompletionToolMessageParamWrapper = {
+        "role": "tool",
+        "content": "Tool response",
+        "tool_call_id": "call_123",
+        "kiln_task_tool_data": None,
+    }
+
+    assert sample_with_none_kiln_data.get("kiln_task_tool_data") is None

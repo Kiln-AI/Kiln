@@ -129,35 +129,23 @@
   }
 
   function kiln_task_tool_data_from_message(message: TraceMessage): {
-    tool_id: string
-    task_run_id: string
     project_id: string
+    tool_id: string
     task_id: string
+    run_id: string
   } | null {
-    if (message.role === "tool" && "content" in message && message.content) {
-      try {
-        // Try to parse the content as JSON to extract Kiln task data
-        const parsed = JSON.parse(message.content as string)
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          "tool_id" in parsed &&
-          "task_run_id" in parsed &&
-          "project_id" in parsed &&
-          "task_id" in parsed
-        ) {
-          return {
-            tool_id: parsed.tool_id,
-            task_run_id: parsed.task_run_id,
-            project_id: parsed.project_id,
-            task_id: parsed.task_id,
-          }
-        }
-      } catch (e) {
-        // Content is not JSON, return null
+    if ("kiln_task_tool_data" in message && message.kiln_task_tool_data) {
+      const [project_id, tool_id, task_id, run_id] =
+        message.kiln_task_tool_data.split(",")
+      return {
+        project_id,
+        tool_id,
+        task_id,
+        run_id,
       }
+    } else {
+      return null
     }
-    return null
   }
 
   let tool_messages_dialog: ToolMessagesDialog | null = null

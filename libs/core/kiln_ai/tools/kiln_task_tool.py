@@ -1,4 +1,3 @@
-import json
 from typing import Any, Dict
 
 from kiln_ai.datamodel import Task
@@ -8,6 +7,15 @@ from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
 from kiln_ai.utils.project_utils import project_from_id
+
+
+class KilnTaskToolResult:
+    output: Dict | str
+    kiln_task_tool_data: str
+
+    def __init__(self, output: str, kiln_task_tool_data: str):
+        self.output = output
+        self.kiln_task_tool_data = kiln_task_tool_data
 
 
 class KilnTaskTool(KilnToolInterface):
@@ -56,18 +64,13 @@ class KilnTaskTool(KilnToolInterface):
             },
         }
 
-    async def run(self, **kwargs) -> str:
-        """Execute the wrapped Kiln task with the given parameters.
-
-        This method is kept for backward compatibility but should not be used
-        for Kiln Task Tools as it doesn't have access to the calling context.
-        """
-        # Default to False for backward compatibility when no context is provided
-        context = ToolCallContext(allow_saving=False)
-        return await self.run_with_context(context, **kwargs)
-
-    async def run_with_context(self, context: ToolCallContext, **kwargs) -> str:
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> KilnTaskToolResult:
         """Execute the wrapped Kiln task with the given parameters and calling context."""
+        if context is None:
+            raise ValueError("Context is required for running a KilnTaskTool.")
+
         task = await self._get_task()
         run_config = await self._get_run_config()
 
@@ -103,15 +106,9 @@ class KilnTaskTool(KilnToolInterface):
             ),
         )
 
-        # Return structured information about the created task as tool run
-        return json.dumps(
-            {
-                "output": task_run.output.output,
-                "task_run_id": task_run.id,
-                "task_id": task_run.parent.id if task_run.parent else None,
-                "project_id": self._project_id,
-                "tool_id": self._tool_id,
-            }
+        return KilnTaskToolResult(
+            output=task_run.output.output,
+            kiln_task_tool_data=f"{self._project_id},{self._tool_id},{task.id},{task_run.id}",
         )
 
     async def _get_task(self) -> Task:

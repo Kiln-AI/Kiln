@@ -16,10 +16,10 @@
 
   export function show(
     kiln_task_tool_data: {
-      tool_id: string
-      task_run_id: string
       project_id: string
+      tool_id: string
       task_id: string
+      run_id: string
     } | null,
   ) {
     load_tool_messages_dialog_data(kiln_task_tool_data)
@@ -28,9 +28,9 @@
 
   async function load_tool_messages_dialog_data(
     kiln_task_tool_data: {
-      tool_id: string
-      task_run_id: string
       project_id: string
+      tool_id: string
+      run_id: string
       task_id: string
     } | null,
   ) {
@@ -41,7 +41,7 @@
     if (kiln_task_tool_data) {
       const project_id = kiln_task_tool_data.project_id
       const task_id = kiln_task_tool_data.task_id
-      const run_id = kiln_task_tool_data.task_run_id
+      const run_id = kiln_task_tool_data.run_id
 
       try {
         loading_run = true
