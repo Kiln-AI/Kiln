@@ -117,7 +117,7 @@
           {
             value: "__create_new_run_config__",
             label: "New Run Configuration",
-            badge: "+",
+            badge: "＋",
             badge_color: "primary",
           },
         ],
