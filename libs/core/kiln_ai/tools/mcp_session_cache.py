@@ -1,10 +1,20 @@
 import asyncio
+from dataclasses import dataclass
+from typing import Any
 
 from mcp.client.session import ClientSession
 
 from kiln_ai.utils.logging import logging
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CachedSession:
+    """Wrapper object to keep a MCP ClientSession and its context alive."""
+
+    session: ClientSession
+    context: Any
 
 
 class MCPSessionCache:
@@ -17,13 +27,13 @@ class MCPSessionCache:
     """
 
     def __init__(self):
-        self._sessions: dict[str, ClientSession] = {}
+        self._sessions: dict[str, CachedSession] = {}
         self._lock = asyncio.Lock()
 
-    async def _cleanup_session(self, session: ClientSession) -> None:
+    async def _cleanup_session(self, session: CachedSession) -> None:
         """Helper to clean up a session"""
         try:
-            await session.__aexit__(None, None, None)
+            await session.context.__aexit__(None, None, None)
         except Exception as e:
             # Ignore errors during cleanup so we don't cause MCPSessionManager to throw
             logger.error(f"Error cleaning up ClientSession: {e}")
@@ -31,13 +41,14 @@ class MCPSessionCache:
 
     async def get(self, server_id: str) -> ClientSession | None:
         async with self._lock:
-            return self._sessions.get(server_id)
+            cached = self._sessions.get(server_id)
+            return cached.session if cached else None
 
-    async def set(self, server_id: str, session: ClientSession) -> None:
+    async def set(self, server_id: str, cached_session: CachedSession) -> None:
         # Close old session if it exists to prevent memory leak
         async with self._lock:
             old_session = self._sessions.get(server_id)
-            self._sessions[server_id] = session
+            self._sessions[server_id] = cached_session
 
         # Clean up old session, no lock needed
         if old_session is not None:

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from kiln_ai.tools.mcp_session_cache import MCPSessionCache
+from kiln_ai.tools.mcp_session_cache import CachedSession, MCPSessionCache
 
 
 @pytest.fixture
@@ -11,11 +11,16 @@ def cache():
     return MCPSessionCache()
 
 
-def create_mock_session(close_side_effect=None):
-    """Create a mock ClientSession with optional close error."""
+def create_cached_session(
+    session_close_side_effect=None, context_close_side_effect=None
+):
+    """Create a CachedSession with mock session and context."""
     session = Mock()
-    session.__aexit__ = AsyncMock(side_effect=close_side_effect)
-    return session
+    session.__aexit__ = AsyncMock(side_effect=session_close_side_effect)
+
+    context = Mock()
+    context.__aexit__ = AsyncMock(side_effect=context_close_side_effect)
+    return CachedSession(session=session, context=context)
 
 
 @pytest.mark.asyncio
@@ -27,82 +32,84 @@ async def test_cache_initialization(cache):
 @pytest.mark.asyncio
 async def test_set_and_get(cache):
     """Test storing and retrieving a session."""
-    session = create_mock_session()
-    await cache.set("test-server-1", session)
-    assert await cache.get("test-server-1") is session
+    cached_session = create_cached_session()
+    await cache.set("test-server-1", cached_session)
+    assert await cache.get("test-server-1") is cached_session.session
 
 
 @pytest.mark.asyncio
 async def test_set_multiple_sessions(cache):
     """Test storing multiple sessions."""
-    session1 = create_mock_session()
-    session2 = create_mock_session()
+    cached_session1 = create_cached_session()
+    cached_session2 = create_cached_session()
 
-    await cache.set("server-1", session1)
-    await cache.set("server-2", session2)
+    await cache.set("server-1", cached_session1)
+    await cache.set("server-2", cached_session2)
 
-    assert await cache.get("server-1") is session1
-    assert await cache.get("server-2") is session2
+    assert await cache.get("server-1") is cached_session1.session
+    assert await cache.get("server-2") is cached_session2.session
 
 
 @pytest.mark.asyncio
 async def test_set_overwrites_existing(cache):
     """Test that setting a session with same ID overwrites and closes old session."""
     server_id = "test-server"
-    session1 = create_mock_session()
-    session2 = create_mock_session()
+    cached_session1 = create_cached_session()
+    cached_session2 = create_cached_session()
 
-    await cache.set(server_id, session1)
-    await cache.set(server_id, session2)
+    await cache.set(server_id, cached_session1)
+    await cache.set(server_id, cached_session2)
 
-    assert await cache.get(server_id) is session2
-    # Old session should be closed to prevent memory leak
-    session1.__aexit__.assert_called_once_with(None, None, None)
+    assert await cache.get(server_id) is cached_session2.session
+    # Old context should be closed to prevent memory leak
+    cached_session1.context.__aexit__.assert_called_once_with(None, None, None)
 
 
 @pytest.mark.asyncio
 async def test_close_session(cache):
     """Test closing a specific session."""
-    session = create_mock_session()
+    cached_session = create_cached_session()
     server_id = "test-server"
 
-    await cache.set(server_id, session)
+    await cache.set(server_id, cached_session)
     await cache.close_session(server_id)
 
     assert await cache.get(server_id) is None
-    session.__aexit__.assert_called_once_with(None, None, None)
+    cached_session.context.__aexit__.assert_called_once_with(None, None, None)
 
 
 @pytest.mark.asyncio
 async def test_close_session_ignores_errors(cache):
     """Test that close_session ignores errors during cleanup."""
-    session = create_mock_session(Exception("Close failed"))
+    cached_session = create_cached_session(
+        context_close_side_effect=Exception("Close failed")
+    )
 
     server_id = "test-server"
-    await cache.set(server_id, session)
+    await cache.set(server_id, cached_session)
 
     # Should not raise
     await cache.close_session(server_id)
 
     assert await cache.get(server_id) is None
-    session.__aexit__.assert_called_once()
+    cached_session.context.__aexit__.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_close_all(cache):
     """Test closing all sessions."""
-    session1 = create_mock_session()
-    session2 = create_mock_session()
+    cached_session1 = create_cached_session()
+    cached_session2 = create_cached_session()
 
-    await cache.set("server-1", session1)
-    await cache.set("server-2", session2)
+    await cache.set("server-1", cached_session1)
+    await cache.set("server-2", cached_session2)
 
     await cache.close_all()
 
     assert await cache.get("server-1") is None
     assert await cache.get("server-2") is None
-    session1.__aexit__.assert_called_once()
-    session2.__aexit__.assert_called_once()
+    cached_session1.context.__aexit__.assert_called_once()
+    cached_session2.context.__aexit__.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -118,11 +125,11 @@ async def test_concurrent_operations_no_race_condition(cache):
 
     async def mixed_operations(i: int):
         # Mix of get, set, and close operations
-        session = create_mock_session()
-        await cache.set(f"server-{i}", session)
+        cached_session = create_cached_session()
+        await cache.set(f"server-{i}", cached_session)
         retrieved = await cache.get(f"server-{i}")
-        assert retrieved is session
-        return session
+        assert retrieved is cached_session.session
+        return cached_session.session
 
     # Launch concurrent operations 10 times
     tasks = [mixed_operations(i) for i in range(10)]
