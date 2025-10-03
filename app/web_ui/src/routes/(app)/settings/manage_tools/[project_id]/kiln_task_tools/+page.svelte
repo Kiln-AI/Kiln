@@ -123,8 +123,12 @@
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolDetails(tool)}
-                on:keydown={(e) =>
-                  e.key === "Enter" && navigateToToolDetails(tool)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    navigateToToolDetails(tool)
+                  }
+                }}
                 role="button"
                 tabindex={0}
               >

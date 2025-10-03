@@ -1,3 +1,4 @@
+from functools import cached_property
 from typing import Any, Dict
 
 from kiln_ai.datamodel import Task
@@ -40,10 +41,6 @@ class KilnTaskTool(KilnToolInterface):
         self._task_id = data_model.properties.get("task_id", "")
         self._run_config_id = data_model.properties.get("run_config_id", "")
 
-        self._task: Task | None = None
-        self._run_config: TaskRunConfig | None = None
-        self._parameters_schema: Dict[str, Any] | None = None
-
     async def id(self) -> ToolId:
         return self._tool_id
 
@@ -60,7 +57,7 @@ class KilnTaskTool(KilnToolInterface):
             "function": {
                 "name": await self.name(),
                 "description": await self.description(),
-                "parameters": await self.get_parameters_schema(),
+                "parameters": self.parameters_schema,
             },
         }
 
@@ -71,11 +68,8 @@ class KilnTaskTool(KilnToolInterface):
         if context is None:
             raise ValueError("Context is required for running a KilnTaskTool.")
 
-        task = await self._get_task()
-        run_config = await self._get_run_config()
-
         # Determine the input format
-        if task.input_json_schema:
+        if self._task.input_json_schema:
             # Structured input - pass kwargs directly
             input = kwargs
         else:
@@ -91,8 +85,8 @@ class KilnTaskTool(KilnToolInterface):
 
         # Create adapter and run the task using the calling task's allow_saving setting
         adapter = adapter_for_task(
-            task,
-            run_config_properties=run_config.run_config_properties,
+            self._task,
+            run_config_properties=self._run_config.run_config_properties,
             base_adapter_config=AdapterConfig(
                 allow_saving=context.allow_saving,
                 default_tags=["tool_call"],
@@ -102,72 +96,65 @@ class KilnTaskTool(KilnToolInterface):
             input,
             input_source=DataSource(
                 type=DataSourceType.tool_call,
-                run_config=run_config.run_config_properties,
+                run_config=self._run_config.run_config_properties,
             ),
         )
 
         return KilnTaskToolResult(
             output=task_run.output.output,
-            kiln_task_tool_data=f"{self._project_id},{self._tool_id},{task.id},{task_run.id}",
+            kiln_task_tool_data=f"{self._project_id},{self._tool_id},{self._task.id},{task_run.id}",
         )
 
-    async def _get_task(self) -> Task:
-        """Lazy load the task."""
-        if self._task is None:
-            # Load the project first
-            project = project_from_id(self._project_id)
-            if project is None:
-                raise ValueError(f"Project not found: {self._project_id}")
+    @cached_property
+    def _task(self) -> Task:
+        # Load the project first
+        project = project_from_id(self._project_id)
+        if project is None:
+            raise ValueError(f"Project not found: {self._project_id}")
 
-            # Load the task from the project
-            self._task = Task.from_id_and_parent_path(self._task_id, project.path)
-            if self._task is None:
-                raise ValueError(
-                    f"Task not found: {self._task_id} in project {self._project_id}"
-                )
-        return self._task
-
-    async def _get_run_config(self) -> TaskRunConfig:
-        """Lazy load the task run config."""
-        if self._run_config is None:
-            task = await self._get_task()
-            self._run_config = next(
-                (
-                    run_config
-                    for run_config in task.run_configs(readonly=True)
-                    if run_config.id == self._run_config_id
-                ),
-                None,
+        # Load the task from the project
+        task = Task.from_id_and_parent_path(self._task_id, project.path)
+        if task is None:
+            raise ValueError(
+                f"Task not found: {self._task_id} in project {self._project_id}"
             )
-            if self._run_config is None:
-                raise ValueError(
-                    f"Task run config not found: {self._run_config_id} for task {self._task_id} in project {self._project_id}"
-                )
-        return self._run_config
+        return task
 
-    async def get_parameters_schema(self) -> Dict[str, Any]:
-        """Lazy load the task parameters schema."""
-        if self._parameters_schema is None:
-            task = await self._get_task()
+    @cached_property
+    def _run_config(self) -> TaskRunConfig:
+        run_config = next(
+            (
+                run_config
+                for run_config in self._task.run_configs(readonly=True)
+                if run_config.id == self._run_config_id
+            ),
+            None,
+        )
+        if run_config is None:
+            raise ValueError(
+                f"Task run config not found: {self._run_config_id} for task {self._task_id} in project {self._project_id}"
+            )
+        return run_config
 
-            # V2: The user should control the input schema, especially for plaintext tasks.
-            if task.input_json_schema:
-                # Use the task's input schema directly if it exists
-                self._parameters_schema = task.input_schema()
-            else:
-                # For plaintext tasks, create a simple string input parameter
-                self._parameters_schema = {
-                    "type": "object",
-                    "properties": {
-                        "input": {
-                            "type": "string",
-                            "description": "Plaintext input for the tool.",
-                        }
-                    },
-                    "required": ["input"],
-                }
-            if self._parameters_schema is None:
-                raise ValueError(
-                    f"Failed to create parameters schema for tool_id {self._tool_id}"
-                )
-        return self._parameters_schema
+    @cached_property
+    def parameters_schema(self) -> Dict[str, Any]:
+        if self._task.input_json_schema:
+            # Use the task's input schema directly if it exists
+            parameters_schema = self._task.input_schema()
+        else:
+            # For plaintext tasks, create a simple string input parameter
+            parameters_schema = {
+                "type": "object",
+                "properties": {
+                    "input": {
+                        "type": "string",
+                        "description": "Plaintext input for the tool.",
+                    }
+                },
+                "required": ["input"],
+            }
+        if parameters_schema is None:
+            raise ValueError(
+                f"Failed to create parameters schema for tool_id {self._tool_id}"
+            )
+        return parameters_schema

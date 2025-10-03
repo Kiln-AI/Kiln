@@ -10,6 +10,7 @@ from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
 class ToolCallContext:
     """Context passed to tools when they are called, containing information from the calling task."""
 
+    """Used for Kiln Tasks as Tools, to know if the tool call should save the task run it invoked to that task's Dataset."""
     allow_saving: bool = True
 
 

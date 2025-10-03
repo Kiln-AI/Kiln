@@ -212,8 +212,12 @@
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => goto(`/docs/rag_configs/${project_id}`)}
-                on:keydown={(e) =>
-                  e.key === "Enter" && goto(`/docs/rag_configs/${project_id}`)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(`/docs/rag_configs/${project_id}`)
+                  }
+                }}
                 role="button"
                 tabindex="0"
               >
@@ -249,9 +253,12 @@
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() =>
                   goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)}
-                on:keydown={(e) =>
-                  e.key === "Enter" &&
-                  goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)
+                  }
+                }}
                 role="button"
                 tabindex="0"
               >
@@ -299,8 +306,12 @@
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolServer(tool)}
-                on:keydown={(e) =>
-                  e.key === "Enter" && navigateToToolServer(tool)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    navigateToToolServer(tool)
+                  }
+                }}
                 role="button"
                 tabindex={0}
               >

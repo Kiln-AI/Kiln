@@ -3170,7 +3170,7 @@ export interface components {
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
          * ExternalToolApiDescription
-         * @description This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+         * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
          */
         ExternalToolApiDescription: {
             /** Name */

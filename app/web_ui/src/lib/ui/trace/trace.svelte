@@ -137,11 +137,19 @@
     if ("kiln_task_tool_data" in message && message.kiln_task_tool_data) {
       const [project_id, tool_id, task_id, run_id] =
         message.kiln_task_tool_data.split(",")
-      return {
-        project_id,
-        tool_id,
-        task_id,
-        run_id,
+      if (project_id && tool_id && task_id && run_id) {
+        return {
+          project_id,
+          tool_id,
+          task_id,
+          run_id,
+        }
+      } else {
+        console.warn(
+          "Invalid kiln task tool data format:",
+          message.kiln_task_tool_data,
+        )
+        return null
       }
     } else {
       return null

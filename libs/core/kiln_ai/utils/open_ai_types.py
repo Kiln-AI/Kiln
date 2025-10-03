@@ -97,7 +97,7 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     kiln_task_tool_data: Optional[str]
     """The data for the Kiln task tool that this message is responding to.
     
-    Formatted as <project_id>::<tool_id>::<task_id>::<run_id>
+    Formatted as `<project_id>,<tool_id>,<task_id>,<run_id>`
     """
 
 

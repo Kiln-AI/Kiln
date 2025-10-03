@@ -84,7 +84,7 @@ class KilnTaskToolServerCreationRequest(BaseModel):
 
 class ExternalToolApiDescription(BaseModel):
     """
-    This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+    This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
     """
 
     name: str
@@ -103,12 +103,12 @@ class ExternalToolApiDescription(BaseModel):
 
     @classmethod
     async def tool_from_kiln_task_tool(cls, tool: KilnTaskTool):
-        """Create an ExternalToolApiDescription from an MCP Tool object."""
+        """Create an ExternalToolApiDescription from a KilnTaskTool object."""
 
         return cls(
             name=await tool.name(),
             description=await tool.description(),
-            inputSchema=await tool.get_parameters_schema() or {},
+            inputSchema=tool.parameters_schema or {},
         )
 
 
