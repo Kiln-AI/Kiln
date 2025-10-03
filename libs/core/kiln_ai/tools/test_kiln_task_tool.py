@@ -18,7 +18,7 @@ class TestKilnTaskToolResult:
     def test_init(self):
         """Test KilnTaskToolResult initialization."""
         output = "test output"
-        kiln_task_tool_data = "project_id,tool_id,task_id,run_id"
+        kiln_task_tool_data = "project_id:::tool_id:::task_id:::run_id"
 
         result = KilnTaskToolResult(output, kiln_task_tool_data)
 
@@ -233,7 +233,7 @@ class TestKilnTaskTool:
             assert result.output == "Task completed successfully"
             assert (
                 result.kiln_task_tool_data
-                == "test_project,test_tool_id,test_task_123,run_789"
+                == "test_project:::test_tool_id:::test_task_123:::run_789"
             )
 
     @pytest.mark.asyncio

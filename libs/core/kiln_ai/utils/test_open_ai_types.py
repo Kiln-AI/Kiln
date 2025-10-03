@@ -188,12 +188,12 @@ def test_tool_message_wrapper_can_be_instantiated():
         "role": "tool",
         "content": "Tool response",
         "tool_call_id": "call_123",
-        "kiln_task_tool_data": "project_123::tool_456::task_789::run_101",
+        "kiln_task_tool_data": "project_123:::tool_456:::task_789:::run_101",
     }
 
     assert (
         sample_with_kiln_data.get("kiln_task_tool_data")
-        == "project_123::tool_456::task_789::run_101"
+        == "project_123:::tool_456:::task_789:::run_101"
     )
 
     # Test with kiln_task_tool_data as None

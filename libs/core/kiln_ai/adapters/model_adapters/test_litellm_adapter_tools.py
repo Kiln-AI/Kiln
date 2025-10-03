@@ -797,7 +797,7 @@ class MockKilnTaskTool:
         name: str,
         raise_on_run: Exception | None = None,
         output: str = "kiln_task_output",
-        kiln_task_tool_data: str = "project_id,tool_id,task_id,run_id",
+        kiln_task_tool_data: str = "project_id:::tool_id:::task_id:::run_id",
     ):
         self._name = name
         self._raise_on_run = raise_on_run
@@ -1194,7 +1194,7 @@ async def test_process_tool_calls_kiln_task_tool_result(tmp_path):
     mock_kiln_task_tool = MockKilnTaskTool(
         "kiln_task_tool",
         output="Task completed successfully",
-        kiln_task_tool_data="proj123,tool456,task789,run101",
+        kiln_task_tool_data="proj123:::tool456:::task789:::run101",
     )
     tool_calls = [MockToolCall("call_1", "kiln_task_tool", '{"input": "test input"}')]
 
@@ -1211,5 +1211,6 @@ async def test_process_tool_calls_kiln_task_tool_result(tmp_path):
     assert tool_messages[0]["tool_call_id"] == "call_1"
     assert tool_messages[0]["content"] == "Task completed successfully"
     assert (
-        tool_messages[0].get("kiln_task_tool_data") == "proj123,tool456,task789,run101"
+        tool_messages[0].get("kiln_task_tool_data")
+        == "proj123:::tool456:::task789:::run101"
     )

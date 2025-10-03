@@ -136,7 +136,7 @@
   } | null {
     if ("kiln_task_tool_data" in message && message.kiln_task_tool_data) {
       const [project_id, tool_id, task_id, run_id] =
-        message.kiln_task_tool_data.split(",")
+        message.kiln_task_tool_data.split(":::")
       if (project_id && tool_id && task_id && run_id) {
         return {
           project_id,

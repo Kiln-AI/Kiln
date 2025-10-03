@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict
 
@@ -10,13 +11,10 @@ from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
 from kiln_ai.utils.project_utils import project_from_id
 
 
+@dataclass
 class KilnTaskToolResult:
     output: str
     kiln_task_tool_data: str
-
-    def __init__(self, output: str, kiln_task_tool_data: str):
-        self.output = output
-        self.kiln_task_tool_data = kiln_task_tool_data
 
 
 class KilnTaskTool(KilnToolInterface):
@@ -102,7 +100,7 @@ class KilnTaskTool(KilnToolInterface):
 
         return KilnTaskToolResult(
             output=task_run.output.output,
-            kiln_task_tool_data=f"{self._project_id},{self._tool_id},{self._task.id},{task_run.id}",
+            kiln_task_tool_data=f"{self._project_id}:::{self._tool_id}:::{self._task.id}:::{task_run.id}",
         )
 
     @cached_property
