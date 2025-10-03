@@ -18,6 +18,7 @@ from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
@@ -784,7 +785,7 @@ class MockTool:
             raise self._raise_on_run
         return self._return_value
 
-    async def id(self) -> str:
+    async def id(self) -> ToolId:
         """Mock implementation of id for testing."""
         return f"mock_tool_{self._name}"
 
@@ -828,7 +829,7 @@ class MockKilnTaskTool:
             kiln_task_tool_data=self._kiln_task_tool_data,
         )
 
-    async def id(self) -> str:
+    async def id(self) -> ToolId:
         """Mock implementation of id for testing."""
         return f"mock_kiln_task_tool_{self._name}"
 
