@@ -190,7 +190,7 @@ async def available_mcp_tools(
             ToolApiDescription(
                 id=f"{prefix}{server.id}::{tool.name}",
                 name=tool.name,
-                description=tool.description,
+                description=tool.description.strip() if tool.description else None,
             )
             for tool in tools_result.tools
         ]
