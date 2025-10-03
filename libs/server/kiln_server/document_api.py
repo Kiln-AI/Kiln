@@ -274,6 +274,27 @@ class CreateChunkerConfigRequest(BaseModel):
         default_factory=dict,
     )
 
+    @model_validator(mode="after")
+    def validate_semantic_chunker_properties(self):
+        if self.chunker_type == ChunkerType.SEMANTIC:
+            # Validate required properties for semantic chunker
+            if "model_provider" not in self.properties:
+                raise ValueError("model_provider is required for semantic chunker")
+            if "model_provider_name" not in self.properties:
+                raise ValueError("model_provider_name is required for semantic chunker")
+            if "buffer_size" not in self.properties:
+                raise ValueError("buffer_size is required for semantic chunker")
+            if "breakpoint_percentile_threshold" not in self.properties:
+                raise ValueError(
+                    "breakpoint_percentile_threshold is required for semantic chunker"
+                )
+
+            # Set include_metadata and include_prev_next_rel to false
+            self.properties["include_metadata"] = False
+            self.properties["include_prev_next_rel"] = False
+
+        return self
+
 
 class CreateEmbeddingConfigRequest(BaseModel):
     name: FilenameString | None = Field(
