@@ -340,7 +340,7 @@
     title={"Kiln Task as Tool"}
     subtitle={`Name: ${tool_server?.name || ""}`}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/agents"
+    sub_subtitle_link="https://docs.kiln.tech/docs/agents#multi-actor-interaction-aka-sub-tasks"
     breadcrumbs={[
       {
         label: "Settings",

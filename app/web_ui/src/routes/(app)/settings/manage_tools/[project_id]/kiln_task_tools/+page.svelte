@@ -66,7 +66,7 @@
     title="Manage Kiln Tasks as Tools"
     subtitle="Allow your tasks to call another Kiln task, as a tool call."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/agents"
+    sub_subtitle_link="https://docs.kiln.tech/docs/agents#multi-actor-interaction-aka-sub-tasks"
     breadcrumbs={[
       {
         label: "Settings",
