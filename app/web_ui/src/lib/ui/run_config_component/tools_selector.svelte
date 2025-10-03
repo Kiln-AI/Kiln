@@ -81,6 +81,11 @@
   function get_tool_options(
     available_tools: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
+    if (!available_tools || available_tools.length === 0) {
+      // When there are no available tools, we'll show the empty state "Add tools" button
+      return []
+    }
+
     let option_groups: OptionGroup[] = []
 
     tool_set_order.forEach((tool_set_type) => {
@@ -114,7 +119,12 @@
         }
       }
 
-      if (options.length > 0) {
+      // Always add the kiln_task option group even if there are no kiln task tools
+      // For discoverability since we'll show the "Create New" button still
+      if (
+        options.length > 0 ||
+        (tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button)
+      ) {
         option_groups.push({
           label: label,
           options: options,
