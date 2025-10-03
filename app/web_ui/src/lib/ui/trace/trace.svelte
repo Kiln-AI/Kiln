@@ -146,7 +146,7 @@
         }
       } else {
         console.warn(
-          "Invalid kiln task tool data format:",
+          "Invalid kiln task tool data format. Expected format: <project_id>,<tool_id>,<task_id>,<run_id>",
           message.kiln_task_tool_data,
         )
         return null

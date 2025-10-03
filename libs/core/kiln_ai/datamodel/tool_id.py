@@ -133,7 +133,7 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
         )
     parts = remaining.split("::")
 
-    if len(parts) != 1 or not parts[0]:
+    if len(parts) != 1 or not parts[0].strip():
         raise ValueError(
             f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
         )

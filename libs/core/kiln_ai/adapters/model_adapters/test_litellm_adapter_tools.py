@@ -25,6 +25,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
+from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -783,13 +784,53 @@ class MockTool:
             raise self._raise_on_run
         return self._return_value
 
-    async def run_with_context(self, context: ToolCallContext, **kwargs) -> str:
-        """Mock implementation of run_with_context for testing."""
-        return await self.run(**kwargs)
-
     async def id(self) -> str:
         """Mock implementation of id for testing."""
         return f"mock_tool_{self._name}"
+
+
+class MockKilnTaskTool:
+    """Mock tool class that returns KilnTaskToolResult for testing"""
+
+    def __init__(
+        self,
+        name: str,
+        raise_on_run: Exception | None = None,
+        output: str = "kiln_task_output",
+        kiln_task_tool_data: str = "project_id,tool_id,task_id,run_id",
+    ):
+        self._name = name
+        self._raise_on_run = raise_on_run
+        self._output = output
+        self._kiln_task_tool_data = kiln_task_tool_data
+
+    async def name(self) -> str:
+        return self._name
+
+    async def toolcall_definition(self) -> dict:
+        return {
+            "function": {
+                "parameters": {
+                    "type": "object",
+                    "properties": {"input": {"type": "string"}},
+                    "required": ["input"],
+                }
+            }
+        }
+
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> KilnTaskToolResult:
+        if self._raise_on_run:
+            raise self._raise_on_run
+        return KilnTaskToolResult(
+            output=self._output,
+            kiln_task_tool_data=self._kiln_task_tool_data,
+        )
+
+    async def id(self) -> str:
+        """Mock implementation of id for testing."""
+        return f"mock_kiln_task_tool_{self._name}"
 
 
 async def test_process_tool_calls_none_input(tmp_path):
@@ -946,10 +987,10 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     assert len(tool_messages) == 2
     assert tool_messages[0]["tool_call_id"] == "call_1"
     assert tool_messages[0]["content"] == "5"
-    assert tool_messages[0]["kiln_task_tool_data"] is None
+    assert tool_messages[0].get("kiln_task_tool_data") is None
     assert tool_messages[1]["tool_call_id"] == "call_2"
     assert tool_messages[1]["content"] == "6"
-    assert tool_messages[1]["kiln_task_tool_data"] is None
+    assert tool_messages[1].get("kiln_task_tool_data") is None
 
 
 async def test_process_tool_calls_tool_not_found(tmp_path):
@@ -1105,7 +1146,7 @@ async def test_process_tool_calls_complex_result(tmp_path):
     assert assistant_output is None
     assert len(tool_messages) == 1
     assert tool_messages[0]["content"] == complex_result
-    assert tool_messages[0]["kiln_task_tool_data"] is None
+    assert tool_messages[0].get("kiln_task_tool_data") is None
 
 
 async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):
@@ -1135,3 +1176,40 @@ async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path
             match="task_response tool call and other tool calls were both provided",
         ):
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_kiln_task_tool_result(tmp_path):
+    """Test process_tool_calls with KilnTaskToolResult - tests the new if statement branch"""
+    task = build_test_task(tmp_path)
+    config = LiteLlmConfig(
+        run_config_properties=RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        )
+    )
+    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    mock_kiln_task_tool = MockKilnTaskTool(
+        "kiln_task_tool",
+        output="Task completed successfully",
+        kiln_task_tool_data="proj123,tool456,task789,run101",
+    )
+    tool_calls = [MockToolCall("call_1", "kiln_task_tool", '{"input": "test input"}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_kiln_task_tool]
+    ):
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["role"] == "tool"
+    assert tool_messages[0]["tool_call_id"] == "call_1"
+    assert tool_messages[0]["content"] == "Task completed successfully"
+    assert (
+        tool_messages[0].get("kiln_task_tool_data") == "proj123,tool456,task789,run101"
+    )

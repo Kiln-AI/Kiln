@@ -187,10 +187,17 @@
         return
       }
 
-      const task = tasks.find((t) => t.id === selected_task_id)
-      if (!task) {
+      if (!name) {
         error = createKilnError({
-          message: "Selected task not found.",
+          message: "Please enter a tool name.",
+          status: 400,
+        })
+        return
+      }
+
+      if (!description) {
+        error = createKilnError({
+          message: "Please enter a tool description.",
           status: 400,
         })
         return
@@ -203,9 +210,9 @@
           },
         },
         body: {
-          name: name ?? "",
+          name: name,
           description: description,
-          task_id: selected_task_id || "",
+          task_id: selected_task_id,
           run_config_id: selected_run_config_id,
           is_archived: false,
         },

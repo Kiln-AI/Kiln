@@ -11,7 +11,7 @@ from kiln_ai.utils.project_utils import project_from_id
 
 
 class KilnTaskToolResult:
-    output: Dict | str
+    output: str
     kiln_task_tool_data: str
 
     def __init__(self, output: str, kiln_task_tool_data: str):
