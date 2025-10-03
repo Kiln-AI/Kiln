@@ -247,7 +247,7 @@
                     Tool Result
                     {#if kiln_task_tool_data}
                       <button
-                        class="text-primary link ml-2"
+                        class="text-primary link ml-2 font-normal"
                         on:click={() => {
                           tool_messages_dialog?.show(kiln_task_tool_data)
                         }}
