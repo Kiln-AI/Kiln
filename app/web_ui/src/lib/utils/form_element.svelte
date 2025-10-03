@@ -108,8 +108,6 @@
 </script>
 
 <div>
-  <!-- Ensure compiler doesn't optimize away the heights -->
-  <div class="hidden h-18 h-36 h-60 h-96"></div>
   <div class="flex flex-row items-center gap-2 pb-[4px]">
     {#if inputType === "checkbox"}
       <input
@@ -159,8 +157,6 @@
   </div>
   <div class="relative">
     {#if inputType === "textarea"}
-      <!-- Ensure compiler doesn't optimize away the heights -->
-      <span class="h-18 h-60 hidden"></span>
       <textarea
         placeholder={error_message || placeholder || label}
         {id}
