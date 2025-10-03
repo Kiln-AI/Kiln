@@ -90,7 +90,7 @@
   <FormElement
     label="Plaintext Input"
     inputType="textarea"
-    tall={true}
+    height="large"
     {id}
     bind:value={plaintext_input}
   />
