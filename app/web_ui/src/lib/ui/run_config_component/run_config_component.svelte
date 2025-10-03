@@ -167,9 +167,9 @@
     }
   }
 
-  export async function save_new_run_config() {
+  export async function save_new_run_config(): Promise<TaskRunConfig | null> {
     if (!project_id || !current_task.id) {
-      return
+      return null
     }
     try {
       save_config_error = null
@@ -180,14 +180,14 @@
       )
       // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
       await load_task_prompts(project_id, current_task.id)
-      if (saved_config.id) {
-        selected_run_config_id = saved_config.id
-      } else {
+      if (!saved_config || !saved_config.id) {
         throw new Error("Saved config id not found")
       }
+      return saved_config
     } catch (e) {
       save_config_error = createKilnError(e)
     }
+    return null
   }
 
   async function get_selected_run_config(): Promise<

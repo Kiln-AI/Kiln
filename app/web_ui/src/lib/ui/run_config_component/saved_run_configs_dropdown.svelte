@@ -33,7 +33,8 @@
   export let project_id: string
   export let current_task: Task
   export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
-  export let save_new_run_config: (() => Promise<void>) | null = null
+  export let save_new_run_config: (() => Promise<TaskRunConfig | null>) | null =
+    null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let info_description: string = ""
@@ -180,7 +181,10 @@
 
   async function handle_save() {
     if (save_new_run_config) {
-      await save_new_run_config()
+      const saved_run_config = await save_new_run_config()
+      if (saved_run_config?.id) {
+        selected_run_config_id = saved_run_config.id
+      }
     }
   }
 

@@ -325,11 +325,17 @@
 
   // Handle key input when dropdown is open
   function handleKeyInput(event: KeyboardEvent) {
-    // Don't interfere with navigation keys or if we're already focused on search input
+    // Don't interfere if we're already focused on search input
     if (isSearching && document.activeElement === searchInputElement) {
       return
     }
 
+    // Don't interfere if the fancy select is not focused either
+    if (document.activeElement !== selectedElement) {
+      return
+    }
+
+    // Don't interfere with navigation keys
     if (
       event.key === "ArrowDown" ||
       event.key === "ArrowUp" ||

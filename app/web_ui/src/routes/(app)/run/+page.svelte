@@ -6,7 +6,7 @@
   import { KilnError } from "$lib/utils/error_handlers"
   import Run from "./run.svelte"
   import { client } from "$lib/api_client"
-  import type { TaskRun } from "$lib/types"
+  import type { TaskRun, TaskRunConfig } from "$lib/types"
   import RunInputForm from "./run_input_form.svelte"
   import posthog from "posthog-js"
   import { tick } from "svelte"
@@ -148,15 +148,16 @@
     }
   }
 
-  async function handle_save_new_run_config() {
+  async function handle_save_new_run_config(): Promise<TaskRunConfig | null> {
     try {
       if (!run_config_component) {
         throw new Error("Run config component is not loaded")
       }
-      await run_config_component.save_new_run_config()
+      return await run_config_component.save_new_run_config()
     } catch (e) {
       save_config_error = createKilnError(e)
     }
+    return null
   }
 </script>
 

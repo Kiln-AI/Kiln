@@ -71,8 +71,16 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: if (selected_task) {
-    name = to_snake_case(selected_task.name)
+  $: selected_task, handle_task_change()
+
+  function handle_task_change() {
+    clear_error_if_present()
+    selected_run_config_id = null
+    name = ""
+    description = ""
+    if (selected_task) {
+      name = to_snake_case(selected_task.name)
+    }
   }
 
   $: task_options = data_loaded ? create_task_options(tasks) : []
@@ -151,7 +159,10 @@
   async function create_new_run_config() {
     loading = true
     if (run_config_component) {
-      await run_config_component.save_new_run_config()
+      const saved_run_config = await run_config_component.save_new_run_config()
+      if (saved_run_config?.id) {
+        selected_run_config_id = saved_run_config.id
+      }
     }
     loading = false
   }
@@ -258,7 +269,6 @@
           fancy_select_options={task_options}
           disabled={!data_loaded}
           description="The Kiln task the tool will call."
-          on:change={clear_error_if_present}
         />
 
         {#if selected_task}
@@ -324,7 +334,6 @@
         <RunConfigComponent
           bind:this={run_config_component}
           {project_id}
-          bind:selected_run_config_id
           current_task={selected_task}
           hide_create_kiln_task_tool_button={true}
           {save_config_error}
