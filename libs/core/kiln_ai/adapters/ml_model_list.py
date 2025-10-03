@@ -2252,7 +2252,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_2p5_vl_72b,
-        friendly_name="Qwen 2.5 VL 72B",
+        friendly_name="Qwen 2.5 VL 72B (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -2326,7 +2326,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_2p5_vl_32b,
-        friendly_name="Qwen 2.5 VL 32B",
+        friendly_name="Qwen 2.5 VL 32B (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -2399,7 +2399,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_2p5_vl_7b,
-        friendly_name="Qwen 2.5 VL 7B",
+        friendly_name="Qwen 2.5 VL 7B (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -2456,7 +2456,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_2p5_vl_3b,
-        friendly_name="Qwen 2.5 VL 3B",
+        friendly_name="Qwen 2.5 VL 3B (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
@@ -3650,7 +3650,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_3_vl_235b_a22b_no_thinking,
-        friendly_name="Qwen 3 235B (22B Active) VL Instruct",
+        friendly_name="Qwen 3 VL Instruct 235B / 22B Active (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
