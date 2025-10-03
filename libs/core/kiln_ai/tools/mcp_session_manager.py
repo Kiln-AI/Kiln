@@ -15,6 +15,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.shared.exceptions import McpError
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
+from kiln_ai.tools.mcp_session_cache import MCPSessionCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -32,6 +33,7 @@ class MCPSessionManager:
 
     def __init__(self):
         self._shell_path = None
+        self._session_cache = MCPSessionCache()
 
     @classmethod
     def shared(cls):
@@ -50,9 +52,21 @@ class MCPSessionManager:
         match tool_server.type:
             case ToolServerType.remote_mcp:
                 async with self._create_remote_mcp_session(tool_server) as session:
+                    # Skip caching for remote MCP servers since url-based sessions are ephemeral
                     yield session
             case ToolServerType.local_mcp:
+                # Check if we have a cached session for local MCP servers
+                # Note: The cached session will not be closed when this context manager exits.
+                # Instead, the session is persisted in the MCPSessionCache and requires explicit invalidation via invalidate_session().
+                if tool_server.id is not None and (
+                    cached := await self._session_cache.get(tool_server.id)
+                ):
+                    yield cached
+                    return
+
                 async with self._create_local_mcp_session(tool_server) as session:
+                    if tool_server.id is not None:
+                        await self._session_cache.set(tool_server.id, session)
                     yield session
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
@@ -268,3 +282,9 @@ class MCPSessionManager:
     def clear_shell_path_cache(self):
         """Clear the cached shell path. Typically used when adding a new tool, which might have just been installed."""
         self._shell_path = None
+
+    async def invalidate_session(self, server_id: str):
+        """
+        Invalidate and close a specific session.
+        """
+        await self._session_cache.close_session(server_id)
