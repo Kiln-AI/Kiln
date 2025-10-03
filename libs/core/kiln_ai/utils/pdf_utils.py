@@ -39,7 +39,7 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
         yield page_paths
 
 
-def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
     image_paths = []
 
     # note: doing this in a thread causes a segfault - but this is slow and blocking
@@ -47,6 +47,7 @@ def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
     pdf = pypdfium2.PdfDocument(pdf_path)
     try:
         for idx, page in enumerate(pdf):
+            await asyncio.sleep(0)
             # scale=2 is legible for ~A4 pages (research papers, etc.) - lower than this is blurry
             bitmap = page.render(scale=2).to_pil()
             target_path = output_dir / f"img-{pdf_path.name}-{idx}.png"
