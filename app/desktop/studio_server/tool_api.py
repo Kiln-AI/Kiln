@@ -356,6 +356,9 @@ def connect_tool_servers_api(app: FastAPI):
         # Validate the tool server connectivity
         await validate_tool_server_connectivity(existing_tool_server)
 
+        # Remove cached session if any
+        await MCPSessionManager.shared().invalidate_session(tool_server_id)
+
         # Save the tool to file
         existing_tool_server.save_to_file()
 
@@ -415,6 +418,9 @@ def connect_tool_servers_api(app: FastAPI):
         MCPSessionManager.shared().clear_shell_path_cache()
         await validate_tool_server_connectivity(tool_server)
 
+        # Remove cached session if any
+        await MCPSessionManager.shared().invalidate_session(tool_server_id)
+
         # Save the tool to file
         tool_server.save_to_file()
 
@@ -433,6 +439,8 @@ def connect_tool_servers_api(app: FastAPI):
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):
         tool_server = tool_server_from_id(project_id, tool_server_id)
+        # Close and remove the cached session
+        await MCPSessionManager.shared().invalidate_session(tool_server_id)
         # Delete the secrets from the settings
         tool_server.delete_secrets()
         # Delete the tool server from the file system

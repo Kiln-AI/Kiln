@@ -11,6 +11,7 @@ import kiln_server.server as kiln_server
 import uvicorn
 from fastapi import FastAPI
 from kiln_ai.adapters.remote_config import load_remote_models
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
@@ -44,6 +45,10 @@ async def lifespan(app: FastAPI):
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
     yield
+
+    # Close all MCP server sessions
+    await MCPSessionManager.shared()._session_cache.close_all()
+
     # Reset datamodel strict mode on shutdown
     datamodel_strict_mode.set_strict_mode(original_strict_mode)
 

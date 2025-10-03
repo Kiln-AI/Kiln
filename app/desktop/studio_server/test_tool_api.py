@@ -71,8 +71,9 @@ async def mock_mcp_success(tools=None):
     patch_obj, mock_client = create_mcp_session_manager_patch(mock_tools=tools)
 
     with patch_obj as mock_session_manager_shared:
-        mock_session_manager = Mock()
+        mock_session_manager = AsyncMock()
         mock_session_manager.mcp_client = mock_client
+        mock_session_manager.clear_shell_path_cache = Mock()
         mock_session_manager_shared.return_value = mock_session_manager
         yield
 
@@ -84,8 +85,9 @@ async def mock_mcp_connection_error(error_message="Connection failed"):
     patch_obj, mock_client = create_mcp_session_manager_patch(connection_error=error)
 
     with patch_obj as mock_session_manager_shared:
-        mock_session_manager = Mock()
+        mock_session_manager = AsyncMock()
         mock_session_manager.mcp_client = mock_client
+        mock_session_manager.clear_shell_path_cache = Mock()
         mock_session_manager_shared.return_value = mock_session_manager
         yield
 
@@ -97,8 +99,9 @@ async def mock_mcp_list_tools_error(error_message="list_tools failed"):
     patch_obj, mock_client = create_mcp_session_manager_patch(list_tools_error=error)
 
     with patch_obj as mock_session_manager_shared:
-        mock_session_manager = Mock()
+        mock_session_manager = AsyncMock()
         mock_session_manager.mcp_client = mock_client
+        mock_session_manager.clear_shell_path_cache = Mock()
         mock_session_manager_shared.return_value = mock_session_manager
         yield
 
