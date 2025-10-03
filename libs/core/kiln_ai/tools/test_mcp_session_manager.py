@@ -104,6 +104,11 @@ def local_server_with_secret_keys():
 class TestMCPSessionManager:
     """Unit tests for MCPSessionManager."""
 
+    def setup_method(self):
+        """Reset the singleton before each test to ensure isolation."""
+        # Reset the singleton to ensure clean state for each test
+        MCPSessionManager._shared_instance = None
+
     def test_singleton_behavior(self):
         """Test that MCPSessionManager follows singleton pattern."""
         # Get two instances
