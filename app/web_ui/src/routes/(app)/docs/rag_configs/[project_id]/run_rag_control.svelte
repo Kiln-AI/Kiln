@@ -2,10 +2,10 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import type { RagConfigWithSubConfigs } from "$lib/types"
   import RunRagDialog from "./run_rag_dialog.svelte"
-  import { getProjectStateStore } from "$lib/stores/rag_progress_store"
+  import { getProjectRagStateStore } from "$lib/stores/rag_progress_store"
   import type { RagConfigurationStatus } from "$lib/stores/rag_progress_store"
 
-  $: projectStateStore = getProjectStateStore(project_id)
+  $: projectStateStore = getProjectRagStateStore(project_id)
   $: ragProgressState = $projectStateStore
 
   export let project_id: string

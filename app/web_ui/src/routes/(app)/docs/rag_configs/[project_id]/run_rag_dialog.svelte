@@ -7,11 +7,11 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import {
     ragProgressStore,
-    getProjectStateStore,
+    getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
   import Checkmark from "$lib/ui/checkmark.svelte"
 
-  $: projectStateStore = getProjectStateStore(project_id)
+  $: projectStateStore = getProjectRagStateStore(project_id)
   $: ragProgressState = $projectStateStore
 
   export let dialog: Dialog | null = null

@@ -10,12 +10,12 @@
   } from "$lib/stores"
   import {
     compute_overall_completion_percentage,
-    getProjectStateStore,
+    getProjectRagStateStore,
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
   import { goto } from "$app/navigation"
 
-  $: projectStateStore = getProjectStateStore(project_id)
+  $: projectStateStore = getProjectRagStateStore(project_id)
   $: ragProgressState = $projectStateStore
 
   export let rag_config: RagConfigWithSubConfigs

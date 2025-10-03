@@ -14,10 +14,10 @@
     load_all_rag_config_progress,
     load_rag_configs,
     sortRagConfigs,
-    getProjectStateStore,
+    getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
 
-  $: projectStateStore = getProjectStateStore($page.params.project_id)
+  $: projectStateStore = getProjectRagStateStore($page.params.project_id)
   $: progressState = $projectStateStore
 
   let error: KilnError | null = null
