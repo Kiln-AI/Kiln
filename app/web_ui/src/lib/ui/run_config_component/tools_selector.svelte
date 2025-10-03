@@ -33,20 +33,8 @@
   // Load tools if project_id or task_id changes
   $: load_tools(project_id, task_id)
 
-  // Handle special navigation case immediately, do not save to tools_store
-  $: if (tools && tools.includes("__add_new_kiln_task__")) {
-    // Remove the add new option and navigate immediately
-    tools = tools.filter((tool) => tool !== "__add_new_kiln_task__")
-    goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
-  }
-
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
-  $: if (
-    task_id &&
-    tools &&
-    tools_store_loaded_task_id === task_id &&
-    !tools.includes("__add_new_kiln_task__")
-  ) {
+  $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
     tools_store.update((state) => ({
       ...state,
       selected_tool_ids_by_task_id: {
@@ -93,30 +81,32 @@
   function get_tool_options(
     available_tools: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
-    if (!available_tools) {
+    if (!available_tools || available_tools.length === 0) {
+      // When there are no available tools, we'll show the empty state "Add tools" button
       return []
     }
 
     let option_groups: OptionGroup[] = []
 
     tool_set_order.forEach((tool_set_type) => {
-      const tool_set = available_tools.find(
+      let options: Option[] = []
+      let label = ""
+      let action_label: string | undefined = undefined
+      let action_handler: (() => void) | undefined = undefined
+      if (tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button) {
+        // Setting the label for the Kiln Tasks as Tools in case the tool set is not found below (cold start case)
+        label = "Kiln Tasks as Tools"
+        action_label = "Create New"
+        action_handler = () => {
+          goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
+        }
+      }
+
+      const tool_set = available_tools?.find(
         (tool_set) => tool_set.type === tool_set_type,
       )
       if (tool_set) {
-        let options: Option[] = []
-        if (
-          tool_set_type === "kiln_task" &&
-          !hide_create_kiln_task_tool_button
-        ) {
-          options.push({
-            value: "__add_new_kiln_task__",
-            label: "Create New",
-            description: "Create a new tool from a Kiln task.",
-            badge: "＋",
-            badge_color: "primary",
-          })
-        }
+        label = tool_set.set_name
         let tools = tool_set.tools
         if (tools.length > 0) {
           options.push(
@@ -127,12 +117,20 @@
             })),
           )
         }
-        if (options.length > 0) {
-          option_groups.push({
-            label: tool_set.set_name,
-            options: options,
-          })
-        }
+      }
+
+      // Always add the kiln_task option group even if there are no kiln task tools
+      // For discoverability since we'll show the "Create New" button still
+      if (
+        options.length > 0 ||
+        (tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button)
+      ) {
+        option_groups.push({
+          label: label,
+          options: options,
+          action_label: action_label,
+          action_handler: action_handler,
+        })
       }
     })
 

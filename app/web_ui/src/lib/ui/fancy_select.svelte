@@ -600,10 +600,22 @@
       >
         {#each filteredOptions as option, sectionIndex}
           {#if option.label}
-            <li class="menu-title pl-1 sticky top-0 bg-white z-10">
+            <li
+              class="menu-title pl-1 sticky top-0 bg-white z-10 flex flex-row items-center justify-between"
+            >
               {option.label}
+              {#if option.action_label}
+                <button
+                  type="button"
+                  class="btn btn-xs btn-primary btn-outline rounded-full"
+                  on:click={option.action_handler}
+                >
+                  {option.action_label}
+                </button>
+              {/if}
             </li>
           {/if}
+
           {#each option.options as item, index}
             {@const overallIndex =
               filteredOptions

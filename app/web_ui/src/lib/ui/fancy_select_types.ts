@@ -1,6 +1,8 @@
 export type OptionGroup = {
   label?: string
   options: Option[]
+  action_label?: string
+  action_handler?: () => void
 }
 export type Option = {
   label: string
