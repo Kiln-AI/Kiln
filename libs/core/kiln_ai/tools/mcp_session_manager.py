@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import AsyncGenerator
@@ -18,6 +19,8 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
+
+LOCAL_MCP_ERROR_INSTRUCTION = "Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup."
 
 
 class MCPSessionManager:
@@ -172,29 +175,50 @@ class MCPSessionManager:
             command=command, args=args, env=env_vars, cwd=cwd
         )
 
-        try:
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(
-                    read, write, read_timeout_seconds=timedelta(seconds=30)
-                ) as session:
-                    await session.initialize()
-                    yield session
-        except Exception as e:
-            # Check for MCP errors. Things like wrong arguments would fall here.
-            mcp_error = self._extract_first_exception(e, McpError)
-            if mcp_error and isinstance(mcp_error, McpError):
-                self._raise_local_mcp_error(mcp_error)
+        # Create temporary file to capture MCP server stderr
+        # Use errors="replace" to handle non-UTF-8 bytes gracefully
+        with tempfile.TemporaryFile(
+            mode="w+", encoding="utf-8", errors="replace"
+        ) as err_log:
+            try:
+                async with stdio_client(server_params, errlog=err_log) as (
+                    read,
+                    write,
+                ):
+                    async with ClientSession(
+                        read, write, read_timeout_seconds=timedelta(seconds=30)
+                    ) as session:
+                        await session.initialize()
+                        yield session
+            except Exception as e:
+                # Read stderr content from temporary file for debugging
+                err_log.seek(0)  # Read from the start of the file
+                stderr_content = err_log.read()
+                if stderr_content:
+                    logger.error(
+                        f"MCP server '{tool_server.name}' stderr output: {stderr_content}"
+                    )
 
-            # Re-raise the original error but with a friendlier message
-            self._raise_local_mcp_error(e)
+                # Check for MCP errors. Things like wrong arguments would fall here.
+                mcp_error = self._extract_first_exception(e, McpError)
+                if mcp_error and isinstance(mcp_error, McpError):
+                    self._raise_local_mcp_error(mcp_error, stderr_content)
 
-    def _raise_local_mcp_error(self, e: Exception):
+                # Re-raise the original error but with a friendlier message
+                self._raise_local_mcp_error(e, stderr_content)
+
+    def _raise_local_mcp_error(self, e: Exception, stderr: str):
         """
-        Raise a ValueError with a friendlier message for local MCP errors.
+        Raise a RuntimeError with a friendlier message for local MCP errors.
         """
-        raise RuntimeError(
-            f"MCP server failed to start. Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup. Original error: {e}"
-        ) from e
+        error_msg = f"'{e}'"
+
+        if stderr:
+            error_msg += f"\nMCP server error: {stderr}"
+
+        error_msg += f"\n{LOCAL_MCP_ERROR_INSTRUCTION}"
+
+        raise RuntimeError(error_msg) from e
 
     def _get_path(self) -> str:
         """

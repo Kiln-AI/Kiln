@@ -34,9 +34,9 @@ from .correlation_calculator import (
 
 def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     task = task_from_id(project_id, task_id)
-    for eval in task.evals():
-        if eval.id == eval_id:
-            return eval
+    eval = Eval.from_id_and_parent_path(eval_id, task.path)
+    if eval is not None:
+        return eval
 
     raise HTTPException(
         status_code=404,

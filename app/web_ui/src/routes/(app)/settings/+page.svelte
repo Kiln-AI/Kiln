@@ -1,24 +1,8 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
-  import { client } from "$lib/api_client"
   import SettingsSection from "$lib/ui/settings_section.svelte"
-
-  async function view_logs() {
-    try {
-      const { error } = await client.POST("/api/open_logs", {})
-      if (error) {
-        const errorMessage = (error as Record<string, unknown>)?.message
-        if (typeof errorMessage === "string") {
-          throw new Error(errorMessage)
-        } else {
-          throw new Error("Unknown error")
-        }
-      }
-    } catch (e) {
-      alert("Failed to open logs: " + e)
-    }
-  }
+  import { view_logs } from "$lib/utils/logs"
 
   let sections = [
     {

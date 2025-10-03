@@ -23,7 +23,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.pdf_utils import split_pdf_into_pages
+from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
 
 logger = logging.getLogger(__name__)
 
@@ -167,13 +167,35 @@ class LitellmExtractor(BaseExtractor):
         logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
         return None
 
+    async def convert_pdf_page_to_image_input(
+        self, page_path: Path, page_number: int
+    ) -> ExtractionInput:
+        image_paths = await convert_pdf_to_images(page_path, page_path.parent)
+        if len(image_paths) != 1:
+            raise ValueError(
+                f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
+            )
+        image_path = image_paths[0]
+        page_input = ExtractionInput(path=str(image_path), mime_type="image/png")
+        return page_input
+
     async def _extract_single_pdf_page(
-        self, pdf_path: Path, page_path: Path, prompt: str, page_number: int
+        self,
+        pdf_path: Path,
+        page_path: Path,
+        prompt: str,
+        page_number: int,
     ) -> str:
         try:
-            page_input = ExtractionInput(
-                path=str(page_path), mime_type="application/pdf"
-            )
+            if self.model_provider.multimodal_requires_pdf_as_image:
+                page_input = await self.convert_pdf_page_to_image_input(
+                    page_path, page_number
+                )
+            else:
+                page_input = ExtractionInput(
+                    path=str(page_path), mime_type="application/pdf"
+                )
+
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
             response = await litellm.acompletion(**completion_kwargs)
         except Exception as e:
@@ -197,11 +219,6 @@ class LitellmExtractor(BaseExtractor):
             )
 
         content = response.choices[0].message.content
-        if not content:
-            raise ValueError(
-                f"No text returned from extraction model when extracting page {page_number} for {page_path}"
-            )
-
         if self.filesystem_cache is not None:
             # we don't want to fail the whole extraction just because cache write fails
             # as that would block the whole flow
@@ -238,7 +255,9 @@ class LitellmExtractor(BaseExtractor):
                     continue
 
                 extract_page_jobs.append(
-                    self._extract_single_pdf_page(pdf_path, page_path, prompt, i)
+                    self._extract_single_pdf_page(
+                        pdf_path, page_path, prompt, page_number=i
+                    )
                 )
                 page_indices_for_jobs.append(i)
 
