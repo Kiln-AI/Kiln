@@ -67,7 +67,16 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title="Create a Prompt" subtitle={`For the task "${task_name}"`}>
+  <AppPage
+    title="Create a Prompt"
+    subtitle={`For the task "${task_name}"`}
+    breadcrumbs={[
+      {
+        label: "Prompts",
+        href: `/prompts/${project_id}/${task_id}`,
+      },
+    ]}
+  >
     <div class="max-w-[800px]">
       <FormContainer
         submit_label="Create Prompt"
