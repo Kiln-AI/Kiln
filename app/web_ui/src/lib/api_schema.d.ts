@@ -2233,7 +2233,7 @@ export interface components {
          * ChunkerType
          * @enum {string}
          */
-        ChunkerType: "fixed_window";
+        ChunkerType: "fixed_window" | "semantic";
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
