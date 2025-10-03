@@ -125,6 +125,10 @@ class ModelName(str, Enum):
     qwen_2p5_7b = "qwen_2p5_7b"
     qwen_2p5_14b = "qwen_2p5_14b"
     qwen_2p5_72b = "qwen_2p5_72b"
+    qwen_2p5_vl_3b = "qwen_2p5_vl_3b"
+    qwen_2p5_vl_7b = "qwen_2p5_vl_7b"
+    qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
+    qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
     deepseek_3_1 = "deepseek_3_1"
     deepseek_3_1_terminus = "deepseek_3_1_terminus"
@@ -166,6 +170,7 @@ class ModelName(str, Enum):
     qwen_3_235b_a22b = "qwen_3_235b_a22b"
     qwen_3_235b_a22b_2507_no_thinking = "qwen_3_235b_a22b_2507_no_thinking"
     qwen_3_235b_a22b_no_thinking = "qwen_3_235b_a22b_no_thinking"
+    qwen_3_vl_235b_a22b_no_thinking = "qwen_3_vl_235b_a22b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
@@ -219,6 +224,7 @@ class KilnModelProvider(BaseModel):
         suggested_for_doc_extraction: Whether the model is suggested for document extraction
         multimodal_capable: Whether the model supports multimodal inputs (e.g. images, audio, video, PDFs, etc.)
         multimodal_mime_types: The mime types that the model supports for multimodal inputs (e.g. image/jpeg, video/mp4, application/pdf, etc.)
+        multimodal_requires_pdf_as_image: Whether the model requires PDFs to be processed as images
     """
 
     name: ModelProviderName
@@ -242,6 +248,7 @@ class KilnModelProvider(BaseModel):
     suggested_for_doc_extraction: bool = False
     multimodal_capable: bool = False
     multimodal_mime_types: List[str] | None = None
+    multimodal_requires_pdf_as_image: bool = False
 
     # We need a more generalized way to handle custom provider parameters.
     # Making them quite declarative here for now, isolating provider specific logic
@@ -2241,45 +2248,232 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Qwen 2.5 7B
+    # Qwen 2.5 VL 72B
     KilnModel(
         family=ModelFamily.qwen,
-        name=ModelName.qwen_2p5_7b,
-        friendly_name="Qwen 2.5 7B",
+        name=ModelName.qwen_2p5_vl_72b,
+        friendly_name="Qwen 2.5 VL 72B",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:72b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="qwen/qwen-2.5-7b-instruct",
+                model_id="qwen/qwen2.5-vl-72b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen2.5-VL-72B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen2.5-VL-72B-Instruct",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.ollama,
-                model_id="qwen2.5",
-                supports_function_calling=False,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.docker_model_runner,
-                model_id="ai/qwen2.5:7B-Q4_K_M",
-                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # supports video, but LiteLLM fails request validation
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
-    # Qwen 2.5 14B
+    # Qwen 2.5 VL 32B
     KilnModel(
         family=ModelFamily.qwen,
-        name=ModelName.qwen_2p5_14b,
-        friendly_name="Qwen 2.5 14B",
+        name=ModelName.qwen_2p5_vl_32b,
+        friendly_name="Qwen 2.5 VL 32B",
         providers=[
             KilnModelProvider(
-                name=ModelProviderName.together_ai,
-                provider_finetune_id="Qwen/Qwen2.5-14B-Instruct",
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:32b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
             ),
             KilnModelProvider(
-                name=ModelProviderName.ollama,
-                model_id="qwen2.5:14b",
-                supports_data_gen=False,
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen2.5-vl-32b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Qwen/Qwen2.5-VL-32B-Instruct",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen2p5-vl-32b-instruct",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 2.5 VL 7B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_vl_7b,
+        friendly_name="Qwen 2.5 VL 7B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:7b",
+                supports_structured_output=False,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen-2.5-vl-7b-instruct",
+                supports_structured_output=False,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+                supports_structured_output=False,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 2.5 VL 3B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_vl_3b,
+        friendly_name="Qwen 2.5 VL 3B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5vl:3b",
+                supports_structured_output=False,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
             ),
         ],
     ),
@@ -2304,6 +2498,48 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 provider_finetune_id="Qwen/Qwen2.5-72B-Instruct",
+            ),
+        ],
+    ),
+    # Qwen 2.5 14B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_14b,
+        friendly_name="Qwen 2.5 14B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                provider_finetune_id="Qwen/Qwen2.5-14B-Instruct",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5:14b",
+                supports_data_gen=False,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Qwen 2.5 7B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_2p5_7b,
+        friendly_name="Qwen 2.5 7B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen-2.5-7b-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen2.5",
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.docker_model_runner,
+                model_id="ai/qwen2.5:7B-Q4_K_M",
+                supports_function_calling=False,
             ),
         ],
     ),
@@ -3407,6 +3643,34 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=True,
                 parser=ModelParserID.optional_r1_thinking,
+            ),
+        ],
+    ),
+    # Qwen 3 235B (22B Active) VL Instruct
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3_vl_235b_a22b_no_thinking,
+        friendly_name="Qwen 3 235B (22B Active) VL Instruct",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-vl-235b-a22b-instruct",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                formatter=ModelFormatterID.qwen3_style_no_think,
+                supports_data_gen=False,
+                reasoning_capable=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
