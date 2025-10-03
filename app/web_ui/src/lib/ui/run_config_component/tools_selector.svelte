@@ -113,7 +113,9 @@
             ...tools.map((tool) => ({
               value: tool.id,
               label: tool.name,
-              description: tool.description || undefined,
+              description: tool.description
+                ? tool.description.trim()
+                : undefined,
             })),
           )
         }
