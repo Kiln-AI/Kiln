@@ -339,6 +339,8 @@
   <AppPage
     title={"Kiln Task as Tool"}
     subtitle={`Name: ${tool_server?.name || ""}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/agents"
     breadcrumbs={[
       {
         label: "Settings",
