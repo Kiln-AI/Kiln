@@ -80,7 +80,7 @@ async def test_convert_pdf_to_images(mock_file_factory):
     """Test that convert_pdf_to_images successfully converts a PDF into individual images."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     with tempfile.TemporaryDirectory() as temp_dir:
-        images = convert_pdf_to_images(test_file, Path(temp_dir))
+        images = await convert_pdf_to_images(test_file, Path(temp_dir))
         assert len(images) == 2
         assert all(image.exists() for image in images)
         assert all(image.suffix == ".png" for image in images)

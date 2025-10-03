@@ -4,6 +4,7 @@ Utilities for working with PDF files.
 
 import asyncio
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
@@ -39,11 +40,9 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
         yield page_paths
 
 
-def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
     image_paths = []
 
-    # note: doing this in a thread causes a segfault - but this is slow and blocking
-    # so we should try to find a better way
     pdf = pypdfium2.PdfDocument(pdf_path)
     try:
         for idx, page in enumerate(pdf):
@@ -56,3 +55,11 @@ def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
         return image_paths
     finally:
         pdf.close()
+
+
+async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+    loop = asyncio.get_running_loop()
+    with ProcessPoolExecutor(max_workers=1) as executor:
+        return await loop.run_in_executor(
+            executor, _convert_pdf_to_images_sync, pdf_path, output_dir
+        )

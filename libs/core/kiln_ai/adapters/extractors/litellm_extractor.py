@@ -170,7 +170,7 @@ class LitellmExtractor(BaseExtractor):
     async def convert_pdf_page_to_image_input(
         self, page_path: Path, page_number: int
     ) -> ExtractionInput:
-        image_paths = convert_pdf_to_images(page_path, page_path.parent)
+        image_paths = await convert_pdf_to_images(page_path, page_path.parent)
         if len(image_paths) != 1:
             raise ValueError(
                 f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
