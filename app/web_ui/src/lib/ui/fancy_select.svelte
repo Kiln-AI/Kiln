@@ -11,6 +11,7 @@
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
   export let multi_select: boolean = false
+  export let disabled: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -324,11 +325,17 @@
 
   // Handle key input when dropdown is open
   function handleKeyInput(event: KeyboardEvent) {
-    // Don't interfere with navigation keys or if we're already focused on search input
+    // Don't interfere if we're already focused on search input
     if (isSearching && document.activeElement === searchInputElement) {
       return
     }
 
+    // Don't interfere if the fancy select is not focused either
+    if (document.activeElement !== selectedElement) {
+      return
+    }
+
+    // Don't interfere with navigation keys
     if (
       event.key === "ArrowDown" ||
       event.key === "ArrowUp" ||
@@ -426,14 +433,16 @@
 
 <div class="dropdown w-full relative">
   <div
-    tabindex="0"
+    tabindex={disabled ? -1 : 0}
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : ''}"
+      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
     bind:this={selectedElement}
     on:click={() => {
-      listVisible = true
+      if (!disabled) {
+        listVisible = true
+      }
     }}
     on:blur={(_) => {
       if (multi_select) {
@@ -450,6 +459,9 @@
       }, 0)
     }}
     on:keydown={(event) => {
+      if (disabled) {
+        return
+      }
       if (
         !listVisible &&
         (event.key === "ArrowDown" ||
@@ -630,8 +642,9 @@
                       </div>
                       {#if item.badge}
                         <div
-                          class="badge badge-sm px-2 {item.badge_color ===
-                          'primary'
+                          class="badge badge-sm text-xs {item.badge.length <= 2
+                            ? 'rounded-full w-5 h-5'
+                            : 'px-2'} {item.badge_color === 'primary'
                             ? 'badge-primary'
                             : 'badge-ghost'}"
                         >
@@ -641,7 +654,7 @@
                     </div>
                     {#if item.description}
                       <div
-                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3"
+                        class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"
                       >
                         {item.description}
                       </div>

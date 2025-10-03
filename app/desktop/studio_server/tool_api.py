@@ -1,25 +1,30 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
+    KilnTaskServerProperties,
     LocalServerProperties,
     RemoteServerProperties,
     ToolServerType,
 )
 from kiln_ai.datamodel.tool_id import (
+    KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
 )
+from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
+from kiln_server.task_api import task_from_id
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field
 
@@ -34,6 +39,22 @@ class KilnToolServerDescription(BaseModel):
     type: ToolServerType
     description: str | None
     missing_secrets: list[str]
+    is_archived: bool
+
+
+class KilnTaskToolDescription(BaseModel):
+    """
+    This class is used to describe Kiln Task tools with their associated task information.
+    """
+
+    tool_server_id: str
+    tool_name: str
+    tool_description: str | None
+    task_id: str
+    task_name: str
+    task_description: str | None
+    is_archived: bool
+    created_at: datetime
 
 
 class ExternalToolServerCreationRequest(BaseModel):
@@ -53,9 +74,17 @@ class LocalToolServerCreationRequest(BaseModel):
     secret_env_var_keys: List[str] = Field(default_factory=list)
 
 
+class KilnTaskToolServerCreationRequest(BaseModel):
+    name: str
+    description: str
+    task_id: str
+    run_config_id: str
+    is_archived: bool
+
+
 class ExternalToolApiDescription(BaseModel):
     """
-    This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+    This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
     """
 
     name: str
@@ -72,6 +101,16 @@ class ExternalToolApiDescription(BaseModel):
             inputSchema=tool.inputSchema or {},
         )
 
+    @classmethod
+    async def tool_from_kiln_task_tool(cls, tool: KilnTaskTool):
+        """Create an ExternalToolApiDescription from a KilnTaskTool object."""
+
+        return cls(
+            name=await tool.name(),
+            description=await tool.description(),
+            inputSchema=tool.parameters_schema or {},
+        )
+
 
 class ExternalToolServerApiDescription(BaseModel):
     """
@@ -84,7 +123,9 @@ class ExternalToolServerApiDescription(BaseModel):
     description: str | None
     created_at: datetime | None
     created_by: str | None
-    properties: LocalServerProperties | RemoteServerProperties
+    properties: (
+        LocalServerProperties | RemoteServerProperties | KilnTaskServerProperties
+    )
     available_tools: list[ExternalToolApiDescription]
     missing_secrets: list[str]
 
@@ -95,7 +136,15 @@ class ToolApiDescription(BaseModel):
     description: str | None
 
 
+class ToolSetType(Enum):
+    SEARCH = "search"
+    MCP = "mcp"
+    KILN_TASK = "kiln_task"
+    DEMO = "demo"
+
+
 class ToolSetApiDescription(BaseModel):
+    type: ToolSetType
     set_name: str
     tools: list[ToolApiDescription]
 
@@ -109,9 +158,11 @@ class SearchToolApiDescription(BaseModel):
 
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
     project = project_from_id(project_id)
-    for tool_server in project.external_tool_servers(readonly=True):
-        if tool_server.id == tool_server_id:
-            return tool_server
+    tool_server = ExternalToolServer.from_id_and_parent_path(
+        tool_server_id, project.path
+    )
+    if tool_server is not None:
+        return tool_server
 
     raise HTTPException(status_code=404, detail="Tool server not found")
 
@@ -128,6 +179,8 @@ async def available_mcp_tools(
             prefix = MCP_REMOTE_TOOL_ID_PREFIX
         case ToolServerType.local_mcp:
             prefix = MCP_LOCAL_TOOL_ID_PREFIX
+        case ToolServerType.kiln_task:
+            raise ValueError("Kiln task tools are not available from an MCP server")
         case _:
             raise_exhaustive_enum_error(server.type)
 
@@ -154,6 +207,8 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
             async with MCPSessionManager.shared().mcp_client(tool_server) as session:
                 # Use list tools to validate the server is reachable
                 await session.list_tools()
+        case ToolServerType.kiln_task:
+            pass
         case _:
             raise_exhaustive_enum_error(tool_server.type)
 
@@ -182,12 +237,15 @@ def connect_tool_servers_api(app: FastAPI):
             if tools and len(tools) > 0:
                 tool_sets.append(
                     ToolSetApiDescription(
+                        type=ToolSetType.SEARCH,
                         set_name="Search Tools (RAG)",
                         tools=tools,
                     )
                 )
 
-        # Get available tools from MCP servers
+        # Get available tools from Kiln task tools and MCP servers
+        task_tools = []
+        mcp_tool_sets = []
         for server in project.external_tool_servers(readonly=True):
             server_tools = []
             match server.type:
@@ -197,21 +255,46 @@ def connect_tool_servers_api(app: FastAPI):
                     except Exception:
                         # Skip the tool when we can't connect to the server
                         continue
+                case ToolServerType.kiln_task:
+                    if not server.properties.get("is_archived", False):
+                        task_tools.append(
+                            ToolApiDescription(
+                                id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.id}",
+                                name=server.properties.get("name") or "",
+                                description=server.properties.get("description") or "",
+                            )
+                        )
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
             if server_tools:
-                tool_sets.append(
+                mcp_tool_sets.append(
                     ToolSetApiDescription(
+                        type=ToolSetType.MCP,
                         set_name="MCP Server: " + server.name,
                         tools=server_tools,
                     )
                 )
 
+        # Add task tools
+        if task_tools:
+            tool_sets.append(
+                ToolSetApiDescription(
+                    type=ToolSetType.KILN_TASK,
+                    set_name="Kiln Tasks as Tools",
+                    tools=task_tools,
+                )
+            )
+
+        # Add MCP tool sets
+        if len(mcp_tool_sets) > 0:
+            tool_sets.extend(mcp_tool_sets)
+
         # Add demo tools if enabled
         if Config.shared().enable_demo_tools:
             tool_sets.append(
                 ToolSetApiDescription(
+                    type=ToolSetType.DEMO,
                     set_name="Kiln Demo Tools",
                     tools=[
                         ToolApiDescription(
@@ -256,8 +339,43 @@ def connect_tool_servers_api(app: FastAPI):
                     type=tool.type,
                     description=tool.description,
                     missing_secrets=missing_secrets,
+                    is_archived=tool.properties.get("is_archived", False),
                 )
             )
+        return results
+
+    @app.get("/api/projects/{project_id}/kiln_task_tools")
+    async def get_kiln_task_tools(
+        project_id: str,
+    ) -> List[KilnTaskToolDescription]:
+        project = project_from_id(project_id)
+
+        results = []
+        for tool_server in project.external_tool_servers():
+            if tool_server.type == ToolServerType.kiln_task:
+                try:
+                    task_id = tool_server.properties.get("task_id")
+                    if task_id:
+                        task = task_from_id(project_id, task_id)
+                        results.append(
+                            KilnTaskToolDescription(
+                                tool_server_id=str(tool_server.id),
+                                tool_name=tool_server.properties.get("name", ""),
+                                tool_description=tool_server.properties.get(
+                                    "description"
+                                ),
+                                task_id=task_id,
+                                task_name=task.name,
+                                task_description=task.description,
+                                is_archived=tool_server.properties.get(
+                                    "is_archived", False
+                                ),
+                                created_at=tool_server.created_at,
+                            )
+                        )
+                except HTTPException:
+                    # Skip tools with invalid task references
+                    continue
         return results
 
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
@@ -296,6 +414,13 @@ def connect_tool_servers_api(app: FastAPI):
                         ExternalToolApiDescription.tool_from_mcp_tool(tool)
                         for tool in tools_result.tools
                     ]
+            case ToolServerType.kiln_task:
+                available_tools = [
+                    await ExternalToolApiDescription.tool_from_kiln_task_tool(
+                        KilnTaskTool(project_id, tool_server_id, tool_server)
+                    )
+                ]
+                pass
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 
@@ -347,8 +472,6 @@ def connect_tool_servers_api(app: FastAPI):
                 detail="Existing tool server is not a remote MCP server. You can't edit a non-remote MCP server with this endpoint.",
             )
 
-        # Create a deep copy of the existing tool server so if any validation fails we don't cache the bad data in memory
-        existing_tool_server = existing_tool_server.model_copy(deep=True)
         existing_tool_server.name = tool_data.name
         existing_tool_server.description = tool_data.description
         existing_tool_server.properties = _remote_tool_server_properties(tool_data)
@@ -429,6 +552,82 @@ def connect_tool_servers_api(app: FastAPI):
             "env_vars": tool_data.env_vars,
             "secret_env_var_keys": tool_data.secret_env_var_keys,
         }
+
+    def _validate_kiln_task_tool_task_and_run_config(
+        project_id: str, tool_data: KilnTaskToolServerCreationRequest
+    ):
+        # This will raise an exception if the task is not found
+        task = task_from_id(project_id, tool_data.task_id)
+        run_config = next(
+            (
+                rc
+                for rc in task.run_configs(readonly=True)
+                if rc.id == tool_data.run_config_id
+            ),
+            None,
+        )
+        if run_config is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Run config not found for the specified task.",
+            )
+
+    @app.post("/api/projects/{project_id}/kiln_task_tool")
+    async def add_kiln_task_tool(
+        project_id: str, tool_data: KilnTaskToolServerCreationRequest
+    ) -> ExternalToolServer:
+        _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
+
+        project = project_from_id(project_id)
+
+        tool_server = ExternalToolServer(
+            name=tool_data.name,
+            type=ToolServerType.kiln_task,
+            description=tool_data.description,
+            properties={
+                "name": tool_data.name,
+                "description": tool_data.description,
+                "task_id": tool_data.task_id,
+                "run_config_id": tool_data.run_config_id,
+                "is_archived": tool_data.is_archived,
+            },
+            parent=project,
+        )
+
+        # Save the tool server to file
+        tool_server.save_to_file()
+
+        return tool_server
+
+    @app.patch("/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}")
+    async def edit_kiln_task_tool(
+        project_id: str,
+        tool_server_id: str,
+        tool_data: KilnTaskToolServerCreationRequest,
+    ) -> ExternalToolServer:
+        _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
+
+        existing_tool_server = tool_server_from_id(project_id, tool_server_id)
+        if existing_tool_server.type != ToolServerType.kiln_task:
+            raise HTTPException(
+                status_code=400,
+                detail="Existing tool server is not a kiln task tool. You can't edit a non-kiln task tool with this endpoint.",
+            )
+
+        existing_tool_server.name = tool_data.name
+        existing_tool_server.description = tool_data.description
+        existing_tool_server.properties = {
+            "name": tool_data.name,
+            "description": tool_data.description,
+            "task_id": tool_data.task_id,
+            "run_config_id": tool_data.run_config_id,
+            "is_archived": tool_data.is_archived,
+        }
+
+        # Save the tool to file
+        existing_tool_server.save_to_file()
+
+        return existing_tool_server
 
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def delete_tool_server(project_id: str, tool_server_id: str):

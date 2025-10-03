@@ -158,6 +158,14 @@
         "Build a search tool to retrieve information from custom documents.",
       on_click: () => goto(`/docs/rag_configs/${project_id}/add_search_tool`),
     },
+    {
+      name: "Kiln Task as Tool",
+      subtitle: "by Kiln",
+      description:
+        "Build smarter workflows with Kiln tasks as tools, acting as subtasks.",
+      on_click: () =>
+        goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
+    },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
       on_click: () => connectLocalMcp(tool),
@@ -221,6 +229,14 @@
               "Create a tool to search for information in documents.",
             button_text: "Create",
             href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
+          {
+            name: "Kiln Task as Tool",
+            description:
+              "Allow your tasks to call another Kiln task, as a tool call.",
+            button_text: "Create",
+            on_click: () =>
+              goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
           },
           {
             name: "Remote MCP Servers",

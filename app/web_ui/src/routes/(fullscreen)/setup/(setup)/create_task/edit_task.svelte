@@ -145,7 +145,7 @@
 
       // reload the current task to make sure changes propagate throughout the UI
       // e.g. the rating options
-      await load_current_task(get(current_project))
+      await load_current_task(get(current_project)?.id)
       await load_rating_options()
 
       // Wait for the saved change to propagate to the warn_before_unload

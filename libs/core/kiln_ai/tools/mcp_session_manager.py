@@ -54,6 +54,8 @@ class MCPSessionManager:
             case ToolServerType.local_mcp:
                 async with self._create_local_mcp_session(tool_server) as session:
                     yield session
+            case ToolServerType.kiln_task:
+                raise ValueError("Kiln task tools are not available from an MCP server")
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
 

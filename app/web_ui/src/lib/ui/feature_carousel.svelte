@@ -1,13 +1,8 @@
 <script lang="ts">
   import InfoTooltip from "./info_tooltip.svelte"
+  import type { CarouselFeature } from "./feature_carousel_types"
 
-  export let features: {
-    name: string
-    subtitle: string
-    description: string
-    tooltip?: string
-    on_click: () => void
-  }[]
+  export let features: CarouselFeature[]
 </script>
 
 <div

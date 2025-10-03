@@ -31,6 +31,7 @@ export type Eval = components["schemas"]["Eval"]
 export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
+export type RunConfigProperties = components["schemas"]["RunConfigProperties"]
 export type EvalResultSummary = components["schemas"]["EvalResultSummary"]
 export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
@@ -66,10 +67,13 @@ export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
 export type KilnToolServerDescription =
   components["schemas"]["KilnToolServerDescription"]
+export type KilnTaskToolDescription =
+  components["schemas"]["KilnTaskToolDescription"]
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
+export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =
   components["schemas"]["ToolSetApiDescription"]
@@ -77,13 +81,15 @@ export type LocalServerProperties =
   components["schemas"]["LocalServerProperties"]
 export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
+export type KilnTaskServerProperties =
+  components["schemas"]["KilnTaskServerProperties"]
 
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]
   | components["schemas"]["ChatCompletionUserMessageParam-Input"]
   | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
-  | components["schemas"]["ChatCompletionToolMessageParam"]
+  | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
 export type ToolCallMessageParam =

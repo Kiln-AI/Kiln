@@ -1467,6 +1467,31 @@ class TestMCPSessionManager:
         assert result2 == "/cached/path"
         assert mock_run.call_count == 1  # Should not have been called again
 
+    async def test_mcp_client_with_kiln_task_raises_error(self):
+        """Test that mcp_client raises ValueError when passed a Kiln task tool server."""
+        # Create a Kiln task tool server
+        kiln_task_server = ExternalToolServer(
+            name="test_kiln_task",
+            type=ToolServerType.kiln_task,
+            description="Test Kiln task",
+            properties={
+                "task_id": "task_123",
+                "run_config_id": "config_456",
+                "name": "test_task",
+                "description": "A test task for validation",
+                "is_archived": False,
+            },
+        )
+
+        manager = MCPSessionManager.shared()
+
+        # Should raise ValueError with specific message
+        with pytest.raises(
+            ValueError, match="Kiln task tools are not available from an MCP server"
+        ):
+            async with manager.mcp_client(kiln_task_server):
+                pass
+
 
 class TestMCPServerIntegration:
     """Integration tests for MCPServer using real services."""

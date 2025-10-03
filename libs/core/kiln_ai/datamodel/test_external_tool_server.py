@@ -64,6 +64,17 @@ class TestExternalToolServer:
             "env_vars": {},
         }
 
+    @pytest.fixture
+    def kiln_task_base_props(self) -> dict:
+        """Base properties for kiln task server."""
+        return {
+            "task_id": "task-123",
+            "run_config_id": "run-config-456",
+            "name": "test_task_tool",
+            "description": "A test task tool for unit testing",
+            "is_archived": False,
+        }
+
     @pytest.mark.parametrize(
         "server_type, properties",
         [
@@ -82,18 +93,28 @@ class TestExternalToolServer:
                     "env_vars": {"API_KEY": "secret123"},
                 },
             ),
+            (
+                ToolServerType.kiln_task,
+                {
+                    "task_id": "task-123",
+                    "run_config_id": "run-config-456",
+                    "name": "test_task_tool",
+                    "description": "A test task tool for unit testing",
+                    "is_archived": False,
+                },
+            ),
         ],
     )
     def test_valid_server_creation(self, server_type, properties):
         """Test creating valid servers of both types."""
         server = ExternalToolServer(
-            name="test-server",
+            name="test_server",
             type=server_type,
             description="Test server",
             properties=properties,
         )
 
-        assert server.name == "test-server"
+        assert server.name == "test_server"
         assert server.type == server_type
         assert server.description == "Test server"
         assert server.properties == properties
@@ -401,6 +422,53 @@ class TestExternalToolServer:
                 },
                 "secret_env_var_keys must contain only strings",
             ),
+            # Kiln task validation errors
+            (
+                ToolServerType.kiln_task,
+                {},
+                "Tool name cannot be empty",
+            ),
+            (
+                ToolServerType.kiln_task,
+                {"name": ""},
+                "Tool name cannot be empty",
+            ),
+            (
+                ToolServerType.kiln_task,
+                {"name": "test", "description": 123},
+                "description must be of type <class 'str'>",
+            ),
+            (
+                ToolServerType.kiln_task,
+                {"name": "test", "description": "a" * 129},
+                "description must be 128 characters or less",
+            ),
+            (
+                ToolServerType.kiln_task,
+                {"name": "test", "description": "test", "is_archived": "not-bool"},
+                "is_archived must be of type <class 'bool'>",
+            ),
+            (
+                ToolServerType.kiln_task,
+                {
+                    "name": "test",
+                    "description": "test",
+                    "is_archived": False,
+                    "task_id": 123,
+                },
+                "task_id must be of type <class 'str'>",
+            ),
+            (
+                ToolServerType.kiln_task,
+                {
+                    "name": "test",
+                    "description": "test",
+                    "is_archived": False,
+                    "task_id": "task-123",
+                    "run_config_id": 456,
+                },
+                "run_config_id must be of type <class 'str'>",
+            ),
         ],
     )
     def test_validation_errors(self, server_type, invalid_props, expected_error):
@@ -459,6 +527,15 @@ class TestExternalToolServer:
         )
         assert server.get_secret_keys() == ["API_KEY", "SECRET_TOKEN"]
 
+    def test_get_secret_keys_kiln_task(self, kiln_task_base_props):
+        """Test get_secret_keys for kiln task servers."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.kiln_task,
+            properties=kiln_task_base_props,
+        )
+        assert server.get_secret_keys() == []
+
     def test_secret_processing_remote_mcp_initialization(
         self, remote_mcp_props_with_secrets, sample_remote_mcp_secrets
     ):
@@ -504,6 +581,20 @@ class TestExternalToolServer:
         # Secrets should be removed from env_vars
         env_vars = server.properties.get("env_vars", {})
         assert env_vars == {"PATH": "/usr/bin"}
+
+    def test_secret_processing_kiln_task_initialization(self, kiln_task_base_props):
+        """Test secret processing during kiln task server initialization."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.kiln_task,
+            properties=kiln_task_base_props,
+        )
+
+        # Kiln task servers should have no secrets processed
+        assert server._unsaved_secrets == {}
+
+        # Properties should remain unchanged
+        assert server.properties == kiln_task_base_props
 
     def test_secret_processing_property_update_remote_mcp(
         self, remote_mcp_props_with_secrets
@@ -665,6 +756,19 @@ class TestExternalToolServer:
             name="test-server",
             type=ToolServerType.remote_mcp,
             properties=remote_mcp_base_props,  # No secret_header_keys
+        )
+
+        secrets, missing = server.retrieve_secrets()
+
+        assert secrets == {}
+        assert missing == []
+
+    def test_retrieve_secrets_kiln_task(self, kiln_task_base_props):
+        """Test retrieving secrets for kiln task servers (should return empty)."""
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.kiln_task,
+            properties=kiln_task_base_props,
         )
 
         secrets, missing = server.retrieve_secrets()
@@ -873,6 +977,27 @@ class TestExternalToolServer:
                     assert "_unsaved_secrets" not in data
                     assert "API_KEY" not in data["properties"]["env_vars"]
 
+                case ToolServerType.kiln_task:
+                    server = ExternalToolServer(
+                        name="test_kiln_task_server",
+                        type=server_type,
+                        properties={
+                            "task_id": "task-123",
+                            "run_config_id": "run-config-456",
+                            "name": "test_task_tool",
+                            "description": "A test task tool",
+                            "is_archived": False,
+                        },
+                    )
+                    data = server.model_dump()
+                    assert "_unsaved_secrets" not in data
+                    # Kiln task properties should be preserved as-is since there are no secrets
+                    assert data["properties"]["task_id"] == "task-123"
+                    assert data["properties"]["run_config_id"] == "run-config-456"
+                    assert data["properties"]["name"] == "test_task_tool"
+                    assert data["properties"]["description"] == "A test task tool"
+                    assert data["properties"]["is_archived"] is False
+
                 case _:
                     raise_exhaustive_enum_error(server_type)
 
@@ -922,6 +1047,7 @@ class TestExternalToolServer:
         [
             ({"type": "remote_mcp"}, ToolServerType.remote_mcp),
             ({"type": "local_mcp"}, ToolServerType.local_mcp),
+            ({"type": "kiln_task"}, ToolServerType.kiln_task),
         ],
     )
     def test_type_from_data_valid(self, data, expected_type):

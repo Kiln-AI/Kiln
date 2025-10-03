@@ -340,7 +340,12 @@
           on:click={openFileDialog}
           role="button"
           tabindex="0"
-          on:keydown={(e) => e.key === "Enter" && openFileDialog()}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              openFileDialog()
+            }
+          }}
         >
           <div class="space-y-2">
             <div class="w-10 h-10 mx-auto text-gray-500">

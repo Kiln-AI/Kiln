@@ -12,6 +12,7 @@ from kiln_ai.datamodel.basemodel import (
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.validation import tool_name_validator, validate_return_dict_prop
 
 
 class ToolServerType(str, Enum):
@@ -21,6 +22,7 @@ class ToolServerType(str, Enum):
 
     remote_mcp = "remote_mcp"
     local_mcp = "local_mcp"
+    kiln_task = "kiln_task"
 
 
 class LocalServerProperties(TypedDict, total=True):
@@ -34,6 +36,14 @@ class RemoteServerProperties(TypedDict, total=True):
     server_url: str
     headers: NotRequired[dict[str, str]]
     secret_header_keys: NotRequired[list[str]]
+
+
+class KilnTaskServerProperties(TypedDict, total=True):
+    task_id: str
+    run_config_id: str
+    name: str
+    description: str
+    is_archived: bool
 
 
 class ExternalToolServer(KilnParentedModel):
@@ -53,7 +63,9 @@ class ExternalToolServer(KilnParentedModel):
         description="A description of the external tool for you and your team. Will not be used in prompts/training/validation.",
     )
 
-    properties: LocalServerProperties | RemoteServerProperties = Field(
+    properties: (
+        LocalServerProperties | RemoteServerProperties | KilnTaskServerProperties
+    ) = Field(
         description="Configuration properties specific to the tool type.",
     )
 
@@ -95,6 +107,9 @@ class ExternalToolServer(KilnParentedModel):
                         self._unsaved_secrets[key_name] = env_vars[key_name]
                         # Remove from env_vars immediately so they are not saved to file
                         del env_vars[key_name]
+
+            case ToolServerType.kiln_task:
+                pass
 
             case _:
                 raise_exhaustive_enum_error(self.type)
@@ -231,6 +246,23 @@ class ExternalToolServer(KilnParentedModel):
                             "arguments must be a list to start a local MCP server"
                         )
 
+            case ToolServerType.kiln_task:
+                tool_name_validator(properties.get("name", ""))
+                err_msg_prefix = "Kiln task server properties:"
+                validate_return_dict_prop(
+                    properties, "description", str, err_msg_prefix
+                )
+                description = properties.get("description", "")
+                if len(description) > 128:
+                    raise ValueError("description must be 128 characters or less")
+                validate_return_dict_prop(
+                    properties, "is_archived", bool, err_msg_prefix
+                )
+                validate_return_dict_prop(properties, "task_id", str, err_msg_prefix)
+                validate_return_dict_prop(
+                    properties, "run_config_id", str, err_msg_prefix
+                )
+
             case _:
                 # Type checking will catch missing cases
                 raise_exhaustive_enum_error(server_type)
@@ -274,6 +306,9 @@ class ExternalToolServer(KilnParentedModel):
                         secret_env_var_keys, "secret_env_var_keys", "local_mcp"
                     )
 
+            case ToolServerType.kiln_task:
+                pass
+
             case _:
                 raise_exhaustive_enum_error(type)
 
@@ -291,6 +326,8 @@ class ExternalToolServer(KilnParentedModel):
                 return self.properties.get("secret_header_keys", [])
             case ToolServerType.local_mcp:
                 return self.properties.get("secret_env_var_keys", [])
+            case ToolServerType.kiln_task:
+                return []
             case _:
                 raise_exhaustive_enum_error(self.type)
 

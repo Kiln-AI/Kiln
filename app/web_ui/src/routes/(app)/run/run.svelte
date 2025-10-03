@@ -426,7 +426,7 @@
         <Output raw_output={run.output.output} />
         <div>
           <div class="font-bold mt-6 mb-2">All Messages</div>
-          <TraceComponent trace={run.trace} />
+          <TraceComponent trace={run.trace} {project_id} />
         </div>
       {:else}
         <Output raw_output={run.output.output} />

@@ -69,6 +69,8 @@
         return "Local MCP Server: " + tool_server.name
       case "remote_mcp":
         return "Remote MCP Server: " + tool_server.name
+      case "kiln_task":
+        return "Kiln Task: " + tool_server.name
       default: {
         const exhaustiveCheck: never = tool_server.type
         console.warn(`Unhandled toolType: ${exhaustiveCheck}`)
