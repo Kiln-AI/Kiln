@@ -16,7 +16,7 @@
 
   let error: KilnError | null = null
   let submitting = false
-  let name: string | null = null
+  let name: string = ""
   let description = ""
   let selected_task_id: string | null = null
   let selected_run_config_id: string | null = null
@@ -71,12 +71,7 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: selected_task, update_name()
-
-  function update_name() {
-    if (!selected_task) {
-      return
-    }
+  $: if (selected_task) {
     name = to_snake_case(selected_task.name)
   }
 
