@@ -93,30 +93,29 @@
   function get_tool_options(
     available_tools: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
-    if (!available_tools) {
-      return []
-    }
-
     let option_groups: OptionGroup[] = []
 
     tool_set_order.forEach((tool_set_type) => {
-      const tool_set = available_tools.find(
+      let options: Option[] = []
+      let label = ""
+
+      if (tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button) {
+        // Setting the label for the Kiln Tasks as Tools in case the tool set is not found below (cold start case)
+        label = "Kiln Tasks as Tools"
+        options.push({
+          value: "__add_new_kiln_task__",
+          label: "Create New",
+          description: "Create a new tool from a Kiln task.",
+          badge: "＋",
+          badge_color: "primary",
+        })
+      }
+
+      const tool_set = available_tools?.find(
         (tool_set) => tool_set.type === tool_set_type,
       )
       if (tool_set) {
-        let options: Option[] = []
-        if (
-          tool_set_type === "kiln_task" &&
-          !hide_create_kiln_task_tool_button
-        ) {
-          options.push({
-            value: "__add_new_kiln_task__",
-            label: "Create New",
-            description: "Create a new tool from a Kiln task.",
-            badge: "＋",
-            badge_color: "primary",
-          })
-        }
+        label = tool_set.set_name
         let tools = tool_set.tools
         if (tools.length > 0) {
           options.push(
@@ -127,12 +126,13 @@
             })),
           )
         }
-        if (options.length > 0) {
-          option_groups.push({
-            label: tool_set.set_name,
-            options: options,
-          })
-        }
+      }
+
+      if (options.length > 0) {
+        option_groups.push({
+          label: label,
+          options: options,
+        })
       }
     })
 
