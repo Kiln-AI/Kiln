@@ -25,126 +25,227 @@ interface RagConfigurationProgressState {
   last_started_rag_config_id: string | null
 }
 
-export const ragProgressStore = createRagProgressStore()
+export const rag_config_state_by_project_id = writable<
+  Record<string, RagConfigurationProgressState>
+>({})
 
-export const allRagConfigs = derived(ragProgressStore, ($store) => {
-  return sortRagConfigs(Object.values($store.rag_configs), "created_at")
-})
+export const allRagConfigs = derived(
+  rag_config_state_by_project_id,
+  ($store) => {
+    const allConfigs: RagConfigWithSubConfigs[] = []
+    for (const projectState of Object.values($store)) {
+      allConfigs.push(...Object.values(projectState.rag_configs))
+    }
+    return sortRagConfigs(allConfigs, "created_at")
+  },
+)
+
+export { run_all_rag_configs, run_rag_config }
+
+// Helper functions to get project-specific state
+export function getProjectRagConfigs(project_id: string) {
+  return derived(rag_config_state_by_project_id, ($store) => {
+    const projectState = $store[project_id]
+    if (!projectState) return []
+    return sortRagConfigs(Object.values(projectState.rag_configs), "created_at")
+  })
+}
+
+export function getProjectRagConfigError(project_id: string) {
+  return derived(rag_config_state_by_project_id, ($store) => {
+    const projectState = $store[project_id]
+    return projectState?.error || null
+  })
+}
+
+export function getProjectRagConfigState(project_id: string) {
+  return derived(rag_config_state_by_project_id, ($store) => {
+    return (
+      $store[project_id] || {
+        rag_configs: {},
+        progress: {},
+        logs: {},
+        status: {},
+        running_rag_configs: {},
+        is_archived: {},
+        error: null,
+        last_started_rag_config_id: null,
+      }
+    )
+  })
+}
+
+// Backward compatibility - create a proxy store that works with the first project
+export const ragProgressStore = {
+  subscribe: (callback: (value: RagConfigurationProgressState) => void) => {
+    return rag_config_state_by_project_id.subscribe((state) => {
+      const firstProjectId = Object.keys(state)[0]
+      if (firstProjectId) {
+        callback(state[firstProjectId])
+      } else {
+        callback({
+          rag_configs: {},
+          progress: {},
+          logs: {},
+          status: {},
+          running_rag_configs: {},
+          is_archived: {},
+          error: null,
+          last_started_rag_config_id: null,
+        })
+      }
+    })
+  },
+  update: (
+    updater: (
+      state: RagConfigurationProgressState,
+    ) => RagConfigurationProgressState,
+  ) => {
+    rag_config_state_by_project_id.update((state) => {
+      const firstProjectId = Object.keys(state)[0]
+      if (firstProjectId) {
+        return {
+          ...state,
+          [firstProjectId]: updater(state[firstProjectId]),
+        }
+      }
+      return state
+    })
+  },
+  set: (newState: RagConfigurationProgressState) => {
+    rag_config_state_by_project_id.update((state) => {
+      const firstProjectId = Object.keys(state)[0]
+      if (firstProjectId) {
+        return {
+          ...state,
+          [firstProjectId]: newState,
+        }
+      }
+      return state
+    })
+  },
+  run_all_rag_configs,
+  run_rag_config,
+  reset: () => {
+    rag_config_state_by_project_id.set({})
+  },
+}
 
 // cap concurrent EventSource connections browsers have different limits,
 // we keep the limit low enough to be safe for most browsers
 const run_rag_config_with_throttling = createLimiter(MAX_CONCURRENT_RAG_CONFIGS)
 
-function createRagProgressStore() {
-  const { subscribe, set, update } = writable<RagConfigurationProgressState>({
-    // rag configuration id -> rag config
-    rag_configs: {},
-
-    // rag configuration id -> progress; only applies to rag configurations that are running
-    progress: {},
-
-    // rag configuration id -> logs
-    logs: {},
-
-    // rag configuration id -> status
-    status: {},
-
-    // rag configuration id -> is_running
-    running_rag_configs: {},
-
-    // rag configuration id -> is_archived
-    is_archived: {},
-
-    // error
-    error: null,
-
-    // last started rag config id
-    last_started_rag_config_id: null,
-  })
-
-  function has_errors(rag_config_id: string): boolean {
-    const progress = get(ragProgressStore).progress[rag_config_id]
-    if (!progress) return false
-    return (
-      (progress.total_document_extracted_error_count ?? 0) > 0 ||
-      (progress.total_document_chunked_error_count ?? 0) > 0 ||
-      (progress.total_document_embedded_error_count ?? 0) > 0 ||
-      (progress.total_chunks_indexed_error_count ?? 0) > 0
-    )
+function getProjectState(project_id: string): RagConfigurationProgressState {
+  const state = get(rag_config_state_by_project_id)
+  if (!state[project_id]) {
+    state[project_id] = {
+      rag_configs: {},
+      progress: {},
+      logs: {},
+      status: {},
+      running_rag_configs: {},
+      is_archived: {},
+      error: null,
+      last_started_rag_config_id: null,
+    }
+    rag_config_state_by_project_id.set(state)
   }
+  return state[project_id]
+}
 
-  async function run_all_rag_configs(project_id: string): Promise<void> {
-    const { data, error } = await client.GET(
-      "/api/projects/{project_id}/rag_configs",
-      {
-        params: {
-          path: {
-            project_id,
-          },
+function has_errors(project_id: string, rag_config_id: string): boolean {
+  const projectState = getProjectState(project_id)
+  const progress = projectState.progress[rag_config_id]
+  if (!progress) return false
+  return (
+    (progress.total_document_extracted_error_count ?? 0) > 0 ||
+    (progress.total_document_chunked_error_count ?? 0) > 0 ||
+    (progress.total_document_embedded_error_count ?? 0) > 0 ||
+    (progress.total_chunks_indexed_error_count ?? 0) > 0
+  )
+}
+
+async function run_all_rag_configs(project_id: string): Promise<void> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/rag_configs",
+    {
+      params: {
+        path: {
+          project_id,
         },
       },
-    )
+    },
+  )
 
-    // we don't want to throw an error in this side effect as it is supposed to be
-    // relatively invisible to the user
-    if (error) {
-      console.error("Error fetching rag configs", error)
-      return
-    }
-
-    const tasks: Promise<unknown>[] = data.map((rag_config) => {
-      if (!rag_config.id || rag_config.is_archived) {
-        return Promise.resolve()
-      }
-      return run_rag_config(project_id, rag_config.id)
-    })
-
-    await Promise.allSettled(tasks)
+  // we don't want to throw an error in this side effect as it is supposed to be
+  // relatively invisible to the user
+  if (error) {
+    console.error("Error fetching rag configs", error)
+    return
   }
 
-  async function run_rag_config(
-    project_id: string,
-    rag_config_id: string,
-  ): Promise<void> {
-    // we update the status even if waiting for slot, so that it looks
-    // like it is running to the user
-    update((state) => ({
+  const tasks: Promise<unknown>[] = data.map((rag_config) => {
+    if (!rag_config.id || rag_config.is_archived) {
+      return Promise.resolve()
+    }
+    return run_rag_config(project_id, rag_config.id)
+  })
+
+  await Promise.allSettled(tasks)
+}
+
+async function run_rag_config(
+  project_id: string,
+  rag_config_id: string,
+): Promise<void> {
+  // we update the status even if waiting for slot, so that it looks
+  // like it is running to the user
+  rag_config_state_by_project_id.update((state) => {
+    const projectState = getProjectState(project_id)
+    return {
       ...state,
-      status: { ...state.status, [rag_config_id]: "running" },
-      running_rag_configs: {
-        ...state.running_rag_configs,
-        [rag_config_id]: true,
+      [project_id]: {
+        ...projectState,
+        status: { ...projectState.status, [rag_config_id]: "running" },
+        running_rag_configs: {
+          ...projectState.running_rag_configs,
+          [rag_config_id]: true,
+        },
+        logs: {
+          ...projectState.logs,
+          [rag_config_id]: [],
+        },
+        last_started_rag_config_id: rag_config_id,
       },
-      logs: {
-        ...state.logs,
-        [rag_config_id]: [],
-      },
-      last_started_rag_config_id: rag_config_id,
-    }))
+    }
+  })
 
-    // lets us track the last started rag config progress
-    progress_ui_state.set({
-      title: "Processing Documents",
-      body: "",
-      link: `/docs/rag_configs/${project_id}`,
-      cta: "View Progress",
-      progress: 0,
-      step_count: null,
-      current_step: 0,
-    })
+  // lets us track the last started rag config progress
+  progress_ui_state.set({
+    title: "Processing Documents",
+    body: "",
+    link: `/docs/rag_configs/${project_id}`,
+    cta: "View Progress",
+    progress: 0,
+    step_count: null,
+    current_step: 0,
+  })
 
-    // we will send a log to say that the config is queued if we are still blocked for more than 10s
-    // otherwise, if the config starts in less than 10s, we won't show anything
-    let showed_queued_log = false
-    let wait_log_timer: ReturnType<typeof setTimeout> | null = setTimeout(
-      () => {
-        showed_queued_log = true
-        update((state) => ({
-          ...state,
+  // we will send a log to say that the config is queued if we are still blocked for more than 10s
+  // otherwise, if the config starts in less than 10s, we won't show anything
+  let showed_queued_log = false
+  let wait_log_timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    showed_queued_log = true
+    rag_config_state_by_project_id.update((state) => {
+      const projectState = getProjectState(project_id)
+      return {
+        ...state,
+        [project_id]: {
+          ...projectState,
           logs: {
-            ...state.logs,
+            ...projectState.logs,
             [rag_config_id]: [
-              ...(state.logs[rag_config_id] ?? []),
+              ...(projectState.logs[rag_config_id] ?? []),
               {
                 level: "info",
                 message:
@@ -152,209 +253,216 @@ function createRagProgressStore() {
               },
             ],
           },
-        }))
-      },
-      10_000,
-    )
-
-    await run_rag_config_with_throttling(async () => {
-      // if we got a slot within 10s, prevent the log from being added
-      if (wait_log_timer) {
-        clearTimeout(wait_log_timer)
-        wait_log_timer = null
+        },
       }
-
-      if (showed_queued_log) {
-        update((state) => ({
-          ...state,
-          logs: {
-            ...state.logs,
-            [rag_config_id]: [
-              ...(state.logs[rag_config_id] ?? []),
-              { level: "info", message: "Started running" },
-            ],
-          },
-        }))
-      }
-
-      await run_rag_config_unsafe(project_id, rag_config_id)
     })
-  }
+  }, 10_000)
 
-  function run_rag_config_unsafe(
-    project_id: string,
-    rag_config_id: string,
-  ): Promise<void> {
-    // browsers have a limit on the number of concurrent connections, so we need to make sure
-    // we don't ever exceed that limit - you should use run_rag_config instead
-    const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
-    const eventSource = new EventSource(run_url)
+  await run_rag_config_with_throttling(async () => {
+    // if we got a slot within 10s, prevent the log from being added
+    if (wait_log_timer) {
+      clearTimeout(wait_log_timer)
+      wait_log_timer = null
+    }
 
-    return new Promise<void>((resolve) => {
-      const finalize = (status: RagConfigurationStatus) => {
-        try {
-          eventSource.close()
-        } catch (error) {
-          console.error("Error closing event source", error)
-        }
-        update((state) => ({
+    if (showed_queued_log) {
+      rag_config_state_by_project_id.update((state) => {
+        const projectState = getProjectState(project_id)
+        return {
           ...state,
-          running_rag_configs: {
-            ...state.running_rag_configs,
-            [rag_config_id]: false,
+          [project_id]: {
+            ...projectState,
+            logs: {
+              ...projectState.logs,
+              [rag_config_id]: [
+                ...(projectState.logs[rag_config_id] ?? []),
+                { level: "info", message: "Started running" },
+              ],
+            },
           },
-          status: { ...state.status, [rag_config_id]: status },
-        }))
-        if (
-          get(ragProgressStore).last_started_rag_config_id === rag_config_id
-        ) {
+        }
+      })
+    }
+
+    await run_rag_config_unsafe(project_id, rag_config_id)
+  })
+}
+
+function run_rag_config_unsafe(
+  project_id: string,
+  rag_config_id: string,
+): Promise<void> {
+  // browsers have a limit on the number of concurrent connections, so we need to make sure
+  // we don't ever exceed that limit - you should use run_rag_config instead
+  const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
+  const eventSource = new EventSource(run_url)
+
+  return new Promise<void>((resolve) => {
+    const finalize = (status: RagConfigurationStatus) => {
+      try {
+        eventSource.close()
+      } catch (error) {
+        console.error("Error closing event source", error)
+      }
+      rag_config_state_by_project_id.update((state) => {
+        const projectState = getProjectState(project_id)
+        return {
+          ...state,
+          [project_id]: {
+            ...projectState,
+            running_rag_configs: {
+              ...projectState.running_rag_configs,
+              [rag_config_id]: false,
+            },
+            status: { ...projectState.status, [rag_config_id]: status },
+          },
+        }
+      })
+      const currentState = get(rag_config_state_by_project_id)
+      const currentProjectState = currentState[project_id]
+      if (currentProjectState?.last_started_rag_config_id === rag_config_id) {
+        progress_ui_state.set({
+          title: "Processing Documents",
+          body: "",
+          link: `/docs/rag_configs/${project_id}`,
+          cta:
+            status === "completed_with_errors" ? "View Errors" : "View Results",
+          progress: 100,
+          step_count: null,
+          current_step: 0,
+        })
+      }
+
+      // we don't need to reject because we handle errors in a more complex
+      // and communicate it in the UI
+      resolve()
+    }
+
+    eventSource.onmessage = (event) => {
+      try {
+        if (event.data === "complete") {
+          const state = get(rag_config_state_by_project_id)
+          const projectState = state[project_id]
+          const prev = projectState?.progress[rag_config_id]
+          // guard for undefined
+          if (!prev)
+            return finalize(
+              has_errors(project_id, rag_config_id)
+                ? "completed_with_errors"
+                : "complete",
+            )
+          const extraction_incomplete =
+            (prev.total_document_extracted_count ?? 0) <
+            (prev.total_document_count ?? 0)
+          const chunking_incomplete =
+            (prev.total_document_chunked_count ?? 0) <
+            (prev.total_document_count ?? 0)
+          const embedding_incomplete =
+            (prev.total_document_embedded_count ?? 0) <
+            (prev.total_document_count ?? 0)
+          const indexing_incomplete =
+            (prev.total_chunk_completed_count ?? 0) <
+            (prev.total_chunk_count ?? 0)
+
+          const failed_implicitly =
+            (prev.total_document_count ?? 0) > 0 &&
+            (extraction_incomplete ||
+              chunking_incomplete ||
+              embedding_incomplete ||
+              indexing_incomplete)
+
+          const completion_status =
+            has_errors(project_id, rag_config_id) || failed_implicitly
+              ? "completed_with_errors"
+              : "complete"
+
+          return finalize(completion_status)
+        }
+
+        const payload = JSON.parse(event.data) as RagProgress
+        rag_config_state_by_project_id.update((state) => {
+          const projectState = getProjectState(project_id)
+          const currentLogs = projectState.logs[rag_config_id] || []
+          const newLogs = payload.logs || []
+          return {
+            ...state,
+            [project_id]: {
+              ...projectState,
+              progress: { ...projectState.progress, [rag_config_id]: payload },
+              logs: {
+                ...projectState.logs,
+                [rag_config_id]: [...currentLogs, ...newLogs],
+              },
+            },
+          }
+        })
+
+        const currentState = get(rag_config_state_by_project_id)
+        const currentProjectState = currentState[project_id]
+        if (currentProjectState?.last_started_rag_config_id === rag_config_id) {
           progress_ui_state.set({
             title: "Processing Documents",
             body: "",
             link: `/docs/rag_configs/${project_id}`,
-            cta:
-              status === "completed_with_errors"
-                ? "View Errors"
-                : "View Results",
-            progress: 100,
+            cta: "View Progress",
+            progress:
+              (payload.total_document_completed_count /
+                Math.max(payload.total_document_count, 1)) *
+              100,
             step_count: null,
-            current_step: 0,
+            current_step: null,
           })
         }
-
-        // we don't need to reject because we handle errors in a more complex
-        // and communicate it in the UI
-        resolve()
-      }
-
-      eventSource.onmessage = (event) => {
-        try {
-          if (event.data === "complete") {
-            const state = get(ragProgressStore)
-            const prev = state.progress[rag_config_id]
-            // guard for undefined
-            if (!prev)
-              return finalize(
-                has_errors(rag_config_id)
-                  ? "completed_with_errors"
-                  : "complete",
-              )
-            const extraction_incomplete =
-              (prev.total_document_extracted_count ?? 0) <
-              (prev.total_document_count ?? 0)
-            const chunking_incomplete =
-              (prev.total_document_chunked_count ?? 0) <
-              (prev.total_document_count ?? 0)
-            const embedding_incomplete =
-              (prev.total_document_embedded_count ?? 0) <
-              (prev.total_document_count ?? 0)
-            const indexing_incomplete =
-              (prev.total_chunk_completed_count ?? 0) <
-              (prev.total_chunk_count ?? 0)
-
-            const failed_implicitly =
-              (prev.total_document_count ?? 0) > 0 &&
-              (extraction_incomplete ||
-                chunking_incomplete ||
-                embedding_incomplete ||
-                indexing_incomplete)
-
-            const completion_status =
-              has_errors(rag_config_id) || failed_implicitly
-                ? "completed_with_errors"
-                : "complete"
-
-            return finalize(completion_status)
-          }
-
-          const payload = JSON.parse(event.data) as RagProgress
-          update((state) => {
-            const currentLogs = state.logs[rag_config_id] || []
-            const newLogs = payload.logs || []
-            return {
-              ...state,
-              progress: { ...state.progress, [rag_config_id]: payload },
-              logs: {
-                ...state.logs,
-                [rag_config_id]: [...currentLogs, ...newLogs],
-              },
-            }
-          })
-
-          if (
-            get(ragProgressStore).last_started_rag_config_id === rag_config_id
-          ) {
-            progress_ui_state.set({
-              title: "Processing Documents",
-              body: "",
-              link: `/docs/rag_configs/${project_id}`,
-              cta: "View Progress",
-              progress:
-                (payload.total_document_completed_count /
-                  Math.max(payload.total_document_count, 1)) *
-                100,
-              step_count: null,
-              current_step: null,
-            })
-          }
-        } catch (err) {
-          update((state) => ({
+      } catch (err) {
+        rag_config_state_by_project_id.update((state) => {
+          const projectState = getProjectState(project_id)
+          return {
             ...state,
+            [project_id]: {
+              ...projectState,
+              logs: {
+                ...projectState.logs,
+                [rag_config_id]: [
+                  ...(projectState.logs[rag_config_id] || []),
+                  {
+                    level: "error",
+                    message: `Error running RAG config: ${String(err)}`,
+                  },
+                ],
+              },
+            },
+          }
+        })
+        finalize("completed_with_errors")
+      }
+    }
+
+    eventSource.onerror = (error) => {
+      console.error(
+        `Error processing SSE message while running RAG config ${rag_config_id}: ${error}`,
+      )
+      rag_config_state_by_project_id.update((state) => {
+        const projectState = getProjectState(project_id)
+        return {
+          ...state,
+          [project_id]: {
+            ...projectState,
             logs: {
-              ...state.logs,
+              ...projectState.logs,
               [rag_config_id]: [
-                ...(state.logs[rag_config_id] || []),
+                ...(projectState.logs[rag_config_id] || []),
                 {
                   level: "error",
-                  message: `Error running RAG config: ${String(err)}`,
+                  message: `SSE connection error: ${String(error)}`,
                 },
               ],
             },
-          }))
-          finalize("completed_with_errors")
-        }
-      }
-
-      eventSource.onerror = (error) => {
-        console.error(
-          `Error processing SSE message while running RAG config ${rag_config_id}: ${error}`,
-        )
-        update((state) => ({
-          ...state,
-          logs: {
-            ...state.logs,
-            [rag_config_id]: [
-              ...(state.logs[rag_config_id] || []),
-              {
-                level: "error",
-                message: `SSE connection error: ${String(error)}`,
-              },
-            ],
           },
-        }))
-        finalize("completed_with_errors")
-      }
-    })
-  }
-
-  return {
-    subscribe,
-    set,
-    update,
-    run_all_rag_configs,
-    run_rag_config,
-    reset: () =>
-      set({
-        progress: {},
-        status: {},
-        logs: {},
-        running_rag_configs: {},
-        rag_configs: {},
-        is_archived: {},
-        error: null,
-        last_started_rag_config_id: null,
-      }),
-  }
+        }
+      })
+      finalize("completed_with_errors")
+    }
+  })
 }
 
 function sortRagConfigs(
@@ -441,11 +549,12 @@ export async function load_all_rag_config_progress(projectId: string) {
 
     if (!error && data) {
       for (const [rag_config_id, progress] of Object.entries(data)) {
-        ragProgressStore.update((state) => {
+        rag_config_state_by_project_id.update((state) => {
+          const projectState = getProjectState(projectId)
           const newProgress = {
-            ...state.progress,
+            ...projectState.progress,
             [rag_config_id]: {
-              ...state.progress[rag_config_id],
+              ...projectState.progress[rag_config_id],
               ...progress,
             },
           }
@@ -453,25 +562,34 @@ export async function load_all_rag_config_progress(projectId: string) {
           // we need to make sure not to overwrite the client-side status, otherwise we will
           // lose the progress state when navigating out and back into the pages that
           const newStatus = {
-            ...state.status,
+            ...projectState.status,
             [rag_config_id]:
-              state.status[rag_config_id] ||
+              projectState.status[rag_config_id] ||
               calculateStatus(newProgress[rag_config_id]),
           }
 
           return {
             ...state,
-            progress: newProgress,
-            status: newStatus,
+            [projectId]: {
+              ...projectState,
+              progress: newProgress,
+              status: newStatus,
+            },
           }
         })
       }
     }
   } catch (e) {
-    ragProgressStore.update((state) => ({
-      ...state,
-      error: createKilnError(e),
-    }))
+    rag_config_state_by_project_id.update((state) => {
+      const projectState = getProjectState(projectId)
+      return {
+        ...state,
+        [projectId]: {
+          ...projectState,
+          error: createKilnError(e),
+        },
+      }
+    })
   }
 }
 
@@ -493,51 +611,67 @@ export async function load_rag_configs(project_id: string) {
     if (get_error) {
       throw get_error
     }
-    ragProgressStore.update((state) => {
-      const newState = {
+    rag_config_state_by_project_id.update((state) => {
+      const projectState = getProjectState(project_id)
+      return {
         ...state,
-        rag_configs: {
-          ...state.rag_configs,
-          ...rag_configs_response.reduce(
-            (acc, rag_config) => {
-              acc[String(rag_config.id)] = rag_config
-              return acc
-            },
-            {} as Record<string, RagConfigWithSubConfigs>,
-          ),
-        },
-        is_archived: {
-          ...state.is_archived,
-          ...rag_configs_response.reduce(
-            (acc, rag_config) => {
-              acc[String(rag_config.id)] = rag_config.is_archived
-              return acc
-            },
-            {} as Record<string, boolean>,
-          ),
+        [project_id]: {
+          ...projectState,
+          rag_configs: {
+            ...projectState.rag_configs,
+            ...rag_configs_response.reduce(
+              (acc, rag_config) => {
+                acc[String(rag_config.id)] = rag_config
+                return acc
+              },
+              {} as Record<string, RagConfigWithSubConfigs>,
+            ),
+          },
+          is_archived: {
+            ...projectState.is_archived,
+            ...rag_configs_response.reduce(
+              (acc, rag_config) => {
+                acc[String(rag_config.id)] = rag_config.is_archived
+                return acc
+              },
+              {} as Record<string, boolean>,
+            ),
+          },
         },
       }
-      return newState
     })
   } catch (e) {
-    ragProgressStore.update((state) => ({
-      ...state,
-      error: createKilnError(e),
-    }))
+    rag_config_state_by_project_id.update((state) => {
+      const projectState = getProjectState(project_id)
+      return {
+        ...state,
+        [project_id]: {
+          ...projectState,
+          error: createKilnError(e),
+        },
+      }
+    })
   }
 }
 
 export async function update_rag_config_archived_state(
+  project_id: string,
   rag_config_id: string,
   is_archived: boolean,
 ) {
-  ragProgressStore.update((state) => ({
-    ...state,
-    is_archived: {
-      ...state.is_archived,
-      [rag_config_id]: is_archived,
-    },
-  }))
+  rag_config_state_by_project_id.update((state) => {
+    const projectState = getProjectState(project_id)
+    return {
+      ...state,
+      [project_id]: {
+        ...projectState,
+        is_archived: {
+          ...projectState.is_archived,
+          [rag_config_id]: is_archived,
+        },
+      },
+    }
+  })
 }
 
 export function compute_overall_completion_percentage(

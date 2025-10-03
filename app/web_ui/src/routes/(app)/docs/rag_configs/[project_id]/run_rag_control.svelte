@@ -2,13 +2,15 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import type { RagConfigWithSubConfigs } from "$lib/types"
   import RunRagDialog from "./run_rag_dialog.svelte"
-  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import { getProjectRagConfigState } from "$lib/stores/rag_progress_store"
   import type { RagConfigurationStatus } from "$lib/stores/rag_progress_store"
 
   export let project_id: string
   export let rag_config: RagConfigWithSubConfigs
 
   $: rag_config_id = rag_config.id || ""
+  $: project_state_store = getProjectRagConfigState(project_id)
+  $: project_state = $project_state_store
 
   let run_rag_dialog: Dialog | null = null
 
@@ -54,7 +56,7 @@
     }
   }
 
-  $: status = $ragProgressStore.status[rag_config_id]
+  $: status = project_state.status[rag_config_id]
 
   $: btn_props = status_to_btn_props(status)
 </script>

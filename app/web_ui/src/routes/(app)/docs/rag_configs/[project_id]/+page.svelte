@@ -12,12 +12,14 @@
   import TableRagConfigRow from "./table_rag_config_row.svelte"
   import {
     load_all_rag_config_progress,
-    ragProgressStore,
     load_rag_configs,
-    allRagConfigs,
+    getProjectRagConfigs,
+    getProjectRagConfigError,
   } from "$lib/stores/rag_progress_store"
 
-  let error: KilnError | null = $ragProgressStore.error
+  $: project_id = $page.params.project_id
+  $: project_error_store = getProjectRagConfigError(project_id)
+  $: error = $project_error_store
   let loading = true
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
@@ -28,8 +30,6 @@
     const url = new URL(window.location.href)
     page_number = parseInt(url.searchParams.get("page") || "1", 10)
   }
-
-  $: project_id = $page.params.project_id
 
   onMount(async () => {
     // need to ensure the store is populated for friendly name resolution
@@ -42,7 +42,8 @@
     loading = false
   })
 
-  $: all_rag_configs = $allRagConfigs
+  $: project_rag_configs_store = getProjectRagConfigs(project_id)
+  $: all_rag_configs = $project_rag_configs_store
 
   $: active_rag_configs = (all_rag_configs || [])
     .filter((rag_config) => !rag_config.is_archived)

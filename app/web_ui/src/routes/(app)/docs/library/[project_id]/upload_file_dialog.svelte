@@ -4,7 +4,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import TrashIcon from "$lib/ui/trash_icon.svelte"
   import UploadIcon from "$lib/ui/upload_icon.svelte"
-  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import { run_all_rag_configs } from "$lib/stores/rag_progress_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -158,7 +158,7 @@
     selected_files = []
     onUploadCompleted()
 
-    ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+    run_all_rag_configs(project_id).catch((error) => {
       console.error("Error running all rag configs", error)
     })
 

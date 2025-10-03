@@ -14,7 +14,7 @@
   import Output from "../../../../run/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
-  import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import { run_all_rag_configs } from "$lib/stores/rag_progress_store"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
@@ -125,7 +125,7 @@
   let delete_document_dialog: DeleteDialog | null = null
   $: delete_document_url = `/api/projects/${project_id}/documents/${document_id}`
   function after_document_delete() {
-    ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+    run_all_rag_configs(project_id).catch((error) => {
       console.error("Error running all rag configs", error)
     })
     goto(`/docs/library/${project_id}`)
