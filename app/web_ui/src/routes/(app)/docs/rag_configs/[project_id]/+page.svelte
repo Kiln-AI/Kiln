@@ -11,17 +11,20 @@
   import EmptyRagConfigsIntro from "./empty_rag_configs_intro.svelte"
   import TableRagConfigRow from "./table_rag_config_row.svelte"
   import {
+    ensure_rag_store_initialized,
     load_all_rag_config_progress,
     load_rag_configs,
+    ragProgressStore,
     sortRagConfigs,
-    getProjectStateStore,
   } from "$lib/stores/rag_progress_store"
 
-  $: projectStateStore = getProjectStateStore($page.params.project_id)
-  $: progressState = $projectStateStore
+  let rag_store_initialized = false
+  $: progressState = rag_store_initialized
+    ? $ragProgressStore[$page.params.project_id]
+    : null
 
   let error: KilnError | null = null
-  $: error = progressState.error
+  $: error = progressState?.error || null
   let loading = true
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
@@ -36,6 +39,9 @@
   $: project_id = $page.params.project_id
 
   onMount(async () => {
+    ensure_rag_store_initialized(project_id)
+    rag_store_initialized = true
+
     // need to ensure the store is populated for friendly name resolution
     await Promise.all([
       load_available_models(),
@@ -43,13 +49,13 @@
       load_all_rag_config_progress(project_id),
       load_rag_configs(project_id),
     ])
+
     loading = false
   })
 
-  $: all_rag_configs = sortRagConfigs(
-    Object.values(progressState.rag_configs),
-    "created_at",
-  )
+  $: all_rag_configs = progressState?.rag_configs
+    ? sortRagConfigs(Object.values(progressState.rag_configs), "created_at")
+    : []
 
   $: active_rag_configs = (all_rag_configs || [])
     .filter((rag_config) => !rag_config.is_archived)

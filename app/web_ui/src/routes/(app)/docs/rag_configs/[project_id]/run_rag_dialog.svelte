@@ -6,32 +6,41 @@
   } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
   import {
+    ensure_rag_store_initialized,
     ragProgressStore,
-    getProjectStateStore,
   } from "$lib/stores/rag_progress_store"
   import Checkmark from "$lib/ui/checkmark.svelte"
+  import { onMount } from "svelte"
 
-  $: projectStateStore = getProjectStateStore(project_id)
-  $: ragProgressState = $projectStateStore
+  let rag_store_initialized = false
+  $: ragProgressState = rag_store_initialized
+    ? $ragProgressStore[project_id]
+    : null
 
   export let dialog: Dialog | null = null
   export let project_id: string
   export let rag_config_id: string
   export let rag_config: RagConfigWithSubConfigs
 
-  $: config_progress = ragProgressState.progress[rag_config_id] || null
-  $: is_running = ragProgressState.running_rag_configs[rag_config_id] || false
+  $: config_progress = ragProgressState?.progress[rag_config_id] || null
+  $: is_running = ragProgressState?.running_rag_configs[rag_config_id] || false
 
   let log_container: HTMLPreElement
-  $: log_messages = ragProgressState.logs[rag_config_id] || []
+  $: log_messages = ragProgressState?.logs[rag_config_id] || []
   let end_of_logs: HTMLDivElement | null = null
 
   // user can override the default behavior of showing logs when there are error logs
   let show_logs_explicit_open: boolean = false
   let show_logs_explicit_close: boolean = false
-  $: has_error_logs = log_messages.some((log) => log.level === "error")
+  $: has_error_logs =
+    log_messages?.some((log) => log.level === "error") || false
   $: show_logs =
     !show_logs_explicit_close && (has_error_logs || show_logs_explicit_open)
+
+  onMount(() => {
+    ensure_rag_store_initialized(project_id)
+    rag_store_initialized = true
+  })
 
   function copy_logs_to_clipboard(logs: LogMessage[]) {
     const logs_string = logs

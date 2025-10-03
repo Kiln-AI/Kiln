@@ -25,7 +25,10 @@
   import Output from "../../../../../run/output.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { mime_type_to_string } from "$lib/utils/formatters"
-  import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
+  import {
+    ensure_rag_store_initialized,
+    update_rag_config_archived_state,
+  } from "$lib/stores/rag_progress_store"
   import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
   import { uncache_available_tools } from "$lib/stores"
@@ -52,7 +55,12 @@
     similarity: number | null
   }> = []
 
+  let rag_store_initialized = false
+
   onMount(async () => {
+    ensure_rag_store_initialized(project_id)
+    rag_store_initialized = true
+
     // need to load available models to get the model store populated
     await load_available_models()
     await load_available_embedding_models()
@@ -109,11 +117,13 @@
       }
 
       // update the store to make sure state gets reflected everywhere
-      await update_rag_config_archived_state(
-        project_id,
-        rag_config_id,
-        is_archived,
-      )
+      if (rag_store_initialized) {
+        await update_rag_config_archived_state(
+          project_id,
+          rag_config_id,
+          is_archived,
+        )
+      }
 
       await get_rag_config()
     } catch (e) {

@@ -2,11 +2,17 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import type { RagConfigWithSubConfigs } from "$lib/types"
   import RunRagDialog from "./run_rag_dialog.svelte"
-  import { getProjectStateStore } from "$lib/stores/rag_progress_store"
+  import {
+    ensure_rag_store_initialized,
+    ragProgressStore,
+  } from "$lib/stores/rag_progress_store"
   import type { RagConfigurationStatus } from "$lib/stores/rag_progress_store"
+  import { onMount } from "svelte"
 
-  $: projectStateStore = getProjectStateStore(project_id)
-  $: ragProgressState = $projectStateStore
+  let rag_store_initialized = false
+  $: ragProgressState = rag_store_initialized
+    ? $ragProgressStore[project_id]
+    : null
 
   export let project_id: string
   export let rag_config: RagConfigWithSubConfigs
@@ -14,6 +20,11 @@
   $: rag_config_id = rag_config.id || ""
 
   let run_rag_dialog: Dialog | null = null
+
+  onMount(() => {
+    ensure_rag_store_initialized(project_id)
+    rag_store_initialized = true
+  })
 
   function status_to_btn_props(status: RagConfigurationStatus) {
     switch (status) {
@@ -57,7 +68,7 @@
     }
   }
 
-  $: status = ragProgressState.status[rag_config_id]
+  $: status = ragProgressState?.status[rag_config_id] || "not_started"
 
   $: btn_props = status_to_btn_props(status)
 </script>

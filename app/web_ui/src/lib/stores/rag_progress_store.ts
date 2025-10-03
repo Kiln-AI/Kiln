@@ -1,4 +1,4 @@
-import { get, writable, derived } from "svelte/store"
+import { get, writable } from "svelte/store"
 import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
@@ -25,8 +25,17 @@ interface RagConfigurationProgressState {
   last_started_rag_config_id: string | null
 }
 
-interface ProjectRagProgressState {
-  rag_config_state_by_project_id: Record<string, RagConfigurationProgressState>
+// we need to call this in every component that uses the rag progress store
+// because the project does not set the project state automatically
+export function ensure_rag_store_initialized(project_id: string) {
+  if (get(ragProgressStore)[project_id]) {
+    return
+  }
+
+  ragProgressStore.update((state) => ({
+    ...state,
+    [project_id]: getDefaultProjectState(),
+  }))
 }
 
 // cap concurrent EventSource connections browsers have different limits,
@@ -63,50 +72,27 @@ function getDefaultProjectState(): RagConfigurationProgressState {
 
 export const ragProgressStore = createRagProgressStore()
 
-// derived store that gets project state by project ID and initializes state if does not exist yet
-export function getProjectStateStore(project_id: string) {
-  return derived(ragProgressStore, ($store) => {
-    return (
-      $store.rag_config_state_by_project_id[project_id] ||
-      getDefaultProjectState()
-    )
-  })
-}
-
 function createRagProgressStore() {
-  const { subscribe, set, update } = writable<ProjectRagProgressState>({
-    rag_config_state_by_project_id: {},
-  })
+  const { subscribe, update } = writable<
+    Record<string, RagConfigurationProgressState>
+  >({})
 
-  function getProjectState(
-    project_id: string | null,
-  ): RagConfigurationProgressState {
-    if (!project_id) return getDefaultProjectState()
-
+  function getProjectState(project_id: string): RagConfigurationProgressState {
     const state = get(ragProgressStore)
-    return (
-      state.rag_config_state_by_project_id[project_id] ||
-      getDefaultProjectState()
-    )
+    return state[project_id] || getDefaultProjectState()
   }
 
   function updateProjectState(
-    project_id: string | null,
+    project_id: string,
     updater: (
       state: RagConfigurationProgressState,
     ) => RagConfigurationProgressState,
   ) {
-    if (!project_id) return
-
     update((globalState) => ({
       ...globalState,
-      rag_config_state_by_project_id: {
-        ...globalState.rag_config_state_by_project_id,
-        [project_id]: updater(
-          globalState.rag_config_state_by_project_id[project_id] ||
-            getDefaultProjectState(),
-        ),
-      },
+      [project_id]: updater(
+        globalState[project_id] || getDefaultProjectState(),
+      ),
     }))
   }
 
@@ -392,24 +378,10 @@ function createRagProgressStore() {
 
   return {
     subscribe,
-    set,
     update,
     run_all_rag_configs,
     run_rag_config,
     getProjectState,
-    reset: () =>
-      set({
-        rag_config_state_by_project_id: {},
-      }),
-    resetProject: (project_id: string) => {
-      update((state) => ({
-        ...state,
-        rag_config_state_by_project_id: {
-          ...state.rag_config_state_by_project_id,
-          [project_id]: getDefaultProjectState(),
-        },
-      }))
-    },
   }
 }
 
@@ -499,7 +471,7 @@ export async function load_all_rag_config_progress(projectId: string) {
       for (const [rag_config_id, progress] of Object.entries(data)) {
         ragProgressStore.update((globalState) => {
           const projectState =
-            globalState.rag_config_state_by_project_id[projectId] ||
+            globalState[projectId] ||
             ragProgressStore.getProjectState(projectId)
           const newProgress = {
             ...projectState.progress,
@@ -520,13 +492,10 @@ export async function load_all_rag_config_progress(projectId: string) {
 
           return {
             ...globalState,
-            rag_config_state_by_project_id: {
-              ...globalState.rag_config_state_by_project_id,
-              [projectId]: {
-                ...projectState,
-                progress: newProgress,
-                status: newStatus,
-              },
+            [projectId]: {
+              ...projectState,
+              progress: newProgress,
+              status: newStatus,
             },
           }
         })
@@ -535,12 +504,9 @@ export async function load_all_rag_config_progress(projectId: string) {
   } catch (e) {
     ragProgressStore.update((globalState) => ({
       ...globalState,
-      rag_config_state_by_project_id: {
-        ...globalState.rag_config_state_by_project_id,
-        [projectId]: {
-          ...ragProgressStore.getProjectState(projectId),
-          error: createKilnError(e),
-        },
+      [projectId]: {
+        ...ragProgressStore.getProjectState(projectId),
+        error: createKilnError(e),
       },
     }))
   }
@@ -566,8 +532,7 @@ export async function load_rag_configs(project_id: string) {
     }
     ragProgressStore.update((globalState) => {
       const projectState =
-        globalState.rag_config_state_by_project_id[project_id] ||
-        ragProgressStore.getProjectState(project_id)
+        globalState[project_id] || ragProgressStore.getProjectState(project_id)
       const newProjectState = {
         ...projectState,
         rag_configs: {
@@ -593,21 +558,15 @@ export async function load_rag_configs(project_id: string) {
       }
       return {
         ...globalState,
-        rag_config_state_by_project_id: {
-          ...globalState.rag_config_state_by_project_id,
-          [project_id]: newProjectState,
-        },
+        [project_id]: newProjectState,
       }
     })
   } catch (e) {
     ragProgressStore.update((globalState) => ({
       ...globalState,
-      rag_config_state_by_project_id: {
-        ...globalState.rag_config_state_by_project_id,
-        [project_id]: {
-          ...ragProgressStore.getProjectState(project_id),
-          error: createKilnError(e),
-        },
+      [project_id]: {
+        ...ragProgressStore.getProjectState(project_id),
+        error: createKilnError(e),
       },
     }))
   }
@@ -622,14 +581,11 @@ export async function update_rag_config_archived_state(
 
   ragProgressStore.update((globalState) => ({
     ...globalState,
-    rag_config_state_by_project_id: {
-      ...globalState.rag_config_state_by_project_id,
-      [project_id]: {
-        ...ragProgressStore.getProjectState(project_id),
-        is_archived: {
-          ...ragProgressStore.getProjectState(project_id).is_archived,
-          [rag_config_id]: is_archived,
-        },
+    [project_id]: {
+      ...ragProgressStore.getProjectState(project_id),
+      is_archived: {
+        ...ragProgressStore.getProjectState(project_id).is_archived,
+        [rag_config_id]: is_archived,
       },
     },
   }))

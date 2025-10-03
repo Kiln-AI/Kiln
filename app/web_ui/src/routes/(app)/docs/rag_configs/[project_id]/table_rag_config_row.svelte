@@ -10,25 +10,36 @@
   } from "$lib/stores"
   import {
     compute_overall_completion_percentage,
-    getProjectStateStore,
+    ensure_rag_store_initialized,
+    ragProgressStore,
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
   import { goto } from "$app/navigation"
+  import { onMount } from "svelte"
 
-  $: projectStateStore = getProjectStateStore(project_id)
-  $: ragProgressState = $projectStateStore
+  let rag_store_initialized = false
+  $: ragProgressState = rag_store_initialized
+    ? $ragProgressStore[project_id]
+    : null
 
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
-  $: rag_progress = ragProgressState.progress[rag_config.id || ""]
+  $: rag_progress = ragProgressState?.progress[rag_config.id || ""]
 
   let row_hovered = false
 
   // Calculate percentages for progress bar
   $: total_docs = rag_progress?.total_document_count || 0
-  $: completed_pct = compute_overall_completion_percentage(rag_progress)
+  $: completed_pct = rag_progress
+    ? compute_overall_completion_percentage(rag_progress)
+    : 0
 
-  $: status = ragProgressState.status[rag_config.id || ""]
+  $: status = ragProgressState?.status[rag_config.id || ""]
+
+  onMount(() => {
+    ensure_rag_store_initialized(project_id)
+    rag_store_initialized = true
+  })
 
   function status_to_badge_props(
     status: RagConfigurationStatus,
@@ -76,7 +87,9 @@
     }
   }
 
-  $: status_badge_props = status_to_badge_props(status, rag_config.is_archived)
+  $: status_badge_props = status
+    ? status_to_badge_props(status, rag_config.is_archived)
+    : null
 
   function open() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
@@ -145,22 +158,24 @@
         <div class="flex flex-col gap-2 w-full max-w-[360px]">
           <!-- Status and Action Row -->
           <div class="flex items-center justify-between gap-4">
-            <div
-              class="badge px-3 py-1 {status_badge_props?.warning
-                ? 'badge-outline badge-warning'
-                : ''} {status_badge_props?.running
-                ? 'badge-outline badge-success'
-                : ''} {status_badge_props?.error
-                ? 'badge-outline badge-error'
-                : ''} {status_badge_props?.primary
-                ? 'badge-outline badge-primary'
-                : ''} {status_badge_props?.archived ? 'badge-secondary' : ''}"
-            >
-              {status_badge_props?.text}
-              {#if status_badge_props?.show_percentage}
-                ({completed_pct}%)
-              {/if}
-            </div>
+            {#if status_badge_props}
+              <div
+                class="badge px-3 py-1 {status_badge_props?.warning
+                  ? 'badge-outline badge-warning'
+                  : ''} {status_badge_props?.running
+                  ? 'badge-outline badge-success'
+                  : ''} {status_badge_props?.error
+                  ? 'badge-outline badge-error'
+                  : ''} {status_badge_props?.primary
+                  ? 'badge-outline badge-primary'
+                  : ''} {status_badge_props?.archived ? 'badge-secondary' : ''}"
+              >
+                {status_badge_props?.text}
+                {#if status_badge_props?.show_percentage}
+                  ({completed_pct}%)
+                {/if}
+              </div>
+            {/if}
           </div>
 
           <!-- Progress Bar (only when running) -->
