@@ -374,6 +374,7 @@ function createRagProgressStore() {
     subscribe,
     set,
     update,
+    updateProjectState,
     run_all_rag_configs,
     run_rag_config,
     getProjectState,
@@ -464,10 +465,7 @@ export async function load_all_rag_config_progress(projectId: string) {
 
     if (!error && data) {
       for (const [rag_config_id, progress] of Object.entries(data)) {
-        ragProgressStore.update((globalState) => {
-          const projectState =
-            globalState[projectId] ||
-            ragProgressStore.getProjectState(projectId)
+        ragProgressStore.updateProjectState(projectId, (projectState) => {
           const newProgress = {
             ...projectState.progress,
             [rag_config_id]: {
@@ -486,23 +484,17 @@ export async function load_all_rag_config_progress(projectId: string) {
           }
 
           return {
-            ...globalState,
-            [projectId]: {
-              ...projectState,
-              progress: newProgress,
-              status: newStatus,
-            },
+            ...projectState,
+            progress: newProgress,
+            status: newStatus,
           }
         })
       }
     }
   } catch (e) {
-    ragProgressStore.update((globalState) => ({
-      ...globalState,
-      [projectId]: {
-        ...ragProgressStore.getProjectState(projectId),
-        error: createKilnError(e),
-      },
+    ragProgressStore.updateProjectState(projectId, (projectState) => ({
+      ...projectState,
+      error: createKilnError(e),
     }))
   }
 }
@@ -525,44 +517,37 @@ export async function load_rag_configs(project_id: string) {
     if (get_error) {
       throw get_error
     }
-    ragProgressStore.update((globalState) => {
-      const projectState =
-        globalState[project_id] || ragProgressStore.getProjectState(project_id)
-      const newProjectState = {
-        ...projectState,
-        rag_configs: {
-          ...projectState.rag_configs,
-          ...rag_configs_response.reduce(
-            (acc, rag_config) => {
-              acc[String(rag_config.id)] = rag_config
-              return acc
-            },
-            {} as Record<string, RagConfigWithSubConfigs>,
-          ),
-        },
-        is_archived: {
-          ...projectState.is_archived,
-          ...rag_configs_response.reduce(
-            (acc, rag_config) => {
-              acc[String(rag_config.id)] = rag_config.is_archived
-              return acc
-            },
-            {} as Record<string, boolean>,
-          ),
-        },
+    ragProgressStore.updateProjectState(project_id, (projectState) => {
+      const newRagConfigs = {
+        ...projectState.rag_configs,
+        ...rag_configs_response.reduce(
+          (acc, rag_config) => {
+            acc[String(rag_config.id)] = rag_config
+            return acc
+          },
+          {} as Record<string, RagConfigWithSubConfigs>,
+        ),
+      }
+      const newIsArchived = {
+        ...projectState.is_archived,
+        ...rag_configs_response.reduce(
+          (acc, rag_config) => {
+            acc[String(rag_config.id)] = rag_config.is_archived
+            return acc
+          },
+          {} as Record<string, boolean>,
+        ),
       }
       return {
-        ...globalState,
-        [project_id]: newProjectState,
+        ...projectState,
+        rag_configs: newRagConfigs,
+        is_archived: newIsArchived,
       }
     })
   } catch (e) {
-    ragProgressStore.update((globalState) => ({
-      ...globalState,
-      [project_id]: {
-        ...ragProgressStore.getProjectState(project_id),
-        error: createKilnError(e),
-      },
+    ragProgressStore.updateProjectState(project_id, (projectState) => ({
+      ...projectState,
+      error: createKilnError(e),
     }))
   }
 }
@@ -572,16 +557,11 @@ export async function update_rag_config_archived_state(
   rag_config_id: string,
   is_archived: boolean,
 ) {
-  if (!project_id) return
-
-  ragProgressStore.update((globalState) => ({
-    ...globalState,
-    [project_id]: {
-      ...ragProgressStore.getProjectState(project_id),
-      is_archived: {
-        ...ragProgressStore.getProjectState(project_id).is_archived,
-        [rag_config_id]: is_archived,
-      },
+  ragProgressStore.updateProjectState(project_id, (projectState) => ({
+    ...projectState,
+    is_archived: {
+      ...projectState.is_archived,
+      [rag_config_id]: is_archived,
     },
   }))
 }
