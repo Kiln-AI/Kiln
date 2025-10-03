@@ -280,7 +280,10 @@
 
     <div>
       <p>You can also install the models using the Ollama CLI:</p>
-      <pre>{selected_template?.required_commands?.join("\n")}</pre>
+      <pre
+        class="font-mono text-xs bg-base-200 p-2 rounded-md mt-1">{selected_template?.required_commands?.join(
+          "\n",
+        )}</pre>
     </div>
   </div>
 </Dialog>
