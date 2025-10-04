@@ -127,7 +127,7 @@
         description={`Guidance to help the model generate relevant ${description_plural()}.`}
         inputType={"textarea"}
         optional={true}
-        tall={true}
+        height="large"
         bind:value={$guidance_store}
       />
       {#if guidance_data.custom_warning($selected_template_store)}

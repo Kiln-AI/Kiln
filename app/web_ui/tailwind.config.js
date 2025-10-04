@@ -4,6 +4,7 @@ import typography from "@tailwindcss/typography"
 
 export default {
   content: ["./src/**/*.{html,js,svelte,ts}"],
+  safelist: ["h-18", "h-36", "h-60", "h-96"],
   theme: {
     extend: {},
   },
