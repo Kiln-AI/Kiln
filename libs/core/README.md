@@ -310,6 +310,58 @@ custom_model_ids.append(new_model)
 Config.shared().custom_models = custom_model_ids
 ```
 
+## Taking Kiln RAG to production
+
+### LanceDB Cloud
+
+```py
+from kiln_ai.datamodel import Project
+from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
+from kiln_ai.adapters.vector_store_loaders import LanceDBLoader
+from kiln_ai.adapters.vector_store.lancedb_adapter import lancedb_construct_from_config
+
+project = Project.load_from_file("path/to/your/project.kiln")
+target_rag_config_id = "rag-config-id"
+
+# Retrieve the configurations
+rag_config = RagConfig.from_id_and_parent_path(
+    target_rag_config_id, project.path,
+)
+vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+    rag_config.vector_store_config_id, project.path,
+)
+
+# Initialize a LanceDBVectorStore using Llamaindex
+llama_index_lancedb_store = lancedb_construct_from_config(
+    vector_store_config=vector_store_config,
+    uri="db://my-project",
+    api_key="sk_...",
+    region="us-east-1",
+    table_name="table-name",  # the table is created automatically
+)
+
+loader = LanceDBLoader(
+    project=project,
+    rag_config=rag_config,
+    vector_store_config=vector_store_config,
+    lancedb_vector_store=llama_index_lancedb_store,
+)
+
+# Iterate over all the chunks as llama_index TextNode
+all_nodes: List[TextNode] = []
+async for node in loader.iter_llama_index_nodes():
+    all_nodes.append(node)
+
+# Insert all the nodes in LanceDB
+await loader.insert_nodes(
+    nodes=all_nodes,
+    flush_batch_size=100,
+)
+```
+
+After inserting the nodes in the vector store, you can query your data [using llama_index](https://developers.llamaindex.ai/python/framework-api-reference/storage/vector_store/lancedb/), or the [lancedb client].
+
 ## Full API Reference
 
 The library can do a lot more than the examples we've shown here.
