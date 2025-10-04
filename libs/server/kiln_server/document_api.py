@@ -7,6 +7,7 @@ from typing import Annotated, Awaitable, Callable, Dict, List
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
@@ -1112,14 +1113,56 @@ def connect_document_api(app: FastAPI):
                 detail=f"Document {document_id} not found",
             )
 
+        # should not happen
+        if document.path is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Document path not found",
+            )
+
         extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
         if not extraction:
             raise HTTPException(
                 status_code=404,
                 detail=f"Extraction {extraction_id} not found",
             )
-
         extraction.delete()
+
+        if extraction.extractor_config_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config ID not found",
+            )
+
+        # there may be some cached partial extraction data in cache, which would be picked
+        # up on the next extraction run for this file, so we need to clear it
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extraction.extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config not found",
+            )
+
+        extractor = extractor_adapter_from_type(
+            extractor_config.extractor_type,
+            extractor_config,
+            filesystem_cache=TemporaryFilesystemCache.shared(),
+        )
+
+        try:
+            await extractor.clear_cache_for_file_path(
+                document.original_file.attachment.resolve_path(document.path.parent)
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to clear extractor cache for document %s (extraction %s): %s",
+                document_id,
+                extraction_id,
+                e,
+                exc_info=True,
+            )
 
         return {"message": f"Extraction removed. ID: {extraction_id}"}
 

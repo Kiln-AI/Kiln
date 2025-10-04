@@ -905,12 +905,12 @@ def mock_litellm_extractor_without_cache():
     )
 
 
-def test_pdf_page_cache_key_generation(mock_litellm_extractor_with_cache):
+def test_cache_key_for_page_generation(mock_litellm_extractor_with_cache):
     """Test that PDF page cache keys are generated correctly."""
     pdf_path = Path("test_document.pdf")
     page_number = 0
 
-    cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(
+    cache_key = mock_litellm_extractor_with_cache._cache_key_for_page(
         pdf_path, page_number
     )
 
@@ -919,17 +919,17 @@ def test_pdf_page_cache_key_generation(mock_litellm_extractor_with_cache):
     assert len(cache_key) > len("test_extractor_123_")  # Should have hash suffix
 
     # Same PDF and page should generate same key
-    cache_key2 = mock_litellm_extractor_with_cache.pdf_page_cache_key(
+    cache_key2 = mock_litellm_extractor_with_cache._cache_key_for_page(
         pdf_path, page_number
     )
     assert cache_key == cache_key2
 
     # Different page should generate different key
-    cache_key3 = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, 1)
+    cache_key3 = mock_litellm_extractor_with_cache._cache_key_for_page(pdf_path, 1)
     assert cache_key != cache_key3
 
 
-def test_pdf_page_cache_key_requires_extractor_id():
+def test_cache_key_for_page_requires_extractor_id():
     """Test that PDF page cache key generation requires extractor ID."""
     extractor_config = ExtractorConfig(
         id=None,  # No ID
@@ -955,9 +955,9 @@ def test_pdf_page_cache_key_requires_extractor_id():
     )
 
     with pytest.raises(
-        ValueError, match="Extractor config ID is required for PDF page cache key"
+        ValueError, match="Extractor config ID is required for page cache key"
     ):
-        extractor.pdf_page_cache_key(Path("test.pdf"), 0)
+        extractor._cache_key_for_page(Path("test.pdf"), 0)
 
 
 async def test_extract_pdf_with_cache_storage(
@@ -1016,7 +1016,7 @@ async def test_extract_pdf_with_cache_retrieval(
 
     # Pre-populate cache with content
     for i in range(2):
-        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        cache_key = mock_litellm_extractor_with_cache._cache_key_for_page(pdf_path, i)
         await mock_litellm_extractor_with_cache.filesystem_cache.set(
             cache_key, f"Cached content from page {i + 1}".encode("utf-8")
         )
@@ -1091,7 +1091,7 @@ async def test_extract_pdf_mixed_cache_hits_and_misses(
     pdf_path = Path(test_file)
 
     # Pre-populate cache with only page 0 content
-    cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, 0)
+    cache_key = mock_litellm_extractor_with_cache._cache_key_for_page(pdf_path, 0)
     await mock_litellm_extractor_with_cache.filesystem_cache.set(
         cache_key, "Cached content from page 1".encode("utf-8")
     )
@@ -1178,7 +1178,7 @@ async def test_extract_pdf_cache_decode_failure_does_not_throw(
 
     # Pre-populate cache with invalid UTF-8 bytes that will cause decode failure
     for i in range(2):
-        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        cache_key = mock_litellm_extractor_with_cache._cache_key_for_page(pdf_path, i)
         # Use bytes that are not valid UTF-8 (e.g., some binary data)
         invalid_utf8_bytes = b"\xff\xfe\x00\x00"  # Invalid UTF-8 sequence
         await mock_litellm_extractor_with_cache.filesystem_cache.set(
@@ -1256,7 +1256,7 @@ async def test_extract_pdf_parallel_processing_all_cached(
 
     # Pre-populate cache with both pages
     for i in range(2):
-        cache_key = mock_litellm_extractor_with_cache.pdf_page_cache_key(pdf_path, i)
+        cache_key = mock_litellm_extractor_with_cache._cache_key_for_page(pdf_path, i)
         await mock_litellm_extractor_with_cache.filesystem_cache.set(
             cache_key, f"Cached content from page {i + 1}".encode("utf-8")
         )
@@ -1288,3 +1288,66 @@ async def test_extract_pdf_parallel_processing_all_cached(
     assert "Cached content from page 2" in result.content
     assert "Fresh content from page 1" not in result.content
     assert "Fresh content from page 2" not in result.content
+
+
+async def test_clear_cache_for_file_path(
+    mock_litellm_extractor_with_cache, mock_file_factory
+):
+    """Test that clear_cache_for_file_path clears the cache for a file path."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # seed cache
+    for i in range(10):
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
+            mock_litellm_extractor_with_cache._cache_key_for_page(Path(test_file), i),
+            f"Cached content from page {i}".encode("utf-8"),
+        )
+
+    # set irrelevant keys
+    for i in range(10):
+        await mock_litellm_extractor_with_cache.filesystem_cache.set(
+            f"irrelevant_key_{i}",
+            f"Cached content from page {i}".encode("utf-8"),
+        )
+
+    # verify the cache is populated
+    for i in range(10):
+        assert (
+            await mock_litellm_extractor_with_cache.filesystem_cache.get(
+                mock_litellm_extractor_with_cache._cache_key_for_page(
+                    Path(test_file), i
+                )
+            )
+            is not None
+        )
+
+    # verify the irrelevant keys are still there
+    for i in range(10):
+        assert (
+            await mock_litellm_extractor_with_cache.filesystem_cache.get(
+                f"irrelevant_key_{i}"
+            )
+            is not None
+        )
+
+    await mock_litellm_extractor_with_cache.clear_cache_for_file_path(Path(test_file))
+
+    # verify the cache is cleared
+    for i in range(10):
+        assert (
+            await mock_litellm_extractor_with_cache.filesystem_cache.get(
+                mock_litellm_extractor_with_cache._cache_key_for_page(
+                    Path(test_file), i
+                )
+            )
+            is None
+        )
+
+    # verify the irrelevant keys are still there
+    for i in range(10):
+        assert (
+            await mock_litellm_extractor_with_cache.filesystem_cache.get(
+                f"irrelevant_key_{i}"
+            )
+            is not None
+        )

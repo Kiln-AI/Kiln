@@ -41,6 +41,18 @@ class FilesystemCache:
         await anyio.Path(path).write_bytes(value)
         return path
 
+    async def delete_by_prefix(self, prefix: str) -> None:
+        # we avoid globbing here to avoid any unexpected traversal/glob injection
+        logger.debug(f"Deleting cache by prefix {prefix} in {self.cache_dir_path}")
+        for path in self.cache_dir_path.iterdir():
+            if path.is_file() and path.name.startswith(prefix):
+                try:
+                    await anyio.Path(path).unlink()
+                except FileNotFoundError:
+                    continue
+                except Exception:
+                    logger.error(f"Error deleting cache path {path}", exc_info=True)
+
 
 class TemporaryFilesystemCache:
     _shared_instance = None
