@@ -9,14 +9,17 @@
   } from "$lib/stores"
   import {
     compute_overall_completion_percentage,
-    ragProgressStore,
+    getProjectRagStateStore,
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
   import { goto } from "$app/navigation"
 
+  $: projectStateStore = getProjectRagStateStore(project_id)
+  $: ragProgressState = $projectStateStore
+
   export let rag_config: RagConfigWithSubConfigs
   export let project_id: string
-  $: rag_progress = $ragProgressStore.progress[rag_config.id || ""]
+  $: rag_progress = ragProgressState.progress[rag_config.id || ""]
 
   let row_hovered = false
 
@@ -24,7 +27,7 @@
   $: total_docs = rag_progress?.total_document_count || 0
   $: completed_pct = compute_overall_completion_percentage(rag_progress)
 
-  $: status = $ragProgressStore.status[rag_config.id || ""]
+  $: status = ragProgressState.status[rag_config.id || ""]
 
   function status_to_badge_props(
     status: RagConfigurationStatus,
