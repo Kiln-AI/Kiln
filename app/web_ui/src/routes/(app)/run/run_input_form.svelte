@@ -9,8 +9,13 @@
   let id = "plaintext_input_" + Math.random().toString(36).substring(2, 15)
 
   export let input_schema: string | null | undefined
+  export let onInputChange: (() => void) | null = null
   let plaintext_input: string = ""
   let structured_input_data: Record<string, string> = {}
+
+  $: {
+    plaintext_input, structured_input_data, onInputChange?.()
+  }
 
   $: structured_input_model = input_schema
     ? model_from_schema_string(input_schema)

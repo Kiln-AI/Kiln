@@ -94,6 +94,7 @@
       submitting = false
       await tick() // ensure {#if !submitting && response} has rendered
       if (response) scroll_to_output_if_needed()
+      run_complete = true
     }
   }
 
@@ -101,13 +102,6 @@
     input_form.clear_input()
     response = null
     run_complete = false
-  }
-
-  function next_task_run() {
-    // Keep the input, but clear the response
-    response = null
-    run_complete = false
-    clear_all()
   }
 
   // Check if the Output section headers are visible in the viewport
@@ -159,6 +153,12 @@
     }
     return null
   }
+
+  function handle_input_change() {
+    if (response) {
+      response = null
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -178,7 +178,11 @@
           bind:primary={run_focus}
           bind:keyboard_submit={run_focus}
         >
-          <RunInputForm bind:input_schema bind:this={input_form} />
+          <RunInputForm
+            bind:input_schema
+            bind:this={input_form}
+            onInputChange={handle_input_change}
+          />
         </FormContainer>
       </div>
       {#if $current_task}
@@ -215,16 +219,6 @@
           bind:run_complete
           focus_repair_on_appear={true}
         />
-      </div>
-    {/if}
-    {#if run_complete}
-      <div class="flex flex-col md:flex-row gap-6 place-content-center mt-10">
-        <button
-          class="btn btn-primary mt-2 min-w-48"
-          on:click={() => next_task_run()}
-        >
-          Next Run
-        </button>
       </div>
     {/if}
   </AppPage>
