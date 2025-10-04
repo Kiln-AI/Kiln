@@ -89,12 +89,16 @@
     let option_groups: OptionGroup[] = []
 
     tool_set_order.forEach((tool_set_type) => {
+      let action_label: string | undefined = undefined
+      let action_handler: (() => void) | undefined = undefined
+
       const add_create_kiln_task_tool_action =
         tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button
-
-      const add_kiln_task_tool_action_label = "Create New"
-      const add_kiln_task_tool_action_handler = () => {
-        goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
+      if (add_create_kiln_task_tool_action) {
+        action_label = "Create New"
+        action_handler = () => {
+          goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
+        }
       }
 
       const tool_sets = available_tool_sets.filter(
@@ -105,33 +109,28 @@
       if (tool_sets.length > 0) {
         for (const tool_set of tool_sets) {
           let tools = tool_set.tools
+
           let options = tools.map((tool) => ({
             value: tool.id,
             label: tool.name,
             description: tool.description ? tool.description.trim() : undefined,
           }))
+
           option_groups.push({
             label: tool_set.set_name,
-            options: options,
-            action_label: add_create_kiln_task_tool_action
-              ? add_kiln_task_tool_action_label
-              : undefined,
-            action_handler: add_create_kiln_task_tool_action
-              ? add_kiln_task_tool_action_handler
-              : undefined,
+            options,
+            action_label,
+            action_handler,
           })
         }
-      } else if (
-        tool_set_type === "kiln_task" &&
-        !hide_create_kiln_task_tool_button
-      ) {
-        // Always add the kiln_task option group even if there are no kiln task tools
-        // For discoverability since we'll show the "Create New" button still
+      } else if (add_create_kiln_task_tool_action) {
+        // Manually add the kiln_task option group when there are no kiln task tools
+        // For discoverability since we want to show the "Create New" button
         option_groups.push({
           label: "Kiln Tasks as Tools",
           options: [],
-          action_label: add_kiln_task_tool_action_label,
-          action_handler: add_kiln_task_tool_action_handler,
+          action_label,
+          action_handler,
         })
       }
     })
