@@ -261,6 +261,16 @@
   <AppPage
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
+    breadcrumbs={[
+      {
+        label: "Settings",
+        href: `/settings`,
+      },
+      {
+        label: "Manage Tools",
+        href: `/settings/manage_tools/${project_id}`,
+      },
+    ]}
     action_buttons={[
       {
         label: "Edit",
