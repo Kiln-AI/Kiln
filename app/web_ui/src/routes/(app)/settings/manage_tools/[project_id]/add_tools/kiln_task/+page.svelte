@@ -8,7 +8,7 @@
   title="Create Tool from Kiln Task"
   subtitle="Allow your tasks to call another Kiln task, as a tool call."
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#connecting-kiln-tasks"
+  sub_subtitle_link="https://docs.kiln.tech/docs/agents#multi-actor-interaction-aka-subtasks"
   breadcrumbs={[
     {
       label: "Settings",
