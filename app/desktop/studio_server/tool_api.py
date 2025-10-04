@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
@@ -478,15 +478,16 @@ def connect_tool_servers_api(app: FastAPI):
     async def connect_remote_mcp(
         project_id: str,
         tool_data: ExternalToolServerCreationRequest,
-        callback_base_url: str | None = Query(default=None),
+        callback_base_url: Annotated[str | None, Query()] = None,
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
+        remote_tool_server_properties = _remote_tool_server_properties(tool_data)
         tool_server = ExternalToolServer(
             name=tool_data.name,
             type=ToolServerType.remote_mcp,
             description=tool_data.description,
-            properties=_remote_tool_server_properties(tool_data),
+            properties=remote_tool_server_properties,
             parent=project,
         )
 
@@ -506,7 +507,7 @@ def connect_tool_servers_api(app: FastAPI):
             raise HTTPException(status_code=400, detail=str(exc))
 
         if oauth_required:
-            tool_server.properties["oauth_required"] = True
+            remote_tool_server_properties["oauth_required"] = True
 
         # Save the tool to file
         tool_server.save_to_file()
@@ -518,7 +519,7 @@ def connect_tool_servers_api(app: FastAPI):
         project_id: str,
         tool_server_id: str,
         tool_data: ExternalToolServerCreationRequest,
-        callback_base_url: str | None = Query(default=None),
+        callback_base_url: Annotated[str | None, Query()] = None,
     ) -> ExternalToolServer:
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
         if existing_tool_server.type != ToolServerType.remote_mcp:
@@ -563,7 +564,7 @@ def connect_tool_servers_api(app: FastAPI):
     async def connect_remote_server_oauth(
         project_id: str,
         tool_server_id: str,
-        callback_base_url: str | None = Query(default=None),
+        callback_base_url: Annotated[str | None, Query()] = None,
     ):
         tool_server = tool_server_from_id(project_id, tool_server_id)
         if tool_server.type != ToolServerType.remote_mcp:
@@ -600,9 +601,7 @@ def connect_tool_servers_api(app: FastAPI):
             "secret_header_keys": tool_data.secret_header_keys,
         }
 
-    @app.post(
-        "/api/projects/{project_id}/tool_servers/{tool_server_id}/add_oauth"
-    )
+    @app.post("/api/projects/{project_id}/tool_servers/{tool_server_id}/add_oauth")
     async def add_oauth_to_remote_server(
         project_id: str,
         tool_server_id: str,

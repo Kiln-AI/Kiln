@@ -25,42 +25,17 @@
   let error: KilnError | null = null
   let delete_dialog: DeleteDialog | null = null
   $: delete_url = `/api/projects/${project_id}/tool_servers/${tool_server_id}`
-  let action_buttons: {
-    label?: string
-    href?: string
-    handler?: () => void
-    icon?: string
-  }[] = []
-  $: oauth_connect_url =
-    tool_server?.id
-      ? `/api/projects/${project_id}/tool_servers/${tool_server.id}/connect_remote_server_oauth?callback_base_url=${encodeURIComponent(base_url)}`
-      : null
-  $: requires_oauth =
-    !!(
-      tool_server &&
-      tool_server.type === "remote_mcp" &&
-      isToolType(tool_server, tool_server.type) &&
-      tool_server.properties.oauth_required
-    )
+
+  $: oauth_connect_url = tool_server?.id
+    ? `${base_url}/api/projects/${project_id}/tool_servers/${tool_server.id}/connect_remote_server_oauth?callback_base_url=${encodeURIComponent(window.location.origin)}`
+    : null
+  $: requires_oauth = !!(
+    tool_server &&
+    tool_server.type === "remote_mcp" &&
+    isToolType(tool_server, tool_server.type) &&
+    tool_server.properties.oauth_required
+  )
   $: oauth_missing = !!tool_server?.missing_oauth
-  $: action_buttons = [
-    {
-      label: "Edit",
-      href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
-    },
-    {
-      icon: "/images/delete.svg",
-      handler: () => delete_dialog?.show(),
-    },
-    ...(requires_oauth && !oauth_missing && oauth_connect_url
-      ? [
-          {
-            label: "Reconnect oAuth",
-            handler: () => openOAuthWindow(),
-          },
-        ]
-      : []),
-  ]
 
   onMount(async () => {
     await fetch_tool_server()
@@ -110,6 +85,7 @@
 
   function openOAuthWindow() {
     if (!oauth_connect_url) {
+      alert("Error: No OAuth connect URL")
       return
     }
     window.open(oauth_connect_url, "_blank", "noopener")
@@ -143,7 +119,7 @@
   }
 
   function getConnectionProperties(tool: ExternalToolServerApiDescription) {
-    const properties = [
+    const properties: UiProperty[] = [
       { name: "Type", value: toolServerTypeToString(tool.type) || "Unknown" },
     ]
 
@@ -156,6 +132,18 @@
             value: tool.properties.server_url,
           })
         }
+        properties.push({
+          name: "OAuth Status",
+          tooltip:
+            "Does this server require a connection to an OAuth provider?",
+          value: requires_oauth
+            ? oauth_missing
+              ? "Required & Not Connected"
+              : "Connected - Click to Reconnect"
+            : "Not Required",
+          link:
+            requires_oauth && oauth_connect_url ? oauth_connect_url : undefined,
+        })
         break
       }
       case "local_mcp": {
@@ -315,7 +303,16 @@
         href: `/settings/manage_tools/${project_id}`,
       },
     ]}
-    {action_buttons}
+    action_buttons={[
+      {
+        label: "Edit",
+        href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
+      },
+      {
+        icon: "/images/delete.svg",
+        handler: () => delete_dialog?.show(),
+      },
+    ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -346,14 +343,6 @@
               Connect OAuth
             </button>
           {/if}
-        </div>
-      {:else if requires_oauth}
-        <div class="mb-6">
-          <Warning
-            warning_message="OAuth is active for this server. Use reconnect if you need to authorize again."
-            warning_color="info"
-            tight={true}
-          />
         </div>
       {/if}
       <!-- Row 1: Properties and Connection Details side by side -->

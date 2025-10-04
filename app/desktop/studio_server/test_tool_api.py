@@ -50,7 +50,9 @@ def create_mcp_session_manager_patch(
         mock_tools = []
 
     @asynccontextmanager
-    async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
+    async def mock_mcp_client(
+        tool_server, force_oauth=False, oauth_callback_base_url=None
+    ):
         if connection_error:
             raise connection_error
 
@@ -835,7 +837,9 @@ async def test_get_available_tools_multiple_servers(client, test_project):
         }
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
+        async def mock_mcp_client(
+            tool_server, force_oauth=False, oauth_callback_base_url=None
+        ):
             mock_session = AsyncMock()
             # Use the server URL to determine which tools to return
             mock_session.list_tools.return_value = tools_by_server[
@@ -1514,7 +1518,9 @@ def test_create_tool_server_url_with_query_params(client, test_project):
         mock_session.list_tools.return_value = ListToolsResult(tools=[])
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
+        async def mock_mcp_client(
+            tool_server, force_oauth=False, oauth_callback_base_url=None
+        ):
             yield mock_session
 
         with patch(
@@ -1556,7 +1562,9 @@ def test_create_tool_server_empty_string_description(client, test_project):
         mock_session.list_tools.return_value = ListToolsResult(tools=[])
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
+        async def mock_mcp_client(
+            tool_server, force_oauth=False, oauth_callback_base_url=None
+        ):
             yield mock_session
 
         with patch(
@@ -1597,7 +1605,9 @@ def test_get_tool_server_with_many_tools(client, test_project):
         mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
 
         @asynccontextmanager
-        async def mock_mcp_client_create(tool_server, force_oauth=False, oauth_callback_base_url=None):
+        async def mock_mcp_client_create(
+            tool_server, force_oauth=False, oauth_callback_base_url=None
+        ):
             yield mock_session_create
 
         with patch(
@@ -1627,7 +1637,9 @@ def test_get_tool_server_with_many_tools(client, test_project):
         mock_session.list_tools.return_value = mock_result
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
+        async def mock_mcp_client(
+            tool_server, force_oauth=False, oauth_callback_base_url=None
+        ):
             yield mock_session
 
         with patch(
@@ -3946,8 +3958,9 @@ async def test_get_tool_server_with_missing_oauth(client, test_project):
 
     with (
         patch("app.desktop.studio_server.tool_api.tool_server_from_id") as mock_from_id,
-        patch("app.desktop.studio_server.tool_api.MCPSessionManager.shared")
-        as mock_session_shared,
+        patch(
+            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
+        ) as mock_session_shared,
     ):
         mock_tool_server = Mock()
         mock_tool_server.id = tool_server_id
@@ -3978,7 +3991,6 @@ async def test_get_tool_server_with_missing_oauth(client, test_project):
         assert result["missing_secrets"] == []
         assert result["missing_oauth"] is True
         assert result["available_tools"] == []
-
 
 
 async def test_get_tool_server_with_some_missing_secrets(client, test_project):

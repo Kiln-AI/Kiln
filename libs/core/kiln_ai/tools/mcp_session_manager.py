@@ -13,23 +13,25 @@ from urllib.parse import urlencode, urljoin
 import httpx
 from mcp import StdioServerParameters
 from mcp.client.auth import (
-    OAuthClientInformationFull,
-    OAuthClientMetadata,
     OAuthClientProvider,
-    PKCEParameters,
     OAuthFlowError,
-    OAuthToken,
     OAuthTokenError,
+    PKCEParameters,
     TokenStorage,
 )
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.shared.auth import (
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
 from mcp.shared.exceptions import McpError
 from pydantic import AnyUrl, TypeAdapter
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
-from kiln_ai.utils.config import Config, REMOTE_MCP_OAUTH_TOKENS_KEY
+from kiln_ai.utils.config import REMOTE_MCP_OAUTH_TOKENS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
@@ -141,10 +143,14 @@ class _KilnOAuthClientProvider(OAuthClientProvider):
             callback_handler=self._callback_handler,
         )
 
-    async def _noop_redirect(self, _: str) -> None:  # pragma: no cover - not expected to run
+    async def _noop_redirect(
+        self, _: str
+    ) -> None:  # pragma: no cover - not expected to run
         return None
 
-    async def _callback_handler(self) -> tuple[str, str | None]:  # pragma: no cover - handled upstream
+    async def _callback_handler(
+        self,
+    ) -> tuple[str, str | None]:  # pragma: no cover - handled upstream
         raise OAuthFlowError("OAuth callback handler invoked unexpectedly")
 
     def _get_token_url(self) -> str:
@@ -157,12 +163,19 @@ class _KilnOAuthClientProvider(OAuthClientProvider):
         if self._tool_server.id is None:
             raise ValueError("Tool server must have an ID before starting OAuth flow")
         if self._project_id is None:
-            raise ValueError("Tool server must belong to a project before starting OAuth flow")
+            raise ValueError(
+                "Tool server must belong to a project before starting OAuth flow"
+            )
 
-        if self.context.oauth_metadata and self.context.oauth_metadata.authorization_endpoint:
+        if (
+            self.context.oauth_metadata
+            and self.context.oauth_metadata.authorization_endpoint
+        ):
             auth_endpoint = str(self.context.oauth_metadata.authorization_endpoint)
         else:
-            auth_base_url = self.context.get_authorization_base_url(self.context.server_url)
+            auth_base_url = self.context.get_authorization_base_url(
+                self.context.server_url
+            )
             auth_endpoint = urljoin(auth_base_url, "/authorize")
 
         if not self.context.client_info:
@@ -180,7 +193,9 @@ class _KilnOAuthClientProvider(OAuthClientProvider):
             "code_challenge_method": "S256",
         }
 
-        include_resource = self.context.should_include_resource_param(self.context.protocol_version)
+        include_resource = self.context.should_include_resource_param(
+            self.context.protocol_version
+        )
         if include_resource:
             auth_params["resource"] = self.context.get_resource_url()
 
@@ -341,6 +356,15 @@ class MCPSessionManager:
         except OAuthFlowError as exc:
             raise RuntimeError(f"OAuth flow error: {exc}") from exc
         except Exception as e:
+            # Re-raise the redirect exception if it exists in a ExceptionGroup
+            redirect_exception = self._extract_first_exception(
+                e, RemoteMCPOAuthRedirectRequired
+            )
+            if redirect_exception and isinstance(
+                redirect_exception, RemoteMCPOAuthRedirectRequired
+            ):
+                raise redirect_exception
+
             http_error = self._extract_first_exception(e, httpx.HTTPStatusError)
             if http_error and isinstance(http_error, httpx.HTTPStatusError):
                 raise ValueError(
@@ -426,9 +450,7 @@ class MCPSessionManager:
         tool_server_id: str,
     ) -> str:
         base = callback_base_url.rstrip("/")
-        return (
-            f"{base}/settings/manage_tools/{project_id}/tool_servers/{tool_server_id}/oauth"
-        )
+        return f"{base}/settings/manage_tools/{project_id}/tool_servers/{tool_server_id}/oauth"
 
     def _has_oauth_tokens(self, server_id: str | None) -> bool:
         if not server_id:
@@ -467,6 +489,10 @@ class MCPSessionManager:
         project_id: str,
         oauth_callback_base_url: str | None,
     ) -> AnyUrl:
+        if tool_server.id is None:
+            raise ValueError(
+                "Tool server must have an ID before resolving redirect URI"
+            )
         if oauth_callback_base_url:
             callback_url = self._build_oauth_callback_url(
                 oauth_callback_base_url, project_id, tool_server.id

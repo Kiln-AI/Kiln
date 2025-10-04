@@ -301,12 +301,12 @@
               </tr>
             {/if}
             {#each (tools || []).filter((tool) => tool.type !== "kiln_task") as tool}
-            {@const missing_secrets =
-              tool.missing_secrets && tool.missing_secrets.length > 0}
-            {@const missing_oauth = !!tool.missing_oauth}
-            <tr
-              class="hover:bg-base-200 cursor-pointer"
-              on:click={() => navigateToToolServer(tool)}
+              {@const missing_secrets =
+                tool.missing_secrets && tool.missing_secrets.length > 0}
+              {@const missing_oauth = !!tool.missing_oauth}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() => navigateToToolServer(tool)}
                 on:keydown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault()

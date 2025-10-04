@@ -1,10 +1,17 @@
 import os
 import subprocess
 from types import SimpleNamespace
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from mcp.client.auth import (
+    OAuthTokenError,
+)
+from mcp.shared.auth import (
+    OAuthClientInformationFull,
+    OAuthToken,
+)
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
 from pydantic import ValidationError
@@ -18,12 +25,9 @@ from kiln_ai.tools.mcp_session_manager import (
     ConfigBackedOAuthTokenStorage,
     MCPSessionManager,
     PendingOAuthState,
-    RemoteMCPOAuthRedirectRequired,
     RemoteMCPOAuthTokensMissing,
 )
-from kiln_ai.utils.config import MCP_SECRETS_KEY
-from kiln_ai.utils.config import REMOTE_MCP_OAUTH_TOKENS_KEY, Config
-from mcp.client.auth import OAuthClientInformationFull, OAuthToken, OAuthTokenError
+from kiln_ai.utils.config import MCP_SECRETS_KEY, REMOTE_MCP_OAUTH_TOKENS_KEY, Config
 
 
 def create_remote_server(
@@ -47,7 +51,9 @@ def create_identified_remote_server(
     headers=None,
     secret_header_keys=None,
 ):
-    server = create_remote_server(headers=headers, secret_header_keys=secret_header_keys)
+    server = create_remote_server(
+        headers=headers, secret_header_keys=secret_header_keys
+    )
     server.id = "server_123"
     return server
 
@@ -176,8 +182,11 @@ class TestMCPSessionManager:
         server = create_identified_remote_server()
         storage_stub = SimpleNamespace(_force_new_flow=False)
 
-        with patch.object(manager, "_tool_server_project_id", return_value="project_456"), patch.object(
-            manager, "_get_stored_client_info", return_value=None
+        with (
+            patch.object(
+                manager, "_tool_server_project_id", return_value="project_456"
+            ),
+            patch.object(manager, "_get_stored_client_info", return_value=None),
         ):
             with pytest.raises(ValueError, match="OAuth callback base URL is required"):
                 manager._build_oauth_client_metadata(
@@ -192,8 +201,11 @@ class TestMCPSessionManager:
         server = create_identified_remote_server()
         storage_stub = SimpleNamespace(_force_new_flow=False)
 
-        with patch.object(manager, "_tool_server_project_id", return_value="project_456"), patch.object(
-            manager, "_get_stored_client_info", return_value=None
+        with (
+            patch.object(
+                manager, "_tool_server_project_id", return_value="project_456"
+            ),
+            patch.object(manager, "_get_stored_client_info", return_value=None),
         ):
             metadata = manager._build_oauth_client_metadata(
                 server,
@@ -215,10 +227,15 @@ class TestMCPSessionManager:
             "https://stored.example.com/callback"
         )
 
-        with patch.object(manager, "_tool_server_project_id", return_value="project_456"), patch.object(
-            manager,
-            "_get_stored_client_info",
-            return_value=SimpleNamespace(redirect_uris=[stored_redirect]),
+        with (
+            patch.object(
+                manager, "_tool_server_project_id", return_value="project_456"
+            ),
+            patch.object(
+                manager,
+                "_get_stored_client_info",
+                return_value=SimpleNamespace(redirect_uris=[stored_redirect]),
+            ),
         ):
             metadata = manager._build_oauth_client_metadata(
                 server,
@@ -401,9 +418,12 @@ class TestMCPSessionManager:
         mock_client_cm = MagicMock()
         mock_client_cm.return_value.__aenter__.return_value = mock_client
 
-        with patch.object(Config, "shared", return_value=dummy_config), patch(
-            "kiln_ai.tools.mcp_session_manager.httpx.AsyncClient",
-            mock_client_cm,
+        with (
+            patch.object(Config, "shared", return_value=dummy_config),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.httpx.AsyncClient",
+                mock_client_cm,
+            ),
         ):
             await manager.complete_remote_oauth(
                 server,
@@ -425,7 +445,9 @@ class TestMCPSessionManager:
         server = create_identified_remote_server()
 
         with pytest.raises(ValueError, match="OAuth state is invalid"):
-            await manager.complete_remote_oauth(server, "project_456", "code", "missing")
+            await manager.complete_remote_oauth(
+                server, "project_456", "code", "missing"
+            )
 
     @pytest.mark.asyncio
     async def test_complete_remote_oauth_validates_project(self):
@@ -495,11 +517,16 @@ class TestMCPSessionManager:
         mock_client_cm = MagicMock()
         mock_client_cm.return_value.__aenter__.return_value = mock_client
 
-        with patch.object(Config, "shared", return_value=dummy_config), patch(
-            "kiln_ai.tools.mcp_session_manager.httpx.AsyncClient",
-            mock_client_cm,
+        with (
+            patch.object(Config, "shared", return_value=dummy_config),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.httpx.AsyncClient",
+                mock_client_cm,
+            ),
         ):
-            with pytest.raises(OAuthTokenError, match="Server granted unauthorized scopes"):
+            with pytest.raises(
+                OAuthTokenError, match="Server granted unauthorized scopes"
+            ):
                 await manager.complete_remote_oauth(
                     server,
                     "project_456",

@@ -5,16 +5,15 @@
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
-  $: search_params = $page.url.searchParams
-  const code = search_params.get("code")
-  const state = search_params.get("state")
-  const error_param = search_params.get("error")
-  const error_description = search_params.get("error_description")
+  $: code = $page.url.searchParams.get("code")
+  $: state = $page.url.searchParams.get("state")
+  $: error_param = $page.url.searchParams.get("error")
+  $: error_description = $page.url.searchParams.get("error_description")
 
   let status: "loading" | "success" | "error" = "loading"
   let error_message: string | null = null
 
-  const detail_link = `/settings/manage_tools/${project_id}/tool_servers/${tool_server_id}`
+  $: detail_link = `/settings/manage_tools/${project_id}/tool_servers/${tool_server_id}`
 
   onMount(async () => {
     if (error_param) {
@@ -51,10 +50,13 @@
         const result = (await response.json()) as { detail?: string }
         error_message =
           result?.detail ||
-          (response.statusText || "Failed to save OAuth credentials.")
+          response.statusText ||
+          "Failed to save OAuth credentials."
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to save OAuth credentials."
+          err instanceof Error
+            ? err.message
+            : "Failed to save OAuth credentials."
         error_message = message
       }
       return
@@ -64,7 +66,9 @@
   })
 </script>
 
-<div class="min-h-[60vh] flex flex-col items-center justify-center gap-6 px-4 text-center">
+<div
+  class="min-h-[60vh] flex flex-col items-center justify-center gap-6 px-4 text-center"
+>
   {#if status === "loading"}
     <div class="flex flex-col items-center gap-2">
       <div class="loading loading-spinner loading-lg"></div>
@@ -72,15 +76,17 @@
     </div>
   {:else if status === "success"}
     <div class="flex flex-col items-center gap-4">
-      <div class="text-2xl font-semibold">Connection Successful</div>
+      <div class="text-2xl font-semibold">OAuth Connection Successful</div>
       <div class="text-sm text-gray-500 max-w-xl">
-        You can close this window or return to the tool server page to continue working.
+        Your remote MCP server is now connected.
       </div>
       <a class="btn btn-primary" href={detail_link}>Back to Tool Server</a>
     </div>
   {:else}
     <div class="flex flex-col items-center gap-4">
-      <div class="text-2xl font-semibold text-error">Connection Failed</div>
+      <div class="text-2xl font-semibold text-error">
+        OAuth Connection Failed
+      </div>
       <div class="text-sm text-error max-w-xl">
         {error_message || "An unknown error occurred while completing OAuth."}
       </div>
