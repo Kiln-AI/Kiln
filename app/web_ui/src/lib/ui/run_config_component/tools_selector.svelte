@@ -1,6 +1,6 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
@@ -79,9 +79,9 @@
   const tool_set_order: ToolSetType[] = ["search", "kiln_task", "mcp", "demo"]
 
   function get_tool_options(
-    available_tools: ToolSetApiDescription[] | undefined,
+    available_tool_sets: ToolSetApiDescription[] | undefined,
   ): OptionGroup[] {
-    if (!available_tools || available_tools.length === 0) {
+    if (!available_tool_sets || available_tool_sets.length === 0) {
       // When there are no available tools, we'll show the empty state "Add tools" button
       return []
     }
@@ -89,49 +89,48 @@
     let option_groups: OptionGroup[] = []
 
     tool_set_order.forEach((tool_set_type) => {
-      let options: Option[] = []
-      let label = ""
       let action_label: string | undefined = undefined
       let action_handler: (() => void) | undefined = undefined
-      if (tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button) {
-        // Setting the label for the Kiln Tasks as Tools in case the tool set is not found below (cold start case)
-        label = "Kiln Tasks as Tools"
+
+      const add_create_kiln_task_tool_action =
+        tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button
+      if (add_create_kiln_task_tool_action) {
         action_label = "Create New"
         action_handler = () => {
           goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
         }
       }
 
-      const tool_set = available_tools?.find(
-        (tool_set) => tool_set.type === tool_set_type,
+      const tool_sets = available_tool_sets.filter(
+        (tool_set) =>
+          tool_set.type === tool_set_type && tool_set.tools.length > 0,
       )
-      if (tool_set) {
-        label = tool_set.set_name
-        let tools = tool_set.tools
-        if (tools.length > 0) {
-          options.push(
-            ...tools.map((tool) => ({
-              value: tool.id,
-              label: tool.name,
-              description: tool.description
-                ? tool.description.trim()
-                : undefined,
-            })),
-          )
-        }
-      }
 
-      // Always add the kiln_task option group even if there are no kiln task tools
-      // For discoverability since we'll show the "Create New" button still
-      if (
-        options.length > 0 ||
-        (tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button)
-      ) {
+      if (tool_sets.length > 0) {
+        for (const tool_set of tool_sets) {
+          let tools = tool_set.tools
+
+          let options = tools.map((tool) => ({
+            value: tool.id,
+            label: tool.name,
+            description: tool.description ? tool.description.trim() : undefined,
+          }))
+
+          option_groups.push({
+            label: tool_set.set_name,
+            options,
+            action_label,
+            action_handler,
+          })
+        }
+      } else if (add_create_kiln_task_tool_action) {
+        // Manually add the kiln_task option group when there are no kiln task tools
+        // For discoverability since we want to show the "Create New" button
         option_groups.push({
-          label: label,
-          options: options,
-          action_label: action_label,
-          action_handler: action_handler,
+          label: "Kiln Tasks as Tools",
+          options: [],
+          action_label,
+          action_handler,
         })
       }
     })
