@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import { client } from "$lib/api_client"
+  import { base_url, client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -13,6 +13,7 @@
   } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { uncache_available_tools } from "$lib/stores"
 
@@ -24,6 +25,42 @@
   let error: KilnError | null = null
   let delete_dialog: DeleteDialog | null = null
   $: delete_url = `/api/projects/${project_id}/tool_servers/${tool_server_id}`
+  let action_buttons: {
+    label?: string
+    href?: string
+    handler?: () => void
+    icon?: string
+  }[] = []
+  $: oauth_connect_url =
+    tool_server?.id
+      ? `/api/projects/${project_id}/tool_servers/${tool_server.id}/connect_remote_server_oauth?callback_base_url=${encodeURIComponent(base_url)}`
+      : null
+  $: requires_oauth =
+    !!(
+      tool_server &&
+      tool_server.type === "remote_mcp" &&
+      isToolType(tool_server, tool_server.type) &&
+      tool_server.properties.oauth_required
+    )
+  $: oauth_missing = !!tool_server?.missing_oauth
+  $: action_buttons = [
+    {
+      label: "Edit",
+      href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
+    },
+    {
+      icon: "/images/delete.svg",
+      handler: () => delete_dialog?.show(),
+    },
+    ...(requires_oauth && !oauth_missing && oauth_connect_url
+      ? [
+          {
+            label: "Reconnect oAuth",
+            handler: () => openOAuthWindow(),
+          },
+        ]
+      : []),
+  ]
 
   onMount(async () => {
     await fetch_tool_server()
@@ -69,6 +106,13 @@
 
   function goBack() {
     goto(`/settings/manage_tools/${project_id}`)
+  }
+
+  function openOAuthWindow() {
+    if (!oauth_connect_url) {
+      return
+    }
+    window.open(oauth_connect_url, "_blank", "noopener")
   }
 
   function getDetailsProperties(tool: ExternalToolServerApiDescription) {
@@ -271,16 +315,7 @@
         href: `/settings/manage_tools/${project_id}`,
       },
     ]}
-    action_buttons={[
-      {
-        label: "Edit",
-        href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
-      },
-      {
-        icon: "/images/delete.svg",
-        handler: () => delete_dialog?.show(),
-      },
-    ]}
+    {action_buttons}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -299,6 +334,28 @@
         </button>
       </div>
     {:else if tool_server}
+      {#if oauth_missing}
+        <div class="mb-6">
+          <Warning
+            warning_message="This server requires OAuth before it can be used."
+            warning_color="warning"
+            large_icon={true}
+          />
+          {#if oauth_connect_url}
+            <button class="btn btn-primary mt-4" on:click={openOAuthWindow}>
+              Connect OAuth
+            </button>
+          {/if}
+        </div>
+      {:else if requires_oauth}
+        <div class="mb-6">
+          <Warning
+            warning_message="OAuth is active for this server. Use reconnect if you need to authorize again."
+            warning_color="info"
+            tight={true}
+          />
+        </div>
+      {/if}
       <!-- Row 1: Properties and Connection Details side by side -->
       <div class="flex flex-col lg:flex-row gap-8 lg:gap-16 mb-10">
         <div class="flex-1">

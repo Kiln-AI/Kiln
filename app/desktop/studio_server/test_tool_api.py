@@ -50,7 +50,7 @@ def create_mcp_session_manager_patch(
         mock_tools = []
 
     @asynccontextmanager
-    async def mock_mcp_client(tool_server):
+    async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
         if connection_error:
             raise connection_error
 
@@ -432,6 +432,8 @@ async def test_get_available_tool_servers_with_tool_server(client, test_project)
         assert result[0]["description"] == "My awesome tool"
         assert "missing_secrets" in result[0]
         assert isinstance(result[0]["missing_secrets"], list)
+        assert "missing_oauth" in result[0]
+        assert result[0]["missing_oauth"] is False
 
 
 async def test_get_available_tool_servers_with_missing_secrets(client, test_project):
@@ -490,6 +492,8 @@ async def test_get_available_tool_servers_with_missing_secrets(client, test_proj
             assert result[0]["description"] == "Tool with missing secrets"
             assert "missing_secrets" in result[0]
             assert set(result[0]["missing_secrets"]) == {"Authorization", "X-API-Key"}
+            assert "missing_oauth" in result[0]
+            assert result[0]["missing_oauth"] is False
 
 
 async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
@@ -555,6 +559,8 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
             assert result[0]["description"] == "Local tool with missing secrets"
             assert "missing_secrets" in result[0]
             assert result[0]["missing_secrets"] == ["API_KEY"]
+            assert "missing_oauth" in result[0]
+            assert result[0]["missing_oauth"] is False
 
 
 async def test_get_tool_server_success(client, test_project):
@@ -829,7 +835,7 @@ async def test_get_available_tools_multiple_servers(client, test_project):
         }
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server):
+        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
             mock_session = AsyncMock()
             # Use the server URL to determine which tools to return
             mock_session.list_tools.return_value = tools_by_server[
@@ -1508,7 +1514,7 @@ def test_create_tool_server_url_with_query_params(client, test_project):
         mock_session.list_tools.return_value = ListToolsResult(tools=[])
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server):
+        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
             yield mock_session
 
         with patch(
@@ -1550,7 +1556,7 @@ def test_create_tool_server_empty_string_description(client, test_project):
         mock_session.list_tools.return_value = ListToolsResult(tools=[])
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server):
+        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
             yield mock_session
 
         with patch(
@@ -1591,7 +1597,7 @@ def test_get_tool_server_with_many_tools(client, test_project):
         mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
 
         @asynccontextmanager
-        async def mock_mcp_client_create(tool_server):
+        async def mock_mcp_client_create(tool_server, force_oauth=False, oauth_callback_base_url=None):
             yield mock_session_create
 
         with patch(
@@ -1621,7 +1627,7 @@ def test_get_tool_server_with_many_tools(client, test_project):
         mock_session.list_tools.return_value = mock_result
 
         @asynccontextmanager
-        async def mock_mcp_client(tool_server):
+        async def mock_mcp_client(tool_server, force_oauth=False, oauth_callback_base_url=None):
             yield mock_session
 
         with patch(
@@ -3910,6 +3916,69 @@ async def test_get_tool_server_with_missing_secrets(client, test_project):
             # Verify available_tools is empty when secrets are missing
             assert "available_tools" in result
             assert result["available_tools"] == []
+            assert "missing_oauth" in result
+            assert result["missing_oauth"] is False
+
+
+async def test_get_tool_server_with_missing_oauth(client, test_project):
+    """Test get_tool_server reports missing OAuth tokens when required."""
+
+    tool_data = {
+        "name": "test_missing_oauth_tool",
+        "server_url": "https://example.com/api",
+        "headers": {},
+        "secret_header_keys": [],
+        "description": "Tool requiring OAuth",
+    }
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id",
+        return_value=test_project,
+    ):
+        async with mock_mcp_success():
+            create_response = client.post(
+                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                json=tool_data,
+            )
+            assert create_response.status_code == 200
+        created_tool = create_response.json()
+        tool_server_id = created_tool["id"]
+
+    with (
+        patch("app.desktop.studio_server.tool_api.tool_server_from_id") as mock_from_id,
+        patch("app.desktop.studio_server.tool_api.MCPSessionManager.shared")
+        as mock_session_shared,
+    ):
+        mock_tool_server = Mock()
+        mock_tool_server.id = tool_server_id
+        mock_tool_server.name = "test_missing_oauth_tool"
+        mock_tool_server.type = ToolServerType.remote_mcp
+        mock_tool_server.description = "Tool requiring OAuth"
+        mock_tool_server.created_at = datetime.now()
+        mock_tool_server.created_by = None
+        mock_tool_server.properties = {
+            "server_url": "https://example.com/api",
+            "headers": {},
+            "secret_header_keys": [],
+            "oauth_required": True,
+        }
+        mock_tool_server.retrieve_secrets.return_value = ({}, [])
+        mock_from_id.return_value = mock_tool_server
+
+        mock_session_manager = Mock()
+        mock_session_manager.has_oauth_tokens.return_value = False
+        mock_session_shared.return_value = mock_session_manager
+
+        response = client.get(
+            f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["missing_secrets"] == []
+        assert result["missing_oauth"] is True
+        assert result["available_tools"] == []
+
 
 
 async def test_get_tool_server_with_some_missing_secrets(client, test_project):
@@ -3979,6 +4048,8 @@ async def test_get_tool_server_with_some_missing_secrets(client, test_project):
             # Verify missing_secrets contains only the missing secret
             assert "missing_secrets" in result
             assert result["missing_secrets"] == ["X-API-Key"]
+            assert "missing_oauth" in result
+            assert result["missing_oauth"] is False
 
             # Verify available_tools is empty when any secrets are missing
             assert "available_tools" in result
@@ -4051,6 +4122,8 @@ async def test_get_tool_server_no_missing_secrets(client, test_project):
                 # Verify missing_secrets is empty
                 assert "missing_secrets" in result
                 assert result["missing_secrets"] == []
+                assert "missing_oauth" in result
+                assert result["missing_oauth"] is False
 
                 # Verify available_tools is populated when no secrets are missing
                 assert "available_tools" in result
@@ -4134,6 +4207,8 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
             # Verify missing_secrets is populated
             assert "missing_secrets" in result
             assert result["missing_secrets"] == ["DATABASE_PASSWORD"]
+            assert "missing_oauth" in result
+            assert result["missing_oauth"] is False
 
             # Verify available_tools is empty when secrets are missing
             assert "available_tools" in result

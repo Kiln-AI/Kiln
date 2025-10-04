@@ -1,6 +1,7 @@
 import os
 import subprocess
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -14,9 +15,15 @@ from kiln_ai.datamodel.external_tool_server import (
 )
 from kiln_ai.tools.mcp_session_manager import (
     LOCAL_MCP_ERROR_INSTRUCTION,
+    ConfigBackedOAuthTokenStorage,
     MCPSessionManager,
+    PendingOAuthState,
+    RemoteMCPOAuthRedirectRequired,
+    RemoteMCPOAuthTokensMissing,
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY
+from kiln_ai.utils.config import REMOTE_MCP_OAUTH_TOKENS_KEY, Config
+from mcp.client.auth import OAuthClientInformationFull, OAuthToken, OAuthTokenError
 
 
 def create_remote_server(
@@ -34,6 +41,26 @@ def create_remote_server(
             "secret_header_keys": secret_header_keys or [],
         },
     )
+
+
+def create_identified_remote_server(
+    headers=None,
+    secret_header_keys=None,
+):
+    server = create_remote_server(headers=headers, secret_header_keys=secret_header_keys)
+    server.id = "server_123"
+    return server
+
+
+class DummyConfig:
+    def __init__(self, initial_store=None):
+        self.store = initial_store or {}
+
+    def get_value(self, key):
+        return self.store.get(key)
+
+    def update_settings(self, new_settings):
+        self.store.update(new_settings)
 
 
 def create_local_server(
@@ -127,6 +154,358 @@ class TestMCPSessionManager:
 
         # They should be different objects
         assert instance1 is not instance2
+
+    def test_build_oauth_callback_url_includes_project_and_server(self):
+        """Ensure OAuth callback URLs include project and server identifiers."""
+        manager = MCPSessionManager()
+
+        result = manager._build_oauth_callback_url(
+            "https://example.com/base/",
+            "project123",
+            "server456",
+        )
+
+        assert (
+            result
+            == "https://example.com/base/settings/manage_tools/project123/tool_servers/server456/oauth"
+        )
+
+    def test_build_oauth_client_metadata_requires_base_without_client_info(self):
+        """The manager should require a callback base when no stored metadata exists."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+        storage_stub = SimpleNamespace(_force_new_flow=False)
+
+        with patch.object(manager, "_tool_server_project_id", return_value="project_456"), patch.object(
+            manager, "_get_stored_client_info", return_value=None
+        ):
+            with pytest.raises(ValueError, match="OAuth callback base URL is required"):
+                manager._build_oauth_client_metadata(
+                    server,
+                    storage_stub,
+                    None,
+                )
+
+    def test_build_oauth_client_metadata_uses_callback_base(self):
+        """The callback base should drive the computed redirect URI."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+        storage_stub = SimpleNamespace(_force_new_flow=False)
+
+        with patch.object(manager, "_tool_server_project_id", return_value="project_456"), patch.object(
+            manager, "_get_stored_client_info", return_value=None
+        ):
+            metadata = manager._build_oauth_client_metadata(
+                server,
+                storage_stub,
+                "https://kiln.local",
+            )
+
+        assert (
+            str(metadata.redirect_uris[0])
+            == "https://kiln.local/settings/manage_tools/project_456/tool_servers/server_123/oauth"
+        )
+
+    def test_build_oauth_client_metadata_uses_stored_redirect(self):
+        """Stored client metadata should provide the redirect URI when no base is supplied."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+        storage_stub = SimpleNamespace(_force_new_flow=False)
+        stored_redirect = manager._redirect_url_adapter.validate_python(
+            "https://stored.example.com/callback"
+        )
+
+        with patch.object(manager, "_tool_server_project_id", return_value="project_456"), patch.object(
+            manager,
+            "_get_stored_client_info",
+            return_value=SimpleNamespace(redirect_uris=[stored_redirect]),
+        ):
+            metadata = manager._build_oauth_client_metadata(
+                server,
+                storage_stub,
+                None,
+            )
+
+        assert str(metadata.redirect_uris[0]) == "https://stored.example.com/callback"
+
+    def test_register_pending_oauth_state_replaces_existing(self):
+        """Registering a new state for the same server should evict the prior entry."""
+        manager = MCPSessionManager()
+        client_info = MagicMock()
+        client_info.model_dump.return_value = {}
+        client_info.client_id = "client123"
+        client_info.client_secret = None
+
+        first_state = PendingOAuthState(
+            tool_server_id="server_123",
+            project_id="project_456",
+            token_url="https://example.com/token",
+            code_verifier="verifier1",
+            state="state1",
+            client_info=client_info,
+            redirect_uri="https://callback/one",
+            include_resource=False,
+            resource=None,
+            scope=None,
+        )
+        second_state = PendingOAuthState(
+            tool_server_id="server_123",
+            project_id="project_456",
+            token_url="https://example.com/token",
+            code_verifier="verifier2",
+            state="state2",
+            client_info=client_info,
+            redirect_uri="https://callback/two",
+            include_resource=False,
+            resource=None,
+            scope=None,
+        )
+
+        manager._register_pending_oauth_state("state1", first_state)
+        manager._register_pending_oauth_state("state2", second_state)
+
+        assert "state1" not in manager._pending_oauth_states
+        assert manager._pending_oauth_states["state2"] is second_state
+
+    def test_pop_pending_oauth_state_returns_and_removes(self):
+        """Popping a pending state should return and delete it."""
+        manager = MCPSessionManager()
+        pending = PendingOAuthState(
+            tool_server_id="server_123",
+            project_id="project_456",
+            token_url="https://example.com/token",
+            code_verifier="verifier",
+            state="state",
+            client_info=MagicMock(),
+            redirect_uri="https://callback",
+            include_resource=False,
+            resource=None,
+            scope=None,
+        )
+        manager._register_pending_oauth_state("state", pending)
+
+        result = manager._pop_pending_oauth_state("state")
+
+        assert result is pending
+        assert "state" not in manager._pending_oauth_states
+
+    @pytest.mark.asyncio
+    async def test_config_backed_storage_round_trip(self):
+        """Config-backed storage should persist tokens and client info."""
+        dummy_config = DummyConfig()
+        client_info_data = {
+            "client_id": "client123",
+            "redirect_uris": ["https://kiln.local/callback"],
+            "grant_types": ["authorization_code"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        }
+
+        with patch.object(Config, "shared", return_value=dummy_config):
+            storage = ConfigBackedOAuthTokenStorage("server_123")
+            token = OAuthToken(access_token="access-token", token_type="Bearer")
+            await storage.set_tokens(token)
+            client_info = OAuthClientInformationFull.model_validate(client_info_data)
+            await storage.set_client_info(client_info)
+
+            retrieved_token = await storage.get_tokens()
+            retrieved_info = await storage.get_client_info()
+
+        assert retrieved_token is not None
+        assert retrieved_token.access_token == "access-token"
+        assert retrieved_info is not None
+        assert retrieved_info.client_id == "client123"
+        assert REMOTE_MCP_OAUTH_TOKENS_KEY in dummy_config.store
+        assert "server_123" in dummy_config.store[REMOTE_MCP_OAUTH_TOKENS_KEY]
+
+    @pytest.mark.asyncio
+    async def test_config_backed_storage_force_new_flow_ignores_tokens(self):
+        """Force new flow should ignore stored tokens for retrieval."""
+        dummy_store = {
+            REMOTE_MCP_OAUTH_TOKENS_KEY: {
+                "server_123": {
+                    "tokens": {"access_token": "existing", "token_type": "Bearer"}
+                }
+            }
+        }
+        dummy_config = DummyConfig(initial_store=dummy_store)
+
+        with patch.object(Config, "shared", return_value=dummy_config):
+            storage = ConfigBackedOAuthTokenStorage("server_123", force_new_flow=True)
+            tokens = await storage.get_tokens()
+
+        assert tokens is None
+
+    def test_has_oauth_tokens_detects_saved_entries(self):
+        """The manager should detect when tokens exist in the config store."""
+        dummy_store = {
+            REMOTE_MCP_OAUTH_TOKENS_KEY: {
+                "server_123": {
+                    "tokens": {"access_token": "existing", "token_type": "Bearer"}
+                }
+            }
+        }
+        dummy_config = DummyConfig(initial_store=dummy_store)
+        server = create_identified_remote_server()
+
+        with patch.object(Config, "shared", return_value=dummy_config):
+            manager = MCPSessionManager()
+            assert manager.has_oauth_tokens(server)
+
+    @pytest.mark.asyncio
+    async def test_mcp_client_raises_when_oauth_required_and_missing_tokens(self):
+        """Connecting to an OAuth server without tokens should raise a clear error."""
+        dummy_config = DummyConfig()
+        server = create_identified_remote_server()
+        server.properties["oauth_required"] = True
+
+        with patch.object(Config, "shared", return_value=dummy_config):
+            manager = MCPSessionManager()
+            with pytest.raises(RemoteMCPOAuthTokensMissing):
+                async with manager.mcp_client(server):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_complete_remote_oauth_persists_tokens(self):
+        """Completing OAuth should exchange the code and persist tokens."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+        dummy_config = DummyConfig()
+        client_info = MagicMock()
+        client_info.client_id = "client123"
+        client_info.client_secret = None
+        client_info.model_dump.return_value = {"client_id": "client123"}
+
+        pending_state = PendingOAuthState(
+            tool_server_id=server.id,
+            project_id="project_456",
+            token_url="https://auth.example.com/token",
+            code_verifier="verifier",
+            state="oauth-state",
+            client_info=client_info,
+            redirect_uri="https://callback",
+            include_resource=False,
+            resource=None,
+            scope="read",
+        )
+        manager._register_pending_oauth_state("oauth-state", pending_state)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "ok"
+        mock_response.aread = AsyncMock(
+            return_value=b'{"access_token": "token", "token_type": "Bearer", "scope": "read"}'
+        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_cm = MagicMock()
+        mock_client_cm.return_value.__aenter__.return_value = mock_client
+
+        with patch.object(Config, "shared", return_value=dummy_config), patch(
+            "kiln_ai.tools.mcp_session_manager.httpx.AsyncClient",
+            mock_client_cm,
+        ):
+            await manager.complete_remote_oauth(
+                server,
+                "project_456",
+                "auth-code",
+                "oauth-state",
+            )
+
+        assert REMOTE_MCP_OAUTH_TOKENS_KEY in dummy_config.store
+        entry = dummy_config.store[REMOTE_MCP_OAUTH_TOKENS_KEY][server.id]
+        assert entry["tokens"]["access_token"] == "token"
+        assert entry["client_info"]["client_id"] == "client123"
+        assert "oauth-state" not in manager._pending_oauth_states
+
+    @pytest.mark.asyncio
+    async def test_complete_remote_oauth_rejects_invalid_state(self):
+        """An invalid OAuth state should raise a ValueError."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+
+        with pytest.raises(ValueError, match="OAuth state is invalid"):
+            await manager.complete_remote_oauth(server, "project_456", "code", "missing")
+
+    @pytest.mark.asyncio
+    async def test_complete_remote_oauth_validates_project(self):
+        """State entries must match the incoming project identifier."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+        client_info = MagicMock()
+        client_info.client_id = "client123"
+        client_info.client_secret = None
+        client_info.model_dump.return_value = {"client_id": "client123"}
+
+        pending_state = PendingOAuthState(
+            tool_server_id=server.id,
+            project_id="other_project",
+            token_url="https://auth.example.com/token",
+            code_verifier="verifier",
+            state="oauth-state",
+            client_info=client_info,
+            redirect_uri="https://callback",
+            include_resource=False,
+            resource=None,
+            scope=None,
+        )
+        manager._register_pending_oauth_state("oauth-state", pending_state)
+
+        with pytest.raises(ValueError, match="does not match the requested project"):
+            await manager.complete_remote_oauth(
+                server,
+                "project_456",
+                "code",
+                "oauth-state",
+            )
+
+    @pytest.mark.asyncio
+    async def test_complete_remote_oauth_rejects_unexpected_scopes(self):
+        """Servers returning broader scopes than requested should raise an error."""
+        manager = MCPSessionManager()
+        server = create_identified_remote_server()
+        dummy_config = DummyConfig()
+        client_info = MagicMock()
+        client_info.client_id = "client123"
+        client_info.client_secret = None
+        client_info.model_dump.return_value = {"client_id": "client123"}
+
+        pending_state = PendingOAuthState(
+            tool_server_id=server.id,
+            project_id="project_456",
+            token_url="https://auth.example.com/token",
+            code_verifier="verifier",
+            state="oauth-state",
+            client_info=client_info,
+            redirect_uri="https://callback",
+            include_resource=False,
+            resource=None,
+            scope="read",
+        )
+        manager._register_pending_oauth_state("oauth-state", pending_state)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "ok"
+        mock_response.aread = AsyncMock(
+            return_value=b'{"access_token": "token", "token_type": "Bearer", "scope": "read write"}'
+        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_cm = MagicMock()
+        mock_client_cm.return_value.__aenter__.return_value = mock_client
+
+        with patch.object(Config, "shared", return_value=dummy_config), patch(
+            "kiln_ai.tools.mcp_session_manager.httpx.AsyncClient",
+            mock_client_cm,
+        ):
+            with pytest.raises(OAuthTokenError, match="Server granted unauthorized scopes"):
+                await manager.complete_remote_oauth(
+                    server,
+                    "project_456",
+                    "auth-code",
+                    "oauth-state",
+                )
 
     # Note: Testing invalid tool server types is not possible because:
     # 1. The ToolServerType enum only has one value: remote_mcp
@@ -287,7 +666,9 @@ class TestMCPSessionManager:
 
         # Verify streamablehttp_client was called with correct parameters
         mock_client.assert_called_once_with(
-            "http://example.com/mcp", headers={"Authorization": "Bearer token123"}
+            "http://example.com/mcp",
+            headers={"Authorization": "Bearer token123"},
+            auth=None,
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
@@ -323,7 +704,9 @@ class TestMCPSessionManager:
                 assert session is mock_session_instance
 
         # Verify streamablehttp_client was called with empty headers dict
-        mock_client.assert_called_once_with("http://example.com/mcp", headers={})
+        mock_client.assert_called_once_with(
+            "http://example.com/mcp", headers={}, auth=None
+        )
 
     @pytest.mark.parametrize(
         "status_code,reason_phrase",
@@ -512,7 +895,8 @@ class TestMCPSessionManager:
                 assert session is mock_session_instance
 
         # Verify config was accessed for mcp_secrets
-        mock_config_instance.get_value.assert_called_once_with(MCP_SECRETS_KEY)
+        assert mock_config_instance.get_value.call_count >= 1
+        mock_config_instance.get_value.assert_any_call(MCP_SECRETS_KEY)
 
         # Verify streamablehttp_client was called with merged headers
         expected_headers = {
@@ -521,7 +905,7 @@ class TestMCPSessionManager:
             "X-API-Key": "api-key-456",
         }
         mock_client.assert_called_once_with(
-            "http://example.com/mcp", headers=expected_headers
+            "http://example.com/mcp", headers=expected_headers, auth=None
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
@@ -580,7 +964,7 @@ class TestMCPSessionManager:
             # X-API-Key should not be present since it wasn't found in config
         }
         mock_client.assert_called_once_with(
-            "http://example.com/mcp", headers=expected_headers
+            "http://example.com/mcp", headers=expected_headers, auth=None
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
@@ -633,7 +1017,7 @@ class TestMCPSessionManager:
         # Verify only the original headers are used
         expected_headers = {"Content-Type": "application/json"}
         mock_client.assert_called_once_with(
-            "http://example.com/mcp", headers=expected_headers
+            "http://example.com/mcp", headers=expected_headers, auth=None
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
@@ -678,7 +1062,7 @@ class TestMCPSessionManager:
         # Verify only the original headers are used (no config access needed for empty list)
         expected_headers = {"Content-Type": "application/json"}
         mock_client.assert_called_once_with(
-            "http://example.com/mcp", headers=expected_headers
+            "http://example.com/mcp", headers=expected_headers, auth=None
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
@@ -723,7 +1107,7 @@ class TestMCPSessionManager:
         # Verify only the original headers are used (no config access needed when property missing)
         expected_headers = {"Content-Type": "application/json"}
         mock_client.assert_called_once_with(
-            "http://example.com/mcp", headers=expected_headers
+            "http://example.com/mcp", headers=expected_headers, auth=None
         )
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")

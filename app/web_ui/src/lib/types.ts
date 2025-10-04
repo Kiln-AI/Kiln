@@ -66,12 +66,17 @@ export type LogMessage = components["schemas"]["LogMessage"]
 export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
 export type KilnToolServerDescription =
-  components["schemas"]["KilnToolServerDescription"]
+  components["schemas"]["KilnToolServerDescription"] & {
+    oauth_required?: boolean | null
+    missing_oauth?: boolean
+  }
 export type KilnTaskToolDescription =
   components["schemas"]["KilnTaskToolDescription"]
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
-  components["schemas"]["ExternalToolServerApiDescription"]
+  components["schemas"]["ExternalToolServerApiDescription"] & {
+    missing_oauth?: boolean
+  }
 export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]

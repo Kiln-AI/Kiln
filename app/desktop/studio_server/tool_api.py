@@ -2,7 +2,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
@@ -20,11 +21,16 @@ from kiln_ai.datamodel.tool_id import (
     ToolId,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import (
+    MCPSessionManager,
+    RemoteMCPOAuthRedirectRequired,
+    RemoteMCPOAuthTokensMissing,
+)
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
+from mcp.client.auth import OAuthTokenError
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field
 
@@ -40,6 +46,8 @@ class KilnToolServerDescription(BaseModel):
     description: str | None
     missing_secrets: list[str]
     is_archived: bool
+    oauth_required: bool | None = None
+    missing_oauth: bool = False
 
 
 class KilnTaskToolDescription(BaseModel):
@@ -80,6 +88,13 @@ class KilnTaskToolServerCreationRequest(BaseModel):
     task_id: str
     run_config_id: str
     is_archived: bool
+
+
+class RemoteServerOAuthCallbackRequest(BaseModel):
+    code: str | None = None
+    state: str
+    error: str | None = None
+    error_description: str | None = None
 
 
 class ExternalToolApiDescription(BaseModel):
@@ -128,6 +143,7 @@ class ExternalToolServerApiDescription(BaseModel):
     )
     available_tools: list[ExternalToolApiDescription]
     missing_secrets: list[str]
+    missing_oauth: bool
 
 
 class ToolApiDescription(BaseModel):
@@ -196,7 +212,12 @@ async def available_mcp_tools(
         ]
 
 
-async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
+async def validate_tool_server_connectivity(
+    tool_server: ExternalToolServer,
+    *,
+    force_oauth: bool = False,
+    oauth_callback_base_url: str | None = None,
+):
     """
     Validate that the tool server is reachable by attempting to connect.
     Basic field validation is now handled by Pydantic validators in CreationRequest.
@@ -204,8 +225,11 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
     match tool_server.type:
         case ToolServerType.remote_mcp | ToolServerType.local_mcp:
             # Validate the server is reachable
-            async with MCPSessionManager.shared().mcp_client(tool_server) as session:
-                # Use list tools to validate the server is reachable
+            async with MCPSessionManager.shared().mcp_client(
+                tool_server,
+                force_oauth=force_oauth,
+                oauth_callback_base_url=oauth_callback_base_url,
+            ) as session:
                 await session.list_tools()
         case ToolServerType.kiln_task:
             pass
@@ -332,6 +356,10 @@ def connect_tool_servers_api(app: FastAPI):
         results = []
         for tool in project.external_tool_servers():
             _, missing_secrets = tool.retrieve_secrets()
+            oauth_required = bool(tool.properties.get("oauth_required"))
+            missing_oauth = False
+            if tool.type == ToolServerType.remote_mcp and oauth_required:
+                missing_oauth = not MCPSessionManager.shared().has_oauth_tokens(tool)
             results.append(
                 KilnToolServerDescription(
                     name=tool.name,
@@ -340,6 +368,8 @@ def connect_tool_servers_api(app: FastAPI):
                     description=tool.description,
                     missing_secrets=missing_secrets,
                     is_archived=tool.properties.get("is_archived", False),
+                    oauth_required=oauth_required or None,
+                    missing_oauth=missing_oauth,
                 )
             )
         return results
@@ -387,7 +417,12 @@ def connect_tool_servers_api(app: FastAPI):
         # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
         # If there are missing secrets, add a requirement to the result and skip getting available tools.
         _, missing_secrets = tool_server.retrieve_secrets()
-        if missing_secrets:
+        oauth_required = bool(tool_server.properties.get("oauth_required"))
+        missing_oauth = False
+        if tool_server.type == ToolServerType.remote_mcp and oauth_required:
+            missing_oauth = not MCPSessionManager.shared().has_oauth_tokens(tool_server)
+
+        if missing_secrets or missing_oauth:
             return ExternalToolServerApiDescription(
                 id=tool_server.id,
                 name=tool_server.name,
@@ -398,6 +433,7 @@ def connect_tool_servers_api(app: FastAPI):
                 properties=tool_server.properties,
                 available_tools=[],
                 missing_secrets=list(missing_secrets),
+                missing_oauth=missing_oauth,
             )
 
         # If there are no missing secrets, get available tools
@@ -435,11 +471,14 @@ def connect_tool_servers_api(app: FastAPI):
             properties=tool_server.properties,
             available_tools=available_tools,
             missing_secrets=[],
+            missing_oauth=False,
         )
 
     @app.post("/api/projects/{project_id}/connect_remote_mcp")
     async def connect_remote_mcp(
-        project_id: str, tool_data: ExternalToolServerCreationRequest
+        project_id: str,
+        tool_data: ExternalToolServerCreationRequest,
+        callback_base_url: str | None = Query(default=None),
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
@@ -452,7 +491,22 @@ def connect_tool_servers_api(app: FastAPI):
         )
 
         # Validate the tool server connectivity
-        await validate_tool_server_connectivity(tool_server)
+        oauth_required = False
+        try:
+            await validate_tool_server_connectivity(
+                tool_server,
+                force_oauth=True,
+                oauth_callback_base_url=callback_base_url,
+            )
+        except RemoteMCPOAuthRedirectRequired:
+            oauth_required = True
+        except RemoteMCPOAuthTokensMissing:
+            oauth_required = True
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        if oauth_required:
+            tool_server.properties["oauth_required"] = True
 
         # Save the tool to file
         tool_server.save_to_file()
@@ -464,6 +518,7 @@ def connect_tool_servers_api(app: FastAPI):
         project_id: str,
         tool_server_id: str,
         tool_data: ExternalToolServerCreationRequest,
+        callback_base_url: str | None = Query(default=None),
     ) -> ExternalToolServer:
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
         if existing_tool_server.type != ToolServerType.remote_mcp:
@@ -474,15 +529,66 @@ def connect_tool_servers_api(app: FastAPI):
 
         existing_tool_server.name = tool_data.name
         existing_tool_server.description = tool_data.description
+        existing_oauth_required = bool(
+            existing_tool_server.properties.get("oauth_required")
+        )
         existing_tool_server.properties = _remote_tool_server_properties(tool_data)
 
-        # Validate the tool server connectivity
-        await validate_tool_server_connectivity(existing_tool_server)
+        oauth_required = existing_oauth_required
+        try:
+            await validate_tool_server_connectivity(
+                existing_tool_server,
+                oauth_callback_base_url=callback_base_url,
+            )
+        except RemoteMCPOAuthTokensMissing:
+            oauth_required = True
+        except RemoteMCPOAuthRedirectRequired:
+            oauth_required = True
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        if oauth_required:
+            existing_tool_server.properties["oauth_required"] = True
+        else:
+            existing_tool_server.properties.pop("oauth_required", None)
 
         # Save the tool to file
         existing_tool_server.save_to_file()
 
         return existing_tool_server
+
+    @app.get(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}/connect_remote_server_oauth"
+    )
+    async def connect_remote_server_oauth(
+        project_id: str,
+        tool_server_id: str,
+        callback_base_url: str | None = Query(default=None),
+    ):
+        tool_server = tool_server_from_id(project_id, tool_server_id)
+        if tool_server.type != ToolServerType.remote_mcp:
+            raise HTTPException(
+                status_code=400,
+                detail="OAuth is only supported for remote MCP servers.",
+            )
+
+        try:
+            await validate_tool_server_connectivity(
+                tool_server,
+                force_oauth=True,
+                oauth_callback_base_url=callback_base_url,
+            )
+        except RemoteMCPOAuthRedirectRequired as exc:
+            return RedirectResponse(url=exc.redirect_url)
+        except RemoteMCPOAuthTokensMissing as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth flow was not requested by the remote MCP server.",
+        )
 
     def _remote_tool_server_properties(
         tool_data: ExternalToolServerCreationRequest,
@@ -493,6 +599,42 @@ def connect_tool_servers_api(app: FastAPI):
             "headers": tool_data.headers,
             "secret_header_keys": tool_data.secret_header_keys,
         }
+
+    @app.post(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}/add_oauth"
+    )
+    async def add_oauth_to_remote_server(
+        project_id: str,
+        tool_server_id: str,
+        payload: RemoteServerOAuthCallbackRequest,
+    ) -> dict[str, str]:
+        tool_server = tool_server_from_id(project_id, tool_server_id)
+        if tool_server.type != ToolServerType.remote_mcp:
+            raise HTTPException(
+                status_code=400,
+                detail="OAuth data can only be added for remote MCP servers.",
+            )
+
+        if payload.error:
+            raise HTTPException(
+                status_code=400,
+                detail=payload.error_description or payload.error,
+            )
+
+        if not payload.code:
+            raise HTTPException(
+                status_code=400,
+                detail="OAuth authorization code is required.",
+            )
+
+        try:
+            await MCPSessionManager.shared().complete_remote_oauth(
+                tool_server, project_id, payload.code, payload.state
+            )
+        except (ValueError, OAuthTokenError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        return {"status": "ok"}
 
     @app.post("/api/projects/{project_id}/connect_local_mcp")
     async def connect_local_mcp(
