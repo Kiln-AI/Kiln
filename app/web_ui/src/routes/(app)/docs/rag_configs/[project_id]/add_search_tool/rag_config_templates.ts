@@ -15,7 +15,7 @@ import {
   default_extractor_audio_prompts,
 } from "../../../extractors/[project_id]/create_extractor/default_extractor_prompts"
 
-export type RequiredApiKeysSets = "Openai" | "Gemini"
+export type RequiredProvider = "Openai" | "Gemini" | "Ollama"
 
 type SubConfig = {
   config_name: string
@@ -43,7 +43,9 @@ export type RagConfigTemplate = {
   preview_description: string
   preview_subtitle: string
   preview_tooltip?: string
-  required_api_keys: RequiredApiKeysSets
+  required_provider: RequiredProvider
+  required_models?: string[]
+  required_commands?: string[]
   extractor: ExtractorSubConfig
   chunker: ChunkerSubConfig
   embedding: EmbeddingSubConfig
@@ -86,7 +88,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "The best quality search configuration. Uses Gemini 2.5 Pro with hybrid search.",
     preview_tooltip:
       "Gemini 2.5 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
-    required_api_keys: "Gemini",
+    required_provider: "Gemini",
     extractor: {
       config_name: "Gemini 2p5 Pro w Default Prompts",
       description: "Gemini 2.5 Pro",
@@ -105,12 +107,40 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "Great quality at a lower price. Uses Gemini 2.5 Flash with hybrid search.",
     preview_tooltip:
       "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
-    required_api_keys: "Gemini",
+    required_provider: "Gemini",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: default_vector_store,
     rag_config_name: "Cost Optimized - Gemini Flash Hybrid Search",
+  },
+  local_qwen: {
+    name: "All Local",
+    preview_subtitle: "Qwen 2.5 VL with Ollama",
+    preview_description: "Qwen 2.5 VL on your computer using Ollama.",
+    preview_tooltip:
+      "Qwen 2.5 VL 7B via Ollama for extraction and Qwen 3 Embedding 0.6B for embeddings.",
+    required_provider: "Ollama",
+    required_models: ["qwen2.5vl:7b", "qwen3-embedding:0.6b"],
+    required_commands: [
+      "ollama pull qwen2.5vl:7b",
+      "ollama pull qwen3-embedding:0.6b",
+    ],
+    extractor: {
+      config_name: "Qwen 2p5 VL 7B via Ollama",
+      description: "Qwen 2.5 VL 7B via Ollama",
+      model_provider_name: "ollama",
+      model_name: "qwen_2p5_vl_7b",
+    },
+    chunker: default_chunker,
+    embedding: {
+      config_name: "Qwen 3 Embedding 0p6B (1024 dimensions)",
+      description: "Qwen 3 Embedding 0.6B (1024 dimensions)",
+      model_provider_name: "ollama",
+      model_name: "qwen_3_embedding_0p6b",
+    },
+    vector_store: default_vector_store,
+    rag_config_name: "Ollama - Qwen 2p5 VL",
   },
   vector_only: {
     name: "Vector Only",
@@ -119,7 +149,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "Use only vector search for semantic similarity, without keyword search.",
     preview_tooltip:
       "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB vector search (no full-text search).",
-    required_api_keys: "Gemini",
+    required_provider: "Gemini",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
@@ -137,16 +167,16 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "We suggest Gemini, but if you need to use OpenAI try this template.",
     preview_tooltip:
-      "GPT-4.1 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
-    required_api_keys: "Openai",
+      "GPT-5 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+    required_provider: "Openai",
     notice_text: "Does not support audio or video files.",
     notice_tooltip:
-      "GPT 4.1 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
+      "GPT 5 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
     extractor: {
-      config_name: "GPT-4p1 w Default Prompts",
-      description: "GPT-4.1",
+      config_name: "GPT-5 w Default Prompts",
+      description: "GPT-5",
       model_provider_name: "openai",
-      model_name: "gpt_4_1",
+      model_name: "gpt_5",
     },
     chunker: default_chunker,
     embedding: {
@@ -156,7 +186,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       model_name: "openai_text_embedding_3_large",
     },
     vector_store: default_vector_store,
-    rag_config_name: "OpenAI Based - GPT-4_1 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-5 Hybrid Search",
   },
 }
 

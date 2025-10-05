@@ -12,10 +12,11 @@
     load_task,
   } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
+  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
+  import AdvancedRunOptions from "$lib/ui/run_config_component/advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import AdvancedRunOptions from "../../../../../run/advanced_run_options.svelte"
   import type { TaskRunConfig } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -133,6 +134,7 @@
   </h4>
   <div class="flex flex-col gap-2 pt-6">
     <AvailableModelsDropdown
+      {task_id}
       bind:model_name={task_run_config_model_name}
       bind:provider_name={task_run_config_provider_name}
       bind:model={task_run_config_long_prompt_name_provider}
@@ -142,15 +144,13 @@
       bind:prompt_method={task_run_config_prompt_method}
       bind:linked_model_selection={task_run_config_long_prompt_name_provider}
     />
+    <ToolsSelector bind:tools={task_run_config_tools} {project_id} {task_id} />
     <Collapse title="Advanced Options">
       <AdvancedRunOptions
-        bind:tools={task_run_config_tools}
         bind:temperature={task_run_config_temperature}
         bind:top_p={task_run_config_top_p}
         bind:structured_output_mode={task_run_config_structured_output_mode}
         has_structured_output={!!$current_task?.output_json_schema}
-        {project_id}
-        {task_id}
       />
     </Collapse>
     {#if add_task_config_error}

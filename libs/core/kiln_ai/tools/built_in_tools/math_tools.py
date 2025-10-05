@@ -27,7 +27,9 @@ class AddTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, a: Union[int, float], b: Union[int, float]) -> str:
+    async def run(
+        self, context=None, *, a: Union[int, float], b: Union[int, float]
+    ) -> str:
         """Add two numbers and return the result."""
         return str(a + b)
 
@@ -57,7 +59,9 @@ class SubtractTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, a: Union[int, float], b: Union[int, float]) -> str:
+    async def run(
+        self, context=None, *, a: Union[int, float], b: Union[int, float]
+    ) -> str:
         """Subtract b from a and return the result."""
         return str(a - b)
 
@@ -84,7 +88,9 @@ class MultiplyTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, a: Union[int, float], b: Union[int, float]) -> str:
+    async def run(
+        self, context=None, *, a: Union[int, float], b: Union[int, float]
+    ) -> str:
         """Multiply two numbers and return the result."""
         return str(a * b)
 
@@ -117,7 +123,9 @@ class DivideTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, a: Union[int, float], b: Union[int, float]) -> str:
+    async def run(
+        self, context=None, *, a: Union[int, float], b: Union[int, float]
+    ) -> str:
         """Divide a by b and return the result."""
         if b == 0:
             raise ZeroDivisionError("Cannot divide by zero")

@@ -1,8 +1,17 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Dict
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
+
+
+@dataclass
+class ToolCallContext:
+    """Context passed to tools when they are called, containing information from the calling task."""
+
+    """Used for Kiln Tasks as Tools, to know if the tool call should save the task run it invoked to that task's Dataset."""
+    allow_saving: bool = True
 
 
 class KilnToolInterface(ABC):
@@ -12,8 +21,8 @@ class KilnToolInterface(ABC):
     """
 
     @abstractmethod
-    async def run(self, **kwargs) -> Any:
-        """Execute the tool with the given parameters."""
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> Any:
+        """Execute the tool with the given parameters and calling context if provided."""
         pass
 
     @abstractmethod
@@ -77,6 +86,6 @@ class KilnTool(KilnToolInterface):
         }
 
     @abstractmethod
-    async def run(self, **kwargs) -> str:
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> Any:
         """Subclasses must implement the actual tool logic."""
         pass

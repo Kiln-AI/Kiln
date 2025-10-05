@@ -211,7 +211,7 @@
       step_count: 4,
       current_step: 2,
     })
-    let link = `/dataset/${project_id}/${task_id}/add_data?reason=fine_tune&splits=fine_tune_data:1.0&finetune_link=${encodeURIComponent(
+    let link = `/dataset/${project_id}/${task_id}/add_data?reason=fine_tune&template_id=fine_tuning&splits=fine_tune_data:1.0&finetune_link=${encodeURIComponent(
       `/fine_tune/${project_id}/${task_id}/create_finetune`,
     )}`
     goto(link)

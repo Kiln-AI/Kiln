@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation"
   import type { OptionGroup } from "./fancy_select_types"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
@@ -6,7 +7,11 @@
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
+  export let empty_state_message: string = "No options available"
+  export let empty_state_subtitle: string | null = null
+  export let empty_state_link: string | null = null
   export let multi_select: boolean = false
+  export let disabled: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -93,14 +98,16 @@
       }
       // Update selected, which is what we expose outside the component
       selected = selected_values
+
+      // Note: we don't close the dropdown for multi-select
     } else {
       selected = option
-    }
 
-    // Delay hiding the dropdown to ensure the click event is fully processed
-    setTimeout(() => {
-      listVisible = false
-    }, 0)
+      // Delay hiding the dropdown to ensure the click event is fully processed
+      setTimeout(() => {
+        listVisible = false
+      }, 0)
+    }
   }
 
   // Make it reactive, when selected changes, update the selected_values
@@ -318,11 +325,17 @@
 
   // Handle key input when dropdown is open
   function handleKeyInput(event: KeyboardEvent) {
-    // Don't interfere with navigation keys or if we're already focused on search input
+    // Don't interfere if we're already focused on search input
     if (isSearching && document.activeElement === searchInputElement) {
       return
     }
 
+    // Don't interfere if the fancy select is not focused either
+    if (document.activeElement !== selectedElement) {
+      return
+    }
+
+    // Don't interfere with navigation keys
     if (
       event.key === "ArrowDown" ||
       event.key === "ArrowUp" ||
@@ -420,16 +433,21 @@
 
 <div class="dropdown w-full relative">
   <div
-    tabindex="0"
+    tabindex={disabled ? -1 : 0}
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : ''}"
+      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
     bind:this={selectedElement}
     on:click={() => {
-      listVisible = true
+      if (!disabled) {
+        listVisible = true
+      }
     }}
     on:blur={(_) => {
+      if (multi_select) {
+        return
+      }
       // Only close if focus is not moving to the dropdown
       setTimeout(() => {
         if (
@@ -441,6 +459,9 @@
       }, 0)
     }}
     on:keydown={(event) => {
+      if (disabled) {
+        return
+      }
       if (
         !listVisible &&
         (event.key === "ArrowDown" ||
@@ -550,16 +571,51 @@
         </div>
       {/if}
 
+      {#if options.length === 0}
+        <!-- Empty state -->
+        <button
+          class="px-4 pt-4 pb-2 text-center text-base-content/60 {empty_state_link
+            ? 'cursor-pointer'
+            : 'cursor-default'}"
+          on:mousedown={() => {
+            if (empty_state_link) {
+              goto(empty_state_link)
+            }
+          }}
+        >
+          <div>
+            {empty_state_message}
+          </div>
+          {#if empty_state_subtitle}
+            <div class="text-sm {empty_state_link ? 'link' : ''}">
+              {empty_state_subtitle}
+            </div>
+          {/if}
+        </button>
+      {/if}
+
       <ul
         class="menu overflow-y-auto overflow-x-hidden flex-nowrap pt-0 mt-2 custom-scrollbar flex-1"
         use:scrollableCheck
       >
         {#each filteredOptions as option, sectionIndex}
           {#if option.label}
-            <li class="menu-title pl-1 sticky top-0 bg-white z-10">
+            <li
+              class="menu-title pl-1 sticky top-0 bg-white z-10 flex flex-row items-center justify-between"
+            >
               {option.label}
+              {#if option.action_label}
+                <button
+                  type="button"
+                  class="btn btn-xs btn-primary btn-outline rounded-full"
+                  on:click={option.action_handler}
+                >
+                  {option.action_label}
+                </button>
+              {/if}
             </li>
           {/if}
+
           {#each option.options as item, index}
             {@const overallIndex =
               filteredOptions
@@ -598,8 +654,9 @@
                       </div>
                       {#if item.badge}
                         <div
-                          class="badge badge-sm px-2 {item.badge_color ===
-                          'primary'
+                          class="badge badge-sm text-xs {item.badge.length <= 2
+                            ? 'rounded-full w-5 h-5'
+                            : 'px-2'} {item.badge_color === 'primary'
                             ? 'badge-primary'
                             : 'badge-ghost'}"
                         >

@@ -5,7 +5,10 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { KilnToolServerDescription } from "$lib/types"
+  import type {
+    KilnTaskToolDescription,
+    KilnToolServerDescription,
+  } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import EmptyTools from "./empty_tools.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -14,11 +17,16 @@
   import type { SearchToolApiDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id
-  $: is_empty = !demo_tools_enabled && (!tools || tools.length == 0)
+  $: is_empty =
+    !demo_tools_enabled &&
+    (!tools || tools.length == 0) &&
+    (!kiln_task_tools || kiln_task_tools.length === 0) &&
+    (!search_tools || search_tools.length === 0)
 
   let tools: KilnToolServerDescription[] | null = null
   let demo_tools_enabled: boolean | null = null
   let search_tools: SearchToolApiDescription[] | null = null
+  let kiln_task_tools: KilnTaskToolDescription[] | null = null
   let loading = true
   let error: KilnError | null = null
 
@@ -26,8 +34,13 @@
     await fetch_available_tool_servers()
     await load_demo_tools()
     await load_rag_configs()
+    await load_kiln_task_tools()
     loading = false
   })
+
+  $: unarchived_kiln_task_tools = kiln_task_tools?.filter(
+    (tool) => !tool.is_archived,
+  )
 
   async function fetch_available_tool_servers() {
     try {
@@ -93,11 +106,37 @@
     }
   }
 
+  async function load_kiln_task_tools() {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/kiln_task_tools",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      kiln_task_tools = data
+    } catch (err) {
+      error = createKilnError(err)
+      console.error("Error loading kiln task tools count", err)
+    }
+  }
+
   function navigateToToolServer(tool_server: KilnToolServerDescription) {
     if (tool_server.id) {
-      goto(
-        `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
-      )
+      if (tool_server.type === "kiln_task") {
+        goto(`/settings/manage_tools/${project_id}/kiln_task/${tool_server.id}`)
+      } else {
+        goto(
+          `/settings/manage_tools/${project_id}/tool_servers/${tool_server.id}`,
+        )
+      }
     }
   }
 
@@ -125,7 +164,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Manage Tools"
-    subtitle="Connect to tools such as RAG systems and MCP servers"
+    subtitle="Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp"
     breadcrumbs={[
@@ -162,7 +201,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Server Name</th>
+              <th>Name</th>
               <th>Type</th>
               <th>Description</th>
               <th>Status</th>
@@ -173,8 +212,12 @@
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => goto(`/docs/rag_configs/${project_id}`)}
-                on:keydown={(e) =>
-                  e.key === "enter" && goto(`/docs/rag_configs/${project_id}`)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(`/docs/rag_configs/${project_id}`)
+                  }
+                }}
                 role="button"
                 tabindex="0"
               >
@@ -205,16 +248,72 @@
                 </td>
               </tr>
             {/if}
-            {#each tools || [] as tool}
+            {#if kiln_task_tools && kiln_task_tools.length > 0 && unarchived_kiln_task_tools}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                on:click={() =>
+                  goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)
+                  }
+                }}
+                role="button"
+                tabindex="0"
+              >
+                <td class="font-medium">Kiln Tasks as Tools</td>
+                <td class="text-sm">Kiln Tasks</td>
+                <td class="text-sm"
+                  >Tools that run Kiln tasks using specified configurations.
+                  {#if unarchived_kiln_task_tools.length == 0}
+                    No Kiln task tools available
+                  {:else if unarchived_kiln_task_tools.length == 1}
+                    One Kiln task tool available
+                  {:else}
+                    {unarchived_kiln_task_tools.length} Kiln task tools available
+                  {/if}
+                  {#if unarchived_kiln_task_tools.length > 0}
+                    <InfoTooltip
+                      tooltip_text="Tools: {unarchived_kiln_task_tools
+                        .map((tool) => tool.tool_name)
+                        .join(', ')}"
+                      no_pad={true}
+                    />
+                  {/if}
+                </td>
+                <td class="text-sm">
+                  {#if unarchived_kiln_task_tools.length == 0}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="Ready"
+                      warning_color="success"
+                      warning_icon="check"
+                      tight={true}
+                    />
+                  {/if}
+                </td>
+              </tr>
+            {/if}
+            {#each (tools || []).filter((tool) => tool.type !== "kiln_task") as tool}
               {@const missing_secrets =
                 tool.missing_secrets && tool.missing_secrets.length > 0}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolServer(tool)}
-                on:keydown={(e) =>
-                  e.key === "Enter" && navigateToToolServer(tool)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    navigateToToolServer(tool)
+                  }
+                }}
                 role="button"
-                tabindex="0"
+                tabindex={0}
               >
                 <td class="font-medium">{tool.name}</td>
                 <td class="text-sm">{toolServerTypeToString(tool.type)}</td>
@@ -223,6 +322,12 @@
                   {#if missing_secrets}
                     <Warning
                       warning_message="Action Required"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else if tool.is_archived}
+                    <Warning
+                      warning_message="Archived"
                       warning_color="warning"
                       tight={true}
                     />

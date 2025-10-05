@@ -18,12 +18,15 @@ from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
     MultiplyTool,
     SubtractTool,
 )
+from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -91,6 +94,7 @@ async def run_simple_task_with_tools(
             # Verify that AddTool.run was called with correct parameters
             add_spy.run.assert_called()
             add_call_args = add_spy.run.call_args
+            assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
             add_kwargs = add_call_args.kwargs
             assert add_kwargs.get("a") == 2
             assert add_kwargs.get("b") == 2
@@ -126,6 +130,9 @@ async def run_simple_task_with_tools(
             # Verify that MultiplyTool.run was called with correct parameters
             multiply_spy.run.assert_called()
             multiply_call_args = multiply_spy.run.call_args
+            assert multiply_call_args.args[
+                0
+            ].allow_saving  # First arg is ToolCallContext
             multiply_kwargs = multiply_call_args.kwargs
             # Check that multiply was called with a=6, b=10 (or vice versa)
             assert (
@@ -137,6 +144,7 @@ async def run_simple_task_with_tools(
             # Verify that AddTool.run was called with correct parameters
             add_spy.run.assert_called()
             add_call_args = add_spy.run.call_args
+            assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
             add_kwargs = add_call_args.kwargs
             # Check that add was called with a=60, b=4 (or vice versa)
             assert (add_kwargs.get("a") == 60 and add_kwargs.get("b") == 4) or (
@@ -482,8 +490,16 @@ async def test_run_model_turn_parallel_tools(tmp_path):
                     )
 
     # Verify both tools were called in parallel
-    multiply_spy.run.assert_called_once_with(a=6, b=10)
-    add_spy.run.assert_called_once_with(a=2, b=3)
+    # The context is passed as the first positional argument, not as a keyword argument
+    multiply_spy.run.assert_called_once()
+    multiply_call_args = multiply_spy.run.call_args
+    assert multiply_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert multiply_call_args.kwargs == {"a": 6, "b": 10}
+
+    add_spy.run.assert_called_once()
+    add_call_args = add_spy.run.call_args
+    assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert add_call_args.kwargs == {"a": 2, "b": 3}
 
     # Verify the result structure
     assert isinstance(result, ModelTurnResult)
@@ -596,8 +612,16 @@ async def test_run_model_turn_sequential_tools(tmp_path):
                     )
 
     # Verify tools were called sequentially
-    multiply_spy.run.assert_called_once_with(a=6, b=10)
-    add_spy.run.assert_called_once_with(a=60, b=4)
+    # The context is passed as the first positional argument, not as a keyword argument
+    multiply_spy.run.assert_called_once()
+    multiply_call_args = multiply_spy.run.call_args
+    assert multiply_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert multiply_call_args.kwargs == {"a": 6, "b": 10}
+
+    add_spy.run.assert_called_once()
+    add_call_args = add_spy.run.call_args
+    assert add_call_args.args[0].allow_saving  # First arg is ToolCallContext
+    assert add_call_args.kwargs == {"a": 60, "b": 4}
 
     # Verify the result structure
     assert isinstance(result, ModelTurnResult)
@@ -756,10 +780,58 @@ class MockTool:
             }
         }
 
-    async def run(self, **kwargs) -> str:
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
         if self._raise_on_run:
             raise self._raise_on_run
         return self._return_value
+
+    async def id(self) -> ToolId:
+        """Mock implementation of id for testing."""
+        return f"mock_tool_{self._name}"
+
+
+class MockKilnTaskTool:
+    """Mock tool class that returns KilnTaskToolResult for testing"""
+
+    def __init__(
+        self,
+        name: str,
+        raise_on_run: Exception | None = None,
+        output: str = "kiln_task_output",
+        kiln_task_tool_data: str = "project_id:::tool_id:::task_id:::run_id",
+    ):
+        self._name = name
+        self._raise_on_run = raise_on_run
+        self._output = output
+        self._kiln_task_tool_data = kiln_task_tool_data
+
+    async def name(self) -> str:
+        return self._name
+
+    async def toolcall_definition(self) -> dict:
+        return {
+            "function": {
+                "parameters": {
+                    "type": "object",
+                    "properties": {"input": {"type": "string"}},
+                    "required": ["input"],
+                }
+            }
+        }
+
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> KilnTaskToolResult:
+        if self._raise_on_run:
+            raise self._raise_on_run
+        return KilnTaskToolResult(
+            output=self._output,
+            kiln_task_tool_data=self._kiln_task_tool_data,
+        )
+
+    async def id(self) -> ToolId:
+        """Mock implementation of id for testing."""
+        return f"mock_kiln_task_tool_{self._name}"
 
 
 async def test_process_tool_calls_none_input(tmp_path):
@@ -879,6 +951,7 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
         "role": "tool",
         "tool_call_id": "call_1",
         "content": "5",
+        "kiln_task_tool_data": None,
     }
 
 
@@ -915,8 +988,10 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     assert len(tool_messages) == 2
     assert tool_messages[0]["tool_call_id"] == "call_1"
     assert tool_messages[0]["content"] == "5"
+    assert tool_messages[0].get("kiln_task_tool_data") is None
     assert tool_messages[1]["tool_call_id"] == "call_2"
     assert tool_messages[1]["content"] == "6"
+    assert tool_messages[1].get("kiln_task_tool_data") is None
 
 
 async def test_process_tool_calls_tool_not_found(tmp_path):
@@ -1072,6 +1147,7 @@ async def test_process_tool_calls_complex_result(tmp_path):
     assert assistant_output is None
     assert len(tool_messages) == 1
     assert tool_messages[0]["content"] == complex_result
+    assert tool_messages[0].get("kiln_task_tool_data") is None
 
 
 async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path):
@@ -1101,3 +1177,41 @@ async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path
             match="task_response tool call and other tool calls were both provided",
         ):
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_process_tool_calls_kiln_task_tool_result(tmp_path):
+    """Test process_tool_calls with KilnTaskToolResult - tests the new if statement branch"""
+    task = build_test_task(tmp_path)
+    config = LiteLlmConfig(
+        run_config_properties=RunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        )
+    )
+    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    mock_kiln_task_tool = MockKilnTaskTool(
+        "kiln_task_tool",
+        output="Task completed successfully",
+        kiln_task_tool_data="proj123:::tool456:::task789:::run101",
+    )
+    tool_calls = [MockToolCall("call_1", "kiln_task_tool", '{"input": "test input"}')]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[mock_kiln_task_tool]
+    ):
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["role"] == "tool"
+    assert tool_messages[0]["tool_call_id"] == "call_1"
+    assert tool_messages[0]["content"] == "Task completed successfully"
+    assert (
+        tool_messages[0].get("kiln_task_tool_data")
+        == "proj123:::tool456:::task789:::run101"
+    )

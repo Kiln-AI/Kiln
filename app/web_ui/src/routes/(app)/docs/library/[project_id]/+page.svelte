@@ -17,6 +17,7 @@
   } from "$lib/utils/formatters"
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
+  import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
 
   let upload_file_dialog: UploadFileDialog | null = null
@@ -27,7 +28,7 @@
   let loading = true
   let sortColumn = ($page.url.searchParams.get("sort") || "created_at") as
     | keyof KilnDocument
-    | "name"
+    | "friendly_name"
     | "kind"
     | "created_at"
     | "original_file.size"
@@ -56,7 +57,7 @@
 
   const columns = [
     { key: "kind", label: "Type" },
-    { key: "name", label: "Name" },
+    { key: "friendly_name", label: "Name" },
     { key: "original_file.size", label: "Size" },
     { key: "created_at", label: "Created At" },
   ]
@@ -114,9 +115,9 @@
         aValue = a.created_at
         bValue = b.created_at
         break
-      case "name":
-        aValue = a.name
-        bValue = b.name
+      case "friendly_name":
+        aValue = a.friendly_name
+        bValue = b.friendly_name
         break
       case "kind":
         aValue = a.kind + a.original_file.mime_type
@@ -457,6 +458,12 @@
       // Hide the dropdown (safari bug shows it when hidden)
       show_add_tag_dropdown = false
 
+      // trigger all rag configs to re-run because tagging documents may
+      // have changed which documents are targeted by which rag configs
+      ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+        console.error("Error running all rag configs", error)
+      })
+
       // Close modal on success
       return true
     } finally {
@@ -473,6 +480,8 @@
     title="Document Library"
     subtitle="Add or Browse Documents"
     no_y_padding
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#document-library"
     breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={documents && documents.length == 0
       ? []
@@ -620,7 +629,7 @@
                       </span>
                     </div>
                   </td>
-                  <td>{document.name}</td>
+                  <td>{document.friendly_name}</td>
                   <td>{formatSize(document.original_file.size)}</td>
                   <td>{formatDate(document.created_at)}</td>
                 </tr>

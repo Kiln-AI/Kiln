@@ -6,7 +6,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
-  import { createKilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type {
     AvailableModels,
     PromptResponse,
@@ -28,11 +28,11 @@
     load_available_prompts,
     load_available_models,
     available_models,
+    get_task_composite_id,
   } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
-    get_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
     getRunConfigPromptDisplayName,
@@ -50,6 +50,7 @@
 
   // Run configs state
   let loading = true
+  let error: KilnError | null = null
 
   // Eval scores cache and state
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
@@ -135,7 +136,7 @@
       load_available_prompts(),
       load_available_models(),
     ])
-    await load_task_run_configs(project_id, task_id)
+    await get_task_run_configs()
 
     // Now that data is loaded, restore full state from URL
     restoreStateFromURL()
@@ -143,6 +144,17 @@
     // Mark initialization as complete
     isInitializing = false
   })
+
+  async function get_task_run_configs() {
+    loading = true
+    try {
+      await load_task_run_configs(project_id, task_id)
+    } catch (err) {
+      error = createKilnError(err)
+    } finally {
+      loading = false
+    }
+  }
 
   async function fetch_eval_scores(run_config_id: string) {
     if (
@@ -274,7 +286,7 @@
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
-    ] || []
+    ] || null
 
   $: modelOptions = generateRunConfigOptions(
     current_task_run_configs,
@@ -508,6 +520,15 @@
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
+    </div>
+  {:else if error}
+    <div
+      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+    >
+      <div class="font-medium">Error Loading Run Methods</div>
+      <div class="text-error text-sm">
+        {error.getMessage() || "An unknown error occurred"}
+      </div>
     </div>
   {:else}
     {@const hasSelectedModels = selectedModels.filter((m) => m !== null)}
@@ -840,6 +861,6 @@
     ) {
       selectedModels[target_new_run_config_col] = task_run_config.id || null
     }
-    load_task_run_configs(project_id, task_id)
+    get_task_run_configs()
   }}
 />

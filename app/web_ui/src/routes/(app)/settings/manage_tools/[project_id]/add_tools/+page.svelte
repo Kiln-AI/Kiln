@@ -7,6 +7,7 @@
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
 
@@ -157,6 +158,14 @@
         "Build a search tool to retrieve information from custom documents.",
       on_click: () => goto(`/docs/rag_configs/${project_id}/add_search_tool`),
     },
+    {
+      name: "Kiln Task as Tool",
+      subtitle: "by Kiln",
+      description:
+        "Build smarter workflows with Kiln tasks as tools, acting as subtasks.",
+      on_click: () =>
+        goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
+    },
     ...sampleLocalMcpServers.map((tool) => ({
       ...tool,
       on_click: () => connectLocalMcp(tool),
@@ -179,6 +188,9 @@
       if (error) {
         throw error
       }
+
+      posthog.capture("enable_demo_tools", {})
+
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools(project_id)
       goto(`/settings/manage_tools/${project_id}`)
@@ -217,6 +229,14 @@
               "Create a tool to search for information in documents.",
             button_text: "Create",
             href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
+          {
+            name: "Kiln Task as Tool",
+            description:
+              "Allow your tasks to call another Kiln task, as a tool call.",
+            button_text: "Create",
+            on_click: () =>
+              goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
           },
           {
             name: "Remote MCP Servers",

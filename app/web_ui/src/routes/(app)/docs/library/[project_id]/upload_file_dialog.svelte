@@ -6,6 +6,7 @@
   import UploadIcon from "$lib/ui/upload_icon.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
+  import posthog from "posthog-js"
 
   export let onUploadCompleted: () => void
 
@@ -153,12 +154,85 @@
     show_upload_result = true
     show_success_dialog = true
 
+    const uploaded_files = selected_files
     selected_files = []
     onUploadCompleted()
 
-    ragProgressStore.run_all_rag_configs(project_id)
+    ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
+      console.error("Error running all rag configs", error)
+    })
+
+    posthog.capture("add_documents", {
+      file_count: uploaded_files.length,
+      file_count_summary: file_count_summary(uploaded_files),
+      kind_counts: kind_counts(uploaded_files),
+    })
 
     return true
+  }
+
+  function file_count_summary(files: File[]): Record<string, number> {
+    try {
+      let summary: Record<string, number> = {}
+      let recognized_file_types_count = 0
+      for (const filetype of supported_file_types) {
+        const count = files.filter((file) =>
+          file.name.toLowerCase().endsWith(filetype),
+        ).length
+        if (count > 0) {
+          summary[filetype] = count
+          recognized_file_types_count += count
+        }
+      }
+      let unrecognized_file_types_count =
+        files.length - recognized_file_types_count
+      summary["unknown_type"] = unrecognized_file_types_count
+      return summary
+    } catch (e) {
+      console.error(e)
+      return {}
+    }
+  }
+
+  function infer_kind(file: File): string {
+    const mime = file.type || ""
+    if (mime.startsWith("image/")) return "image"
+    if (mime.startsWith("video/")) return "video"
+    if (mime.startsWith("audio/")) return "audio"
+
+    // documents by mime
+    if (
+      mime === "application/pdf" ||
+      mime === "text/plain" ||
+      mime === "text/markdown" ||
+      mime === "text/html" ||
+      mime === "text/csv"
+    ) {
+      return "document"
+    }
+
+    // fallback by extension
+    const ext = ("." + (file.name.split(".").pop() || "")).toLowerCase()
+    if ([".pdf", ".txt", ".md", ".html"].includes(ext)) return "document"
+    if ([".jpg", ".jpeg", ".png"].includes(ext)) return "image"
+    if ([".mp4", ".mov"].includes(ext)) return "video"
+    if ([".mp3", ".wav", ".ogg"].includes(ext)) return "audio"
+
+    return "unknown"
+  }
+
+  function kind_counts(files: File[]): Record<string, number> {
+    try {
+      let summary: Record<string, number> = {}
+      for (const file of files) {
+        const kind = infer_kind(file)
+        summary[kind] = (summary[kind] || 0) + 1
+      }
+      return summary
+    } catch (e) {
+      console.error(e)
+      return {}
+    }
   }
 
   let dialog: Dialog | null = null
@@ -200,7 +274,7 @@
 <Dialog
   bind:this={dialog}
   title={show_success_dialog
-    ? "Upload Completed"
+    ? "Completed"
     : upload_in_progress
       ? "Processing Documents"
       : "Add Documents"}
@@ -214,8 +288,8 @@
         {
           label:
             selected_files.length > 1
-              ? `Upload ${selected_files.length} Files`
-              : "Upload",
+              ? `Add ${selected_files.length} Files`
+              : "Add",
           asyncAction: () => handleUpload(),
           disabled: selected_files.length === 0,
           isPrimary: true,
@@ -231,7 +305,7 @@
             {upload_result.created_documents.length} file{upload_result
               .created_documents.length === 1
               ? ""
-              : "s"} uploaded successfully
+              : "s"} added successfully
             {#if upload_result.failed_files.length > 0}
               <br />
               {upload_result.failed_files.length} file{upload_result
@@ -266,7 +340,12 @@
           on:click={openFileDialog}
           role="button"
           tabindex="0"
-          on:keydown={(e) => e.key === "Enter" && openFileDialog()}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              openFileDialog()
+            }
+          }}
         >
           <div class="space-y-2">
             <div class="w-10 h-10 mx-auto text-gray-500">
@@ -302,7 +381,7 @@
               {upload_result.created_documents.length} document{upload_result
                 .created_documents.length === 1
                 ? ""
-                : "s"} uploaded successfully
+                : "s"} added successfully
             </div>
           {/if}
           {#if upload_result.failed_files.length > 0}
@@ -310,7 +389,7 @@
               {upload_result.failed_files.length} document{upload_result
                 .failed_files.length === 1
                 ? ""
-                : "s"} failed to upload
+                : "s"} failed to be added
             </div>
           {/if}
         {/if}
@@ -357,7 +436,7 @@
         {#if upload_in_progress && upload_total > 0}
           <div class="space-y-2">
             <div class="flex justify-between text-sm">
-              <span>Uploading files...</span>
+              <span>Adding files...</span>
               <span>{upload_progress}/{upload_total}</span>
             </div>
             <progress

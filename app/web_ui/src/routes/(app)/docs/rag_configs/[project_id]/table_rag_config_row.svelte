@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { RagConfigWithSubConfigs } from "$lib/types"
-  import { formatDate } from "$lib/utils/formatters"
   import RunRagControl from "./run_rag_control.svelte"
   import {
     embedding_model_name,
@@ -9,6 +8,7 @@
     vector_store_name,
   } from "$lib/stores"
   import {
+    compute_overall_completion_percentage,
     ragProgressStore,
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
@@ -22,13 +22,7 @@
 
   // Calculate percentages for progress bar
   $: total_docs = rag_progress?.total_document_count || 0
-  $: completed_pct =
-    total_docs > 0
-      ? Math.round(
-          ((rag_progress?.total_document_completed_count || 0) / total_docs) *
-            100,
-        )
-      : 0
+  $: completed_pct = compute_overall_completion_percentage(rag_progress)
 
   $: status = $ragProgressStore.status[rag_config.id || ""]
 
@@ -54,6 +48,7 @@
         return {
           text: "Incomplete",
           warning: true,
+          show_percentage: true,
         }
       }
       case "running": {
@@ -66,6 +61,7 @@
         return {
           text: "Complete with Errors",
           error: true,
+          show_percentage: true,
         }
       }
       default: {
@@ -80,6 +76,21 @@
 
   function open() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
+  }
+
+  $: chunk_size = rag_config.chunker_config.properties.chunk_size
+  $: chunk_overlap = rag_config.chunker_config.properties.chunk_overlap
+
+  function format_chunking(chunk_size: unknown, chunk_overlap: unknown) {
+    // we expect a non-nullable number for both, but we validate because we
+    // do not have typing on the properties object
+    const is_chunk_size_valid = typeof chunk_size === "number"
+    const is_chunk_overlap_valid = typeof chunk_overlap === "number"
+    if (!is_chunk_size_valid || !is_chunk_overlap_valid) {
+      return "Invalid chunk size or overlap, not a number"
+    }
+
+    return `${chunk_size} words, ${chunk_overlap} overlap`
   }
 </script>
 
@@ -107,12 +118,7 @@
             ) || ""})
           </div>
           <div>
-            Chunk size: {rag_config.chunker_config.properties?.chunk_size ||
-              "N/A"}
-          </div>
-          <div>
-            Chunk overlap: {rag_config.chunker_config.properties
-              ?.chunk_overlap || "N/A"}
+            Chunking: {format_chunking(chunk_size, chunk_overlap) || "N/A"}
           </div>
           <div>
             Embedding: {embedding_model_name(
@@ -125,9 +131,6 @@
               rag_config.vector_store_config.store_type,
             ) || "N/A"}
           </div>
-          <div class="text-xs text-gray-500">
-            Created {formatDate(rag_config.created_at)}
-          </div>
           <div class="text-xs text-gray-500 flex flex-row flex-wrap gap-2 w-80">
             {#each rag_config.tags || [] as tag}
               <div class="badge bg-gray-200 text-gray-500 text-xs">
@@ -137,6 +140,11 @@
           </div>
         </div>
       </div>
+    </td>
+
+    <!-- Tool info -->
+    <td class="p-4 align-top text-gray-500">
+      {rag_config.tool_name}
     </td>
 
     <!-- Progress Section -->
@@ -157,6 +165,9 @@
                 : ''} {status_badge_props?.archived ? 'badge-secondary' : ''}"
             >
               {status_badge_props?.text}
+              {#if status_badge_props?.show_percentage}
+                ({completed_pct}%)
+              {/if}
             </div>
           </div>
 
@@ -172,8 +183,8 @@
               </div>
               <progress
                 class="progress progress-primary bg-base-200 w-full h-2"
-                value={rag_progress.total_document_completed_count || 0}
-                max={total_docs || 100}
+                value={completed_pct || 0}
+                max={100}
               ></progress>
             </div>
           {:else if total_docs > 0 && !rag_config.is_archived}

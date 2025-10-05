@@ -6,7 +6,11 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import type { ExternalToolServerApiDescription } from "$lib/types"
+  import {
+    type ExternalToolServerApiDescription,
+    toolIsType,
+    isToolType,
+  } from "$lib/types"
   import { toolServerTypeToString } from "$lib/utils/formatters"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
@@ -100,28 +104,35 @@
     ]
 
     switch (tool.type) {
-      case "remote_mcp":
-        if (tool.properties["server_url"]) {
+      case "remote_mcp": {
+        toolIsType(tool, tool.type)
+        if (tool.properties.server_url) {
           properties.push({
             name: "Server URL",
-            value: String(tool.properties["server_url"]),
+            value: tool.properties.server_url,
           })
         }
         break
+      }
       case "local_mcp": {
-        if (tool.properties["command"]) {
+        toolIsType(tool, tool.type)
+        if (tool.properties.command) {
           properties.push({
             name: "Command",
-            value: String(tool.properties["command"]),
+            value: tool.properties.command,
           })
         }
-        const args = tool.properties["args"]
+        const args = tool.properties.args
         if (args && isStringArray(args)) {
           properties.push({
             name: "Arguments",
-            value: (args as string[]).join(" ") || "None",
+            value: args.join(" ") || "None",
           })
         }
+        break
+      }
+      case "kiln_task": {
+        // Kiln task tools don't have additional properties to display
         break
       }
       default: {
@@ -244,23 +255,22 @@
 
     goto(`/settings/manage_tools/${project_id}`)
   }
-
-  $: headers = tool_server?.properties["headers"] as Record<string, string>
-  $: secret_header_keys = tool_server?.properties[
-    "secret_header_keys"
-  ] as string[]
-  $: env_vars = tool_server?.properties["env_vars"] as
-    | Record<string, string>
-    | undefined
-  $: secret_env_var_keys = tool_server?.properties["secret_env_var_keys"] as
-    | string[]
-    | undefined
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
+    breadcrumbs={[
+      {
+        label: "Settings",
+        href: `/settings`,
+      },
+      {
+        label: "Manage Tools",
+        href: `/settings/manage_tools/${project_id}`,
+      },
+    ]}
     action_buttons={[
       {
         label: "Edit",
@@ -298,7 +308,7 @@
           />
         </div>
         <div class="flex-1">
-          {#if tool_server.type === "remote_mcp"}
+          {#if tool_server.type === "remote_mcp" && isToolType(tool_server, tool_server.type)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Connection Details"
@@ -307,31 +317,29 @@
             <div class="mt-8">
               <PropertyList
                 properties={buildPropertiesWithSecrets(
-                  headers,
-                  secret_header_keys,
+                  tool_server.properties.headers || {},
+                  tool_server.properties.secret_header_keys || [],
                   tool_server.missing_secrets,
                 )}
                 title="Headers"
               />
             </div>
-          {:else if tool_server.type === "local_mcp"}
+          {:else if tool_server.type === "local_mcp" && isToolType(tool_server, tool_server.type)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
               title="Run Config"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
-            {#if (env_vars && Object.keys(env_vars).length > 0) || (secret_env_var_keys && Object.keys(secret_env_var_keys).length > 0)}
-              <div class="mt-8">
-                <PropertyList
-                  properties={buildPropertiesWithSecrets(
-                    env_vars || {},
-                    secret_env_var_keys || [],
-                    tool_server.missing_secrets,
-                  )}
-                  title="Environment Variables"
-                />
-              </div>
-            {/if}
+            <div class="mt-8">
+              <PropertyList
+                properties={buildPropertiesWithSecrets(
+                  tool_server.properties.env_vars || {},
+                  tool_server.properties.secret_env_var_keys || [],
+                  tool_server.missing_secrets,
+                )}
+                title="Environment Variables"
+              />
+            </div>
           {/if}
         </div>
       </div>

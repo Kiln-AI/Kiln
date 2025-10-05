@@ -163,8 +163,6 @@ def mock_file_factory(
                 filename = test_data_dir / "document_ice_cubes.html"
             case MockFileFactoryMimeType.MD:
                 filename = test_data_dir / "document_ice_cubes.md"
-            case MockFileFactoryMimeType.TXT:
-                filename = test_data_dir / "document_ice_cubes.txt"
 
             # images
             case MockFileFactoryMimeType.PNG:

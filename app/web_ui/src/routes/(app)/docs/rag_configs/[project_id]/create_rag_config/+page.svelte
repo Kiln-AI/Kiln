@@ -34,6 +34,9 @@
   } from "../add_search_tool/rag_config_templates"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { tool_name_validator } from "$lib/utils/input_validators"
+  import posthog from "posthog-js"
+  import { uncache_available_tools } from "$lib/stores"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   $: project_id = $page.params.project_id
   const template_id = $page.url.searchParams.get("template_id")
@@ -42,8 +45,10 @@
 
   let loading: boolean = false
   let error: KilnError | null = null
-  let tool_name: string = "search_docs"
-  let tool_description: string = "Search documents for knowledge."
+  const DEFAULT_TOOL_NAME = "search_docs"
+  const DEFAULT_TOOL_DESCRIPTION = "Search documents for knowledge."
+  let tool_name: string = DEFAULT_TOOL_NAME
+  let tool_description: string = DEFAULT_TOOL_DESCRIPTION
   let name: string | null = null
   let description: string = ""
   let selected_tags: string[] = []
@@ -100,7 +105,7 @@
         {
           label: "New Extractor Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -130,7 +135,7 @@
         {
           label: "New Chunker Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -169,7 +174,7 @@
         {
           label: "New Embedding Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -200,7 +205,7 @@
         {
           label: "New Search Index Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -452,6 +457,48 @@
         return
       }
 
+      let extractor_model: string | undefined = undefined
+      let chunker_type: "fixed_window" | undefined = undefined
+      let chunker_size: unknown = undefined
+      let chunker_overlap: unknown = undefined
+      let embedding_model: string | undefined = undefined
+      let vector_store_type: string | undefined = undefined
+      try {
+        extractor_model = extractor_configs.find(
+          (config) => config.id === selected_extractor_config_id,
+        )?.model_name
+        chunker_type = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )?.chunker_type
+        chunker_size = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )?.properties.chunk_size
+        chunker_overlap = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )?.properties.chunk_overlap
+        embedding_model = embedding_configs.find(
+          (config) => config.id === selected_embedding_config_id,
+        )?.model_name
+        vector_store_type = vector_store_configs.find(
+          (config) => config.id === selected_vector_store_config_id,
+        )?.store_type
+      } catch (e) {
+        console.error(e)
+      }
+      posthog.capture("create_custom_rag_config", {
+        tag_filter: selected_tags.length > 0,
+        custom_name: tool_name !== DEFAULT_TOOL_NAME,
+        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
+        extractor_model: extractor_model,
+        chunker_type: chunker_type,
+        chunker_size: chunker_size,
+        chunker_overlap: chunker_overlap,
+        embedding_model: embedding_model,
+        vector_store_type: vector_store_type,
+      })
+
+      uncache_available_tools(project_id)
+
       goto(`/docs/rag_configs/${project_id}`)
     } finally {
       loading = false
@@ -549,6 +596,15 @@
         return
       }
 
+      posthog.capture("create_rag_config_from_template", {
+        template_name: template.name,
+        tag_filter: selected_tags.length > 0,
+        custom_name: tool_name !== DEFAULT_TOOL_NAME,
+        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
+      })
+
+      uncache_available_tools(project_id)
+
       goto(`/docs/rag_configs/${project_id}`)
     } finally {
       loading = false
@@ -559,6 +615,8 @@
 <AppPage
   title="Create Search Tool (RAG)"
   subtitle="Define parameters for how this tool will search and retrieve your documents"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   breadcrumbs={[
     {
       label: "Docs & Search",
@@ -590,6 +648,7 @@
         keyboard_submit={!modal_opened}
       >
         <!-- Search Tool Properties -->
+        <div class="text-xl font-bold">Part 1: Tool Properties</div>
         <FormElement
           label="Search Tool Name"
           description="A unique short tool name such as 'knowledge_base_search'. Be descriptive about what data this tool can search."
@@ -617,17 +676,23 @@
             on:change={(e) => (selected_tags = e.detail.selected_tags)}
           />
         </div>
+
+        <div>
+          <div class="text-xl font-bold mt-4">Part 2: Search Configuration</div>
+          <div class="text-xs text-gray-500 font-medium">
+            This configuration controls how the search tool will extract, index,
+            and search your documents.
+            {#if template && !customize_template_mode}
+              <InfoTooltip
+                no_pad={true}
+                tooltip_text="You selected a pre-configured search tool with these parameters."
+              />
+            {/if}
+          </div>
+        </div>
         {#if template && !customize_template_mode}
-          <div class="flex flex-col mt-4">
-            <FormElement
-              id="search_tool_configuration_header"
-              label="Search Configuration"
-              description="These parameters control how the search tool will extract, index, and search your documents."
-              info_description="You selected a pre-configured search tool with these parameters."
-              inputType="header_only"
-              value={null}
-            />
-            <div class="mt-2 mb-8">
+          <div class="flex flex-col">
+            <div class="mb-8">
               <PropertyList
                 properties={[
                   { name: "Template Name", value: template.name },

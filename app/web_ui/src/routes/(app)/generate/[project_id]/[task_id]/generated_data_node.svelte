@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SampleDataNode, SampleData } from "./gen_model"
-  import AvailableModelsDropdown from "../../../run/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { tick } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
@@ -520,6 +520,7 @@
             <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
           <AvailableModelsDropdown
+            task_id={guidance_data.task_id}
             requires_data_gen={true}
             suggested_mode={guidance_data.suggest_uncensored($selected_template)
               ? "uncensored_data_gen"

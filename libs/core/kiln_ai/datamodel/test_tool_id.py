@@ -8,6 +8,7 @@ from kiln_ai.datamodel.tool_id import (
     KilnBuiltInToolId,
     ToolId,
     _check_tool_id,
+    kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
 )
@@ -145,6 +146,39 @@ class TestCheckToolId:
         with pytest.raises(ValueError, match="Invalid RAG tool ID"):
             _check_tool_id("kiln_tool::rag::")
 
+    def test_valid_kiln_task_tools(self):
+        """Test validation of valid Kiln task tools."""
+        valid_ids = [
+            "kiln_task::server1",
+            "kiln_task::my_server",
+            "kiln_task::test_server_123",
+            "kiln_task::server_with_underscores",
+            "kiln_task::server-with-dashes",
+            "kiln_task::server.with.dots",
+        ]
+        for tool_id in valid_ids:
+            result = _check_tool_id(tool_id)
+            assert result == tool_id
+
+    def test_invalid_kiln_task_format(self):
+        """Test validation fails for invalid Kiln task tool formats."""
+        # These IDs start with the Kiln task prefix but have invalid formats
+        kiln_task_invalid_ids = [
+            "kiln_task::",  # Missing server ID
+            "kiln_task::server::extra",  # Too many parts
+            "kiln_task::server::tool::extra",  # Too many parts
+        ]
+
+        for invalid_id in kiln_task_invalid_ids:
+            with pytest.raises(ValueError, match="Invalid Kiln task tool ID"):
+                _check_tool_id(invalid_id)
+
+    def test_kiln_task_tool_empty_server_id(self):
+        """Test that Kiln task tool with empty server ID is handled properly."""
+        # This tests the case where kiln_task_server_id_from_tool_id returns empty string which should raise an error
+        with pytest.raises(ValueError, match="Invalid Kiln task tool ID"):
+            _check_tool_id("kiln_task::")
+
 
 class TestMcpServerAndToolNameFromId:
     """Test the mcp_server_and_tool_name_from_id function."""
@@ -220,7 +254,7 @@ class TestToolIdPydanticType:
             model = self._ModelWithToolId(tool_id=tool_id.value)
             assert model.tool_id == tool_id.value
 
-    def test_valid_mcp_tools(self):
+    def test_valid_tool_ids(self):
         """Test ToolId validates MCP remote and local tools."""
         valid_ids = [
             # Remote MCP tools
@@ -232,6 +266,9 @@ class TestToolIdPydanticType:
             # RAG tools
             "kiln_tool::rag::config1",
             "kiln_tool::rag::my_rag_config",
+            # Kiln task tools
+            "kiln_task::server1",
+            "kiln_task::my_server",
         ]
 
         for tool_id in valid_ids:
@@ -249,6 +286,8 @@ class TestToolIdPydanticType:
             "mcp::local::server",
             "kiln_tool::rag::",
             "kiln_tool::rag::config::extra",
+            "kiln_task::",
+            "kiln_task::server::extra",
         ]
 
         for invalid_id in invalid_ids:
@@ -318,3 +357,69 @@ class TestRagConfigIdFromId:
         # The validation for empty config ID happens in _check_tool_id
         result = rag_config_id_from_id("kiln_tool::rag::")
         assert result == ""
+
+
+class TestKilnTaskServerIdFromToolId:
+    """Test the kiln_task_server_id_from_tool_id function."""
+
+    def test_valid_kiln_task_ids(self):
+        """Test parsing valid Kiln task tool IDs."""
+        test_cases = [
+            ("kiln_task::server1", "server1"),
+            ("kiln_task::my_server", "my_server"),
+            ("kiln_task::test_server_123", "test_server_123"),
+            ("kiln_task::a", "a"),  # Minimal valid case
+            ("kiln_task::server_with_underscores", "server_with_underscores"),
+            ("kiln_task::server-with-dashes", "server-with-dashes"),
+            ("kiln_task::server.with.dots", "server.with.dots"),
+        ]
+
+        for tool_id, expected in test_cases:
+            result = kiln_task_server_id_from_tool_id(tool_id)
+            assert result == expected
+
+    def test_invalid_kiln_task_ids(self):
+        """Test parsing fails for invalid Kiln task tool IDs."""
+        # Test various invalid formats
+        invalid_ids = [
+            "kiln_task::",  # Empty server ID
+            "kiln_task::server::extra",  # Too many parts (3 parts)
+            "kiln_task::server::tool::extra",  # Too many parts (4 parts)
+            "wrong::server",  # Wrong prefix
+            "kiln_wrong::server",  # Wrong prefix
+            "task::server",  # Too few parts (2 parts)
+            "",  # Empty string
+            "single_part",  # Only 1 part
+            "kiln_task",  # Missing server ID
+        ]
+
+        for invalid_id in invalid_ids:
+            with pytest.raises(ValueError, match="Invalid Kiln task tool ID format"):
+                kiln_task_server_id_from_tool_id(invalid_id)
+
+    def test_kiln_task_id_with_empty_server_id(self):
+        """Test that Kiln task tool ID with empty server ID raises error."""
+        with pytest.raises(ValueError, match="Invalid Kiln task tool ID format"):
+            kiln_task_server_id_from_tool_id("kiln_task::")
+
+    def test_kiln_task_id_with_whitespace_server_id(self):
+        """Test that Kiln task tool ID with whitespace-only server ID raises error."""
+        with pytest.raises(ValueError, match="Invalid Kiln task tool ID format"):
+            kiln_task_server_id_from_tool_id("kiln_task::")
+
+    def test_kiln_task_id_with_multiple_colons(self):
+        """Test that Kiln task tool ID with multiple colons raises error."""
+        with pytest.raises(ValueError, match="Invalid Kiln task tool ID format"):
+            kiln_task_server_id_from_tool_id("kiln_task::server::extra")
+
+    def test_kiln_task_id_case_sensitivity(self):
+        """Test that Kiln task tool IDs are case sensitive."""
+        # These should work
+        result1 = kiln_task_server_id_from_tool_id("kiln_task::Server")
+        assert result1 == "Server"
+
+        result2 = kiln_task_server_id_from_tool_id("kiln_task::SERVER")
+        assert result2 == "SERVER"
+
+        result3 = kiln_task_server_id_from_tool_id("kiln_task::server")
+        assert result3 == "server"

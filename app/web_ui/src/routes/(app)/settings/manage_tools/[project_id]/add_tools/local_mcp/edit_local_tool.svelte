@@ -11,6 +11,9 @@
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
   import type { ExternalToolServerApiDescription } from "$lib/types"
+  import posthog from "posthog-js"
+  import { view_logs } from "$lib/utils/logs"
+  import Output from "../../../../../run/output.svelte"
 
   // The existing tool server, if we're editing
   export let editing_tool_server: ExternalToolServerApiDescription | null = null
@@ -221,6 +224,12 @@
         throw new Error("Failed to get server id")
       }
 
+      if (editing_tool_server) {
+        posthog.capture("edit_local_mcp", {})
+      } else {
+        posthog.capture("connect_local_mcp", {})
+      }
+
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools($page.params.project_id)
       // Navigate to the tools page for the created tool
@@ -258,7 +267,6 @@
     <FormContainer
       submit_label={editing_tool_server ? "Save" : "Connect"}
       on:submit={save_or_connect}
-      bind:error
       bind:submitting
     >
       <FormElement
@@ -357,6 +365,56 @@
           </div>
         </div>
       </FormList>
+
+      {#if error}
+        <div
+          class="mb-6 flex flex-col gap-4 max-w-[600px] mx-auto border p-4 rounded-md"
+        >
+          <span class="font-bold text-error"
+            >Could Not Connect to MCP Server</span
+          >
+
+          <div class="flex flex-col gap-2">
+            <span class="font-medium">Troubleshooting Steps</span>
+            <ol
+              class="text-sm list-decimal list-outside pl-6 flex flex-col gap-2"
+            >
+              <li>
+                Check the Error Details below for information about the issue.
+              </li>
+              <li>
+                Check the server's documentation for the correct setup
+                (dependencies, etc.).
+              </li>
+              <li>
+                Ensure your command <span
+                  class="font-mono text-xs font-bold bg-base-200 p-1 rounded-sm"
+                  >{command}
+                  {args}</span
+                > runs in your terminal. If you had to install libraries or dependencies,
+                restart the Kiln app before trying again.
+              </li>
+              <li>
+                Check Kiln logs for additional details. <button
+                  type="button"
+                  class="link"
+                  on:click={view_logs}
+                >
+                  View Logs
+                </button>
+              </li>
+            </ol>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="font-medium">Error Details</span>
+            <Output
+              raw_output={error.getErrorMessages().join("\n\n")}
+              hide_toggle={false}
+              max_height="120px"
+            />
+          </div>
+        </div>
+      {/if}
     </FormContainer>
   </div>
 </div>

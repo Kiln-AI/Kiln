@@ -67,23 +67,63 @@ export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
 export type KilnToolServerDescription =
   components["schemas"]["KilnToolServerDescription"]
+export type KilnTaskToolDescription =
+  components["schemas"]["KilnTaskToolDescription"]
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
+export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
 export type ToolSetApiDescription =
   components["schemas"]["ToolSetApiDescription"]
+export type LocalServerProperties =
+  components["schemas"]["LocalServerProperties"]
+export type RemoteServerProperties =
+  components["schemas"]["RemoteServerProperties"]
+export type KilnTaskServerProperties =
+  components["schemas"]["KilnTaskServerProperties"]
 
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]
   | components["schemas"]["ChatCompletionUserMessageParam-Input"]
   | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
-  | components["schemas"]["ChatCompletionToolMessageParam"]
+  | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+
+// Type helpers for ExternalToolServerApiDescription properties
+
+type ToolPropsByType = {
+  remote_mcp: RemoteServerProperties
+  local_mcp: LocalServerProperties
+}
+
+export function toolIsType<T extends keyof ToolPropsByType>(
+  x: ExternalToolServerApiDescription,
+  t: T,
+): asserts x is ExternalToolServerApiDescription & {
+  type: T
+  properties: ToolPropsByType[T]
+} {
+  if (x.type !== t) {
+    throw new Error(`Tool type mismatch: ${x.type} !== ${t}`)
+  }
+}
+
+export function isToolType<T extends keyof ToolPropsByType>(
+  x: ExternalToolServerApiDescription,
+  t: T,
+): x is ExternalToolServerApiDescription & {
+  type: T
+  properties: ToolPropsByType[T]
+} {
+  // Throw an error if the tool is not of the given type
+  toolIsType(x, t)
+  return true
+}
