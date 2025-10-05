@@ -109,7 +109,11 @@
       }
 
       // update the store to make sure state gets reflected everywhere
-      await update_rag_config_archived_state(rag_config_id, is_archived)
+      await update_rag_config_archived_state(
+        project_id,
+        rag_config_id,
+        is_archived,
+      )
 
       await get_rag_config()
     } catch (e) {
