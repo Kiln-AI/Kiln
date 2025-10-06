@@ -29,6 +29,7 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
+    getDetailedModelName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
@@ -457,7 +458,7 @@
           {#if !has_default_eval_config}
             <div class="mt-2">
               <Warning
-                warning_message="No winning judge selected. We recommend using 'Compare Judges' and selecting the best as the winner."
+                warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
                 warning_color="warning"
                 tight={true}
               />
@@ -465,7 +466,7 @@
           {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
             <div class="mt-2">
               <Warning
-                warning_message="The currently selected judge is not the winning judge. You can change the winning judge in 'Compare Judges'."
+                warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
                 warning_color="warning"
                 tight={true}
               />
@@ -593,12 +594,14 @@
                 <tr class="max-w-[400px]">
                   <td>
                     <div class="font-medium">
-                      {model_name(
-                        task_run_config?.run_config_properties?.model_name,
+                      {task_run_config.name}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      Model: {getDetailedModelName(
+                        task_run_config,
                         $model_info,
                       )}
                     </div>
-
                     <div class="text-sm text-gray-500">
                       Prompt: <a
                         href={prompt_link(
@@ -621,15 +624,6 @@
                           no_pad={true}
                         />
                       {/if}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Provider: {provider_name_from_id(
-                        task_run_config?.run_config_properties
-                          ?.model_provider_name,
-                      )}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Run Configuration Name: {task_run_config.name}
                     </div>
                   </td>
                   <td class="text-sm text-center">

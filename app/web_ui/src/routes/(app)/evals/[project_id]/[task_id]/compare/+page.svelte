@@ -531,13 +531,11 @@
             class="grid border-b border-gray-200 bg-gray-50"
             style="grid-template-columns: 200px repeat({columns}, 1fr);"
           >
-            <div class="px-6 py-4 font-semibold text-gray-900 flex items-start">
-              <div class="flex items-center h-10">Compare</div>
-            </div>
+            <div class="px-6 py-4 font-semibold text-gray-900"></div>
             {#each Array(columns) as _, i}
               <div class="px-6 py-4 relative min-w-0">
                 {#if task}
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-1 xl:flex-row">
                     {#if columns > 2}
                       <button
                         on:click={() => removeColumn(i)}
@@ -554,6 +552,7 @@
                         current_task={task}
                         bind:selected_run_config_id={selectedModels[i]}
                         run_page={false}
+                        auto_select_default={i === 0}
                       />
                     </div>
                   </div>

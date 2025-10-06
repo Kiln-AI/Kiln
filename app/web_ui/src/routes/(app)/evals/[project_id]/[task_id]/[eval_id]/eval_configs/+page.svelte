@@ -551,7 +551,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4 mt-2">
             <Warning
-              warning_message="Click 'Set as Winner' below to select a winning run configuration for this eval."
+              warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon={focus_select_eval_config ? "exclaim" : "info"}
               large_icon={focus_select_eval_config}
@@ -622,7 +622,7 @@
                           set_current_eval_config(null)
                         }}
                       >
-                        Winner <span class="pl-[1px]">&#x2715;</span>
+                        Default <span class="pl-[1px]">&#x2715;</span>
                       </button>
                     {:else}
                       <button
@@ -633,7 +633,7 @@
                           set_current_eval_config(eval_config.id)
                         }}
                       >
-                        Set as Winner
+                        Set as Default
                       </button>
                     {/if}
                   </td>
@@ -764,7 +764,7 @@
   <div class="font-medium text-sm text-gray-500">
     Each score is a correlation score between human ratings and the automated
     judge's scores. Use these scores to find the judge which best matches human
-    preferences, and set it as your winning judge.
+    preferences, and set it as your default judge.
   </div>
   <div class="m-8 font-light text-sm flex flex-col gap-2">
     <div class="font-bold text-xl">Quick Start</div>
@@ -782,7 +782,7 @@
     </div>
     <div>
       Finally, set the judge with the highest Kendall's Tau score as your
-      winning judge.
+      default judge.
     </div>
 
     <div class="font-bold text-xl mt-6">Detailed Instructions</div>
