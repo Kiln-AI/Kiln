@@ -3,7 +3,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import RunConfigComponent from "./run_config_component.svelte"
   import type { Task, TaskRunConfig } from "$lib/types"
-  import { KilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
 
   export let subtitle: string | null = null
   export let project_id: string
@@ -27,12 +27,20 @@
 
   async function create_new_run_config() {
     submitting = true
-    const saved_run_config = await run_config_component?.save_new_run_config()
-    if (saved_run_config) {
-      new_run_config_created(saved_run_config)
-      close() // Only close on success
+    try {
+      save_config_error = null
+      const saved_run_config = await run_config_component?.save_new_run_config()
+      if (saved_run_config) {
+        new_run_config_created(saved_run_config)
+        close() // Only close on success
+      } else {
+        throw new Error("Resulting saved run config not found.")
+      }
+    } catch (e) {
+      save_config_error = createKilnError(e)
+    } finally {
+      submitting = false
     }
-    submitting = false
   }
 </script>
 

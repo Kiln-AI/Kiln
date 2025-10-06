@@ -801,21 +801,21 @@
   {project_id}
   {task}
   new_run_config_created={(run_config) => {
-    if (
-      target_new_run_config_col !== null &&
-      target_new_run_config_col < columns
-    ) {
-      selectedModels[target_new_run_config_col] = run_config.id || null
+    if (target_new_run_config_col !== null) {
+      if (target_new_run_config_col < columns) {
+        selectedModels[target_new_run_config_col] = run_config.id || null
+        selectedModels = [...selectedModels] // Trigger reactivity
+      }
+      target_new_run_config_col = null
     }
-    target_new_run_config_col = null
   }}
   on:close={() => {
-    if (
-      target_new_run_config_col !== null &&
-      target_new_run_config_col < columns
-    ) {
-      selectedModels[target_new_run_config_col] = null
+    if (target_new_run_config_col !== null) {
+      if (target_new_run_config_col < columns) {
+        selectedModels[target_new_run_config_col] = null
+        selectedModels = [...selectedModels]
+      }
+      target_new_run_config_col = null // Trigger reactivity
     }
-    target_new_run_config_col = null
   }}
 />

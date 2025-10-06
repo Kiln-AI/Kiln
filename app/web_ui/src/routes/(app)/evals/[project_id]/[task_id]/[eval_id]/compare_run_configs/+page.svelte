@@ -457,7 +457,7 @@
           {#if !has_default_eval_config}
             <div class="mt-2">
               <Warning
-                warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
+                warning_message="No winning judge selected. We recommend using 'Compare Judges' and selecting the best as the winner."
                 warning_color="warning"
                 tight={true}
               />
@@ -465,7 +465,7 @@
           {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
             <div class="mt-2">
               <Warning
-                warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
+                warning_message="The currently selected judge is not the winning judge. You can change the winning judge in 'Compare Judges'."
                 warning_color="warning"
                 tight={true}
               />
