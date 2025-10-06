@@ -327,7 +327,7 @@
           {:else if tool_server.type === "local_mcp" && isToolType(tool_server, tool_server.type)}
             <PropertyList
               properties={getConnectionProperties(tool_server)}
-              title="Run Config"
+              title="Run Configuration"
             />
             <!-- Check if there are any environment variables or secret environment variables -->
             <div class="mt-8">
