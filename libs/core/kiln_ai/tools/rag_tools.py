@@ -1,5 +1,5 @@
 from functools import cached_property
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypedDict
 
 from pydantic import BaseModel
 
@@ -18,7 +18,7 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -44,6 +44,10 @@ def format_search_results(search_results: List[SearchResult]) -> str:
             )
         )
     return "\n=========\n".join([result.serialize() for result in results])
+
+
+class RagParams(TypedDict):
+    query: str
 
 
 class RagTool(KilnToolInterface):
@@ -126,7 +130,10 @@ class RagTool(KilnToolInterface):
             },
         }
 
-    async def run(self, query: str) -> str:
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+        kwargs = RagParams(**kwargs)
+        query = kwargs["query"]
+
         _, embedding_adapter = self.embedding
 
         vector_store_adapter = await self.vector_store()
@@ -152,6 +159,6 @@ class RagTool(KilnToolInterface):
             store_query.query_embedding = query_embedding_result.embeddings[0].vector
 
         search_results = await vector_store_adapter.search(store_query)
-        context = format_search_results(search_results)
+        search_results_as_text = format_search_results(search_results)
 
-        return context
+        return search_results_as_text
