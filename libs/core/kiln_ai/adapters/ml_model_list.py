@@ -3893,7 +3893,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_4_5v,
-        friendly_name="GLM 4.5V",
+        friendly_name="GLM 4.5V (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
