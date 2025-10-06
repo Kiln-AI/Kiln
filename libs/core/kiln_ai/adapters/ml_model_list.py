@@ -175,8 +175,9 @@ class ModelName(str, Enum):
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_dev_72b = "kimi_dev_72b"
-    glm_4_5 = "glm_4_5"
     glm_4_6 = "glm_4_6"
+    glm_4_5v = "glm_4_5v"
+    glm_4_5 = "glm_4_5"
     glm_4_5_air = "glm_4_5_air"
     glm_4_1v_9b_thinking = "glm_4_1v_9b_thinking"
     glm_z1_32b_0414 = "glm_z1_32b_0414"
@@ -3886,6 +3887,55 @@ built_in_models: List[KilnModel] = [
                 model_id="zai-org/GLM-4.6",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
+        ],
+    ),
+    # GLM 4.5V
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_5v,
+        friendly_name="GLM 4.5V",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.5v",
+                supports_structured_output=False,
+                reasoning_capable=True,
+                supports_data_gen=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-4.5V",
+                supports_structured_output=False,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+                supports_data_gen=False,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
+            ),
+            # fireworks currently has it but not serverless
         ],
     ),
     # GLM 4.5
