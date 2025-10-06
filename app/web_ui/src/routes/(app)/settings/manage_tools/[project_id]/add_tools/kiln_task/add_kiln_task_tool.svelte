@@ -13,6 +13,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { tool_name_validator } from "$lib/utils/input_validators"
+  import posthog from "posthog-js"
 
   let error: KilnError | null = null
   let submitting = false
@@ -156,12 +157,14 @@
     goto(`/settings/create_task/${project_id}`)
   }
 
+  let created_run_config_in_page = false
   async function create_new_run_config() {
     loading = true
     if (run_config_component) {
       const saved_run_config = await run_config_component.save_new_run_config()
       if (saved_run_config?.id) {
         selected_run_config_id = saved_run_config.id
+        created_run_config_in_page = true
       }
     }
     loading = false
@@ -226,6 +229,11 @@
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools($page.params.project_id)
+
+      posthog.capture("added_kiln_task_tool", {
+        created_run_config_in_page: created_run_config_in_page,
+      })
+
       // Navigate to the manage tools page for the created tool
       goto(`/settings/manage_tools/${$page.params.project_id}/kiln_task_tools`)
     } catch (e) {
