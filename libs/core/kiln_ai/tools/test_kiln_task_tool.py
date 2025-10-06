@@ -171,7 +171,7 @@ class TestKilnTaskTool:
     async def test_run_with_plaintext_input(
         self, kiln_task_tool, mock_context, mock_task, mock_run_config
     ):
-        """Test the run method with plaintext input."""
+        """Test the run configuration with plaintext input."""
         # Setup mocks
         kiln_task_tool._task = mock_task
         kiln_task_tool._run_config = mock_run_config
@@ -240,7 +240,7 @@ class TestKilnTaskTool:
     async def test_run_with_structured_input(
         self, kiln_task_tool, mock_context, mock_task, mock_run_config
     ):
-        """Test the run method with structured input."""
+        """Test the run configuration with structured input."""
         # Setup task with JSON schema
         mock_task.input_json_schema = {
             "type": "object",
@@ -287,7 +287,7 @@ class TestKilnTaskTool:
 
     @pytest.mark.asyncio
     async def test_run_without_context(self, kiln_task_tool):
-        """Test the run method without context raises ValueError."""
+        """Test the run configuration without context raises ValueError."""
         with pytest.raises(
             ValueError, match="Context is required for running a KilnTaskTool"
         ):
@@ -297,7 +297,7 @@ class TestKilnTaskTool:
     async def test_run_plaintext_missing_input(
         self, kiln_task_tool, mock_context, mock_task
     ):
-        """Test the run method with plaintext task but missing input parameter."""
+        """Test the run configuration with plaintext task but missing input parameter."""
         # Setup mocks
         kiln_task_tool._task = mock_task
 
@@ -474,7 +474,7 @@ class TestKilnTaskTool:
     async def test_run_with_adapter_exception(
         self, kiln_task_tool, mock_context, mock_task, mock_run_config
     ):
-        """Test the run method when adapter raises an exception."""
+        """Test the run configuration when adapter raises an exception."""
         # Setup mocks
         kiln_task_tool._task = mock_task
         kiln_task_tool._run_config = mock_run_config
@@ -494,7 +494,7 @@ class TestKilnTaskTool:
     async def test_run_with_different_allow_saving(
         self, kiln_task_tool, mock_task, mock_run_config
     ):
-        """Test the run method with different allow_saving values."""
+        """Test the run configuration with different allow_saving values."""
         mock_context_false = MagicMock(spec=ToolCallContext)
         mock_context_false.allow_saving = False
 

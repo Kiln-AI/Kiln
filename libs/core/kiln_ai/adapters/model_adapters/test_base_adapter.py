@@ -226,7 +226,7 @@ async def test_input_formatting(
         mock_factory.return_value = mock_formatter
         mock_parser_factory.return_value = mock_parser
 
-        # Mock the _run method to capture the input
+        # Mock the _run_configuration to capture the input
         captured_input = None
 
         async def mock_run(input):

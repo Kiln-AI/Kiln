@@ -145,7 +145,7 @@
   async function handle_save_new_run_config(): Promise<TaskRunConfig | null> {
     try {
       if (!run_config_component) {
-        throw new Error("Run config component is not loaded")
+        throw new Error("Run configuration component is not loaded")
       }
       return await run_config_component.save_new_run_config()
     } catch (e) {

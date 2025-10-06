@@ -83,7 +83,7 @@
       return {}
     }
     return {
-      "Run Config Name": run_config.name,
+      "Run Configuration Name": run_config.name,
       Model: model_name(
         run_config.run_config_properties?.model_name,
         $model_info,
@@ -117,7 +117,7 @@
 
 <AppPage
   title="Eval Results"
-  subtitle="Evaluating a task run config with a judge."
+  subtitle="Evaluating a task run configuration with a judge."
 >
   {#if results_loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -281,7 +281,7 @@
     </div>
     <div>
       Use our "Run" screen or fresh synthetic dataset generation if you want to
-      explore what type of content a run config is generating.
+      explore what type of content a run configuration is generating.
     </div>
   </div>
 </Dialog>

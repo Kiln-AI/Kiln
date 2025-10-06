@@ -23,7 +23,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -154,8 +154,21 @@ class EvalProgress(BaseModel):
     golden_dataset_fully_rated_count: int
     # The current selected eval method
     current_eval_method: EvalConfig | None
-    # The current selected run method
-    current_run_method: TaskRunConfig | None
+    # The current selected run config
+    current_run_config: TaskRunConfig | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_field_names(cls, data: dict) -> dict:
+        """Migrate legacy field names for backward compatibility."""
+        if not isinstance(data, dict):
+            return data
+
+        # Migrate current_run_method to current_run_config
+        if "current_run_method" in data and "current_run_config" not in data:
+            data["current_run_config"] = data.pop("current_run_method")
+
+        return data
 
 
 class EvalResultSummary(BaseModel):
@@ -622,7 +635,7 @@ def connect_evals_api(app: FastAPI):
             None,
         )
 
-        current_run_method = next(
+        current_run_config = next(
             (
                 run_config
                 for run_config in task.run_configs()
@@ -638,7 +651,7 @@ def connect_evals_api(app: FastAPI):
             golden_dataset_partially_rated_count=partially_rated_count,
             golden_dataset_fully_rated_count=fully_rated_count,
             current_eval_method=current_eval_method,
-            current_run_method=current_run_method,
+            current_run_config=current_run_config,
         )
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.

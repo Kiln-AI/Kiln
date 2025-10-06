@@ -218,7 +218,7 @@
             >
             <button
               class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"
-              >Compare Run Configs</button
+              >Compare Run Configurations</button
             >
           </div>
         </div>

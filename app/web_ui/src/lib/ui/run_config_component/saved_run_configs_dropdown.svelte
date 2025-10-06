@@ -30,6 +30,7 @@
   } from "$lib/stores/run_configs_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
+  export let title: string = "Run Configuration"
   export let project_id: string
   export let current_task: Task
   export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
@@ -228,7 +229,7 @@
 
 <div>
   <FormElement
-    label="Run Configuration"
+    label={title}
     {description}
     {info_description}
     inputType="fancy_select"

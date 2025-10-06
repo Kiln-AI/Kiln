@@ -256,7 +256,7 @@ class EvalTester(BaseEval):
 
 @pytest.mark.paid
 @pytest.mark.asyncio
-async def test_run_method():
+async def test_run_configuration():
     task = Task(
         name="Test Task",
         instruction="Test instruction",

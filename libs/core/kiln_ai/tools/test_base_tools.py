@@ -117,8 +117,8 @@ class TestKilnTool:
 
         assert definition == expected
 
-    def test_run_method_implemented_by_subclass(self):
-        """Test that the run method works when implemented by subclass."""
+    def test_run_configuration_implemented_by_subclass(self):
+        """Test that the run configuration works when implemented by subclass."""
         schema = {
             "type": "object",
             "properties": {"message": {"type": "string"}},
@@ -136,7 +136,7 @@ class TestKilnTool:
         assert result == "test_result: {'message': 'hello', 'extra_param': 42}"
 
     def test_cannot_instantiate_abstract_kiln_tool_directly(self):
-        """Test that KilnTool cannot be instantiated directly due to abstract run method."""
+        """Test that KilnTool cannot be instantiated directly due to abstract run configuration."""
         schema = {
             "type": "object",
             "properties": {"param": {"type": "string"}},

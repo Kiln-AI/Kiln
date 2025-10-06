@@ -173,11 +173,11 @@
       })
     }
 
-    if (eval_progress?.current_run_method) {
+    if (eval_progress?.current_run_config) {
       properties.push({
         name: "Run Model",
         value: model_name(
-          eval_progress.current_run_method.run_config_properties.model_name,
+          eval_progress.current_run_config.run_config_properties.model_name,
           modelInfo,
         ),
         tooltip: "The model used by your selected run config.",
@@ -185,16 +185,16 @@
       properties.push({
         name: "Run Prompt",
         value:
-          eval_progress.current_run_method.prompt?.name ||
+          eval_progress.current_run_config.prompt?.name ||
           prompt_name_from_id(
-            eval_progress.current_run_method.run_config_properties.prompt_id,
+            eval_progress.current_run_config.run_config_properties.prompt_id,
             taskPrompts,
           ),
         tooltip: "The prompt used by your selected run config.",
         link: prompt_link(
           project_id,
           task_id,
-          eval_progress.current_run_method.run_config_properties.prompt_id,
+          eval_progress.current_run_config.run_config_properties.prompt_id,
         ),
       })
     }
@@ -373,7 +373,7 @@
 
   function compare_run_configs() {
     let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_configs`
-    show_progress_ui("When you're done comparing run configs, ", 5)
+    show_progress_ui("When you're done comparing run configurations, ", 5)
     goto(url)
   }
 </script>
@@ -526,15 +526,15 @@
                       </div>
                     {:else if step == 5}
                       <div class="mb-1">
-                        {#if eval_progress?.current_run_method}
+                        {#if eval_progress?.current_run_config}
                           You've selected the model '{model_name(
-                            eval_progress.current_run_method
+                            eval_progress.current_run_config
                               .run_config_properties.model_name,
                             $model_info,
-                          )}' with the prompt '{eval_progress.current_run_method
+                          )}' with the prompt '{eval_progress.current_run_config
                             .prompt?.name ||
                             prompt_name_from_id(
-                              eval_progress.current_run_method
+                              eval_progress.current_run_config
                                 .run_config_properties.prompt_id,
                               $current_task_prompts,
                             )}'.
@@ -550,7 +550,7 @@
                             : ''}"
                           on:click={compare_run_configs}
                         >
-                          Compare Run Configs
+                          Compare Run Configurations
                         </button>
                       </div>
                     {/if}

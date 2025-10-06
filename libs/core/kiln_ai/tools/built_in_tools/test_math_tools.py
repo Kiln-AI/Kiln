@@ -48,7 +48,7 @@ class TestAddTool:
         ],
     )
     async def test_run_various_inputs(self, a, b, expected):
-        """Test AddTool run method with various inputs."""
+        """Test AddTool run configuration with various inputs."""
         tool = AddTool()
         result = await tool.run(a=a, b=b)
         assert result == expected
@@ -94,7 +94,7 @@ class TestSubtractTool:
         ],
     )
     async def test_run_various_inputs(self, a, b, expected):
-        """Test SubtractTool run method with various inputs."""
+        """Test SubtractTool run configuration with various inputs."""
         tool = SubtractTool()
         result = await tool.run(a=a, b=b)
         assert result == expected
@@ -140,7 +140,7 @@ class TestMultiplyTool:
         ],
     )
     async def test_run_various_inputs(self, a, b, expected):
-        """Test MultiplyTool run method with various inputs."""
+        """Test MultiplyTool run configuration with various inputs."""
         tool = MultiplyTool()
         result = await tool.run(a=a, b=b)
         assert result == expected
@@ -186,7 +186,7 @@ class TestDivideTool:
         ],
     )
     async def test_run_various_inputs(self, a, b, expected):
-        """Test DivideTool run method with various inputs."""
+        """Test DivideTool run configuration with various inputs."""
         tool = DivideTool()
         result = await tool.run(a=a, b=b)
         assert result == expected

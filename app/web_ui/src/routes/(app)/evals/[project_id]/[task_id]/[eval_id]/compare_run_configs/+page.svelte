@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
-  import type { Eval } from "$lib/types"
+  import type { Eval, Task } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
@@ -38,7 +38,7 @@
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import AddRunMethod from "./add_run_method.svelte"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import posthog from "posthog-js"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { UiProperty } from "$lib/ui/property_list"
@@ -46,6 +46,8 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
   $: eval_id = $page.params.eval_id
+
+  let task: Task | null = null
 
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null
@@ -94,8 +96,8 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
-      load_task(project_id, task_id),
     ])
+    task = await load_task(project_id, task_id)
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
     // These two can be parallel
@@ -104,7 +106,7 @@
     get_score_summary()
   })
 
-  let add_run_method_component: AddRunMethod | null = null
+  let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
 
   async function get_eval() {
     try {
@@ -398,7 +400,7 @@
 </script>
 
 <AppPage
-  title="Compare Run Configs"
+  title="Compare Run Configurations"
   subtitle="Find the best configuration for running your task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-configuration"
@@ -439,7 +441,7 @@
         <div>
           <div class="text-xl font-bold">Judge</div>
           <div class="text-sm text-gray-500 mb-2">
-            Select the judge to use when comparing run configs.
+            Select the judge to use when comparing run configurations.
           </div>
 
           <FormElement
@@ -495,7 +497,7 @@
       {#if current_task_run_configs?.length}
         <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
           <div class="grow">
-            <div class="text-xl font-bold">Run Configs</div>
+            <div class="text-xl font-bold">Run Configurations</div>
             <div class="text-xs text-gray-500">
               Find the best method of running your task comparing various
               prompts, models, fine-tunes, and more.
@@ -516,8 +518,8 @@
             <button
               class="btn btn-mid mr-2"
               on:click={() => {
-                add_run_method_component?.show()
-              }}>Add Run Config</button
+                create_new_run_config_dialog?.show()
+              }}>Add Run Configuration</button
             >
 
             <RunEval
@@ -528,7 +530,7 @@
               {current_eval_config_id}
               run_all={true}
               btn_primary={!focus_select_eval_config}
-              eval_type="run_method"
+              eval_type="run_configuration"
               on_run_complete={() => {
                 get_score_summary()
               }}
@@ -552,7 +554,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as Winner' below to select a winning run config for this eval."
+              warning_message="Click 'Set as Winner' below to select a winning run configuration for this eval."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon="info"
               large_icon={focus_select_eval_config}
@@ -627,7 +629,7 @@
                       )}
                     </div>
                     <div class="text-sm text-gray-500">
-                      Run Config Name: {task_run_config.name}
+                      Run Configuration Name: {task_run_config.name}
                     </div>
                   </td>
                   <td class="text-sm text-center">
@@ -642,7 +644,7 @@
                           {eval_id}
                           {current_eval_config_id}
                           run_config_ids={[task_run_config.id || ""]}
-                          eval_type="run_method"
+                          eval_type="run_configuration"
                           btn_size="xs"
                           btn_primary={false}
                           btn_class="min-w-[120px]"
@@ -701,11 +703,11 @@
           </table>
         </div>
       {:else}
-        <div class="text-xl font-bold">Compare Run Configs</div>
+        <div class="text-xl font-bold">Compare Run Configurations</div>
         <div class="text-sm text-gray-500">
           Find the best way of running your task comparing various prompts,
-          models, fine-tunes, and more. Add one or more task run config to get
-          started.
+          models, fine-tunes, and more. Add one or more task run configurations
+          to get started.
         </div>
 
         <button
@@ -713,7 +715,7 @@
             ? 'btn-primary'
             : ''}"
           on:click={() => {
-            add_run_method_component?.show()
+            create_new_run_config_dialog?.show()
           }}
         >
           Add Run Config
@@ -723,11 +725,13 @@
   {/if}
 </AppPage>
 
-<AddRunMethod
-  bind:this={add_run_method_component}
+<CreateNewRunConfigDialog
+  bind:this={create_new_run_config_dialog}
+  subtitle="Your evaluator can compare multiple run configurations to find which one produces
+    the highest scores on your eval dataset."
   {project_id}
-  {task_id}
-  run_method_added={(_) => {
+  {task}
+  new_run_config_created={(_) => {
     get_task_run_configs()
   }}
 />
