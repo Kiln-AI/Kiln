@@ -237,24 +237,10 @@
             <th></th>
             <th>Eval Name</th>
             <th>Description</th>
-            <th>Winning Run Configuration</th>
           </tr>
         </thead>
         <tbody>
           {#each sorted_evals as evaluator}
-            {@const run_config = current_task_run_configs?.find(
-              (run_config) => run_config.id === evaluator.current_run_config_id,
-            )}
-            {@const prompt_href = run_config?.run_config_properties.prompt_id
-              ? prompt_link(
-                  project_id,
-                  task_id,
-                  run_config.run_config_properties.prompt_id,
-                )
-              : undefined}
-            {@const prompt_name = run_config
-              ? getRunConfigPromptDisplayName(run_config, $current_task_prompts)
-              : "Unknown Prompt"}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
@@ -274,32 +260,6 @@
               </td>
               <td> {evaluator.name} </td>
               <td> {evaluator.description} </td>
-              <td>
-                {#if run_config}
-                  <div
-                    class="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4 lg:min-w-[260px]"
-                  >
-                    <div>Name:</div>
-                    <div class="text-gray-500">
-                      {run_config.name}
-                    </div>
-                    <div>Model:</div>
-                    <div class="text-gray-500">
-                      {getDetailedModelName(run_config, $model_info)}
-                    </div>
-                    <div>Prompt:</div>
-                    <div class="text-gray-500">
-                      {#if prompt_href}
-                        <a href={prompt_href} class="link">{prompt_name}</a>
-                      {:else}
-                        {prompt_name}
-                      {/if}
-                    </div>
-                  </div>
-                {:else}
-                  <div class="text-gray-500">N/A</div>
-                {/if}
-              </td>
             </tr>
           {/each}
         </tbody>

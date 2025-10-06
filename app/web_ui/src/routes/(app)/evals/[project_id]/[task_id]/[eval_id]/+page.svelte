@@ -181,35 +181,10 @@
       })
     }
 
-    if (eval_progress?.current_run_config) {
-      properties.push({
-        name: "Run Model",
-        value: getDetailedModelName(
-          eval_progress.current_run_config,
-          modelInfo,
-        ),
-        tooltip: "The model used by your selected run config.",
-      })
-      properties.push({
-        name: "Run Prompt",
-        value: getRunConfigPromptDisplayName(
-          eval_progress.current_run_config,
-          taskPrompts,
-        ),
-        tooltip: "The prompt used by your selected run config.",
-        link: prompt_link(
-          project_id,
-          task_id,
-          eval_progress.current_run_config.run_config_properties.prompt_id,
-        ),
-      })
-    }
-
     return properties
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
-  $: has_default_run_config = evaluator && evaluator.current_run_config_id
 
   let edit_dialog: EditDialog | null = null
 
@@ -224,14 +199,14 @@
     "Create Eval Data",
     "Human Ratings",
     "Find the Best Judge",
-    "Find the Best Way to Run this Task",
+    "Evaluate Run Configurations",
   ]
   const step_tooltips: Record<number, string> = {
     1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
     2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
     3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
     4: "Benchmark various judge methods (model+prompt+algorithm). We'll compare judges to your golden dataset to find the judge which best matches your human preferences.",
-    5: "This tool will help your compare a variety of options for running this task and find the best one. You can compare different models, prompts, or fine-tunes.",
+    5: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, or fine-tunes.",
   }
   function update_eval_progress(
     progress: EvalProgress | null,
@@ -266,13 +241,8 @@
       return
     }
 
-    current_step = 5
-    if (!has_default_run_config) {
-      return
-    }
-
     // Everything is setup!
-    current_step = 6
+    current_step = 5
   }
   $: update_eval_progress(eval_progress, evaluator)
 
@@ -532,22 +502,8 @@
                       </div>
                     {:else if step == 5}
                       <div class="mb-1">
-                        {#if eval_progress?.current_run_config}
-                          You've selected the model '{model_name(
-                            eval_progress.current_run_config
-                              .run_config_properties.model_name,
-                            $model_info,
-                          )}' with the prompt '{eval_progress.current_run_config
-                            .prompt?.name ||
-                            prompt_name_from_id(
-                              eval_progress.current_run_config
-                                .run_config_properties.prompt_id,
-                              $current_task_prompts,
-                            )}'.
-                        {:else}
-                          Compare models, prompts and fine-tunes to find the
-                          most effective.
-                        {/if}
+                        Compare models, prompts and fine-tunes to find the most
+                        effective.
                       </div>
                       <div>
                         <button
@@ -556,7 +512,7 @@
                             : ''}"
                           on:click={compare_run_configs}
                         >
-                          Compare Run Configurations
+                          Compare Configs
                         </button>
                       </div>
                     {/if}

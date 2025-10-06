@@ -23,7 +23,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -154,21 +154,6 @@ class EvalProgress(BaseModel):
     golden_dataset_fully_rated_count: int
     # The current selected eval method
     current_eval_method: EvalConfig | None
-    # The current selected run config
-    current_run_config: TaskRunConfig | None
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_legacy_field_names(cls, data: dict) -> dict:
-        """Migrate legacy field names for backward compatibility."""
-        if not isinstance(data, dict):
-            return data
-
-        # Migrate current_run_method to current_run_config
-        if "current_run_method" in data and "current_run_config" not in data:
-            data["current_run_config"] = data.pop("current_run_method")
-
-        return data
 
 
 class EvalResultSummary(BaseModel):
@@ -524,41 +509,6 @@ def connect_evals_api(app: FastAPI):
 
         return eval
 
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}"
-    )
-    async def set_default_run_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        run_config_id: str | None,
-    ) -> Eval:
-        task = task_from_id(project_id, task_id)
-
-        # Confirm the run config exists, unless the user is clearing the default run config
-        if run_config_id == "None":
-            run_config_id = None
-        else:
-            run_config = next(
-                (
-                    run_config
-                    for run_config in task.run_configs()
-                    if run_config.id == run_config_id
-                ),
-                None,
-            )
-            if run_config is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Run config not found.",
-                )
-
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.current_run_config_id = run_config_id
-        eval.save_to_file()
-
-        return eval
-
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval"
@@ -635,15 +585,6 @@ def connect_evals_api(app: FastAPI):
             None,
         )
 
-        current_run_config = next(
-            (
-                run_config
-                for run_config in task.run_configs()
-                if run_config.id == eval.current_run_config_id
-            ),
-            None,
-        )
-
         return EvalProgress(
             dataset_size=len(dataset_ids),
             golden_dataset_size=len(golden_dataset_runs),
@@ -651,7 +592,6 @@ def connect_evals_api(app: FastAPI):
             golden_dataset_partially_rated_count=partially_rated_count,
             golden_dataset_fully_rated_count=fully_rated_count,
             current_eval_method=current_eval_method,
-            current_run_config=current_run_config,
         )
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
