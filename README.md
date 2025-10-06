@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-    Evals, Synthetic Data, and Fine-Tuning Made Easy
+    Easily Build AI Systems
 </h3>
 
 <p align="center">
@@ -15,12 +15,11 @@
 </p>
 
 <p align="center">
-  <strong>Guides:</strong>
   <a href="https://docs.kiln.tech/docs/evaluations"><strong>Evals</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/agents"><strong>Agents</strong></a> • 
   <a href="https://docs.kiln.tech/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •
   <a href="https://docs.kiln.tech/docs/synthetic-data-generation"><strong>Synthetic Data</strong></a> • 
-  <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> • 
-  <a href="https://docs.kiln.tech/docs/quickstart"><strong>Quick Start</strong></a> • 
   <a href="https://docs.kiln.tech"><strong>All Docs</strong></a>
 </p>
 <p align="center">
@@ -39,9 +38,10 @@
 - 🚀 [**Intuitive Desktop Apps**](https://kiln.tech/download): One-click apps for Windows, MacOS, and Linux.
 - 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations): Evaluate the quality of your models/tasks using state of the art evaluators.
 - 🎛️ [**Fine Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide): Zero-code fine-tuning for Llama, GPT-4o, and more. Automatic serverless deployment of models.
-- 🤖 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation): Generate eval datasets or fine-tuning data with our interactive visual tooling.
 - 🔍 [**Docs & Search (RAG)**](https://docs.kiln.tech/docs/documents-and-search-rag): Add knowledge to your AI systems with Retrieval-Augmented Generation (RAG).
+- 🤖 [**Agents**](https://docs.kiln.tech/docs/agents): Build agentic systems with multiple actors
 - 🛠 [**Tools & MCP**](https://docs.kiln.tech/docs/tools-and-mcp): Connect powerful tools to your Kiln tasks
+- 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation): Generate eval datasets or fine-tuning data with our interactive visual tooling.
 - 🧠 [**Reasoning Models**](https://docs.kiln.tech/docs/guide-train-a-reasoning-model): Train or distill your own custom reasoning models.
 - 📝 [**Prompt Generation**](https://docs.kiln.tech/docs/prompts): Automatically generate prompts including chain-of-thought, few-shot, and multi-shot, and more.
 - 🌐 [**Comprehensive Model Support**](https://kiln.tech/model_library): Skip the guesswork — we've tested over 100 models' capabilities. Use any model via Ollama, OpenAI, OpenRouter, Fireworks, Groq, AWS, any OpenAI compatible API, and more.
