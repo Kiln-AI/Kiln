@@ -337,7 +337,7 @@ def test_deep_update_with_none_values():
     }
 
 
-def test_update_run_configuration():
+def test_update_run_method():
     run = TaskRun(
         input="Test input",
         input_source=DataSource(

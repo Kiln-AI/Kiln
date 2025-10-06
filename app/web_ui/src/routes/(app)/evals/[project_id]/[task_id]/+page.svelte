@@ -237,7 +237,7 @@
             <th></th>
             <th>Eval Name</th>
             <th>Description</th>
-            <th>Winning Run Configuration</th>
+            <th>Default Run Configuration</th>
           </tr>
         </thead>
         <tbody>
