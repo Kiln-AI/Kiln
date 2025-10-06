@@ -1,23 +1,17 @@
 <script lang="ts">
   import InfoTooltip from "./info_tooltip.svelte"
+  import type { CarouselFeature } from "./feature_carousel_types"
 
-  export let features: {
-    name: string
-    subtitle: string
-    description: string
-    tooltip?: string
-    on_click: () => void
-  }[]
+  export let features: CarouselFeature[]
 </script>
 
 <div
   class="carousel carousel-center max-w-full p-4 space-x-4 bg-base-200 rounded-box"
 >
-  {#each features as feature, index}
+  {#each features as feature}
     <div class="carousel-item">
       <div
-        class="card z-10 bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48"
-        style="z-index: {40 - index}"
+        class="card bg-base-100 shadow-md hover:shadow-xl hover:border-primary border border-base-200 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 w-48 hover:z-10"
         on:click={feature.on_click}
         on:keydown={(e) => {
           if (e.key === "Enter" || e.key === " ") {

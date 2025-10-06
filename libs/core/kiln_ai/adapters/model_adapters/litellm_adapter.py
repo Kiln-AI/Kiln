@@ -13,7 +13,6 @@ from litellm.types.utils import (
 )
 from litellm.types.utils import Message as LiteLLMMessage
 from litellm.types.utils import Usage as LiteLlmUsage
-from openai.types.chat import ChatCompletionToolMessageParam
 from openai.types.chat.chat_completion_message_tool_call_param import (
     ChatCompletionMessageToolCallParam,
 )
@@ -32,12 +31,14 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
+from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
+    ChatCompletionToolMessageParamWrapper,
 )
 
 MAX_CALLS_PER_TURN = 10
@@ -488,6 +489,21 @@ class LiteLlmAdapter(BaseAdapter):
             completion_kwargs["tools"] = tool_calls
             completion_kwargs["tool_choice"] = "auto"
 
+        # Special condition for Claude Opus 4.1 and Sonnet 4.5, where we can only specify top_p or temp, not both.
+        # Remove default values (1.0) prioritizing anything the user customized, then error with helpful message if they are both custom.
+        if provider.temp_top_p_exclusive:
+            if "top_p" in completion_kwargs and completion_kwargs["top_p"] == 1.0:
+                del completion_kwargs["top_p"]
+            if (
+                "temperature" in completion_kwargs
+                and completion_kwargs["temperature"] == 1.0
+            ):
+                del completion_kwargs["temperature"]
+            if "top_p" in completion_kwargs and "temperature" in completion_kwargs:
+                raise ValueError(
+                    "top_p and temperature can not both have custom values for this model. This is a restriction from the model provider. Please set only one of them to a custom value (not 1.0)."
+                )
+
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
             response_format_options = await self.response_format_options()
@@ -552,12 +568,12 @@ class LiteLlmAdapter(BaseAdapter):
 
     async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None
-    ) -> tuple[str | None, list[ChatCompletionToolMessageParam]]:
+    ) -> tuple[str | None, list[ChatCompletionToolMessageParamWrapper]]:
         if tool_calls is None:
             return None, []
 
         assistant_output_from_toolcall: str | None = None
-        tool_call_response_messages: list[ChatCompletionToolMessageParam] = []
+        tool_call_response_messages: list[ChatCompletionToolMessageParamWrapper] = []
 
         for tool_call in tool_calls:
             # Kiln "task_response" tool is used for returning structured output via tool calls.
@@ -594,13 +610,24 @@ class LiteLlmAdapter(BaseAdapter):
                     f"Failed to validate arguments for tool '{tool_name}'. The arguments didn't match the tool's schema. The arguments were: {parsed_args}\n The error was: {e}"
                 ) from e
 
-            result = await tool.run(**parsed_args)
+            # Create context with the calling task's allow_saving setting
+            context = ToolCallContext(
+                allow_saving=self.base_adapter_config.allow_saving
+            )
+            result = await tool.run(context, **parsed_args)
+            if isinstance(result, KilnTaskToolResult):
+                content = result.output
+                kiln_task_tool_data = result.kiln_task_tool_data
+            else:
+                content = result
+                kiln_task_tool_data = None
 
             tool_call_response_messages.append(
-                ChatCompletionToolMessageParam(
+                ChatCompletionToolMessageParamWrapper(
                     role="tool",
                     tool_call_id=tool_call.id,
-                    content=result,
+                    content=content,
+                    kiln_task_tool_data=kiln_task_tool_data,
                 )
             )
 

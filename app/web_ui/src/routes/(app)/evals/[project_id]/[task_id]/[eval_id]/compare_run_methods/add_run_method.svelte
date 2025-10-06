@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import type { StructuredOutputMode, AvailableModels } from "$lib/types"
+  import { save_new_task_run_config } from "$lib/stores/run_configs_store"
   import {
     load_available_prompts,
     load_available_models,
@@ -12,10 +12,11 @@
     load_task,
   } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import AvailableModelsDropdown from "../../../../../run/available_models_dropdown.svelte"
-  import PromptTypeSelector from "../../../../../run/prompt_type_selector.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
+  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
+  import AdvancedRunOptions from "$lib/ui/run_config_component/advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import RunOptions from "$lib/ui/run_options.svelte"
   import type { TaskRunConfig } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -75,34 +76,18 @@
     }
 
     try {
-      const { error, data } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-          body: {
-            run_config_properties: {
-              model_name: task_run_config_model_name,
-              // @ts-expect-error not checking types here, server will check them
-              model_provider_name: task_run_config_provider_name,
-              prompt_id: task_run_config_prompt_method,
-              temperature: task_run_config_temperature,
-              top_p: task_run_config_top_p,
-              structured_output_mode: task_run_config_structured_output_mode,
-              tools_config: {
-                tools: task_run_config_tools,
-              },
-            },
-          },
+      const data = await save_new_task_run_config(project_id, task_id, {
+        model_name: task_run_config_model_name,
+        // @ts-expect-error not checking types here, server will check them
+        model_provider_name: task_run_config_provider_name,
+        prompt_id: task_run_config_prompt_method,
+        temperature: task_run_config_temperature,
+        top_p: task_run_config_top_p,
+        structured_output_mode: task_run_config_structured_output_mode,
+        tools_config: {
+          tools: task_run_config_tools,
         },
-      )
-      if (error) {
-        throw error
-      }
+      })
       posthog.capture("add_run_method", {
         model_name: task_run_config_model_name,
         provider_name: task_run_config_provider_name,
@@ -149,6 +134,7 @@
   </h4>
   <div class="flex flex-col gap-2 pt-6">
     <AvailableModelsDropdown
+      {task_id}
       bind:model_name={task_run_config_model_name}
       bind:provider_name={task_run_config_provider_name}
       bind:model={task_run_config_long_prompt_name_provider}
@@ -158,15 +144,13 @@
       bind:prompt_method={task_run_config_prompt_method}
       bind:linked_model_selection={task_run_config_long_prompt_name_provider}
     />
+    <ToolsSelector bind:tools={task_run_config_tools} {project_id} {task_id} />
     <Collapse title="Advanced Options">
-      <RunOptions
-        bind:tools={task_run_config_tools}
+      <AdvancedRunOptions
         bind:temperature={task_run_config_temperature}
         bind:top_p={task_run_config_top_p}
         bind:structured_output_mode={task_run_config_structured_output_mode}
         has_structured_output={!!$current_task?.output_json_schema}
-        {project_id}
-        {task_id}
       />
     </Collapse>
     {#if add_task_config_error}

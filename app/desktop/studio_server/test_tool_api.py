@@ -8,14 +8,14 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX
 from kiln_ai.utils.config import MCP_SECRETS_KEY
-from kiln_ai.utils.dataset_import import format_validation_error
 from mcp.types import ListToolsResult, Tool
 from pydantic import ValidationError
 
 from app.desktop.studio_server.tool_api import (
-    ExternalToolServerCreationRequest,
-    LocalToolServerCreationRequest,
+    ExternalToolApiDescription,
     available_mcp_tools,
     connect_tool_servers_api,
     tool_server_from_id,
@@ -442,6 +442,7 @@ async def test_get_available_tool_servers_with_missing_secrets(client, test_proj
         "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -468,6 +469,8 @@ async def test_get_available_tool_servers_with_missing_secrets(client, test_proj
                 {},
                 ["Authorization", "X-API-Key"],
             )
+            # Mock properties.get to return False for is_archived
+            mock_tool_server.properties = {"is_archived": False}
 
             # Mock the project's external_tool_servers method
             mock_project = Mock()
@@ -500,6 +503,7 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
         "env_vars": {"DATABASE_URL": "postgres://localhost", "API_KEY": "secret"},
         "secret_env_var_keys": ["API_KEY"],
         "description": "Local tool with missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -530,6 +534,8 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
             mock_tool_server.type = ToolServerType.local_mcp
             mock_tool_server.description = "Local tool with missing secrets"
             mock_tool_server.retrieve_secrets.return_value = ({}, ["API_KEY"])
+            # Mock properties.get to return False for is_archived
+            mock_tool_server.properties = {"is_archived": False}
 
             # Mock the project's external_tool_servers method
             mock_project = Mock()
@@ -735,8 +741,9 @@ async def test_get_available_tools_success(client, test_project):
 
 
 async def test_get_available_tools_multiple_servers(client, test_project):
-    """Test get_available_tools with multiple tool servers"""
-    # Create first tool server
+    """Test get_available_tools with multiple tool servers including kiln task tools"""
+
+    # Create first MCP tool server
     tool_data_1 = {
         "name": "mcp_server_1",
         "server_url": "https://example1.com/mcp",
@@ -744,13 +751,46 @@ async def test_get_available_tools_multiple_servers(client, test_project):
         "description": "First MCP server",
     }
 
-    # Create second tool server
+    # Create second MCP tool server
     tool_data_2 = {
         "name": "mcp_server_2",
         "server_url": "https://example2.com/mcp",
         "headers": {},
         "description": "Second MCP server",
     }
+
+    # Create kiln task tool servers
+    kiln_task_server_1 = ExternalToolServer(
+        name="kiln_task_server_1",
+        type=ToolServerType.kiln_task,
+        description="First kiln task server",
+        properties={
+            "name": "test_task_tool_1",
+            "description": "First test task tool",
+            "task_id": "task_1",
+            "run_config_id": "run_config_1",
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+
+    kiln_task_server_2 = ExternalToolServer(
+        name="kiln_task_server_2",
+        type=ToolServerType.kiln_task,
+        description="Second kiln task server",
+        properties={
+            "name": "test_task_tool_2",
+            "description": "Second test task tool",
+            "task_id": "task_2",
+            "run_config_id": "run_config_2",
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+
+    # Save the kiln task tool servers
+    kiln_task_server_1.save_to_file()
+    kiln_task_server_2.save_to_file()
 
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
@@ -809,7 +849,7 @@ async def test_get_available_tools_multiple_servers(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 2
+            assert len(set_result) == 3  # 2 MCP servers + 1 kiln task set
 
             # Find sets by name instead of assuming order
             server1_set = next(
@@ -820,6 +860,10 @@ async def test_get_available_tools_multiple_servers(client, test_project):
                 (s for s in set_result if s["set_name"] == "MCP Server: mcp_server_2"),
                 None,
             )
+            kiln_task_set = next(
+                (s for s in set_result if s["set_name"] == "Kiln Tasks as Tools"),
+                None,
+            )
 
             assert server1_set is not None, (
                 "Could not find MCP Server: mcp_server_1 in results"
@@ -827,21 +871,42 @@ async def test_get_available_tools_multiple_servers(client, test_project):
             assert server2_set is not None, (
                 "Could not find MCP Server: mcp_server_2 in results"
             )
+            assert kiln_task_set is not None, (
+                "Could not find Kiln Tasks as Tools in results"
+            )
 
             assert len(server1_set["tools"]) == 2  # 2 from server1
             assert len(server2_set["tools"]) == 1  # 1 from server2
+            assert len(kiln_task_set["tools"]) == 2  # 2 kiln task tools
 
             for tool in server1_set["tools"]:
                 assert tool["id"].startswith(f"mcp::remote::{server1_id}::")
             for tool in server2_set["tools"]:
                 assert tool["id"].startswith(f"mcp::remote::{server2_id}::")
+            for tool in kiln_task_set["tools"]:
+                assert tool["id"].startswith(KILN_TASK_TOOL_ID_PREFIX)
 
-            # Verify tools from both servers are present
+            # Verify MCP tools from both servers are present
             tool_names = [tool["name"] for tool in server1_set["tools"]]
             assert "tool_a" in tool_names
             assert "tool_b" in tool_names
             tool_names = [tool["name"] for tool in server2_set["tools"]]
             assert "tool_x" in tool_names
+
+            # Verify kiln task tool names
+            kiln_tool_names = [tool["name"] for tool in kiln_task_set["tools"]]
+            assert "test_task_tool_1" in kiln_tool_names
+            assert "test_task_tool_2" in kiln_tool_names
+
+            # Verify kiln task tool IDs
+            tool1 = next(
+                t for t in kiln_task_set["tools"] if t["name"] == "test_task_tool_1"
+            )
+            assert tool1["id"] == f"{KILN_TASK_TOOL_ID_PREFIX}{kiln_task_server_1.id}"
+            tool2 = next(
+                t for t in kiln_task_set["tools"] if t["name"] == "test_task_tool_2"
+            )
+            assert tool2["id"] == f"{KILN_TASK_TOOL_ID_PREFIX}{kiln_task_server_2.id}"
 
 
 async def test_get_available_tools_mcp_error_handling(client, test_project):
@@ -1728,6 +1793,31 @@ async def test_available_mcp_tools_local_success():
         assert echo_tool.description == "Local echo tool"
 
 
+@pytest.mark.asyncio
+async def test_available_mcp_tools_kiln_task_raises_value_error():
+    """Test available_mcp_tools raises ValueError when called with kiln_task server type"""
+
+    # Create a mock ExternalToolServer with kiln_task type
+    server = ExternalToolServer(
+        name="test_kiln_task",
+        type=ToolServerType.kiln_task,
+        description="Test Kiln task server",
+        properties={
+            "name": "test_task",
+            "description": "Test task description",
+            "is_archived": False,
+            "task_id": "test_task_id",
+            "run_config_id": "test_run_config_id",
+        },
+    )
+
+    # Test that ValueError is raised
+    with pytest.raises(
+        ValueError, match="Kiln task tools are not available from an MCP server"
+    ):
+        await available_mcp_tools(server)
+
+
 # Unit tests for validate_tool_server_connectivity function
 @pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_success():
@@ -1815,6 +1905,26 @@ async def test_validate_tool_server_connectivity_mcp_with_minimal_properties():
 
 
 @pytest.mark.asyncio
+async def test_validate_tool_server_connectivity_kiln_task():
+    """Test validate_tool_server_connectivity does nothing for kiln_task type"""
+    tool_server = ExternalToolServer(
+        name="kiln_task_server",
+        type=ToolServerType.kiln_task,
+        description="Kiln task tool server",
+        properties={
+            "name": "kiln_task_server",
+            "description": "Kiln task tool server",
+            "task_id": "test_task_id",
+            "run_config_id": "test_run_config_id",
+            "is_archived": False,
+        },
+    )
+
+    # Should complete without any exceptions or network calls
+    await validate_tool_server_connectivity(tool_server)
+
+
+@pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_with_headers():
     """Test validate_tool_server_connectivity works correctly with custom headers"""
     tool_server = ExternalToolServer(
@@ -1855,89 +1965,6 @@ async def test_validate_tool_server_connectivity_empty_headers():
         await validate_tool_server_connectivity(tool_server)
 
 
-def test_external_tool_server_creation_request_invalid_url_format():
-    """Test ExternalToolServerCreationRequest rejects malformed URLs"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="invalid_url_server",
-            server_url="https://",  # Invalid URL format - scheme without netloc
-            headers={},
-            description="Server with malformed URL",
-        )
-
-    error_str = str(exc_info.value)
-    assert "Server URL is not a valid URL" in error_str
-
-
-def test_external_tool_server_creation_request_invalid_header_name():
-    """Test ExternalToolServerCreationRequest rejects invalid header names"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="invalid_header_server",
-            server_url="https://example.com/mcp",
-            headers={
-                "invalid@header": "value",  # Invalid character in header name
-            },
-            description="Server with invalid header name",
-        )
-
-    error_str = str(exc_info.value)
-    assert 'Invalid header name: "invalid@header"' in error_str
-
-
-def test_external_tool_server_creation_request_header_with_cr_lf():
-    """Test ExternalToolServerCreationRequest rejects headers with CR/LF characters"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="crlf_header_server",
-            server_url="https://example.com/mcp",
-            headers={
-                "Authorization": "Bearer token\r\nX-Injected: evil",  # CR/LF injection
-            },
-            description="Server with CR/LF in headers",
-        )
-
-    error_str = str(exc_info.value)
-    assert "Header names/values must not contain invalid characters" in error_str
-
-
-def test_external_tool_server_creation_request_empty_header_name():
-    """Test ExternalToolServerCreationRequest rejects empty header names"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="empty_header_name_server",
-            server_url="https://example.com/mcp",
-            headers={
-                "": "some_value",  # Empty header name
-            },
-            description="Server with empty header name",
-        )
-
-    error_str = str(exc_info.value)
-    assert "Header name is required" in error_str
-
-
-def test_external_tool_server_creation_request_empty_header_value():
-    """Test ExternalToolServerCreationRequest rejects empty header values"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="empty_header_value_server",
-            server_url="https://example.com/mcp",
-            headers={
-                "Authorization": "",  # Empty header value
-            },
-            description="Server with empty header value",
-        )
-
-    error_str = str(exc_info.value)
-    assert "Header value is required" in error_str
-
-
 @pytest.mark.asyncio
 async def test_validate_tool_server_connectivity_valid_complex_headers():
     """Test validate_tool_server_connectivity accepts valid complex headers"""
@@ -1960,859 +1987,6 @@ async def test_validate_tool_server_connectivity_valid_complex_headers():
     async with mock_mcp_success():
         # Should succeed with valid complex headers
         await validate_tool_server_connectivity(tool_server)
-
-
-def test_external_tool_server_creation_request_invalid_url_simple_string():
-    """Test ExternalToolServerCreationRequest rejects simple string URLs like 'asdf'"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="invalid_simple_url_server",
-            server_url="asdf",  # Simple invalid URL like the user's case
-            headers={},
-            description="Server with simple invalid URL",
-        )
-
-    # Verify the error can be formatted properly and contains expected message
-    formatted_error = format_validation_error(exc_info.value)
-    assert "Server URL must start with http:// or https://" in formatted_error
-
-
-# Comprehensive tests for ExternalToolServerCreationRequest validation
-def test_external_tool_server_creation_request_valid_minimal():
-    """Test ExternalToolServerCreationRequest with minimal valid data"""
-    request = ExternalToolServerCreationRequest(
-        name="Test Server",
-        server_url="https://example.com",
-    )
-
-    assert request.name == "Test Server"
-    assert request.server_url == "https://example.com"
-    assert request.headers == {}
-    assert request.description is None
-
-
-def test_external_tool_server_creation_request_valid_complete():
-    """Test ExternalToolServerCreationRequest with all valid fields"""
-    headers = {"Authorization": "Bearer token123", "X-Custom": "value"}
-
-    request = ExternalToolServerCreationRequest(
-        name="Complete Server",
-        server_url="https://api.example.com/mcp",
-        headers=headers,
-        description="A complete server configuration",
-    )
-
-    assert request.name == "Complete Server"
-    assert request.server_url == "https://api.example.com/mcp"
-    assert request.headers == headers
-    assert request.description == "A complete server configuration"
-
-
-def test_external_tool_server_creation_request_url_with_leading_whitespace_fails():
-    """Test that server URLs with leading whitespace are rejected by stricter validation"""
-
-    # Test URLs with leading whitespace (should fail)
-    leading_whitespace_urls = [
-        "  https://example.com/mcp",  # Leading spaces
-        " https://example.com/mcp",  # Single leading space
-        "\thttps://example.com/mcp",  # Leading tab
-        "\nhttps://example.com/mcp",  # Leading newline
-    ]
-
-    for url in leading_whitespace_urls:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Leading Whitespace URL Server",
-                server_url=url,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Server URL must not have leading whitespace" in error_str
-
-
-def test_external_tool_server_creation_request_url_with_trailing_whitespace_succeeds():
-    """Test that server URLs with trailing whitespace are accepted"""
-
-    # Test URLs with trailing whitespace (should succeed)
-    trailing_whitespace_urls = [
-        "https://example.com/mcp ",  # Trailing space
-        "https://example.com/mcp\t",  # Trailing tab
-        "https://example.com/mcp  ",  # Multiple trailing spaces
-    ]
-
-    for url in trailing_whitespace_urls:
-        request = ExternalToolServerCreationRequest(
-            name="Trailing Whitespace URL Server",
-            server_url=url,
-        )
-        # URL should be preserved as-is
-        assert request.server_url == url
-
-
-def test_external_tool_server_creation_request_header_with_whitespace_fails():
-    """Test that headers with whitespace in keys are rejected"""
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Whitespace Header Server",
-            server_url="https://example.com",
-            headers={
-                "  Authorization  ": "Bearer token123",  # Whitespace in key should fail
-                "X-Custom": "value",
-            },
-        )
-
-    error_str = str(exc_info.value)
-    assert 'Invalid header name: "  Authorization  "' in error_str
-
-
-def test_external_tool_server_creation_request_http_scheme():
-    """Test that HTTP scheme is also valid"""
-    request = ExternalToolServerCreationRequest(
-        name="HTTP Server",
-        server_url="http://localhost:8080/mcp",
-    )
-
-    assert request.server_url == "http://localhost:8080/mcp"
-
-
-def test_external_tool_server_creation_request_complex_valid_headers():
-    """Test with complex but valid header names and values"""
-
-    # Valid complex headers
-    request = ExternalToolServerCreationRequest(
-        name="Complex Headers Server",
-        server_url="https://example.com",
-        headers={
-            "X-API-Key": "sk-1234567890abcdef",
-            "Accept": "application/json",
-            "User-Agent": "Kiln/1.0",
-            "X-Rate-Limit": "1000",
-            "Content-Type": "application/json; charset=utf-8",
-        },
-    )
-
-    assert len(request.headers) == 5
-    assert request.headers["X-API-Key"] == "sk-1234567890abcdef"
-
-
-def test_external_tool_server_creation_request_secret_headers_valid():
-    """Test ExternalToolServerCreationRequest with valid secret headers"""
-    request = ExternalToolServerCreationRequest(
-        name="Secret Headers Server",
-        server_url="https://example.com",
-        headers={
-            "Authorization": "Bearer secret-token",
-            "X-API-Key": "api-key-123",
-            "Content-Type": "application/json",
-        },
-        secret_header_keys=["Authorization", "X-API-Key"],
-    )
-
-    assert request.name == "Secret Headers Server"
-    assert request.server_url == "https://example.com"
-    assert len(request.headers) == 3
-    assert len(request.secret_header_keys) == 2
-    assert "Authorization" in request.secret_header_keys
-    assert "X-API-Key" in request.secret_header_keys
-
-
-def test_external_tool_server_creation_request_secret_headers_empty_list():
-    """Test ExternalToolServerCreationRequest with empty secret headers list"""
-    request = ExternalToolServerCreationRequest(
-        name="No Secret Headers Server",
-        server_url="https://example.com",
-        headers={"Content-Type": "application/json"},
-        secret_header_keys=[],
-    )
-
-    assert request.secret_header_keys == []
-    assert len(request.headers) == 1
-
-
-def test_external_tool_server_creation_request_secret_headers_not_in_headers():
-    """Test ExternalToolServerCreationRequest rejects secret header keys not in headers"""
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Invalid Secret Server",
-            server_url="https://example.com",
-            headers={"Content-Type": "application/json"},
-            secret_header_keys=["Authorization"],  # Not in headers
-        )
-
-    error_str = str(exc_info.value)
-    assert "Secret header key Authorization is not in the headers" in error_str
-
-
-def test_external_tool_server_creation_request_secret_headers_empty_key():
-    """Test ExternalToolServerCreationRequest rejects empty secret header keys"""
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Empty Secret Key Server",
-            server_url="https://example.com",
-            headers={"Authorization": "Bearer token"},
-            secret_header_keys=[""],  # Empty key
-        )
-
-    error_str = str(exc_info.value)
-    assert "Secret header key is required" in error_str
-
-
-def test_external_tool_server_creation_request_secret_headers_with_whitespace_fails():
-    """Test that secret header keys with whitespace are rejected"""
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Whitespace Secret Headers Server",
-            server_url="https://example.com",
-            headers={
-                "Authorization": "Bearer token",
-                "X-API-Key": "key123",
-            },
-            secret_header_keys=[
-                "  Authorization  ",
-                " X-API-Key ",
-            ],  # Whitespace should fail
-        )
-
-    error_str = str(exc_info.value)
-    assert "Secret header key   Authorization   is not in the headers" in error_str
-
-
-def test_external_tool_server_creation_request_secret_headers_multiple_validation_errors():
-    """Test that multiple secret header validation errors are caught"""
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Multiple Errors Server",
-            server_url="https://example.com",
-            headers={"Content-Type": "application/json"},
-            secret_header_keys=["", "NonExistentHeader"],  # Empty and non-existent
-        )
-
-    error_str = str(exc_info.value)
-    # Should catch the first error (empty key)
-    assert "Secret header key is required" in error_str
-
-
-def test_external_tool_server_creation_request_empty_url():
-    """Test that empty server URL is rejected"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Empty URL Server",
-            server_url="",
-        )
-
-    error_str = str(exc_info.value)
-    assert "Server URL is required" in error_str
-
-
-def test_external_tool_server_creation_request_url_without_netloc():
-    """Test various malformed URLs"""
-
-    invalid_urls = [
-        "https://",
-        "http://",
-        "https:///path",
-        "http:///path",
-    ]
-
-    for invalid_url in invalid_urls:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Invalid URL Server",
-                server_url=invalid_url,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Server URL is not a valid URL" in error_str
-
-
-def test_external_tool_server_creation_request_various_schemes_accepted():
-    """Test that various URL schemes are currently accepted (urlparse is lenient)"""
-
-    # These schemes are currently accepted due to lenient urlparse validation
-    invalid_schemes = [
-        "ftp://example.com",
-        "ssh://user@example.com",
-        "tcp://example.com:1234",
-        "file:///path/to/file",
-        "mailto:user@example.com",
-    ]
-
-    for url in invalid_schemes:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Various Scheme Server",
-                server_url=url,
-            )
-        assert "Server URL must start with http:// or https://" in str(exc_info.value)
-
-
-def test_external_tool_server_creation_request_invalid_header_characters():
-    """Test various invalid header name characters"""
-
-    invalid_headers = [
-        {"invalid header": "value"},  # Space in name
-        {"invalid@header": "value"},  # @ symbol
-        {"invalid(header)": "value"},  # Parentheses
-        {"invalid[header]": "value"},  # Brackets
-        {"invalid{header}": "value"},  # Braces
-        {"invalid<header>": "value"},  # Angle brackets
-        {"invalid/header": "value"},  # Forward slash
-        {"invalid\\header": "value"},  # Backslash
-        {"invalid:header": "value"},  # Colon
-        {"invalid;header": "value"},  # Semicolon
-        {"invalid=header": "value"},  # Equals
-        {"invalid?header": "value"},  # Question mark
-        {"invalid,header": "value"},  # Comma
-    ]
-
-    for headers in invalid_headers:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Invalid Header Server",
-                server_url="https://example.com",
-                headers=headers,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Invalid header name" in error_str
-
-
-def test_external_tool_server_creation_request_header_injection():
-    """Test prevention of header injection attacks"""
-
-    # Test header value injection
-    value_injection_attempts = [
-        {"Authorization": "Bearer token\r\nX-Injected: evil"},
-        {"Authorization": "Bearer token\nX-Injected: evil"},
-    ]
-
-    for headers in value_injection_attempts:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Injection Server",
-                server_url="https://example.com",
-                headers=headers,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Header names/values must not contain invalid characters" in error_str
-
-    # Test header name injection (these will fail with invalid header name error)
-    name_injection_attempts = [
-        {"X-Header\r\nX-Injected": "value"},
-        {"X-Header\nX-Injected": "value"},
-    ]
-
-    for headers in name_injection_attempts:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Injection Server",
-                server_url="https://example.com",
-                headers=headers,
-            )
-
-        error_str = str(exc_info.value)
-        # Header names with CR/LF will be caught by the invalid header name regex
-        assert (
-            "Invalid header name" in error_str
-            or "Header names/values must not contain invalid characters" in error_str
-        )
-
-
-def test_external_tool_server_creation_request_non_string_headers():
-    """Test that non-string header keys and values are rejected by Pydantic"""
-
-    # Non-string header keys should be rejected
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Non-String Headers Server",
-            server_url="https://example.com",
-            headers={
-                123: "value",  # Non-string key  # type: ignore
-            },
-        )
-
-    error_str = str(exc_info.value)
-    assert "Input should be a valid string" in error_str
-
-    # Non-string header values should be rejected
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Non-String Headers Server",
-            server_url="https://example.com",
-            headers={
-                "key": 456,  # Non-string value  # type: ignore
-            },
-        )
-
-    error_str = str(exc_info.value)
-    assert "Input should be a valid string" in error_str
-
-
-def test_external_tool_server_creation_request_whitespace_only_headers():
-    """Test validation behavior for whitespace-only header names and values"""
-
-    # Whitespace-only header names should be rejected (invalid header name format)
-    whitespace_name_cases = [
-        {"   ": "value"},  # Whitespace-only name
-        {"\t\n": "value"},  # Tab/newline only name
-    ]
-
-    for headers in whitespace_name_cases:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Whitespace Header Name Server",
-                server_url="https://example.com",
-                headers=headers,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Invalid header name" in error_str
-
-    # Whitespace-only header values are currently accepted (except CR/LF)
-    whitespace_value_cases = [
-        {"name": "   "},  # Whitespace-only value (spaces)
-        {"name": "\t"},  # Tab only (no newlines)
-    ]
-
-    for headers in whitespace_value_cases:
-        request = ExternalToolServerCreationRequest(
-            name="Whitespace Header Value Server",
-            server_url="https://example.com",
-            headers=headers,
-        )
-        # Values are preserved as-is
-        assert next(iter(headers.values())) in request.headers.values()
-
-    # Header values with CR/LF are rejected
-    invalid_value_cases = [
-        {"name": "\t\n"},  # Tab/newline (contains \n)
-        {"name": "\r"},  # Carriage return
-    ]
-
-    for headers in invalid_value_cases:
-        with pytest.raises(ValidationError) as exc_info:
-            ExternalToolServerCreationRequest(
-                name="Invalid Header Value Server",
-                server_url="https://example.com",
-                headers=headers,
-            )
-
-        error_str = str(exc_info.value)
-        assert "Header names/values must not contain invalid characters" in error_str
-
-
-def test_external_tool_server_creation_request_model_validator_integration():
-    """Test that the model validator works correctly with combined URL and header validation"""
-
-    # Test successful validation with clean inputs (no whitespace)
-    request = ExternalToolServerCreationRequest(
-        name="Integration Test Server",
-        server_url="https://api.example.com/mcp",  # Clean URL without whitespace
-        headers={
-            "Authorization": "Bearer token123",  # Clean headers without whitespace
-            "X-Custom-Header": "custom-value",
-        },
-        description="Integration test for model validator",
-    )
-
-    # Verify values are preserved as-is
-    assert request.server_url == "https://api.example.com/mcp"
-    assert request.headers["Authorization"] == "Bearer token123"
-    assert request.headers["X-Custom-Header"] == "custom-value"
-
-    # Test that both URL and header validation work together
-    with pytest.raises(ValidationError) as exc_info:
-        ExternalToolServerCreationRequest(
-            name="Bad Integration Server",
-            server_url="ftp://invalid.com",  # Invalid scheme
-            headers={
-                "invalid@header": "value",  # Invalid header name
-            },
-        )
-
-    error_str = str(exc_info.value)
-    # Should catch validation errors (header validation happens first in this case)
-    assert (
-        "Invalid header name" in error_str
-        or "Server URL must start with http:// or https://" in error_str
-    )
-
-
-# Tests for LocalToolServerCreationRequest validation
-def test_local_tool_server_creation_request_valid_minimal():
-    """Test LocalToolServerCreationRequest with minimal valid data"""
-    request = LocalToolServerCreationRequest(
-        name="Test Local Server",
-        command="python",
-        args=["-m", "test_server"],
-    )
-
-    assert request.name == "Test Local Server"
-    assert request.command == "python"
-    assert request.args == ["-m", "test_server"]
-    assert request.env_vars == {}
-    assert request.description is None
-
-
-def test_local_tool_server_creation_request_valid_complete():
-    """Test LocalToolServerCreationRequest with all valid fields"""
-    env_vars = {"PATH": "/usr/bin", "ENV_VAR": "value"}
-
-    request = LocalToolServerCreationRequest(
-        name="Complete Local Server",
-        command="/usr/bin/python3",
-        args=["-m", "my_mcp_server", "--config", "config.json"],
-        env_vars=env_vars,
-        description="A complete local server configuration",
-    )
-
-    assert request.name == "Complete Local Server"
-    assert request.command == "/usr/bin/python3"
-    assert request.args == ["-m", "my_mcp_server", "--config", "config.json"]
-    assert request.env_vars == env_vars
-    assert request.description == "A complete local server configuration"
-
-
-def test_local_tool_server_creation_request_empty_command():
-    """Test LocalToolServerCreationRequest rejects empty command"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Empty Command Server",
-            command="",  # Empty command should fail validation
-            args=["arg1"],
-        )
-
-    error_str = str(exc_info.value)
-    assert "Command is required" in error_str
-
-
-def test_local_tool_server_creation_request_missing_command():
-    """Test LocalToolServerCreationRequest rejects missing command"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(  # type: ignore
-            name="Missing Command Server",
-            args=["arg1"],
-            # Missing required command field
-        )
-
-    assert exc_info.value.error_count() > 0
-
-
-def test_local_tool_server_creation_request_empty_args():
-    """Test LocalToolServerCreationRequest accepts empty args list"""
-
-    request = LocalToolServerCreationRequest(
-        name="Empty Args Server",
-        command="python",
-        args=[],  # Empty args should now be allowed
-    )
-
-    assert request.name == "Empty Args Server"
-    assert request.command == "python"
-    assert request.args == []
-
-
-def test_local_tool_server_creation_request_missing_args():
-    """Test LocalToolServerCreationRequest rejects missing args"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(  # type: ignore
-            name="Missing Args Server",
-            command="python",
-            # Missing required args field
-        )
-
-    assert exc_info.value.error_count() > 0
-
-
-def test_local_tool_server_creation_request_empty_name():
-    """Test LocalToolServerCreationRequest accepts empty name (no validation on request)"""
-    # Note: The API request classes don't validate names - validation happens on the domain objects
-    request = LocalToolServerCreationRequest(
-        name="",  # Empty name is allowed in request object
-        command="python",
-        args=["-m", "server"],
-    )
-
-    assert request.name == ""
-    assert request.command == "python"
-    assert request.args == ["-m", "server"]
-
-
-def test_local_tool_server_creation_request_missing_name():
-    """Test LocalToolServerCreationRequest rejects missing name"""
-
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(  # type: ignore
-            command="python",
-            args=["-m", "server"],
-            # Missing required name field
-        )
-
-    assert exc_info.value.error_count() > 0
-
-
-def test_local_tool_server_creation_request_no_description():
-    """Test LocalToolServerCreationRequest works without description (optional field)"""
-    request = LocalToolServerCreationRequest(
-        name="No Description Server",
-        command="python",
-        args=["-m", "server"],
-        # description is optional
-    )
-
-    assert request.description is None
-
-
-def test_local_tool_server_creation_request_empty_env_vars():
-    """Test LocalToolServerCreationRequest works with empty env_vars (default)"""
-    request = LocalToolServerCreationRequest(
-        name="Default Env Server",
-        command="python",
-        args=["-m", "server"],
-        # env_vars defaults to empty dict
-    )
-
-    assert request.env_vars == {}
-
-
-def test_local_tool_server_creation_request_with_env_vars():
-    """Test LocalToolServerCreationRequest with custom environment variables"""
-    env_vars = {
-        "PYTHON_PATH": "/opt/python/bin",
-        "CONFIG_FILE": "/etc/config.json",
-        "DEBUG": "true",
-        "PORT": "8080",
-    }
-
-    request = LocalToolServerCreationRequest(
-        name="Env Vars Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars=env_vars,
-    )
-
-    assert request.env_vars == env_vars
-
-
-def test_local_tool_server_creation_request_various_commands():
-    """Test LocalToolServerCreationRequest with various command formats"""
-    test_cases = [
-        ("python", ["-m", "server"]),
-        ("/usr/bin/python3", ["script.py", "--verbose"]),
-        ("node", ["index.js", "--port", "3000"]),
-        ("./local_server", ["--config", "conf.yaml"]),
-        ("/path/to/executable", ["--flag1", "--flag2", "value"]),
-    ]
-
-    for command, args in test_cases:
-        request = LocalToolServerCreationRequest(
-            name=f"Server for {command}",
-            command=command,
-            args=args,
-        )
-
-        assert request.command == command
-        assert request.args == args
-
-
-def test_local_tool_server_creation_request_unicode_name():
-    """Test LocalToolServerCreationRequest with Unicode characters in name"""
-    request = LocalToolServerCreationRequest(
-        name="本地服务器",  # Chinese characters
-        command="python",
-        args=["-m", "server"],
-        description="Local server with émojis 🚀 and spéciàl characters",
-    )
-
-    assert request.name == "本地服务器"
-    assert request.description is not None and "émojis 🚀" in request.description
-
-
-def test_local_tool_server_creation_request_valid_env_var_keys():
-    """Test LocalToolServerCreationRequest with valid environment variable keys"""
-    valid_env_vars = {
-        "PATH": "/usr/bin",
-        "HOME": "/home/user",
-        "PYTHON_PATH": "/opt/python",
-        "_PRIVATE_VAR": "private",
-        "VAR_123": "value123",
-        "a": "single_letter",
-        "A": "single_uppercase",
-        "_": "single_underscore",
-        "VAR_WITH_UNDERSCORES": "value",
-        "CamelCase": "mixed_case",
-        "UPPER_CASE": "upper",
-        "lower_case": "lower",
-        "Mixed_Case_123": "mixed",
-    }
-
-    request = LocalToolServerCreationRequest(
-        name="Valid Env Vars Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars=valid_env_vars,
-    )
-
-    assert request.env_vars == valid_env_vars
-
-
-def test_local_tool_server_creation_request_invalid_env_var_key_start_digit():
-    """Test LocalToolServerCreationRequest rejects env var keys starting with digits"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Invalid Env Key Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={"123_INVALID": "value"},  # Starts with digit
-        )
-
-    error_str = str(exc_info.value)
-    assert "Invalid environment variable key: 123_INVALID" in error_str
-    assert "Must start with a letter or underscore" in error_str
-
-
-def test_local_tool_server_creation_request_invalid_env_var_key_special_chars():
-    """Test LocalToolServerCreationRequest rejects env var keys with invalid characters"""
-    invalid_keys = [
-        ("KEY-WITH-DASHES", "dash"),
-        ("KEY.WITH.DOTS", "dot"),
-        ("KEY WITH SPACES", "space"),
-        ("KEY@SYMBOL", "at symbol"),
-        ("KEY#HASH", "hash"),
-        ("KEY$DOLLAR", "dollar sign"),
-        ("KEY%PERCENT", "percent"),
-        ("KEY&AMPERSAND", "ampersand"),
-        ("KEY*ASTERISK", "asterisk"),
-        ("KEY+PLUS", "plus"),
-        ("KEY=EQUALS", "equals"),
-        ("KEY[BRACKET]", "bracket"),
-        ("KEY{BRACE}", "brace"),
-        ("KEY(PAREN)", "parenthesis"),
-        ("KEY|PIPE", "pipe"),
-        ("KEY\\BACKSLASH", "backslash"),
-        ("KEY/SLASH", "slash"),
-        ("KEY:COLON", "colon"),
-        ("KEY;SEMICOLON", "semicolon"),
-        ("KEY<LESS>", "angle bracket"),
-        ("KEY?QUESTION", "question mark"),
-        ("KEY,COMMA", "comma"),
-    ]
-
-    for invalid_key, description in invalid_keys:
-        with pytest.raises(ValidationError) as exc_info:
-            LocalToolServerCreationRequest(
-                name="Invalid Env Key Server",
-                command="python",
-                args=["-m", "server"],
-                env_vars={invalid_key: "value"},
-            )
-
-        error_str = str(exc_info.value)
-        assert f"Invalid environment variable key: {invalid_key}" in error_str
-        assert "Can only contain letters, digits, and underscores" in error_str
-
-
-def test_local_tool_server_creation_request_invalid_env_var_key_non_ascii():
-    """Test LocalToolServerCreationRequest rejects env var keys with non-ASCII characters"""
-    invalid_keys = [
-        "KEY_WITH_ÉMOJI_🚀",
-        "键名",  # Chinese characters
-        "CLAVÉ",  # Accented characters
-        "КЛЮЧ",  # Cyrillic characters
-        "مفتاح",  # Arabic characters
-    ]
-
-    for invalid_key in invalid_keys:
-        with pytest.raises(ValidationError) as exc_info:
-            LocalToolServerCreationRequest(
-                name="Invalid Env Key Server",
-                command="python",
-                args=["-m", "server"],
-                env_vars={invalid_key: "value"},
-            )
-
-        error_str = str(exc_info.value)
-        assert f"Invalid environment variable key: {invalid_key}" in error_str
-        # Should match either error message depending on the character
-        assert (
-            "Must start with a letter or underscore" in error_str
-            or "Can only contain letters, digits, and underscores" in error_str
-        )
-
-
-def test_local_tool_server_creation_request_empty_env_var_key():
-    """Test LocalToolServerCreationRequest rejects empty environment variable keys"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Empty Env Key Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={"": "value"},  # Empty key
-        )
-
-    error_str = str(exc_info.value)
-    assert "Invalid environment variable key:" in error_str
-    assert "Must start with a letter or underscore" in error_str
-
-
-def test_local_tool_server_creation_request_env_var_key_edge_cases():
-    """Test LocalToolServerCreationRequest with edge cases for environment variable keys"""
-    # Test single character valid keys
-    valid_single_chars = {
-        "A": "uppercase_letter",
-        "a": "lowercase_letter",
-        "Z": "last_uppercase",
-        "z": "last_lowercase",
-        "_": "underscore_only",
-    }
-
-    request = LocalToolServerCreationRequest(
-        name="Edge Case Env Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars=valid_single_chars,
-    )
-    assert request.env_vars == valid_single_chars
-
-    # Test invalid single character keys
-    invalid_single_chars = ["0", "9", "@", "#", "-", ".", " "]
-
-    for invalid_char in invalid_single_chars:
-        with pytest.raises(ValidationError) as exc_info:
-            LocalToolServerCreationRequest(
-                name="Invalid Single Char Env Server",
-                command="python",
-                args=["-m", "server"],
-                env_vars={invalid_char: "value"},
-            )
-
-        error_str = str(exc_info.value)
-        assert f"Invalid environment variable key: {invalid_char}" in error_str
-
-
-def test_local_tool_server_creation_request_mixed_valid_invalid_env_vars():
-    """Test LocalToolServerCreationRequest with mix of valid and invalid env var keys"""
-    # Should fail on the first invalid key encountered
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Mixed Env Vars Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={
-                "VALID_KEY": "valid_value",
-                "123_INVALID": "invalid_value",  # This should cause failure
-                "ANOTHER_VALID": "another_valid",
-            },
-        )
-
-    error_str = str(exc_info.value)
-    assert "Invalid environment variable key: 123_INVALID" in error_str
 
 
 # Tests for connect_local_mcp endpoint
@@ -2946,31 +2120,6 @@ def test_create_local_tool_server_missing_args(client, test_project):
         )
 
         assert response.status_code == 422  # Validation error
-
-
-def test_create_local_tool_server_empty_command(client, test_project):
-    """Test local tool server creation fails when command is empty"""
-    tool_data = {
-        "name": "empty_command_tool",
-        "command": "",  # Empty command
-        "args": ["-m", "server"],
-        "description": "Tool with empty command",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error from Pydantic
-        error_data = response.json()
-        # The validation error should mention command
-        assert "command" in str(error_data).lower()
 
 
 async def test_create_local_tool_server_empty_args(client, test_project):
@@ -4156,36 +3305,6 @@ async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
         assert mcp_secrets[f"{server_id}::Authorization"] == "Bearer new-token"
 
 
-async def test_connect_remote_mcp_secret_header_validation_error(client, test_project):
-    """Test connect_remote_mcp endpoint handles secret header validation errors"""
-    tool_data = {
-        "name": "invalid_secret_tool",
-        "server_url": "https://example.com/api",
-        "headers": {
-            "Content-Type": "application/json",
-        },
-        "secret_header_keys": ["Authorization"],  # Not in headers
-        "description": "Tool with invalid secret header keys",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-        error_detail = response.json()["detail"]
-        assert any(
-            "Secret header key Authorization is not in the headers" in str(error)
-            for error in error_detail
-        )
-
-
 async def test_delete_tool_server_config_update_fixed(client, test_project):
     """Test that deleting a tool server with secret headers properly saves config changes"""
     # Create a tool server with secret headers
@@ -4476,73 +3595,6 @@ async def test_connect_local_mcp_existing_mcp_secrets(client, test_project):
         assert mcp_secrets[f"{server_id}::NEW_SECRET"] == "new_secret_value"
 
 
-async def test_connect_local_mcp_secret_env_var_validation_error(client, test_project):
-    """Test connect_local_mcp endpoint handles secret env var validation errors"""
-    tool_data = {
-        "name": "invalid_secret_env_tool",
-        "command": "python",
-        "args": ["-m", "my_server"],
-        "env_vars": {
-            "PUBLIC_VAR": "public_value",
-        },
-        "secret_env_var_keys": ["SECRET_API_KEY"],  # Not in env_vars
-        "description": "Tool with invalid secret env var keys",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-        error_detail = response.json()["detail"]
-        assert any(
-            "Secret environment variable key SECRET_API_KEY is not in the list of environment variables"
-            in str(error)
-            for error in error_detail
-        )
-
-
-async def test_connect_local_mcp_empty_secret_env_var_key_validation_error(
-    client, test_project
-):
-    """Test connect_local_mcp endpoint handles empty secret env var key validation errors"""
-    tool_data = {
-        "name": "empty_secret_key_tool",
-        "command": "python",
-        "args": ["-m", "my_server"],
-        "env_vars": {
-            "PUBLIC_VAR": "public_value",
-        },
-        "secret_env_var_keys": [
-            ""
-        ],  # Empty key (not in env_vars, but will trigger empty key validation first)
-        "description": "Tool with empty secret env var key",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-        error_detail = response.json()["detail"]
-        assert any(
-            "Secret environment variable key is required" in str(error)
-            for error in error_detail
-        )
-
-
 async def test_delete_local_mcp_tool_server_with_secret_env_vars(client, test_project):
     """Test that deleting a local MCP tool server removes secret environment variables from Config"""
     # Create a local MCP tool server with secret env vars
@@ -4788,219 +3840,6 @@ async def test_delete_local_mcp_tool_server_missing_secret_env_var_keys_property
                     "other_server::some_env_var": "other_value"
                 }
                 assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
-
-
-# Tests for LocalToolServerCreationRequest secret environment variable validation
-def test_local_tool_server_creation_request_valid_secret_env_var_keys():
-    """Test LocalToolServerCreationRequest with valid secret environment variable keys"""
-    request = LocalToolServerCreationRequest(
-        name="Secret Env Vars Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars={
-            "PUBLIC_VAR": "public_value",
-            "SECRET_API_KEY": "secret_key_123",
-            "ANOTHER_SECRET": "another_secret_value",
-        },
-        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET"],
-        description="Server with secret environment variables",
-    )
-
-    assert request.name == "Secret Env Vars Server"
-    assert request.command == "python"
-    assert request.args == ["-m", "server"]
-    assert request.env_vars == {
-        "PUBLIC_VAR": "public_value",
-        "SECRET_API_KEY": "secret_key_123",
-        "ANOTHER_SECRET": "another_secret_value",
-    }
-    assert request.secret_env_var_keys == ["SECRET_API_KEY", "ANOTHER_SECRET"]
-    assert request.description == "Server with secret environment variables"
-
-
-def test_local_tool_server_creation_request_empty_secret_env_var_keys():
-    """Test LocalToolServerCreationRequest with empty secret_env_var_keys (default)"""
-    request = LocalToolServerCreationRequest(
-        name="No Secret Env Vars Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars={"PUBLIC_VAR": "public_value"},
-        # secret_env_var_keys defaults to empty list
-    )
-
-    assert request.secret_env_var_keys == []
-
-
-def test_local_tool_server_creation_request_secret_env_var_key_not_in_env_vars():
-    """Test LocalToolServerCreationRequest rejects secret keys not in env_vars"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Invalid Secret Key Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={"PUBLIC_VAR": "public_value"},
-            secret_env_var_keys=["SECRET_API_KEY"],  # Not in env_vars
-        )
-
-    error_str = str(exc_info.value)
-    assert (
-        "Secret environment variable key SECRET_API_KEY is not in the list of environment variables"
-        in error_str
-    )
-
-
-def test_local_tool_server_creation_request_empty_secret_env_var_key():
-    """Test LocalToolServerCreationRequest rejects empty secret env var keys"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Empty Secret Key Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={"PUBLIC_VAR": "public_value", "": "some_value"},
-            secret_env_var_keys=[""],  # Empty key
-        )
-
-    error_str = str(exc_info.value)
-    # The validation first catches invalid env var keys, then secret env var key validation
-    assert (
-        "Secret environment variable key is required" in error_str
-        or "Invalid environment variable key" in error_str
-    )
-
-
-def test_local_tool_server_creation_request_whitespace_only_secret_env_var_key():
-    """Test LocalToolServerCreationRequest rejects whitespace-only secret env var keys"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Whitespace Secret Key Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={"PUBLIC_VAR": "public_value", "   ": "some_value"},
-            secret_env_var_keys=["   "],  # Whitespace only
-        )
-
-    error_str = str(exc_info.value)
-    # The validation first catches invalid env var keys, then secret env var key validation
-    assert (
-        "Secret environment variable key is required" in error_str
-        or "Invalid environment variable key" in error_str
-    )
-
-
-def test_local_tool_server_creation_request_multiple_secret_env_var_key_validation_errors():
-    """Test LocalToolServerCreationRequest handles multiple secret env var key validation errors"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Multiple Errors Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={"PUBLIC_VAR": "public_value"},
-            secret_env_var_keys=["", "NOT_IN_ENV_VARS", "   "],  # Multiple invalid keys
-        )
-
-    error_str = str(exc_info.value)
-    # Should contain errors for all invalid keys
-    # The validation first catches invalid env var keys, then secret env var key validation
-    assert (
-        "Secret environment variable key is required" in error_str
-        or "Invalid environment variable key" in error_str
-    )
-    # Note: The first validation error (empty key) stops further validation, so NOT_IN_ENV_VARS error may not appear
-    # assert "Secret environment variable key NOT_IN_ENV_VARS is not in the list of environment variables" in error_str
-
-
-def test_local_tool_server_creation_request_secret_env_var_keys_with_whitespace_fails():
-    """Test LocalToolServerCreationRequest rejects secret env var keys with whitespace"""
-    with pytest.raises(ValidationError) as exc_info:
-        LocalToolServerCreationRequest(
-            name="Whitespace Secret Env Vars Server",
-            command="python",
-            args=["-m", "server"],
-            env_vars={
-                "PUBLIC_VAR": "public_value",
-                "SECRET_KEY": "secret_value",
-                "ANOTHER_SECRET": "another_value",
-            },
-            secret_env_var_keys=[
-                "  SECRET_KEY  ",
-                " ANOTHER_SECRET ",
-            ],  # Whitespace should fail
-        )
-
-    error_str = str(exc_info.value)
-    assert (
-        "Secret environment variable key   SECRET_KEY   is not in the list of environment variables"
-        in error_str
-    )
-
-
-def test_local_tool_server_creation_request_secret_env_var_keys_with_all_env_vars_secret():
-    """Test LocalToolServerCreationRequest when all env vars are marked as secret"""
-    request = LocalToolServerCreationRequest(
-        name="All Secret Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars={
-            "SECRET_API_KEY": "secret_key_123",
-            "ANOTHER_SECRET": "another_secret_value",
-            "DATABASE_PASSWORD": "db_password",
-        },
-        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET", "DATABASE_PASSWORD"],
-    )
-
-    assert set(request.secret_env_var_keys) == {
-        "SECRET_API_KEY",
-        "ANOTHER_SECRET",
-        "DATABASE_PASSWORD",
-    }
-    assert set(request.secret_env_var_keys) == set(request.env_vars.keys())
-
-
-def test_local_tool_server_creation_request_secret_env_var_keys_partial_overlap():
-    """Test LocalToolServerCreationRequest with some env vars marked as secret"""
-    request = LocalToolServerCreationRequest(
-        name="Partial Secret Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars={
-            "PUBLIC_VAR": "public_value",
-            "DEBUG": "true",
-            "SECRET_API_KEY": "secret_key_123",
-            "ANOTHER_SECRET": "another_secret_value",
-            "PORT": "8080",
-        },
-        secret_env_var_keys=["SECRET_API_KEY", "ANOTHER_SECRET"],
-    )
-
-    assert request.secret_env_var_keys == ["SECRET_API_KEY", "ANOTHER_SECRET"]
-    # Verify all secret keys are in env_vars
-    for secret_key in request.secret_env_var_keys:
-        assert secret_key in request.env_vars
-
-
-def test_local_tool_server_creation_request_duplicate_secret_env_var_keys():
-    """Test LocalToolServerCreationRequest handles duplicate secret env var keys"""
-    request = LocalToolServerCreationRequest(
-        name="Duplicate Secret Keys Server",
-        command="python",
-        args=["-m", "server"],
-        env_vars={
-            "PUBLIC_VAR": "public_value",
-            "SECRET_API_KEY": "secret_key_123",
-        },
-        secret_env_var_keys=[
-            "SECRET_API_KEY",
-            "SECRET_API_KEY",
-            "SECRET_API_KEY",
-        ],  # Duplicates
-    )
-
-    # Should preserve duplicates as provided (validation doesn't dedupe)
-    assert request.secret_env_var_keys == [
-        "SECRET_API_KEY",
-        "SECRET_API_KEY",
-        "SECRET_API_KEY",
-    ]
 
 
 async def test_get_tool_server_with_missing_secrets(client, test_project):
@@ -5299,6 +4138,83 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
             # Verify available_tools is empty when secrets are missing
             assert "available_tools" in result
             assert result["available_tools"] == []
+
+
+async def test_get_tool_server_kiln_task_success(client, test_project):
+    """Test get_tool_server successfully retrieves a Kiln task tool server"""
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_ai.tools.kiln_task_tool.project_from_id"
+        ) as mock_kiln_project_from_id,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_kiln_project_from_id.return_value = test_project
+
+        # Create a test task
+        task = Task(
+            name="Test Task",
+            description="Test task for Kiln task tool",
+            instruction="Complete the test task",
+            parent=test_project,
+        )
+        task.save_to_file()
+
+        # Set up task_from_id mock to return the task
+        def mock_task_from_id_func(project_id, task_id):
+            if task_id == str(task.id):
+                return task
+            else:
+                raise HTTPException(status_code=404, detail="Task not found")
+
+        mock_task_from_id.side_effect = mock_task_from_id_func
+
+        # Create a Kiln task tool server
+        kiln_task_server = ExternalToolServer(
+            name="kiln_task_server",
+            type=ToolServerType.kiln_task,
+            description="Kiln task server for testing",
+            properties={
+                "name": "test_kiln_task_tool",
+                "description": "Test Kiln task tool",
+                "task_id": str(task.id),
+                "run_config_id": "default",
+                "is_archived": False,
+            },
+            parent=test_project,
+        )
+        kiln_task_server.save_to_file()
+
+        # Get the tool server
+        response = client.get(
+            f"/api/projects/{test_project.id}/tool_servers/{kiln_task_server.id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        # Verify the tool server details
+        assert result["name"] == "kiln_task_server"
+        assert result["type"] == "kiln_task"
+        assert result["description"] == "Kiln task server for testing"
+        assert result["properties"]["name"] == "test_kiln_task_tool"
+        assert result["properties"]["description"] == "Test Kiln task tool"
+        assert result["properties"]["task_id"] == str(task.id)
+        assert result["properties"]["run_config_id"] == "default"
+        assert "id" in result
+
+        # Verify available_tools is populated with the Kiln task tool
+        assert "available_tools" in result
+        assert len(result["available_tools"]) == 1
+
+        tool = result["available_tools"][0]
+        assert tool["name"] == "test_kiln_task_tool"
+        assert tool["description"] == "Test Kiln task tool"
+        assert "inputSchema" in tool
 
 
 @pytest.fixture
@@ -5846,9 +4762,12 @@ def test_get_search_tools_excludes_archived(client, test_project, mock_project_f
     assert tools[0]["name"] == "Active Search Tool"
 
 
-async def test_available_tools_excludes_archived_rag(client, test_project):
-    """Archived RAG configs should be excluded from the RAG set in /available_tools."""
+async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
+    client, test_project
+):
+    """Archived RAG configs and kiln task tools should be excluded from their respective sets in /available_tools."""
 
+    # Create active and archived RAG configs
     active = RagConfig(
         parent=test_project,
         name="Active RAG",
@@ -5876,6 +4795,37 @@ async def test_available_tools_excludes_archived_rag(client, test_project):
     active.save_to_file()
     archived.save_to_file()
 
+    # Create active and archived kiln task tool servers
+    active_kiln_task = ExternalToolServer(
+        name="active_kiln_task_server",
+        type=ToolServerType.kiln_task,
+        description="Active kiln task server",
+        properties={
+            "name": "active_task_tool",
+            "description": "Active task tool",
+            "task_id": "task_1",
+            "run_config_id": "run_config_1",
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+
+    archived_kiln_task = ExternalToolServer(
+        name="archived_kiln_task_server",
+        type=ToolServerType.kiln_task,
+        description="Archived kiln task server",
+        properties={
+            "name": "archived_task_tool",
+            "description": "Archived task tool",
+            "task_id": "task_2",
+            "run_config_id": "run_config_2",
+            "is_archived": True,
+        },
+        parent=test_project,
+    )
+    active_kiln_task.save_to_file()
+    archived_kiln_task.save_to_file()
+
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
@@ -5885,10 +4835,716 @@ async def test_available_tools_excludes_archived_rag(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
+        # Should have two tool sets: RAG and Kiln Task
+        assert len(result) == 2
+
         rag_set = next(
             (s for s in result if s["set_name"] == "Search Tools (RAG)"), None
         )
+        kiln_task_set = next(
+            (s for s in result if s["set_name"] == "Kiln Tasks as Tools"), None
+        )
+
         assert rag_set is not None
+        assert kiln_task_set is not None
+
         # Only the active RAG config should be present
         assert len(rag_set["tools"]) == 1
         assert rag_set["tools"][0]["name"] == "active_rag"
+
+        # Only the active kiln task tool should be present
+        assert len(kiln_task_set["tools"]) == 1
+        assert kiln_task_set["tools"][0]["name"] == "active_task_tool"
+
+
+class TestExternalToolApiDescription:
+    """Test cases for ExternalToolApiDescription class methods."""
+
+    def test_tool_from_mcp_tool_with_all_fields(self):
+        """Test creating ExternalToolApiDescription from MCP Tool with all fields."""
+        mcp_tool = Tool(
+            name="test_tool",
+            description="A test tool description",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "param1": {"type": "string", "description": "First parameter"},
+                    "param2": {"type": "number", "description": "Second parameter"},
+                },
+                "required": ["param1"],
+            },
+        )
+
+        result = ExternalToolApiDescription.tool_from_mcp_tool(mcp_tool)
+
+        assert result.name == "test_tool"
+        assert result.description == "A test tool description"
+        assert result.inputSchema == {
+            "type": "object",
+            "properties": {
+                "param1": {"type": "string", "description": "First parameter"},
+                "param2": {"type": "number", "description": "Second parameter"},
+            },
+            "required": ["param1"],
+        }
+
+    def test_tool_from_mcp_tool_with_minimal_fields(self):
+        """Test creating ExternalToolApiDescription from MCP Tool with minimal fields."""
+        mcp_tool = Tool(
+            name="minimal_tool",
+            description=None,
+            inputSchema={},
+        )
+
+        result = ExternalToolApiDescription.tool_from_mcp_tool(mcp_tool)
+
+        assert result.name == "minimal_tool"
+        assert result.description is None
+        assert result.inputSchema == {}
+
+    @pytest.mark.asyncio
+    async def test_tool_from_kiln_task_tool_with_all_fields(self):
+        """Test creating ExternalToolApiDescription from KilnTaskTool with all fields."""
+        # Create a mock KilnTaskTool
+        mock_tool = AsyncMock()
+        mock_tool.name.return_value = "kiln_task_tool"
+        mock_tool.description.return_value = "A Kiln task tool description"
+        mock_tool.parameters_schema = {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": "Input parameter"},
+            },
+            "required": ["input"],
+        }
+
+        result = await ExternalToolApiDescription.tool_from_kiln_task_tool(mock_tool)
+
+        # Verify that the async methods were called
+        mock_tool.name.assert_called_once()
+        mock_tool.description.assert_called_once()
+
+        assert result.name == "kiln_task_tool"
+        assert result.description == "A Kiln task tool description"
+        assert result.inputSchema == {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": "Input parameter"},
+            },
+            "required": ["input"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_tool_from_kiln_task_tool_with_minimal_fields(self):
+        """Test creating ExternalToolApiDescription from KilnTaskTool with minimal fields."""
+        # Create a mock KilnTaskTool with minimal fields
+        mock_tool = AsyncMock()
+        mock_tool.name.return_value = "minimal_kiln_tool"
+        mock_tool.description.return_value = ""
+        mock_tool.parameters_schema = None
+
+        result = await ExternalToolApiDescription.tool_from_kiln_task_tool(mock_tool)
+
+        assert result.name == "minimal_kiln_tool"
+        assert result.description == ""
+        assert result.inputSchema == {}
+
+
+@pytest.mark.asyncio
+async def test_get_kiln_task_tools_success(client, test_project):
+    """Test get_kiln_task_tools successfully retrieves kiln task tools"""
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Create test tasks
+        task1 = Task(
+            name="Test Task 1",
+            description="First test task",
+            instruction="Complete the first test task",
+            parent=test_project,
+        )
+        task1.save_to_file()
+
+        task2 = Task(
+            name="Test Task 2",
+            description="Second test task",
+            instruction="Complete the second test task",
+            parent=test_project,
+        )
+        task2.save_to_file()
+
+        # Set up task_from_id mock to return the appropriate tasks
+        def mock_task_from_id_func(project_id, task_id):
+            if task_id == str(task1.id):
+                return task1
+            elif task_id == str(task2.id):
+                return task2
+            else:
+                raise HTTPException(status_code=404, detail="Task not found")
+
+        mock_task_from_id.side_effect = mock_task_from_id_func
+
+        # Create kiln task tool servers
+        kiln_task_server_1 = ExternalToolServer(
+            name="kiln_task_server_1",
+            type=ToolServerType.kiln_task,
+            description="First kiln task server",
+            properties={
+                "name": "test_task_tool_1",
+                "description": "First test task tool",
+                "task_id": str(task1.id),
+                "run_config_id": "run_config_1",
+                "is_archived": False,
+            },
+            parent=test_project,
+        )
+        kiln_task_server_1.save_to_file()
+
+        kiln_task_server_2 = ExternalToolServer(
+            name="kiln_task_server_2",
+            type=ToolServerType.kiln_task,
+            description="Second kiln task server",
+            properties={
+                "name": "test_task_tool_2",
+                "description": "Second test task tool",
+                "task_id": str(task2.id),
+                "run_config_id": "run_config_2",
+                "is_archived": True,
+            },
+            parent=test_project,
+        )
+        kiln_task_server_2.save_to_file()
+
+        # Create a non-kiln task server to ensure it's filtered out
+        mcp_server = ExternalToolServer(
+            name="mcp_server",
+            type=ToolServerType.remote_mcp,
+            description="MCP server",
+            properties={
+                "server_url": "https://example.com/mcp",
+            },
+            parent=test_project,
+        )
+        mcp_server.save_to_file()
+
+        # Make the API call
+        response = client.get(f"/api/projects/{test_project.id}/kiln_task_tools")
+
+        assert response.status_code == 200
+        results = response.json()
+
+        # Should return 2 kiln task tools
+        assert len(results) == 2
+
+        # Find tools by their names since order may vary
+        tool1_result = next(t for t in results if t["tool_name"] == "test_task_tool_1")
+        tool2_result = next(t for t in results if t["tool_name"] == "test_task_tool_2")
+
+        # Verify first tool
+        assert tool1_result["tool_server_id"] == str(kiln_task_server_1.id)
+        assert tool1_result["tool_name"] == "test_task_tool_1"
+        assert tool1_result["tool_description"] == "First test task tool"
+        assert tool1_result["task_id"] == str(task1.id)
+        assert tool1_result["task_name"] == "Test Task 1"
+        assert tool1_result["task_description"] == "First test task"
+        assert tool1_result["is_archived"] is False
+        assert "created_at" in tool1_result
+
+        # Verify second tool
+        assert tool2_result["tool_server_id"] == str(kiln_task_server_2.id)
+        assert tool2_result["tool_name"] == "test_task_tool_2"
+        assert tool2_result["tool_description"] == "Second test task tool"
+        assert tool2_result["task_id"] == str(task2.id)
+        assert tool2_result["task_name"] == "Test Task 2"
+        assert tool2_result["task_description"] == "Second test task"
+        assert tool2_result["is_archived"] is True
+        assert "created_at" in tool2_result
+
+
+@pytest.mark.asyncio
+async def test_get_kiln_task_tools_no_tools(client, test_project):
+    """Test get_kiln_task_tools returns empty list when no kiln task tools exist"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create a non-kiln task server
+        mcp_server = ExternalToolServer(
+            name="mcp_server",
+            type=ToolServerType.remote_mcp,
+            description="MCP server",
+            properties={
+                "server_url": "https://example.com/mcp",
+            },
+            parent=test_project,
+        )
+        mcp_server.save_to_file()
+
+        # Make the API call
+        response = client.get(f"/api/projects/{test_project.id}/kiln_task_tools")
+
+        assert response.status_code == 200
+        results = response.json()
+        assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_kiln_task_tools_invalid_task_reference(client, test_project):
+    """Test get_kiln_task_tools handles invalid task references gracefully"""
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+    ):
+        mock_project_from_id.return_value = test_project
+
+        # Create a valid task first
+        valid_task = Task(
+            name="Valid Task",
+            description="Valid test task",
+            instruction="Complete the valid test task",
+            parent=test_project,
+        )
+        valid_task.save_to_file()
+
+        # Set up task_from_id mock to raise HTTPException for invalid task_id
+        def mock_task_from_id_func(project_id, task_id):
+            if task_id == "non_existent_task_id":
+                raise HTTPException(status_code=404, detail="Task not found")
+            elif task_id == str(valid_task.id):
+                return valid_task
+            else:
+                # This shouldn't be called in this test
+                raise HTTPException(status_code=404, detail="Unexpected task_id")
+
+        mock_task_from_id.side_effect = mock_task_from_id_func
+
+        # Create kiln task server with invalid task_id
+        kiln_task_server = ExternalToolServer(
+            name="kiln_task_server_invalid",
+            type=ToolServerType.kiln_task,
+            description="Kiln task server with invalid task",
+            properties={
+                "name": "invalid_task_tool",
+                "description": "Tool with invalid task reference",
+                "task_id": "non_existent_task_id",
+                "run_config_id": "run_config_invalid",
+                "is_archived": False,
+            },
+            parent=test_project,
+        )
+        kiln_task_server.save_to_file()
+
+        # Create a valid kiln task server
+        valid_kiln_task_server = ExternalToolServer(
+            name="kiln_task_server_valid",
+            type=ToolServerType.kiln_task,
+            description="Valid kiln task server",
+            properties={
+                "name": "valid_task_tool",
+                "description": "Tool with valid task reference",
+                "task_id": str(valid_task.id),
+                "run_config_id": "run_config_valid",
+                "is_archived": False,
+            },
+            parent=test_project,
+        )
+        valid_kiln_task_server.save_to_file()
+
+        # Make the API call
+        response = client.get(f"/api/projects/{test_project.id}/kiln_task_tools")
+
+        assert response.status_code == 200
+        results = response.json()
+
+        # Should only return the valid tool, invalid one should be skipped
+        assert len(results) == 1
+        assert results[0]["tool_server_id"] == str(valid_kiln_task_server.id)
+        assert results[0]["tool_name"] == "valid_task_tool"
+
+
+@pytest.mark.asyncio
+async def test_get_kiln_task_tools_empty_task_id(client, test_project):
+    """Test get_kiln_task_tools handles empty task_id in properties"""
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        # Create kiln task server with empty task_id (this will pass validation but be skipped by endpoint)
+        kiln_task_server = ExternalToolServer(
+            name="kiln_task_server_empty_task_id",
+            type=ToolServerType.kiln_task,
+            description="Kiln task server with empty task_id",
+            properties={
+                "name": "empty_task_id_tool",
+                "description": "Tool with empty task_id",
+                "task_id": "",  # Empty string
+                "run_config_id": "run_config_empty_task",
+                "is_archived": False,
+            },
+            parent=test_project,
+        )
+        kiln_task_server.save_to_file()
+
+        # Make the API call
+        response = client.get(f"/api/projects/{test_project.id}/kiln_task_tools")
+
+        assert response.status_code == 200
+        results = response.json()
+
+        # Should return empty list since empty task_id is falsy
+        assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_add_kiln_task_tool_validation_success(client, test_project):
+    """Test add_kiln_task_tool succeeds with valid task and run config (validates _validate_kiln_task_tool_task_and_run_config)"""
+
+    # Create a test task
+    task = Task(
+        name="Test Task",
+        description="Test task for validation",
+        instruction="Complete the test task",
+        parent=test_project,
+    )
+    task.save_to_file()
+
+    # Create a run config with ID "default" for the task
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+    from kiln_ai.datamodel.prompt_id import PromptGenerators
+    from kiln_ai.datamodel.run_config import RunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    run_config = TaskRunConfig(
+        name="default",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Create tool data with valid task and run config
+    tool_data = {
+        "name": "test_tool",
+        "description": "Test tool",
+        "task_id": str(task.id),
+        "run_config_id": str(run_config.id),
+        "is_archived": False,
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_task_from_id.return_value = task
+
+        # Should succeed without raising any exception
+        response = client.post(
+            f"/api/projects/{test_project.id}/kiln_task_tool", json=tool_data
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["name"] == "test_tool"
+        assert result["type"] == "kiln_task"
+
+        # Verify task_from_id was called with correct parameters (validates the validation function)
+        mock_task_from_id.assert_called_once_with(str(test_project.id), str(task.id))
+
+
+@pytest.mark.asyncio
+async def test_add_kiln_task_tool_validation_task_not_found(client, test_project):
+    """Test add_kiln_task_tool raises exception when task is not found (validates _validate_kiln_task_tool_task_and_run_config)"""
+
+    # Create tool data with non-existent task
+    tool_data = {
+        "name": "test_tool",
+        "description": "Test tool",
+        "task_id": "non_existent_task_id",
+        "run_config_id": "default",
+        "is_archived": False,
+    }
+
+    with patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id:
+        # Mock task_from_id to raise HTTPException
+        mock_task_from_id.side_effect = HTTPException(
+            status_code=404, detail="Task not found"
+        )
+
+        # Should raise HTTPException
+        response = client.post(
+            f"/api/projects/{test_project.id}/kiln_task_tool", json=tool_data
+        )
+
+        assert response.status_code == 404
+        assert "Task not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_add_kiln_task_tool_validation_run_config_not_found(client, test_project):
+    """Test add_kiln_task_tool raises exception when run config is not found (validates _validate_kiln_task_tool_task_and_run_config)"""
+
+    # Create a test task
+    task = Task(
+        name="Test Task",
+        description="Test task for validation",
+        instruction="Complete the test task",
+        parent=test_project,
+    )
+    task.save_to_file()
+
+    # Create a run config with ID "default" for the task
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+    from kiln_ai.datamodel.prompt_id import PromptGenerators
+    from kiln_ai.datamodel.run_config import RunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    run_config = TaskRunConfig(
+        name="default",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Create tool data with non-existent run config
+    tool_data = {
+        "name": "test_tool",
+        "description": "Test tool",
+        "task_id": str(task.id),
+        "run_config_id": "non_existent_run_config",
+        "is_archived": False,
+    }
+
+    with patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id:
+        # Mock task_from_id to return our test task
+        mock_task_from_id.return_value = task
+
+        # Should raise HTTPException for run config not found
+        response = client.post(
+            f"/api/projects/{test_project.id}/kiln_task_tool", json=tool_data
+        )
+
+        assert response.status_code == 400
+        assert (
+            "Run config not found for the specified task" in response.json()["detail"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_edit_kiln_task_tool_validation_success(client, test_project):
+    """Test edit_kiln_task_tool succeeds with valid task and run config (validates _validate_kiln_task_tool_task_and_run_config)"""
+
+    # Create a test task
+    task = Task(
+        name="Test Task",
+        description="Test task for validation",
+        instruction="Complete the test task",
+        parent=test_project,
+    )
+    task.save_to_file()
+
+    # Create a run config with ID "default" for the task
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+    from kiln_ai.datamodel.prompt_id import PromptGenerators
+    from kiln_ai.datamodel.run_config import RunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    run_config = TaskRunConfig(
+        name="default",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Create an existing kiln task tool server
+    existing_tool_server = ExternalToolServer(
+        name="existing_tool",
+        type=ToolServerType.kiln_task,
+        description="Existing tool",
+        properties={
+            "name": "existing_tool",
+            "description": "Existing tool",
+            "task_id": str(task.id),
+            "run_config_id": str(run_config.id),
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+    existing_tool_server.save_to_file()
+
+    # Create updated tool data with valid task and run config
+    tool_data = {
+        "name": "updated_tool",
+        "description": "Updated tool",
+        "task_id": str(task.id),
+        "run_config_id": str(run_config.id),
+        "is_archived": False,
+    }
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_task_from_id.return_value = task
+
+        # Should succeed without raising any exception
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_kiln_task_tool/{existing_tool_server.id}",
+            json=tool_data,
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["name"] == "updated_tool"
+        assert result["type"] == "kiln_task"
+
+        # Verify task_from_id was called with correct parameters (validates the validation function)
+        mock_task_from_id.assert_called_once_with(str(test_project.id), str(task.id))
+
+
+@pytest.mark.asyncio
+async def test_edit_kiln_task_tool_validation_task_not_found(client, test_project):
+    """Test edit_kiln_task_tool raises exception when task is not found (validates _validate_kiln_task_tool_task_and_run_config)"""
+
+    # Create an existing kiln task tool server
+    existing_tool_server = ExternalToolServer(
+        name="existing_tool",
+        type=ToolServerType.kiln_task,
+        description="Existing tool",
+        properties={
+            "name": "existing_tool",
+            "description": "Existing tool",
+            "task_id": "old_task_id",
+            "run_config_id": "default",
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+    existing_tool_server.save_to_file()
+
+    # Create tool data with non-existent task
+    tool_data = {
+        "name": "updated_tool",
+        "description": "Updated tool",
+        "task_id": "non_existent_task_id",
+        "run_config_id": "default",
+        "is_archived": False,
+    }
+
+    with patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id:
+        # Mock task_from_id to raise HTTPException
+        mock_task_from_id.side_effect = HTTPException(
+            status_code=404, detail="Task not found"
+        )
+
+        # Should raise HTTPException
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_kiln_task_tool/{existing_tool_server.id}",
+            json=tool_data,
+        )
+
+        assert response.status_code == 404
+        assert "Task not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_edit_kiln_task_tool_validation_run_config_not_found(
+    client, test_project
+):
+    """Test edit_kiln_task_tool raises exception when run config is not found (validates _validate_kiln_task_tool_task_and_run_config)"""
+
+    # Create a test task
+    task = Task(
+        name="Test Task",
+        description="Test task for validation",
+        instruction="Complete the test task",
+        parent=test_project,
+    )
+    task.save_to_file()
+
+    # Create a run config with ID "default" for the task
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+    from kiln_ai.datamodel.prompt_id import PromptGenerators
+    from kiln_ai.datamodel.run_config import RunConfigProperties
+    from kiln_ai.datamodel.task import TaskRunConfig
+
+    run_config = TaskRunConfig(
+        name="default",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Create an existing kiln task tool server
+    existing_tool_server = ExternalToolServer(
+        name="existing_tool",
+        type=ToolServerType.kiln_task,
+        description="Existing tool",
+        properties={
+            "name": "existing_tool",
+            "description": "Existing tool",
+            "task_id": str(task.id),
+            "run_config_id": str(run_config.id),
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+    existing_tool_server.save_to_file()
+
+    # Create tool data with non-existent run config
+    tool_data = {
+        "name": "updated_tool",
+        "description": "Updated tool",
+        "task_id": str(task.id),
+        "run_config_id": "non_existent_run_config",
+        "is_archived": False,
+    }
+
+    with patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id:
+        # Mock task_from_id to return our test task
+        mock_task_from_id.return_value = task
+
+        # Should raise HTTPException for run config not found
+        response = client.patch(
+            f"/api/projects/{test_project.id}/edit_kiln_task_tool/{existing_tool_server.id}",
+            json=tool_data,
+        )
+
+        assert response.status_code == 400
+        assert (
+            "Run config not found for the specified task" in response.json()["detail"]
+        )

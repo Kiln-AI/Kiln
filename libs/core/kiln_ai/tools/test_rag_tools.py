@@ -8,6 +8,7 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.rag_tools import ChunkContext, RagTool, format_search_results
 
 
@@ -420,7 +421,7 @@ class TestRagTool:
             tool = RagTool("tool_123", mock_rag_config)
 
             # Run the tool
-            result = await tool.run("test query")
+            result = await tool.run(context=None, query="test query")
 
             # Verify the result format
             expected_result = (
@@ -500,7 +501,7 @@ class TestRagTool:
             tool = RagTool("tool_123", mock_rag_config)
 
             # Run the tool
-            result = await tool.run("hybrid query")
+            result = await tool.run(context=None, query="hybrid query")
 
             # Verify embedding generation was called
             mock_embedding_adapter.generate_embeddings.assert_called_once_with(
@@ -566,7 +567,7 @@ class TestRagTool:
             tool = RagTool("tool_123", mock_rag_config)
 
             # Run the tool
-            result = await tool.run("fts query")
+            result = await tool.run(context=None, query="fts query")
 
             # Verify the result format
             expected_result = (
@@ -629,7 +630,7 @@ class TestRagTool:
 
             # Run the tool and expect an error
             with pytest.raises(ValueError, match="No embeddings generated"):
-                await tool.run("query with no embeddings")
+                await tool.run(context=None, query="query with no embeddings")
 
     async def test_rag_tool_run_empty_search_results(
         self, mock_rag_config, mock_project
@@ -675,10 +676,90 @@ class TestRagTool:
             tool = RagTool("tool_123", mock_rag_config)
 
             # Run the tool
-            result = await tool.run("query with no results")
+            result = await tool.run(context=None, query="query with no results")
 
             # Should return empty string for no results
             assert result == ""
+
+    async def test_rag_tool_run_with_context_is_accepted(
+        self, mock_rag_config, mock_project
+    ):
+        """Ensure RagTool.run accepts and works when a ToolCallContext is provided."""
+        mock_rag_config.parent_project.return_value = mock_project
+
+        # Mock search results
+        search_results = [
+            SearchResult(
+                document_id="doc_ctx",
+                chunk_idx=3,
+                chunk_text="Context ok",
+                similarity=0.77,
+            )
+        ]
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch("kiln_ai.tools.rag_tools.EmbeddingConfig") as mock_embed_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
+            ) as mock_adapter_factory,
+            patch(
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
+            ) as mock_vs_adapter_factory,
+        ):
+            # VECTOR type → embedding path taken
+            mock_vector_store_config = Mock()
+            mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+            mock_vs_config_class.from_id_and_parent_path.return_value = (
+                mock_vector_store_config
+            )
+
+            mock_embedding_config = Mock()
+            mock_embed_config_class.from_id_and_parent_path.return_value = (
+                mock_embedding_config
+            )
+
+            mock_embedding_adapter = AsyncMock()
+            mock_embedding_result = Mock()
+            mock_embedding_result.embeddings = [Mock(vector=[1.0])]
+            mock_embedding_adapter.generate_embeddings.return_value = (
+                mock_embedding_result
+            )
+            mock_adapter_factory.return_value = mock_embedding_adapter
+
+            mock_vector_store_adapter = AsyncMock()
+            mock_vector_store_adapter.search.return_value = search_results
+            mock_vs_adapter_factory.return_value = mock_vector_store_adapter
+
+            tool = RagTool("tool_ctx", mock_rag_config)
+
+            ctx = ToolCallContext(allow_saving=False)
+            result = await tool.run(context=ctx, query="with context")
+
+            # Works and returns formatted text
+            assert result == "[document_id: doc_ctx, chunk_idx: 3]\nContext ok\n\n"
+
+            # Normal behavior still occurs
+            mock_embedding_adapter.generate_embeddings.assert_called_once_with(
+                ["with context"]
+            )
+            mock_vector_store_adapter.search.assert_called_once()
+
+    async def test_rag_tool_run_missing_query_raises(
+        self, mock_rag_config, mock_project
+    ):
+        """Ensure RagTool.run enforces the 'if not query' guard."""
+        mock_rag_config.parent_project.return_value = mock_project
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            tool = RagTool("tool_err", mock_rag_config)
+
+            with pytest.raises(KeyError, match="query"):
+                await tool.run(context=None)
 
 
 class TestRagToolNameAndDescription:

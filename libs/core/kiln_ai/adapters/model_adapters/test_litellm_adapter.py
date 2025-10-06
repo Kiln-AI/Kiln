@@ -405,6 +405,7 @@ async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_tas
 
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -446,6 +447,7 @@ async def test_build_completion_kwargs(
     """Test build_completion_kwargs with various configurations"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -613,6 +615,7 @@ async def test_build_completion_kwargs_includes_tools(
     """Test build_completion_kwargs includes tools when available_tools has tools"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -666,6 +669,7 @@ async def test_build_completion_kwargs_raises_error_with_tools_conflict(
     config.run_config_properties.structured_output_mode = structured_output_mode
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -976,3 +980,77 @@ def test_build_extra_body_enable_thinking(config, mock_task, enable_thinking):
     extra_body = adapter.build_extra_body(provider)
 
     assert extra_body["enable_thinking"] == enable_thinking
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "temperature,top_p,should_raise,expected_temp,expected_top_p",
+    [
+        (1.0, 1.0, False, None, None),
+        (0.7, 1.0, False, 0.7, None),
+        (1.0, 0.9, False, None, 0.9),
+        (0.7, 0.9, True, None, None),
+        (0.5, 0.5, True, None, None),
+    ],
+)
+async def test_build_completion_kwargs_temp_top_p_exclusive(
+    config, mock_task, temperature, top_p, should_raise, expected_temp, expected_top_p
+):
+    """Test build_completion_kwargs with temp_top_p_exclusive provider flag"""
+    config.run_config_properties.temperature = temperature
+    config.run_config_properties.top_p = top_p
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = True
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="anthropic/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        if should_raise:
+            with pytest.raises(
+                ValueError,
+                match="top_p and temperature can not both have custom values",
+            ):
+                await adapter.build_completion_kwargs(mock_provider, messages, None)
+        else:
+            kwargs = await adapter.build_completion_kwargs(
+                mock_provider, messages, None
+            )
+
+            if expected_temp is None:
+                assert "temperature" not in kwargs
+            else:
+                assert kwargs["temperature"] == expected_temp
+
+            if expected_top_p is None:
+                assert "top_p" not in kwargs
+            else:
+                assert kwargs["top_p"] == expected_top_p
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_temp_top_p_not_exclusive(config, mock_task):
+    """Test build_completion_kwargs with temp_top_p_exclusive=False allows both params"""
+    config.run_config_properties.temperature = 0.7
+    config.run_config_properties.top_p = 0.9
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+        assert kwargs["temperature"] == 0.7
+        assert kwargs["top_p"] == 0.9

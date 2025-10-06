@@ -131,6 +131,11 @@ class Task(
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
     )
 
+    default_run_config_id: ID_TYPE | None = Field(
+        default=None,
+        description="ID of the run config to use for this task by default. Must exist in saved run configs for this task.",
+    )
+
     def output_schema(self) -> Dict | None:
         if self.output_json_schema is None:
             return None

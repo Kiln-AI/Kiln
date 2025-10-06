@@ -23,3 +23,14 @@ export function prompt_link(
   // ID style prompt, link to saved
   return `/prompts/${project_id}/${task_id}/saved/${encodeURIComponent(prompt_id)}`
 }
+
+export function dataset_item_link(
+  project_id: string,
+  task_id: string,
+  run_id: string,
+): string | null {
+  if (!project_id || !task_id || !run_id) {
+    return null
+  }
+  return `/dataset/${project_id}/${task_id}/${run_id}/run`
+}

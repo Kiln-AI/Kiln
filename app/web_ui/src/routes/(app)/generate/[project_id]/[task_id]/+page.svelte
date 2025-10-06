@@ -8,9 +8,9 @@
   import { page } from "$app/stores"
   import type { SampleDataNode } from "./gen_model"
   import GeneratedDataNode from "./generated_data_node.svelte"
-  import AvailableModelsDropdown from "../../../run/available_models_dropdown.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { ui_state } from "$lib/stores"
-  import PromptTypeSelector from "../../../run/prompt_type_selector.svelte"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
   import { indexedDBStore } from "$lib/stores/index_db_store"
@@ -1065,6 +1065,7 @@
           </div>
         </div>
         <AvailableModelsDropdown
+          {task_id}
           requires_data_gen={true}
           requires_uncensored_data_gen={guidance_data.suggest_uncensored(
             $selected_template,

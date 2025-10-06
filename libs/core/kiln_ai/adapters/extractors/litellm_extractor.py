@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+from functools import cached_property
 from pathlib import Path
 from typing import Any, List
 
@@ -13,23 +14,16 @@ from kiln_ai.adapters.extractors.base_extractor import (
     ExtractionOutput,
 )
 from kiln_ai.adapters.extractors.encoding import to_base64_url
-from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
+from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
+    built_in_models_from_provider,
+)
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.pdf_utils import split_pdf_into_pages
-
-
-def max_pdf_page_concurrency_for_model(model_name: str) -> int:
-    # we assume each batch takes ~5s to complete (likely more in practice)
-    # lowest rate limit is 150 RPM for Tier 1 accounts for gemini-2.5-pro
-    if model_name == "gemini/gemini-2.5-pro":
-        return 2
-    # other models support at least 500 RPM for lowest tier accounts
-    return 5
-
+from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +68,11 @@ def encode_file_litellm_format(path: Path, mime_type: str) -> dict[str, Any]:
         "text/markdown",
         "text/plain",
     ] or any(mime_type.startswith(m) for m in ["video/", "audio/"]):
-        pdf_bytes = path.read_bytes()
+        file_bytes = path.read_bytes()
         return {
             "type": "file",
             "file": {
-                "file_data": to_base64_url(mime_type, pdf_bytes),
+                "file_data": to_base64_url(mime_type, file_bytes),
             },
         }
 
@@ -101,6 +95,7 @@ class LitellmExtractor(BaseExtractor):
         extractor_config: ExtractorConfig,
         litellm_core_config: LiteLlmCoreConfig,
         filesystem_cache: FilesystemCache | None = None,
+        default_max_parallel_requests: int = 5,
     ):
         if extractor_config.extractor_type != ExtractorType.LITELLM:
             raise ValueError(
@@ -133,6 +128,7 @@ class LitellmExtractor(BaseExtractor):
         }
 
         self.litellm_core_config = litellm_core_config
+        self.default_max_parallel_requests = default_max_parallel_requests
 
     def pdf_page_cache_key(self, pdf_path: Path, page_number: int) -> str:
         """
@@ -171,13 +167,35 @@ class LitellmExtractor(BaseExtractor):
         logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
         return None
 
+    async def convert_pdf_page_to_image_input(
+        self, page_path: Path, page_number: int
+    ) -> ExtractionInput:
+        image_paths = await convert_pdf_to_images(page_path, page_path.parent)
+        if len(image_paths) != 1:
+            raise ValueError(
+                f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
+            )
+        image_path = image_paths[0]
+        page_input = ExtractionInput(path=str(image_path), mime_type="image/png")
+        return page_input
+
     async def _extract_single_pdf_page(
-        self, pdf_path: Path, page_path: Path, prompt: str, page_number: int
+        self,
+        pdf_path: Path,
+        page_path: Path,
+        prompt: str,
+        page_number: int,
     ) -> str:
         try:
-            page_input = ExtractionInput(
-                path=str(page_path), mime_type="application/pdf"
-            )
+            if self.model_provider.multimodal_requires_pdf_as_image:
+                page_input = await self.convert_pdf_page_to_image_input(
+                    page_path, page_number
+                )
+            else:
+                page_input = ExtractionInput(
+                    path=str(page_path), mime_type="application/pdf"
+                )
+
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
             response = await litellm.acompletion(**completion_kwargs)
         except Exception as e:
@@ -201,11 +219,6 @@ class LitellmExtractor(BaseExtractor):
             )
 
         content = response.choices[0].message.content
-        if not content:
-            raise ValueError(
-                f"No text returned from extraction model when extracting page {page_number} for {page_path}"
-            )
-
         if self.filesystem_cache is not None:
             # we don't want to fail the whole extraction just because cache write fails
             # as that would block the whole flow
@@ -242,13 +255,14 @@ class LitellmExtractor(BaseExtractor):
                     continue
 
                 extract_page_jobs.append(
-                    self._extract_single_pdf_page(pdf_path, page_path, prompt, i)
+                    self._extract_single_pdf_page(
+                        pdf_path, page_path, prompt, page_number=i
+                    )
                 )
                 page_indices_for_jobs.append(i)
 
                 if (
-                    len(extract_page_jobs)
-                    >= max_pdf_page_concurrency_for_model(self.litellm_model_slug())
+                    len(extract_page_jobs) >= self.max_parallel_requests_for_model
                     or i == len(page_paths) - 1
                 ):
                     extraction_results = await asyncio.gather(
@@ -295,7 +309,7 @@ class LitellmExtractor(BaseExtractor):
         self, prompt: str, extraction_input: ExtractionInput
     ) -> dict[str, Any]:
         completion_kwargs = {
-            "model": self.litellm_model_slug(),
+            "model": self.litellm_model_slug,
             "messages": [
                 {
                     "role": "user",
@@ -367,20 +381,26 @@ class LitellmExtractor(BaseExtractor):
             content_format=self.extractor_config.output_format,
         )
 
-    def litellm_model_slug(self) -> str:
+    @cached_property
+    def model_provider(self) -> KilnModelProvider:
         kiln_model_provider = built_in_models_from_provider(
             ModelProviderName(self.extractor_config.model_provider_name),
             self.extractor_config.model_name,
         )
-
         if kiln_model_provider is None:
             raise ValueError(
                 f"Model provider {self.extractor_config.model_provider_name} not found in the list of built-in models"
             )
+        return kiln_model_provider
 
-        # need to translate into LiteLLM model slug
+    @cached_property
+    def max_parallel_requests_for_model(self) -> int:
+        value = self.model_provider.max_parallel_requests
+        return value if value is not None else self.default_max_parallel_requests
+
+    @cached_property
+    def litellm_model_slug(self) -> str:
         litellm_provider_name = get_litellm_provider_info(
-            kiln_model_provider,
+            self.model_provider,
         )
-
         return litellm_provider_name.litellm_model_id

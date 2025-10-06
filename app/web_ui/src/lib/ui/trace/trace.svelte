@@ -2,8 +2,10 @@
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "../../../routes/(app)/run/output.svelte"
   import ToolCall from "./tool_call.svelte"
+  import ToolMessagesDialog from "./tool_messages_dialog.svelte"
 
   export let trace: Trace
+  export let project_id: string | undefined = undefined
 
   // Track collapsed state for each message (true = expanded, false = collapsed)
   let messageExpanded: boolean[] = trace.map(() => false)
@@ -87,6 +89,17 @@
       message.content &&
       typeof message.content === "string"
     ) {
+      // For Kiln task tools, extract just the output field from the JSON response
+      if (message.role === "tool") {
+        try {
+          const parsed = JSON.parse(message.content)
+          if (parsed && typeof parsed === "object" && "output" in parsed) {
+            return parsed.output
+          }
+        } catch (e) {
+          // Content is not JSON, return as-is
+        }
+      }
       return message.content
     }
     return undefined
@@ -114,6 +127,36 @@
     }
     return undefined
   }
+
+  function kiln_task_tool_data_from_message(message: TraceMessage): {
+    project_id: string
+    tool_id: string
+    task_id: string
+    run_id: string
+  } | null {
+    if ("kiln_task_tool_data" in message && message.kiln_task_tool_data) {
+      const [project_id, tool_id, task_id, run_id] =
+        message.kiln_task_tool_data.split(":::")
+      if (project_id && tool_id && task_id && run_id) {
+        return {
+          project_id,
+          tool_id,
+          task_id,
+          run_id,
+        }
+      } else {
+        console.warn(
+          "Invalid kiln task tool data format. Expected format: <project_id>,<tool_id>,<task_id>,<run_id>",
+          message.kiln_task_tool_data,
+        )
+        return null
+      }
+    } else {
+      return null
+    }
+  }
+
+  let tool_messages_dialog: ToolMessagesDialog | null = null
 </script>
 
 <div class="flex flex-col gap-3 w-full">
@@ -162,6 +205,7 @@
                     {#each tool_calls as tool_call, index}
                       <ToolCall
                         {tool_call}
+                        {project_id}
                         nameTag={tool_calls.length > 1
                           ? `Tool Call #${index + 1}`
                           : "Tool Call"}
@@ -184,17 +228,33 @@
                 {@const origin_tool_call = origin_tool_call_by_id(
                   message.tool_call_id,
                 )}
+                {@const kiln_task_tool_data =
+                  kiln_task_tool_data_from_message(message)}
                 {#if origin_tool_call}
                   <div>
                     <div class="text-xs text-gray-500 font-bold mb-1">
                       Invoked Tool Call
                     </div>
-                    <ToolCall tool_call={origin_tool_call} />
+                    <ToolCall
+                      tool_call={origin_tool_call}
+                      {project_id}
+                      persistent_tool_id={kiln_task_tool_data?.tool_id}
+                    />
                   </div>
                 {/if}
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Tool Result
+                    {#if kiln_task_tool_data}
+                      <button
+                        class="text-primary link ml-2 font-normal"
+                        on:click={() => {
+                          tool_messages_dialog?.show(kiln_task_tool_data)
+                        }}
+                      >
+                        Messages
+                      </button>
+                    {/if}
                   </div>
                   <Output raw_output={content} no_padding={true} />
                 </div>
@@ -216,3 +276,5 @@
     </div>
   {/each}
 </div>
+
+<ToolMessagesDialog bind:this={tool_messages_dialog} {project_id} />
