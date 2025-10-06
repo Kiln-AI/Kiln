@@ -109,7 +109,9 @@
     urlParams.set("columns", columns.toString())
 
     // Update models (empty string for null values)
-    const modelIds = selectedModels.map((id) => id || "")
+    const modelIds = selectedModels.map((id) =>
+      id && id !== "__create_new_run_config__" ? id : "",
+    )
     urlParams.set("models", modelIds.join(","))
 
     // Use replace to avoid creating new history entries
