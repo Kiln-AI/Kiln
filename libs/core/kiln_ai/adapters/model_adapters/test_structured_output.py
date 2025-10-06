@@ -175,15 +175,12 @@ async def run_structured_output_test(tmp_path: Path, model_name: str, provider: 
 
     # Check reasoning models
     assert a._model_provider is not None
-    if a._model_provider.reasoning_capable:
-        # some providers have reasoning_capable models that do not return the reasoning
-        # for structured output responses (they provide it only for non-structured output)
-        if a._model_provider.reasoning_optional_for_structured_output:
-            # models may be updated to include the reasoning in the future
-            assert "reasoning" not in run.intermediate_outputs
-        else:
-            assert "reasoning" in run.intermediate_outputs
-            assert isinstance(run.intermediate_outputs["reasoning"], str)
+    if (
+        a._model_provider.reasoning_capable
+        and not a._model_provider.reasoning_optional_for_structured_output
+    ):
+        assert "reasoning" in run.intermediate_outputs
+        assert isinstance(run.intermediate_outputs["reasoning"], str)
 
 
 def build_structured_input_test_task(tmp_path: Path):
