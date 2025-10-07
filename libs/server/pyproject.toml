@@ -19,6 +19,7 @@ classifiers = [
 
 dependencies = [
     "fastapi>=0.115.4",
+    "mcp>=1.10.1",
     "httpx>=0.27.2",
     "kiln-ai>=0.11.1",
     "pydantic>=2.9.2",
@@ -26,6 +27,10 @@ dependencies = [
     "python-multipart>=0.0.20",
     "uvicorn>=0.32.0",
 ]
+
+[project.scripts]
+kiln_server = "kiln_server.server:main"
+kiln_mcp = "kiln_server.mcp.mcp:main"
 
 [dependency-groups]
 dev = [

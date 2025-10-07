@@ -1,9 +1,24 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, TypedDict
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
+
+
+class ToolFunction(TypedDict):
+    """Typed dict for the function definition within a tool call definition."""
+
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+
+
+class ToolCallDefinition(TypedDict):
+    """Typed dict for OpenAI-compatible tool call definitions."""
+
+    type: str  # Must be "function"
+    function: ToolFunction
 
 
 @dataclass
@@ -26,7 +41,7 @@ class KilnToolInterface(ABC):
         pass
 
     @abstractmethod
-    async def toolcall_definition(self) -> Dict[str, Any]:
+    async def toolcall_definition(self) -> ToolCallDefinition:
         """Return the OpenAI-compatible tool definition for this tool."""
         pass
 
@@ -74,7 +89,7 @@ class KilnTool(KilnToolInterface):
     async def description(self) -> str:
         return self._description
 
-    async def toolcall_definition(self) -> Dict[str, Any]:
+    async def toolcall_definition(self) -> ToolCallDefinition:
         """Generate OpenAI-compatible tool definition."""
         return {
             "type": "function",

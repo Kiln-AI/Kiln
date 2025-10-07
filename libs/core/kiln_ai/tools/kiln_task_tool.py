@@ -7,7 +7,11 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
+from kiln_ai.tools.base_tool import (
+    KilnToolInterface,
+    ToolCallContext,
+    ToolCallDefinition,
+)
 from kiln_ai.utils.project_utils import project_from_id
 
 
@@ -48,7 +52,7 @@ class KilnTaskTool(KilnToolInterface):
     async def description(self) -> str:
         return self._description
 
-    async def toolcall_definition(self) -> Dict[str, Any]:
+    async def toolcall_definition(self) -> ToolCallDefinition:
         """Generate OpenAI-compatible tool definition."""
         return {
             "type": "function",
