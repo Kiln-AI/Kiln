@@ -5,10 +5,13 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 from mcp.types import ListToolsResult, Tool
@@ -3725,7 +3728,6 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
 
 async def test_get_available_tools_with_rag_and_mcp(client, test_project):
     """Test get_available_tools with both RAG configs and MCP servers"""
-    from kiln_ai.datamodel.rag import RagConfig
 
     # Create a RAG config
     rag_config = RagConfig(
@@ -4297,11 +4299,6 @@ async def test_add_kiln_task_tool_validation_success(client, test_project):
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
@@ -4388,11 +4385,6 @@ async def test_add_kiln_task_tool_validation_run_config_not_found(client, test_p
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
@@ -4443,11 +4435,6 @@ async def test_edit_kiln_task_tool_validation_success(client, test_project):
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
@@ -4570,11 +4557,6 @@ async def test_edit_kiln_task_tool_validation_run_config_not_found(
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
