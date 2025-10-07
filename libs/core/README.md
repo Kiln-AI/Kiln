@@ -44,8 +44,9 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Tagging Task Runs Programmatically](#tagging-task-runs-programmatically)
   - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code)
 - [Taking Kiln RAG to production](#taking-kiln-rag-to-production)
-  - [Export to Any Vector Store](#export-to-any-vector-store)
+  - [Load a LlamaIndex Vector Store](#load-a-llamaindex-vector-store)
   - [Example: LanceDB Cloud](#example-lancedb-cloud)
+  - [Deploy RAG without LlamaIndex](#deploy-rag-without-llamaindex)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
@@ -317,7 +318,7 @@ Config.shared().custom_models = custom_model_ids
 
 When you're ready to deploy your RAG system, you can export your processed documents to any vector store supported by LlamaIndex. This allows you to use your Kiln-configured chunking and embedding settings in production.
 
-### Export to Any Vector Store
+### Load a LlamaIndex Vector Store
 
 Kiln provides a `VectorStoreLoader` that yields your processed document chunks as LlamaIndex `TextNode` objects. These nodes contain the same metadata, chunking and embedding data as your Kiln Search Tool configuration.
 
@@ -336,13 +337,15 @@ loader = VectorStoreLoader(project=project, rag_config=rag_config)
 # Export chunks to any LlamaIndex vector store
 async for batch in loader.iter_llama_index_nodes(batch_size=10):
     # Insert into your chosen vector store
-    # Examples: Pinecone, Weaviate, Chroma, Qdrant, etc.
+    # Examples: LanceDB, Pinecone, Chroma, Qdrant, etc.
     pass
 ```
 
-**Supported Vector Stores:** LlamaIndex supports 20+ vector stores including Pinecone, Weaviate, Chroma, Qdrant, and more. See the [full list](https://developers.llamaindex.ai/python/framework/module_guides/storing/vector_stores/).
+**Supported Vector Stores:** LlamaIndex supports 20+ vector stores including LanceDB, Pinecone, Weaviate, Chroma, Qdrant, and more. See the [full list](https://developers.llamaindex.ai/python/framework/module_guides/storing/vector_stores/).
 
 ### Example: LanceDB Cloud
+
+Internally Kiln uses LanceDB. By using LanceDB cloud you'll get the same indexing behaviour as in app.
 
 Here's a complete example using LanceDB Cloud:
 
@@ -378,6 +381,10 @@ print("Documents successfully exported to LanceDB!")
 ```
 
 After export, query your data using [LlamaIndex](https://developers.llamaindex.ai/python/framework-api-reference/storage/vector_store/lancedb/) or the [LanceDB client](https://lancedb.github.io/lancedb/).
+
+### Deploy RAG without LlamaIndex
+
+While Kiln is designed for deploying to LlamaIndex, you don't need to use it. The `iter_llama_index_nodes` returns a `TextNode` object which includes all the data you need to build a RAG index in any stack: embedding, text, document name, chunk ID, etc.
 
 ## Full API Reference
 
