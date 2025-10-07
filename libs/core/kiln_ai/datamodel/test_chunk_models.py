@@ -2,6 +2,7 @@ import tempfile
 import uuid
 from enum import Enum
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -315,3 +316,48 @@ class TestChunkedDocument:
                     chunks=chunk,
                     chunker_config_id="fake-id",
                 )
+
+
+def test_chunk_serialize_content_uses_prefix(tmp_path):
+    att = KilnAttachmentModel.from_data("hello", "text/plain")
+    chunk = Chunk(content=att)
+    # emulate model_dump with context used in Chunk.field_serializer
+    data = chunk.model_dump(
+        mode="json", context={"filename_prefix": "content", "save_attachments": False}
+    )
+    assert "content" in data
+
+
+@pytest.mark.asyncio
+async def test_chunked_document_load_chunks_text_errors_when_no_path(tmp_path):
+    doc = ChunkedDocument(
+        chunker_config_id="cfg",
+        chunks=[
+            Chunk(content=KilnAttachmentModel.from_data("a", "text/plain")),
+        ],
+    )
+    with pytest.raises(ValueError, match="does not have a path"):
+        await doc.load_chunks_text()
+
+
+@pytest.mark.asyncio
+async def test_chunked_document_load_chunks_text_read_failure(tmp_path):
+    # Build a chunked doc and force read failure by mocking read_text
+    bad_attachment = KilnAttachmentModel.from_data("x", "text/plain")
+    chunked = ChunkedDocument(
+        chunker_config_id="cfg",
+        chunks=[Chunk(content=bad_attachment)],
+    )
+    # set a fake path so load_chunks_text passes initial path check
+    chunked.path = tmp_path / "dummy" / "doc.kiln"
+
+    # mock anyio.Path.read_text to raise
+    async def fail_read_text(self, encoding="utf-8"):
+        raise RuntimeError("boom")
+
+    with patch(
+        "kiln_ai.datamodel.chunk.anyio.Path.read_text",
+        new=fail_read_text,
+    ):
+        with pytest.raises(ValueError, match="Failed to read chunk content"):
+            await chunked.load_chunks_text()

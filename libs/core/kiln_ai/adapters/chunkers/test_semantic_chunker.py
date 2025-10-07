@@ -141,6 +141,149 @@ class TestSemanticChunker:
         chunker = semantic_chunker_factory(semantic_chunker_config)
         assert chunker.chunker_config == semantic_chunker_config
 
+    def test_init_missing_parent_project(self, semantic_chunker_config):
+        """Test that missing parent project raises ValueError."""
+        with (
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
+            ) as mock_from,
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.embedding_adapter_from_type"
+            ) as mock_adapter,
+        ):
+            mock_from.return_value = MagicMock()
+            mock_adapter.return_value = MagicMock()
+
+            # parent is None by default
+            with pytest.raises(ValueError, match="requires parent project"):
+                SemanticChunker(semantic_chunker_config)
+
+    def test_init_embedding_config_not_found(self, semantic_chunker_config):
+        """Test that missing embedding config raises ValueError."""
+        proj = Project(name="p")
+        proj.path = Path("/tmp")
+        semantic_chunker_config.parent = proj
+
+        with patch(
+            "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from:
+            mock_from.return_value = None
+            with pytest.raises(ValueError, match="Embedding config not found"):
+                SemanticChunker(semantic_chunker_config)
+
+    def test_init_missing_required_properties(
+        self, semantic_chunker_config, monkeypatch
+    ):
+        """Test that missing buffer/threshold/metadata flags raise errors."""
+        proj = Project(name="p")
+        proj.path = Path("/tmp")
+
+        # buffer_size missing
+        cfg = ChunkerConfig(
+            parent=proj,
+            name="c1",
+            chunker_type=ChunkerType.SEMANTIC,
+            properties={
+                "embedding_config_id": "emb-1",
+                # "buffer_size": 2,
+                "breakpoint_percentile_threshold": 90,
+                "include_metadata": True,
+                "include_prev_next_rel": True,
+            },
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
+            ) as mock_from,
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.embedding_adapter_from_type"
+            ) as mock_adapter,
+        ):
+            mock_from.return_value = MagicMock()
+            mock_adapter.return_value = MagicMock()
+            with pytest.raises(ValueError, match="buffer_size must be set"):
+                SemanticChunker(cfg)
+
+        # breakpoint missing
+        cfg2 = ChunkerConfig(
+            parent=proj,
+            name="c2",
+            chunker_type=ChunkerType.SEMANTIC,
+            properties={
+                "embedding_config_id": "emb-1",
+                "buffer_size": 2,
+                # "breakpoint_percentile_threshold": 90,
+                "include_metadata": True,
+                "include_prev_next_rel": True,
+            },
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
+            ) as mock_from,
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.embedding_adapter_from_type"
+            ) as mock_adapter,
+        ):
+            mock_from.return_value = MagicMock()
+            mock_adapter.return_value = MagicMock()
+            with pytest.raises(
+                ValueError, match="breakpoint_percentile_threshold must be set"
+            ):
+                SemanticChunker(cfg2)
+
+        # include_metadata missing
+        cfg3 = ChunkerConfig(
+            parent=proj,
+            name="c3",
+            chunker_type=ChunkerType.SEMANTIC,
+            properties={
+                "embedding_config_id": "emb-1",
+                "buffer_size": 2,
+                "breakpoint_percentile_threshold": 90,
+                # "include_metadata": True,
+                "include_prev_next_rel": True,
+            },
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
+            ) as mock_from,
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.embedding_adapter_from_type"
+            ) as mock_adapter,
+        ):
+            mock_from.return_value = MagicMock()
+            mock_adapter.return_value = MagicMock()
+            with pytest.raises(ValueError, match="include_metadata must be set"):
+                SemanticChunker(cfg3)
+
+        # include_prev_next_rel missing
+        cfg4 = ChunkerConfig(
+            parent=proj,
+            name="c4",
+            chunker_type=ChunkerType.SEMANTIC,
+            properties={
+                "embedding_config_id": "emb-1",
+                "buffer_size": 2,
+                "breakpoint_percentile_threshold": 90,
+                "include_metadata": True,
+                # "include_prev_next_rel": True,
+            },
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
+            ) as mock_from,
+            patch(
+                "kiln_ai.adapters.chunkers.semantic_chunker.embedding_adapter_from_type"
+            ) as mock_adapter,
+        ):
+            mock_from.return_value = MagicMock()
+            mock_adapter.return_value = MagicMock()
+            with pytest.raises(ValueError, match="include_prev_next_rel must be set"):
+                SemanticChunker(cfg4)
+
     @pytest.mark.asyncio
     async def test_chunk_empty_text(
         self, semantic_chunker_factory, semantic_chunker_config

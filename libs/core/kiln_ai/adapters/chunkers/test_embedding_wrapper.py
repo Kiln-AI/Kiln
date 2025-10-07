@@ -80,6 +80,21 @@ class TestKilnEmbeddingWrapper:
         with pytest.raises(NotImplementedError, match="Use async methods instead"):
             embedding_wrapper._get_text_embedding_batch(["text1", "text2"])
 
+    async def test_aget_query_embedding_not_implemented(self, embedding_wrapper):
+        """Test async query embedding not implemented."""
+        with pytest.raises(NotImplementedError, match="Not implemented"):
+            await embedding_wrapper._aget_query_embedding("q")
+
+    async def test_aget_text_embedding_no_embeddings(
+        self, embedding_wrapper, mock_embedding_adapter
+    ):
+        """Test error when adapter returns no embeddings."""
+        mock_embedding_adapter.generate_embeddings.return_value = EmbeddingResult(
+            embeddings=[]
+        )
+        with pytest.raises(ValueError, match="No embeddings returned from adapter"):
+            await embedding_wrapper._aget_text_embedding("text")
+
 
 class TestCreateEmbeddingWrapperFromAdapter:
     """Test the create_embedding_wrapper_from_adapter function."""

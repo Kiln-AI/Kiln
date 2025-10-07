@@ -854,6 +854,32 @@ async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
     )
 
 
+async def test_create_semantic_chunker_config_embedding_config_not_found(
+    client, mock_project
+):
+    """Should return 404 if embedding_config_id does not exist."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Bad Semantic Chunker Config",
+                "chunker_type": "semantic",
+                "properties": {
+                    "embedding_config_id": "does-not-exist",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90.0,
+                },
+            },
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Embedding config does-not-exist not found" in response.text
+
+
 @pytest.mark.asyncio
 async def test_create_extractor_config_model_not_found(client, mock_project):
     project = mock_project
