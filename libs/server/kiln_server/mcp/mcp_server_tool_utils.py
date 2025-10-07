@@ -100,7 +100,9 @@ async def prepare_tool_contexts(
         context = await _build_tool_context(resolution)
         tool_name = context.definition.name
         if tool_name in seen_names:
-            raise ValueError(f"Duplicate tool name detected: {tool_name}")
+            raise ValueError(
+                f"Duplicate tool name detected: {tool_name}. A MCP server can't expose 2 tools with the same name. Either archive the duplicate tool in Kiln's UI, or only specify one tool with each name for MCP using the --tool-ids flag of the kiln_mcp command."
+            )
         seen_names.add(tool_name)
         contexts.append(context)
 

@@ -65,7 +65,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--auto-reload",
-        default=False,
+        action="store_true",
         help="Enable auto-reload for the server.",
     )
     return parser

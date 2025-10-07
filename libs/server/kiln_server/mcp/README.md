@@ -26,7 +26,7 @@ kiln_mcp --transport streamable-http "/Users/username/Kiln Projects/Project Name
 
 ### Running kiln_mcp in Cursor, VSCode, etc
 
-Many MCP clients require running MCP server over the stdio transport. See this example `mcp.json`:
+Add Kiln to your `mcp.json` file, and your MCP client will launch the server over the stdio transport when it's invoked. Note: the JSON format the client expects can vary from app to app. Check your client's documentation for the exact format required.
 
 ```json
 {
@@ -38,6 +38,8 @@ Many MCP clients require running MCP server over the stdio transport. See this e
   }
 }
 ```
+
+[![Cursor Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=kiln_mcp&config=eyJjb21tYW5kIjoia2lsbl9tY3AgL1VzZXJzL3VzZXJuYW1lL0tpbG4gUHJvamVjdHMvUHJvamVjdCBOYW1lL3Byb2plY3Qua2lsbiJ9)
 
 ### kiln_mcp Command Options
 

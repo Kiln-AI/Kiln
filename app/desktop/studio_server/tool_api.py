@@ -9,9 +9,9 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
-    RAG_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
+    build_rag_tool_id,
 )
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.utils.config import Config
@@ -247,7 +247,7 @@ def connect_tool_servers_api(app: FastAPI):
         if rag_configs:
             tools = [
                 ToolApiDescription(
-                    id=f"{RAG_TOOL_ID_PREFIX}{rag_config.id}",
+                    id=build_rag_tool_id(rag_config.id),
                     name=rag_config.tool_name,
                     description=f"{rag_config.name}: {rag_config.tool_description}",
                 )

@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Sequence
 
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.tool_id import build_rag_tool_id
 
 from .mcp_server_tool_utils import prepare_tool_contexts
 from .runtime import Transport, create_fastmcp_server, run_transport
@@ -32,7 +34,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--tool-ids",
         dest="tool_ids",
         default=None,
-        help="Comma-separated list of tool IDs to expose. Defaults to all project tools.",
+        help="Comma-separated list of tool IDs to expose. Defaults to all project tools. Use the --list-tools flag to list all available tool IDs for a project.",
+    )
+    parser.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="List all available tool IDs.",
     )
     parser.add_argument(
         "--transport",
@@ -90,10 +97,30 @@ async def _async_main(
     await run_transport(server, transport, mount_path)
 
 
+def _list_tools(project_path: Path) -> None:
+    project = Project.load_from_file(project_path)
+
+    stdout = sys.stdout
+    stdout.write("Search Tools / RAG (ID -- name):\n")
+    for rag_config in project.rag_configs(readonly=True):
+        stdout.write(f"{build_rag_tool_id(rag_config.id)} -- {rag_config.name}\n")
+
+    # TODO: List Kiln task as tools
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = build_argument_parser()
     args = parser.parse_args(argv)
     tool_ids = _parse_tool_ids(args.tool_ids)
+
+    if not args.project.exists():
+        parser.error(f"Project file not found: {args.project}")
+    if not args.project.is_file():
+        parser.error(f"Project file parameter is not a file: {args.project}")
+
+    if args.list_tools:
+        _list_tools(args.project)
+        return
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
 
