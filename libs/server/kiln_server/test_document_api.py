@@ -784,12 +784,18 @@ async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
 
 
 @pytest.mark.asyncio
-async def test_create_semantic_chunker_config_invalid_buffer_size(client, mock_project):
+async def test_create_semantic_chunker_config_invalid_buffer_size(
+    client, mock_project, mock_embedding_config
+):
     """Test creating semantic chunker config with invalid buffer size."""
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
     ):
         mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
 
         response = client.post(
             f"/api/projects/{mock_project.id}/create_chunker_config",
@@ -798,14 +804,14 @@ async def test_create_semantic_chunker_config_invalid_buffer_size(client, mock_p
                 "properties": {
                     "buffer_size": 0,  # Invalid buffer size
                     "breakpoint_percentile_threshold": 95,
+                    "embedding_config_id": "emb-1",
                 },
             },
         )
 
     assert response.status_code == 422, response.text
     assert (
-        "embedding_config_id is required for semantic chunker"
-        in response.json()["message"]
+        "buffer_size must be greater than or equal to 1" in response.json()["message"]
     )
 
 

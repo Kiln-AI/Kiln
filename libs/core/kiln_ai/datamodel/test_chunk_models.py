@@ -135,7 +135,7 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": None, "chunk_overlap": 15},
+                properties={"chunk_size": None, "chunk_overlap": 15},  # type: ignore[arg-type]
             )
 
 
@@ -144,6 +144,19 @@ class TestSemanticChunkerProperties:
 
     def test_required_fields(self):
         """All required fields must be present for semantic chunker."""
+        # missing embedding_config_id
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
         # missing buffer_size
         with pytest.raises(ValueError):
             ChunkerConfig(
@@ -356,7 +369,7 @@ class TestChunk:
 
             # Test that attachment is required
             with pytest.raises(ValueError):
-                Chunk(content=None)
+                Chunk(content=None)  # type: ignore[arg-type]
 
 
 class TestChunkedDocument:
@@ -416,7 +429,7 @@ class TestChunkedDocument:
             # Test that chunks must be a list
             with pytest.raises(ValueError):
                 ChunkedDocument(
-                    chunks=chunk,
+                    chunks=chunk,  # type: ignore[arg-type]
                     chunker_config_id="fake-id",
                 )
 
@@ -464,3 +477,138 @@ async def test_chunked_document_load_chunks_text_read_failure(tmp_path):
     ):
         with pytest.raises(ValueError, match="Failed to read chunk content"):
             await chunked.load_chunks_text()
+
+
+class TestSemanticChunkerPropertiesTypes:
+    def test_invalid_types(self):
+        with pytest.raises(ValueError, match="embedding_config_id must be a string"):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": 123,
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        with pytest.raises(ValueError, match="buffer_size must be an integer"):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": "2",
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        with pytest.raises(
+            ValueError, match="breakpoint_percentile_threshold must be an integer"
+        ):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": "90",
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        with pytest.raises(ValueError, match="include_metadata must be a boolean"):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": "yes",
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        with pytest.raises(ValueError, match="include_prev_next_rel must be a boolean"):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": "yes",
+                },
+            )
+
+
+class TestChunkerConfigGetterValidations:
+    def test_getter_type_errors(self):
+        cfg = ChunkerConfig(
+            name="fixed",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={"chunk_size": 100, "chunk_overlap": 10},
+        )
+        # mutate to wrong types to exercise getters
+        cfg.properties["chunk_size"] = "100"
+        with pytest.raises(ValueError, match="Chunk size must be an integer"):
+            cfg.chunk_size()
+        cfg.properties["chunk_size"] = 100
+
+        cfg.properties["chunk_overlap"] = "10"
+        with pytest.raises(ValueError, match="Chunk overlap must be an integer"):
+            cfg.chunk_overlap()
+        cfg.properties["chunk_overlap"] = 10
+
+        # semantic getters
+        scfg = ChunkerConfig(
+            name="semantic",
+            chunker_type=ChunkerType.SEMANTIC,
+            properties={
+                "embedding_config_id": "emb",
+                "buffer_size": 2,
+                "breakpoint_percentile_threshold": 50,
+                "include_metadata": True,
+                "include_prev_next_rel": False,
+            },
+        )
+
+        scfg.properties["embedding_config_id"] = 1
+        with pytest.raises(ValueError, match="embedding_config_id must be a string"):
+            scfg.embedding_config_id()
+        scfg.properties["embedding_config_id"] = "emb"
+
+        scfg.properties["buffer_size"] = "2"
+        with pytest.raises(ValueError, match="Buffer size must be an integer"):
+            scfg.buffer_size()
+        scfg.properties["buffer_size"] = 2
+
+        scfg.properties["breakpoint_percentile_threshold"] = "50"
+        with pytest.raises(
+            ValueError, match="Breakpoint percentile threshold must be an integer"
+        ):
+            scfg.breakpoint_percentile_threshold()
+        scfg.properties["breakpoint_percentile_threshold"] = -1
+        with pytest.raises(ValueError, match="between 0 and 100"):
+            scfg.breakpoint_percentile_threshold()
+        scfg.properties["breakpoint_percentile_threshold"] = 150
+        with pytest.raises(ValueError, match="between 0 and 100"):
+            scfg.breakpoint_percentile_threshold()
+        scfg.properties["breakpoint_percentile_threshold"] = 50
+
+        scfg.properties["include_metadata"] = "true"
+        with pytest.raises(ValueError, match="Include metadata must be a boolean"):
+            scfg.include_metadata()
+        scfg.properties["include_metadata"] = True
+
+        scfg.properties["include_prev_next_rel"] = "false"
+        with pytest.raises(ValueError, match="Include prev next rel must be a boolean"):
+            scfg.include_prev_next_rel()
+        scfg.properties["include_prev_next_rel"] = False
