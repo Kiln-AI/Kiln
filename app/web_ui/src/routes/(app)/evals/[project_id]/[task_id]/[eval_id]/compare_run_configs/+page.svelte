@@ -117,7 +117,7 @@
     try {
       task = await load_task(project_id, task_id)
       if (!task) {
-        task_error = createKilnError("Task not found")
+        throw createKilnError("Task not found")
       }
     } catch (err) {
       task_error = createKilnError(err)
