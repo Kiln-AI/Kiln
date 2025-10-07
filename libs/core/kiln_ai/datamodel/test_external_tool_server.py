@@ -94,6 +94,30 @@ class TestExternalToolServer:
                 },
             ),
             (
+                # local MCP with complex commands
+                ToolServerType.local_mcp,
+                {
+                    "command": "/opt/miniconda3/envs/mcp/bin/python",
+                    "args": [
+                        "-m",
+                        "custom_mcp_server",
+                        "--config",
+                        "/etc/mcp/config.yaml",
+                        "--verbose",
+                        "--log-level",
+                        "debug",
+                        "--port",
+                        "8080",
+                    ],
+                    "env_vars": {
+                        "PYTHONPATH": "/opt/custom/lib",
+                        "CONFIG_PATH": "/etc/mcp",
+                        "LOG_LEVEL": "debug",
+                        "MCP_SERVER_MODE": "production",
+                    },
+                },
+            ),
+            (
                 ToolServerType.kiln_task,
                 {
                     "task_id": "task-123",
