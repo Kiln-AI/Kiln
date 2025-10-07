@@ -111,6 +111,7 @@
 </script>
 
 <AppPage
+  limit_max_width={true}
   title="Evals"
   subtitle="Evaluate the quality of your prompts, models and tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
