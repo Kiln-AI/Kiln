@@ -555,7 +555,7 @@
         {:else if should_select_eval_config}
           <div class="mb-4">
             <Warning
-              warning_message="Click 'Set as Winner' below to select a winning run configuration for this eval."
+              warning_message="Click 'Set as Default' below to select a winner."
               warning_color={focus_select_eval_config ? "primary" : "gray"}
               warning_icon="info"
               large_icon={focus_select_eval_config}
@@ -657,7 +657,7 @@
                           set_current_run_config("None")
                         }}
                       >
-                        Winner <span class="">&#x2715;</span>
+                        Default <span class="">&#x2715;</span>
                       </button>
                     {:else}
                       <button
@@ -668,7 +668,7 @@
                           set_current_run_config(task_run_config.id)
                         }}
                       >
-                        Set as Winner
+                        Set as Default
                       </button>
                     {/if}
                     {#if percent_complete > 0}
