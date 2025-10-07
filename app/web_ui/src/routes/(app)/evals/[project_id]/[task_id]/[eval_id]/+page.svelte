@@ -12,22 +12,15 @@
     model_info,
     load_model_info,
     model_name,
-    prompt_name_from_id,
-    current_task_prompts,
     load_available_models,
   } from "$lib/stores"
-  import type { ProviderModels, PromptResponse } from "$lib/types"
+  import type { ProviderModels } from "$lib/types"
   import { goto } from "$app/navigation"
-  import { prompt_link } from "$lib/utils/link_builder"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import PropertyList from "$lib/ui/property_list.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import {
-    getDetailedModelName,
-    getDetailedModelNameFromParts,
-    getRunConfigPromptDisplayName,
-  } from "$lib/utils/run_config_formatters"
+  import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -112,7 +105,6 @@
     evaluator: Eval | null,
     eval_progress: EvalProgress | null,
     modelInfo: ProviderModels | null,
-    taskPrompts: PromptResponse | null,
   ): UiProperty[] {
     if (!evaluator) {
       return []
@@ -529,7 +521,6 @@
               evaluator,
               eval_progress,
               $model_info,
-              $current_task_prompts,
             )}
             title="Evaluator Properties"
           />

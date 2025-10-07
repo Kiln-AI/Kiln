@@ -7,29 +7,11 @@
   import { onMount, tick } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
-  import {
-    model_info,
-    load_model_info,
-    current_task_prompts,
-    get_task_composite_id,
-    load_available_models,
-  } from "$lib/stores"
-  import {
-    load_task_run_configs,
-    run_configs_by_task_composite_id,
-  } from "$lib/stores/run_configs_store"
-  import { prompt_link } from "$lib/utils/link_builder"
-  import {
-    getDetailedModelName,
-    getRunConfigPromptDisplayName,
-  } from "$lib/utils/run_config_formatters"
+  import { load_model_info } from "$lib/stores"
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
-  $: current_task_run_configs =
-    $run_configs_by_task_composite_id[
-      get_task_composite_id(project_id, task_id)
-    ] || null
 
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
@@ -53,7 +35,6 @@
     await tick()
     // Usually cached and fast
     load_model_info()
-    load_available_models()
     // Load the evals and run configs in parallel
     await Promise.all([get_evals(), get_task_run_configs()])
   })

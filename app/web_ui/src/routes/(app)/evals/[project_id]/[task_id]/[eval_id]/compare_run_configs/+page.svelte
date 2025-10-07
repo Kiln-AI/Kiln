@@ -495,7 +495,7 @@
               {current_eval_config_id}
               run_all={true}
               btn_primary={!focus_select_eval_config}
-              eval_type="run_configuration"
+              eval_type="run_config"
               on_run_complete={() => {
                 get_score_summary()
               }}
@@ -592,7 +592,7 @@
                           {eval_id}
                           {current_eval_config_id}
                           run_config_ids={[task_run_config.id || ""]}
-                          eval_type="run_configuration"
+                          eval_type="run_config"
                           btn_size="xs"
                           btn_primary={false}
                           btn_class="min-w-[120px]"

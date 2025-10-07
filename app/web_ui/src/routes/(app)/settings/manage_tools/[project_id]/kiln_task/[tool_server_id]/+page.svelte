@@ -230,9 +230,7 @@
 
   function get_run_config_properties(run_config: TaskRunConfig | null) {
     if (!run_config || !$model_info) {
-      return [
-        { name: "Status", value: "Run Configuration Not Found", error: true },
-      ]
+      return [{ name: "Status", value: "Run Config Not Found", error: true }]
     }
 
     return [

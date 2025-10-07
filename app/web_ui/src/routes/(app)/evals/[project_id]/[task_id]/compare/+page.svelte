@@ -707,7 +707,7 @@
                                       selectedModels[i],
                                       section.eval_id,
                                     )}
-                                    eval_type="run_configuration"
+                                    eval_type="run_config"
                                     btn_size="xs"
                                     btn_primary={false}
                                     on_run_complete={() => {
