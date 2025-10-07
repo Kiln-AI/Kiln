@@ -142,6 +142,10 @@ class TestExternalToolServer:
         [
             "http://test.com",
             "https://test.com",
+            "https://api.example.com/mcp?version=v1&timeout=30",
+            "https://secure.example.com:8443/mcp/api",
+            "http://localhost:3000/api?key=value&debug=true",
+            "https://api.example.com/mcp?token=abc123&mode=production",
         ],
     )
     def test_validate_server_url_valid(self, server_url):
@@ -190,6 +194,14 @@ class TestExternalToolServer:
         [
             {"Authorization": "Bearer token123"},
             {"X-API-Key": "api-key-456"},
+            {"X-API-Key": "key_with-dashes_and.dots"},
+            {"User-Agent": "Mozilla/5.0 (compatible; Kiln/1.0)"},  # special characters
+            {"Content-Type": "application/json"},
+            {
+                "Authorization": "Bearer abc123def456",
+                "X-API-Key": "my-secret-key",
+                "X-Custom-Header": "custom-value",
+            },
         ],
     )
     def test_validate_headers_valid(self, headers):
