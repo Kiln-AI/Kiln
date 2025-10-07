@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import EmptyEvaluator from "./empty_eval.svelte"
-  import type { Eval } from "$lib/types"
+  import type { Eval, EvalProgress } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
@@ -9,6 +9,7 @@
   import { page } from "$app/stores"
   import { load_model_info } from "$lib/stores"
   import { load_task_run_configs } from "$lib/stores/run_configs_store"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -16,6 +17,10 @@
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
   let evals_loading = true
+
+  let eval_progress_loading = true
+  let all_eval_progress: Record<string, EvalProgress> = {}
+  let eval_progress_error: KilnError | null = null
 
   $: is_empty = !evals || evals.length == 0
   $: sorted_evals = (
@@ -37,6 +42,7 @@
     load_model_info()
     // Load the evals and run configs in parallel
     await Promise.all([get_evals(), get_task_run_configs()])
+    await get_all_eval_progress()
   })
 
   let run_configs_error: KilnError | null = null
@@ -80,8 +86,12 @@
 
   let toggle_eval_favourite_error: KilnError | null = null
 
-  $: loading = evals_loading || run_configs_loading
-  $: error = evals_error || toggle_eval_favourite_error || run_configs_error
+  $: loading = evals_loading || run_configs_loading || eval_progress_loading
+  $: error =
+    evals_error ||
+    toggle_eval_favourite_error ||
+    run_configs_error ||
+    eval_progress_error
 
   async function toggle_eval_favourite(evaluator: Eval) {
     try {
@@ -107,6 +117,73 @@
     } catch (error) {
       toggle_eval_favourite_error = createKilnError(error)
     }
+  }
+
+  async function get_all_eval_progress() {
+    try {
+      eval_progress_loading = true
+      eval_progress_error = null
+      if (evals) {
+        for (const evaluator of evals) {
+          if (evaluator.id) {
+            const progress = await get_eval_progress(evaluator.id)
+            if (progress) {
+              all_eval_progress[evaluator.id] = progress
+            }
+          }
+        }
+      }
+    } catch (error) {
+      eval_progress_error = createKilnError(error)
+    } finally {
+      eval_progress_loading = false
+    }
+  }
+
+  async function get_eval_progress(
+    eval_id: string,
+  ): Promise<EvalProgress | null> {
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+      {
+        params: {
+          path: {
+            project_id,
+            task_id,
+            eval_id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    return data
+  }
+
+  function get_eval_status(evaluator: Eval) {
+    const progress = all_eval_progress[evaluator.id ?? ""]
+    if (!progress) {
+      return "Incomplete"
+    }
+    const required_more_eval_data = progress.dataset_size < 25
+    const required_more_golden_data = progress.golden_dataset_size < 25
+    if (required_more_eval_data || required_more_golden_data) {
+      return "Incomplete"
+    }
+    if (progress.golden_dataset_size == 0) {
+      return "Incomplete"
+    }
+    if (progress.golden_dataset_not_rated_count > 0) {
+      return "Incomplete"
+    }
+    if (progress.golden_dataset_partially_rated_count > 0) {
+      return "Incomplete"
+    }
+    if (!evaluator.current_config_id) {
+      return "Incomplete"
+    }
+    return "Complete"
   }
 </script>
 
@@ -219,10 +296,12 @@
             <th></th>
             <th>Eval Name</th>
             <th>Description</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
           {#each sorted_evals as evaluator}
+            {@const status = get_eval_status(evaluator)}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
@@ -242,6 +321,22 @@
               </td>
               <td> {evaluator.name} </td>
               <td> {evaluator.description} </td>
+              <td>
+                {#if status === "Incomplete"}
+                  <Warning
+                    warning_message="Action Required"
+                    warning_color="warning"
+                    tight={true}
+                  />
+                {:else if status === "Complete"}
+                  <Warning
+                    warning_message="Ready"
+                    warning_color="success"
+                    warning_icon="check"
+                    tight={true}
+                  />
+                {/if}
+              </td>
             </tr>
           {/each}
         </tbody>
