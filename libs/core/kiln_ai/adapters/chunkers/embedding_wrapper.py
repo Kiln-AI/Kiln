@@ -33,4 +33,9 @@ class KilnEmbeddingWrapper(BaseEmbedding):
 
     async def _aget_text_embedding_batch(self, texts: List[str]) -> List[List[float]]:
         result = await self._embedding_adapter.generate_embeddings(texts)
+        # this should not happen if the embedding adapter is properly implemented
+        if len(result.embeddings) != len(texts):
+            raise ValueError(
+                f"Expected {len(texts)} embeddings but got {len(result.embeddings)}"
+            )
         return [embedding.vector for embedding in result.embeddings]

@@ -118,7 +118,10 @@
           },
         }
       case "semantic":
-        if (!selected_embedding_config_id) {
+        if (
+          !selected_embedding_config_id ||
+          selected_embedding_config_id === "create_new"
+        ) {
           throw new Error("Please select or create an embedding config")
         }
         return {
@@ -256,7 +259,7 @@
         id="buffer_size"
         bind:value={buffer_size}
         validator={number_validator({
-          min: 3,
+          min: 1,
           integer: true,
           label: "Buffer Size (Sentences)",
           optional: false,

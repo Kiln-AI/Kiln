@@ -69,30 +69,34 @@ def validate_semantic_chunker_properties(
 
     # Optional properties - validate if present
     buffer_size = properties.get("buffer_size")
-    if buffer_size is not None:
-        if not isinstance(buffer_size, int):
-            raise ValueError("buffer_size must be an integer.")
-        if buffer_size < 1:
-            raise ValueError("buffer_size must be greater than or equal to 1.")
+    if buffer_size is None:
+        raise ValueError("buffer_size is required for semantic chunker.")
+    if not isinstance(buffer_size, int):
+        raise ValueError("buffer_size must be an integer.")
+    if buffer_size < 1:
+        raise ValueError("buffer_size must be greater than or equal to 1.")
 
     breakpoint_percentile_threshold = properties.get("breakpoint_percentile_threshold")
-    if breakpoint_percentile_threshold is not None:
-        if not isinstance(breakpoint_percentile_threshold, (int, float)):
-            raise ValueError("breakpoint_percentile_threshold must be a number.")
-        if not (0 <= breakpoint_percentile_threshold <= 100):
-            raise ValueError(
-                "breakpoint_percentile_threshold must be between 0 and 100."
-            )
+    if breakpoint_percentile_threshold is None:
+        raise ValueError(
+            "breakpoint_percentile_threshold is required for semantic chunker."
+        )
+    if not isinstance(breakpoint_percentile_threshold, int):
+        raise ValueError("breakpoint_percentile_threshold must be an integer.")
+    if not (0 <= breakpoint_percentile_threshold <= 100):
+        raise ValueError("breakpoint_percentile_threshold must be between 0 and 100.")
 
     include_metadata = properties.get("include_metadata")
-    if include_metadata is not None:
-        if not isinstance(include_metadata, bool):
-            raise ValueError("include_metadata must be a boolean.")
+    if include_metadata is None:
+        raise ValueError("include_metadata is required for semantic chunker.")
+    if not isinstance(include_metadata, bool):
+        raise ValueError("include_metadata must be a boolean.")
 
     include_prev_next_rel = properties.get("include_prev_next_rel")
-    if include_prev_next_rel is not None:
-        if not isinstance(include_prev_next_rel, bool):
-            raise ValueError("include_prev_next_rel must be a boolean.")
+    if include_prev_next_rel is None:
+        raise ValueError("include_prev_next_rel is required for semantic chunker.")
+    if not isinstance(include_prev_next_rel, bool):
+        raise ValueError("include_prev_next_rel must be a boolean.")
 
     return properties
 

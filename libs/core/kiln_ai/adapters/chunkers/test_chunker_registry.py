@@ -34,7 +34,13 @@ def test_chunker_registry_semantic_returns_semantic_chunker():
     config = ChunkerConfig(
         name="cfg",
         chunker_type=ChunkerType.SEMANTIC,
-        properties={"embedding_config_id": "emb-1"},
+        properties={
+            "embedding_config_id": "emb-1",
+            "buffer_size": 2,
+            "breakpoint_percentile_threshold": 90,
+            "include_metadata": True,
+            "include_prev_next_rel": True,
+        },
     )
 
     with patch(

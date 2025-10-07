@@ -139,6 +139,109 @@ class TestFixedWindowChunkerProperties:
             )
 
 
+class TestSemanticChunkerProperties:
+    """Test the Semantic Chunker properties validation."""
+
+    def test_required_fields(self):
+        """All required fields must be present for semantic chunker."""
+        # missing buffer_size
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        # missing breakpoint_percentile_threshold
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        # missing include_metadata
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+        # missing include_prev_next_rel
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                },
+            )
+
+    def test_invalid_buffer_size(self):
+        """buffer_size must be >= 1."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 0,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+    def test_invalid_breakpoint_threshold(self):
+        """breakpoint_percentile_threshold must be 0..100 inclusive."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 150,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+    def test_success(self):
+        """Valid properties succeed."""
+        cfg = ChunkerConfig(
+            name="semantic",
+            chunker_type=ChunkerType.SEMANTIC,
+            properties={
+                "embedding_config_id": "emb-1",
+                "buffer_size": 2,
+                "breakpoint_percentile_threshold": 90,
+                "include_metadata": False,
+                "include_prev_next_rel": False,
+            },
+        )
+        assert cfg.embedding_config_id() == "emb-1"
+
+
 class TestChunkerType:
     """Test the ChunkerType enum."""
 
