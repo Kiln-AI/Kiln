@@ -725,7 +725,4 @@
     the highest scores on your eval dataset."
   {project_id}
   {task}
-  new_run_config_created={(_) => {
-    get_task_run_configs()
-  }}
 />

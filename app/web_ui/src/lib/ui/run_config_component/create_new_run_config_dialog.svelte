@@ -8,7 +8,9 @@
   export let subtitle: string | null = null
   export let project_id: string
   export let task: Task | null
-  export let new_run_config_created: (run_config: TaskRunConfig) => void
+  export let new_run_config_created:
+    | ((run_config: TaskRunConfig) => void)
+    | null = null
 
   let submitting: boolean
   let save_config_error: KilnError | null = null
@@ -31,7 +33,7 @@
       save_config_error = null
       const saved_run_config = await run_config_component?.save_new_run_config()
       if (saved_run_config) {
-        new_run_config_created(saved_run_config)
+        new_run_config_created?.(saved_run_config)
         close() // Only close on success
       } else {
         throw new Error("Resulting saved run config not found.")
