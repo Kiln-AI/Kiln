@@ -38,15 +38,21 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  let task: Task | null = null
-
   // State management
   let columns = 2 // Start with 2 columns
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
 
   // Run configs state
-  let loading = true
-  let error: KilnError | null = null
+  let loading_run_configs = true
+  let loading_run_configs_error: KilnError | null = null
+
+  // Task state
+  let task: Task | null = null
+  let loading_task = true
+  let task_error: KilnError | null = null
+
+  $: loading = loading_run_configs || loading_task
+  $: error = loading_run_configs_error || task_error
 
   // Eval scores cache and state
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
@@ -136,12 +142,9 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      get_task(),
     ])
     await get_task_run_configs()
-    task = await load_task(project_id, task_id)
-    if (!task) {
-      error = createKilnError("Task not found")
-    }
 
     // Now that data is loaded, restore full state from URL
     restoreStateFromURL()
@@ -151,13 +154,27 @@
   })
 
   async function get_task_run_configs() {
-    loading = true
+    loading_run_configs = true
     try {
       await load_task_run_configs(project_id, task_id)
     } catch (err) {
-      error = createKilnError(err)
+      loading_run_configs_error = createKilnError(err)
     } finally {
-      loading = false
+      loading_run_configs = false
+    }
+  }
+
+  async function get_task() {
+    loading_task = true
+    try {
+      task = await load_task(project_id, task_id)
+      if (!task) {
+        throw createKilnError("Task not found")
+      }
+    } catch (err) {
+      task_error = createKilnError(err)
+    } finally {
+      loading_task = false
     }
   }
 

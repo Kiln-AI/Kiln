@@ -48,6 +48,8 @@
   $: eval_id = $page.params.eval_id
 
   let task: Task | null = null
+  let loading_task = true
+  let task_error: KilnError | null = null
 
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null
@@ -65,8 +67,9 @@
   let score_summary_error: KilnError | null = null
 
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
-  $: loading = eval_loading || eval_configs_loading || run_configs_loading
-  $: error = eval_error || eval_configs_error || run_configs_error
+  $: loading =
+    eval_loading || eval_configs_loading || run_configs_loading || loading_task
+  $: error = eval_error || eval_configs_error || run_configs_error || task_error
 
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
@@ -87,13 +90,13 @@
   onMount(async () => {
     // Wait for page params to load
     await tick()
-    // Wait for these 3 to load, as they are needed for better labels. Usually already cached and instant.
+    // Wait for these to load, as they are needed for better labels. Usually already cached and instant.
     await Promise.all([
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      get_task(),
     ])
-    task = await load_task(project_id, task_id)
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
     // These two can be parallel
@@ -103,6 +106,20 @@
   })
 
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+
+  async function get_task() {
+    loading_task = true
+    try {
+      task = await load_task(project_id, task_id)
+      if (!task) {
+        throw createKilnError("Task not found")
+      }
+    } catch (err) {
+      task_error = createKilnError(err)
+    } finally {
+      loading_task = false
+    }
+  }
 
   async function get_eval() {
     try {
