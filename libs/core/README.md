@@ -43,6 +43,9 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
   - [Tagging Task Runs Programmatically](#tagging-task-runs-programmatically)
   - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code)
+- [Taking Kiln RAG to production](#taking-kiln-rag-to-production)
+  - [Export to Any Vector Store](#export-to-any-vector-store)
+  - [Example: LanceDB Cloud](#example-lancedb-cloud)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
@@ -312,55 +315,69 @@ Config.shared().custom_models = custom_model_ids
 
 ## Taking Kiln RAG to production
 
-### LanceDB Cloud
+When you're ready to deploy your RAG system, you can export your processed documents to any vector store supported by LlamaIndex. This allows you to use your Kiln-configured chunking and embedding settings in production.
+
+### Export to Any Vector Store
+
+Kiln provides a `VectorStoreLoader` that yields your processed document chunks as LlamaIndex `TextNode` objects. These nodes contain the same metadata, chunking and embedding data as your Kiln Search Tool configuration.
+
+```py
+from kiln_ai.datamodel import Project
+from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.adapters.vector_store_loaders import VectorStoreLoader
+
+# Load your project and RAG configuration
+project = Project.load_from_file("path/to/your/project.kiln")
+rag_config = RagConfig.from_id_and_parent_path("rag-config-id", project.path)
+
+# Create the loader
+loader = VectorStoreLoader(project=project, rag_config=rag_config)
+
+# Export chunks to any LlamaIndex vector store
+async for batch in loader.iter_llama_index_nodes(batch_size=10):
+    # Insert into your chosen vector store
+    # Examples: Pinecone, Weaviate, Chroma, Qdrant, etc.
+    pass
+```
+
+**Supported Vector Stores:** LlamaIndex supports 20+ vector stores including Pinecone, Weaviate, Chroma, Qdrant, and more. See the [full list](https://developers.llamaindex.ai/python/framework/module_guides/storing/vector_stores/).
+
+### Example: LanceDB Cloud
+
+Here's a complete example using LanceDB Cloud:
 
 ```py
 from kiln_ai.datamodel import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
-from kiln_ai.adapters.vector_store_loaders import LanceDBLoader
+from kiln_ai.adapters.vector_store_loaders import VectorStoreLoader
 from kiln_ai.adapters.vector_store.lancedb_adapter import lancedb_construct_from_config
 
+# Load configurations
 project = Project.load_from_file("path/to/your/project.kiln")
-target_rag_config_id = "rag-config-id"
-
-# Retrieve the configurations
-rag_config = RagConfig.from_id_and_parent_path(
-    target_rag_config_id, project.path,
-)
+rag_config = RagConfig.from_id_and_parent_path("rag-config-id", project.path)
 vector_store_config = VectorStoreConfig.from_id_and_parent_path(
     rag_config.vector_store_config_id, project.path,
 )
 
-# Initialize a LanceDBVectorStore using Llamaindex
-llama_index_lancedb_store = lancedb_construct_from_config(
+# Create LanceDB vector store
+lancedb_store = lancedb_construct_from_config(
     vector_store_config=vector_store_config,
     uri="db://my-project",
     api_key="sk_...",
     region="us-east-1",
-    table_name="table-name",  # the table is created automatically
+    table_name="my-documents",  # Created automatically
 )
 
-loader = LanceDBLoader(
-    project=project,
-    rag_config=rag_config,
-    vector_store_config=vector_store_config,
-    lancedb_vector_store=llama_index_lancedb_store,
-)
+# Export and insert your documents
+loader = VectorStoreLoader(project=project, rag_config=rag_config)
+async for batch in loader.iter_llama_index_nodes(batch_size=100):
+    await lancedb_store.async_add(batch)
 
-# Iterate over all the chunks as llama_index TextNode
-all_nodes: List[TextNode] = []
-async for node in loader.iter_llama_index_nodes():
-    all_nodes.append(node)
-
-# Insert all the nodes in LanceDB
-await loader.insert_nodes(
-    nodes=all_nodes,
-    flush_batch_size=100,
-)
+print("Documents successfully exported to LanceDB!")
 ```
 
-After inserting the nodes in the vector store, you can query your data [using llama_index](https://developers.llamaindex.ai/python/framework-api-reference/storage/vector_store/lancedb/), or the [lancedb client].
+After export, query your data using [LlamaIndex](https://developers.llamaindex.ai/python/framework-api-reference/storage/vector_store/lancedb/) or the [LanceDB client](https://lancedb.github.io/lancedb/).
 
 ## Full API Reference
 

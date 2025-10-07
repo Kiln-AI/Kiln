@@ -1,13 +1,9 @@
 import uuid
 from dataclasses import dataclass
-from typing import AsyncGenerator
 
 import pytest
-from llama_index.core.schema import TextNode
 
-from kiln_ai.adapters.vector_store_loaders.base_vector_store_loader import (
-    BaseVectorStoreLoader,
-)
+from kiln_ai.adapters.vector_store_loaders.vector_store_loader import VectorStoreLoader
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
 from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding
@@ -135,73 +131,84 @@ def rag_config_factory(mock_project):
     return fn
 
 
-class ConcreteVectorStoreLoader(BaseVectorStoreLoader):
-    """Concrete implementation for testing the abstract base class."""
-
-    async def insert_nodes(
-        self,
-        nodes: list[TextNode],
-        flush_batch_size: int = 100,
-    ) -> None:
-        raise NotImplementedError("Not implemented")
-
-    async def iter_llama_index_nodes(self) -> AsyncGenerator[TextNode, None]:
-        raise NotImplementedError("Not implemented")
+# Tests for VectorStoreLoader.iter_llama_index_nodes
 
 
-def test_iter_docs_with_chunks_single_document(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_single_document(
     mock_project, mock_chunks_factory, rag_config_factory
 ):
-    """Test iter_docs_with_chunks with a single document that matches all config IDs."""
+    """Test iter_llama_index_nodes with a single document that matches all config IDs."""
     rag_config = rag_config_factory()
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create a document with chunks
     doc_with_chunks = mock_chunks_factory(
         mock_project, rag_config, num_chunks=3, text="Test content"
     )
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 1
-    doc = docs[0]
-    assert doc.document_id == str(doc_with_chunks.document.id)
-    assert doc.chunked_document.id == doc_with_chunks.chunked_document.id
-    assert doc.chunk_embeddings.id == doc_with_chunks.chunked_embeddings.id
+    assert len(all_nodes) == 3
+    # Check that all nodes have the correct document ID
+    for node in all_nodes:
+        assert node.metadata["kiln_doc_id"] == str(doc_with_chunks.document.id)
+        assert "kiln_chunk_idx" in node.metadata
+        assert "text" in node.text
 
 
-def test_iter_docs_with_chunks_multiple_documents(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_multiple_documents(
     mock_project, mock_chunks_factory, rag_config_factory
 ):
-    """Test iter_docs_with_chunks with multiple documents."""
+    """Test iter_llama_index_nodes with multiple documents."""
     rag_config = rag_config_factory()
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create multiple documents
     doc1 = mock_chunks_factory(mock_project, rag_config, num_chunks=2, text="Doc 1")
     doc2 = mock_chunks_factory(mock_project, rag_config, num_chunks=3, text="Doc 2")
     doc3 = mock_chunks_factory(mock_project, rag_config, num_chunks=1, text="Doc 3")
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 3
-    doc_ids = {doc.document_id for doc in docs}
-    expected_ids = {
+    assert len(all_nodes) == 6  # 2 + 3 + 1 = 6 total chunks
+
+    # Group nodes by document ID
+    nodes_by_doc = {}
+    for node in all_nodes:
+        doc_id = node.metadata["kiln_doc_id"]
+        if doc_id not in nodes_by_doc:
+            nodes_by_doc[doc_id] = []
+        nodes_by_doc[doc_id].append(node)
+
+    # Check that we have nodes from all three documents
+    expected_doc_ids = {
         str(doc1.document.id),
         str(doc2.document.id),
         str(doc3.document.id),
     }
-    assert doc_ids == expected_ids
+    assert set(nodes_by_doc.keys()) == expected_doc_ids
+
+    # Check chunk counts
+    assert len(nodes_by_doc[str(doc1.document.id)]) == 2
+    assert len(nodes_by_doc[str(doc2.document.id)]) == 3
+    assert len(nodes_by_doc[str(doc3.document.id)]) == 1
 
 
-def test_iter_docs_with_chunks_filters_by_extractor_config_id(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_filters_by_extractor_config_id(
     mock_project, mock_chunks_factory, rag_config_factory
 ):
-    """Test that iter_docs_with_chunks filters by extractor_config_id."""
+    """Test that iter_llama_index_nodes filters by extractor_config_id."""
     rag_config = rag_config_factory(extractor_config_id="target_extractor")
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create documents with different extractor config IDs
     matching_doc = mock_chunks_factory(
@@ -219,18 +226,23 @@ def test_iter_docs_with_chunks_filters_by_extractor_config_id(
         extractor_config_id="other_extractor",
     )
 
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 1
-    assert docs[0].document_id == str(matching_doc.document.id)
+    assert len(all_nodes) == 2  # Only the matching document's chunks
+    for node in all_nodes:
+        assert node.metadata["kiln_doc_id"] == str(matching_doc.document.id)
 
 
-def test_iter_docs_with_chunks_filters_by_chunker_config_id(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_filters_by_chunker_config_id(
     mock_project, mock_chunks_factory, rag_config_factory
 ):
-    """Test that iter_docs_with_chunks filters by chunker_config_id."""
+    """Test that iter_llama_index_nodes filters by chunker_config_id."""
     rag_config = rag_config_factory(chunker_config_id="target_chunker")
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create documents with different chunker config IDs
     matching_doc = mock_chunks_factory(
@@ -248,19 +260,23 @@ def test_iter_docs_with_chunks_filters_by_chunker_config_id(
         chunker_config_id="other_chunker",
     )
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 1
-    assert docs[0].document_id == str(matching_doc.document.id)
+    assert len(all_nodes) == 2  # Only the matching document's chunks
+    for node in all_nodes:
+        assert node.metadata["kiln_doc_id"] == str(matching_doc.document.id)
 
 
-def test_iter_docs_with_chunks_filters_by_embedding_config_id(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_filters_by_embedding_config_id(
     mock_project, mock_chunks_factory, rag_config_factory
 ):
-    """Test that iter_docs_with_chunks filters by embedding_config_id."""
+    """Test that iter_llama_index_nodes filters by embedding_config_id."""
     rag_config = rag_config_factory(embedding_config_id="target_embedding")
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create documents with different embedding config IDs
     matching_doc = mock_chunks_factory(
@@ -278,23 +294,27 @@ def test_iter_docs_with_chunks_filters_by_embedding_config_id(
         embedding_config_id="other_embedding",
     )
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 1
-    assert docs[0].document_id == str(matching_doc.document.id)
+    assert len(all_nodes) == 2  # Only the matching document's chunks
+    for node in all_nodes:
+        assert node.metadata["kiln_doc_id"] == str(matching_doc.document.id)
 
 
-def test_iter_docs_with_chunks_filters_by_all_config_ids(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_filters_by_all_config_ids(
     mock_project, mock_chunks_factory, rag_config_factory
 ):
-    """Test that iter_docs_with_chunks filters by all config IDs simultaneously."""
+    """Test that iter_llama_index_nodes filters by all config IDs simultaneously."""
     rag_config = rag_config_factory(
         extractor_config_id="target_extractor",
         chunker_config_id="target_chunker",
         embedding_config_id="target_embedding",
     )
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create documents with different combinations of config IDs
     fully_matching_doc = mock_chunks_factory(
@@ -325,30 +345,120 @@ def test_iter_docs_with_chunks_filters_by_all_config_ids(
         embedding_config_id="other_embedding",
     )
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 1
-    assert docs[0].document_id == str(fully_matching_doc.document.id)
+    assert len(all_nodes) == 2  # Only the fully matching document's chunks
+    for node in all_nodes:
+        assert node.metadata["kiln_doc_id"] == str(fully_matching_doc.document.id)
 
 
-def test_iter_docs_with_chunks_empty_project(mock_project, rag_config_factory):
-    """Test iter_docs_with_chunks with an empty project."""
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_empty_project(mock_project, rag_config_factory):
+    """Test iter_llama_index_nodes with an empty project."""
     rag_config = rag_config_factory()
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    assert len(docs) == 0
+    assert len(all_nodes) == 0
 
 
-def test_iter_docs_with_chunks_multiple_extractions_per_document(
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_batch_size(
+    mock_project, mock_chunks_factory, rag_config_factory
+):
+    """Test that iter_llama_index_nodes respects batch_size parameter."""
+    rag_config = rag_config_factory()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create a document with many chunks
+    mock_chunks_factory(mock_project, rag_config, num_chunks=5, text="Test content")
+
+    # Test with small batch size
+    batch_size = 2
+    batches = []
+    async for batch in loader.iter_llama_index_nodes(batch_size=batch_size):
+        batches.append(batch)
+        assert len(batch) <= batch_size
+
+    # Should have 3 batches: [2, 2, 1] chunks
+    assert len(batches) == 3
+    assert len(batches[0]) == 2
+    assert len(batches[1]) == 2
+    assert len(batches[2]) == 1
+
+
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_chunk_text_embedding_mismatch(
     mock_project, mock_chunks_factory, rag_config_factory, mock_attachment_factory
 ):
-    """Test iter_docs_with_chunks with multiple extractions per document."""
+    """Test that iter_llama_index_nodes raises error on chunk text/embedding count mismatch."""
     rag_config = rag_config_factory()
-    loader = ConcreteVectorStoreLoader()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create a document with mismatched chunk text and embeddings
+    doc = Document(
+        id=f"doc_{uuid.uuid4()}",
+        name="Test Document",
+        description="Test Document",
+        original_file=FileInfo(
+            filename="test.pdf",
+            size=100,
+            mime_type="application/pdf",
+            attachment=mock_attachment_factory(KilnMimeType.PDF),
+        ),
+        kind=Kind.DOCUMENT,
+        parent=mock_project,
+    )
+    doc.save_to_file()
+
+    extraction = Extraction(
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=rag_config.extractor_config_id,
+        output=mock_attachment_factory(KilnMimeType.PDF),
+        parent=doc,
+    )
+    extraction.save_to_file()
+
+    # Create 2 chunks but only 1 embedding
+    chunks = [
+        Chunk(content=mock_attachment_factory(KilnMimeType.TXT, text=f"chunk-{i}"))
+        for i in range(2)
+    ]
+    chunked_document = ChunkedDocument(
+        chunks=chunks,
+        chunker_config_id=rag_config.chunker_config_id,
+        parent=extraction,
+    )
+    chunked_document.save_to_file()
+
+    # Only 1 embedding for 2 chunks
+    chunked_embeddings = ChunkEmbeddings(
+        embeddings=[Embedding(vector=[0.1, 0.2, 0.3])],  # Only 1 embedding
+        embedding_config_id=rag_config.embedding_config_id,
+        parent=chunked_document,
+    )
+    chunked_embeddings.save_to_file()
+
+    # Test that it raises an error
+    with pytest.raises(ValueError, match="Chunk text/embedding count mismatch"):
+        async for batch in loader.iter_llama_index_nodes():
+            pass
+
+
+@pytest.mark.asyncio
+async def test_iter_llama_index_nodes_multiple_extractions_per_document(
+    mock_project, mock_chunks_factory, rag_config_factory, mock_attachment_factory
+):
+    """Test iter_llama_index_nodes with multiple extractions per document."""
+    rag_config = rag_config_factory()
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
 
     # Create a document
     doc = Document(
@@ -421,11 +531,14 @@ def test_iter_docs_with_chunks_multiple_extractions_per_document(
     )
     embeddings2.save_to_file()
 
-    # Test iterating through docs with chunks
-    docs = list(loader.iter_docs_with_chunks(mock_project, rag_config))
+    # Test iterating through nodes
+    all_nodes = []
+    async for batch in loader.iter_llama_index_nodes():
+        all_nodes.extend(batch)
 
-    # Should only return the first extraction since the second has a different extractor_config_id
-    assert len(docs) == 1
-    assert docs[0].document_id == str(doc.id)
-    assert docs[0].chunked_document.id == chunked_doc1.id
-    assert docs[0].chunk_embeddings.id == embeddings1.id
+    # Should only return nodes from the first extraction since the second has a different extractor_config_id
+    assert len(all_nodes) == 2
+    for node in all_nodes:
+        assert node.metadata["kiln_doc_id"] == str(doc.id)
+        # All nodes should have chunk indices 0 and 1 (from the first extraction)
+        assert node.metadata["kiln_chunk_idx"] in [0, 1]

@@ -8,7 +8,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from kiln_ai.adapters.vector_store.lancedb_adapter import lancedb_construct_from_config
-from kiln_ai.adapters.vector_store_loaders.lancedb_loader import LanceDBLoader
+from kiln_ai.adapters.vector_store_loaders.vector_store_loader import VectorStoreLoader
 from kiln_ai.datamodel.chunk import Chunk, ChunkedDocument
 from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 from kiln_ai.datamodel.embedding import ChunkEmbeddings, Embedding
@@ -247,12 +247,9 @@ async def test_lancedb_loader_insert_nodes_lancedb_cloud(
         table_name=table_name,
     )
 
-    # init loader
-    loader = LanceDBLoader(
+    loader = VectorStoreLoader(
         project=mock_project,
         rag_config=rag_config,
-        vector_store_config=vector_store_config,
-        lancedb_vector_store=lancedb_store,
     )
 
     # create nodes
@@ -272,81 +269,9 @@ async def test_lancedb_loader_insert_nodes_lancedb_cloud(
     assert node_count > 0, "No mock nodes were created"
 
     # insert docs
-    nodes_to_insert = []
     batch_size = 100
-    async for node in loader.iter_llama_index_nodes():
-        nodes_to_insert.append(node)
-
-    await loader.insert_nodes(nodes=nodes_to_insert, flush_batch_size=batch_size)
-
-    # check if docs are inserted
-    table = lancedb_store.table
-    assert table is not None
-    row_count = table.count_rows()
-    assert row_count == node_count, (
-        f"Expected {node_count} rows (one for each node), got {row_count} instead"
-    )
-
-
-@pytest.mark.parametrize(
-    "vector_store_type",
-    [
-        VectorStoreType.LANCE_DB_FTS,
-        VectorStoreType.LANCE_DB_VECTOR,
-        VectorStoreType.LANCE_DB_HYBRID,
-    ],
-)
-async def test_lancedb_loader_insert_nodes_lancedb_local(
-    mock_project,
-    mock_chunks_factory,
-    rag_config_factory,
-    vector_store_type,
-    vector_store_config_factory,
-    tmp_path,
-):
-    vector_store_config = vector_store_config_factory(vector_store_type)
-    rag_config = rag_config_factory(vector_store_config.id)
-
-    # init lancedb store
-    now = time.time()
-    table_name = f"test_lancedb_loader_insert_nodes_{vector_store_type.value}_{now}"
-    lancedb_store = lancedb_construct_from_config(
-        vector_store_config=vector_store_config,
-        uri=str(tmp_path / "lancedb"),
-        table_name=table_name,
-    )
-
-    # init loader
-    loader = LanceDBLoader(
-        project=mock_project,
-        rag_config=rag_config,
-        vector_store_config=vector_store_config,
-        lancedb_vector_store=lancedb_store,
-    )
-
-    # create nodes
-    doc_count = 10
-    node_count = 0
-    for i in range(doc_count):
-        nodes_to_add = random.randint(1, 20)
-        # create mock docs, extractions, chunked documents, and chunk embeddings and persist
-        mock_chunks_factory(
-            mock_project,
-            rag_config,
-            num_chunks=nodes_to_add,
-            text=f"Document {i}",
-        )
-        node_count += nodes_to_add
-
-    assert node_count > 0, "No mock nodes were created"
-
-    # insert docs
-    nodes_to_insert = []
-    batch_size = 100
-    async for node in loader.iter_llama_index_nodes():
-        nodes_to_insert.append(node)
-
-    await loader.insert_nodes(nodes=nodes_to_insert, flush_batch_size=batch_size)
+    async for batch in loader.iter_llama_index_nodes(batch_size=batch_size):
+        await lancedb_store.async_add(batch)
 
     # check if docs are inserted
     table = lancedb_store.table
