@@ -10,19 +10,16 @@
   import {
     model_info,
     load_model_info,
+    model_name,
+    prompt_name_from_id,
     current_task_prompts,
     get_task_composite_id,
-    load_available_models,
   } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
-  import {
-    getDetailedModelName,
-    getRunConfigPromptDisplayName,
-  } from "$lib/utils/run_config_formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -53,7 +50,6 @@
     await tick()
     // Usually cached and fast
     load_model_info()
-    load_available_models()
     // Load the evals and run configs in parallel
     await Promise.all([get_evals(), get_task_run_configs()])
   })
@@ -252,9 +248,12 @@
                   run_config.run_config_properties.prompt_id,
                 )
               : undefined}
-            {@const prompt_name = run_config
-              ? getRunConfigPromptDisplayName(run_config, $current_task_prompts)
-              : "Unknown Prompt"}
+            {@const prompt_name =
+              run_config?.prompt?.name ||
+              prompt_name_from_id(
+                run_config?.run_config_properties.prompt_id || "",
+                $current_task_prompts,
+              )}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
@@ -279,13 +278,12 @@
                   <div
                     class="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4 lg:min-w-[260px]"
                   >
-                    <div>Name:</div>
-                    <div class="text-gray-500">
-                      {run_config.name}
-                    </div>
                     <div>Model:</div>
                     <div class="text-gray-500">
-                      {getDetailedModelName(run_config, $model_info)}
+                      {model_name(
+                        run_config.run_config_properties.model_name,
+                        $model_info,
+                      )}
                     </div>
                     <div>Prompt:</div>
                     <div class="text-gray-500">

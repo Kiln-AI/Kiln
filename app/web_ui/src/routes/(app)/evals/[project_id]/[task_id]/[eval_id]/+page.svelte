@@ -181,11 +181,11 @@
       })
     }
 
-    if (eval_progress?.current_run_config) {
+    if (eval_progress?.current_run_method) {
       properties.push({
         name: "Run Model",
         value: getDetailedModelName(
-          eval_progress.current_run_config,
+          eval_progress.current_run_method,
           modelInfo,
         ),
         tooltip: "The model used by your selected run config.",
@@ -193,14 +193,14 @@
       properties.push({
         name: "Run Prompt",
         value: getRunConfigPromptDisplayName(
-          eval_progress.current_run_config,
+          eval_progress.current_run_method,
           taskPrompts,
         ),
         tooltip: "The prompt used by your selected run config.",
         link: prompt_link(
           project_id,
           task_id,
-          eval_progress.current_run_config.run_config_properties.prompt_id,
+          eval_progress.current_run_method.run_config_properties.prompt_id,
         ),
       })
     }
@@ -532,15 +532,15 @@
                       </div>
                     {:else if step == 5}
                       <div class="mb-1">
-                        {#if eval_progress?.current_run_config}
+                        {#if eval_progress?.current_run_method}
                           You've selected the model '{model_name(
-                            eval_progress.current_run_config
+                            eval_progress.current_run_method
                               .run_config_properties.model_name,
                             $model_info,
-                          )}' with the prompt '{eval_progress.current_run_config
+                          )}' with the prompt '{eval_progress.current_run_method
                             .prompt?.name ||
                             prompt_name_from_id(
-                              eval_progress.current_run_config
+                              eval_progress.current_run_method
                                 .run_config_properties.prompt_id,
                               $current_task_prompts,
                             )}'.
