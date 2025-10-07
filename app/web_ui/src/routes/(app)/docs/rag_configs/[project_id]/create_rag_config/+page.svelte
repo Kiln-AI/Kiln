@@ -36,6 +36,7 @@
   import { tool_name_validator } from "$lib/utils/input_validators"
   import posthog from "posthog-js"
   import { uncache_available_tools } from "$lib/stores"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   $: project_id = $page.params.project_id
   const template_id = $page.url.searchParams.get("template_id")
@@ -104,7 +105,7 @@
         {
           label: "New Extractor Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -134,7 +135,7 @@
         {
           label: "New Chunker Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -173,7 +174,7 @@
         {
           label: "New Embedding Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -204,7 +205,7 @@
         {
           label: "New Search Index Configuration",
           value: "create_new",
-          badge: "New",
+          badge: "＋",
           badge_color: "primary",
         },
       ],
@@ -647,6 +648,7 @@
         keyboard_submit={!modal_opened}
       >
         <!-- Search Tool Properties -->
+        <div class="text-xl font-bold">Part 1: Tool Properties</div>
         <FormElement
           label="Search Tool Name"
           description="A unique short tool name such as 'knowledge_base_search'. Be descriptive about what data this tool can search."
@@ -674,17 +676,23 @@
             on:change={(e) => (selected_tags = e.detail.selected_tags)}
           />
         </div>
+
+        <div>
+          <div class="text-xl font-bold mt-4">Part 2: Search Configuration</div>
+          <div class="text-xs text-gray-500 font-medium">
+            This configuration controls how the search tool will extract, index,
+            and search your documents.
+            {#if template && !customize_template_mode}
+              <InfoTooltip
+                no_pad={true}
+                tooltip_text="You selected a pre-configured search tool with these parameters."
+              />
+            {/if}
+          </div>
+        </div>
         {#if template && !customize_template_mode}
-          <div class="flex flex-col mt-4">
-            <FormElement
-              id="search_tool_configuration_header"
-              label="Search Configuration"
-              description="These parameters control how the search tool will extract, index, and search your documents."
-              info_description="You selected a pre-configured search tool with these parameters."
-              inputType="header_only"
-              value={null}
-            />
-            <div class="mt-2 mb-8">
+          <div class="flex flex-col">
+            <div class="mb-8">
               <PropertyList
                 properties={[
                   { name: "Template Name", value: template.name },

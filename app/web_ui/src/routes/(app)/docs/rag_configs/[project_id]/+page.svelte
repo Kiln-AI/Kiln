@@ -12,12 +12,16 @@
   import TableRagConfigRow from "./table_rag_config_row.svelte"
   import {
     load_all_rag_config_progress,
-    ragProgressStore,
     load_rag_configs,
-    allRagConfigs,
+    sortRagConfigs,
+    getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
 
-  let error: KilnError | null = $ragProgressStore.error
+  $: projectStateStore = getProjectRagStateStore($page.params.project_id)
+  $: progressState = $projectStateStore
+
+  let error: KilnError | null = null
+  $: error = progressState.error
   let loading = true
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
@@ -42,7 +46,10 @@
     loading = false
   })
 
-  $: all_rag_configs = $allRagConfigs
+  $: all_rag_configs = sortRagConfigs(
+    Object.values(progressState.rag_configs),
+    "created_at",
+  )
 
   $: active_rag_configs = (all_rag_configs || [])
     .filter((rag_config) => !rag_config.is_archived)
@@ -114,7 +121,8 @@
           <table class="table table-fixed">
             <thead>
               <tr>
-                <th class="w-auto">Details</th>
+                <th class="w-[300px]">Details</th>
+                <th class="w-[300px]">Tool Name</th>
                 <th class="w-[300px]">Processing Status</th>
               </tr>
             </thead>

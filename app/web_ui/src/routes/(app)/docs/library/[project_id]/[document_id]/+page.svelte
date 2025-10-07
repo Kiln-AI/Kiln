@@ -16,6 +16,8 @@
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -30,6 +32,8 @@
   // dialog state
   let output_dialog: Dialog | null = null
   let dialog_extraction: ExtractionSummary | null = null
+
+  let edit_dialog: EditDialog | null = null
 
   $: download_document_url = `${base_url}/api/projects/${project_id}/documents/${document_id}/download`
 
@@ -188,7 +192,7 @@
 
 <AppPage
   title="Document"
-  subtitle={`${document?.name || document?.original_file.filename}`}
+  subtitle={document?.friendly_name}
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width
@@ -203,6 +207,12 @@
     },
   ]}
   action_buttons={[
+    {
+      label: "Edit",
+      handler: () => {
+        edit_dialog?.show()
+      },
+    },
     {
       icon: "/images/download.svg",
       href: download_document_url || "",
@@ -247,14 +257,15 @@
                   <tr>
                     <th>Extraction Details</th>
                     <th>Extraction Output</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each results as result}
                     <tr>
-                      <td>
+                      <td class="flex justify-start">
                         <div
-                          class="grid grid-cols-[auto_1fr] gap-y-2 gap-x-4 text-sm"
+                          class="grid grid-cols-[auto_1fr] gap-y-2 gap-x-4 text-sm items-start"
                         >
                           <div>ID</div>
                           <div class="text-gray-500">{result.id}</div>
@@ -277,18 +288,6 @@
                               {result.extractor.name}
                             </a>
                           </div>
-                          <div>Actions</div>
-                          <div class="text-gray-500">
-                            <button
-                              class="link"
-                              on:click={() => {
-                                delete_extraction_id = result.id || null
-                                delete_extraction_dialog?.show()
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
                         </div>
                       </td>
                       <td>
@@ -306,6 +305,27 @@
                           />
                         </button>
                       </td>
+                      <td class="flex justify-start">
+                        <div class="dropdown dropdown-end dropdown-hover">
+                          <TableButton />
+                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                          <ul
+                            tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                          >
+                            <li>
+                              <button
+                                on:click={() => {
+                                  delete_extraction_id = result.id || null
+                                  delete_extraction_dialog?.show()
+                                }}
+                              >
+                                Delete Extraction</button
+                              >
+                            </li>
+                          </ul>
+                        </div>
+                      </td>
                     </tr>
                   {/each}
                 </tbody>
@@ -319,13 +339,12 @@
         <PropertyList
           properties={[
             { name: "ID", value: document.id || "Unknown" },
-            { name: "Name", value: document.name },
             {
-              name: "Original Filename",
-              value: document.original_file.filename,
+              name: "Name",
+              value: document.friendly_name,
             },
             {
-              name: "Original File Size",
+              name: "File Size",
               value: formatSize(document.original_file.size),
             },
             {
@@ -377,6 +396,7 @@
                 : 'hidden'}"
             >
               <TagDropdown
+                {project_id}
                 on_select={(tag) => add_tags([tag])}
                 on_escape={() => (show_create_tag = false)}
                 focus_on_mount={true}
@@ -443,4 +463,34 @@
   bind:this={delete_extraction_dialog}
   delete_url={delete_extraction_url}
   after_delete={after_delete_extraction}
+/>
+
+<EditDialog
+  bind:this={edit_dialog}
+  after_save={() => {
+    get_document()
+    get_extractions()
+  }}
+  name="Document"
+  patch_url={`/api/projects/${project_id}/documents/${document_id}`}
+  fields={[
+    {
+      label: "Name",
+      description:
+        "A name for your own reference. It does not need to contain the file extension or be unique.",
+      api_name: "name_override",
+      value: document?.friendly_name || "",
+      input_type: "input",
+      optional: true, // if empty, we revert to the original name
+      info_description: "If empty, the original file name will be used.",
+    },
+    {
+      label: "Description",
+      description: "A description of the document for your own reference.",
+      api_name: "description",
+      value: document?.description || "",
+      input_type: "textarea",
+      optional: true,
+    },
+  ]}
 />

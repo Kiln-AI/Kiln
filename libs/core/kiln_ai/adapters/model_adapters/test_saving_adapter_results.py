@@ -60,7 +60,9 @@ def test_save_run_isolation(test_task, adapter):
     )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data,
+        input_source=None,
+        run_output=run_output,
     )
     task_run.save_to_file()
 
@@ -146,7 +148,9 @@ def test_generate_run_non_ascii(test_task, adapter):
     )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data,
+        input_source=None,
+        run_output=run_output,
     )
     task_run.save_to_file()
 
@@ -256,7 +260,9 @@ def test_properties_for_task_output_custom_values(test_task):
     run_output = RunOutput(output=output_data, intermediate_outputs=None)
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data,
+        input_source=None,
+        run_output=run_output,
     )
     task_run.save_to_file()
 

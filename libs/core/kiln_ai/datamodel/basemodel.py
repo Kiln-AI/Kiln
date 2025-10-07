@@ -9,7 +9,7 @@ from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Set, Type, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -78,9 +78,9 @@ def string_to_valid_name(name: str) -> str:
     # https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
     valid_name = unicodedata.normalize("NFKD", name)
     # Replace any forbidden chars with an underscore
-    valid_name = re.sub(FORBIDDEN_CHARS_REGEX, "_", valid_name)
+    valid_name = re.sub(FORBIDDEN_CHARS_REGEX, " ", valid_name)
     # Replace control characters with an underscore
-    valid_name = re.sub(r"[\x00-\x1F]", "_", valid_name)
+    valid_name = re.sub(r"[\x00-\x1F]", " ", valid_name)
     # Replace consecutive whitespace with a single space
     valid_name = re.sub(r"\s+", " ", valid_name)
     # Replace consecutive underscores with a single underscore
@@ -593,6 +593,34 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
                 if child.id == id:
                     return child
         return None
+
+    @classmethod
+    def from_ids_and_parent_path(
+        cls: Type[PT], ids: Set[str], parent_path: Path | None
+    ) -> Dict[str, PT]:
+        """
+        Bulk equivalent of from_id_and_parent_path, much faster for large collections.
+
+        It picks out the matching models from the directory only once. This avoids
+        doing individual costly lookups that scan the whole directory in scenarios
+        where we need to iterate over a large collection of models (e.g. bulk tagging).
+        """
+        if parent_path is None:
+            return {}
+
+        children = {}
+
+        # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            child_id = ModelCache.shared().get_model_id(child_path, cls)
+            if child_id in ids:
+                children[child_id] = cls.load_from_file(child_path)
+            if child_id is None:
+                child = cls.load_from_file(child_path)
+                if child.id in ids:
+                    children[child.id] = child
+
+        return children
 
 
 # Parent create methods for all child relationships

@@ -22,6 +22,9 @@
   export let redirect_on_created: string | null = "/"
   export let hide_example_task: boolean = false
 
+  // Simplify the create view for onboarding
+  export let onboarding: boolean = false
+
   // @ts-expect-error This is a partial task, which is fine.
   export let task: Task = {
     name: "",
@@ -32,7 +35,7 @@
 
   $: creating = !task.id
   $: editing = !creating
-  $: show_requirements = editing || task.requirements.length > 0
+  $: show_requirements = !onboarding || task.requirements.length > 0
 
   // These have their own custom VM, which is translated back to the model on save
   let outputSchemaSection: SchemaSection
@@ -142,7 +145,7 @@
 
       // reload the current task to make sure changes propagate throughout the UI
       // e.g. the rating options
-      await load_current_task(get(current_project))
+      await load_current_task(get(current_project)?.id)
       await load_rating_options()
 
       // Wait for the saved change to propagate to the warn_before_unload
@@ -272,24 +275,27 @@
       bind:value={task.instruction}
     />
 
-    <FormElement
-      label="Task Description"
-      inputType="textarea"
-      id="task_description"
-      description="A description for you and your team, not used by the model."
-      optional={true}
-      bind:value={task.description}
-    />
+    <!-- Don't show these if onboarding, keep onboarding view as simple as possible -->
+    {#if !onboarding}
+      <FormElement
+        label="Task Description"
+        inputType="textarea"
+        id="task_description"
+        description="A description for you and your team, not used by the model."
+        optional={true}
+        bind:value={task.description}
+      />
 
-    <FormElement
-      label="'Thinking' Instructions"
-      inputType="textarea"
-      id="thinking_instructions"
-      optional={true}
-      description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
-      info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
-      bind:value={task.thinking_instruction}
-    />
+      <FormElement
+        label="'Thinking' Instructions"
+        inputType="textarea"
+        id="thinking_instructions"
+        optional={true}
+        description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
+        info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
+        bind:value={task.thinking_instruction}
+      />
+    {/if}
 
     {#if show_requirements}
       <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">

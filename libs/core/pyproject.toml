@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.21.0"
+version = "0.22.0"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -39,6 +39,8 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.3.3",
     "llama-index>=0.13.3",
     "anyio>=4.10.0",
+    "pypdfium2>=4.30.0",
+    "pillow>=11.1.0",
 ]
 
 [dependency-groups]

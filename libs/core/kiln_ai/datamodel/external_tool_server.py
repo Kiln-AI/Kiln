@@ -1,7 +1,10 @@
+import re
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import Field, PrivateAttr, model_validator
+from typing_extensions import NotRequired, TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
@@ -9,6 +12,7 @@ from kiln_ai.datamodel.basemodel import (
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY, Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.validation import tool_name_validator, validate_return_dict_prop
 
 
 class ToolServerType(str, Enum):
@@ -18,6 +22,28 @@ class ToolServerType(str, Enum):
 
     remote_mcp = "remote_mcp"
     local_mcp = "local_mcp"
+    kiln_task = "kiln_task"
+
+
+class LocalServerProperties(TypedDict, total=True):
+    command: str
+    args: NotRequired[list[str]]
+    env_vars: NotRequired[dict[str, str]]
+    secret_env_var_keys: NotRequired[list[str]]
+
+
+class RemoteServerProperties(TypedDict, total=True):
+    server_url: str
+    headers: NotRequired[dict[str, str]]
+    secret_header_keys: NotRequired[list[str]]
+
+
+class KilnTaskServerProperties(TypedDict, total=True):
+    task_id: str
+    run_config_id: str
+    name: str
+    description: str
+    is_archived: bool
 
 
 class ExternalToolServer(KilnParentedModel):
@@ -36,8 +62,10 @@ class ExternalToolServer(KilnParentedModel):
         default=None,
         description="A description of the external tool for you and your team. Will not be used in prompts/training/validation.",
     )
-    properties: Dict[str, Any] = Field(
-        default={},
+
+    properties: (
+        LocalServerProperties | RemoteServerProperties | KilnTaskServerProperties
+    ) = Field(
         description="Configuration properties specific to the tool type.",
     )
 
@@ -80,6 +108,9 @@ class ExternalToolServer(KilnParentedModel):
                         # Remove from env_vars immediately so they are not saved to file
                         del env_vars[key_name]
 
+            case ToolServerType.kiln_task:
+                pass
+
             case _:
                 raise_exhaustive_enum_error(self.type)
 
@@ -93,76 +124,195 @@ class ExternalToolServer(KilnParentedModel):
         if name == "properties":
             self._process_secrets_from_properties()
 
-    @model_validator(mode="after")
-    def validate_required_fields(self) -> "ExternalToolServer":
+    # Validation Helpers
+
+    @classmethod
+    def check_server_url(cls, server_url: str) -> None:
+        """Validate Server URL"""
+        if not isinstance(server_url, str):
+            raise ValueError("Server URL must be a string")
+
+        # Check for leading whitespace in URL
+        if server_url != server_url.lstrip():
+            raise ValueError("Server URL must not have leading whitespace")
+
+        parsed_url = urlparse(server_url)
+        if not parsed_url.netloc:
+            raise ValueError("Server URL is not a valid URL")
+        if parsed_url.scheme not in ["http", "https"]:
+            raise ValueError("Server URL must start with http:// or https://")
+
+    @classmethod
+    def check_headers(cls, headers: dict) -> None:
+        """Validate Headers"""
+        if not isinstance(headers, dict):
+            raise ValueError("headers must be a dictionary")
+
+        for key, value in headers.items():
+            if not key:
+                raise ValueError("Header name is required")
+            if not value:
+                raise ValueError("Header value is required")
+
+            # Reject invalid header names and CR/LF in names/values
+            token_re = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+            if not token_re.match(key):
+                raise ValueError(f'Invalid header name: "{key}"')
+            if re.search(r"\r|\n", key) or re.search(r"\r|\n", value):
+                raise ValueError(
+                    "Header names/values must not contain invalid characters"
+                )
+
+    @classmethod
+    def check_secret_keys(
+        cls, secret_keys: list, key_type: str, tool_type: str
+    ) -> None:
+        """Validate Secret Keys (generic method for both header and env var keys)"""
+        if not isinstance(secret_keys, list):
+            raise ValueError(
+                f"{key_type} must be a list for external tools of type '{tool_type}'"
+            )
+        if not all(isinstance(k, str) for k in secret_keys):
+            raise ValueError(f"{key_type} must contain only strings")
+        if not all(key for key in secret_keys):
+            raise ValueError("Secret key is required")
+
+    @classmethod
+    def check_env_vars(cls, env_vars: dict) -> None:
+        """Validate Environment Variables"""
+        if not isinstance(env_vars, dict):
+            raise ValueError("environment variables must be a dictionary")
+
+        # Validate env_vars keys are in the correct format for Environment Variables
+        # According to POSIX specification, environment variable names must:
+        # - Start with a letter (a-z, A-Z) or underscore (_)
+        # - Contain only ASCII letters, digits, and underscores
+        for key, _ in env_vars.items():
+            if not key or not (
+                key[0].isascii() and (key[0].isalpha() or key[0] == "_")
+            ):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Must start with a letter or underscore."
+                )
+
+            if not all(c.isascii() and (c.isalnum() or c == "_") for c in key):
+                raise ValueError(
+                    f"Invalid environment variable key: {key}. Can only contain letters, digits, and underscores."
+                )
+
+    @classmethod
+    def type_from_data(cls, data: dict) -> ToolServerType:
+        """Get the tool server type from the data for the the validators"""
+        raw_type = data.get("type")
+        if raw_type is None:
+            raise ValueError("type is required")
+        try:
+            return ToolServerType(raw_type)
+        except ValueError:
+            valid_types = ", ".join(type.value for type in ToolServerType)
+            raise ValueError(f"type must be one of: {valid_types}")
+
+    @model_validator(mode="before")
+    def validate_required_fields(cls, data: dict) -> dict:
         """Validate that each tool type has the required configuration."""
-        match self.type:
+        server_type = ExternalToolServer.type_from_data(data)
+        properties = data.get("properties", {})
+
+        match server_type:
             case ToolServerType.remote_mcp:
-                server_url = self.properties.get("server_url", None)
-                if not isinstance(server_url, str):
+                server_url = properties.get("server_url", None)
+                if server_url is None:
                     raise ValueError(
-                        "server_url must be a string for external tools of type 'remote_mcp'"
+                        "Server URL is required to connect to a remote MCP server"
                     )
-                if not server_url:
-                    raise ValueError(
-                        "server_url is required to connect to a remote MCP server"
-                    )
-
-                headers = self.properties.get("headers", None)
-                if headers is None:
-                    raise ValueError("headers must be set when type is 'remote_mcp'")
-                if not isinstance(headers, dict):
-                    raise ValueError(
-                        "headers must be a dictionary for external tools of type 'remote_mcp'"
-                    )
-
-                secret_header_keys = self.properties.get("secret_header_keys", None)
-                # Secret header keys are optional, but if they are set, they must be a list of strings
-                if secret_header_keys is not None:
-                    if not isinstance(secret_header_keys, list):
-                        raise ValueError(
-                            "secret_header_keys must be a list for external tools of type 'remote_mcp'"
-                        )
-                    if not all(isinstance(k, str) for k in secret_header_keys):
-                        raise ValueError("secret_header_keys must contain only strings")
+                ExternalToolServer.check_server_url(server_url)
 
             case ToolServerType.local_mcp:
-                command = self.properties.get("command", None)
+                command = properties.get("command", None)
+                if command is None:
+                    raise ValueError("command is required to start a local MCP server")
                 if not isinstance(command, str):
                     raise ValueError(
                         "command must be a string to start a local MCP server"
                     )
-                if not command.strip():
-                    raise ValueError("command is required to start a local MCP server")
+                # Reject empty/whitespace-only command strings
+                if command.strip() == "":
+                    raise ValueError("command must be a non-empty string")
 
-                args = self.properties.get("args", None)
-                if not isinstance(args, list):
-                    raise ValueError(
-                        "arguments must be a list to start a local MCP server"
-                    )
-
-                env_vars = self.properties.get("env_vars", {})
-                if not isinstance(env_vars, dict):
-                    raise ValueError(
-                        "environment variables must be a dictionary for external tools of type 'local_mcp'"
-                    )
-
-                secret_env_var_keys = self.properties.get("secret_env_var_keys", None)
-                # Secret env var keys are optional, but if they are set, they must be a list of strings
-                if secret_env_var_keys is not None:
-                    if not isinstance(secret_env_var_keys, list):
+                args = properties.get("args", None)
+                if args is not None:
+                    if not isinstance(args, list):
                         raise ValueError(
-                            "secret_env_var_keys must be a list for external tools of type 'local_mcp'"
+                            "arguments must be a list to start a local MCP server"
                         )
-                    if not all(isinstance(k, str) for k in secret_env_var_keys):
-                        raise ValueError(
-                            "secret_env_var_keys must contain only strings"
-                        )
+
+            case ToolServerType.kiln_task:
+                tool_name_validator(properties.get("name", ""))
+                err_msg_prefix = "Kiln task server properties:"
+                validate_return_dict_prop(
+                    properties, "description", str, err_msg_prefix
+                )
+                description = properties.get("description", "")
+                if len(description) > 128:
+                    raise ValueError("description must be 128 characters or less")
+                validate_return_dict_prop(
+                    properties, "is_archived", bool, err_msg_prefix
+                )
+                validate_return_dict_prop(properties, "task_id", str, err_msg_prefix)
+                validate_return_dict_prop(
+                    properties, "run_config_id", str, err_msg_prefix
+                )
 
             case _:
                 # Type checking will catch missing cases
-                raise_exhaustive_enum_error(self.type)
-        return self
+                raise_exhaustive_enum_error(server_type)
+        return data
+
+    @model_validator(mode="before")
+    def validate_headers_and_env_vars(cls, data: dict) -> dict:
+        """
+        Validate secrets, these needs to be validated before model initlization because secrets will be processed and stripped
+        """
+        type = ExternalToolServer.type_from_data(data)
+
+        properties = data.get("properties", {})
+        if properties is None:
+            raise ValueError("properties is required")
+
+        match type:
+            case ToolServerType.remote_mcp:
+                # Validate headers
+                headers = properties.get("headers", None)
+                if headers is not None:
+                    ExternalToolServer.check_headers(headers)
+
+                # Secret header keys are optional, validate if they are set
+                secret_header_keys = properties.get("secret_header_keys", None)
+                if secret_header_keys is not None:
+                    ExternalToolServer.check_secret_keys(
+                        secret_header_keys, "secret_header_keys", "remote_mcp"
+                    )
+
+            case ToolServerType.local_mcp:
+                # Validate secret environment variable keys
+                env_vars = properties.get("env_vars", {})
+                if env_vars is not None:
+                    ExternalToolServer.check_env_vars(env_vars)
+
+                # Secret env var keys are optional, but if they are set, they must be a list of strings
+                secret_env_var_keys = properties.get("secret_env_var_keys", None)
+                if secret_env_var_keys is not None:
+                    ExternalToolServer.check_secret_keys(
+                        secret_env_var_keys, "secret_env_var_keys", "local_mcp"
+                    )
+
+            case ToolServerType.kiln_task:
+                pass
+
+            case _:
+                raise_exhaustive_enum_error(type)
+
+        return data
 
     def get_secret_keys(self) -> list[str]:
         """
@@ -176,6 +326,8 @@ class ExternalToolServer(KilnParentedModel):
                 return self.properties.get("secret_header_keys", [])
             case ToolServerType.local_mcp:
                 return self.properties.get("secret_env_var_keys", [])
+            case ToolServerType.kiln_task:
+                return []
             case _:
                 raise_exhaustive_enum_error(self.type)
 

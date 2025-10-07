@@ -5,7 +5,7 @@ from mcp.types import Tool as MCPTool
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
@@ -38,7 +38,7 @@ class MCPServerTool(KilnToolInterface):
             },
         }
 
-    async def run(self, **kwargs) -> Any:
+    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
         result = await self._call_tool(**kwargs)
 
         if result.isError:

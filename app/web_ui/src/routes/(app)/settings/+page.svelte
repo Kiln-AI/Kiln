@@ -1,24 +1,8 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
-  import { client } from "$lib/api_client"
   import SettingsSection from "$lib/ui/settings_section.svelte"
-
-  async function view_logs() {
-    try {
-      const { error } = await client.POST("/api/open_logs", {})
-      if (error) {
-        const errorMessage = (error as Record<string, unknown>)?.message
-        if (typeof errorMessage === "string") {
-          throw new Error(errorMessage)
-        } else {
-          throw new Error("Unknown error")
-        }
-      }
-    } catch (e) {
-      alert("Failed to open logs: " + e)
-    }
-  }
+  import { view_logs } from "$lib/utils/logs"
 
   let sections = [
     {
@@ -41,6 +25,18 @@
       ],
     },
     {
+      category: "Tools & MCP",
+      items: [
+        {
+          name: "Manage Tools",
+          description:
+            "Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
+          button_text: "Manage Tools",
+        },
+      ],
+    },
+    {
       category: "Models & Providers",
       items: [
         {
@@ -56,17 +52,6 @@
             "Add or remove custom models from one of your connected AI providers.",
           href: "/settings/providers/add_models",
           button_text: "Custom Models",
-        },
-      ],
-    },
-    {
-      category: "Tools & MCP",
-      items: [
-        {
-          name: "Manage Tools",
-          description: "Connect to tools such as RAG systems and MCP servers.",
-          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
-          button_text: "Manage Tools",
         },
       ],
     },

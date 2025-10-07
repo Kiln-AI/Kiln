@@ -34,9 +34,9 @@ from .correlation_calculator import (
 
 def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     task = task_from_id(project_id, task_id)
-    for eval in task.evals():
-        if eval.id == eval_id:
-            return eval
+    eval = Eval.from_id_and_parent_path(eval_id, task.path)
+    if eval is not None:
+        return eval
 
     raise HTTPException(
         status_code=404,
@@ -395,7 +395,7 @@ def connect_evals_api(app: FastAPI):
             prompt_name = generate_memorable_name()
             frozen_prompt = BasePrompt(
                 name=prompt_name,
-                description=f"Frozen copy of prompt '{prompt_id}', created for evaluations.",
+                description=f"Frozen copy of prompt '{prompt_id}'.",
                 generator_id=prompt_id,
                 prompt=prompt_builder.build_base_prompt(),
                 chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),

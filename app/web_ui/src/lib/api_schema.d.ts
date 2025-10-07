@@ -369,6 +369,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tags */
+        get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -1110,6 +1127,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/open_project_folder/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Project Folder */
+        post: operations["open_project_folder_api_open_project_folder__project_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/generate_categories": {
         parameters: {
             query?: never;
@@ -1662,6 +1696,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/kiln_task_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Kiln Task Tools */
+        get: operations["get_kiln_task_tools_api_projects__project_id__kiln_task_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tool_servers/{tool_server_id}": {
         parameters: {
             query?: never;
@@ -1746,6 +1797,40 @@ export interface paths {
         head?: never;
         /** Edit Local Mcp */
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/kiln_task_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Kiln Task Tool */
+        post: operations["add_kiln_task_tool_api_projects__project_id__kiln_task_tool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Edit Kiln Task Tool */
+        patch: operations["edit_kiln_task_tool_api_projects__project_id__edit_kiln_task_tool__tool_server_id__patch"];
         trace?: never;
     };
     "/api/demo_tools": {
@@ -2060,8 +2145,8 @@ export interface components {
             /** Name */
             name?: string;
         };
-        /** ChatCompletionToolMessageParam */
-        ChatCompletionToolMessageParam: {
+        /** ChatCompletionToolMessageParamWrapper */
+        ChatCompletionToolMessageParamWrapper: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
             /**
@@ -2071,6 +2156,8 @@ export interface components {
             role: "tool";
             /** Tool Call Id */
             tool_call_id: string;
+            /** Kiln Task Tool Data */
+            kiln_task_tool_data?: string | null;
         };
         /** ChatCompletionUserMessageParam */
         "ChatCompletionUserMessageParam-Input": {
@@ -2516,16 +2603,17 @@ export interface components {
         };
         /**
          * DataSource
-         * @description Represents the origin of data, either human or synthetic, with associated properties.
+         * @description Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
          *
-         *     Properties vary based on the source type - for synthetic sources this includes
-         *     model information, for human sources this includes creator information.
+         *     Properties vary based on the source type - for synthetic/tool_call sources this includes
+         *     model information, for human sources this includes creator information, for file imports
+         *     this includes file information.
          */
         "DataSource-Input": {
             type: components["schemas"]["DataSourceType"];
             /**
              * Properties
-             * @description Properties describing the data source. For synthetic things like model. For human, the human's name.
+             * @description Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.
              * @default {}
              */
             properties: {
@@ -2536,16 +2624,17 @@ export interface components {
         };
         /**
          * DataSource
-         * @description Represents the origin of data, either human or synthetic, with associated properties.
+         * @description Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
          *
-         *     Properties vary based on the source type - for synthetic sources this includes
-         *     model information, for human sources this includes creator information.
+         *     Properties vary based on the source type - for synthetic/tool_call sources this includes
+         *     model information, for human sources this includes creator information, for file imports
+         *     this includes file information.
          */
         "DataSource-Output": {
             type: components["schemas"]["DataSourceType"];
             /**
              * Properties
-             * @description Properties describing the data source. For synthetic things like model. For human, the human's name.
+             * @description Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.
              * @default {}
              */
             properties: {
@@ -2562,7 +2651,7 @@ export interface components {
          *     Synthetic: a model created the data
          * @enum {string}
          */
-        DataSourceType: "human" | "synthetic" | "file_import";
+        DataSourceType: "human" | "synthetic" | "file_import" | "tool_call";
         /**
          * DatasetSplit
          * @description A collection of task runs, with optional splits (train, test, validation).
@@ -2682,6 +2771,11 @@ export interface components {
              */
             name: string;
             /**
+             * Name Override
+             * @description A friendly name to identify the document. This is used for display purposes and can be different from the name.
+             */
+            name_override?: string | null;
+            /**
              * Description
              * @description A description for the file
              */
@@ -2697,6 +2791,8 @@ export interface components {
             tags?: string[];
             /** Model Type */
             readonly model_type: string;
+            /** Friendly Name */
+            readonly friendly_name: string;
         };
         /** EmbeddingConfig */
         EmbeddingConfig: {
@@ -2763,7 +2859,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1";
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -3074,7 +3170,7 @@ export interface components {
         EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
          * ExternalToolApiDescription
-         * @description This class is a wrapper of MCP's Tool object to be displayed in the UI under tool_server/[tool_server_id].
+         * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
          */
         ExternalToolApiDescription: {
             /** Name */
@@ -3125,11 +3221,8 @@ export interface components {
             /**
              * Properties
              * @description Configuration properties specific to the tool type.
-             * @default {}
              */
-            properties: {
-                [key: string]: unknown;
-            };
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"] | components["schemas"]["KilnTaskServerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3150,9 +3243,7 @@ export interface components {
             /** Created By */
             created_by: string | null;
             /** Properties */
-            properties: {
-                [key: string]: unknown;
-            };
+            properties: components["schemas"]["LocalServerProperties"] | components["schemas"]["RemoteServerProperties"] | components["schemas"]["KilnTaskServerProperties"];
             /** Available Tools */
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
@@ -3617,6 +3708,57 @@ export interface components {
             /** File Path */
             file_path: string | null;
         };
+        /** KilnTaskServerProperties */
+        KilnTaskServerProperties: {
+            /** Task Id */
+            task_id: string;
+            /** Run Config Id */
+            run_config_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Is Archived */
+            is_archived: boolean;
+        };
+        /**
+         * KilnTaskToolDescription
+         * @description This class is used to describe Kiln Task tools with their associated task information.
+         */
+        KilnTaskToolDescription: {
+            /** Tool Server Id */
+            tool_server_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string | null;
+            /** Task Id */
+            task_id: string;
+            /** Task Name */
+            task_name: string;
+            /** Task Description */
+            task_description: string | null;
+            /** Is Archived */
+            is_archived: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** KilnTaskToolServerCreationRequest */
+        KilnTaskToolServerCreationRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Task Id */
+            task_id: string;
+            /** Run Config Id */
+            run_config_id: string;
+            /** Is Archived */
+            is_archived: boolean;
+        };
         /**
          * KilnToolServerDescription
          * @description This class is used to describe the external tool server under Settings -> Manage Tools UI.
@@ -3631,12 +3773,27 @@ export interface components {
             description: string | null;
             /** Missing Secrets */
             missing_secrets: string[];
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * Kind
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LocalServerProperties */
+        LocalServerProperties: {
+            /** Command */
+            command: string;
+            /** Args */
+            args?: string[];
+            /** Env Vars */
+            env_vars?: {
+                [key: string]: string;
+            };
+            /** Secret Env Var Keys */
+            secret_env_var_keys?: string[];
+        };
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
             /** Name */
@@ -3753,10 +3910,10 @@ export interface components {
         /** PatchDocumentRequest */
         PatchDocumentRequest: {
             /**
-             * Name
+             * Name Override
              * @description A name for this document.
              */
-            name?: string | null;
+            name_override?: string | null;
             /**
              * Description
              * @description The description of the document
@@ -4188,6 +4345,17 @@ export interface components {
             /** Options */
             options: components["schemas"]["RatingOption"][];
         };
+        /** RemoteServerProperties */
+        RemoteServerProperties: {
+            /** Server Url */
+            server_url: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /** Secret Header Keys */
+            secret_header_keys?: string[];
+        };
         /** RepairRunPost */
         RepairRunPost: {
             repair_run: components["schemas"]["TaskRun-Input"];
@@ -4414,6 +4582,11 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.
              */
             thinking_instruction?: string | null;
+            /**
+             * Default Run Config Id
+             * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
+             */
+            default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4669,7 +4842,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParam"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * TaskRun
@@ -4730,7 +4903,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParam"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4790,14 +4963,20 @@ export interface components {
          * @description Enumeration of supported external tool server types.
          * @enum {string}
          */
-        ToolServerType: "remote_mcp" | "local_mcp";
+        ToolServerType: "remote_mcp" | "local_mcp" | "kiln_task";
         /** ToolSetApiDescription */
         ToolSetApiDescription: {
+            type: components["schemas"]["ToolSetType"];
             /** Set Name */
             set_name: string;
             /** Tools */
             tools: components["schemas"]["ToolApiDescription"][];
         };
+        /**
+         * ToolSetType
+         * @enum {string}
+         */
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -5771,6 +5950,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BulkUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tags_api_projects__project_id__tasks__task_id__tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -7381,6 +7594,37 @@ export interface operations {
             };
         };
     };
+    open_project_folder_api_open_project_folder__project_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_categories_api_projects__project_id__tasks__task_id__generate_categories_post: {
         parameters: {
             query?: never;
@@ -8636,6 +8880,37 @@ export interface operations {
             };
         };
     };
+    get_kiln_task_tools_api_projects__project_id__kiln_task_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KilnTaskToolDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_tool_server_api_projects__project_id__tool_servers__tool_server_id__get: {
         parameters: {
             query?: never;
@@ -8819,6 +9094,77 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LocalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_kiln_task_tool_api_projects__project_id__kiln_task_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KilnTaskToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_kiln_task_tool_api_projects__project_id__edit_kiln_task_tool__tool_server_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KilnTaskToolServerCreationRequest"];
             };
         };
         responses: {

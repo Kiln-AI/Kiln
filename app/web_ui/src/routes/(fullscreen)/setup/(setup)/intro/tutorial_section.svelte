@@ -6,10 +6,13 @@
 
 <div class="flex flex-col gap-4">
   <div class="flex flex-col md:flex-row gap-12">
-    <div class="flex-1 flex flex-col gap-8 place-self-center">
+    <div class="flex-1 flex flex-col gap-6 place-self-center">
       <p class="text-2xl font-light">{title}</p>
       {#each promos as promo}
-        <p class="text-gray-500">{promo}</p>
+        <p class="text-gray-500 font-light">
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+          {@html promo}
+        </p>
       {/each}
     </div>
     <div class="flex-1">

@@ -54,7 +54,21 @@
             href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
           },
         ]
-      : []
+      : reason === "generic"
+        ? [
+            {
+              label: "Dataset",
+              href: `/dataset/${$page.params.project_id}/${$page.params.task_id}`,
+            },
+          ]
+        : reason === "fine_tune"
+          ? [
+              {
+                label: "Fine-tuning",
+                href: `/fine_tune/${$page.params.project_id}/${$page.params.task_id}`,
+              },
+            ]
+          : []
 
   $: data_source_descriptions = [
     {

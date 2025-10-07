@@ -5,46 +5,43 @@
 
   let sections = [
     {
-      title: "Data Driven Improvements",
+      title: "Build AI Systems in Minutes",
       promos: [
-        "As you use your models, Kiln automatically creates a rich dataset.",
-        "Prompts improve themselves, using past results and ratings.",
-        "Handle structured input and output with ease.",
+        "What took weeks now takes minutes.",
+        "Build powerful AI systems with agents, RAG, MCP, fine tuning, synthetic data, human in the loop, and more.",
       ],
-      image_path: "/images/data_driven.png",
+      image_path: "/images/features.png",
     },
     {
-      title: "Collaborate with Your Team",
+      title: "Measure and Optimize",
+      promos: [
+        "Use Kiln evals to measure your system's quality.",
+        "Quickly try new prompts, models, and methods to build the optimal system.",
+      ],
+      image_path: "/images/compare.png",
+    },
+    {
+      title: "Comprehensive Docs & Guides",
+      promos: [
+        "Learning Kiln or AI? Our documentation will help you at every step.",
+        "Detailed docs, walkthroughs, and video tutorials on <a href='https://docs.kiln.tech' class='link' target='_blank'>docs.kiln.tech</a>",
+      ],
+      image_path: "/images/docs.png",
+    },
+    {
+      title: "Collaborate With Your Team",
       promos: [
         "Our data format is designed for Git. Work with your team, with tools you know.",
-        "Our easy-to-use app makes it easy for non-technical team members to contribute.",
+        "Our intuitive app enables non-technical team members to contribute.",
         "Completely private: we don't see your dataset, period.",
       ],
       image_path: "/images/collaborate.png",
     },
     {
-      title: "Find the best way to run your task",
+      title: "Library & Integrations",
       promos: [
-        "Try over a dozen different foundation models.",
-        "Bring your own keys, or run locally with Ollama.",
-        "Optimize performance and costs for your task.",
-      ],
-      image_path: "/images/logo_grid.png",
-    },
-    {
-      title: "Fine Tuning and Synthetic Data Generation",
-      promos: [
-        "Fine tune your models to your specific use case.",
-        "Create synthetic data to train your models.",
-        "Dozens of base models to choose from, locally or in the cloud.",
-      ],
-      image_path: "/images/training.png",
-    },
-    {
-      title: "Library and API",
-      promos: [
-        "Our open-source python library makes it easy to extend Kiln.",
-        "Use our REST API to integrate Kiln with your own applications.",
+        "Our open-source Python library makes it easy to extend Kiln.",
+        "Datasets are stored in JSON, making it easy to integrate with your own applications.",
       ],
       image_path: "/images/developers.png",
     },

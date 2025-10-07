@@ -16,6 +16,7 @@ Tool IDs can be one of:
 - A kiln built-in tool name: kiln_tool::add_numbers
 - A remote MCP tool: mcp::remote::<server_id>::<tool_name>
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
+- A Kiln task tool: kiln_task::<server_id>
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -30,6 +31,7 @@ class KilnBuiltInToolId(str, Enum):
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
 RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
+KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 
 
 def _check_tool_id(id: str) -> str:
@@ -67,6 +69,15 @@ def _check_tool_id(id: str) -> str:
         if not rag_config_id:
             raise ValueError(
                 f"Invalid RAG tool ID: {id}. Expected format: 'kiln_tool::rag::<rag_config_id>'."
+            )
+        return id
+
+    # Kiln task tools must have format: kiln_task::<server_id>
+    if id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+        server_id = kiln_task_server_id_from_tool_id(id)
+        if not server_id:
+            raise ValueError(
+                f"Invalid Kiln task tool ID: {id}. Expected format: 'kiln_task::<server_id>'."
             )
         return id
 
@@ -111,3 +122,28 @@ def build_rag_tool_id(rag_config_id: ID_TYPE) -> str:
     """Construct the tool ID for a RAG configuration."""
 
     return f"{RAG_TOOL_ID_PREFIX}{rag_config_id}"
+
+
+def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
+    """
+    Get the server ID from the tool ID.
+    """
+    if not tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+        raise ValueError(
+            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
+        )
+
+    # Remove prefix and split on ::
+    remaining = tool_id[len(KILN_TASK_TOOL_ID_PREFIX) :]
+    if not remaining:
+        raise ValueError(
+            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
+        )
+    parts = remaining.split("::")
+
+    if len(parts) != 1 or not parts[0].strip():
+        raise ValueError(
+            f"Invalid Kiln task tool ID format: {tool_id}. Expected format: 'kiln_task::<server_id>'."
+        )
+
+    return parts[0]  # server_id

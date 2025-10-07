@@ -109,7 +109,11 @@
       }
 
       // update the store to make sure state gets reflected everywhere
-      await update_rag_config_archived_state(rag_config_id, is_archived)
+      await update_rag_config_archived_state(
+        project_id,
+        rag_config_id,
+        is_archived,
+      )
 
       await get_rag_config()
     } catch (e) {
@@ -570,6 +574,9 @@
 
 <EditDialog
   bind:this={edit_dialog}
+  after_save={() => {
+    uncache_available_tools(project_id)
+  }}
   name="Search Tool"
   subtitle="You can't edit the tool name/description that the model sees, which are different from reference name/description below. If that's your goal, create a new search tool with the same configuration and new name/description."
   patch_url={`/api/projects/${project_id}/rag_configs/${rag_config_id}`}
