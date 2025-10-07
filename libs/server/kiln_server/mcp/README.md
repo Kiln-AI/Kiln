@@ -39,7 +39,7 @@ Add Kiln to your `mcp.json` file, and your MCP client will launch the server ove
 }
 ```
 
-[![Cursor Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=kiln_mcp&config=eyJjb21tYW5kIjoia2lsbl9tY3AgL1VzZXJzL3VzZXJuYW1lL0tpbG4gUHJvamVjdHMvUHJvamVjdCBOYW1lL3Byb2plY3Qua2lsbiJ9)
+[![Cursor Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=kiln_mcp&config=eyJlbnYiOnt9LCJjb21tYW5kIjoia2lsbl9tY3AgL1VzZXJzL1VTRVJOQU1FL0tpbG4gUHJvamVjdHMvUFJPSkVDVCBGT0xERVIvcHJvamVjdC5raWxuIn0%3D)
 
 ### kiln_mcp Command Options
 
