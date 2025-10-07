@@ -12,11 +12,11 @@ from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
 from kiln_ai.datamodel.tool_id import (
-    KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
+    build_kiln_task_tool_id,
     build_rag_tool_id,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
@@ -259,7 +259,7 @@ def connect_tool_servers_api(app: FastAPI):
                     if not server.properties.get("is_archived", False):
                         task_tools.append(
                             ToolApiDescription(
-                                id=f"{KILN_TASK_TOOL_ID_PREFIX}{server.id}",
+                                id=build_kiln_task_tool_id(server.id),
                                 name=server.properties.get("name") or "",
                                 description=server.properties.get("description") or "",
                             )

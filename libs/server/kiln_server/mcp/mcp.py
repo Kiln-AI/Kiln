@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from kiln_ai.datamodel.external_tool_server import ToolServerType
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.tool_id import build_rag_tool_id
+from kiln_ai.datamodel.tool_id import build_kiln_task_tool_id, build_rag_tool_id
 
 from .mcp_server_tool_utils import prepare_tool_contexts
 from .runtime import Transport, create_fastmcp_server, run_transport
@@ -101,11 +102,30 @@ def _list_tools(project_path: Path) -> None:
     project = Project.load_from_file(project_path)
 
     stdout = sys.stdout
-    stdout.write("Search Tools / RAG (ID -- name):\n")
+    stdout.write("Listing all available tools\n\n")
+    stdout.write("Search Tools / RAG (ID -- name -- description):\n")
+    has_rag_tools = False
     for rag_config in project.rag_configs(readonly=True):
-        stdout.write(f"{build_rag_tool_id(rag_config.id)} -- {rag_config.name}\n")
+        stdout.write(
+            f"{build_rag_tool_id(rag_config.id)} -- {rag_config.tool_name} -- {rag_config.tool_description}\n"
+        )
+        has_rag_tools = True
+    if not has_rag_tools:
+        stdout.write("No RAG tools found.\n")
 
-    # TODO: List Kiln task as tools
+    stdout.write("\nKiln Task Tools (ID -- name  -- description):\n")
+    has_kiln_task_tools = False
+    for tool_server in project.external_tool_servers(readonly=True):
+        if (
+            tool_server.type == ToolServerType.kiln_task
+            and not tool_server.properties.get("is_archived", False)
+        ):
+            stdout.write(
+                f"{build_kiln_task_tool_id(tool_server.id)} -- {tool_server.name} -- {tool_server.description or 'No description'}\n"
+            )
+            has_kiln_task_tools = True
+    if not has_kiln_task_tools:
+        stdout.write("No Kiln task tools found.\n")
 
 
 def main(argv: Sequence[str] | None = None) -> None:
