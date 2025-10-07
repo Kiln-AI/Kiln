@@ -31,7 +31,11 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
+from kiln_ai.tools.base_tool import (
+    KilnToolInterface,
+    ToolCallContext,
+    ToolCallDefinition,
+)
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
@@ -560,7 +564,7 @@ class LiteLlmAdapter(BaseAdapter):
             self._cached_available_tools = await self.available_tools()
         return self._cached_available_tools
 
-    async def litellm_tools(self) -> list[Dict]:
+    async def litellm_tools(self) -> list[ToolCallDefinition]:
         available_tools = await self.cached_available_tools()
 
         # LiteLLM takes the standard OpenAI-compatible tool call format
