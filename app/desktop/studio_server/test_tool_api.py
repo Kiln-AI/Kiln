@@ -1730,7 +1730,7 @@ async def test_delete_tool_server_with_secret_headers(client, test_project):
                 "command": "python",
                 "args": ["-m", "test_server"],
                 "env_vars": {"DEBUG": "true"},
-                "secret_header_keys": [],
+                "secret_env_var_keys": [],
                 "description": "Local tool without secret headers",
             },
             ToolServerType.local_mcp,
