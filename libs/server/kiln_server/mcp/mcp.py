@@ -105,25 +105,37 @@ def _list_tools(project_path: Path) -> None:
     stdout.write("Listing all available tools\n\n")
     stdout.write("Search Tools / RAG (ID -- name -- description):\n")
     has_rag_tools = False
+    archived_rag_tools = 0
     for rag_config in project.rag_configs(readonly=True):
+        if rag_config.is_archived:
+            archived_rag_tools += 1
+            continue
         stdout.write(
             f"{build_rag_tool_id(rag_config.id)} -- {rag_config.tool_name} -- {rag_config.tool_description}\n"
         )
         has_rag_tools = True
     if not has_rag_tools:
         stdout.write("No RAG tools found.\n")
+    if archived_rag_tools > 0:
+        stdout.write(f"Archived RAG tool count (not listed): {archived_rag_tools}\n")
 
     stdout.write("\nKiln Task Tools (ID -- name  -- description):\n")
     has_kiln_task_tools = False
+    archived_kiln_task_tools = 0
     for tool_server in project.external_tool_servers(readonly=True):
-        if (
-            tool_server.type == ToolServerType.kiln_task
-            and not tool_server.properties.get("is_archived", False)
-        ):
+        if tool_server.type == ToolServerType.kiln_task:
+            if tool_server.properties.get("is_archived", False):
+                archived_kiln_task_tools += 1
+                continue
             stdout.write(
                 f"{build_kiln_task_tool_id(tool_server.id)} -- {tool_server.name} -- {tool_server.description or 'No description'}\n"
             )
             has_kiln_task_tools = True
+    if archived_kiln_task_tools > 0:
+        stdout.write(
+            f"Archived Kiln task tool count (not listed): {archived_kiln_task_tools}\n"
+        )
+
     if not has_kiln_task_tools:
         stdout.write("No Kiln task tools found.\n")
 

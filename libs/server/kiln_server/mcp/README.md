@@ -50,7 +50,7 @@ usage: kiln_mcp [-h] [--tool-ids TOOL_IDS] [--transport {stdio,sse,streamable-ht
 Run the Kiln MCP server for a project.
 
 positional arguments:
-  project               Path to the kiln.project file
+  project               Path to the project.kiln file
 
 options:
   -h, --help            show this help message and exit
