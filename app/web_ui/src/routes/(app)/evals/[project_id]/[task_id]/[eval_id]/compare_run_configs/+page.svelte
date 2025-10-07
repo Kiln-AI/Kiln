@@ -83,7 +83,7 @@
       )
     : false
 
-  $: focus_select_eval_config = !!(
+  $: focus_run_all = !!(
     eval_state?.includes("complete") || all_run_configs_complete
   )
 
@@ -385,7 +385,7 @@
   title="Compare Run Configurations"
   subtitle="Find the best configuration for running your task."
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-configuration"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
   breadcrumbs={[
     {
       label: "Evals",
@@ -511,7 +511,7 @@
               {eval_id}
               {current_eval_config_id}
               run_all={true}
-              btn_primary={!focus_select_eval_config}
+              btn_primary={!focus_run_all}
               eval_type="run_config"
               on_run_complete={() => {
                 get_score_summary()
@@ -528,7 +528,7 @@
               data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Eval' to generate missing results.`}
+                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Evals' to generate missing results.`}
                 tight={true}
               />
             </button>

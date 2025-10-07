@@ -337,7 +337,7 @@
         : 1.0
     if (minComplete < 1.0) {
       warnings.push(
-        "You evals are incomplete. Click 'Run All Eval' to generate scores for the missing items.",
+        "You evals are incomplete. Click 'Run All Evals' to generate scores for the missing items.",
       )
     }
 
@@ -708,7 +708,7 @@
                       {:else}
                         None
                         <InfoTooltip
-                          tooltip_text="No scores were found for this judge. Click 'Run All Eval' to generate scores and ensure your golden dataset has human ratings."
+                          tooltip_text="No scores were found for this judge. Click 'Run All Evals' to generate scores and ensure your golden dataset has human ratings."
                           no_pad={true}
                         />
                       {/if}
@@ -770,7 +770,7 @@
     <div class="font-bold text-xl">Quick Start</div>
     <div>
       Add a variety of judges with different options (model, algorithm,
-      instructions). Then click 'Run All Eval' to generate scores from each
+      instructions). Then click 'Run All Evals' to generate scores from each
       judge on your golden dataset.
     </div>
     <div>
