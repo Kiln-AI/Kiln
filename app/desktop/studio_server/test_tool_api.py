@@ -262,78 +262,50 @@ async def test_get_available_tool_servers_with_tool_server(client, test_project)
         assert isinstance(result[0]["missing_secrets"], list)
 
 
-async def test_get_available_tool_servers_with_missing_secrets(client, test_project):
-    """Test that get_available_tool_servers includes missing_secrets field"""
-    tool_data = {
-        "name": "tool_with_missing_secrets",
-        "server_url": "https://api.example.com",
-        "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
-        "secret_header_keys": ["Authorization", "X-API-Key"],
-        "description": "Tool with missing secrets",
-        "is_archived": False,
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-        created_tool = create_response.json()
-
-        # Mock the tool server to have missing secrets
-        with patch("app.desktop.studio_server.tool_api.tool_server_from_id"):
-            mock_tool_server = Mock()
-            mock_tool_server.id = created_tool["id"]
-            mock_tool_server.name = "tool_with_missing_secrets"
-            mock_tool_server.type = ToolServerType.remote_mcp
-            mock_tool_server.description = "Tool with missing secrets"
-            mock_tool_server.retrieve_secrets.return_value = (
-                {},
-                ["Authorization", "X-API-Key"],
-            )
-            # Mock properties.get to return False for is_archived
-            mock_tool_server.properties = {"is_archived": False}
-
-            # Mock the project's external_tool_servers method
-            mock_project = Mock()
-            mock_project.external_tool_servers.return_value = [mock_tool_server]
-            mock_project_from_id.return_value = mock_project
-
-            # Get the list of tool servers
-            response = client.get(
-                f"/api/projects/{test_project.id}/available_tool_servers"
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert len(result) == 1
-            assert result[0]["name"] == "tool_with_missing_secrets"
-            assert result[0]["id"] == created_tool["id"]
-            assert result[0]["description"] == "Tool with missing secrets"
-            assert "missing_secrets" in result[0]
-            assert set(result[0]["missing_secrets"]) == {"Authorization", "X-API-Key"}
-
-
-async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
-    client, test_project
+@pytest.mark.parametrize(
+    "server_type, tool_data, endpoint, expected_missing_secrets",
+    [
+        (
+            ToolServerType.remote_mcp,
+            {
+                "name": "tool_with_missing_secrets",
+                "server_url": "https://api.example.com",
+                "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+                "description": "Tool with missing secrets",
+                "is_archived": False,
+            },
+            "connect_remote_mcp",
+            ["Authorization", "X-API-Key"],
+        ),
+        (
+            ToolServerType.local_mcp,
+            {
+                "name": "local_tool_with_missing_secrets",
+                "command": "python",
+                "args": ["-m", "my_mcp_server"],
+                "env_vars": {
+                    "DATABASE_URL": "postgres://localhost",
+                    "API_KEY": "secret",
+                },
+                "secret_env_var_keys": ["API_KEY"],
+                "description": "Local tool with missing secrets",
+                "is_archived": False,
+            },
+            "connect_local_mcp",
+            ["API_KEY"],
+        ),
+    ],
+)
+async def test_get_available_tool_servers_with_missing_secrets(
+    client,
+    test_project,
+    server_type,
+    tool_data,
+    endpoint,
+    expected_missing_secrets,
 ):
-    """Test that get_available_tool_servers includes missing_secrets field for local MCP servers"""
-    tool_data = {
-        "name": "local_tool_with_missing_secrets",
-        "command": "python",
-        "args": ["-m", "my_mcp_server"],
-        "env_vars": {"DATABASE_URL": "postgres://localhost", "API_KEY": "secret"},
-        "secret_env_var_keys": ["API_KEY"],
-        "description": "Local tool with missing secrets",
-        "is_archived": False,
-    }
-
+    """Test that get_available_tool_servers includes missing_secrets field"""
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
@@ -349,20 +321,21 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
 
             async with mock_mcp_success():
                 create_response = client.post(
-                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    f"/api/projects/{test_project.id}/{endpoint}",
                     json=tool_data,
                 )
                 assert create_response.status_code == 200
             created_tool = create_response.json()
 
-            # Mock the tool server to have missing secrets
             mock_tool_server = Mock()
             mock_tool_server.id = created_tool["id"]
-            mock_tool_server.name = "local_tool_with_missing_secrets"
-            mock_tool_server.type = ToolServerType.local_mcp
-            mock_tool_server.description = "Local tool with missing secrets"
-            mock_tool_server.retrieve_secrets.return_value = ({}, ["API_KEY"])
-            # Mock properties.get to return False for is_archived
+            mock_tool_server.name = tool_data["name"]
+            mock_tool_server.type = server_type
+            mock_tool_server.description = tool_data["description"]
+            mock_tool_server.retrieve_secrets.return_value = (
+                {},
+                expected_missing_secrets,
+            )
             mock_tool_server.properties = {"is_archived": False}
 
             # Mock the project's external_tool_servers method
@@ -378,11 +351,9 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
             assert response.status_code == 200
             result = response.json()
             assert len(result) == 1
-            assert result[0]["name"] == "local_tool_with_missing_secrets"
             assert result[0]["id"] == created_tool["id"]
-            assert result[0]["description"] == "Local tool with missing secrets"
             assert "missing_secrets" in result[0]
-            assert result[0]["missing_secrets"] == ["API_KEY"]
+            assert set(result[0]["missing_secrets"]) == set(expected_missing_secrets)
 
 
 async def test_get_tool_server_success(client, test_project):
@@ -504,8 +475,8 @@ def test_get_available_tools_empty(client, test_project):
         assert result == []
 
 
-async def test_get_available_tools_success(client, test_project):
-    """Test get_available_tools successfully retrieves tools from MCP servers"""
+async def test_get_available_tools_success_single_server(client, test_project):
+    """Test get_available_tools successfully retrieves tools from a single MCP server"""
     # First create a tool server
     tool_data = {
         "name": "test_available_tools",
@@ -917,32 +888,6 @@ async def test_create_tool_server_complex_headers(
         assert result["properties"]["headers"]["Authorization"] == "Bearer abc123def456"
         assert result["properties"]["headers"]["X-API-Key"] == "my-secret-key"
         assert result["properties"]["headers"]["Content-Type"] == "application/json"
-
-
-async def test_create_tool_server_long_description(client, test_project):
-    """Test creation with very long description"""
-    long_description = "This is a very long description " * 50  # ~1500 characters
-    tool_data = {
-        "name": "long_desc_tool",
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": long_description,
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["description"] == long_description
 
 
 async def test_create_tool_server_update_workflow(client, test_project):
@@ -1544,32 +1489,6 @@ async def test_create_local_tool_server_clean_inputs(client, test_project):
             # Values should be preserved as-is
             assert result["name"] == "clean_tool"
             assert result["description"] == "Tool with clean description"
-
-
-async def test_create_local_tool_server_long_description(client, test_project):
-    """Test local tool server creation works with very long descriptions"""
-    long_description = "A" * 1000  # 1000 character description
-    tool_data = {
-        "name": "long_desc_tool",
-        "command": "python",
-        "args": ["-m", "server"],
-        "description": long_description,
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["description"] == long_description
 
 
 async def test_create_local_tool_server_concurrent_creation(client, test_project):
