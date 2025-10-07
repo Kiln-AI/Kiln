@@ -564,8 +564,17 @@
                   getRunConfigPromptInfoText(task_run_config)}
                 <tr class="max-w-[400px]">
                   <td>
-                    <div class="font-medium">
-                      {task_run_config.name}
+                    <div class="flex items-center gap-2">
+                      <div class="font-medium">
+                        {task_run_config.name}
+                      </div>
+                      {#if task_run_config.id === task?.default_run_config_id}
+                        <span
+                          class="badge badge-sm badge-primary badge-outline"
+                        >
+                          Default
+                        </span>
+                      {/if}
                     </div>
                     <div class="text-sm text-gray-500">
                       Model: {getDetailedModelName(
