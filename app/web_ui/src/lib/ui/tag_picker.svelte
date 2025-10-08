@@ -76,7 +76,7 @@
 
 <div class="w-full">
   <div class="flex flex-row flex-wrap gap-2 mb-2">
-    {#each tags.sort() as tag}
+    {#each (tags ?? []).slice().sort() as tag (tag)}
       <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
         <span class="truncate">{tag}</span>
         <button

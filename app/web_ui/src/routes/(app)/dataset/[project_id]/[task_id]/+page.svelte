@@ -722,10 +722,10 @@
 >
   <div>
     <div class="text-sm font-light text-gray-500 mb-2">
-      Tags can be used to organize you dataset.
+      Tags can be used to organize your dataset.
     </div>
     <TagPicker
-      bind:tags={add_tags}
+      tags={add_tags}
       tag_type="task_run"
       {project_id}
       {task_id}

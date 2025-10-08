@@ -721,10 +721,10 @@
 >
   <div>
     <div class="text-sm font-light text-gray-500 mb-2">
-      Tags can be used to organize you documents.
+      Tags can be used to organize your documents.
     </div>
     <TagPicker
-      bind:tags={add_tags}
+      tags={add_tags}
       tag_type="doc"
       {project_id}
       initial_expanded={true}

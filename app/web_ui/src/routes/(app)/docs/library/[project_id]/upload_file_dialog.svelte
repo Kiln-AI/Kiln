@@ -408,7 +408,7 @@
             Add tags to organize your documents
           </div>
           <TagPicker
-            bind:tags={selected_tags}
+            tags={selected_tags}
             tag_type="doc"
             {project_id}
             initial_expanded={true}

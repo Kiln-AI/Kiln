@@ -647,7 +647,7 @@
           </p>
         {/if}
         <TagPicker
-          bind:tags={run.tags}
+          tags={run.tags}
           tag_type="task_run"
           {project_id}
           task_id={task.id || null}

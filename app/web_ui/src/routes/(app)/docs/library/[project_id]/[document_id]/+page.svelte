@@ -359,7 +359,7 @@
         <div class="mt-8 mb-4">
           <div class="text-xl font-bold">Tags</div>
           <TagPicker
-            bind:tags={document.tags}
+            tags={document.tags}
             tag_type="doc"
             {project_id}
             initial_expanded={false}
