@@ -1379,7 +1379,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "kiln-server", editable = "libs/server" },
-    { name = "pillow", specifier = ">=11.0.0" },
+    { name = "pillow", specifier = ">=11.1.0" },
     { name = "pyinstaller", specifier = "==6.15.0" },
     { name = "pystray", specifier = ">=0.19.5" },
     { name = "scipy", specifier = ">=1.15.2" },
