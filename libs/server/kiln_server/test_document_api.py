@@ -1229,6 +1229,80 @@ async def test_get_document_tags_no_tags(client):
 
 
 @pytest.mark.asyncio
+async def test_get_document_tag_counts_success(client):
+    """Test getting document tag counts from a project"""
+    # Create mock documents with various tags
+    doc1 = MagicMock()
+    doc1.tags = ["python", "ml", "backend"]
+    doc2 = MagicMock()
+    doc2.tags = ["javascript", "python", "frontend", "web"]
+    doc3 = MagicMock()
+    doc3.tags = ["web"]  # Overlapping tags
+    doc4 = MagicMock()
+    doc4.tags = None  # No tags
+    doc5 = MagicMock()
+    doc5.tags = []  # Empty tags
+
+    mock_project = MagicMock()
+    mock_project.id = "tag-counts-project-123"
+    mock_project.documents.return_value = [doc1, doc2, doc3, doc4, doc5]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tag_counts")
+
+    assert response.status_code == 200
+    result = response.json()
+    # Should return tag counts: python(2), ml(1), backend(1), javascript(1), frontend(1), web(2)
+    expected_counts = {
+        "python": 2,
+        "ml": 1,
+        "backend": 1,
+        "javascript": 1,
+        "frontend": 1,
+        "web": 2,
+    }
+    assert result == expected_counts
+
+
+@pytest.mark.asyncio
+async def test_get_document_tag_counts_empty_project(client):
+    """Test getting document tag counts from a project with no documents"""
+    mock_project = MagicMock()
+    mock_project.id = "empty-project-123"
+    mock_project.documents.return_value = []
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tag_counts")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_get_document_tag_counts_no_tags(client):
+    """Test getting document tag counts from a project where no documents have tags"""
+    doc1 = MagicMock()
+    doc1.tags = None
+    doc2 = MagicMock()
+    doc2.tags = []
+
+    mock_project = MagicMock()
+    mock_project.id = "no-tags-project-123"
+    mock_project.documents.return_value = [doc1, doc2]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tag_counts")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == {}
+
+
+@pytest.mark.asyncio
 async def test_get_rag_configs_success(
     client,
     mock_project,

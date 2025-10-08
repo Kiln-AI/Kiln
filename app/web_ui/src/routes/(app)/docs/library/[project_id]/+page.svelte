@@ -469,6 +469,7 @@
     } finally {
       // Reload UI, even on failure, as partial delete is possible
       selected_documents = new Set()
+      add_tags = new Set()
       select_mode = false
       await get_documents()
     }
@@ -762,6 +763,8 @@
       >
         <TagDropdown
           bind:tag={current_tag}
+          {project_id}
+          example_tag_set="doc"
           on_select={(tag) => {
             add_tags.add(tag)
             add_tags = add_tags
@@ -769,7 +772,6 @@
             current_tag = ""
           }}
           on_escape={() => (show_add_tag_dropdown = false)}
-          example_tag_set="doc"
           focus_on_mount={true}
         />
         <div class="flex-none">

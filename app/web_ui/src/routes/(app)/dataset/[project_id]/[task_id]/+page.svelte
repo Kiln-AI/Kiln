@@ -472,6 +472,7 @@
     } finally {
       // Reload UI, even on failure, as partial delete is possible
       selected_runs = new Set()
+      add_tags = new Set()
       select_mode = false
       await get_runs()
     }
