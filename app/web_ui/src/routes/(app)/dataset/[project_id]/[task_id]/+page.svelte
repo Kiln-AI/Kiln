@@ -10,7 +10,7 @@
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
   import { replaceState } from "$app/navigation"
-  import TagDropdown from "../../../../../lib/ui/tag_dropdown.svelte"
+  import TagPicker from "$lib/ui/tag_picker.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
 
   let runs: RunSummary[] | null = null
@@ -390,27 +390,16 @@
     }
   }
 
-  let add_tags: Set<string> = new Set()
+  let add_tags: string[] = []
   let remove_tags: Set<string> = new Set()
-  let show_add_tag_dropdown = false
-  let current_tag: string = ""
 
   let add_tags_dialog: Dialog | null = null
 
   function show_add_tags_modal() {
-    // Show the dropdown
-    show_add_tag_dropdown = true
-
     add_tags_dialog?.show()
   }
 
   async function add_selected_tags(): Promise<boolean> {
-    // Special case for this UI - consider the partly filled tag in the input
-    // as a tag to add
-    if (current_tag.length > 0) {
-      add_tags.add(current_tag)
-      current_tag = ""
-    }
     // Don't accidentially remove tags
     remove_tags = new Set()
     return await edit_tags()
@@ -443,7 +432,7 @@
 
   async function remove_selected_tags(): Promise<boolean> {
     // Don't accidentially add tags
-    add_tags = new Set()
+    add_tags = []
     return await edit_tags()
   }
 
@@ -455,7 +444,7 @@
           params: { path: { project_id, task_id } },
           body: {
             run_ids: Array.from(selected_runs),
-            add_tags: Array.from(add_tags),
+            add_tags: add_tags,
             remove_tags: Array.from(remove_tags),
           },
         },
@@ -465,14 +454,14 @@
       }
 
       // Hide the dropdown (safari bug shows it when hidden)
-      show_add_tag_dropdown = false
+      add_tags = []
 
       // Close modal on success
       return true
     } finally {
       // Reload UI, even on failure, as partial delete is possible
       selected_runs = new Set()
-      add_tags = new Set()
+      add_tags = []
       select_mode = false
       await get_runs()
     }
@@ -726,7 +715,7 @@
     {
       label: "Add Tags",
       asyncAction: add_selected_tags,
-      disabled: add_tags.size == 0 && !current_tag,
+      disabled: add_tags.length == 0,
       isPrimary: true,
     },
   ]}
@@ -735,53 +724,16 @@
     <div class="text-sm font-light text-gray-500 mb-2">
       Tags can be used to organize you dataset.
     </div>
-    <div class="flex flex-row flex-wrap gap-2 mt-2">
-      {#each Array.from(add_tags).sort() as tag}
-        <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
-          <span class="truncate">{tag}</span>
-          <button
-            class="pl-3 font-medium shrink-0"
-            on:click={() => {
-              add_tags.delete(tag)
-              add_tags = add_tags
-            }}>✕</button
-          >
-        </div>
-      {/each}
-      <button
-        class="badge bg-gray-200 text-gray-500 p-3 font-medium {show_add_tag_dropdown
-          ? 'hidden'
-          : ''}"
-        on:click={() => (show_add_tag_dropdown = true)}>+</button
-      >
-    </div>
-    {#if show_add_tag_dropdown}
-      <div
-        class="mt-3 flex flex-row gap-2 items-center {show_add_tag_dropdown
-          ? ''
-          : 'hidden'}"
-      >
-        <TagDropdown
-          bind:tag={current_tag}
-          {project_id}
-          {task_id}
-          on_select={(tag) => {
-            add_tags.add(tag)
-            add_tags = add_tags
-            show_add_tag_dropdown = false
-            current_tag = ""
-          }}
-          on_escape={() => (show_add_tag_dropdown = false)}
-          focus_on_mount={true}
-        />
-        <div class="flex-none">
-          <button
-            class="btn btn-sm btn-circle text-xl font-medium"
-            on:click={() => (show_add_tag_dropdown = false)}>✕</button
-          >
-        </div>
-      </div>
-    {/if}
+    <TagPicker
+      bind:tags={add_tags}
+      tag_type="task_run"
+      {project_id}
+      {task_id}
+      initial_expanded={true}
+      on:tags_changed={(event) => {
+        add_tags = event.detail.current
+      }}
+    />
   </div>
 </Dialog>
 

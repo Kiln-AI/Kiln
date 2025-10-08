@@ -15,7 +15,7 @@
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
-  import TagDropdown from "../../../lib/ui/tag_dropdown.svelte"
+  import TagPicker from "../../../lib/ui/tag_picker.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { components } from "../../../lib/api_schema"
   import Warning from "../../../lib/ui/warning.svelte"
@@ -57,7 +57,6 @@
 
   let show_raw_data = false
   let save_rating_error: KilnError | null = null
-  let show_create_tag = false
 
   type RatingValue = number | null
   let overall_rating: RatingValue = null
@@ -147,18 +146,6 @@
   }
 
   let tags_error: KilnError | null = null
-  function add_tags(tags: string[]) {
-    let prior_tags = run.tags
-    let new_tags = [...prior_tags, ...tags]
-    let unique_tags = [...new Set(new_tags)]
-    save_tags(unique_tags)
-  }
-
-  function remove_tag(tag: string) {
-    let prior_tags = run.tags
-    let new_tags = prior_tags.filter((t) => t !== tag)
-    save_tags(new_tags)
-  }
 
   async function save_tags(tags: string[]) {
     try {
@@ -166,7 +153,6 @@
         tags: tags,
       }
       updated_run = await patch_run(patch_body)
-      show_create_tag = false
       tags_error = null
     } catch (err) {
       tags_error = createKilnError(err)
@@ -660,44 +646,18 @@
             {tags_error.getMessage()}
           </p>
         {/if}
-        <div class="flex flex-row flex-wrap gap-2 mt-2">
-          {#each run.tags.sort() as tag}
-            <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
-              <span class="truncate">{tag}</span>
-              <button
-                class="pl-3 font-medium shrink-0"
-                on:click={() => remove_tag(tag)}>✕</button
-              >
-            </div>
-          {/each}
-          <button
-            class="badge bg-gray-200 text-gray-500 p-3 font-medium {show_create_tag
-              ? 'hidden'
-              : ''}"
-            on:click={() => (show_create_tag = true)}>+</button
-          >
-        </div>
-        {#if show_create_tag}
-          <div
-            class="mt-3 flex flex-row gap-2 items-center {show_create_tag
-              ? ''
-              : 'hidden'}"
-          >
-            <TagDropdown
-              {project_id}
-              task_id={task.id || null}
-              on_select={(tag) => add_tags([tag])}
-              on_escape={() => (show_create_tag = false)}
-              focus_on_mount={true}
-            />
-            <div class="flex-none">
-              <button
-                class="btn btn-sm btn-circle text-xl font-medium"
-                on:click={() => (show_create_tag = false)}>✕</button
-              >
-            </div>
-          </div>
-        {/if}
+        <TagPicker
+          bind:tags={run.tags}
+          tag_type="task_run"
+          {project_id}
+          task_id={task.id || null}
+          initial_expanded={false}
+          on:tags_changed={(event) => {
+            const { current } = event.detail
+            run.tags = current
+            save_tags(current)
+          }}
+        />
       </div>
       <div>
         {#if usage_properties && usage_properties.length > 0}
