@@ -619,19 +619,15 @@ class LiteLlmAdapter(BaseAdapter):
                 allow_saving=self.base_adapter_config.allow_saving
             )
             result = await tool.run(context, **parsed_args)
-            if isinstance(result, KilnTaskToolResult):
-                content = result.output
-                kiln_task_tool_data = result.kiln_task_tool_data
-            else:
-                content = result
-                kiln_task_tool_data = None
 
             tool_call_response_messages.append(
                 ChatCompletionToolMessageParamWrapper(
                     role="tool",
                     tool_call_id=tool_call.id,
-                    content=content,
-                    kiln_task_tool_data=kiln_task_tool_data,
+                    content=result.output,
+                    kiln_task_tool_data=None
+                    if not isinstance(result, KilnTaskToolResult)
+                    else result.kiln_task_tool_data,
                 )
             )
 

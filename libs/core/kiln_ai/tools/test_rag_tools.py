@@ -429,7 +429,7 @@ class TestRagTool:
                 "\n=========\n"
                 "[document_id: doc2, chunk_idx: 1]\nTest content 2\n\n"
             )
-            assert result == expected_result
+            assert result.output == expected_result
 
             # Verify embedding generation was called
             mock_embedding_adapter.generate_embeddings.assert_called_once_with(
@@ -518,7 +518,7 @@ class TestRagTool:
             expected_result = (
                 "[document_id: doc1, chunk_idx: 0]\nHybrid search result\n\n"
             )
-            assert result == expected_result
+            assert result.output == expected_result
 
     async def test_rag_tool_run_fts_store_type(self, mock_rag_config, mock_project):
         """Test RagTool.run() with LANCE_DB_FTS store type (no embedding needed)."""
@@ -573,7 +573,7 @@ class TestRagTool:
             expected_result = (
                 "[document_id: doc_fts, chunk_idx: 2]\nFTS search result\n\n"
             )
-            assert result == expected_result
+            assert result.output == expected_result
 
             # Verify embedding generation was NOT called for FTS
             mock_embedding_adapter.generate_embeddings.assert_not_called()
@@ -679,7 +679,7 @@ class TestRagTool:
             result = await tool.run(context=None, query="query with no results")
 
             # Should return empty string for no results
-            assert result == ""
+            assert result.output == ""
 
     async def test_rag_tool_run_with_context_is_accepted(
         self, mock_rag_config, mock_project
@@ -738,7 +738,9 @@ class TestRagTool:
             result = await tool.run(context=ctx, query="with context")
 
             # Works and returns formatted text
-            assert result == "[document_id: doc_ctx, chunk_idx: 3]\nContext ok\n\n"
+            assert (
+                result.output == "[document_id: doc_ctx, chunk_idx: 3]\nContext ok\n\n"
+            )
 
             # Normal behavior still occurs
             mock_embedding_adapter.generate_embeddings.assert_called_once_with(

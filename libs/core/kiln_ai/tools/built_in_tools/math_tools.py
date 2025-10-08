@@ -1,7 +1,7 @@
 from typing import Union
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool
+from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
 
 
 class AddTool(KilnTool):
@@ -29,9 +29,9 @@ class AddTool(KilnTool):
 
     async def run(
         self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    ) -> ToolCallResult:
         """Add two numbers and return the result."""
-        return str(a + b)
+        return ToolCallResult(output=str(a + b))
 
 
 class SubtractTool(KilnTool):
@@ -61,9 +61,9 @@ class SubtractTool(KilnTool):
 
     async def run(
         self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    ) -> ToolCallResult:
         """Subtract b from a and return the result."""
-        return str(a - b)
+        return ToolCallResult(output=str(a - b))
 
 
 class MultiplyTool(KilnTool):
@@ -90,9 +90,9 @@ class MultiplyTool(KilnTool):
 
     async def run(
         self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    ) -> ToolCallResult:
         """Multiply two numbers and return the result."""
-        return str(a * b)
+        return ToolCallResult(output=str(a * b))
 
 
 class DivideTool(KilnTool):
@@ -125,8 +125,8 @@ class DivideTool(KilnTool):
 
     async def run(
         self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    ) -> ToolCallResult:
         """Divide a by b and return the result."""
         if b == 0:
             raise ZeroDivisionError("Cannot divide by zero")
-        return str(a / b)
+        return ToolCallResult(output=str(a / b))

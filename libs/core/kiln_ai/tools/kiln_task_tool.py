@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Dict
 
@@ -11,13 +10,12 @@ from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
     ToolCallDefinition,
+    ToolCallResult,
 )
 from kiln_ai.utils.project_utils import project_from_id
 
 
-@dataclass
-class KilnTaskToolResult:
-    output: str
+class KilnTaskToolResult(ToolCallResult):
     kiln_task_tool_data: str
 
 
@@ -68,7 +66,9 @@ class KilnTaskTool(KilnToolInterface):
     ) -> KilnTaskToolResult:
         """Execute the wrapped Kiln task with the given parameters and calling context."""
         if context is None:
-            raise ValueError("Context is required for running a KilnTaskTool.")
+            context = ToolCallContext(
+                allow_saving=False,
+            )
 
         # Determine the input format
         if self._task.input_json_schema:
