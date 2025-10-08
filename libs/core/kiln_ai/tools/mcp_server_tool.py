@@ -1,11 +1,13 @@
-from typing import Any, Dict
-
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
-from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallContext
+from kiln_ai.tools.base_tool import (
+    KilnToolInterface,
+    ToolCallContext,
+    ToolCallDefinition,
+)
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
@@ -26,7 +28,7 @@ class MCPServerTool(KilnToolInterface):
         await self._load_tool_properties()
         return self._description
 
-    async def toolcall_definition(self) -> Dict[str, Any]:
+    async def toolcall_definition(self) -> ToolCallDefinition:
         """Generate OpenAI-compatible tool definition."""
         await self._load_tool_properties()
         return {

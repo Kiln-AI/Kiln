@@ -17,6 +17,7 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     VectorStoreQuery,
 )
 from kiln_ai.adapters.vector_store.lancedb_adapter import LanceDBAdapter
+from kiln_ai.adapters.vector_store.lancedb_helpers import deterministic_chunk_id
 from kiln_ai.adapters.vector_store.vector_store_registry import (
     vector_store_adapter_for_config,
 )
@@ -925,9 +926,7 @@ async def test_get_nodes_by_ids_functionality(
     await adapter.add_chunks_with_embeddings([mock_chunked_documents[0]])  # doc_001
 
     # Test getting nodes by IDs - compute expected IDs
-    expected_ids = [
-        adapter.compute_deterministic_chunk_id("doc_001", i) for i in range(4)
-    ]
+    expected_ids = [deterministic_chunk_id("doc_001", i) for i in range(4)]
 
     # Get nodes by IDs
     retrieved_nodes = await adapter.get_nodes_by_ids(expected_ids)
@@ -943,7 +942,7 @@ async def test_get_nodes_by_ids_functionality(
         assert len(node.get_content()) > 0
 
     # Test with non-existent IDs
-    fake_ids = [adapter.compute_deterministic_chunk_id("fake_doc", i) for i in range(2)]
+    fake_ids = [deterministic_chunk_id("fake_doc", i) for i in range(2)]
     retrieved_fake = await adapter.get_nodes_by_ids(fake_ids)
     assert len(retrieved_fake) == 0
 
@@ -1019,7 +1018,7 @@ async def test_uuid_scheme_retrieval_and_node_properties(
     # Test the UUID scheme: document_id::chunk_idx
     for chunk_idx in range(4):
         # Compute expected ID using the same scheme as the adapter
-        expected_id = adapter.compute_deterministic_chunk_id("doc_001", chunk_idx)
+        expected_id = deterministic_chunk_id("doc_001", chunk_idx)
 
         # Retrieve the specific node by ID
         retrieved_nodes = await adapter.get_nodes_by_ids([expected_id])
@@ -1053,7 +1052,7 @@ async def test_uuid_scheme_retrieval_and_node_properties(
 
     # Test retrieval of doc_002 chunks
     for chunk_idx in range(4):
-        expected_id = adapter.compute_deterministic_chunk_id("doc_002", chunk_idx)
+        expected_id = deterministic_chunk_id("doc_002", chunk_idx)
         retrieved_nodes = await adapter.get_nodes_by_ids([expected_id])
         assert len(retrieved_nodes) == 1
 
@@ -1080,25 +1079,19 @@ async def test_deterministic_chunk_id_consistency(
     create_rag_config_factory,
 ):
     """Test that the deterministic chunk ID generation is consistent."""
-    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
-
-    adapter = LanceDBAdapter(
-        rag_config,
-        fts_vector_store_config,
-    )
 
     # Test that the same document_id and chunk_idx always produce the same UUID
     doc_id = "test_doc_123"
     chunk_idx = 5
 
-    id1 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx)
-    id2 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx)
+    id1 = deterministic_chunk_id(doc_id, chunk_idx)
+    id2 = deterministic_chunk_id(doc_id, chunk_idx)
 
     assert id1 == id2
 
     # Test that different inputs produce different UUIDs
-    id3 = adapter.compute_deterministic_chunk_id(doc_id, chunk_idx + 1)
-    id4 = adapter.compute_deterministic_chunk_id(doc_id + "_different", chunk_idx)
+    id3 = deterministic_chunk_id(doc_id, chunk_idx + 1)
+    id4 = deterministic_chunk_id(doc_id + "_different", chunk_idx)
 
     assert id1 != id3
     assert id1 != id4
