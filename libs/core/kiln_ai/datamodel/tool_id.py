@@ -3,6 +3,8 @@ from typing import Annotated
 
 from pydantic import AfterValidator
 
+from kiln_ai.datamodel.basemodel import ID_TYPE
+
 ToolId = Annotated[
     str,
     AfterValidator(lambda v: _check_tool_id(v)),
@@ -114,6 +116,17 @@ def rag_config_id_from_id(id: str) -> str:
             f"Invalid RAG tool ID: {id}. Expected format: 'kiln_tool::rag::<rag_config_id>'."
         )
     return parts[2]
+
+
+def build_rag_tool_id(rag_config_id: ID_TYPE) -> str:
+    """Construct the tool ID for a RAG configuration."""
+
+    return f"{RAG_TOOL_ID_PREFIX}{rag_config_id}"
+
+
+def build_kiln_task_tool_id(server_id: ID_TYPE) -> str:
+    """Construct the tool ID for a Kiln task server."""
+    return f"{KILN_TASK_TOOL_ID_PREFIX}{server_id}"
 
 
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:

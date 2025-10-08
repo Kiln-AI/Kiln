@@ -5,12 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, TypedDict
 
 from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.core.schema import (
-    BaseNode,
-    NodeRelationship,
-    RelatedNodeInfo,
-    TextNode,
-)
+from llama_index.core.schema import BaseNode, TextNode
 from llama_index.core.vector_stores.types import (
     VectorStoreQuery as LlamaIndexVectorStoreQuery,
 )
@@ -24,15 +19,19 @@ from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     SearchResult,
     VectorStoreQuery,
 )
+from kiln_ai.adapters.vector_store.lancedb_helpers import (
+    convert_to_llama_index_node,
+    deterministic_chunk_id,
+    lancedb_construct_from_config,
+    store_type_to_lancedb_query_type,
+)
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import (
     VectorStoreConfig,
-    VectorStoreType,
     raise_exhaustive_enum_error,
 )
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.env import temporary_env
-from kiln_ai.utils.uuid import string_to_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +47,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         self,
         rag_config: RagConfig,
         vector_store_config: VectorStoreConfig,
+        lancedb_vector_store: LanceDBVectorStore | None = None,
     ):
         super().__init__(rag_config, vector_store_config)
         self.config_properties = self.vector_store_config.lancedb_properties
@@ -56,17 +56,15 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         if vector_store_config.lancedb_properties.nprobes is not None:
             kwargs["nprobes"] = vector_store_config.lancedb_properties.nprobes
 
-        self.lancedb_vector_store = LanceDBVectorStore(
-            mode="create",
-            uri=LanceDBAdapter.lancedb_path_for_config(rag_config),
-            query_type=self.query_type,
-            overfetch_factor=vector_store_config.lancedb_properties.overfetch_factor,
-            vector_column_name=vector_store_config.lancedb_properties.vector_column_name,
-            text_key=vector_store_config.lancedb_properties.text_key,
-            doc_id_key=vector_store_config.lancedb_properties.doc_id_key,
-            **kwargs,
+        # allow overriding the vector store with a custom one, useful for user loading into an arbitrary
+        # deployment
+        self.lancedb_vector_store = (
+            lancedb_vector_store
+            or lancedb_construct_from_config(
+                vector_store_config,
+                uri=LanceDBAdapter.lancedb_path_for_config(rag_config),
+            )
         )
-
         self._index = None
 
     @property
@@ -149,7 +147,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
             chunk_count_for_document = len(chunks)
             deterministic_chunk_ids = [
-                self.compute_deterministic_chunk_id(document_id, chunk_idx)
+                deterministic_chunk_id(document_id, chunk_idx)
                 for chunk_idx in range(chunk_count_for_document)
             ]
 
@@ -176,42 +174,12 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 zip(chunks_text, embeddings)
             ):
                 node_batch.append(
-                    TextNode(
-                        id_=deterministic_chunk_ids[chunk_idx],
+                    convert_to_llama_index_node(
+                        document_id=document_id,
+                        chunk_idx=chunk_idx,
+                        node_id=deterministic_chunk_id(document_id, chunk_idx),
                         text=chunk_text,
-                        embedding=embedding.vector,
-                        metadata={
-                            # metadata is populated by some internal llama_index logic
-                            # that uses for example the source_node relationship
-                            "kiln_doc_id": document_id,
-                            "kiln_chunk_idx": chunk_idx,
-                            #
-                            # llama_index lancedb vector store automatically sets these metadata:
-                            # "doc_id": "UUID node_id of the Source Node relationship",
-                            # "document_id": "UUID node_id of the Source Node relationship",
-                            # "ref_doc_id": "UUID node_id of the Source Node relationship"
-                            #
-                            # llama_index file loaders set these metadata, which would be useful to also support:
-                            # "creation_date": "2025-09-03",
-                            # "file_name": "file.pdf",
-                            # "file_path": "/absolute/path/to/the/file.pdf",
-                            # "file_size": 395154,
-                            # "file_type": "application\/pdf",
-                            # "last_modified_date": "2025-09-03",
-                            # "page_label": "1",
-                        },
-                        relationships={
-                            # when using the llama_index loaders, llama_index groups Nodes under Documents
-                            # and relationships point to the Document (which is also a Node), which confusingly
-                            # enough does not map to an actual file (for a PDF, a Document is a page of the PDF)
-                            # the Document structure is not something that is persisted, so it is fine here
-                            # if we have a relationship to a node_id that does not exist in the db
-                            NodeRelationship.SOURCE: RelatedNodeInfo(
-                                node_id=document_id,
-                                node_type="1",
-                                metadata={},
-                            ),
-                        },
+                        vector=embedding.vector,
                     )
                 )
 
@@ -330,10 +298,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 return []
             raise
 
-    def compute_deterministic_chunk_id(self, document_id: str, chunk_idx: int) -> str:
-        # the id_ of the Node must be a UUID string, otherwise llama_index / LanceDB fails downstream
-        return str(string_to_uuid(f"{document_id}::{chunk_idx}"))
-
     async def count_records(self) -> int:
         try:
             table = self.lancedb_vector_store.table
@@ -346,15 +310,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
     @property
     def query_type(self) -> Literal["fts", "hybrid", "vector"]:
-        match self.vector_store_config.store_type:
-            case VectorStoreType.LANCE_DB_FTS:
-                return "fts"
-            case VectorStoreType.LANCE_DB_HYBRID:
-                return "hybrid"
-            case VectorStoreType.LANCE_DB_VECTOR:
-                return "vector"
-            case _:
-                raise_exhaustive_enum_error(self.vector_store_config.store_type)
+        return store_type_to_lancedb_query_type(self.vector_store_config.store_type)
 
     @staticmethod
     def lancedb_path_for_config(rag_config: RagConfig) -> str:
@@ -380,9 +336,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 kiln_doc_id = row["metadata"]["kiln_doc_id"]
                 if kiln_doc_id not in document_ids:
                     kiln_chunk_idx = row["metadata"]["kiln_chunk_idx"]
-                    record_id = self.compute_deterministic_chunk_id(
-                        kiln_doc_id, kiln_chunk_idx
-                    )
+                    record_id = deterministic_chunk_id(kiln_doc_id, kiln_chunk_idx)
                     rows_to_delete.append(record_id)
 
             if rows_to_delete:

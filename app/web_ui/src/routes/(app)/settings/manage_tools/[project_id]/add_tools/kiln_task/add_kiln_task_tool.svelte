@@ -12,6 +12,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { tool_name_validator } from "$lib/utils/input_validators"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import posthog from "posthog-js"
 
   let error: KilnError | null = null
   let submitting = false
@@ -19,6 +20,8 @@
   let description = ""
   let selected_task_id: string | null = null
   let selected_run_config_id: string | null = null
+
+  let created_run_config_in_page = false
 
   // Modal for creating new run config
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
@@ -207,6 +210,11 @@
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
       uncache_available_tools($page.params.project_id)
+
+      posthog.capture("added_kiln_task_tool", {
+        created_run_config_in_page: created_run_config_in_page,
+      })
+
       // Navigate to the manage tools page for the created tool
       goto(`/settings/manage_tools/${$page.params.project_id}/kiln_task_tools`)
     } catch (e) {
@@ -295,6 +303,7 @@
   task={selected_task}
   new_run_config_created={(run_config) => {
     if (run_config.id) {
+      created_run_config_in_page = true
       selected_run_config_id = run_config.id
     }
   }}

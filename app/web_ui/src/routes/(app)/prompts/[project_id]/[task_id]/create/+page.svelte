@@ -8,6 +8,7 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
+  import { onMount } from "svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -21,6 +22,12 @@
     "Think step by step, explaining your reasoning."
   let create_error: KilnError | null = null
   let create_loading = false
+  let warn_before_unload = false
+  let mounted = false
+
+  onMount(() => {
+    mounted = true
+  })
 
   async function create_prompt() {
     try {
@@ -64,6 +71,20 @@
       create_loading = false
     }
   }
+
+  // Warn before unload if there's any user input
+  $: prompt_name,
+    prompt_description,
+    prompt,
+    is_chain_of_thought,
+    chain_of_thought_instructions,
+    user_input_detected()
+
+  function user_input_detected() {
+    if (mounted) {
+      warn_before_unload = true
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -83,6 +104,7 @@
         on:submit={create_prompt}
         bind:error={create_error}
         bind:submitting={create_loading}
+        {warn_before_unload}
       >
         <FormElement
           label="Prompt Name"

@@ -1,5 +1,6 @@
-import os
+import argparse
 from importlib.metadata import version
+from typing import Sequence
 
 import uvicorn
 from fastapi import FastAPI
@@ -59,12 +60,41 @@ def make_app(lifespan=None):
     return app
 
 
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the Kiln AI  REST Server.")
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Host for network transports."
+    )
+    parser.add_argument(
+        "--port", type=int, default=8757, help="Port for network transports."
+    )
+    parser.add_argument(
+        "--log-level",
+        default="info",
+        help="Log level for the server when using network transports.",
+    )
+    parser.add_argument(
+        "--auto-reload",
+        action="store_true",
+        help="Enable auto-reload for the server.",
+    )
+    return parser
+
+
 app = make_app()
-if __name__ == "__main__":
-    auto_reload = os.environ.get("AUTO_RELOAD", "").lower() in ("true", "1", "yes")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = build_argument_parser()
+    args = parser.parse_args(argv)
     uvicorn.run(
         "kiln_server.server:app",
-        host="127.0.0.1",
-        port=8757,
-        reload=auto_reload,
+        host=args.host,
+        port=args.port,
+        reload=args.auto_reload,
+        log_level=args.log_level,
     )
+
+
+if __name__ == "__main__":
+    main()
