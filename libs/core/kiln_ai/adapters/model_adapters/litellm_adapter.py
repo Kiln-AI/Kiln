@@ -625,9 +625,9 @@ class LiteLlmAdapter(BaseAdapter):
                     role="tool",
                     tool_call_id=tool_call.id,
                     content=result.output,
-                    kiln_task_tool_data=None
-                    if not isinstance(result, KilnTaskToolResult)
-                    else result.kiln_task_tool_data,
+                    kiln_task_tool_data=result.kiln_task_tool_data
+                    if isinstance(result, KilnTaskToolResult)
+                    else None,
                 )
             )
 
