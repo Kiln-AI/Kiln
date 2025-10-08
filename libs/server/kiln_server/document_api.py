@@ -685,6 +685,18 @@ def connect_document_api(app: FastAPI):
                 all_tags.update(document.tags)
         return sorted(list(all_tags))
 
+    @app.get("/api/projects/{project_id}/documents/tag_counts")
+    async def get_document_tag_counts(project_id: str) -> dict[str, int]:
+        tags_count = {}
+        project = project_from_id(project_id)
+        # Not particularly efficient, but projects are memory cached after first load so re-compute is fairly cheap
+        # We also cache the result client side
+        for document in project.documents(readonly=True):
+            if document.tags:
+                for tag in document.tags:
+                    tags_count[tag] = tags_count.get(tag, 0) + 1
+        return tags_count
+
     @app.get("/api/projects/{project_id}/documents/{document_id}")
     async def get_document(
         project_id: str,
