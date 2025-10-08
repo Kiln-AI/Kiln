@@ -582,6 +582,7 @@ def connect_document_api(app: FastAPI):
         project_id: str,
         files: Annotated[List[UploadFile] | None, File()] = None,
         names: Annotated[List[str] | None, Form()] = None,
+        tags: Annotated[List[str] | None, Form()] = None,
     ) -> BulkCreateDocumentsResponse:
         project = project_from_id(project_id)
 
@@ -636,6 +637,7 @@ def connect_document_api(app: FastAPI):
                     name_override=document_name,
                     description="",  # No description support in bulk upload
                     kind=kind,
+                    tags=tags if tags else [],
                     original_file=FileInfo(
                         filename=file.filename,
                         mime_type=mime_type,

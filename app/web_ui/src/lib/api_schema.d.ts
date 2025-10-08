@@ -1986,6 +1986,8 @@ export interface components {
             files?: string[] | null;
             /** Names */
             names?: string[] | null;
+            /** Tags */
+            tags?: string[] | null;
         };
         /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
         Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {

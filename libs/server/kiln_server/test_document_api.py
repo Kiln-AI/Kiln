@@ -3600,3 +3600,98 @@ async def test_create_rag_config_invalid_tool_fields(
     assert response.status_code == 422
     error_detail = response.json()
     assert "error_messages" in error_detail
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        [],
+        ["tag1"],
+        ["tag1", "tag2"],
+        ["tag1", "tag2", "tag3"],
+    ],
+)
+async def test_create_documents_bulk_with_tags_success(client, mock_project, tags):
+    """Test successful bulk upload with various tag combinations"""
+    project = mock_project
+    test_content_1 = b"test file content 1"
+    test_content_2 = b"test file content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+        data = {"names": ["Custom Name 1", "Custom Name 2"]}
+
+        # Add tags to the data
+        for tag in tags:
+            data.setdefault("tags", []).append(tag)
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+
+    # Check that both documents have all the tags
+    for doc in result["created_documents"]:
+        assert "tags" in doc
+        assert doc["tags"] == tags
+        assert len(doc["tags"]) == len(tags)
+        assert sorted(tags) == sorted(doc["tags"])
+
+
+@pytest.mark.parametrize(
+    "invalid_tags",
+    [
+        ["tag with spaces"],
+        ["tag with spaces", "valid_tag"],
+        ["", "valid_tag"],
+        ["   ", "valid_tag"],
+    ],
+)
+async def test_create_documents_bulk_with_invalid_tags_failure(
+    client, mock_project, invalid_tags
+):
+    """Test bulk upload failure due to invalid tags (spaces, empty strings)"""
+    project = mock_project
+    test_content = b"test file content"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test.txt", io.BytesIO(test_content), "text/plain")),
+        ]
+        data = {"names": ["Custom Name"]}
+
+        # Add invalid tags to the data
+        for tag in invalid_tags:
+            data.setdefault("tags", []).append(tag)
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    # Should return 422 for invalid tags
+    assert response.status_code == 422, response.text
+    result = response.json()
+    assert "message" in result
+    assert "failed_files" in result["message"]
+    assert len(result["message"]["failed_files"]) == 1
+    assert (
+        "Tags cannot contain spaces" in result["message"]["failed_files"][0]
+        or "Tags cannot be empty strings" in result["message"]["failed_files"][0]
+    )
