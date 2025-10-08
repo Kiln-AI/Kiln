@@ -4,12 +4,16 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import TrashIcon from "$lib/ui/trash_icon.svelte"
   import UploadIcon from "$lib/ui/upload_icon.svelte"
+  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import { load_document_tags } from "$lib/stores/document_tag_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
   import posthog from "posthog-js"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
 
   export let onUploadCompleted: () => void
 
+  let upload_error: KilnError | null = null
   let selected_files: File[] = []
   let file_input: HTMLInputElement
   let drag_over = false
@@ -97,7 +101,12 @@
   let unsupported_files_count = 0
   let show_success_dialog = false
 
+  // tags
+  let selected_tags: Set<string> = new Set()
+  let current_tag = ""
+
   async function handleUpload(): Promise<boolean> {
+    upload_error = null
     upload_in_progress = true
     upload_progress = 0
     upload_total = selected_files.length
@@ -112,6 +121,9 @@
         return false
       }
       return success
+    } catch (e) {
+      upload_error = createKilnError(e)
+      return false
     } finally {
       upload_in_progress = false
       upload_progress = 0
@@ -130,6 +142,12 @@
       formData.append("files", file)
       formData.append(`names`, file.name)
     })
+
+    if (selected_tags.size > 0) {
+      Array.from(selected_tags).forEach((tag) => {
+        formData.append("tags", tag)
+      })
+    }
 
     const { data, error } = await client.POST(
       "/api/projects/{project_id}/documents/bulk",
@@ -157,6 +175,13 @@
     const uploaded_files = selected_files
     selected_files = []
     onUploadCompleted()
+
+    // reload document tags for the project - because total counts have changed
+    // and we cannot know which ones due to partial upload rejection possibly
+    // happening on the backend
+    if (project_id) {
+      load_document_tags(project_id)
+    }
 
     ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
       console.error("Error running all rag configs", error)
@@ -244,6 +269,8 @@
     show_upload_result = false
     show_success_dialog = false
     unsupported_files_count = 0
+    selected_tags = new Set()
+    current_tag = ""
   }
 
   export function close() {
@@ -253,6 +280,8 @@
     show_upload_result = false
     show_success_dialog = false
     unsupported_files_count = 0
+    selected_tags = new Set()
+    current_tag = ""
     return true
   }
 
@@ -375,6 +404,42 @@
           </div>
         {/if}
 
+        <!-- Tag selection -->
+        <div class="space-y-2">
+          <h4 class="font-medium">Tags (Optional)</h4>
+          <div class="text-sm text-gray-500">
+            Add tags to organize your documents
+          </div>
+          <div class="flex flex-row flex-wrap gap-2">
+            {#each Array.from(selected_tags).sort() as tag}
+              <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
+                <span class="truncate">{tag}</span>
+                <button
+                  class="pl-3 font-medium shrink-0"
+                  on:click={() => {
+                    selected_tags.delete(tag)
+                    selected_tags = selected_tags
+                  }}>✕</button
+                >
+              </div>
+            {/each}
+          </div>
+          <div class="flex flex-row gap-2 items-center">
+            <TagDropdown
+              bind:tag={current_tag}
+              {project_id}
+              example_tag_set="doc"
+              on_select={(tag) => {
+                selected_tags.add(tag)
+                selected_tags = selected_tags
+                current_tag = ""
+              }}
+              on_escape={() => {}}
+              focus_on_mount={false}
+            />
+          </div>
+        </div>
+
         {#if show_upload_result && upload_result}
           {#if upload_result.created_documents.length > 0}
             <div class="text-success text-sm">
@@ -446,6 +511,12 @@
             ></progress>
           </div>
         {/if}
+      {/if}
+
+      {#if upload_error}
+        <div class="text-error text-sm">
+          {upload_error.getMessage() || "An unknown error occurred"}
+        </div>
       {/if}
     </div>
   </div>
