@@ -5,15 +5,15 @@
 UV python doesn't include TK/TCL [yet](https://github.com/astral-sh/uv/issues/7036). Instead, we install system python including TK/TCL, and tell UV venv to use system python.
 
 ```
-# Install python 3.13 and python-tk 3.13 with homebrew
-brew install python-tk@3.13
-brew install python@3.13
+# Install python 3.14 and python-tk 3.14 with homebrew
+brew install python-tk@3.14
+brew install python@3.14
 
 # check uv can see it hoembrew version
 uv python list --python-preference only-system
 
-# setup 3.13 uv-managed venv with system (homebrew) python 3.13
-uv venv --python 3.13 --python-preference only-system
+# setup 3.14 uv-managed venv with system (homebrew) python 3.14
+uv venv --python 3.14 --python-preference only-system
 
 # Check it worked
 uv run python --version

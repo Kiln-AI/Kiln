@@ -20,7 +20,7 @@ This repo is a monorepo containing all of the source code, in the following stru
 
 ### Tech Stack
 
-- Backend: python (3.10+ for library, 3.13 for desktop), pytest, FastAPI, asyncio, pydantic (v2 not v1),
+- Backend: python (3.10+ for library, 3.14 for desktop), pytest, FastAPI, asyncio, pydantic (v2 not v1),
 - Frontend web: typescript, svelte (v4 not v5), tailwind, DaisyUI
 
 ### Agent Tools

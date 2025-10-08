@@ -18,11 +18,11 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.13
+          python-version: 3.14
 
       # Use GH python version (includes TK/TCL)
       - name: Set up Python using GH python version
-        run: uv venv --python 3.13 --python-preference only-system
+        run: uv venv --python 3.14 --python-preference only-system
 
       - name: Install the project
         run: uv sync
