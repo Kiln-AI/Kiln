@@ -131,6 +131,34 @@ def rag_config_factory(mock_project):
     return fn
 
 
+@pytest.fixture
+def document_factory(mock_project, mock_attachment_factory):
+    def fn(
+        name: str = "Test Document",
+        description: str = "Test Document",
+        tags: list[str] | None = None,
+        filename: str = "test.pdf",
+    ) -> Document:
+        document = Document(
+            id=f"doc_{uuid.uuid4()}",
+            name=name,
+            description=description,
+            original_file=FileInfo(
+                filename=filename,
+                size=100,
+                mime_type="application/pdf",
+                attachment=mock_attachment_factory(KilnMimeType.PDF),
+            ),
+            kind=Kind.DOCUMENT,
+            parent=mock_project,
+            tags=tags or [],
+        )
+        document.save_to_file()
+        return document
+
+    return fn
+
+
 # Tests for VectorStoreLoader.iter_llama_index_nodes
 
 
@@ -542,3 +570,192 @@ async def test_iter_llama_index_nodes_multiple_extractions_per_document(
         assert node.metadata["kiln_doc_id"] == str(doc.id)
         # All nodes should have chunk indices 0 and 1 (from the first extraction)
         assert node.metadata["kiln_chunk_idx"] in [0, 1]
+
+
+def test_filtered_documents_no_tags(mock_project, rag_config_factory, document_factory):
+    """Test filtered_documents when RAG config has no tags (should return all documents)."""
+    # Create RAG config without tags
+    rag_config = rag_config_factory()
+    rag_config.tags = None
+    rag_config.save_to_file()
+
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create multiple documents with different tags
+    doc1 = document_factory(
+        name="Document 1",
+        description="Test Document 1",
+        tags=["python", "ml"],
+        filename="test1.pdf",
+    )
+
+    doc2 = document_factory(
+        name="Document 2",
+        description="Test Document 2",
+        tags=["javascript", "frontend"],
+        filename="test2.pdf",
+    )
+
+    # When no tags are specified, should return all documents
+    filtered_docs = loader.filtered_documents()
+    assert len(filtered_docs) == 2
+    filtered_doc_ids = {doc.id for doc in filtered_docs}
+    assert doc1.id in filtered_doc_ids
+    assert doc2.id in filtered_doc_ids
+
+
+def test_filtered_documents_with_matching_tags(
+    mock_project, rag_config_factory, document_factory
+):
+    """Test filtered_documents when documents have matching tags."""
+    # Create RAG config with specific tags
+    rag_config = rag_config_factory()
+    rag_config.tags = ["python", "ml"]
+    rag_config.save_to_file()
+
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create documents with matching and non-matching tags
+    matching_doc = document_factory(
+        name="Matching Document",
+        description="Document with matching tags",
+        tags=["python", "data_science", "ml"],
+        filename="matching.pdf",
+    )
+
+    non_matching_doc = document_factory(
+        name="Non-matching Document",
+        description="Document without matching tags",
+        tags=["javascript", "frontend"],
+        filename="non_matching.pdf",
+    )
+
+    # Should only return the document with matching tags
+    filtered_docs = loader.filtered_documents()
+    assert len(filtered_docs) == 1
+    filtered_doc_ids = {doc.id for doc in filtered_docs}
+    assert matching_doc.id in filtered_doc_ids
+    assert non_matching_doc.id not in filtered_doc_ids
+
+
+def test_filtered_documents_no_matching_tags(
+    mock_project, rag_config_factory, document_factory
+):
+    """Test filtered_documents when no documents match the tags."""
+    # Create RAG config with specific tags
+    rag_config = rag_config_factory()
+    rag_config.tags = ["python", "ml"]
+    rag_config.save_to_file()
+
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create documents with non-matching tags
+    document_factory(
+        name="Document 1",
+        description="Document without matching tags",
+        tags=["javascript", "frontend"],
+        filename="doc1.pdf",
+    )
+
+    document_factory(
+        name="Document 2",
+        description="Another document without matching tags",
+        tags=["java", "backend"],
+        filename="doc2.pdf",
+    )
+
+    # Should return no documents
+    filtered_docs = loader.filtered_documents()
+    assert len(filtered_docs) == 0
+
+
+def test_filtered_documents_partial_matching(
+    mock_project, rag_config_factory, document_factory
+):
+    """Test filtered_documents when only some documents match the tags."""
+    # Create RAG config with specific tags
+    rag_config = rag_config_factory()
+    rag_config.tags = ["python"]
+    rag_config.save_to_file()
+
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create multiple documents with different tag combinations
+    python_doc = document_factory(
+        name="Python Document",
+        description="Document with python tag",
+        tags=["python", "programming"],
+        filename="python.pdf",
+    )
+
+    js_doc = document_factory(
+        name="JavaScript Document",
+        description="Document with javascript tag",
+        tags=["javascript", "programming"],
+        filename="js.pdf",
+    )
+
+    mixed_doc = document_factory(
+        name="Mixed Document",
+        description="Document with both python and javascript tags",
+        tags=["python", "javascript", "web"],
+        filename="mixed.pdf",
+    )
+
+    # Should return documents that have the "python" tag
+    filtered_docs = loader.filtered_documents()
+    assert len(filtered_docs) == 2
+    filtered_doc_ids = {doc.id for doc in filtered_docs}
+    assert python_doc.id in filtered_doc_ids
+    assert mixed_doc.id in filtered_doc_ids
+    assert js_doc.id not in filtered_doc_ids
+
+
+def test_filtered_documents_multiple_tags(
+    mock_project, rag_config_factory, document_factory
+):
+    """Test filtered_documents with multiple tags in RAG config."""
+    # Create RAG config with multiple tags
+    rag_config = rag_config_factory()
+    rag_config.tags = ["python", "ml"]
+    rag_config.save_to_file()
+
+    loader = VectorStoreLoader(project=mock_project, rag_config=rag_config)
+
+    # Create documents with various tag combinations
+    python_only_doc = document_factory(
+        name="Python Only Document",
+        description="Document with only python tag",
+        tags=["python", "programming"],
+        filename="python_only.pdf",
+    )
+
+    ml_only_doc = document_factory(
+        name="ML Only Document",
+        description="Document with only ml tag",
+        tags=["ml", "ai"],
+        filename="ml_only.pdf",
+    )
+
+    both_tags_doc = document_factory(
+        name="Both Tags Document",
+        description="Document with both python and ml tags",
+        tags=["python", "ml", "data_science"],
+        filename="both_tags.pdf",
+    )
+
+    no_matching_doc = document_factory(
+        name="No Matching Document",
+        description="Document with no matching tags",
+        tags=["javascript", "frontend"],
+        filename="no_matching.pdf",
+    )
+
+    # Should return documents that have either "python" OR "ml" tags
+    filtered_docs = loader.filtered_documents()
+    assert len(filtered_docs) == 3
+    filtered_doc_ids = {doc.id for doc in filtered_docs}
+    assert python_only_doc.id in filtered_doc_ids
+    assert ml_only_doc.id in filtered_doc_ids
+    assert both_tags_doc.id in filtered_doc_ids
+    assert no_matching_doc.id not in filtered_doc_ids
