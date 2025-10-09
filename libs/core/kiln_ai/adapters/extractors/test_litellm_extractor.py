@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List, Tuple
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,10 +16,12 @@ from kiln_ai.adapters.extractors.litellm_extractor import (
     encode_file_litellm_format,
 )
 from kiln_ai.adapters.ml_model_list import (
+    ModelName,
     built_in_models,
     built_in_models_from_provider,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorType
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 
@@ -517,10 +520,10 @@ def paid_litellm_extractor(model_name: str, provider_name: str):
             model_provider_name=provider_name,
             model_name=model_name,
             properties={
-                "prompt_document": "Ignore the file and only respond with the word 'document'",
-                "prompt_image": "Ignore the file and only respond with the word 'image'",
-                "prompt_video": "Ignore the file and only respond with the word 'video'",
-                "prompt_audio": "Ignore the file and only respond with the word 'audio'",
+                "prompt_document": "Transcribe the document.",
+                "prompt_image": "Describe the image in detail.",
+                "prompt_video": "Transcribe the video and any shapes or objects in the video.",
+                "prompt_audio": "Transcribe the audio and any spoken words in the audio.",
             },
             passthrough_mimetypes=[OutputFormat.MARKDOWN, OutputFormat.TEXT],
         ),
@@ -577,9 +580,15 @@ def test_encode_file_litellm_format(mock_file_factory, mime_type, expected_encod
 
 def get_all_models_support_doc_extraction(
     must_support_mime_types: list[str] | None = None,
-):
-    model_provider_pairs = []
+    only_models: List[ModelName] | None = None,
+) -> List[Tuple[str, ModelProviderName]]:
+    model_provider_pairs: List[Tuple[str, ModelProviderName]] = []
     for model in built_in_models:
+        # convenience arg for when we want to only test a subset of models
+        # useful when adding only a handful of new extractor models
+        if only_models is not None and model.name not in only_models:
+            continue
+
         for provider in model.providers:
             if not provider.model_id:
                 # it's possible for models to not have an ID (fine-tune only model)
@@ -600,38 +609,85 @@ def get_all_models_support_doc_extraction(
     return model_provider_pairs
 
 
+@pytest.mark.parametrize(
+    "model_name,provider_name",
+    get_all_models_support_doc_extraction(
+        must_support_mime_types=None,
+        only_models=None,
+    ),
+)
+def test_supports_vision_is_coherent(model_name, provider_name):
+    model = built_in_models_from_provider(provider_name, model_name)
+    assert model is not None
+
+    vision_mime_types = [
+        MockFileFactoryMimeType.JPG,
+        MockFileFactoryMimeType.PNG,
+        MockFileFactoryMimeType.JPEG,
+        MockFileFactoryMimeType.MP4,
+        MockFileFactoryMimeType.MOV,
+    ]
+
+    if model.supports_vision:
+        # a model can only be vision if it is multimodal
+        assert model.multimodal_capable
+
+        # a model can only be vision if it supports some image types or video types
+        assert model.multimodal_mime_types is not None
+        assert any(
+            mime_type in model.multimodal_mime_types for mime_type in vision_mime_types
+        )
+
+    # any model that supports image or video types is a vision model
+    if model.multimodal_mime_types is not None:
+        if any(
+            mime_type in model.multimodal_mime_types for mime_type in vision_mime_types
+        ):
+            assert model.supports_vision
+
+
 @pytest.mark.paid
 @pytest.mark.parametrize(
     "model_name,provider_name",
-    get_all_models_support_doc_extraction(must_support_mime_types=None),
+    get_all_models_support_doc_extraction(
+        must_support_mime_types=None,
+        only_models=None,
+    ),
 )
 @pytest.mark.parametrize(
-    "mime_type,expected_substring_in_output",
+    "mime_type,text_probe",
     [
+        # NOTE:
+        # - live model assertions are flaky so we put in a few synonyms that are likely
+        # to be in the output (e.g. sometimes the model says "parrot", sometimes it says "bird" or "macaw")
+        # - the point of these tests is to ensure it reads the file; sometimes, a provider may accept the
+        # file input but in practice not read it, or corrupt it (e.g. OpenRouter does this with videos and audio
+        # at the moment, on at least some models)
+        #
         # documents
-        (MockFileFactoryMimeType.PDF, "document"),
-        (MockFileFactoryMimeType.TXT, "document"),
-        (MockFileFactoryMimeType.MD, "document"),
-        (MockFileFactoryMimeType.HTML, "document"),
-        (MockFileFactoryMimeType.CSV, "document"),
+        (MockFileFactoryMimeType.PDF, ["attention"]),
+        (MockFileFactoryMimeType.TXT, ["water"]),
+        (MockFileFactoryMimeType.MD, ["thermodynamics"]),
+        (MockFileFactoryMimeType.HTML, ["ice cube"]),
+        (MockFileFactoryMimeType.CSV, ["McConville"]),
         # images
-        (MockFileFactoryMimeType.PNG, "image"),
-        (MockFileFactoryMimeType.JPEG, "image"),
-        (MockFileFactoryMimeType.JPG, "image"),
+        (MockFileFactoryMimeType.PNG, ["parrot", "bird", "macaw"]),
+        (MockFileFactoryMimeType.JPEG, ["earth", "地球"]),
+        (MockFileFactoryMimeType.JPG, ["earth", "地球"]),
         # videos
-        (MockFileFactoryMimeType.MP4, "video"),
-        (MockFileFactoryMimeType.MOV, "video"),
+        (MockFileFactoryMimeType.MP4, ["color"]),
+        (MockFileFactoryMimeType.MOV, ["color"]),
         # audio
-        (MockFileFactoryMimeType.MP3, "audio"),
-        (MockFileFactoryMimeType.OGG, "audio"),
-        (MockFileFactoryMimeType.WAV, "audio"),
+        (MockFileFactoryMimeType.MP3, ["ice cube"]),
+        (MockFileFactoryMimeType.OGG, ["ice cube"]),
+        (MockFileFactoryMimeType.WAV, ["ice cube"]),
     ],
 )
 async def test_extract_document_success(
     model_name,
     provider_name,
     mime_type,
-    expected_substring_in_output,
+    text_probe,
     mock_file_factory,
 ):
     # get model
@@ -657,7 +713,13 @@ async def test_extract_document_success(
     )
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
-    assert expected_substring_in_output.lower() in output.content.lower()
+
+    text_probe_str = ", ".join(text_probe)
+
+    # check that any of the expected substrings are in the output
+    assert any(
+        text_probe.lower() in output.content.lower() for text_probe in text_probe
+    ), f"Expected any of [{text_probe_str}] to be in output: {output.content}"
 
 
 async def test_extract_pdf_page_by_page(mock_file_factory, mock_litellm_extractor):
