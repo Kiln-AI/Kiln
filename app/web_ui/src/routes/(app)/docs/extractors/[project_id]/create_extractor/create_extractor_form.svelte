@@ -97,8 +97,10 @@
       description="The model to use to transform your documents into text."
       info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This model extracts text from these files."
       bind:model={selected_extractor_option}
-      filter_models_predicate={(m) => m.supports_doc_extraction}
-      suggested_mode="doc_extraction"
+      settings={{
+        filter_models_predicate: (m) => m.supports_doc_extraction,
+        suggested_mode: "doc_extraction",
+      }}
     />
     <FormElement
       label="Output Format"
