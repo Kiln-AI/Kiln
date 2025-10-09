@@ -41,6 +41,7 @@ class KilnToolInterface(ABC):
     This ensures consistency across all tool implementations.
     """
 
+    # this interface declaration is not enforced on the implementing class
     @abstractmethod
     async def run(
         self, context: ToolCallContext | None = None, **kwargs

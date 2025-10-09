@@ -18,12 +18,7 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
-from kiln_ai.tools.base_tool import (
-    KilnToolInterface,
-    ToolCallContext,
-    ToolCallDefinition,
-    ToolCallResult,
-)
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -135,12 +130,8 @@ class RagTool(KilnToolInterface):
             },
         }
 
-    async def run(
-        self, context: ToolCallContext | None = None, **kwargs
-    ) -> ToolCallResult:
-        kwargs = RagParams(**kwargs)
-        query = kwargs["query"]
-
+    # function prototype is wrong but still passes typechecking
+    async def run(self, query: str) -> str:
         _, embedding_adapter = self.embedding
 
         vector_store_adapter = await self.vector_store()
@@ -168,4 +159,5 @@ class RagTool(KilnToolInterface):
         search_results = await vector_store_adapter.search(store_query)
         search_results_as_text = format_search_results(search_results)
 
-        return ToolCallResult(output=search_results_as_text)
+        # returns a string when interface requires ToolCallResult
+        return search_results_as_text
