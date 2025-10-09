@@ -2,7 +2,7 @@ import type { EvalTemplateId, Task, Eval } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
-  "kiln_requirements" | "kiln_issue"
+  "kiln_requirements" | "kiln_issue" | "tool_call"
 >
 
 const eval_steps_static_templates: Record<StaticEvalTemplates, string[]> = {
@@ -87,6 +87,34 @@ export function get_eval_steps(
     }
     steps.push(
       "Considering the above, does the model's output contain the issue described? It should pass if it does not contain the issue, and fail if it does contain the issue.",
+    )
+    return steps
+  }
+
+  if (template === "tool_call") {
+    const tool = evaluator.template_properties.tool
+    if (!tool) {
+      throw new Error("Tool is required for tool call template")
+    }
+    const steps: string[] = [
+      `Does the task run full trace output contain the tool call described here: \n<tool_call>\n${tool}\n</tool_call>`,
+    ]
+    const should_call_tool_example =
+      evaluator.template_properties.should_call_tool_example
+    if (should_call_tool_example) {
+      steps.push(
+        `Is the task input similar to this example of when the the above tool should be called: \n<should_call_tool_example>\n${should_call_tool_example}\n</should_call_tool_example>`,
+      )
+    }
+    const should_not_call_tool_example =
+      evaluator.template_properties.should_not_call_tool_example
+    if (should_not_call_tool_example) {
+      steps.push(
+        `Is the task run input similar to this example of when the the above tool should not be called: \n<should_not_call_tool_example>\n${should_not_call_tool_example}\n</should_not_call_tool_example>`,
+      )
+    }
+    steps.push(
+      "Considering the above, does whether or not the task called the tool call match whether it should have called it or not? It should pass if it matches, and fail if it doesn't.",
     )
     return steps
   }

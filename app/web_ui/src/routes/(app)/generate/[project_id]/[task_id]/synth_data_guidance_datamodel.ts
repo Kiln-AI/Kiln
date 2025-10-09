@@ -110,6 +110,8 @@ export class SynthDataGuidanceDataModel {
         this.selected_template.set("issue_eval_template")
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
+      } else if (this.evaluator.template === "tool_call") {
+        this.selected_template.set("tool_call_eval_template")
       }
     } catch (error) {
       this.loading_error.set(createKilnError(error))
@@ -469,6 +471,24 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     return template
   }
 
+  private tool_call_eval_template(
+    tool_call: Eval,
+    task_type: "topics" | "inputs" | "outputs",
+  ): string {
+    let template =
+      "We are building a dataset for an AI eval. We want to generate data that will trigger a specific tool call.\n\n"
+
+    if (task_type == "topics") {
+      template += `When generating top-level topics, generate topics that are likely to trigger the tool call. This may take some creativity, but it's important to make sure the tool call is triggered.`
+    } else if (task_type == "inputs") {
+      template += `When generating model inputs, generate inputs that are likely to trigger the tool call. This may take some creativity, but it's important to make sure the tool call is triggered.`
+    } else if (task_type == "outputs") {
+      template += `When generating model outputs, generate outputs that are likely to trigger the tool call. This may take some creativity, but it's important to make sure the tool call is triggered.`
+    }
+
+    return template
+  }
+
   private build_select_options(
     templates: StaticTemplates[],
     evaluator: Eval | null,
@@ -490,6 +510,13 @@ When generating model inputs, generate inputs that are likely to trigger the iss
           value: "requirements_eval_template",
           description:
             "Generate data expected to trigger the requirements of a specific eval.",
+        })
+      } else if (evaluator.template === "tool_call") {
+        eval_options.push({
+          label: "Tool Call Eval",
+          value: "tool_call_eval_template",
+          description:
+            "Generate data expected to trigger a specific tool call, for an eval to detect that tool call.",
         })
       }
       if (eval_options.length > 0) {

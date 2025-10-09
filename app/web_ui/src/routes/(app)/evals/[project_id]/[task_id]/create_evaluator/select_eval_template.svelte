@@ -10,17 +10,21 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { generate_issue_eval_tag } from "./eval_utils"
+  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
 
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
   let overall_task_performance_dialog: Dialog | undefined
 
+  $: project_id = $page.params.project_id
+  $: task_id = $page.params.task_id
   interface EvaluatorTemplateDescription {
     id:
       | EvalTemplateId
       | "none"
       | "kiln_requirements_preview"
       | "kiln_issue_preview"
+      | "tool_call_preview"
     name: string
     description: string
     recommended?: boolean
@@ -41,6 +45,12 @@
       name: "Issue Eval",
       description:
         "Build an eval to catch a specific issue you've encountered and prevent it from recurring.",
+      recommended: true,
+    },
+    {
+      id: "tool_call_preview",
+      name: "Tool Call Eval",
+      description: "Evaluate the model's ability to use tools in a task.",
       recommended: true,
     },
     {
@@ -182,7 +192,8 @@
       | EvalTemplateId
       | "none"
       | "kiln_requirements_preview"
-      | "kiln_issue_preview",
+      | "kiln_issue_preview"
+      | "tool_call_preview",
     template: EvalTemplateResult | undefined,
   ) {
     // No op
@@ -199,6 +210,11 @@
     // Issue eval shows a list of issues
     if (template_id === "kiln_issue_preview") {
       issue_eval_dialog?.show()
+      return
+    }
+
+    if (template_id === "tool_call_preview") {
+      tool_call_eval_dialog?.show()
       return
     }
 
@@ -285,6 +301,40 @@
         issue_prompt: issue_eval_prompt,
         failure_example: failure_example,
         pass_example: pass_example,
+      },
+    })
+  }
+
+  let tool_call_eval_dialog: Dialog | undefined = undefined
+  let selected_tools: string[] = [] // TODO: Should only allow one tool to be selected
+  let tool_call_eval_name = ""
+  let tool_call_eval_prompt = ""
+  let tool_call_eval_create_complete = false
+  let should_call_tool_example = ""
+  let should_not_call_tool_example = ""
+
+  function create_tool_call_eval() {
+    tool_call_eval_create_complete = true
+    const eval_tag = generate_issue_eval_tag(tool_call_eval_name)
+
+    selected_template_callback({
+      template_id: "tool_call",
+      name: "Tool Call - " + tool_call_eval_name,
+      description:
+        "An eval to check tool call performance: " + tool_call_eval_name,
+      output_scores: [
+        {
+          name: tool_call_eval_name,
+          type: "pass_fail",
+          instruction: tool_call_eval_prompt,
+        },
+      ],
+      default_eval_tag: "eval_" + eval_tag,
+      default_golden_tag: "eval_golden_" + eval_tag,
+      template_properties: {
+        tool: selected_tools.pop() || "", // Error if no tool is selected
+        should_not_call_tool_example: should_not_call_tool_example,
+        should_call_tool_example: should_call_tool_example,
       },
     })
   }
@@ -426,6 +476,53 @@
       id="pass_example"
       optional={true}
       bind:value={pass_example}
+    />
+  </FormContainer>
+</Dialog>
+
+<Dialog bind:this={tool_call_eval_dialog} title="Create Tool Call Eval">
+  <FormContainer
+    submit_label="Create Issue Eval"
+    on:submit={create_tool_call_eval}
+    warn_before_unload={!!(
+      !tool_call_eval_create_complete &&
+      (tool_call_eval_name ||
+        tool_call_eval_prompt ||
+        should_call_tool_example ||
+        should_not_call_tool_example ||
+        selected_tools.length > 0)
+    )}
+  >
+    <div class="font-light text-sm">
+      Tool call evals ensure your models call tools when required and don't when
+      not.
+    </div>
+
+    <FormElement
+      label="Tool Call Eval Name"
+      description="Give your tool call eval a short name that will help you identify it."
+      inputType="input"
+      id="name"
+      bind:value={tool_call_eval_name}
+    />
+    <ToolsSelector {project_id} {task_id} bind:tools={selected_tools} />
+    <FormElement
+      label="Should Call Example"
+      description="An example of model input that should call the tool."
+      info_description="Examples help the judge model understand the issue. The format is flexible (plain text); you can include the entire input/output or just the relevant portion. You can include a description or multiple examples if needed."
+      inputType="textarea"
+      id="should_call_example"
+      optional={true}
+      bind:value={should_call_tool_example}
+    />
+    <FormElement
+      label="Should Not Call Example"
+      description="An example of model input that should not call the tool."
+      info_description="Examples help the judge model understand the issue. The format is flexible (plain text); you can include the entire input/output or just the relevant portion. You can include a description or multiple examples if needed."
+      inputType="textarea"
+      id="should_not_call_example"
+      optional={true}
+      bind:value={should_not_call_tool_example}
     />
   </FormContainer>
 </Dialog>
