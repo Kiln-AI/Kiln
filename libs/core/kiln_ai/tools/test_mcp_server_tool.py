@@ -68,7 +68,7 @@ class TestMCPServerTool:
 
         result = await tool.run(param1="value1", param2="value2")
 
-        assert result == "Success result"
+        assert result.output == "Success result"
         mock_session.call_tool.assert_called_once_with(
             name="test_tool", arguments={"param1": "value1", "param2": "value2"}
         )

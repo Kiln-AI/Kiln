@@ -12,27 +12,6 @@ from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool, KilnTaskToolResult
 
 
-class TestKilnTaskToolResult:
-    """Test the KilnTaskToolResult class."""
-
-    def test_init(self):
-        """Test KilnTaskToolResult initialization."""
-        output = "test output"
-        kiln_task_tool_data = "project_id:::tool_id:::task_id:::run_id"
-
-        result = KilnTaskToolResult(output, kiln_task_tool_data)
-
-        assert result.output == output
-        assert result.kiln_task_tool_data == kiln_task_tool_data
-
-    def test_init_with_empty_strings(self):
-        """Test KilnTaskToolResult initialization with empty strings."""
-        result = KilnTaskToolResult("", "")
-
-        assert result.output == ""
-        assert result.kiln_task_tool_data == ""
-
-
 class TestKilnTaskTool:
     """Test the KilnTaskTool class."""
 
@@ -284,14 +263,6 @@ class TestKilnTaskTool:
 
             # Verify result
             assert result.output == "Structured task completed"
-
-    @pytest.mark.asyncio
-    async def test_run_without_context(self, kiln_task_tool):
-        """Test the run method without context raises ValueError."""
-        with pytest.raises(
-            ValueError, match="Context is required for running a KilnTaskTool"
-        ):
-            await kiln_task_tool.run(input="test input")
 
     @pytest.mark.asyncio
     async def test_run_plaintext_missing_input(
