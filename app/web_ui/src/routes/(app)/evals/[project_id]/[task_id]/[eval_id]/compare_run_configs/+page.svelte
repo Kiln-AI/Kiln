@@ -40,7 +40,6 @@
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
-  import posthog from "posthog-js"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { UiProperty } from "$lib/ui/property_list"
 
@@ -77,9 +76,6 @@
       get_task_composite_id(project_id, task_id)
     ] || null
 
-  $: should_select_eval_config =
-    current_task_run_configs?.length && !evaluator?.current_run_config_id
-
   // Check if all run configs are 100% complete
   $: all_run_configs_complete = score_summary?.run_config_percent_complete
     ? Object.values(score_summary.run_config_percent_complete).every(
@@ -87,9 +83,8 @@
       )
     : false
 
-  $: focus_select_eval_config = !!(
-    should_select_eval_config &&
-    (eval_state?.includes("complete") || all_run_configs_complete)
+  $: focus_run_all = !(
+    eval_state?.includes("complete") || all_run_configs_complete
   )
 
   onMount(async () => {
@@ -277,8 +272,8 @@
 
     return [...configs].sort((a, b) => {
       // Default run config always comes first
-      if (a.id === evaluator?.current_run_config_id) return -1
-      if (b.id === evaluator?.current_run_config_id) return 1
+      if (a.id === task?.default_run_config_id) return -1
+      if (b.id === task?.default_run_config_id) return 1
 
       // If we have evaluator and score summary, sort by the last output score
       if (evaluator?.output_scores?.length && score_summary?.results) {
@@ -384,37 +379,6 @@
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
-
-  async function set_current_run_config(
-    run_config_id: string | null | undefined,
-  ) {
-    if (!run_config_id) {
-      return
-    }
-    try {
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
-              run_config_id: run_config_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      posthog.capture("set_current_run_config", {})
-      // Update the evaluator with the latest
-      evaluator = data
-    } catch (error) {
-      eval_error = createKilnError(error)
-    }
-  }
 </script>
 
 <AppPage
@@ -547,7 +511,7 @@
               {eval_id}
               {current_eval_config_id}
               run_all={true}
-              btn_primary={!focus_select_eval_config}
+              btn_primary={focus_run_all}
               eval_type="run_config"
               on_run_complete={() => {
                 get_score_summary()
@@ -564,20 +528,10 @@
               data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Eval' to generate missing results.`}
+                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Evals' to generate missing results.`}
                 tight={true}
               />
             </button>
-          </div>
-        {:else if should_select_eval_config}
-          <div class="mb-4">
-            <Warning
-              warning_message="Click 'Set as Default' below to select a winner."
-              warning_color={focus_select_eval_config ? "primary" : "gray"}
-              warning_icon="info"
-              large_icon={focus_select_eval_config}
-              tight={true}
-            />
           </div>
         {/if}
 
@@ -586,7 +540,7 @@
             <thead>
               <tr>
                 <th class="max-w-[400px]">
-                  <div>Run Config</div>
+                  <div>Run Configuration</div>
                   <div class="font-normal">How task output is generated</div>
                 </th>
                 <th class="text-center">Status</th>
@@ -610,8 +564,17 @@
                   getRunConfigPromptInfoText(task_run_config)}
                 <tr class="max-w-[400px]">
                   <td>
-                    <div class="font-medium">
-                      {task_run_config.name}
+                    <div class="flex items-center gap-2">
+                      <div class="font-medium">
+                        {task_run_config.name}
+                      </div>
+                      {#if task_run_config.id === task?.default_run_config_id}
+                        <span
+                          class="badge badge-sm badge-primary badge-outline"
+                        >
+                          Default
+                        </span>
+                      {/if}
                     </div>
                     <div class="text-sm text-gray-500">
                       Model: {getDetailedModelName(
@@ -666,27 +629,6 @@
                       </div>
                     {:else}
                       <div>Complete</div>
-                    {/if}
-                    {#if task_run_config.id == evaluator.current_run_config_id}
-                      <button
-                        class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
-                        on:click={() => {
-                          set_current_run_config("None")
-                        }}
-                      >
-                        Default <span class="">&#x2715;</span>
-                      </button>
-                    {:else}
-                      <button
-                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
-                          ? 'btn-primary'
-                          : 'btn-secondary btn-outline'}"
-                        on:click={() => {
-                          set_current_run_config(task_run_config.id)
-                        }}
-                      >
-                        Set as Default
-                      </button>
                     {/if}
                     {#if percent_complete > 0}
                       <div class="mt-1">

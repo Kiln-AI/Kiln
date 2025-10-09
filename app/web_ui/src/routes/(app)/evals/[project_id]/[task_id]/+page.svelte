@@ -7,26 +7,11 @@
   import { onMount, tick } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
-  import {
-    model_info,
-    load_model_info,
-    model_name,
-    prompt_name_from_id,
-    current_task_prompts,
-    get_task_composite_id,
-  } from "$lib/stores"
-  import {
-    load_task_run_configs,
-    run_configs_by_task_composite_id,
-  } from "$lib/stores/run_configs_store"
-  import { prompt_link } from "$lib/utils/link_builder"
+  import { load_model_info } from "$lib/stores"
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
-  $: current_task_run_configs =
-    $run_configs_by_task_composite_id[
-      get_task_composite_id(project_id, task_id)
-    ] || null
 
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
@@ -126,6 +111,7 @@
 </script>
 
 <AppPage
+  limit_max_width={true}
   title="Evals"
   subtitle="Evaluate the quality of your prompts, models and tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
@@ -233,27 +219,10 @@
             <th></th>
             <th>Eval Name</th>
             <th>Description</th>
-            <th>Default Run Configuration</th>
           </tr>
         </thead>
         <tbody>
           {#each sorted_evals as evaluator}
-            {@const run_config = current_task_run_configs?.find(
-              (run_config) => run_config.id === evaluator.current_run_config_id,
-            )}
-            {@const prompt_href = run_config?.run_config_properties.prompt_id
-              ? prompt_link(
-                  project_id,
-                  task_id,
-                  run_config.run_config_properties.prompt_id,
-                )
-              : undefined}
-            {@const prompt_name =
-              run_config?.prompt?.name ||
-              prompt_name_from_id(
-                run_config?.run_config_properties.prompt_id || "",
-                $current_task_prompts,
-              )}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
@@ -273,31 +242,6 @@
               </td>
               <td> {evaluator.name} </td>
               <td> {evaluator.description} </td>
-              <td>
-                {#if run_config}
-                  <div
-                    class="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4 lg:min-w-[260px]"
-                  >
-                    <div>Model:</div>
-                    <div class="text-gray-500">
-                      {model_name(
-                        run_config.run_config_properties.model_name,
-                        $model_info,
-                      )}
-                    </div>
-                    <div>Prompt:</div>
-                    <div class="text-gray-500">
-                      {#if prompt_href}
-                        <a href={prompt_href} class="link">{prompt_name}</a>
-                      {:else}
-                        {prompt_name}
-                      {/if}
-                    </div>
-                  </div>
-                {:else}
-                  <div class="text-gray-500">N/A</div>
-                {/if}
-              </td>
             </tr>
           {/each}
         </tbody>

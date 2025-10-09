@@ -12,22 +12,15 @@
     model_info,
     load_model_info,
     model_name,
-    prompt_name_from_id,
-    current_task_prompts,
     load_available_models,
   } from "$lib/stores"
-  import type { ProviderModels, PromptResponse } from "$lib/types"
+  import type { ProviderModels } from "$lib/types"
   import { goto } from "$app/navigation"
-  import { prompt_link } from "$lib/utils/link_builder"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import PropertyList from "$lib/ui/property_list.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import {
-    getDetailedModelName,
-    getDetailedModelNameFromParts,
-    getRunConfigPromptDisplayName,
-  } from "$lib/utils/run_config_formatters"
+  import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -112,7 +105,6 @@
     evaluator: Eval | null,
     eval_progress: EvalProgress | null,
     modelInfo: ProviderModels | null,
-    taskPrompts: PromptResponse | null,
   ): UiProperty[] {
     if (!evaluator) {
       return []
@@ -181,35 +173,10 @@
       })
     }
 
-    if (eval_progress?.current_run_method) {
-      properties.push({
-        name: "Run Model",
-        value: getDetailedModelName(
-          eval_progress.current_run_method,
-          modelInfo,
-        ),
-        tooltip: "The model used by your selected run config.",
-      })
-      properties.push({
-        name: "Run Prompt",
-        value: getRunConfigPromptDisplayName(
-          eval_progress.current_run_method,
-          taskPrompts,
-        ),
-        tooltip: "The prompt used by your selected run config.",
-        link: prompt_link(
-          project_id,
-          task_id,
-          eval_progress.current_run_method.run_config_properties.prompt_id,
-        ),
-      })
-    }
-
     return properties
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
-  $: has_default_run_config = evaluator && evaluator.current_run_config_id
 
   let edit_dialog: EditDialog | null = null
 
@@ -231,7 +198,7 @@
     2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
     3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
     4: "Benchmark various judge methods (model+prompt+algorithm). We'll compare judges to your golden dataset to find the judge which best matches your human preferences.",
-    5: "This tool will help your compare a variety of options for running this task and find the best one. You can compare different models, prompts, or fine-tunes.",
+    5: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, or fine-tunes.",
   }
   function update_eval_progress(
     progress: EvalProgress | null,
@@ -266,13 +233,8 @@
       return
     }
 
-    current_step = 5
-    if (!has_default_run_config) {
-      return
-    }
-
     // Everything is setup!
-    current_step = 6
+    current_step = 5
   }
   $: update_eval_progress(eval_progress, evaluator)
 
@@ -532,22 +494,8 @@
                       </div>
                     {:else if step == 5}
                       <div class="mb-1">
-                        {#if eval_progress?.current_run_method}
-                          You've selected the model '{model_name(
-                            eval_progress.current_run_method
-                              .run_config_properties.model_name,
-                            $model_info,
-                          )}' with the prompt '{eval_progress.current_run_method
-                            .prompt?.name ||
-                            prompt_name_from_id(
-                              eval_progress.current_run_method
-                                .run_config_properties.prompt_id,
-                              $current_task_prompts,
-                            )}'.
-                        {:else}
-                          Compare models, prompts and fine-tunes to find the
-                          most effective.
-                        {/if}
+                        Compare models, prompts and fine-tunes to find the most
+                        effective.
                       </div>
                       <div>
                         <button
@@ -573,7 +521,6 @@
               evaluator,
               eval_progress,
               $model_info,
-              $current_task_prompts,
             )}
             title="Evaluator Properties"
           />
