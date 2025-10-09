@@ -83,7 +83,7 @@
       return {}
     }
     return {
-      "Run Method Name": run_config.name,
+      "Run Configuration Name": run_config.name,
       Model: model_name(
         run_config.run_config_properties?.model_name,
         $model_info,
@@ -117,7 +117,7 @@
 
 <AppPage
   title="Eval Results"
-  subtitle="Evaluating a task run method with a judge."
+  subtitle="Evaluating a task run configuration with a judge."
 >
   {#if results_loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -138,13 +138,13 @@
     >
       <div class="font-medium">Eval Results Empty</div>
       <div class="text-error text-sm">
-        No results found for this run method.
+        No results found for this run config.
       </div>
     </div>
   {:else if results}
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
       <div class="grow basis-1/2">
-        <div class="text-xl font-bold">Task Run Method</div>
+        <div class="text-xl font-bold">Task Run Config</div>
         <div class="text-sm text-gray-500 mb-4">
           How the task outputs were generated.
         </div>
@@ -281,7 +281,7 @@
     </div>
     <div>
       Use our "Run" screen or fresh synthetic dataset generation if you want to
-      explore what type of content a run method is generating.
+      explore what type of content a run configuration is generating.
     </div>
   </div>
 </Dialog>
