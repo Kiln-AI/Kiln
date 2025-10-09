@@ -34,7 +34,6 @@
   export let current_task: Task
   export let model_name: string = ""
   export let provider: string = ""
-  export let requires_structured_output: boolean = false
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
@@ -45,6 +44,7 @@
   let prompt_method: string = "simple_prompt_builder"
   let tools: string[] = []
   let requires_tool_support: boolean = false
+  $: requires_structured_output = !!current_task.output_json_schema
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -59,6 +59,7 @@
   $: updated_model_dropdown_settings = {
     ...model_dropdown_settings,
     requires_tool_support: requires_tool_support,
+    requires_structured_output: requires_structured_output,
   }
 
   let model_dropdown: AvailableModelsDropdown
