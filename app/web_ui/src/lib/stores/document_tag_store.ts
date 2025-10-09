@@ -17,6 +17,7 @@ export const document_tags_errors_by_project_id = writable<
 
 export async function load_document_tags(
   project_id: string,
+  options?: { invalidate_cache: boolean },
 ): Promise<DocumentTagCounts> {
   try {
     // Return early if already loading
@@ -32,7 +33,7 @@ export async function load_document_tags(
     const existing_tag_counts = get(document_tag_store_by_project_id)[
       project_id
     ]
-    if (existing_tag_counts) {
+    if (existing_tag_counts && !options?.invalidate_cache) {
       return existing_tag_counts
     }
     const { data, error } = await client.GET(

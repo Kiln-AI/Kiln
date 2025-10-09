@@ -124,14 +124,16 @@
     switch (example_tag_set) {
       case "doc": {
         if (project_id !== null) {
-          current_tag_counts = document_tag_counts[project_id] || {}
+          // fallback here in case the document_tag_counts is still loading
+          current_tag_counts = document_tag_counts?.[project_id] ?? {}
         }
         default_tags = DEFAULT_DOC_TAGS
         break
       }
       case "task_run": {
         if (task_id !== null) {
-          current_tag_counts = task_tag_counts[task_id] || {}
+          // fallback here in case the task_tag_counts is still loading
+          current_tag_counts = task_tag_counts?.[task_id] ?? {}
         }
         default_tags = DEFAULT_TASK_TAGS
         break
