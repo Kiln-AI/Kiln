@@ -1,6 +1,7 @@
 import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
 import { get } from "svelte/store"
+import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 export type DocumentTagCounts = Record<string, number>
 
@@ -9,6 +10,10 @@ export const document_tag_store_by_project_id = writable<
 >({})
 
 const loading_document_tags = writable<Record<string, boolean>>({})
+
+export const document_tags_errors_by_project_id = writable<
+  Record<string, KilnError>
+>({})
 
 export async function load_document_tags(
   project_id: string,
@@ -40,6 +45,10 @@ export async function load_document_tags(
     )
     if (error) {
       console.error("Error loading document tags", error)
+      document_tags_errors_by_project_id.set({
+        ...get(document_tags_errors_by_project_id),
+        [project_id]: createKilnError(error),
+      })
       return {}
     }
     const tag_counts: DocumentTagCounts = data
@@ -50,6 +59,10 @@ export async function load_document_tags(
     return tag_counts
   } catch (error: unknown) {
     console.error("Error loading document tags", error)
+    document_tags_errors_by_project_id.set({
+      ...get(document_tags_errors_by_project_id),
+      [project_id]: createKilnError(error),
+    })
     return {}
   } finally {
     loading_document_tags.set({
