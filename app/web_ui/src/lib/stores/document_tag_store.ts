@@ -72,12 +72,13 @@ export function increment_document_tag(
     return {}
   }
 
-  if (tag_counts) {
-    tag_counts[tag] = (tag_counts[tag] || 0) + 1
+  const updated_counts = {
+    ...tag_counts,
+    [tag]: (tag_counts[tag] || 0) + 1,
   }
   document_tag_store_by_project_id.set({
     ...get(document_tag_store_by_project_id),
-    [project_id]: tag_counts,
+    [project_id]: updated_counts,
   })
-  return tag_counts
+  return updated_counts
 }

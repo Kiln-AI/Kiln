@@ -56,12 +56,13 @@ export function increment_tag(task_id: string, tag: string): TagCounts {
     return {}
   }
 
-  if (tag_counts) {
-    tag_counts[tag] = (tag_counts[tag] || 0) + 1
+  const updated_counts = {
+    ...tag_counts,
+    [tag]: (tag_counts[tag] || 0) + 1,
   }
   tag_store_by_task_id.set({
     ...get(tag_store_by_task_id),
-    [task_id]: tag_counts,
+    [task_id]: updated_counts,
   })
-  return tag_counts
+  return updated_counts
 }
