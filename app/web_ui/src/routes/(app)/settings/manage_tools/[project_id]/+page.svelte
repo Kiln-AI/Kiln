@@ -303,6 +303,7 @@
             {#each (tools || []).filter((tool) => tool.type !== "kiln_task") as tool}
               {@const missing_secrets =
                 tool.missing_secrets && tool.missing_secrets.length > 0}
+              {@const missing_oauth = !!tool.missing_oauth}
               <tr
                 class="hover:bg-base-200 cursor-pointer"
                 on:click={() => navigateToToolServer(tool)}
@@ -322,6 +323,12 @@
                   {#if missing_secrets}
                     <Warning
                       warning_message="Action Required"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else if missing_oauth}
+                    <Warning
+                      warning_message="OAuth Required"
                       warning_color="warning"
                       tight={true}
                     />

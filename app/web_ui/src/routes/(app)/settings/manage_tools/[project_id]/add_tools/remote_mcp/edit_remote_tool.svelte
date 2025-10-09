@@ -2,7 +2,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
-  import { client } from "$lib/api_client"
+  import { base_url, client } from "$lib/api_client"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -164,6 +164,9 @@
                 project_id: $page.params.project_id,
                 tool_server_id: editing_tool_server.id || "",
               },
+              query: {
+                callback_base_url: base_url,
+              },
             },
             body: body,
           },
@@ -177,6 +180,9 @@
             params: {
               path: {
                 project_id: $page.params.project_id,
+              },
+              query: {
+                callback_base_url: base_url,
               },
             },
             body: body,

@@ -36,6 +36,7 @@ class RemoteServerProperties(TypedDict, total=True):
     server_url: str
     headers: NotRequired[dict[str, str]]
     secret_header_keys: NotRequired[list[str]]
+    oauth_required: NotRequired[bool]
 
 
 class KilnTaskServerProperties(TypedDict, total=True):

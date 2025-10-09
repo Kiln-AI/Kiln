@@ -1765,6 +1765,40 @@ export interface paths {
         patch: operations["edit_remote_mcp_api_projects__project_id__edit_remote_mcp__tool_server_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/connect_remote_server_oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connect Remote Server Oauth */
+        get: operations["connect_remote_server_oauth_api_projects__project_id__tool_servers__tool_server_id__connect_remote_server_oauth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/add_oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Oauth To Remote Server */
+        post: operations["add_oauth_to_remote_server_api_projects__project_id__tool_servers__tool_server_id__add_oauth_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/connect_local_mcp": {
         parameters: {
             query?: never;
@@ -3248,6 +3282,8 @@ export interface components {
             available_tools: components["schemas"]["ExternalToolApiDescription"][];
             /** Missing Secrets */
             missing_secrets: string[];
+            /** Missing Oauth */
+            missing_oauth: boolean;
         };
         /** ExternalToolServerCreationRequest */
         ExternalToolServerCreationRequest: {
@@ -3775,6 +3811,13 @@ export interface components {
             missing_secrets: string[];
             /** Is Archived */
             is_archived: boolean;
+            /** Oauth Required */
+            oauth_required?: boolean | null;
+            /**
+             * Missing Oauth
+             * @default false
+             */
+            missing_oauth: boolean;
         };
         /**
          * Kind
@@ -4345,6 +4388,17 @@ export interface components {
             /** Options */
             options: components["schemas"]["RatingOption"][];
         };
+        /** RemoteServerOAuthCallbackRequest */
+        RemoteServerOAuthCallbackRequest: {
+            /** Code */
+            code?: string | null;
+            /** State */
+            state: string;
+            /** Error */
+            error?: string | null;
+            /** Error Description */
+            error_description?: string | null;
+        };
         /** RemoteServerProperties */
         RemoteServerProperties: {
             /** Server Url */
@@ -4355,6 +4409,8 @@ export interface components {
             };
             /** Secret Header Keys */
             secret_header_keys?: string[];
+            /** Oauth Required */
+            oauth_required?: boolean;
         };
         /** RepairRunPost */
         RepairRunPost: {
@@ -8977,7 +9033,9 @@ export interface operations {
     };
     connect_remote_mcp_api_projects__project_id__connect_remote_mcp_post: {
         parameters: {
-            query?: never;
+            query?: {
+                callback_base_url?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -9012,7 +9070,9 @@ export interface operations {
     };
     edit_remote_mcp_api_projects__project_id__edit_remote_mcp__tool_server_id__patch: {
         parameters: {
-            query?: never;
+            query?: {
+                callback_base_url?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -9033,6 +9093,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_remote_server_oauth_api_projects__project_id__tool_servers__tool_server_id__connect_remote_server_oauth_get: {
+        parameters: {
+            query?: {
+                callback_base_url?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_oauth_to_remote_server_api_projects__project_id__tool_servers__tool_server_id__add_oauth_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteServerOAuthCallbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

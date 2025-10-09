@@ -8,6 +8,7 @@ import yaml
 
 # Configuration keys
 MCP_SECRETS_KEY = "mcp_secrets"
+REMOTE_MCP_OAUTH_TOKENS_KEY = "remote_mcp_oauth_tokens"
 
 
 class ConfigProperty:
@@ -167,6 +168,10 @@ class Config:
             # Allow the user to set secrets for MCP servers, the key is mcp_server_id::key_name
             MCP_SECRETS_KEY: ConfigProperty(
                 dict[str, str],
+                sensitive=True,
+            ),
+            REMOTE_MCP_OAUTH_TOKENS_KEY: ConfigProperty(
+                dict,
                 sensitive=True,
             ),
         }
