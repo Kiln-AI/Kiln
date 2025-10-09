@@ -14,7 +14,7 @@ We suggest installing with uv:
 uv tool install kiln_server
 ```
 
-**Important** You must have run search indexing from the Kiln app before starting a Kiln search tool via this MCP server.
+**Important** You must have run search indexing from the Kiln app before starting a Kiln search tool via this MCP server, on the same computer as you are running this MCP.
 
 ### Running kiln_mcp
 
