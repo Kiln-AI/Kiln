@@ -540,7 +540,7 @@
             <thead>
               <tr>
                 <th class="max-w-[400px]">
-                  <div>Run Config</div>
+                  <div>Run Configuration</div>
                   <div class="font-normal">How task output is generated</div>
                 </th>
                 <th class="text-center">Status</th>
