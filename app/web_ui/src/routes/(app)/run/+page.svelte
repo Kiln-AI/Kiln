@@ -85,6 +85,9 @@
         mcp_tools: run_config_component
           .get_tools()
           .filter((tool) => tool.startsWith("mcp::")).length,
+        kiln_task_tools: run_config_component
+          .get_tools()
+          .filter((tool) => tool.startsWith("kiln_task::")).length,
       })
       response = data
     } catch (e) {

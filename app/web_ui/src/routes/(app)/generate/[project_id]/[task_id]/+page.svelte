@@ -580,6 +580,8 @@
         model_name: run_config_properties.model_name,
         provider: run_config_properties.model_provider_name,
         prompt_method: run_config_properties.prompt_id,
+        tools: run_config_properties.tools_config?.tools ?? [],
+        structured_output_mode: run_config_properties.structured_output_mode,
       })
 
       return { output: data, error: null }

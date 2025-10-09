@@ -11,6 +11,9 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import RunConfigProperties
 
 from app.desktop.studio_server.data_gen_api import (
     DataGenCategoriesApiInput,
@@ -159,9 +162,12 @@ def test_save_sample_success_paid_run(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_model_name="gpt_4o_mini",
-        output_provider="openai",
-        prompt_method="simple_prompt_builder",
+        output_run_config_properties=RunConfigProperties(
+            model_name="gpt_4o_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
         topic_path=[],  # No topic path
         tags=["test_tag"],
     )
@@ -213,9 +219,12 @@ def test_generate_sample_success_with_mock_invoke(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_model_name="gpt_4o_mini",
-        output_provider="openai",
-        prompt_method="simple_prompt_builder",
+        output_run_config_properties=RunConfigProperties(
+            model_name="gpt_4o_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
         topic_path=["AI", "Machine Learning", "Deep Learning"],
         tags=["test_tag"],
     )
@@ -285,9 +294,12 @@ def test_generate_sample_success_with_topic_path(
         topic_path=["AI", "Machine Learning", "Deep Learning"],
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_model_name="gpt_4o_mini",
-        output_provider="openai",
-        prompt_method="simple_prompt_builder",
+        output_run_config_properties=RunConfigProperties(
+            model_name="gpt_4o_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
     )
 
     # Act
@@ -418,9 +430,12 @@ def test_generate_sample_guidance_generation(
             input="Test input",
             input_model_name="gpt-4",
             input_provider="openai",
-            output_model_name="gpt-4",
-            output_provider="openai",
-            prompt_method="simple_prompt_builder",
+            output_run_config_properties=RunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
             topic_path=topic_path,
             guidance=guidance,
         )
