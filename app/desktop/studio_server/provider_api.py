@@ -144,6 +144,7 @@ class ModelDetails(BaseModel):
     supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
+    supports_vision: bool
     supports_doc_extraction: bool
     suggested_for_doc_extraction: bool
     multimodal_capable: bool = Field(default=False)
@@ -252,6 +253,7 @@ def connect_provider_api(app: FastAPI):
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
+                                supports_vision=provider.supports_vision,
                                 supports_doc_extraction=provider.supports_doc_extraction,
                                 suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
                                 multimodal_capable=provider.multimodal_capable,
@@ -1111,6 +1113,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_vision=ollama_provider.supports_vision,
                             supports_doc_extraction=ollama_provider.supports_doc_extraction,
                             suggested_for_doc_extraction=ollama_provider.suggested_for_doc_extraction,
                             multimodal_capable=ollama_provider.multimodal_capable,
@@ -1138,6 +1141,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_vision=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
                     multimodal_capable=False,
@@ -1217,6 +1221,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             suggested_for_evals=docker_provider.suggested_for_evals,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
+                            supports_vision=docker_provider.supports_vision,
                             supports_doc_extraction=docker_provider.supports_doc_extraction,
                             suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
@@ -1237,6 +1242,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     suggested_for_evals=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
+                    supports_vision=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
@@ -1349,6 +1355,7 @@ def custom_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
                     structured_output_mode=StructuredOutputMode.json_instructions,
+                    supports_vision=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
                     multimodal_capable=False,
@@ -1400,6 +1407,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                                 and isinstance(fine_tune_mode, StructuredOutputMode)
                                 else StructuredOutputMode.json_instructions
                             ),
+                            supports_vision=False,
                             supports_doc_extraction=False,
                             suggested_for_doc_extraction=False,
                             multimodal_capable=False,
@@ -1513,6 +1521,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
                         structured_output_mode=StructuredOutputMode.json_instructions,
+                        supports_vision=False,
                         supports_doc_extraction=False,
                         suggested_for_doc_extraction=False,
                         multimodal_capable=False,

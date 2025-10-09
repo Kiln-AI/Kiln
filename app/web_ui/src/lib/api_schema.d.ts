@@ -3858,6 +3858,8 @@ export interface components {
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
             suggested_for_uncensored_data_gen: boolean;
+            /** Supports Vision */
+            supports_vision: boolean;
             /** Supports Doc Extraction */
             supports_doc_extraction: boolean;
             /** Suggested For Doc Extraction */
