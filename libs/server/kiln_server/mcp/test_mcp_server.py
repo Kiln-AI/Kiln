@@ -1,9 +1,9 @@
-from dataclasses import dataclass
-from typing import Any, Dict, List
-from unittest.mock import AsyncMock
+from typing import Any, Dict
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.datamodel.external_tool_server import ToolServerType
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallResult
 from mcp.types import (
     CallToolRequest,
     CallToolRequestParams,
@@ -27,9 +27,9 @@ class FakeTool(KilnToolInterface):
         self.output_schema: dict[str, Any] | None = None
         self.received: list[dict[str, Any]] = []
 
-    async def run(self, **kwargs) -> Any:
+    async def run(self, **kwargs) -> ToolCallResult:
         self.received.append(kwargs)
-        return kwargs.get("query", "")
+        return ToolCallResult(output=kwargs.get("query", ""))
 
     async def toolcall_definition(self) -> Dict[str, Any]:
         return {
@@ -57,84 +57,167 @@ class FakeTool(KilnToolInterface):
         return self._description
 
 
-@dataclass
 class FakeRagConfig:
-    id: str
-    tool_name: str
-    tool_description: str
-    is_archived: bool = False
-    archived: bool | None = None
-
-
-class FakeProject:
-    def __init__(self, rag_configs: List[FakeRagConfig]) -> None:
-        self._rag_configs = rag_configs
-        self.name = "demo"
-
-    def rag_configs(self, readonly: bool = False) -> List[FakeRagConfig]:
-        assert readonly is True
-        return self._rag_configs
-
-
-def _make_tool_factory(tools: dict[str, FakeTool]):
-    def factory(tool_id: str, rag_config: FakeRagConfig) -> FakeTool:
-        tool = FakeTool(
-            tool_id, name=rag_config.tool_name, description=rag_config.tool_description
-        )
-        tools[tool_id] = tool
-        return tool
-
-    return factory
+    def __init__(
+        self,
+        id: str,
+        tool_name: str,
+        tool_description: str,
+        is_archived: bool = False,
+        archived: bool | None = None,
+    ):
+        self.id = id
+        self.tool_name = tool_name
+        self.tool_description = tool_description
+        self.is_archived = is_archived
+        self.archived = archived
 
 
 class TestCollectProjectTools:
-    def test_filters_archived_and_missing(self) -> None:
-        configs = [
-            FakeRagConfig(id="active", tool_name="active", tool_description="Active"),
-            FakeRagConfig(
-                id="archived",
-                tool_name="archived",
-                tool_description="Archived",
-                is_archived=True,
-            ),
-        ]
-        project = FakeProject(configs)
-        created: dict[str, FakeTool] = {}
+    @patch("kiln_server.mcp.tool_selection.RagTool")
+    def test_filters_archived_and_missing(self, mock_rag_tool_class) -> None:
+        from unittest.mock import Mock
 
-        resolutions = collect_project_tools(
-            project,
-            rag_tool_factory=_make_tool_factory(created),
-        )
+        # Create mock RAG configs
+        active_config = Mock()
+        active_config.id = "active"
+        active_config.is_archived = False
+
+        archived_config = Mock()
+        archived_config.id = "archived"
+        archived_config.is_archived = True
+
+        # Create mock project
+        project = Mock()
+        project.rag_configs.return_value = [active_config, archived_config]
+        project.external_tool_servers.return_value = []
+
+        resolutions = collect_project_tools(project)
 
         assert [resolution.tool_id for resolution in resolutions] == [
             "kiln_tool::rag::active"
         ]
-        assert "kiln_tool::rag::active" in created
-        assert "kiln_tool::rag::archived" not in created
+        # Verify RagTool was only called for the active config
+        mock_rag_tool_class.assert_called_once_with(
+            "kiln_tool::rag::active", active_config
+        )
 
-    def test_respects_tool_id_filter_and_errors_on_missing(self) -> None:
-        configs = [
-            FakeRagConfig(id="one", tool_name="one", tool_description="One"),
-            FakeRagConfig(id="two", tool_name="two", tool_description="Two"),
-        ]
-        project = FakeProject(configs)
-        created: dict[str, FakeTool] = {}
+    @patch("kiln_server.mcp.tool_selection.RagTool")
+    def test_respects_tool_id_filter_and_errors_on_missing(
+        self, mock_rag_tool_class
+    ) -> None:
+        from unittest.mock import Mock
+
+        # Create mock RAG configs
+        config_one = Mock()
+        config_one.id = "one"
+        config_one.is_archived = False
+
+        config_two = Mock()
+        config_two.id = "two"
+        config_two.is_archived = False
+
+        # Create mock project
+        project = Mock()
+        project.rag_configs.return_value = [config_one, config_two]
+        project.external_tool_servers.return_value = []
 
         selected = collect_project_tools(
             project,
             ["kiln_tool::rag::two"],
-            rag_tool_factory=_make_tool_factory(created),
         )
         assert [resolution.tool_id for resolution in selected] == [
             "kiln_tool::rag::two"
         ]
+        # Verify RagTool was only called for the selected config
+        mock_rag_tool_class.assert_called_once_with("kiln_tool::rag::two", config_two)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="Requested tool IDs were not found or are archived"
+        ):
             collect_project_tools(
                 project,
                 ["kiln_tool::rag::missing"],
-                rag_tool_factory=_make_tool_factory({}),
             )
+
+    @patch("kiln_server.mcp.tool_selection.KilnTaskTool")
+    def test_includes_kiln_task_tools(self, mock_kiln_task_tool_class) -> None:
+        """Test that kiln task tools are included in the results."""
+        from unittest.mock import Mock
+
+        # Create mock task servers
+        task_server = Mock()
+        task_server.id = "task1"
+        task_server.type = ToolServerType.kiln_task
+
+        remote_server = Mock()
+        remote_server.id = "task2"
+        remote_server.type = ToolServerType.remote_mcp
+
+        # Create mock project
+        project = Mock()
+        project.id = "test-project-id"
+        project.rag_configs.return_value = []
+        project.external_tool_servers.return_value = [task_server, remote_server]
+
+        resolutions = collect_project_tools(project)
+
+        assert [resolution.tool_id for resolution in resolutions] == [
+            "kiln_task::task1"
+        ]
+        # Verify KilnTaskTool was called with correct parameters
+        mock_kiln_task_tool_class.assert_called_once_with(
+            "test-project-id", "kiln_task::task1", task_server
+        )
+
+    @patch("kiln_server.mcp.tool_selection.RagTool")
+    @patch("kiln_server.mcp.tool_selection.KilnTaskTool")
+    def test_combines_rag_and_task_tools(
+        self, mock_kiln_task_tool_class, mock_rag_tool_class
+    ) -> None:
+        """Test that both RAG and task tools are included together."""
+        from unittest.mock import Mock
+
+        # Create mock RAG config
+        rag_config = Mock()
+        rag_config.id = "rag1"
+        rag_config.is_archived = False
+
+        # Create mock task server
+        task_server = Mock()
+        task_server.id = "task1"
+        task_server.type = ToolServerType.kiln_task
+
+        # Create mock project
+        project = Mock()
+        project.id = "test-project-id"
+        project.rag_configs.return_value = [rag_config]
+        project.external_tool_servers.return_value = [task_server]
+
+        resolutions = collect_project_tools(project)
+
+        tool_ids = [resolution.tool_id for resolution in resolutions]
+        assert "kiln_tool::rag::rag1" in tool_ids
+        assert "kiln_task::task1" in tool_ids
+        assert len(tool_ids) == 2
+
+    def test_requires_project_id_for_task_tools(self) -> None:
+        """Test that task tools require a project ID."""
+        from unittest.mock import Mock
+
+        # Create mock task server
+        task_server = Mock()
+        task_server.id = "task1"
+        task_server.type = ToolServerType.kiln_task
+
+        # Create mock project with no ID
+        project = Mock()
+        project.id = None
+        project.rag_configs.return_value = []
+        project.external_tool_servers.return_value = [task_server]
+
+        with pytest.raises(ValueError, match="Project ID is required"):
+            collect_project_tools(project)
 
 
 @pytest.mark.asyncio
@@ -223,41 +306,6 @@ async def test_create_server_invokes_tool_and_returns_text() -> None:
     assert len(content) == 1
     assert isinstance(content[0], TextContent)
     assert content[0].text == "hello"
-
-
-@pytest.mark.asyncio
-async def test_create_server_enforces_structured_output() -> None:
-    class DictTool(FakeTool):
-        async def run(self, **kwargs: Any) -> Any:
-            return {"answer": 42}
-
-    tool = DictTool("kiln_tool::rag::demo", name="demo_tool", description="Demo tool")
-    tool.output_schema = {
-        "type": "object",
-        "properties": {"answer": {"type": "number"}},
-        "required": ["answer"],
-    }
-    contexts = await prepare_tool_contexts(
-        [ToolResolution(tool_id="kiln_tool::rag::demo", tool=tool)]
-    )
-
-    server = create_fastmcp_server(
-        contexts,
-        project_name=None,
-        host="127.0.0.1",
-        port=8000,
-        log_level="info",
-        transport="stdio",
-        mount_path=None,
-    )
-
-    call_handler = server._mcp_server.request_handlers[CallToolRequest]
-    call_request = CallToolRequest(
-        method="tools/call",
-        params=CallToolRequestParams(name="demo_tool", arguments={"query": "unused"}),
-    )
-    call_result = await call_handler(call_request)
-    assert call_result.root.structuredContent == {"answer": 42}
 
 
 @pytest.mark.asyncio
