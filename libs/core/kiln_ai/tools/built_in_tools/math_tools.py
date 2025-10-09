@@ -1,7 +1,7 @@
 from typing import TypedDict, Union
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool, ToolCallContext
+from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
 
 
 class AddParams(TypedDict):
@@ -32,9 +32,12 @@ class AddTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
+        """Add two numbers and return the result."""
         kwargs = AddParams(**kwargs)
-        return str(kwargs["a"] + kwargs["b"])
+        a = kwargs["a"]
+        b = kwargs["b"]
+        return ToolCallResult(output=str(a + b))
 
 
 class SubtractParams(TypedDict):
@@ -67,9 +70,12 @@ class SubtractTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
+        """Subtract b from a and return the result."""
         kwargs = SubtractParams(**kwargs)
-        return str(kwargs["a"] - kwargs["b"])
+        a = kwargs["a"]
+        b = kwargs["b"]
+        return ToolCallResult(output=str(a - b))
 
 
 class MultiplyParams(TypedDict):
@@ -99,9 +105,12 @@ class MultiplyTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
+        """Multiply two numbers and return the result."""
         kwargs = MultiplyParams(**kwargs)
-        return str(kwargs["a"] * kwargs["b"])
+        a = kwargs["a"]
+        b = kwargs["b"]
+        return ToolCallResult(output=str(a * b))
 
 
 class DivideParams(TypedDict):
@@ -137,8 +146,11 @@ class DivideTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
+        """Divide a by b and return the result."""
         kwargs = DivideParams(**kwargs)
-        if kwargs["b"] == 0:
+        a = kwargs["a"]
+        b = kwargs["b"]
+        if b == 0:
             raise ZeroDivisionError("Cannot divide by zero")
-        return str(kwargs["a"] / kwargs["b"])
+        return ToolCallResult(output=str(a / b))
