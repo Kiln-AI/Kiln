@@ -50,8 +50,8 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Create Search Tool (RAG)"
-    subtitle="Define parameters for how this tool will search and retrieve your documents"
+    title="Clone Search Tool (RAG)"
+    subtitle="This creates a new search tool, based on the configuration of the existing tool."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     breadcrumbs={[
@@ -62,10 +62,6 @@
       {
         label: "Search Tools",
         href: `/docs/rag_configs/${project_id}`,
-      },
-      {
-        label: "Add Search Tool",
-        href: `/docs/rag_configs/${project_id}/add_search_tool`,
       },
     ]}
   >

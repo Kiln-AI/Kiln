@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte"
+  import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import CreateEmbeddingForm from "./create_embedding_form.svelte"
-  import { load_available_embedding_models } from "$lib/stores"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
@@ -11,10 +10,6 @@
     success: { embedding_config_id: string }
     close: void
   }>()
-
-  onMount(async () => {
-    await load_available_embedding_models()
-  })
 </script>
 
 <Dialog
