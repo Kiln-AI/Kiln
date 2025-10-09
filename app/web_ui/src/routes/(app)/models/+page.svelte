@@ -840,8 +840,11 @@
                           {#if provider.supports_vision}
                             <span
                               class="w-2 h-2 bg-pink-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={// vision models always have some mime types
-                              (provider.multimodal_mime_types || []).join(", ")}
+                              data-tip={// in practice, vision models should always have some mime types, if the fallback kicks in, the model definition is probably incorrect
+                              provider.multimodal_mime_types &&
+                              provider.multimodal_mime_types.length > 0
+                                ? provider.multimodal_mime_types.join(", ")
+                                : CAPABILITY_TOOLTIP_MESSAGES.supports_vision}
                             ></span>
                           {/if}
                           {#if provider.supports_logprobs}
