@@ -5,14 +5,13 @@
   import { client } from "$lib/api_client"
   import type { Task } from "$lib/types"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import Dialog from "$lib/ui/dialog.svelte"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { uncache_available_tools } from "$lib/stores"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
-  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { tool_name_validator } from "$lib/utils/input_validators"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import posthog from "posthog-js"
 
   let error: KilnError | null = null
@@ -21,12 +20,11 @@
   let description = ""
   let selected_task_id: string | null = null
   let selected_run_config_id: string | null = null
-  let loading = false
+
+  let created_run_config_in_page = false
 
   // Modal for creating new run config
-  let create_run_config_dialog: Dialog | null = null
-  let save_config_error: KilnError | null = null
-  let run_config_component: RunConfigComponent | null = null
+  let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
 
   $: project_id = $page.params.project_id
 
@@ -146,28 +144,11 @@
 
   // Show the create dialog when the user clicks the create new button
   $: if (selected_run_config_id === "__create_new_run_config__") {
-    save_config_error = null
-    create_run_config_dialog?.show()
-  } else {
-    save_config_error = null
-    create_run_config_dialog?.close()
+    create_new_run_config_dialog?.show()
   }
 
   $: if (selected_task_id === "__create_new_kiln_task__") {
     goto(`/settings/create_task/${project_id}`)
-  }
-
-  let created_run_config_in_page = false
-  async function create_new_run_config() {
-    loading = true
-    if (run_config_component) {
-      const saved_run_config = await run_config_component.save_new_run_config()
-      if (saved_run_config?.id) {
-        selected_run_config_id = saved_run_config.id
-        created_run_config_in_page = true
-      }
-    }
-    loading = false
   }
 
   // Clear error when form fields change
@@ -258,11 +239,7 @@
 
 <div>
   <div class="max-w-4xl">
-    {#if loading}
-      <div class="w-full min-h-[50vh] flex justify-center items-center">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
-    {:else if !tasks_loading_error}
+    {#if !tasks_loading_error}
       <FormContainer
         submit_label="Add"
         on:submit={add_kiln_task_tool}
@@ -277,6 +254,8 @@
           fancy_select_options={task_options}
           disabled={!data_loaded}
           description="The Kiln task the tool will call."
+          empty_state_message="Loading tasks..."
+          empty_state_subtitle="Please wait."
         />
 
         {#if selected_task}
@@ -318,41 +297,19 @@
   </div>
 </div>
 
-<Dialog
-  bind:this={create_run_config_dialog}
-  title="Run Configuration"
+<CreateNewRunConfigDialog
+  bind:this={create_new_run_config_dialog}
+  {project_id}
+  task={selected_task}
+  new_run_config_created={(run_config) => {
+    if (run_config.id) {
+      created_run_config_in_page = true
+      selected_run_config_id = run_config.id
+    }
+  }}
   on:close={() => {
-    create_run_config_dialog?.close()
     if (selected_run_config_id === "__create_new_run_config__") {
       selected_run_config_id = null
     }
   }}
->
-  <FormContainer
-    submit_visible={true}
-    submit_label="Create"
-    on:submit={create_new_run_config}
-    {error}
-    gap={4}
-    bind:submitting={loading}
-    keyboard_submit={false}
-  >
-    <div class="flex flex-col gap-4">
-      {#if selected_task}
-        <RunConfigComponent
-          bind:this={run_config_component}
-          {project_id}
-          current_task={selected_task}
-          hide_create_kiln_task_tool_button={true}
-          {save_config_error}
-        />
-      {/if}
-
-      {#if save_config_error}
-        <div class="text-error text-sm">
-          {save_config_error.getMessage() || "An unknown error occurred"}
-        </div>
-      {/if}
-    </div>
-  </FormContainer>
-</Dialog>
+/>

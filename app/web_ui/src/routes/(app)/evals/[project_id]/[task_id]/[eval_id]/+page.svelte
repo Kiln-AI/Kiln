@@ -14,6 +14,7 @@
     model_name,
     prompt_name_from_id,
     current_task_prompts,
+    load_available_models,
   } from "$lib/stores"
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { goto } from "$app/navigation"
@@ -22,6 +23,11 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
+  import {
+    getDetailedModelName,
+    getDetailedModelNameFromParts,
+    getRunConfigPromptDisplayName,
+  } from "$lib/utils/run_config_formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -43,6 +49,7 @@
     await tick()
     // can be async
     load_model_info()
+    load_available_models()
     // Load data in parallel
     await Promise.all([get_eval(), get_eval_progress()])
   })
@@ -165,8 +172,9 @@
       })
       properties.push({
         name: "Judge Model",
-        value: model_name(
+        value: getDetailedModelNameFromParts(
           eval_progress.current_eval_method.model_name,
+          eval_progress.current_eval_method.model_provider,
           modelInfo,
         ),
         tooltip: "The model used by your selected judge.",
@@ -176,21 +184,19 @@
     if (eval_progress?.current_run_method) {
       properties.push({
         name: "Run Model",
-        value: model_name(
-          eval_progress.current_run_method.run_config_properties.model_name,
+        value: getDetailedModelName(
+          eval_progress.current_run_method,
           modelInfo,
         ),
-        tooltip: "The model used by your selected run method.",
+        tooltip: "The model used by your selected run config.",
       })
       properties.push({
         name: "Run Prompt",
-        value:
-          eval_progress.current_run_method.prompt?.name ||
-          prompt_name_from_id(
-            eval_progress.current_run_method.run_config_properties.prompt_id,
-            taskPrompts,
-          ),
-        tooltip: "The prompt used by your selected run method.",
+        value: getRunConfigPromptDisplayName(
+          eval_progress.current_run_method,
+          taskPrompts,
+        ),
+        tooltip: "The prompt used by your selected run config.",
         link: prompt_link(
           project_id,
           task_id,
@@ -371,9 +377,9 @@
     goto(url)
   }
 
-  function compare_run_methods() {
-    let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_methods`
-    show_progress_ui("When you're done comparing run methods, ", 5)
+  function compare_run_configs() {
+    let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_configs`
+    show_progress_ui("When you're done comparing run configurations, ", 5)
     goto(url)
   }
 </script>
@@ -548,9 +554,9 @@
                           class="btn btn-sm {current_step == 5
                             ? 'btn-primary'
                             : ''}"
-                          on:click={compare_run_methods}
+                          on:click={compare_run_configs}
                         >
-                          Compare Run Methods
+                          Compare Run Configurations
                         </button>
                       </div>
                     {/if}

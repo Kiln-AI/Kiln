@@ -22,6 +22,7 @@ from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
     ToolCallDefinition,
+    ToolCallResult,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -134,7 +135,9 @@ class RagTool(KilnToolInterface):
             },
         }
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
         kwargs = RagParams(**kwargs)
         query = kwargs["query"]
 
@@ -165,4 +168,4 @@ class RagTool(KilnToolInterface):
         search_results = await vector_store_adapter.search(store_query)
         search_results_as_text = format_search_results(search_results)
 
-        return search_results_as_text
+        return ToolCallResult(output=search_results_as_text)
