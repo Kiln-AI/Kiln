@@ -504,7 +504,7 @@
                             : ''}"
                           on:click={compare_run_configs}
                         >
-                          Compare Configurations
+                          Compare Run Configurations
                         </button>
                       </div>
                     {/if}
