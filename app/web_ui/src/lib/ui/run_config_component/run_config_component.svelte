@@ -34,6 +34,7 @@
   export let current_task: Task
   export let model_name: string = ""
   export let provider: string = ""
+  export let requires_structured_output: boolean = false
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
@@ -83,7 +84,7 @@
     provider: string,
     available_models: AvailableModels[],
   ) {
-    if (updated_model_dropdown_settings.requires_structured_output) {
+    if (requires_structured_output) {
       const new_mode =
         available_model_details(model_name, provider, available_models)
           ?.structured_output_mode || "default"

@@ -80,7 +80,9 @@
 
   function get_model_warning(selected: string): string | null {
     if (
-      unsupported_models.some((m) => m.value === selected && requires_logprobs)
+      unsupported_models.some(
+        (m) => m.value === selected && settings.requires_logprobs,
+      )
     ) {
       return LOGPROBS_WARNING
     }
@@ -190,11 +192,12 @@
 
         let badge: string | undefined = undefined
         if (
-          (suggested_mode === "data_gen" && model.suggested_for_data_gen) ||
-          (suggested_mode === "evals" && model.suggested_for_evals) ||
-          (suggested_mode === "uncensored_data_gen" &&
+          (settings.suggested_mode === "data_gen" &&
+            model.suggested_for_data_gen) ||
+          (settings.suggested_mode === "evals" && model.suggested_for_evals) ||
+          (settings.suggested_mode === "uncensored_data_gen" &&
             model.suggested_for_uncensored_data_gen) ||
-          (suggested_mode === "doc_extraction" &&
+          (settings.suggested_mode === "doc_extraction" &&
             model.suggested_for_doc_extraction)
         ) {
           badge = "Recommended"
@@ -241,7 +244,7 @@
       })
     }
 
-    if (suggested_mode === "doc_extraction") {
+    if (settings.suggested_mode === "doc_extraction") {
       for (const option_group of options) {
         for (const option of option_group.options) {
           if (typeof option.value !== "string") {
@@ -338,7 +341,7 @@
         warning_message="This model is not recommended for use with tasks requiring structured output. It fails to consistently return structured data."
       />
     {/if}
-  {:else if suggested_mode === "data_gen"}
+  {:else if settings.suggested_mode === "data_gen"}
     <Warning
       warning_icon={!model
         ? "info"
@@ -352,7 +355,7 @@
           : "warning"}
       warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
     />
-  {:else if suggested_mode === "uncensored_data_gen"}
+  {:else if settings.suggested_mode === "uncensored_data_gen"}
     <Warning
       warning_icon={!model
         ? "info"
@@ -366,7 +369,7 @@
           : "warning"}
       warning_message="For this data gen template we suggest a large uncensored model like Grok 4."
     />
-  {:else if suggested_mode === "evals"}
+  {:else if settings.suggested_mode === "evals"}
     <Warning
       warning_icon={!model
         ? "info"
@@ -380,7 +383,7 @@
           : "warning"}
       warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
     />
-  {:else if suggested_mode === "doc_extraction"}
+  {:else if settings.suggested_mode === "doc_extraction"}
     <Warning
       warning_icon={!model
         ? "info"
