@@ -191,7 +191,7 @@
     "Create Eval Data",
     "Human Ratings",
     "Find the Best Judge",
-    "Evaluate Run Configurations",
+    "Find the Best Way to Run this Task",
   ]
   const step_tooltips: Record<number, string> = {
     1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",

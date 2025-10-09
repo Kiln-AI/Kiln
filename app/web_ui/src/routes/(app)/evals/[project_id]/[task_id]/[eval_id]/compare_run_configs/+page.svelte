@@ -83,7 +83,7 @@
       )
     : false
 
-  $: focus_run_all = !!(
+  $: focus_run_all = !(
     eval_state?.includes("complete") || all_run_configs_complete
   )
 
@@ -511,7 +511,7 @@
               {eval_id}
               {current_eval_config_id}
               run_all={true}
-              btn_primary={!focus_run_all}
+              btn_primary={focus_run_all}
               eval_type="run_config"
               on_run_complete={() => {
                 get_score_summary()
