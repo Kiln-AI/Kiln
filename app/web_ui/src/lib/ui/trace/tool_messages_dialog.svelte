@@ -85,10 +85,10 @@
   }
 </script>
 
-<Dialog title={"Tool Run"} bind:this={dialog} width="wide">
+<Dialog title={"All Subtask Messages"} bind:this={dialog} width="wide">
   <div>
     <div class="font-bold mt-6 mb-2 flex items-center justify-between">
-      <span>All Messages</span>
+      <span>Trace</span>
       <div class="font-normal">
         <InfoTooltip
           tooltip_text={loaded_task
