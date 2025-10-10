@@ -892,15 +892,10 @@ When generating top-level topics, the topics should be the set below.
 When generating second-level topics, analyze the system prompt and tool description and create concrete, testable reasons or factors that explain why the top-level classification occurred. 
 Second-level topics should represent specific model actions, missed cues, or interpretation errors that would cause the model to be labeled with that top-level outcome.
 
-Requirements for second-level topics:
-- Must be actionable and specific (phrased as things the model did or failed to do)
+Other requirements for second-level topics:
 - Should map clearly to one of the four top-level labels (no mixing across top-levels)
 - Avoid restating the top-level label; instead describe the underlying behavior, trigger, or missed signal
-- Include both explicit failures (directly contradicted a guideline) and implicit failures (missed nuance, ambiguity, or inference errors)
-- Keep items short — single phrases or short clauses (not whole paragraphs)
-- Do not include meta-judgments like “good” or “bad”; describe the cause or behavior, keep labels neutral and diagnostic — these are for evaluation and root-cause analysis, not judgment
-- Avoid using internal tool names in the second-level topic text — describe the behavior instead (e.g., “Called external helper on ambiguous prompt” not “Called fetchTool()”)
-- Ensure variety: include edge-cases, multi-turn misses, formatting or tokenization issues, and examples where the model’s generalization from training examples causes the error
+- Avoid mentioning the tool or this prompt.
 
 Below are examples of second-level topics, it may take some creativity to come up with more and ensure they are relevant to the task and tool description:
 
@@ -920,33 +915,9 @@ Under “Tool not called incorrectly” (tool was not called and that was correc
 
 When generating model inputs, generate inputs that test whether the model should or should not call a tool, according to the provided system prompt and issue description.
 
-Inputs should lead to one of four possible high-level outcomes:
-- Tool called correctly (the model calls the tool appropriately)
-- Tool called incorrectly (the model calls the tool when it should not)
-- Tool not called correctly (the model fails to call the tool when it should)
-- Tool not called incorrectly (the model correctly avoids calling the tool)
+Use the provided topic path to guide the specific kind of behavior being tested.
 
-Use the provided topic path to guide the specific kind of behavior being tested. For example, if the topic path is ["Tool not called correctly", "Missed implicit trigger in user intent"], generate inputs where the tool should have been called, but the signal is subtle or implicit in the input text.
-
-When creating inputs:
-- Base them on the requirements and conditions in the system prompt or tool guidelines.
-- Include both obvious and ambiguous examples.
-- Ensure some inputs contain *clear indicators* for tool use, while others include *distractors* or *edge cases*.
-- The inputs should look like normal user messages or text the model would receive — not meta-descriptions of what’s being tested.
-- Avoid referring to system prompts or guidelines explicitly in the input text.
-
-If the system prompt doesn’t specify exact conditions for tool usage, infer reasonable ones based on context. For example:
-  - A translation tool might be called for non-English text.
-  - A search tool might be called for factual or up-to-date questions.
-  - A math tool might be called for numerical or equation-based queries.
-  - A reasoning tool might be called for multi-step logic problems.
-
-Additional guidance:
-- Vary linguistic phrasing, tone, and domain to improve generalization.
-- Include both short, direct inputs and long, context-rich ones.
-- Avoid unrealistic content.
-
-Example structure (illustrative):
+## Example:
 
 Task/System Prompt: "Use the Calculator tool for any queries involving numerical computation."
 Topic Path: ["Tool not called correctly", "Missed implicit trigger in user intent"]
@@ -954,16 +925,10 @@ Generated Inputs:
 - "If I have 4 items and each costs $3.75, how much will that be total?"
 - "What's the total after adding tax to $56 at 8.25%?"
 - "How many hours are there between 7:45 AM and 3:20 PM?"
-- "Can you tell me how much 15% off $240 would be?"
-
-Apply the same approach to generate inputs for the provided system prompt, and topic path.`,
+- "Can you tell me how much 15% off $240 would be?"`,
     output_template: `We are building a dataset for a "tool call" evaluation.
 
-We are building a dataset for evaluating model tool-call behavior.
-
-Outputs should simulate realistic model behavior for its topic path.
-
-When simulating a "Tool not called" case (from topic path), **disregard any prior task instructions that tell you the tool is available or must be used**
+When generating model outputs, when simulating a "Tool not called" case (from topic path), **disregard any prior task instructions that tell you the tool is available or must be used**.
 When simulating a "Tool called" case (from topic path), **ensure the tool is used, even if it is not needed.**
 
 None of the generated outputs should specifically mention tool call or this prompt.
