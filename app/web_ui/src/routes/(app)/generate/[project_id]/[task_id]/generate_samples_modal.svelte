@@ -8,6 +8,7 @@
   import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import posthog from "posthog-js"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import type { RunConfigProperties } from "$lib/types"
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
@@ -84,16 +85,15 @@
   let sample_generating: boolean = false
   async function request_generate_samples(
     topic: TopicNodeWithPath,
+    run_config_properties: RunConfigProperties | null,
   ): Promise<GenerateSampleResponse> {
     try {
-      if (!run_config_component) {
-        throw new KilnError("No run config component.", null)
+      if (!run_config_properties) {
+        throw new KilnError("No run config properties.", null)
       }
       if (!guidance_data.gen_type) {
         throw new KilnError("No generation type selected.", null)
       }
-      const run_config_properties =
-        run_config_component.run_options_as_run_config_properties()
       if (
         !run_config_properties.model_name ||
         !run_config_properties.model_provider_name
@@ -193,6 +193,10 @@
   }
 
   async function generate_samples() {
+    // Grab the run config properties before it is no longer available
+    const run_config_properties =
+      run_config_component?.run_options_as_run_config_properties() ?? null
+
     sample_generating = true
     generate_samples_outcomes = {}
 
@@ -204,7 +208,7 @@
     // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
     const workers = Array(5)
       .fill(null)
-      .map(() => worker(queue))
+      .map(() => worker(queue, run_config_properties))
 
     // Wait for all workers to complete
     await Promise.all(workers)
@@ -218,10 +222,16 @@
     }
   }
 
-  async function worker(queue: TopicNodeWithPath[]) {
+  async function worker(
+    queue: TopicNodeWithPath[],
+    run_config_properties: RunConfigProperties | null,
+  ) {
     while (queue.length > 0) {
       const topic = queue.shift()!
-      const result = await request_generate_samples(topic)
+      const result = await request_generate_samples(
+        topic,
+        run_config_properties,
+      )
 
       const path_serialized = serialize_topic_path(topic.path)
       if (result.error) {
@@ -275,25 +285,21 @@
         <div>
           <SynthDataGuidance guidance_type="inputs" {guidance_data} />
         </div>
-        {#if task}
-          <RunConfigComponent
-            bind:this={run_config_component}
-            {project_id}
-            current_task={task}
-            hide_prompt_selector={true}
-            show_tools_selector_in_advanced={true}
-            model_dropdown_settings={{
-              requires_data_gen: true,
-              requires_uncensored_data_gen:
-                guidance_data.suggest_uncensored($selected_template),
-              suggested_mode: guidance_data.suggest_uncensored(
-                $selected_template,
-              )
-                ? "uncensored_data_gen"
-                : "data_gen",
-            }}
-          />
-        {/if}
+        <RunConfigComponent
+          bind:this={run_config_component}
+          {project_id}
+          requires_structured_output={true}
+          hide_prompt_selector={true}
+          show_tools_selector_in_advanced={true}
+          model_dropdown_settings={{
+            requires_data_gen: true,
+            requires_uncensored_data_gen:
+              guidance_data.suggest_uncensored($selected_template),
+            suggested_mode: guidance_data.suggest_uncensored($selected_template)
+              ? "uncensored_data_gen"
+              : "data_gen",
+          }}
+        />
 
         <!-- display errors after the generation has completed -->
         {#if topics_failed_to_generate_count > 0}

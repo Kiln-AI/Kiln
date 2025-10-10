@@ -174,7 +174,7 @@ The topic path for this sample is:
 
         adapter = adapter_for_task(
             task,
-            run_config_properties=sample.output_run_config_properties,
+            run_config_properties=sample.run_config_properties,
         )
 
         properties: dict[str, str | int | float] = {

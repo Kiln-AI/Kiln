@@ -527,25 +527,23 @@
           <div>
             <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
-          {#if task}
-            <RunConfigComponent
-              bind:this={run_config_component}
-              {project_id}
-              current_task={task}
-              hide_prompt_selector={true}
-              show_tools_selector_in_advanced={true}
-              model_dropdown_settings={{
-                requires_data_gen: true,
-                requires_uncensored_data_gen:
-                  guidance_data.suggest_uncensored($selected_template),
-                suggested_mode: guidance_data.suggest_uncensored(
-                  $selected_template,
-                )
-                  ? "uncensored_data_gen"
-                  : "data_gen",
-              }}
-            />
-          {/if}
+          <RunConfigComponent
+            bind:this={run_config_component}
+            {project_id}
+            requires_structured_output={true}
+            hide_prompt_selector={true}
+            show_tools_selector_in_advanced={true}
+            model_dropdown_settings={{
+              requires_data_gen: true,
+              requires_uncensored_data_gen:
+                guidance_data.suggest_uncensored($selected_template),
+              suggested_mode: guidance_data.suggest_uncensored(
+                $selected_template,
+              )
+                ? "uncensored_data_gen"
+                : "data_gen",
+            }}
+          />
           <button class="btn mt-2 btn-primary" on:click={generate_topics}>
             Generate {num_subtopics_to_generate} Topics
           </button>

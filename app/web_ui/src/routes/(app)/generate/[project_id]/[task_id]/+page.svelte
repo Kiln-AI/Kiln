@@ -563,7 +563,7 @@
             input: formatted_input,
             input_model_name: sample.model_name,
             input_provider: sample.model_provider,
-            output_run_config_properties: run_config_properties,
+            run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
             tags,
@@ -1058,6 +1058,7 @@
             bind:this={run_config_component}
             {project_id}
             current_task={task}
+            requires_structured_output={!!task.output_json_schema}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema
                 ? true
