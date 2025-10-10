@@ -60,14 +60,12 @@ def validate_semantic_chunker_properties(
     properties: dict[str, str | int | float | bool],
 ) -> dict[str, str | int | float | bool]:
     """Validate the properties for the semantic chunker."""
-    # Required properties
     embedding_config_id = properties.get("embedding_config_id")
     if embedding_config_id is None:
         raise ValueError("embedding_config_id is required for semantic chunker.")
     if not isinstance(embedding_config_id, str):
         raise ValueError("embedding_config_id must be a string.")
 
-    # Optional properties - validate if present
     buffer_size = properties.get("buffer_size")
     if buffer_size is None:
         raise ValueError("buffer_size is required for semantic chunker.")
