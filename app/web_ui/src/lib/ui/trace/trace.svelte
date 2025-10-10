@@ -252,7 +252,7 @@
                           tool_messages_dialog?.show(kiln_task_tool_data)
                         }}
                       >
-                        Messages
+                        Subtask Messages
                       </button>
                     {/if}
                   </div>
