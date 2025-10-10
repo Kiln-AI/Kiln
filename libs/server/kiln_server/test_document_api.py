@@ -609,6 +609,273 @@ async def test_create_chunker_config_invalid_chunk_size(
     assert "Chunk overlap must be less than chunk size" in response.json()["message"]
 
 
+# test for create semantic chunker config using unified endpoint
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_success(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Test Semantic Chunker Config",
+                "description": "Test Semantic Chunker Config description",
+                "chunker_type": "semantic",
+                "properties": {
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test Semantic Chunker Config"
+    assert result["description"] == "Test Semantic Chunker Config description"
+    assert result["chunker_type"] == "semantic"
+    assert result["properties"]["embedding_config_id"] == str(embedding.id)
+    assert result["properties"]["buffer_size"] == 2
+    assert result["properties"]["breakpoint_percentile_threshold"] == 90.0
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_minimal(client, mock_project):
+    """Test creating semantic chunker config with only required fields."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker-min",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 1,
+                    "breakpoint_percentile_threshold": 95,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["chunker_type"] == "semantic"
+    assert result["properties"]["embedding_config_id"] == str(embedding.id)
+    assert result["properties"]["buffer_size"] == 1
+    assert result["properties"]["breakpoint_percentile_threshold"] == 95
+    # These are set by the endpoint
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_missing_embedding_config_id(
+    client, mock_project
+):
+    """Test creating semantic chunker config with missing embedding_config_id."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "breakpoint_percentile_threshold": 95,
+                    "buffer_size": 1,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    error_detail = response.json()["source_errors"][0]
+    assert "embedding_config_id is required for semantic chunker" in error_detail["msg"]
+
+
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_missing_buffer_size(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with missing buffer_size."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "breakpoint_percentile_threshold": 95,
+                    "embedding_config_id": "emb-1",
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    error_detail = response.json()["source_errors"][0]
+    assert "buffer_size is required for semantic chunker" in error_detail["msg"]
+
+
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with missing breakpoint_percentile_threshold."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "buffer_size": 1,
+                    "embedding_config_id": "emb-1",
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    error_detail = response.json()["source_errors"][0]
+    assert (
+        "breakpoint_percentile_threshold is required for semantic chunker"
+        in error_detail["msg"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_invalid_buffer_size(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with invalid buffer size."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "buffer_size": 0,  # Invalid buffer size
+                    "breakpoint_percentile_threshold": 95,
+                    "embedding_config_id": "emb-1",
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert (
+        "buffer_size must be greater than or equal to 1" in response.json()["message"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with invalid breakpoint threshold."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "buffer_size": 1,
+                    "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
+                    "embedding_config_id": "emb-1",
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert (
+        "breakpoint_percentile_threshold must be an integer"
+        in response.json()["message"]
+    )
+
+
+async def test_create_semantic_chunker_config_embedding_config_not_found(
+    client, mock_project
+):
+    """Should return 404 if embedding_config_id does not exist."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Bad Semantic Chunker Config",
+                "chunker_type": "semantic",
+                "properties": {
+                    "embedding_config_id": "does-not-exist",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                },
+            },
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Embedding config does-not-exist not found" in response.text
+
+
 @pytest.mark.asyncio
 async def test_create_extractor_config_model_not_found(client, mock_project):
     project = mock_project

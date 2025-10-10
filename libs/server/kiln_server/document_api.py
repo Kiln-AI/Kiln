@@ -275,6 +275,21 @@ class CreateChunkerConfigRequest(BaseModel):
         default_factory=dict,
     )
 
+    @model_validator(mode="after")
+    def validate_semantic_chunker_properties(self):
+        if self.chunker_type == ChunkerType.SEMANTIC:
+            # Require an embedding_config_id to be provided
+            embedding_config_id = self.properties.get("embedding_config_id")
+            if not isinstance(embedding_config_id, str):
+                raise ValueError("embedding_config_id is required for semantic chunker")
+            # currently too granular to be exposed to the user in the UI
+            # but we should pass on these fields as part of the config to
+            # make sure the config is stable and complete
+            self.properties["include_metadata"] = False
+            self.properties["include_prev_next_rel"] = False
+
+        return self
+
 
 class CreateEmbeddingConfigRequest(BaseModel):
     name: FilenameString | None = Field(
@@ -1200,6 +1215,24 @@ def connect_document_api(app: FastAPI):
         request: CreateChunkerConfigRequest,
     ) -> ChunkerConfig:
         project = project_from_id(project_id)
+
+        # if semantic, validate that the referenced embedding config exists
+        if request.chunker_type == ChunkerType.SEMANTIC:
+            embedding_config_id = request.properties.get("embedding_config_id")
+            # should already be enforced by request validator, but needed for type checking
+            if not isinstance(embedding_config_id, str):  # pragma: no cover
+                raise HTTPException(
+                    status_code=422,
+                    detail="embedding_config_id must be provided and be a string",
+                )
+            embedding_config = EmbeddingConfig.from_id_and_parent_path(
+                embedding_config_id, project.path
+            )
+            if not embedding_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Embedding config {embedding_config_id} not found",
+                )
 
         chunker_config = ChunkerConfig(
             parent=project,
