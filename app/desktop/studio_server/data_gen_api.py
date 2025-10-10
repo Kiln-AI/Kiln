@@ -12,7 +12,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
-from kiln_ai.datamodel import DataSource, DataSourceType, PromptId, TaskRun
+from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_server.run_api import model_provider_from_string
@@ -71,10 +71,8 @@ class DataGenSaveSamplesApiInput(BaseModel):
     input_provider: str = Field(
         description="The provider of the model used to generate the input"
     )
-    output_model_name: str = Field(description="The name of the model to use")
-    output_provider: str = Field(description="The provider of the model to use")
-    prompt_method: PromptId = Field(
-        description="The prompt method used to generate the output"
+    output_run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for the output"
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",
@@ -190,16 +188,7 @@ The topic path for this sample is:
 
         adapter = adapter_for_task(
             task,
-            run_config_properties=RunConfigProperties(
-                model_name=sample.output_model_name,
-                model_provider_name=model_provider_from_string(sample.output_provider),
-                prompt_id=sample.prompt_method,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    sample.output_model_name,
-                    model_provider_from_string(sample.output_provider),
-                ),
-            ),
+            run_config_properties=sample.output_run_config_properties,
         )
 
         properties: dict[str, str | int | float] = {

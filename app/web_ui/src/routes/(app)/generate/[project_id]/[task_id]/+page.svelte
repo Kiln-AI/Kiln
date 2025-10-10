@@ -8,9 +8,6 @@
   import { page } from "$app/stores"
   import type { SampleDataNode } from "./gen_model"
   import GeneratedDataNode from "./generated_data_node.svelte"
-  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
-  import { ui_state } from "$lib/stores"
-  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { type SampleData } from "./gen_model"
   import { indexedDBStore } from "$lib/stores/index_db_store"
@@ -27,6 +24,7 @@
   import posthog from "posthog-js"
   import type { TaskRunOutput } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -52,8 +50,7 @@
   $: task_id = $page.params.task_id
   let is_setup = false
 
-  let prompt_method = "simple_prompt_builder"
-  let model: string = $ui_state.selected_model
+  let run_config_component: RunConfigComponent | null = null
 
   // Shared vars for all nodes, so UI saves last used value
   let num_subtopics_to_generate: number = 8
@@ -419,21 +416,10 @@
   let ui_show_errors = false
 
   // Worker function that processes items until queue is empty
-  async function generate_worker(
-    queue: SampleData[],
-    model_name: string,
-    provider: string,
-    prompt_method: string,
-  ) {
+  async function generate_worker(queue: SampleData[]) {
     while (queue.length > 0) {
       const sample = queue.shift()!
-      const result = await generate_sample(
-        sample,
-        model_name,
-        provider,
-        prompt_method,
-        sample.topic_path,
-      )
+      const result = await generate_sample(sample, sample.topic_path)
 
       if (result.error) {
         generate_all_sub_errors.push(result.error)
@@ -461,8 +447,6 @@
       generate_all_error = null
       generate_all_completed = false
       generate_all_sub_errors = []
-      const provider = model.split("/")[0]
-      const model_name = model.split("/").slice(1).join("/")
 
       const queue = [...samples_to_generate]
 
@@ -470,7 +454,7 @@
       // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
       const workers = Array(5)
         .fill(null)
-        .map(() => generate_worker(queue, model_name, provider, prompt_method))
+        .map(() => generate_worker(queue))
 
       // Wait for all workers to complete
       await Promise.all(workers)
@@ -544,12 +528,14 @@
 
   async function generate_sample(
     sample: SampleData,
-    model_name: string,
-    provider: string,
-    prompt_method: string,
     topic_path: string[] | undefined,
   ): Promise<GenerateSampleResponse> {
+    const run_config_properties =
+      run_config_component?.run_options_as_run_config_properties()
     try {
+      if (!run_config_properties) {
+        throw new KilnError("Run config properties not found")
+      }
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
@@ -577,9 +563,7 @@
             input: formatted_input,
             input_model_name: sample.model_name,
             input_provider: sample.model_provider,
-            output_model_name: model_name,
-            output_provider: provider,
-            prompt_method,
+            output_run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
             tags,
@@ -593,9 +577,11 @@
         throw new KilnError("Failed to save sample")
       }
       posthog.capture("save_synthetic_data", {
-        model_name: model_name,
-        provider: provider,
-        prompt_method: prompt_method,
+        model_name: run_config_properties.model_name,
+        provider: run_config_properties.model_provider_name,
+        prompt_method: run_config_properties.prompt_id,
+        tools: run_config_properties.tools_config?.tools ?? [],
+        structured_output_mode: run_config_properties.structured_output_mode,
       })
 
       return { output: data, error: null }
@@ -1064,26 +1050,29 @@
             {/if}
           </div>
         </div>
-        <AvailableModelsDropdown
-          {task_id}
-          settings={{
-            requires_data_gen: true,
-            requires_uncensored_data_gen:
-              guidance_data.suggest_uncensored($selected_template),
-            requires_structured_output: task?.output_json_schema ? true : false,
-            suggested_mode: guidance_data.suggest_uncensored($selected_template)
-              ? "uncensored_data_gen"
-              : "data_gen",
-          }}
-          bind:model
-        />
         <div>
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
         </div>
-
-        <div class="mb-2">
-          <PromptTypeSelector bind:prompt_method />
-        </div>
+        {#if task}
+          <RunConfigComponent
+            bind:this={run_config_component}
+            {project_id}
+            current_task={task}
+            model_dropdown_settings={{
+              requires_structured_output: task.output_json_schema
+                ? true
+                : false,
+              requires_data_gen: true,
+              requires_uncensored_data_gen:
+                guidance_data.suggest_uncensored($selected_template),
+              suggested_mode: guidance_data.suggest_uncensored(
+                $selected_template,
+              )
+                ? "uncensored_data_gen"
+                : "data_gen",
+            }}
+          />
+        {/if}
       </FormContainer>
     {/if}
   </div>

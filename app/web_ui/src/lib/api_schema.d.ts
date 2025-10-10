@@ -2558,21 +2558,8 @@ export interface components {
              * @description The provider of the model used to generate the input
              */
             input_provider: string;
-            /**
-             * Output Model Name
-             * @description The name of the model to use
-             */
-            output_model_name: string;
-            /**
-             * Output Provider
-             * @description The provider of the model to use
-             */
-            output_provider: string;
-            /**
-             * Prompt Method
-             * @description The prompt method used to generate the output
-             */
-            prompt_method: string;
+            /** @description The run config properties to use for the output */
+            output_run_config_properties: components["schemas"]["RunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
