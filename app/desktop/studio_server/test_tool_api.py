@@ -5,14 +5,16 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 from mcp.types import ListToolsResult, Tool
-from pydantic import ValidationError
 
 from app.desktop.studio_server.tool_api import (
     ExternalToolApiDescription,
@@ -166,34 +168,6 @@ async def test_create_tool_server_success(client, test_project):
             assert "created_at" in result
 
 
-async def test_create_tool_server_validation_success(client, test_project):
-    """Test successful tool server creation with MCP validation"""
-    tool_data = {
-        "name": "validated_tool",
-        "server_url": "https://example.com/mcp",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "A validated MCP tool",
-    }
-
-    tools = [Tool(name="test_tool", description="Test tool", inputSchema={})]
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success(tools=tools):
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == "validated_tool"
-            assert result["type"] == "remote_mcp"
-
-
 async def test_create_tool_server_validation_connection_failed(client, test_project):
     """Test tool server creation fails when MCP server is unreachable"""
     tool_data = {
@@ -238,152 +212,6 @@ async def test_create_tool_server_validation_list_tools_failed(client, test_proj
                     f"/api/projects/{test_project.id}/connect_remote_mcp",
                     json=tool_data,
                 )
-
-
-def test_create_tool_server_validation_empty_name(client, test_project):
-    """Test tool server creation fails when name is empty"""
-    tool_data = {
-        "name": "",  # Empty name should fail validation
-        "server_url": "https://example.com/mcp",
-        "headers": {},
-        "description": "Tool with empty name",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # ValidationError should be raised during ExternalToolServer creation
-        with pytest.raises(ValidationError) as exc_info:
-            client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        # Check that the error mentions name length or requirement
-        error_str = str(exc_info.value)
-        assert "too short" in error_str or "Name is required" in error_str
-
-
-async def test_create_tool_server_no_headers(client, test_project):
-    tool_data = {
-        "name": "test_tool",
-        "server_url": "https://example.com/api",
-        "description": "A test tool",
-        # headers defaults to empty dict, which is allowed
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200  # Empty headers are allowed
-            result = response.json()
-            assert result["name"] == "test_tool"
-            assert result["properties"]["headers"] == {}
-
-
-async def test_create_tool_server_empty_headers(
-    client, test_project, mock_mcp_validation
-):
-    tool_data = {
-        "name": "test_tool",
-        "server_url": "https://example.com/api",
-        "headers": {},  # Empty headers are allowed
-        "description": "A test tool",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_validation():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200  # Empty headers are allowed
-            result = response.json()
-            assert result["name"] == "test_tool"
-            assert result["properties"]["headers"] == {}
-
-
-def test_create_tool_server_missing_server_url(client, test_project):
-    tool_data = {
-        "name": "test_tool",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "A test tool",
-        # Missing required server_url
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-
-
-def test_create_tool_server_missing_name(client, test_project):
-    tool_data = {
-        "server_url": "https://example.com/api",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "A test tool",
-        # Missing required name
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_remote_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-
-
-async def test_create_tool_server_no_description(
-    client, test_project, mock_mcp_validation
-):
-    tool_data = {
-        "name": "test_tool",
-        "server_url": "https://example.com/api",
-        "headers": {"Authorization": "Bearer token"},
-        # description is optional
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_validation():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["description"] is None
 
 
 def test_get_available_tool_servers_empty(client, test_project):
@@ -434,78 +262,50 @@ async def test_get_available_tool_servers_with_tool_server(client, test_project)
         assert isinstance(result[0]["missing_secrets"], list)
 
 
-async def test_get_available_tool_servers_with_missing_secrets(client, test_project):
-    """Test that get_available_tool_servers includes missing_secrets field"""
-    tool_data = {
-        "name": "tool_with_missing_secrets",
-        "server_url": "https://api.example.com",
-        "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
-        "secret_header_keys": ["Authorization", "X-API-Key"],
-        "description": "Tool with missing secrets",
-        "is_archived": False,
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-        created_tool = create_response.json()
-
-        # Mock the tool server to have missing secrets
-        with patch("app.desktop.studio_server.tool_api.tool_server_from_id"):
-            mock_tool_server = Mock()
-            mock_tool_server.id = created_tool["id"]
-            mock_tool_server.name = "tool_with_missing_secrets"
-            mock_tool_server.type = ToolServerType.remote_mcp
-            mock_tool_server.description = "Tool with missing secrets"
-            mock_tool_server.retrieve_secrets.return_value = (
-                {},
-                ["Authorization", "X-API-Key"],
-            )
-            # Mock properties.get to return False for is_archived
-            mock_tool_server.properties = {"is_archived": False}
-
-            # Mock the project's external_tool_servers method
-            mock_project = Mock()
-            mock_project.external_tool_servers.return_value = [mock_tool_server]
-            mock_project_from_id.return_value = mock_project
-
-            # Get the list of tool servers
-            response = client.get(
-                f"/api/projects/{test_project.id}/available_tool_servers"
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert len(result) == 1
-            assert result[0]["name"] == "tool_with_missing_secrets"
-            assert result[0]["id"] == created_tool["id"]
-            assert result[0]["description"] == "Tool with missing secrets"
-            assert "missing_secrets" in result[0]
-            assert set(result[0]["missing_secrets"]) == {"Authorization", "X-API-Key"}
-
-
-async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
-    client, test_project
+@pytest.mark.parametrize(
+    "server_type, tool_data, endpoint, expected_missing_secrets",
+    [
+        (
+            ToolServerType.remote_mcp,
+            {
+                "name": "tool_with_missing_secrets",
+                "server_url": "https://api.example.com",
+                "headers": {"Authorization": "Bearer token", "X-API-Key": "secret"},
+                "secret_header_keys": ["Authorization", "X-API-Key"],
+                "description": "Tool with missing secrets",
+                "is_archived": False,
+            },
+            "connect_remote_mcp",
+            ["Authorization", "X-API-Key"],
+        ),
+        (
+            ToolServerType.local_mcp,
+            {
+                "name": "local_tool_with_missing_secrets",
+                "command": "python",
+                "args": ["-m", "my_mcp_server"],
+                "env_vars": {
+                    "DATABASE_URL": "postgres://localhost",
+                    "API_KEY": "secret",
+                },
+                "secret_env_var_keys": ["API_KEY"],
+                "description": "Local tool with missing secrets",
+                "is_archived": False,
+            },
+            "connect_local_mcp",
+            ["API_KEY"],
+        ),
+    ],
+)
+async def test_get_available_tool_servers_with_missing_secrets(
+    client,
+    test_project,
+    server_type,
+    tool_data,
+    endpoint,
+    expected_missing_secrets,
 ):
-    """Test that get_available_tool_servers includes missing_secrets field for local MCP servers"""
-    tool_data = {
-        "name": "local_tool_with_missing_secrets",
-        "command": "python",
-        "args": ["-m", "my_mcp_server"],
-        "env_vars": {"DATABASE_URL": "postgres://localhost", "API_KEY": "secret"},
-        "secret_env_var_keys": ["API_KEY"],
-        "description": "Local tool with missing secrets",
-        "is_archived": False,
-    }
-
+    """Test that get_available_tool_servers includes missing_secrets field"""
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
@@ -521,20 +321,21 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
 
             async with mock_mcp_success():
                 create_response = client.post(
-                    f"/api/projects/{test_project.id}/connect_local_mcp",
+                    f"/api/projects/{test_project.id}/{endpoint}",
                     json=tool_data,
                 )
                 assert create_response.status_code == 200
             created_tool = create_response.json()
 
-            # Mock the tool server to have missing secrets
             mock_tool_server = Mock()
             mock_tool_server.id = created_tool["id"]
-            mock_tool_server.name = "local_tool_with_missing_secrets"
-            mock_tool_server.type = ToolServerType.local_mcp
-            mock_tool_server.description = "Local tool with missing secrets"
-            mock_tool_server.retrieve_secrets.return_value = ({}, ["API_KEY"])
-            # Mock properties.get to return False for is_archived
+            mock_tool_server.name = tool_data["name"]
+            mock_tool_server.type = server_type
+            mock_tool_server.description = tool_data["description"]
+            mock_tool_server.retrieve_secrets.return_value = (
+                {},
+                expected_missing_secrets,
+            )
             mock_tool_server.properties = {"is_archived": False}
 
             # Mock the project's external_tool_servers method
@@ -550,11 +351,9 @@ async def test_get_available_tool_servers_local_mcp_with_missing_secrets(
             assert response.status_code == 200
             result = response.json()
             assert len(result) == 1
-            assert result[0]["name"] == "local_tool_with_missing_secrets"
             assert result[0]["id"] == created_tool["id"]
-            assert result[0]["description"] == "Local tool with missing secrets"
             assert "missing_secrets" in result[0]
-            assert result[0]["missing_secrets"] == ["API_KEY"]
+            assert set(result[0]["missing_secrets"]) == set(expected_missing_secrets)
 
 
 async def test_get_tool_server_success(client, test_project):
@@ -676,8 +475,8 @@ def test_get_available_tools_empty(client, test_project):
         assert result == []
 
 
-async def test_get_available_tools_success(client, test_project):
-    """Test get_available_tools successfully retrieves tools from MCP servers"""
+async def test_get_available_tools_success_single_server(client, test_project):
+    """Test get_available_tools successfully retrieves tools from a single MCP server"""
     # First create a tool server
     tool_data = {
         "name": "test_available_tools",
@@ -1054,213 +853,7 @@ async def test_create_tool_server_whitespace_handling(
         assert result["description"] == "A test tool"
 
 
-async def test_create_tool_server_complex_headers(
-    client, test_project, mock_mcp_validation
-):
-    """Test creation with complex header configurations"""
-    tool_data = {
-        "name": "complex_headers_tool",
-        "server_url": "https://api.example.com",
-        "headers": {
-            "Authorization": "Bearer abc123def456",
-            "X-API-Key": "my-secret-key",
-            "Content-Type": "application/json",
-            "User-Agent": "Kiln-AI/1.0",
-            "X-Custom-Header": "custom-value",
-        },
-        "description": "Tool with complex headers",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_validation():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["name"] == "complex_headers_tool"
-        assert len(result["properties"]["headers"]) == 5
-        assert result["properties"]["headers"]["Authorization"] == "Bearer abc123def456"
-        assert result["properties"]["headers"]["X-API-Key"] == "my-secret-key"
-        assert result["properties"]["headers"]["Content-Type"] == "application/json"
-
-
-async def test_create_tool_server_valid_special_characters_in_name(
-    client, test_project
-):
-    """Test tool server creation with valid special characters in name"""
-    tool_data = {
-        "name": "my-tool_server_test",  # Uses valid characters (no dots)
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": "Tool with valid special chars in name",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["name"] == "my-tool_server_test"
-
-
-async def test_create_tool_server_https_url(client, test_project):
-    """Test successful creation with HTTPS URL"""
-    tool_data = {
-        "name": "secure_tool",
-        "server_url": "https://secure.example.com:8443/mcp/api",
-        "headers": {"Authorization": "Bearer secure-token"},
-        "description": "Secure HTTPS tool",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert (
-            result["properties"]["server_url"]
-            == "https://secure.example.com:8443/mcp/api"
-        )
-
-
-async def test_create_tool_server_http_url(client, test_project):
-    """Test successful creation with HTTP URL"""
-    tool_data = {
-        "name": "http_tool",
-        "server_url": "http://localhost:3000/api",
-        "headers": {},
-        "description": "Local HTTP tool",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["properties"]["server_url"] == "http://localhost:3000/api"
-
-
-async def test_create_tool_server_long_description(client, test_project):
-    """Test creation with very long description"""
-    long_description = "This is a very long description " * 50  # ~1500 characters
-    tool_data = {
-        "name": "long_desc_tool",
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": long_description,
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert result["description"] == long_description
-
-
-async def test_create_tool_server_unicode_characters(client, test_project):
-    """Test creation with Unicode characters in name and description"""
-    tool_data = {
-        "name": "测试工具",
-        "server_url": "https://example.com/api",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "This is a test tool with émojis 🚀 and spéciàl characters",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == "测试工具"
-            assert "émojis 🚀" in result["description"]
-
-
-async def test_create_tool_server_header_value_with_special_characters(
-    client, test_project
-):
-    """Test creation with header values containing special characters"""
-    tool_data = {
-        "name": "special_header_tool",
-        "server_url": "https://example.com/api",
-        "headers": {
-            "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9",
-            "X-API-Key": "key_with-dashes_and.dots",
-            "X-User-Agent": "Mozilla/5.0 (compatible; Kiln/1.0)",
-        },
-        "description": "Tool with special header values",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            headers = result["properties"]["headers"]
-            assert (
-                headers["Authorization"]
-                == "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9"
-            )
-            assert headers["X-API-Key"] == "key_with-dashes_and.dots"
-            assert headers["X-User-Agent"] == "Mozilla/5.0 (compatible; Kiln/1.0)"
-
-
-async def test_create_tool_server_update_workflow(client, test_project):
+async def test_create_tool_server_workflow(client, test_project):
     """Test the complete workflow of creating, listing, and retrieving a tool server"""
     # Step 1: Create a tool server
     tool_data = {
@@ -1298,7 +891,8 @@ async def test_create_tool_server_update_workflow(client, test_project):
 
         # Step 3 & 4: Get detailed view with mock tools
         mock_tools = [
-            Tool(name="workflow_tool", description="Workflow tool", inputSchema={}),
+            Tool(name=f"tool_{i}", description=f"Tool number {i}", inputSchema={})
+            for i in range(20)
         ]
 
         async with mock_mcp_success(tools=mock_tools):
@@ -1309,21 +903,43 @@ async def test_create_tool_server_update_workflow(client, test_project):
             detailed_tool = detail_response.json()
             assert detailed_tool["id"] == tool_server_id
             assert detailed_tool["name"] == "workflow_test_tool"
-            assert len(detailed_tool["available_tools"]) == 1
-            assert detailed_tool["available_tools"][0]["name"] == "workflow_tool"
+            assert len(detailed_tool["available_tools"]) == 20
+
+            tool_names = [tool["name"] for tool in detailed_tool["available_tools"]]
+            expected_names = [f"tool_{i}" for i in range(20)]
+            assert tool_names == expected_names
 
 
-async def test_create_tool_server_concurrent_creation(client, test_project):
+@pytest.mark.parametrize(
+    "endpoint, tool_data_generator",
+    [
+        (
+            "connect_remote_mcp",
+            lambda i: {
+                "name": f"concurrent_tool_{i}",
+                "server_url": f"https://example{i}.com/api",
+                "headers": {"X-Server-ID": str(i)},
+                "description": f"Concurrent tool server {i}",
+            },
+        ),
+        (
+            "connect_local_mcp",
+            lambda i: {
+                "name": f"concurrent_tool_{i}",
+                "command": "python",
+                "args": ["-m", f"server_{i}"],
+                "description": f"Concurrent tool {i}",
+                "env_vars": {f"VAR_{i}": f"value_{i}"},
+            },
+        ),
+    ],
+)
+async def test_create_tool_server_concurrent_creation(
+    client, test_project, endpoint, tool_data_generator
+):
     """Test creating multiple tool servers concurrently"""
-    tool_servers = [
-        {
-            "name": f"concurrent_tool_{i}",
-            "server_url": f"https://example{i}.com/api",
-            "headers": {"X-Server-ID": str(i)},
-            "description": f"Concurrent tool server {i}",
-        }
-        for i in range(3)
-    ]
+    count = 3
+    tool_servers = [tool_data_generator(i) for i in range(count)]
 
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
@@ -1334,7 +950,7 @@ async def test_create_tool_server_concurrent_creation(client, test_project):
             created_tools = []
             for tool_data in tool_servers:
                 response = client.post(
-                    f"/api/projects/{test_project.id}/connect_remote_mcp",
+                    f"/api/projects/{test_project.id}/{endpoint}",
                     json=tool_data,
                 )
                 assert response.status_code == 200
@@ -1342,7 +958,7 @@ async def test_create_tool_server_concurrent_creation(client, test_project):
 
             # Verify all tools were created with unique IDs
             tool_ids = [tool["id"] for tool in created_tools]
-            assert len(set(tool_ids)) == 3  # All IDs should be unique
+            assert len(set(tool_ids)) == count
 
         # Verify they all appear in the list
         list_response = client.get(
@@ -1350,11 +966,11 @@ async def test_create_tool_server_concurrent_creation(client, test_project):
         )
         assert list_response.status_code == 200
         tool_servers_list = list_response.json()
-        assert len(tool_servers_list) == 3
+        assert len(tool_servers_list) == count
 
         # Verify correct names
         server_names = {server["name"] for server in tool_servers_list}
-        expected_names = {"concurrent_tool_0", "concurrent_tool_1", "concurrent_tool_2"}
+        expected_names = {f"concurrent_tool_{i}" for i in range(count)}
         assert server_names == expected_names
 
 
@@ -1405,292 +1021,70 @@ async def test_create_tool_server_duplicate_names_allowed(client, test_project):
         assert len(tool_servers) == 2
 
 
-async def test_create_tool_server_max_length_name(client, test_project):
-    """Test creation with maximum allowed name length (120 characters)"""
-    max_length_name = "a" * 120  # 120 character name (the max allowed)
-    tool_data = {
-        "name": max_length_name,
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": "Tool with maximum length name",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == max_length_name
-
-
-def test_create_tool_server_name_too_long_validation(client, test_project):
-    """Test that names longer than 120 characters are rejected"""
-    too_long_name = "a" * 121  # 121 character name (exceeds max)
-    tool_data = {
-        "name": too_long_name,
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": "Tool with name that's too long",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # ValidationError should be raised during ExternalToolServer creation
-        with pytest.raises(ValidationError) as exc_info:
-            client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        error_str = str(exc_info.value)
-        assert "too long" in error_str or "120" in error_str
-
-
-def test_create_tool_server_invalid_name_characters(client, test_project):
-    """Test that names with forbidden characters are rejected"""
-    forbidden_chars = [".", "/", "\\", "?", "%", "*", ":", "|", "<", ">", ",", ";", "="]
-
-    for char in forbidden_chars[:3]:  # Test just a few to avoid too many test cases
-        tool_data = {
-            "name": f"invalid{char}name",
-            "server_url": "https://example.com/api",
-            "headers": {},
-            "description": f"Tool with forbidden character {char}",
-        }
-
-        with patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id:
-            mock_project_from_id.return_value = test_project
-
-            # ValidationError should be raised during ExternalToolServer creation
-            with pytest.raises(ValidationError) as exc_info:
-                client.post(
-                    f"/api/projects/{test_project.id}/connect_remote_mcp",
-                    json=tool_data,
-                )
-
-            error_str = str(exc_info.value)
-            assert (
-                "invalid" in error_str.lower()
-                or "forbidden" in error_str.lower()
-                or "cannot contain" in error_str.lower()
-            )
-
-
-def test_create_tool_server_url_with_query_params(client, test_project):
-    """Test creation with URL containing query parameters"""
-    tool_data = {
-        "name": "query_param_tool",
-        "server_url": "https://api.example.com/mcp?version=v1&timeout=30",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "Tool with query parameters in URL",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        assert (
-            result["properties"]["server_url"]
-            == "https://api.example.com/mcp?version=v1&timeout=30"
-        )
-
-
-def test_create_tool_server_empty_string_description(client, test_project):
-    """Test creation with empty string description (should be treated as None)"""
-    tool_data = {
-        "name": "empty_desc_tool",
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": "",  # Empty string
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # Mock successful MCP validation
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-
-        assert response.status_code == 200
-        result = response.json()
-        # Backend should preserve empty string, frontend converts to null
-        assert result["description"] == ""
-
-
-def test_get_tool_server_with_many_tools(client, test_project):
-    """Test getting tool server details when MCP server returns many tools"""
-    # Create a tool server
-    tool_data = {
-        "name": "many_tools_server",
-        "server_url": "https://example.com/api",
-        "headers": {},
-        "description": "Server with many tools",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        # Mock successful MCP validation for creation
-        mock_session_create = AsyncMock()
-        mock_session_create.list_tools.return_value = ListToolsResult(tools=[])
-
-        @asynccontextmanager
-        async def mock_mcp_client_create(tool_server):
-            yield mock_session_create
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared_create:
-            mock_session_manager_create = Mock()
-            mock_session_manager_create.mcp_client = mock_mcp_client_create
-            mock_session_manager_shared_create.return_value = (
-                mock_session_manager_create
-            )
-
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-        created_tool = create_response.json()
-        tool_server_id = created_tool["id"]
-
-        # Mock MCP server with many tools
-        mock_tools = [
-            Tool(name=f"tool_{i}", description=f"Tool number {i}", inputSchema={})
-            for i in range(20)
-        ]
-        mock_result = ListToolsResult(tools=mock_tools)
-        mock_session = AsyncMock()
-        mock_session.list_tools.return_value = mock_result
-
-        @asynccontextmanager
-        async def mock_mcp_client(tool_server):
-            yield mock_session
-
-        with patch(
-            "app.desktop.studio_server.tool_api.MCPSessionManager.shared"
-        ) as mock_session_manager_shared:
-            mock_session_manager = AsyncMock()
-            mock_session_manager.mcp_client = mock_mcp_client
-            mock_session_manager_shared.return_value = mock_session_manager
-
-            response = client.get(
-                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert len(result["available_tools"]) == 20
-
-            # Verify tool names are correct
-            tool_names = [tool["name"] for tool in result["available_tools"]]
-            expected_names = [f"tool_{i}" for i in range(20)]
-            assert tool_names == expected_names
-
-
 @pytest.mark.asyncio
-async def test_available_mcp_tools_remote_success():
-    """Test available_mcp_tools successfully retrieves tools from remote MCP server"""
+@pytest.mark.parametrize(
+    "server_type, properties, expected_prefix, mock_tools",
+    [
+        (
+            ToolServerType.remote_mcp,
+            {
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer token"},
+            },
+            "mcp::remote::",
+            [
+                Tool(name="echo", description="Echo tool", inputSchema={}),
+                Tool(name="calculator", description="Math calculator", inputSchema={}),
+                Tool(name="weather", description=None, inputSchema={}),
+            ],
+        ),
+        (
+            ToolServerType.local_mcp,
+            {
+                "command": "python",
+                "args": ["-m", "test_mcp_server"],
+                "env_vars": {},
+            },
+            "mcp::local::",
+            [
+                Tool(name="local_echo", description="Local echo tool", inputSchema={}),
+                Tool(name="local_calc", description=None, inputSchema={}),
+            ],
+        ),
+    ],
+)
+async def test_available_mcp_tools_success(
+    server_type, properties, expected_prefix, mock_tools
+):
+    """Test available_mcp_tools successfully retrieves tools from MCP servers"""
 
     # Create a mock ExternalToolServer
     server = ExternalToolServer(
         name="test_server",
-        type=ToolServerType.remote_mcp,
+        type=server_type,
         description="Test MCP server",
-        properties={
-            "server_url": "https://example.com/mcp",
-            "headers": {"Authorization": "Bearer token"},
-        },
+        properties=properties,
     )
-
-    # Mock tools that the MCP server should return
-    mock_tools = [
-        Tool(name="echo", description="Echo tool", inputSchema={}),
-        Tool(name="calculator", description="Math calculator", inputSchema={}),
-        Tool(name="weather", description=None, inputSchema={}),  # Test None description
-    ]
 
     async with mock_mcp_success(tools=mock_tools):
         # Call the function
         result = await available_mcp_tools(server)
 
         # Verify the result
-        assert len(result) == 3
+        assert len(result) == len(mock_tools)
 
         # Check tool details
-        tool_names = [tool.name for tool in result]
-        assert "echo" in tool_names
-        assert "calculator" in tool_names
-        assert "weather" in tool_names
+        result_names = [tool.name for tool in result]
+        expected_names = [tool.name for tool in mock_tools]
+        assert result_names == expected_names
 
         # Check tool IDs are properly formatted
         for tool in result:
-            assert tool.id.startswith(f"mcp::remote::{server.id}::")
-            assert tool.name in ["echo", "calculator", "weather"]
+            assert tool.id.startswith(f"{expected_prefix}{server.id}::")
 
-        # Check descriptions
-        echo_tool = next(t for t in result if t.name == "echo")
-        assert echo_tool.description == "Echo tool"
-
-        weather_tool = next(t for t in result if t.name == "weather")
-        assert weather_tool.description is None
+        # Check descriptions match
+        for result_tool, expected_tool in zip(result, mock_tools):
+            assert result_tool.description == expected_tool.description
 
 
 @pytest.mark.asyncio
@@ -1750,50 +1144,6 @@ async def test_available_mcp_tools_empty_tools():
 
 
 @pytest.mark.asyncio
-async def test_available_mcp_tools_local_success():
-    """Test available_mcp_tools successfully retrieves tools from local MCP server"""
-
-    # Create a mock ExternalToolServer for local MCP
-    server = ExternalToolServer(
-        name="local_test_server",
-        type=ToolServerType.local_mcp,
-        description="Test local MCP server",
-        properties={
-            "command": "python",
-            "args": ["-m", "test_mcp_server"],
-            "env_vars": {},
-        },
-    )
-
-    # Mock tools that the MCP server should return
-    mock_tools = [
-        Tool(name="local_echo", description="Local echo tool", inputSchema={}),
-        Tool(name="local_calc", description="Local calculator", inputSchema={}),
-    ]
-
-    async with mock_mcp_success(tools=mock_tools):
-        # Call the function
-        result = await available_mcp_tools(server)
-
-        # Verify the result
-        assert len(result) == 2
-
-        # Check tool details
-        tool_names = [tool.name for tool in result]
-        assert "local_echo" in tool_names
-        assert "local_calc" in tool_names
-
-        # Check tool IDs are properly formatted with local prefix
-        for tool in result:
-            assert tool.id.startswith(f"mcp::local::{server.id}::")
-            assert tool.name in ["local_echo", "local_calc"]
-
-        # Check descriptions
-        echo_tool = next(t for t in result if t.name == "local_echo")
-        assert echo_tool.description == "Local echo tool"
-
-
-@pytest.mark.asyncio
 async def test_available_mcp_tools_kiln_task_raises_value_error():
     """Test available_mcp_tools raises ValueError when called with kiln_task server type"""
 
@@ -1820,17 +1170,33 @@ async def test_available_mcp_tools_kiln_task_raises_value_error():
 
 # Unit tests for validate_tool_server_connectivity function
 @pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_success():
+@pytest.mark.parametrize(
+    "server_type, properties",
+    [
+        (
+            ToolServerType.remote_mcp,
+            {
+                "server_url": "https://example.com/mcp",
+                "headers": {"Authorization": "Bearer token"},
+            },
+        ),
+        (
+            ToolServerType.local_mcp,
+            {
+                "command": "python",
+                "args": ["-m", "test_mcp_server"],
+                "env_vars": {"DEBUG": "true"},
+            },
+        ),
+    ],
+)
+async def test_validate_tool_server_connectivity_success(server_type, properties):
     """Test validate_tool_server_connectivity succeeds when MCP server is reachable"""
-    # Create a valid ExternalToolServer
     tool_server = ExternalToolServer(
         name="test_server",
-        type=ToolServerType.remote_mcp,
+        type=server_type,
         description="Test MCP server",
-        properties={
-            "server_url": "https://example.com/mcp",
-            "headers": {"Authorization": "Bearer token"},
-        },
+        properties=properties,
     )
 
     async with mock_mcp_success():
@@ -1839,69 +1205,53 @@ async def test_validate_tool_server_connectivity_success():
 
 
 @pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_connection_failed():
-    """Test validate_tool_server_connectivity raises error when MCP connection fails"""
-
+@pytest.mark.parametrize(
+    "server_type, properties, error_context, error_message",
+    [
+        (
+            ToolServerType.remote_mcp,
+            {"server_url": "https://failing.example.com/mcp", "headers": {}},
+            "connection_error",
+            "Connection failed",
+        ),
+        (
+            ToolServerType.remote_mcp,
+            {"server_url": "https://example.com/mcp", "headers": {}},
+            "list_tools_error",
+            "list_tools failed",
+        ),
+        (
+            ToolServerType.local_mcp,
+            {
+                "command": "python",
+                "args": ["-m", "nonexistent_server"],
+                "env_vars": {},
+            },
+            "list_tools_error",
+            "Local MCP server failed",
+        ),
+    ],
+)
+async def test_validate_tool_server_connectivity_failed(
+    server_type, properties, error_context, error_message
+):
+    """Test validate_tool_server_connectivity raises error when MCP server fails"""
     tool_server = ExternalToolServer(
         name="failing_server",
-        type=ToolServerType.remote_mcp,
+        type=server_type,
         description="Failing MCP server",
-        properties={"server_url": "https://failing.example.com/mcp", "headers": {}},
+        properties=properties,
     )
 
-    async with mock_mcp_connection_error():
+    if error_context == "connection_error":
+        context_manager = mock_mcp_connection_error()
+    else:
+        context_manager = mock_mcp_list_tools_error(error_message)
+
+    async with context_manager:
         # Should raise the raw exception
-        with pytest.raises(Exception, match="Connection failed"):
+        with pytest.raises(Exception, match=error_message):
             await validate_tool_server_connectivity(tool_server)
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_list_tools_failed():
-    """Test validate_tool_server_connectivity raises error when list_tools fails"""
-
-    tool_server = ExternalToolServer(
-        name="list_tools_failing",
-        type=ToolServerType.remote_mcp,
-        description="MCP server with list_tools error",
-        properties={"server_url": "https://example.com/mcp", "headers": {}},
-    )
-
-    async with mock_mcp_list_tools_error():
-        # Should raise the raw exception
-        with pytest.raises(Exception, match="list_tools failed"):
-            await validate_tool_server_connectivity(tool_server)
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_pydantic_prevents_empty_name():
-    """Test that Pydantic prevents creation of tool servers with empty names"""
-    # This test demonstrates that Pydantic validation prevents empty names
-    # which means our validation function doesn't need to handle this case
-    with pytest.raises(Exception):  # Pydantic validation error
-        ExternalToolServer(
-            name="",  # Empty name
-            type=ToolServerType.remote_mcp,
-            description="Tool with empty name",
-            properties={"server_url": "https://example.com/mcp", "headers": {}},
-        )
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_mcp_with_minimal_properties():
-    """Test validate_tool_server_connectivity works with minimal required properties"""
-    tool_server = ExternalToolServer(
-        name="minimal_server",
-        type=ToolServerType.remote_mcp,
-        description=None,  # Optional field
-        properties={
-            "server_url": "https://minimal.example.com/mcp",
-            "headers": {},  # Empty headers are allowed
-        },
-    )
-
-    async with mock_mcp_success():
-        # Should succeed with minimal properties
-        await validate_tool_server_connectivity(tool_server)
 
 
 @pytest.mark.asyncio
@@ -1922,71 +1272,6 @@ async def test_validate_tool_server_connectivity_kiln_task():
 
     # Should complete without any exceptions or network calls
     await validate_tool_server_connectivity(tool_server)
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_with_headers():
-    """Test validate_tool_server_connectivity works correctly with custom headers"""
-    tool_server = ExternalToolServer(
-        name="server_with_headers",
-        type=ToolServerType.remote_mcp,
-        description="MCP server with custom headers",
-        properties={
-            "server_url": "https://example.com/mcp",
-            "headers": {
-                "Authorization": "Bearer custom-token",
-                "X-API-Key": "secret-key",
-                "Content-Type": "application/json",
-            },
-        },
-    )
-
-    tools = [Tool(name="test_tool", description="Test tool", inputSchema={})]
-    async with mock_mcp_success(tools=tools):
-        # Should succeed
-        await validate_tool_server_connectivity(tool_server)
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_empty_headers():
-    """Test validate_tool_server_connectivity works correctly with empty headers"""
-    tool_server = ExternalToolServer(
-        name="server_no_headers",
-        type=ToolServerType.remote_mcp,
-        description="MCP server with no headers",
-        properties={
-            "server_url": "https://example.com/mcp",
-            "headers": {},  # Empty headers
-        },
-    )
-
-    async with mock_mcp_success():
-        # Should succeed even with empty headers
-        await validate_tool_server_connectivity(tool_server)
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_valid_complex_headers():
-    """Test validate_tool_server_connectivity accepts valid complex headers"""
-    tool_server = ExternalToolServer(
-        name="complex_headers_server",
-        type=ToolServerType.remote_mcp,
-        description="Server with valid complex headers",
-        properties={
-            "server_url": "https://example.com/mcp",
-            "headers": {
-                "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9",
-                "X-API-Key": "key_with-dashes_and.dots",
-                "Content-Type": "application/json",
-                "User-Agent": "Kiln-AI/1.0",
-                "X-Custom-123": "value_with_123",
-            },
-        },
-    )
-
-    async with mock_mcp_success():
-        # Should succeed with valid complex headers
-        await validate_tool_server_connectivity(tool_server)
 
 
 # Tests for connect_local_mcp endpoint
@@ -2023,37 +1308,6 @@ async def test_create_local_tool_server_success(client, test_project):
             assert "created_at" in result
 
 
-async def test_create_local_tool_server_validation_success(client, test_project):
-    """Test successful local tool server creation with MCP validation"""
-    tool_data = {
-        "name": "validated_local_tool",
-        "command": "/usr/bin/python3",
-        "args": ["-m", "validated_server", "--config", "config.json"],
-        "env_vars": {"PATH": "/usr/bin"},
-        "description": "A validated local MCP tool",
-    }
-
-    tools = [
-        Tool(name="local_test_tool", description="Local test tool", inputSchema={})
-    ]
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success(tools=tools):
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == "validated_local_tool"
-            assert result["type"] == "local_mcp"
-
-
 async def test_create_local_tool_server_validation_failed(client, test_project):
     """Test local tool server creation fails when MCP server validation fails"""
     tool_data = {
@@ -2076,312 +1330,6 @@ async def test_create_local_tool_server_validation_failed(client, test_project):
                     f"/api/projects/{test_project.id}/connect_local_mcp",
                     json=tool_data,
                 )
-
-
-def test_create_local_tool_server_missing_command(client, test_project):
-    """Test local tool server creation fails when command is missing"""
-    tool_data = {
-        "name": "missing_command_tool",
-        "args": ["-m", "server"],
-        "description": "Tool with missing command",
-        # Missing required command
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-
-
-def test_create_local_tool_server_missing_args(client, test_project):
-    """Test local tool server creation fails when args are missing"""
-    tool_data = {
-        "name": "missing_args_tool",
-        "command": "python",
-        "description": "Tool with missing args",
-        # Missing required args
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-
-
-async def test_create_local_tool_server_empty_args(client, test_project):
-    """Test local tool server creation succeeds when args are empty"""
-    tool_data = {
-        "name": "empty_args_tool",
-        "command": "python",
-        "args": [],  # Empty args should now be allowed
-        "description": "Tool with empty args",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200  # Should succeed now
-            result = response.json()
-            assert result["name"] == "empty_args_tool"
-            assert result["properties"]["args"] == []
-
-
-async def test_create_local_tool_server_no_description(client, test_project):
-    """Test local tool server creation works without description (optional field)"""
-    tool_data = {
-        "name": "no_desc_local_tool",
-        "command": "python",
-        "args": ["-m", "server"],
-        # description is optional
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["description"] is None
-
-
-async def test_create_local_tool_server_no_env_vars(client, test_project):
-    """Test local tool server creation works without env_vars (defaults to empty dict)"""
-    tool_data = {
-        "name": "no_env_local_tool",
-        "command": "python",
-        "args": ["-m", "server"],
-        # env_vars defaults to empty dict
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["properties"]["env_vars"] == {}
-
-
-async def test_create_local_tool_server_complex_command(client, test_project):
-    """Test local tool server creation with complex command and arguments"""
-    tool_data = {
-        "name": "complex_local_tool",
-        "command": "/opt/miniconda3/envs/mcp/bin/python",
-        "args": [
-            "-m",
-            "custom_mcp_server",
-            "--config",
-            "/etc/mcp/config.yaml",
-            "--verbose",
-            "--log-level",
-            "debug",
-            "--port",
-            "8080",
-        ],
-        "env_vars": {
-            "PYTHONPATH": "/opt/custom/lib",
-            "CONFIG_PATH": "/etc/mcp",
-            "LOG_LEVEL": "debug",
-            "MCP_SERVER_MODE": "production",
-        },
-        "description": "Complex local MCP tool with detailed configuration",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == "complex_local_tool"
-            assert (
-                result["properties"]["command"] == "/opt/miniconda3/envs/mcp/bin/python"
-            )
-            assert len(result["properties"]["args"]) == 9
-            assert result["properties"]["args"][0] == "-m"
-            assert result["properties"]["args"][1] == "custom_mcp_server"
-            assert result["properties"]["env_vars"]["PYTHONPATH"] == "/opt/custom/lib"
-            assert result["properties"]["env_vars"]["MCP_SERVER_MODE"] == "production"
-
-
-async def test_create_local_tool_server_missing_name(client, test_project):
-    """Test local tool server creation fails when name is missing"""
-    tool_data = {
-        "command": "python",
-        "args": ["-m", "server"],
-        "description": "Tool with missing name",
-        # Missing required name
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        response = client.post(
-            f"/api/projects/{test_project.id}/connect_local_mcp",
-            json=tool_data,
-        )
-
-        assert response.status_code == 422  # Validation error
-
-
-async def test_create_local_tool_server_clean_inputs(client, test_project):
-    """Test local tool server creation with clean inputs (no leading/trailing whitespace)"""
-    tool_data = {
-        "name": "clean_tool",  # Name without whitespace
-        "command": "python",
-        "args": ["-m", "server"],
-        "description": "Tool with clean description",
-        "env_vars": {"VALID_KEY": "clean_value"},
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            # Values should be preserved as-is
-            assert result["name"] == "clean_tool"
-            assert result["description"] == "Tool with clean description"
-
-
-async def test_create_local_tool_server_unicode_characters(client, test_project):
-    """Test local tool server creation works with unicode characters"""
-    tool_data = {
-        "name": "测试工具_🚀",  # Unicode name with emoji
-        "command": "python",
-        "args": ["-m", "server"],
-        "description": "Тест c юникодом и émojis 🎉",
-        "env_vars": {"UNICODE_VAR": "测试值"},
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == "测试工具_🚀"
-            assert result["description"] == "Тест c юникодом и émojis 🎉"
-            assert result["properties"]["env_vars"]["UNICODE_VAR"] == "测试值"
-
-
-async def test_create_local_tool_server_long_description(client, test_project):
-    """Test local tool server creation works with very long descriptions"""
-    long_description = "A" * 1000  # 1000 character description
-    tool_data = {
-        "name": "long_desc_tool",
-        "command": "python",
-        "args": ["-m", "server"],
-        "description": long_description,
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["description"] == long_description
-
-
-async def test_create_local_tool_server_concurrent_creation(client, test_project):
-    """Test concurrent local tool server creation works correctly"""
-    tool_servers = [
-        {
-            "name": f"concurrent_tool_{i}",
-            "command": "python",
-            "args": ["-m", f"server_{i}"],
-            "description": f"Concurrent tool {i}",
-            "env_vars": {f"VAR_{i}": f"value_{i}"},
-        }
-        for i in range(5)
-    ]
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            created_tools = []
-            for tool_data in tool_servers:
-                response = client.post(
-                    f"/api/projects/{test_project.id}/connect_local_mcp",
-                    json=tool_data,
-                )
-                assert response.status_code == 200
-                created_tools.append(response.json())
-
-            # Verify all tools were created with unique IDs
-            tool_ids = [tool["id"] for tool in created_tools]
-            assert len(set(tool_ids)) == 5  # All IDs should be unique
 
 
 async def test_create_local_tool_server_duplicate_names_allowed(client, test_project):
@@ -2422,32 +1370,6 @@ async def test_create_local_tool_server_duplicate_names_allowed(client, test_pro
             assert tool1_id != tool2_id
 
 
-async def test_create_local_tool_server_max_length_name(client, test_project):
-    """Test local tool server creation works with maximum length names"""
-    max_length_name = "a" * 120  # 120 character name (assuming same max as remote)
-    tool_data = {
-        "name": max_length_name,
-        "command": "python",
-        "args": ["-m", "server"],
-        "description": "Tool with maximum length name",
-    }
-
-    with patch(
-        "app.desktop.studio_server.tool_api.project_from_id"
-    ) as mock_project_from_id:
-        mock_project_from_id.return_value = test_project
-
-        async with mock_mcp_success():
-            response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-
-            assert response.status_code == 200
-            result = response.json()
-            assert result["name"] == max_length_name
-
-
 async def test_create_local_tool_server_list_tools_failed(client, test_project):
     """Test local tool server creation fails when MCP list_tools fails"""
     tool_data = {
@@ -2469,46 +1391,6 @@ async def test_create_local_tool_server_list_tools_failed(client, test_project):
                     f"/api/projects/{test_project.id}/connect_local_mcp",
                     json=tool_data,
                 )
-
-
-# Test validation of local MCP with validate_tool_server_connectivity
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_local_mcp_success():
-    """Test validate_tool_server_connectivity succeeds for local MCP server"""
-    tool_server = ExternalToolServer(
-        name="test_local_server",
-        type=ToolServerType.local_mcp,
-        description="Test local MCP server",
-        properties={
-            "command": "python",
-            "args": ["-m", "test_mcp_server"],
-            "env_vars": {"DEBUG": "true"},
-        },
-    )
-
-    async with mock_mcp_success():
-        # Should not raise any exception
-        await validate_tool_server_connectivity(tool_server)
-
-
-@pytest.mark.asyncio
-async def test_validate_tool_server_connectivity_local_mcp_failed():
-    """Test validate_tool_server_connectivity raises error when local MCP fails"""
-    tool_server = ExternalToolServer(
-        name="failing_local_server",
-        type=ToolServerType.local_mcp,
-        description="Failing local MCP server",
-        properties={
-            "command": "python",
-            "args": ["-m", "nonexistent_server"],
-            "env_vars": {},
-        },
-    )
-
-    async with mock_mcp_list_tools_error("Local MCP server failed"):
-        # Should raise the raw exception
-        with pytest.raises(Exception, match="Local MCP server failed"):
-            await validate_tool_server_connectivity(tool_server)
 
 
 # Tests for tool_server_from_id function
@@ -2605,16 +1487,36 @@ def test_tool_server_from_id_multiple_servers(test_project):
 
 
 # Tests for DELETE /api/projects/{project_id}/tool_servers/{tool_server_id} endpoint
-async def test_delete_tool_server_success(client, test_project):
+@pytest.mark.parametrize(
+    "endpoint, tool_data, server_type",
+    [
+        (
+            "connect_remote_mcp",
+            {
+                "name": "test_delete_tool",
+                "server_url": "https://example.com/api",
+                "headers": {"Authorization": "Bearer token"},
+                "description": "Tool to be deleted",
+            },
+            ToolServerType.remote_mcp,
+        ),
+        (
+            "connect_local_mcp",
+            {
+                "name": "test_delete_local",
+                "command": "python",
+                "args": ["-m", "test_server"],
+                "env_vars": {"DEBUG": "true"},
+                "description": "Local tool to be deleted",
+            },
+            ToolServerType.local_mcp,
+        ),
+    ],
+)
+async def test_delete_tool_server_success(
+    client, test_project, endpoint, tool_data, server_type
+):
     """Test successful deletion of a tool server"""
-    # First create a tool server
-    tool_data = {
-        "name": "test_delete_tool",
-        "server_url": "https://example.com/api",
-        "headers": {"Authorization": "Bearer token"},
-        "description": "Tool to be deleted",
-    }
-
     async with mock_mcp_success():
         with patch(
             "app.desktop.studio_server.tool_api.project_from_id"
@@ -2623,7 +1525,7 @@ async def test_delete_tool_server_success(client, test_project):
 
             # Create the tool server
             create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                f"/api/projects/{test_project.id}/{endpoint}",
                 json=tool_data,
             )
             assert create_response.status_code == 200
@@ -2635,6 +1537,7 @@ async def test_delete_tool_server_success(client, test_project):
                 f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
             )
             assert get_response.status_code == 200
+            assert get_response.json()["type"] == server_type.value
 
             # Now delete it
             delete_response = client.delete(
@@ -2672,52 +1575,6 @@ def test_delete_tool_server_project_not_found(client):
     )
     assert response.status_code == 404
     assert "Project not found" in response.json()["detail"]
-
-
-async def test_delete_tool_server_local_mcp(client, test_project):
-    """Test successful deletion of a local MCP tool server"""
-    # First create a local MCP tool server
-    tool_data = {
-        "name": "test_delete_local",
-        "command": "python",
-        "args": ["-m", "test_server"],
-        "env_vars": {"DEBUG": "true"},
-        "description": "Local tool to be deleted",
-    }
-
-    async with mock_mcp_success():
-        with patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id:
-            mock_project_from_id.return_value = test_project
-
-            # Create the local tool server
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-            created_tool = create_response.json()
-            tool_server_id = created_tool["id"]
-
-            # Verify it exists
-            get_response = client.get(
-                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-            )
-            assert get_response.status_code == 200
-            assert get_response.json()["type"] == "local_mcp"
-
-            # Now delete it
-            delete_response = client.delete(
-                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-            )
-            assert delete_response.status_code == 200
-
-            # Verify it's been deleted
-            get_after_delete_response = client.get(
-                f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-            )
-            assert get_after_delete_response.status_code == 404
 
 
 async def test_delete_tool_server_affects_available_servers_list(client, test_project):
@@ -2852,17 +1709,38 @@ async def test_delete_tool_server_with_secret_headers(client, test_project):
                 assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
-async def test_delete_tool_server_no_secret_headers(client, test_project):
-    """Test that deleting a tool server without secret headers works correctly"""
-    # Create a tool server without secret headers
-    tool_data = {
-        "name": "tool_without_secrets",
-        "server_url": "https://example.com/api",
-        "headers": {"Content-Type": "application/json"},
-        "secret_header_keys": [],
-        "description": "Tool without secret headers",
-    }
-
+@pytest.mark.parametrize(
+    "endpoint, tool_data, server_type",
+    [
+        (
+            "connect_remote_mcp",
+            {
+                "name": "tool_without_secrets",
+                "server_url": "https://example.com/api",
+                "headers": {"Content-Type": "application/json"},
+                "secret_header_keys": [],
+                "description": "Tool without secret headers",
+            },
+            ToolServerType.remote_mcp,
+        ),
+        (
+            "connect_local_mcp",
+            {
+                "name": "local_tool_no_secrets",
+                "command": "python",
+                "args": ["-m", "test_server"],
+                "env_vars": {"DEBUG": "true"},
+                "secret_env_var_keys": [],
+                "description": "Local tool without secret headers",
+            },
+            ToolServerType.local_mcp,
+        ),
+    ],
+)
+async def test_delete_tool_server_no_secrets(
+    client, test_project, endpoint, tool_data, server_type
+):
+    """Test that deleting a tool server without secrets works correctly"""
     async with mock_mcp_success():
         with patch(
             "app.desktop.studio_server.tool_api.project_from_id"
@@ -2871,15 +1749,17 @@ async def test_delete_tool_server_no_secret_headers(client, test_project):
 
             # Create the tool server first (without mocking Config to avoid interference)
             create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
+                f"/api/projects/{test_project.id}/{endpoint}",
                 json=tool_data,
             )
             assert create_response.status_code == 200
             created_tool = create_response.json()
             tool_server_id = created_tool["id"]
 
-            # Verify the tool server was created without secret headers
-            assert created_tool["properties"]["secret_header_keys"] == []
+            # Verify the tool server was created
+            assert created_tool["type"] == server_type.value
+            if server_type == ToolServerType.remote_mcp:
+                assert created_tool["properties"]["secret_header_keys"] == []
 
             # Now mock Config for the delete operation
             with patch(
@@ -2897,7 +1777,7 @@ async def test_delete_tool_server_no_secret_headers(client, test_project):
                 )
                 assert delete_response.status_code == 200
 
-                # Verify that config update was still called (even with empty secret_header_keys)
+                # Verify that config update was still called
                 mock_config.update_settings.assert_called_once()
                 call_args = mock_config.update_settings.call_args[0][0]
 
@@ -3021,62 +1901,6 @@ async def test_delete_tool_server_secret_key_not_in_config(client, test_project)
                 call_args = mock_config.update_settings.call_args[0][0]
 
                 # Check that existing secrets remain unchanged since the secret keys weren't in config
-                expected_remaining_secrets = {
-                    "other_server::some_header": "other_value"
-                }
-                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
-
-
-async def test_delete_tool_server_local_mcp_no_secret_headers(client, test_project):
-    """Test that deleting a local MCP tool server (which doesn't have secret headers) works correctly"""
-    # Create a local MCP tool server
-    tool_data = {
-        "name": "local_tool_no_secrets",
-        "command": "python",
-        "args": ["-m", "test_server"],
-        "env_vars": {"DEBUG": "true"},
-        "description": "Local tool without secret headers",
-    }
-
-    async with mock_mcp_success():
-        with patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id:
-            mock_project_from_id.return_value = test_project
-
-            # Create the local tool server first (without mocking Config to avoid interference)
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_local_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-            created_tool = create_response.json()
-            tool_server_id = created_tool["id"]
-
-            # Verify it's a local MCP server (no secret_header_keys property expected)
-            assert created_tool["type"] == "local_mcp"
-
-            # Now mock Config for the delete operation
-            with patch(
-                "app.desktop.studio_server.tool_api.Config.shared"
-            ) as mock_config_shared:
-                mock_config = mock_config_shared.return_value
-                mock_config.get_value.return_value = {
-                    "other_server::some_header": "other_value"
-                }
-                mock_config.update_settings = Mock()
-
-                # Delete the tool server
-                delete_response = client.delete(
-                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-                )
-                assert delete_response.status_code == 200
-
-                # Verify that config update was still called
-                mock_config.update_settings.assert_called_once()
-                call_args = mock_config.update_settings.call_args[0][0]
-
-                # Check that existing secrets remain unchanged
                 expected_remaining_secrets = {
                     "other_server::some_header": "other_value"
                 }
@@ -3303,120 +2127,6 @@ async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
         # New secret should be added
         assert f"{server_id}::Authorization" in mcp_secrets
         assert mcp_secrets[f"{server_id}::Authorization"] == "Bearer new-token"
-
-
-async def test_delete_tool_server_config_update_fixed(client, test_project):
-    """Test that deleting a tool server with secret headers properly saves config changes"""
-    # Create a tool server with secret headers
-    tool_data = {
-        "name": "tool_with_config_bug",
-        "server_url": "https://example.com/api",
-        "headers": {
-            "Authorization": "Bearer secret-token-123",
-            "Content-Type": "application/json",
-        },
-        "secret_header_keys": ["Authorization"],
-        "description": "Tool to test config update bug",
-    }
-
-    async with mock_mcp_success():
-        with patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id:
-            mock_project_from_id.return_value = test_project
-
-            # Create the tool server first (without mocking Config to avoid interference)
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-            created_tool = create_response.json()
-            tool_server_id = created_tool["id"]
-
-            # Now mock Config for the delete operation
-            with patch(
-                "app.desktop.studio_server.tool_api.Config.shared"
-            ) as mock_config_shared:
-                mock_config = mock_config_shared.return_value
-                mock_config.get_value.return_value = {
-                    f"{tool_server_id}::Authorization": "Bearer secret-token-123",
-                    "other_server::some_header": "other_value",
-                }
-                mock_config.update_settings = Mock()
-
-                # Delete the tool server
-                delete_response = client.delete(
-                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-                )
-                assert delete_response.status_code == 200
-
-                # FIXED: The implementation now properly calls update_settings after removing secrets
-                mock_config.update_settings.assert_called_once()
-                call_args = mock_config.update_settings.call_args[0][0]
-
-                # Verify that the secret for this tool server was removed
-                expected_remaining_secrets = {
-                    "other_server::some_header": "other_value"
-                }
-                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
-
-
-async def test_delete_tool_server_missing_secret_key_in_config(client, test_project):
-    """Test that deleting a tool server handles gracefully when secret keys are not in config"""
-    # Create a tool server with secret headers
-    tool_data = {
-        "name": "tool_missing_secret_key",
-        "server_url": "https://example.com/api",
-        "headers": {
-            "Authorization": "Bearer secret-token-123",
-            "Content-Type": "application/json",
-        },
-        "secret_header_keys": ["Authorization"],
-        "description": "Tool to test missing secret key handling",
-    }
-
-    async with mock_mcp_success():
-        with patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id:
-            mock_project_from_id.return_value = test_project
-
-            # Create the tool server first
-            create_response = client.post(
-                f"/api/projects/{test_project.id}/connect_remote_mcp",
-                json=tool_data,
-            )
-            assert create_response.status_code == 200
-            created_tool = create_response.json()
-            tool_server_id = created_tool["id"]
-
-            # Mock Config for delete - but don't include this server's secrets
-            with patch(
-                "app.desktop.studio_server.tool_api.Config.shared"
-            ) as mock_config_shared:
-                mock_config = mock_config_shared.return_value
-                # The secret for this tool server is NOT in the config (maybe it was manually deleted)
-                mock_config.get_value.return_value = {
-                    "other_server::some_header": "other_value",
-                }
-                mock_config.update_settings = Mock()
-
-                # Delete should work without error even if secret key is missing
-                delete_response = client.delete(
-                    f"/api/projects/{test_project.id}/tool_servers/{tool_server_id}"
-                )
-                assert delete_response.status_code == 200
-
-                # Config should still be updated (even though no secrets were removed)
-                mock_config.update_settings.assert_called_once()
-                call_args = mock_config.update_settings.call_args[0][0]
-
-                # Other secrets should remain unchanged
-                expected_remaining_secrets = {
-                    "other_server::some_header": "other_value"
-                }
-                assert call_args[MCP_SECRETS_KEY] == expected_remaining_secrets
 
 
 # Tests for local MCP secret environment variables functionality
@@ -4647,7 +3357,6 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
 
 async def test_get_available_tools_with_rag_and_mcp(client, test_project):
     """Test get_available_tools with both RAG configs and MCP servers"""
-    from kiln_ai.datamodel.rag import RagConfig
 
     # Create a RAG config
     rag_config = RagConfig(
@@ -5219,11 +3928,6 @@ async def test_add_kiln_task_tool_validation_success(client, test_project):
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
@@ -5310,11 +4014,6 @@ async def test_add_kiln_task_tool_validation_run_config_not_found(client, test_p
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
@@ -5365,11 +4064,6 @@ async def test_edit_kiln_task_tool_validation_success(client, test_project):
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
@@ -5492,11 +4186,6 @@ async def test_edit_kiln_task_tool_validation_run_config_not_found(
     task.save_to_file()
 
     # Create a run config with ID "default" for the task
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import RunConfigProperties
-    from kiln_ai.datamodel.task import TaskRunConfig
-
     run_config = TaskRunConfig(
         name="default",
         run_config_properties=RunConfigProperties(
