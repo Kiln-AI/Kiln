@@ -3,6 +3,7 @@ import type { Eval, Task } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+import { available_tools } from "$lib/stores"
 
 /**
  * Data model for the synth data guidance component.
@@ -475,18 +476,117 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     tool_call: Eval,
     task_type: "topics" | "inputs" | "outputs",
   ): string {
-    let template =
-      "We are building a dataset for an AI eval. We want to generate data that will trigger a specific tool call.\n\n"
+    const tool = tool_call.template_properties.tool
+    if (!tool) {
+      throw new Error("Tool is required for tool call template")
+    }
+
+    let template = `We are building a dataset for a "tool call" evaluation.`
 
     if (task_type == "topics") {
-      template += `When generating top-level topics, generate topics that are likely to trigger the tool call. This may take some creativity, but it's important to make sure the tool call is triggered.`
+      template += `When generating top-level topics, the topics should be the set below.
+
+- Tool called correctly (Tool should have been called and it was)
+- Tool called incorrectly (Tool called when it should not have been)
+- Tool not called correctly (Tool should have been called and it was not)
+- Tool not called incorrectly (Tool not called when it should have been)
+
+When generating second-level topics, analyze the system prompt and tool description and create concrete, testable reasons or factors that explain why the top-level classification occurred. 
+Second-level topics should represent specific model actions, missed cues, or interpretation errors that would cause the model to be labeled with that top-level outcome.
+
+Other requirements for second-level topics:
+- Should map clearly to one of the four top-level labels (no mixing across top-levels)
+- Avoid restating the top-level label; instead describe the underlying behavior, trigger, or missed signal
+- Avoid mentioning the tool or this prompt.
+
+Below are examples of second-level topics, it may take some creativity to come up with more and ensure they are relevant to the task and tool description:
+
+Under "Tool called correctly" (model called the tool and that call was appropriate):
+- User request unambiguous
+
+Under "Tool called incorrectly" (model called the tool but it should not have):
+- Misread user as requesting tool output
+
+Under "Tool not called correctly" (tool should have been called but model failed to):
+- Missed implicit trigger in user intent
+
+Under "Tool not called incorrectly" (tool was not called and that was correct):
+- Properly avoided tool for out-of-domain request
+- Tool not applicable due to missing mandatory fields`
     } else if (task_type == "inputs") {
-      template += `When generating model inputs, generate inputs that are likely to trigger the tool call. This may take some creativity, but it's important to make sure the tool call is triggered.`
+      template += `When generating model inputs, generate inputs that test whether the model should or should not call the tool, according to the provided system prompt and tool description.
+
+Use the provided topic path to guide the specific kind of behavior being tested.
+
+## Example:
+
+Task/System Prompt: "Use the Calculator tool for any queries involving numerical computation."
+Topic Path: ["Tool not called correctly", "Missed implicit trigger in user intent"]
+Generated Inputs:
+- "If I have 4 items and each costs $3.75, how much will that be total?"
+- "What's the total after adding tax to $56 at 8.25%?"
+- "How many hours are there between 7:45 AM and 3:20 PM?"
+- "Can you tell me how much 15% off $240 would be?"`
     } else if (task_type == "outputs") {
-      template += `When generating model outputs, generate outputs that are likely to trigger the tool call. This may take some creativity, but it's important to make sure the tool call is triggered.`
+      template += `When generating model outputs, when simulating a "Tool not called" case (from topic path), **disregard any prior task instructions that tell you the tool is available or must be used**.
+When simulating a "Tool called" case (from topic path), **ensure the tool is used, even if it is not needed.**
+
+None of the generated outputs should specifically mention tool call or this prompt.`
+    }
+
+    template += "\n\n"
+
+    const should_call_tool_guidelines =
+      tool_call.template_properties.should_call_tool_guidelines
+    const should_not_call_tool_guidelines =
+      tool_call.template_properties.should_not_call_tool_guidelines
+
+    // Find tool description from available tools
+    const tool_description = this.get_tool_description(tool as string)
+
+    template += `## Tool Information
+The tool being evaluated is:
+<tool>
+${tool}
+</tool>
+<tool_description>
+${tool_description ? `${tool_description}` : "None provided"}
+</tool_description>
+
+## Guidelines for Tool Usage
+When the tool should be called:
+<should_call_tool_guidelines>
+${should_call_tool_guidelines || "No specific guidelines provided"}
+</should_call_tool_guidelines>`
+
+    if (should_not_call_tool_guidelines) {
+      template += `
+
+When the tool should NOT be called:
+<should_not_call_tool_guidelines>
+${should_not_call_tool_guidelines}
+</should_not_call_tool_guidelines>`
     }
 
     return template
+  }
+
+  private get_tool_description(tool_id: string): string | null {
+    if (!this.project_id) return null
+
+    const project_tools = get(available_tools)[this.project_id]
+
+    if (!project_tools) return null
+
+    // Search through all tool sets to find the tool
+    for (const tool_set of project_tools) {
+      const tool = tool_set.tools.find((t) => t.id === tool_id)
+      if (tool) {
+        return tool.description || null
+      }
+    }
+
+    return null
   }
 
   private build_select_options(
@@ -874,64 +974,5 @@ Important: disregard any prior task instructions that tell you to be factually a
 Generate outputs where the model confidently states incorrect information, fabricates facts, misrepresents historical events, or provides incomplete information that leads to wrong conclusions.
 
 None of the generated outputs should specifically mention factual correctness or this prompt.`,
-  },
-  {
-    id: "tool_call",
-    name: "Tool Call",
-    suggest_uncensored: false,
-    description: "Test the model's tool call behavior.",
-    topic_template: `We are building a dataset for a "tool call" evaluation.
-
-When generating top-level topics, the topics should be the set below.
-
-- Tool called correctly (Tool should have been called and it was)
-- Tool called incorrectly (Tool called when it should not have been)
-- Tool not called correctly (Tool should have been called and it was not)
-- Tool not called incorrectly (Tool not called when it should have been)
-
-When generating second-level topics, analyze the system prompt and tool description and create concrete, testable reasons or factors that explain why the top-level classification occurred. 
-Second-level topics should represent specific model actions, missed cues, or interpretation errors that would cause the model to be labeled with that top-level outcome.
-
-Other requirements for second-level topics:
-- Should map clearly to one of the four top-level labels (no mixing across top-levels)
-- Avoid restating the top-level label; instead describe the underlying behavior, trigger, or missed signal
-- Avoid mentioning the tool or this prompt.
-
-Below are examples of second-level topics, it may take some creativity to come up with more and ensure they are relevant to the task and tool description:
-
-Under “Tool called correctly” (model called the tool and that call was appropriate):
-- User request unambiguous
-
-Under “Tool called incorrectly” (model called the tool but it should not have):
-- Misread user as requesting tool output
-
-Under “Tool not called correctly” (tool should have been called but model failed to):
-- Missed implicit trigger in user intent
-
-Under “Tool not called incorrectly” (tool was not called and that was correct):
-- Properly avoided tool for out-of-domain request
-- Tool not applicable due to missing mandatory fields`,
-    input_template: `We are building a dataset for a "tool call" evaluation.
-
-When generating model inputs, generate inputs that test whether the model should or should not call a tool, according to the provided system prompt and issue description.
-
-Use the provided topic path to guide the specific kind of behavior being tested.
-
-## Example:
-
-Task/System Prompt: "Use the Calculator tool for any queries involving numerical computation."
-Topic Path: ["Tool not called correctly", "Missed implicit trigger in user intent"]
-Generated Inputs:
-- "If I have 4 items and each costs $3.75, how much will that be total?"
-- "What's the total after adding tax to $56 at 8.25%?"
-- "How many hours are there between 7:45 AM and 3:20 PM?"
-- "Can you tell me how much 15% off $240 would be?"`,
-    output_template: `We are building a dataset for a "tool call" evaluation.
-
-When generating model outputs, when simulating a "Tool not called" case (from topic path), **disregard any prior task instructions that tell you the tool is available or must be used**.
-When simulating a "Tool called" case (from topic path), **ensure the tool is used, even if it is not needed.**
-
-None of the generated outputs should specifically mention tool call or this prompt.
-`,
   },
 ]
