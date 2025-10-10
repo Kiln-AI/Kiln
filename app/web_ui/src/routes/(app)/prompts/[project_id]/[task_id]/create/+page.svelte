@@ -127,7 +127,7 @@
           id="prompt"
           bind:value={prompt}
           inputType="textarea"
-          tall={true}
+          height="large"
           description="A prompt to use for this task."
           info_description="A LLM prompt such as 'You are a helpful assistant.'. This prompt is specific to this task. To use this prompt after creation, select it from the prompts dropdown."
         />

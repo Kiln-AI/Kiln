@@ -212,7 +212,7 @@
       label="Raw JSON Schema"
       info_description="See json-schema.org for more information on the JSON Schema spec."
       inputType="textarea"
-      tall={true}
+      height="large"
       bind:value={raw_schema}
     />
     <button
