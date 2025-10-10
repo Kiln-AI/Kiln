@@ -1,10 +1,10 @@
 <script lang="ts">
   import type { TaskRun, Task } from "$lib/types"
   import Dialog from "../dialog.svelte"
-  import InfoTooltip from "../info_tooltip.svelte"
   import TraceComponent from "./trace.svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import Warning from "../warning.svelte"
 
   export let project_id: string | undefined = undefined
 
@@ -85,18 +85,14 @@
   }
 </script>
 
-<Dialog title={"All Subtask Messages"} bind:this={dialog} width="wide">
+<Dialog title={"Subtask Message Trace"} bind:this={dialog} width="wide">
   <div>
-    <div class="font-bold mt-6 mb-2 flex items-center justify-between">
-      <span>Trace</span>
-      <div class="font-normal">
-        <InfoTooltip
-          tooltip_text={loaded_task
-            ? `The full Dataset Run can be viewed in the Dataset tab for the task the tool invoked: ${loaded_task.name} (ID: ${loaded_task.id})`
-            : "The full Dataset Run can be viewed in the Dataset tab for the task the tool invoked."}
-          position="bottom"
-        />
-      </div>
+    <div class="mt-6 mb-2 flex">
+      <Warning
+        warning_message={`Full run details can be viewed in the Dataset tab for the subtask${loaded_task ? ` (${loaded_task.name})` : "."}`}
+        warning_color="warning"
+        tight={true}
+      />
     </div>
     {#if loading_run}
       <div class="flex justify-center items-center py-8">
