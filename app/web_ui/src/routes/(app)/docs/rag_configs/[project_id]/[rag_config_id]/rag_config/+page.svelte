@@ -29,6 +29,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
   import { uncache_available_tools } from "$lib/stores"
+  import { goto } from "$app/navigation"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -239,6 +240,14 @@
               },
             },
           ]),
+      {
+        label: "Clone",
+        handler: () => {
+          goto(
+            `/docs/rag_configs/${project_id}/${rag_config_id}/rag_config/clone`,
+          )
+        },
+      },
       {
         label: rag_config?.is_archived ? "Unarchive" : "Archive",
         primary: rag_config?.is_archived,
