@@ -12,6 +12,7 @@
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
   const selected_template = guidance_data.selected_template
+
   $: task = guidance_data.task
   $: project_id = guidance_data.project_id
   let run_config_component: RunConfigComponent | null = null
@@ -107,7 +108,7 @@
             body: {
               topic: topic.path,
               num_samples: num_samples_to_generate,
-              input_run_config_properties: run_config_properties,
+              run_config_properties: run_config_properties,
               guidance: input_guidance ? input_guidance : null, // clear empty string
               gen_type: guidance_data.gen_type,
             },
@@ -142,8 +143,8 @@
       add_synthetic_samples(
         topic.node,
         response.generated_samples,
-        model_name,
-        model_provider,
+        run_config_properties.model_name,
+        run_config_properties.model_provider_name,
       )
     } catch (e) {
       if (e instanceof KilnError) {
@@ -280,6 +281,7 @@
             {project_id}
             current_task={task}
             hide_prompt_selector={true}
+            show_tools_selector_in_advanced={true}
             model_dropdown_settings={{
               requires_data_gen: true,
               requires_uncensored_data_gen:

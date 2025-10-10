@@ -2487,16 +2487,8 @@ export interface components {
              * @description Optional list of existing topics to avoid
              */
             existing_topics?: string[] | null;
-            /**
-             * Model Name
-             * @description The name of the model to use
-             */
-            model_name: string;
-            /**
-             * Provider
-             * @description The provider of the model to use
-             */
-            provider: string;
+            /** @description The run config properties to use for topic generation */
+            run_config_properties: components["schemas"]["RunConfigProperties"];
         };
         /** DataGenSampleApiInput */
         DataGenSampleApiInput: {
@@ -2524,7 +2516,7 @@ export interface components {
              */
             guidance?: string | null;
             /** @description The run config properties to use for input generation */
-            input_run_config_properties: components["schemas"]["RunConfigProperties"];
+            run_config_properties: components["schemas"]["RunConfigProperties"];
         };
         /** DataGenSaveSamplesApiInput */
         DataGenSaveSamplesApiInput: {
@@ -2551,7 +2543,7 @@ export interface components {
              */
             input_provider: string;
             /** @description The run config properties to use for output generation */
-            output_run_config_properties: components["schemas"]["RunConfigProperties"];
+            run_config_properties: components["schemas"]["RunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation

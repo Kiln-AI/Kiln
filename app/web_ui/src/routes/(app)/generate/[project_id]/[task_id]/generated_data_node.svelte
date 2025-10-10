@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { SampleDataNode, SampleData } from "./gen_model"
-  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import { tick } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
@@ -15,12 +14,17 @@
   import posthog from "posthog-js"
   import TableButton from "./table_button.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
   let custom_topic_mode: boolean = false
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
   const selected_template = guidance_data.selected_template
+
+  $: task = guidance_data.task
+  $: project_id = guidance_data.project_id
+  let run_config_component: RunConfigComponent | null = null
 
   export let data: SampleDataNode
   export let path: string[]
@@ -155,15 +159,18 @@
     try {
       topic_generating = true
       topic_generation_error = null
-      if (!model) {
-        throw new KilnError("No model selected.", null)
-      }
       if (!guidance_data.gen_type) {
         throw new KilnError("No generation type selected.", null)
       }
-      const model_provider = model.split("/")[0]
-      const model_name = model.split("/").slice(1).join("/")
-      if (!model_name || !model_provider) {
+      if (!run_config_component) {
+        throw new KilnError("No run config component.", null)
+      }
+      const run_config_properties =
+        run_config_component.run_options_as_run_config_properties()
+      if (
+        !run_config_properties.model_name ||
+        !run_config_properties.model_provider_name
+      ) {
         throw new KilnError("Invalid model selected.", null)
       }
       const existing_topics = data.sub_topics.map((t) => t.topic)
@@ -175,8 +182,7 @@
             body: {
               node_path: path,
               num_subtopics: num_subtopics_to_generate,
-              model_name: model_name,
-              provider: model_provider,
+              run_config_properties: run_config_properties,
               gen_type: guidance_data.gen_type,
               guidance: topic_guidance ? topic_guidance : null, // clear empty string
               existing_topics:
@@ -195,8 +201,10 @@
       }
       posthog.capture("generate_synthetic_topics", {
         num_subtopics: num_subtopics_to_generate,
-        model_name: model_name,
-        provider: model_provider,
+        model_name: run_config_properties.model_name,
+        provider: run_config_properties.model_provider_name,
+        tools: run_config_properties.tools_config?.tools ?? [],
+        structured_output_mode: run_config_properties.structured_output_mode,
         gen_type: guidance_data.gen_type,
       })
       const response = JSON.parse(generate_response.output.output)
@@ -519,20 +527,25 @@
           <div>
             <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
-          <AvailableModelsDropdown
-            task_id={guidance_data.task_id}
-            settings={{
-              requires_data_gen: true,
-              requires_uncensored_data_gen:
-                guidance_data.suggest_uncensored($selected_template),
-              suggested_mode: guidance_data.suggest_uncensored(
-                $selected_template,
-              )
-                ? "uncensored_data_gen"
-                : "data_gen",
-            }}
-            bind:model
-          />
+          {#if task}
+            <RunConfigComponent
+              bind:this={run_config_component}
+              {project_id}
+              current_task={task}
+              hide_prompt_selector={true}
+              show_tools_selector_in_advanced={true}
+              model_dropdown_settings={{
+                requires_data_gen: true,
+                requires_uncensored_data_gen:
+                  guidance_data.suggest_uncensored($selected_template),
+                suggested_mode: guidance_data.suggest_uncensored(
+                  $selected_template,
+                )
+                  ? "uncensored_data_gen"
+                  : "data_gen",
+              }}
+            />
+          {/if}
           <button class="btn mt-2 btn-primary" on:click={generate_topics}>
             Generate {num_subtopics_to_generate} Topics
           </button>
@@ -559,7 +572,6 @@
     {id}
     {data}
     {path}
-    {model}
     {guidance_data}
     {num_samples_to_generate}
     {custom_topics_string}

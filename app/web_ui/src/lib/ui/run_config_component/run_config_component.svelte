@@ -40,6 +40,7 @@
   export let set_default_error: KilnError | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
   export let hide_prompt_selector: boolean = false
+  export let show_tools_selector_in_advanced: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -265,13 +266,23 @@
       bind:linked_model_selection={model}
     />
   {/if}
-  <ToolsSelector
-    bind:tools
-    {project_id}
-    task_id={current_task.id ?? ""}
-    {hide_create_kiln_task_tool_button}
-  />
+  {#if !show_tools_selector_in_advanced}
+    <ToolsSelector
+      bind:tools
+      {project_id}
+      task_id={current_task.id ?? ""}
+      {hide_create_kiln_task_tool_button}
+    />
+  {/if}
   <Collapse title="Advanced Options">
+    {#if show_tools_selector_in_advanced}
+      <ToolsSelector
+        bind:tools
+        {project_id}
+        task_id={current_task.id ?? ""}
+        {hide_create_kiln_task_tool_button}
+      />
+    {/if}
     <AdvancedRunOptions
       bind:temperature
       bind:top_p
