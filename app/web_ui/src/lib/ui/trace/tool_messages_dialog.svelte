@@ -90,7 +90,8 @@
     <div class="mt-6 mb-2 flex">
       <Warning
         warning_message={`Full run details can be viewed in the Dataset tab for the subtask${loaded_task ? ` (${loaded_task.name})` : "."}`}
-        warning_color="warning"
+        warning_color="gray"
+        warning_icon="info"
         tight={true}
       />
     </div>
