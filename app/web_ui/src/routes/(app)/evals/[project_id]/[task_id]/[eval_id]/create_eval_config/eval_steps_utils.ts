@@ -99,18 +99,22 @@ export function get_eval_steps(
     const steps: string[] = [
       `Does the task run full trace output contain the tool call described here: \n<tool_call>\n${tool}\n</tool_call>`,
     ]
-    const should_call_tool_example =
-      evaluator.template_properties.should_call_tool_example
-    if (should_call_tool_example) {
-      steps.push(
-        `Is the task input similar to this example of when the the above tool should be called: \n<should_call_tool_example>\n${should_call_tool_example}\n</should_call_tool_example>`,
+
+    const should_call_tool_guidelines =
+      evaluator.template_properties.should_call_tool_guidelines
+    if (!should_call_tool_guidelines) {
+      throw new Error(
+        "Should call tool example is required for tool call template",
       )
     }
-    const should_not_call_tool_example =
-      evaluator.template_properties.should_not_call_tool_example
-    if (should_not_call_tool_example) {
+    steps.push(
+      `Does the model input indicate that the tool should have been called, according to the following guidelines: \n<should_call_tool_guidelines>\n${should_call_tool_guidelines}\n</should_call_tool_guidelines>`,
+    )
+    const should_not_call_tool_guidelines =
+      evaluator.template_properties.should_not_call_tool_guidelines
+    if (should_not_call_tool_guidelines) {
       steps.push(
-        `Is the task run input similar to this example of when the the above tool should not be called: \n<should_not_call_tool_example>\n${should_not_call_tool_example}\n</should_not_call_tool_example>`,
+        `Does the model input indicate that the tool should not have been called, according to the following guidelines: \n<should_not_call_tool_guidelines>\n${should_not_call_tool_guidelines}\n</should_not_call_tool_guidelines>`,
       )
     }
     steps.push(

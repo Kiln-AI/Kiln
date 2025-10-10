@@ -598,7 +598,7 @@ export function rating_options_for_sample(
     load_rating_options()
     return []
   }
-
+  console.log("rating_options", rating_options)
   // Filter rating options based on tags and return just the requirements
   return rating_options.options
     .filter((option) => {

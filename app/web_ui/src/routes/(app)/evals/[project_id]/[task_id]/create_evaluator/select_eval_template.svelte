@@ -308,10 +308,9 @@
   let tool_call_eval_dialog: Dialog | undefined = undefined
   let selected_tools: string[] = [] // TODO: Should only allow one tool to be selected
   let tool_call_eval_name = ""
-  let tool_call_eval_prompt = ""
   let tool_call_eval_create_complete = false
-  let should_call_tool_example = ""
-  let should_not_call_tool_example = ""
+  let should_call_tool_guidelines = ""
+  let should_not_call_tool_guidelines = ""
 
   function create_tool_call_eval() {
     tool_call_eval_create_complete = true
@@ -326,15 +325,15 @@
         {
           name: tool_call_eval_name,
           type: "pass_fail",
-          instruction: tool_call_eval_prompt,
+          instruction: `Evaluate if the model's tool call behavior regarding the tool: "${selected_tools.pop()}" is correct.`,
         },
       ],
       default_eval_tag: "eval_" + eval_tag,
       default_golden_tag: "eval_golden_" + eval_tag,
       template_properties: {
         tool: selected_tools.pop() || "", // Error if no tool is selected
-        should_not_call_tool_example: should_not_call_tool_example,
-        should_call_tool_example: should_call_tool_example,
+        should_not_call_tool_guidelines: should_not_call_tool_guidelines,
+        should_call_tool_guidelines: should_call_tool_guidelines,
       },
     })
   }
@@ -487,9 +486,8 @@
     warn_before_unload={!!(
       !tool_call_eval_create_complete &&
       (tool_call_eval_name ||
-        tool_call_eval_prompt ||
-        should_call_tool_example ||
-        should_not_call_tool_example ||
+        should_call_tool_guidelines ||
+        should_not_call_tool_guidelines ||
         selected_tools.length > 0)
     )}
   >
@@ -507,22 +505,21 @@
     />
     <ToolsSelector {project_id} {task_id} bind:tools={selected_tools} />
     <FormElement
-      label="Should Call Example"
-      description="An example of model input that should call the tool."
-      info_description="Examples help the judge model understand the issue. The format is flexible (plain text); you can include the entire input/output or just the relevant portion. You can include a description or multiple examples if needed."
+      label="Should Call Guidelines"
+      description="Guidelines for when the tool should be called."
+      info_description="Include guidelines or examples help the judge model understand when the tool should be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
       inputType="textarea"
       id="should_call_example"
-      optional={true}
-      bind:value={should_call_tool_example}
+      bind:value={should_call_tool_guidelines}
     />
     <FormElement
-      label="Should Not Call Example"
-      description="An example of model input that should not call the tool."
-      info_description="Examples help the judge model understand the issue. The format is flexible (plain text); you can include the entire input/output or just the relevant portion. You can include a description or multiple examples if needed."
+      label="Should Not Call Guidelines"
+      description="Guidelines for when the tool should not be called."
+      info_description="Include guidelines or examples help the judge model understand when the tool should be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
       inputType="textarea"
       id="should_not_call_example"
       optional={true}
-      bind:value={should_not_call_tool_example}
+      bind:value={should_not_call_tool_guidelines}
     />
   </FormContainer>
 </Dialog>
