@@ -39,6 +39,7 @@
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
+  export let hide_prompt_selector: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -257,11 +258,13 @@
     bind:error_message={model_dropdown_error_message}
     bind:this={model_dropdown}
   />
-  <PromptTypeSelector
-    bind:prompt_method
-    info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-    bind:linked_model_selection={model}
-  />
+  {#if !hide_prompt_selector}
+    <PromptTypeSelector
+      bind:prompt_method
+      info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+      bind:linked_model_selection={model}
+    />
+  {/if}
   <ToolsSelector
     bind:tools
     {project_id}

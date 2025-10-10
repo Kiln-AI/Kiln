@@ -53,11 +53,9 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
-    model_name: str = Field(description="The name of the model to use")
-    provider: str = Field(description="The provider of the model to use")
-
-    # Allows use of the model_name field (usually pydantic will reserve model_*)
-    model_config = ConfigDict(protected_namespaces=())
+    input_run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for input generation"
+    )
 
 
 class DataGenSaveSamplesApiInput(BaseModel):
@@ -72,7 +70,7 @@ class DataGenSaveSamplesApiInput(BaseModel):
         description="The provider of the model used to generate the input"
     )
     output_run_config_properties: RunConfigProperties = Field(
-        description="The run config properties to use for the output"
+        description="The run config properties to use for output generation"
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",
@@ -135,17 +133,12 @@ def connect_data_gen_api(app: FastAPI):
             num_samples=input.num_samples,
         )
 
+        run_config_properties = input.input_run_config_properties
+        # Override prompt id to simple just in case we change the default in the UI in the future.
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
             sample_task,
-            run_config_properties=RunConfigProperties(
-                model_name=input.model_name,
-                model_provider_name=model_provider_from_string(input.provider),
-                prompt_id=PromptGenerators.SIMPLE,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    input.model_name, model_provider_from_string(input.provider)
-                ),
-            ),
+            run_config_properties=run_config_properties,
         )
 
         samples_run = await adapter.invoke(task_input.model_dump())

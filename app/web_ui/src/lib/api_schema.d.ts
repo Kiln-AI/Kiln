@@ -2523,16 +2523,8 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
-            /**
-             * Model Name
-             * @description The name of the model to use
-             */
-            model_name: string;
-            /**
-             * Provider
-             * @description The provider of the model to use
-             */
-            provider: string;
+            /** @description The run config properties to use for input generation */
+            input_run_config_properties: components["schemas"]["RunConfigProperties"];
         };
         /** DataGenSaveSamplesApiInput */
         DataGenSaveSamplesApiInput: {
@@ -2558,7 +2550,7 @@ export interface components {
              * @description The provider of the model used to generate the input
              */
             input_provider: string;
-            /** @description The run config properties to use for the output */
+            /** @description The run config properties to use for output generation */
             output_run_config_properties: components["schemas"]["RunConfigProperties"];
             /**
              * Guidance
