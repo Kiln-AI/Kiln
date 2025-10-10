@@ -521,13 +521,16 @@
           </div>
           <AvailableModelsDropdown
             task_id={guidance_data.task_id}
-            requires_data_gen={true}
-            suggested_mode={guidance_data.suggest_uncensored($selected_template)
-              ? "uncensored_data_gen"
-              : "data_gen"}
-            requires_uncensored_data_gen={guidance_data.suggest_uncensored(
-              $selected_template,
-            )}
+            settings={{
+              requires_data_gen: true,
+              requires_uncensored_data_gen:
+                guidance_data.suggest_uncensored($selected_template),
+              suggested_mode: guidance_data.suggest_uncensored(
+                $selected_template,
+              )
+                ? "uncensored_data_gen"
+                : "data_gen",
+            }}
             bind:model
           />
           <button class="btn mt-2 btn-primary" on:click={generate_topics}>

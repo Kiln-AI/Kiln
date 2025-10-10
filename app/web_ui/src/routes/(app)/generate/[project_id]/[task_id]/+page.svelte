@@ -1066,14 +1066,15 @@
         </div>
         <AvailableModelsDropdown
           {task_id}
-          requires_data_gen={true}
-          requires_uncensored_data_gen={guidance_data.suggest_uncensored(
-            $selected_template,
-          )}
-          requires_structured_output={task?.output_json_schema ? true : false}
-          suggested_mode={guidance_data.suggest_uncensored($selected_template)
-            ? "uncensored_data_gen"
-            : "data_gen"}
+          settings={{
+            requires_data_gen: true,
+            requires_uncensored_data_gen:
+              guidance_data.suggest_uncensored($selected_template),
+            requires_structured_output: task?.output_json_schema ? true : false,
+            suggested_mode: guidance_data.suggest_uncensored($selected_template)
+              ? "uncensored_data_gen"
+              : "data_gen",
+          }}
           bind:model
         />
         <div>
