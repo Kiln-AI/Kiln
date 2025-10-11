@@ -181,6 +181,7 @@
         args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
         env_vars: envVarsData.envVarsObj,
         secret_env_var_keys: envVarsData.secret_env_var_keys,
+        is_archived: false,
       }
 
       let server_id: string | null | undefined = undefined

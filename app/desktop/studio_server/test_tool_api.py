@@ -142,6 +142,7 @@ async def test_create_tool_server_success(client, test_project):
         "server_url": "https://example.com/mcp",
         "headers": {"Authorization": "Bearer test-token"},
         "description": "A test MCP tool",
+        "is_archived": False,
     }
 
     with patch(
@@ -175,6 +176,7 @@ async def test_create_tool_server_validation_connection_failed(client, test_proj
         "server_url": "https://unreachable.example.com/mcp",
         "headers": {},
         "description": "Tool that will fail validation",
+        "is_archived": False,
     }
 
     with patch(
@@ -198,6 +200,7 @@ async def test_create_tool_server_validation_list_tools_failed(client, test_proj
         "server_url": "https://example.com/mcp",
         "headers": {},
         "description": "Tool where list_tools fails",
+        "is_archived": False,
     }
 
     with patch(
@@ -234,6 +237,7 @@ async def test_get_available_tool_servers_with_tool_server(client, test_project)
         "server_url": "https://api.example.com",
         "headers": {"X-API-Key": "secret"},
         "description": "My awesome tool",
+        "is_archived": False,
     }
 
     with patch(
@@ -363,6 +367,7 @@ async def test_get_tool_server_success(client, test_project):
         "server_url": "https://example.com/api",
         "headers": {"Authorization": "Bearer token"},
         "description": "Tool for get test",
+        "is_archived": False,
     }
 
     with patch(
@@ -418,6 +423,7 @@ async def test_get_tool_server_mcp_error_handling(client, test_project):
         "server_url": "https://example.com/api",
         "headers": {},
         "description": "MCP tool that will fail",
+        "is_archived": False,
     }
 
     with patch(
@@ -483,6 +489,7 @@ async def test_get_available_tools_success_single_server(client, test_project):
         "server_url": "https://example.com/mcp",
         "headers": {"Authorization": "Bearer token"},
         "description": "Test MCP server",
+        "is_archived": False,
     }
 
     with patch(
@@ -548,6 +555,7 @@ async def test_get_available_tools_multiple_servers(client, test_project):
         "server_url": "https://example1.com/mcp",
         "headers": {},
         "description": "First MCP server",
+        "is_archived": False,
     }
 
     # Create second MCP tool server
@@ -556,6 +564,7 @@ async def test_get_available_tools_multiple_servers(client, test_project):
         "server_url": "https://example2.com/mcp",
         "headers": {},
         "description": "Second MCP server",
+        "is_archived": False,
     }
 
     # Create kiln task tool servers
@@ -716,6 +725,7 @@ async def test_get_available_tools_mcp_error_handling(client, test_project):
         "server_url": "https://failing.example.com/mcp",
         "headers": {},
         "description": "MCP server that will fail",
+        "is_archived": False,
     }
 
     with patch(
@@ -832,6 +842,7 @@ async def test_create_tool_server_whitespace_handling(
         "server_url": "https://example.com/api",
         "headers": {"Authorization": "Bearer token"},
         "description": "A test tool",
+        "is_archived": False,
     }
 
     with patch(
@@ -861,6 +872,7 @@ async def test_create_tool_server_workflow(client, test_project):
         "server_url": "https://workflow.example.com/api",
         "headers": {"Authorization": "Bearer workflow-token"},
         "description": "Tool for testing complete workflow",
+        "is_archived": False,
     }
 
     with patch(
@@ -920,6 +932,7 @@ async def test_create_tool_server_workflow(client, test_project):
                 "server_url": f"https://example{i}.com/api",
                 "headers": {"X-Server-ID": str(i)},
                 "description": f"Concurrent tool server {i}",
+                "is_archived": False,
             },
         ),
         (
@@ -930,6 +943,7 @@ async def test_create_tool_server_workflow(client, test_project):
                 "args": ["-m", f"server_{i}"],
                 "description": f"Concurrent tool {i}",
                 "env_vars": {f"VAR_{i}": f"value_{i}"},
+                "is_archived": False,
             },
         ),
     ],
@@ -981,6 +995,7 @@ async def test_create_tool_server_duplicate_names_allowed(client, test_project):
         "server_url": "https://example1.com/api",
         "headers": {},
         "description": "First tool with this name",
+        "is_archived": False,
     }
 
     with patch(
@@ -1030,6 +1045,7 @@ async def test_create_tool_server_duplicate_names_allowed(client, test_project):
             {
                 "server_url": "https://example.com/mcp",
                 "headers": {"Authorization": "Bearer token"},
+                "is_archived": False,
             },
             "mcp::remote::",
             [
@@ -1044,6 +1060,7 @@ async def test_create_tool_server_duplicate_names_allowed(client, test_project):
                 "command": "python",
                 "args": ["-m", "test_mcp_server"],
                 "env_vars": {},
+                "is_archived": False,
             },
             "mcp::local::",
             [
@@ -1096,7 +1113,11 @@ async def test_available_mcp_tools_connection_error():
         name="failing_server",
         type=ToolServerType.remote_mcp,
         description="Failing MCP server",
-        properties={"server_url": "https://failing.example.com/mcp", "headers": {}},
+        properties={
+            "server_url": "https://failing.example.com/mcp",
+            "headers": {},
+            "is_archived": False,
+        },
     )
 
     async with mock_mcp_connection_error():
@@ -1114,7 +1135,11 @@ async def test_available_mcp_tools_list_tools_error():
         name="error_server",
         type=ToolServerType.remote_mcp,
         description="MCP server with list_tools error",
-        properties={"server_url": "https://error.example.com/mcp", "headers": {}},
+        properties={
+            "server_url": "https://error.example.com/mcp",
+            "headers": {},
+            "is_archived": False,
+        },
     )
 
     async with mock_mcp_list_tools_error():
@@ -1132,7 +1157,11 @@ async def test_available_mcp_tools_empty_tools():
         name="empty_server",
         type=ToolServerType.remote_mcp,
         description="MCP server with no tools",
-        properties={"server_url": "https://empty.example.com/mcp", "headers": {}},
+        properties={
+            "server_url": "https://empty.example.com/mcp",
+            "headers": {},
+            "is_archived": False,
+        },
     )
 
     async with mock_mcp_success():  # Empty tools by default
@@ -1178,6 +1207,7 @@ async def test_available_mcp_tools_kiln_task_raises_value_error():
             {
                 "server_url": "https://example.com/mcp",
                 "headers": {"Authorization": "Bearer token"},
+                "is_archived": False,
             },
         ),
         (
@@ -1186,6 +1216,7 @@ async def test_available_mcp_tools_kiln_task_raises_value_error():
                 "command": "python",
                 "args": ["-m", "test_mcp_server"],
                 "env_vars": {"DEBUG": "true"},
+                "is_archived": False,
             },
         ),
     ],
@@ -1210,13 +1241,21 @@ async def test_validate_tool_server_connectivity_success(server_type, properties
     [
         (
             ToolServerType.remote_mcp,
-            {"server_url": "https://failing.example.com/mcp", "headers": {}},
+            {
+                "server_url": "https://failing.example.com/mcp",
+                "headers": {},
+                "is_archived": False,
+            },
             "connection_error",
             "Connection failed",
         ),
         (
             ToolServerType.remote_mcp,
-            {"server_url": "https://example.com/mcp", "headers": {}},
+            {
+                "server_url": "https://example.com/mcp",
+                "headers": {},
+                "is_archived": False,
+            },
             "list_tools_error",
             "list_tools failed",
         ),
@@ -1226,6 +1265,7 @@ async def test_validate_tool_server_connectivity_success(server_type, properties
                 "command": "python",
                 "args": ["-m", "nonexistent_server"],
                 "env_vars": {},
+                "is_archived": False,
             },
             "list_tools_error",
             "Local MCP server failed",
@@ -1283,6 +1323,7 @@ async def test_create_local_tool_server_success(client, test_project):
         "args": ["-m", "test_mcp_server"],
         "env_vars": {"DEBUG": "true"},
         "description": "A test local MCP tool",
+        "is_archived": False,
     }
 
     with patch(
@@ -1316,6 +1357,7 @@ async def test_create_local_tool_server_validation_failed(client, test_project):
         "args": ["-m", "nonexistent_server"],
         "env_vars": {},
         "description": "Local tool that will fail validation",
+        "is_archived": False,
     }
 
     with patch(
@@ -1339,6 +1381,7 @@ async def test_create_local_tool_server_duplicate_names_allowed(client, test_pro
         "command": "python",
         "args": ["-m", "server1"],
         "description": "First tool with this name",
+        "is_archived": False,
     }
 
     with patch(
@@ -1377,6 +1420,7 @@ async def test_create_local_tool_server_list_tools_failed(client, test_project):
         "command": "python",
         "args": ["-m", "failing_server"],
         "description": "Local tool where list_tools fails",
+        "is_archived": False,
     }
 
     with patch(
@@ -1405,6 +1449,7 @@ def test_tool_server_from_id_success(test_project):
         properties={
             "server_url": "https://example.com/mcp",
             "headers": {"Authorization": "Bearer token"},
+            "is_archived": False,
         },
         parent=test_project,
     )
@@ -1455,7 +1500,11 @@ def test_tool_server_from_id_multiple_servers(test_project):
         name="server1",
         type=ToolServerType.remote_mcp,
         description="First server",
-        properties={"server_url": "https://server1.com", "headers": {}},
+        properties={
+            "server_url": "https://server1.com",
+            "headers": {},
+            "is_archived": False,
+        },
         parent=test_project,
     )
     server1.save_to_file()
@@ -1464,7 +1513,12 @@ def test_tool_server_from_id_multiple_servers(test_project):
         name="server2",
         type=ToolServerType.local_mcp,
         description="Second server",
-        properties={"command": "python", "args": ["-m", "server"], "env_vars": {}},
+        properties={
+            "command": "python",
+            "args": ["-m", "server"],
+            "env_vars": {},
+            "is_archived": False,
+        },
         parent=test_project,
     )
     server2.save_to_file()
@@ -1497,6 +1551,7 @@ def test_tool_server_from_id_multiple_servers(test_project):
                 "server_url": "https://example.com/api",
                 "headers": {"Authorization": "Bearer token"},
                 "description": "Tool to be deleted",
+                "is_archived": False,
             },
             ToolServerType.remote_mcp,
         ),
@@ -1508,6 +1563,7 @@ def test_tool_server_from_id_multiple_servers(test_project):
                 "args": ["-m", "test_server"],
                 "env_vars": {"DEBUG": "true"},
                 "description": "Local tool to be deleted",
+                "is_archived": False,
             },
             ToolServerType.local_mcp,
         ),
@@ -1585,6 +1641,7 @@ async def test_delete_tool_server_affects_available_servers_list(client, test_pr
         "server_url": "https://server1.com/api",
         "headers": {},
         "description": "First server",
+        "is_archived": False,
     }
 
     tool_data_2 = {
@@ -1592,6 +1649,7 @@ async def test_delete_tool_server_affects_available_servers_list(client, test_pr
         "server_url": "https://server2.com/api",
         "headers": {},
         "description": "Second server",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -1656,6 +1714,7 @@ async def test_delete_tool_server_with_secret_headers(client, test_project):
         },
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with secret headers",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -1720,6 +1779,7 @@ async def test_delete_tool_server_with_secret_headers(client, test_project):
                 "headers": {"Content-Type": "application/json"},
                 "secret_header_keys": [],
                 "description": "Tool without secret headers",
+                "is_archived": False,
             },
             ToolServerType.remote_mcp,
         ),
@@ -1732,6 +1792,7 @@ async def test_delete_tool_server_with_secret_headers(client, test_project):
                 "env_vars": {"DEBUG": "true"},
                 "secret_env_var_keys": [],
                 "description": "Local tool without secret headers",
+                "is_archived": False,
             },
             ToolServerType.local_mcp,
         ),
@@ -1799,6 +1860,7 @@ async def test_delete_tool_server_missing_secret_header_keys_property(
         "headers": {"Content-Type": "application/json"},
         "secret_header_keys": [],
         "description": "Tool for testing missing property",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -1862,6 +1924,7 @@ async def test_delete_tool_server_secret_key_not_in_config(client, test_project)
         },
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with secret headers not in config",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -1973,6 +2036,7 @@ async def test_connect_remote_mcp_with_secret_headers(client, test_project):
         },
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with secret headers",
+        "is_archived": False,
     }
 
     with (
@@ -2039,6 +2103,7 @@ async def test_connect_remote_mcp_no_secret_headers(client, test_project):
         },
         "secret_header_keys": [],  # Empty list
         "description": "Tool without secret headers",
+        "is_archived": False,
     }
 
     with (
@@ -2081,6 +2146,7 @@ async def test_connect_remote_mcp_existing_mcp_secrets(client, test_project):
         },
         "secret_header_keys": ["Authorization"],
         "description": "Tool that merges with existing secrets",
+        "is_archived": False,
     }
 
     existing_secrets = {
@@ -2144,6 +2210,7 @@ async def test_connect_local_mcp_with_secret_env_vars(client, test_project):
         },
         "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
         "description": "Tool with secret environment variables",
+        "is_archived": False,
     }
 
     with (
@@ -2214,6 +2281,7 @@ async def test_connect_local_mcp_no_secret_env_vars(client, test_project):
         },
         "secret_env_var_keys": [],  # Empty list
         "description": "Tool without secret environment variables",
+        "is_archived": False,
     }
 
     with (
@@ -2257,6 +2325,7 @@ async def test_connect_local_mcp_existing_mcp_secrets(client, test_project):
         },
         "secret_env_var_keys": ["NEW_SECRET"],
         "description": "Tool that merges with existing secrets",
+        "is_archived": False,
     }
 
     existing_secrets = {
@@ -2319,6 +2388,7 @@ async def test_delete_local_mcp_tool_server_with_secret_env_vars(client, test_pr
         },
         "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
         "description": "Local tool with secret env vars",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -2382,6 +2452,7 @@ async def test_delete_local_mcp_tool_server_no_secret_env_vars(client, test_proj
         "env_vars": {"PUBLIC_VAR": "public_value"},
         "secret_env_var_keys": [],
         "description": "Local tool without secret env vars",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -2445,6 +2516,7 @@ async def test_delete_local_mcp_tool_server_secret_key_not_in_config(
         },
         "secret_env_var_keys": ["SECRET_API_KEY", "ANOTHER_SECRET"],
         "description": "Local tool with secret env vars not in config",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -2502,6 +2574,7 @@ async def test_delete_local_mcp_tool_server_missing_secret_env_var_keys_property
         "env_vars": {"DEBUG": "true"},
         "secret_env_var_keys": [],
         "description": "Local tool for testing missing property",
+        "is_archived": False,
     }
 
     async with mock_mcp_success():
@@ -2561,6 +2634,7 @@ async def test_get_tool_server_with_missing_secrets(client, test_project):
         "headers": {"Authorization": "Bearer token", "X-API-Key": "key"},
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -2593,6 +2667,7 @@ async def test_get_tool_server_with_missing_secrets(client, test_project):
                 "server_url": "https://example.com/api",
                 "headers": {"Authorization": "Bearer token", "X-API-Key": "key"},
                 "secret_header_keys": ["Authorization", "X-API-Key"],
+                "is_archived": False,
             }
             mock_tool_server.retrieve_secrets.return_value = (
                 {},
@@ -2635,6 +2710,7 @@ async def test_get_tool_server_with_some_missing_secrets(client, test_project):
         },
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with some missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -2671,6 +2747,7 @@ async def test_get_tool_server_with_some_missing_secrets(client, test_project):
                     "Content-Type": "application/json",
                 },
                 "secret_header_keys": ["Authorization", "X-API-Key"],
+                "is_archived": False,
             }
             mock_tool_server.retrieve_secrets.return_value = (
                 {"Authorization": "Bearer token"},
@@ -2704,6 +2781,7 @@ async def test_get_tool_server_no_missing_secrets(client, test_project):
         "headers": {"Authorization": "Bearer token", "X-API-Key": "key"},
         "secret_header_keys": ["Authorization", "X-API-Key"],
         "description": "Tool with no missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -2736,6 +2814,7 @@ async def test_get_tool_server_no_missing_secrets(client, test_project):
                 "server_url": "https://example.com/api",
                 "headers": {"Authorization": "Bearer token", "X-API-Key": "key"},
                 "secret_header_keys": ["Authorization", "X-API-Key"],
+                "is_archived": False,
             }
             mock_tool_server.retrieve_secrets.return_value = (
                 {"Authorization": "Bearer token", "X-API-Key": "key"},
@@ -2784,6 +2863,7 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
         },
         "secret_env_var_keys": ["API_KEY", "DATABASE_PASSWORD"],
         "description": "Local MCP tool with missing secrets",
+        "is_archived": False,
     }
 
     with patch(
@@ -2821,6 +2901,7 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
                     "DATABASE_PASSWORD": "placeholder",
                 },
                 "secret_env_var_keys": ["API_KEY", "DATABASE_PASSWORD"],
+                "is_archived": False,
             }
             mock_tool_server.retrieve_secrets.return_value = (
                 {"API_KEY": "secret_key"},
@@ -2939,6 +3020,7 @@ def edit_local_server_data():
         },
         "secret_env_var_keys": ["DATABASE_PASSWORD"],
         "description": "edited description",
+        "is_archived": False,
     }
 
 
@@ -2965,6 +3047,7 @@ def existing_local_tool_server(test_project):
         properties={
             "command": "echo",
             "args": ["hello"],
+            "is_archived": False,
         },
     )
     existing_tool_server.save_to_file()
@@ -2980,6 +3063,7 @@ def existing_remote_tool_server(test_project):
         properties={
             "server_url": "https://example.com",
             "headers": {},
+            "is_archived": False,
         },
     )
     existing_tool_server.save_to_file()
@@ -3064,6 +3148,7 @@ def edit_remote_server_data():
             "Authorization": "Bearer token",
         },
         "secret_header_keys": ["Authorization"],
+        "is_archived": False,
     }
 
 
@@ -3194,6 +3279,7 @@ async def test_edit_mcp_does_not_keep_bad_data_in_memory(
     bad_data = {
         "name": test_server.name,
         "description": test_server.description,
+        "is_archived": False,
         **bad_data,
     }
     async with mock_mcp_connection_error():
@@ -3299,6 +3385,7 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
         "server_url": "https://example.com/mcp",
         "headers": {},
         "description": "Test server",
+        "is_archived": False,
     }
 
     with patch(
@@ -3378,6 +3465,7 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
         "server_url": "https://example.com/mcp",
         "headers": {"Authorization": "Bearer token"},
         "description": "MCP server for mixed test",
+        "is_archived": False,
     }
 
     with patch(
@@ -3736,6 +3824,7 @@ async def test_get_kiln_task_tools_success(client, test_project):
             description="MCP server",
             properties={
                 "server_url": "https://example.com/mcp",
+                "is_archived": False,
             },
             parent=test_project,
         )
@@ -3790,6 +3879,7 @@ async def test_get_kiln_task_tools_no_tools(client, test_project):
             description="MCP server",
             properties={
                 "server_url": "https://example.com/mcp",
+                "is_archived": False,
             },
             parent=test_project,
         )

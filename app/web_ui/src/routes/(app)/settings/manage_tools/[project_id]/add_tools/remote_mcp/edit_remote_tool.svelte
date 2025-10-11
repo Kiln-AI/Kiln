@@ -150,6 +150,7 @@
         headers: headersData.headersObj,
         secret_header_keys: headersData.secret_header_keys,
         description: description || null,
+        is_archived: false,
       }
 
       let server_id: string | null | undefined = undefined

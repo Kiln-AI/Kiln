@@ -31,6 +31,7 @@ class TestExternalToolServer:
         return {
             "server_url": "https://api.example.com/mcp",
             "headers": {"Content-Type": "application/json"},
+            "is_archived": False,
         }
 
     @pytest.fixture
@@ -53,6 +54,7 @@ class TestExternalToolServer:
                 **sample_remote_mcp_secrets,
             },
             "secret_header_keys": list(sample_remote_mcp_secrets.keys()),
+            "is_archived": False,
         }
 
     @pytest.fixture
@@ -62,6 +64,7 @@ class TestExternalToolServer:
             "command": "python",
             "args": ["-m", "mcp_server"],
             "env_vars": {},
+            "is_archived": False,
         }
 
     @pytest.fixture
@@ -83,6 +86,7 @@ class TestExternalToolServer:
                 {
                     "server_url": "https://api.example.com/mcp",
                     "headers": {"Authorization": "Bearer token123"},
+                    "is_archived": False,
                 },
             ),
             (
@@ -91,6 +95,7 @@ class TestExternalToolServer:
                     "command": "python",
                     "args": ["-m", "server"],
                     "env_vars": {"API_KEY": "secret123"},
+                    "is_archived": False,
                 },
             ),
             (
@@ -115,6 +120,7 @@ class TestExternalToolServer:
                         "LOG_LEVEL": "debug",
                         "MCP_SERVER_MODE": "production",
                     },
+                    "is_archived": False,
                 },
             ),
             (
@@ -178,7 +184,7 @@ class TestExternalToolServer:
         ExternalToolServer(
             name="test-server",
             type=ToolServerType.remote_mcp,
-            properties={"server_url": server_url},
+            properties={"server_url": server_url, "is_archived": False},
         )
 
     @pytest.mark.parametrize(
@@ -237,6 +243,7 @@ class TestExternalToolServer:
             properties={
                 "server_url": "https://test.com",
                 "headers": headers,
+                "is_archived": False,
             },
         )
 
@@ -283,6 +290,7 @@ class TestExternalToolServer:
                     "X-API-Key": "api-key-456",
                 },
                 "secret_header_keys": ["Authorization", "X-API-Key"],
+                "is_archived": False,
             },
         )
 
@@ -374,6 +382,7 @@ class TestExternalToolServer:
                 "command": "python",
                 "args": [],
                 "env_vars": env_vars,
+                "is_archived": False,
             },
         )
 
@@ -531,6 +540,7 @@ class TestExternalToolServer:
             "server_url": remote_mcp_base_props["server_url"],
             "headers": remote_mcp_base_props.get("headers", {}),
             "secret_header_keys": ["Authorization", "X-API-Key"],
+            "is_archived": False,
         }
         server = ExternalToolServer(
             name="test-server",
@@ -555,6 +565,7 @@ class TestExternalToolServer:
             "args": local_mcp_base_props.get("args", []),
             "env_vars": local_mcp_base_props.get("env_vars", {}),
             "secret_env_var_keys": ["API_KEY", "SECRET_TOKEN"],
+            "is_archived": False,
         }
         server = ExternalToolServer(
             name="test-server",
@@ -600,6 +611,7 @@ class TestExternalToolServer:
                 "DB_PASSWORD": "db-secret-456",
             },
             "secret_env_var_keys": ["API_KEY", "DB_PASSWORD"],
+            "is_archived": False,
         }
 
         server = ExternalToolServer(
@@ -652,6 +664,7 @@ class TestExternalToolServer:
                 "New-Secret-Header": "Bearer new-token",
             },
             "secret_header_keys": ["New-Secret-Header"],
+            "is_archived": False,
         }
 
         server.properties = new_properties  # type: ignore
@@ -746,6 +759,7 @@ class TestExternalToolServer:
                 "server_url": remote_mcp_base_props["server_url"],
                 "headers": remote_mcp_base_props.get("headers", {}),
                 "secret_header_keys": ["Authorization"],
+                "is_archived": False,
             },
         )
         server.id = "server-123"
@@ -772,6 +786,7 @@ class TestExternalToolServer:
                 "server_url": remote_mcp_base_props["server_url"],
                 "headers": remote_mcp_base_props.get("headers", {}),
                 "secret_header_keys": ["Authorization", "X-API-Key", "Missing-Key"],
+                "is_archived": False,
             },
         )
         server.id = "server-123"
@@ -992,6 +1007,7 @@ class TestExternalToolServer:
                             "server_url": "https://api.example.com/mcp",
                             "headers": {"Authorization": "Bearer secret"},
                             "secret_header_keys": ["Authorization"],
+                            "is_archived": False,
                         },
                     )
                     data = server.model_dump()
@@ -1007,6 +1023,7 @@ class TestExternalToolServer:
                             "args": ["-m", "server"],
                             "env_vars": {"API_KEY": "secret"},
                             "secret_env_var_keys": ["API_KEY"],
+                            "is_archived": False,
                         },
                     )
                     data = server.model_dump()
@@ -1043,6 +1060,7 @@ class TestExternalToolServer:
             "server_url": remote_mcp_base_props["server_url"],
             "headers": remote_mcp_base_props.get("headers", {}),
             "secret_header_keys": [],
+            "is_archived": False,
         }
 
         server = ExternalToolServer(

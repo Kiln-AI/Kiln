@@ -30,12 +30,14 @@ class LocalServerProperties(TypedDict, total=True):
     args: NotRequired[list[str]]
     env_vars: NotRequired[dict[str, str]]
     secret_env_var_keys: NotRequired[list[str]]
+    is_archived: bool
 
 
 class RemoteServerProperties(TypedDict, total=True):
     server_url: str
     headers: NotRequired[dict[str, str]]
     secret_header_keys: NotRequired[list[str]]
+    is_archived: bool
 
 
 class KilnTaskServerProperties(TypedDict, total=True):

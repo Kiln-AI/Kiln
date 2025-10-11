@@ -63,6 +63,7 @@ class ExternalToolServerCreationRequest(BaseModel):
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
     secret_header_keys: List[str] = Field(default_factory=list)
+    is_archived: bool
 
 
 class LocalToolServerCreationRequest(BaseModel):
@@ -72,6 +73,7 @@ class LocalToolServerCreationRequest(BaseModel):
     args: List[str]
     env_vars: Dict[str, str] = Field(default_factory=dict)
     secret_env_var_keys: List[str] = Field(default_factory=list)
+    is_archived: bool
 
 
 class KilnTaskToolServerCreationRequest(BaseModel):
@@ -492,6 +494,7 @@ def connect_tool_servers_api(app: FastAPI):
             "server_url": tool_data.server_url,
             "headers": tool_data.headers,
             "secret_header_keys": tool_data.secret_header_keys,
+            "is_archived": tool_data.is_archived,
         }
 
     @app.post("/api/projects/{project_id}/connect_local_mcp")
@@ -551,6 +554,7 @@ def connect_tool_servers_api(app: FastAPI):
             "args": tool_data.args,
             "env_vars": tool_data.env_vars,
             "secret_env_var_keys": tool_data.secret_env_var_keys,
+            "is_archived": tool_data.is_archived,
         }
 
     def _validate_kiln_task_tool_task_and_run_config(
