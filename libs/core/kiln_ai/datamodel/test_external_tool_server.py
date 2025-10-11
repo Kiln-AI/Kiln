@@ -164,7 +164,7 @@ class TestExternalToolServer:
             ExternalToolServer(
                 name="test-server",
                 type=ToolServerType.remote_mcp,
-                properties={"server_url": server_url},
+                properties={"server_url": server_url, "is_archived": False},
             )
 
     @pytest.mark.parametrize(
@@ -216,6 +216,7 @@ class TestExternalToolServer:
                 properties={
                     "server_url": "https://test.com",
                     "headers": headers,
+                    "is_archived": False,
                 },
             )
 
@@ -274,6 +275,7 @@ class TestExternalToolServer:
                     "server_url": "https://test.com",
                     "headers": {},
                     "secret_header_keys": secret_header_keys,
+                    "is_archived": False,
                 },
             )
 
@@ -355,6 +357,7 @@ class TestExternalToolServer:
                     "command": "python",
                     "args": [],
                     "env_vars": env_vars,
+                    "is_archived": False,
                 },
             )
 
@@ -1125,3 +1128,65 @@ class TestExternalToolServer:
         for data, expected_error in test_cases:
             with pytest.raises(ValueError, match=expected_error):
                 ExternalToolServer.type_from_data(data)
+
+    @pytest.mark.parametrize(
+        "server_type, properties_without_archived",
+        [
+            (
+                ToolServerType.remote_mcp,
+                {"server_url": "https://api.example.com/mcp"},
+            ),
+            (
+                ToolServerType.local_mcp,
+                {"command": "python", "args": ["-m", "server"]},
+            ),
+            # ToolServerType.kiln_task has is_archived when created
+        ],
+    )
+    def test_upgrade_old_properties_adds_is_archived(
+        self, server_type, properties_without_archived
+    ):
+        """Test that upgrade_old_properties adds is_archived field when missing."""
+        server = ExternalToolServer(
+            name="test-server",
+            type=server_type,
+            properties=properties_without_archived,  # type: ignore
+        )
+
+        assert "is_archived" in server.properties
+        assert server.properties["is_archived"] is False
+
+    @pytest.mark.parametrize(
+        "server_type, properties_with_archived",
+        [
+            (
+                ToolServerType.remote_mcp,
+                {"server_url": "https://api.example.com/mcp", "is_archived": True},
+            ),
+            (
+                ToolServerType.local_mcp,
+                {"command": "python", "args": ["-m", "server"], "is_archived": True},
+            ),
+            (
+                ToolServerType.kiln_task,
+                {
+                    "task_id": "task-123",
+                    "run_config_id": "run-config-456",
+                    "name": "test_tool",
+                    "description": "Test tool",
+                    "is_archived": True,
+                },
+            ),
+        ],
+    )
+    def test_upgrade_old_properties_preserves_existing_is_archived(
+        self, server_type, properties_with_archived
+    ):
+        """Test that upgrade_properties does not overwrite existing is_archived field."""
+        server = ExternalToolServer(
+            name="test-server",
+            type=server_type,
+            properties=properties_with_archived,  # type: ignore
+        )
+
+        assert server.properties["is_archived"] is True

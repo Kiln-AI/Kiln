@@ -215,6 +215,18 @@ class ExternalToolServer(KilnParentedModel):
             raise ValueError(f"type must be one of: {valid_types}")
 
     @model_validator(mode="before")
+    def upgrade_old_properties(cls, data: dict) -> dict:
+        """
+        Upgrade properties for backwards compatibility.
+        """
+        properties = data.get("properties")
+        if properties is not None and "is_archived" not in properties:
+            # Add is_archived field with default value back to data
+            properties["is_archived"] = False
+            data["properties"] = properties
+        return data
+
+    @model_validator(mode="before")
     def validate_required_fields(cls, data: dict) -> dict:
         """Validate that each tool type has the required configuration."""
         server_type = ExternalToolServer.type_from_data(data)
