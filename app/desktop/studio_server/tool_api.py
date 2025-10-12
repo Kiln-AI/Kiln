@@ -249,6 +249,9 @@ def connect_tool_servers_api(app: FastAPI):
         task_tools = []
         mcp_tool_sets = []
         for server in project.external_tool_servers(readonly=True):
+            if server.properties.get("is_archived", False):
+                continue
+
             server_tools = []
             match server.type:
                 case ToolServerType.remote_mcp | ToolServerType.local_mcp:
@@ -258,14 +261,13 @@ def connect_tool_servers_api(app: FastAPI):
                         # Skip the tool when we can't connect to the server
                         continue
                 case ToolServerType.kiln_task:
-                    if not server.properties.get("is_archived", False):
-                        task_tools.append(
-                            ToolApiDescription(
-                                id=build_kiln_task_tool_id(server.id),
-                                name=server.properties.get("name") or "",
-                                description=server.properties.get("description") or "",
-                            )
+                    task_tools.append(
+                        ToolApiDescription(
+                            id=build_kiln_task_tool_id(server.id),
+                            name=server.properties.get("name") or "",
+                            description=server.properties.get("description") or "",
                         )
+                    )
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
