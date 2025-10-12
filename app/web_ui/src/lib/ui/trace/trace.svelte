@@ -245,19 +245,37 @@
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Tool Result
-                    {#if kiln_task_tool_data}
-                      <button
-                        class="text-primary link ml-2 font-normal"
-                        on:click={() => {
-                          tool_messages_dialog?.show(kiln_task_tool_data)
-                        }}
-                      >
-                        Subtask Message Trace
-                      </button>
-                    {/if}
                   </div>
                   <Output raw_output={content} no_padding={true} />
                 </div>
+                {#if kiln_task_tool_data}
+                  <div>
+                    <button
+                      class="link text-xs text-gray-500"
+                      on:click={() => {
+                        tool_messages_dialog?.show(kiln_task_tool_data)
+                      }}
+                    >
+                      <div class="flex flex-row items-center gap-1">
+                        <span>Subtask Message Trace</span>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          class="w-3 h-3 opacity-80 group-hover:opacity-100 transition-opacity"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M7 17L17 7M7 7h10v10"
+                          />
+                        </svg>
+                      </div>
+                    </button>
+                  </div>
+                {/if}
               {:else if content}
                 <div>
                   <!-- Header logic: skip if only a message, just for a cleaner ui -->
