@@ -3020,7 +3020,7 @@ def edit_local_server_data():
         },
         "secret_env_var_keys": ["DATABASE_PASSWORD"],
         "description": "edited description",
-        "is_archived": False,
+        "is_archived": True,
     }
 
 
@@ -3118,6 +3118,7 @@ async def test_edit_local_mcp(
             assert response_json["properties"]["secret_env_var_keys"] == [
                 "DATABASE_PASSWORD",
             ]
+            assert response_json["properties"]["is_archived"] is True
 
             # Verify the tool server changes were saved to file
             loaded_tool_server = ExternalToolServer.load_from_file(
@@ -3135,6 +3136,7 @@ async def test_edit_local_mcp(
             assert loaded_tool_server.properties["secret_env_var_keys"] == [
                 "DATABASE_PASSWORD",
             ]
+            assert loaded_tool_server.properties["is_archived"] is True
 
 
 @pytest.fixture
@@ -3148,7 +3150,7 @@ def edit_remote_server_data():
             "Authorization": "Bearer token",
         },
         "secret_header_keys": ["Authorization"],
-        "is_archived": False,
+        "is_archived": True,
     }
 
 
@@ -3215,6 +3217,7 @@ async def test_edit_remote_mcp(
             assert response_json["properties"]["secret_header_keys"] == [
                 "Authorization"
             ]
+            assert response_json["properties"]["is_archived"] is True
 
             # Verify the tool server changes were saved to file
             loaded_tool_server = ExternalToolServer.load_from_file(
@@ -3233,6 +3236,7 @@ async def test_edit_remote_mcp(
             assert loaded_tool_server.properties["secret_header_keys"] == [
                 "Authorization",
             ]
+            assert loaded_tool_server.properties["is_archived"] is True
 
 
 @pytest.mark.parametrize(
