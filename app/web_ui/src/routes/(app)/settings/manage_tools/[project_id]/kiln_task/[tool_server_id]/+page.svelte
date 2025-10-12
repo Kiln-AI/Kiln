@@ -11,6 +11,8 @@
     Task,
     TaskRunConfig,
     KilnTaskServerProperties,
+    ProviderModels,
+    PromptResponse,
   } from "$lib/types"
   import {
     load_available_models,
@@ -34,6 +36,7 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import { get_tools_property_info } from "$lib/stores/tools_store"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -50,6 +53,7 @@
   let unarchive_error: KilnError | null = null
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined = undefined
+  let run_config_properties: UiProperty[] = []
 
   onMount(async () => {
     await fetch_tool_server()
@@ -64,21 +68,6 @@
   $: if (tool_server) {
     load_tool_server_data(tool_server)
   }
-
-  $: {
-    const tools_property_info = get_tools_property_info(
-      run_config?.run_config_properties?.tools_config?.tools || [],
-      project_id,
-      $available_tools,
-    )
-    tools_property_value = tools_property_info.value
-    tool_links = tools_property_info.links
-  }
-
-  $: run_config_properties = get_run_config_properties(
-    run_config,
-    tools_property_value,
-  )
 
   async function load_tool_server_data(
     tool_server: ExternalToolServerApiDescription,
@@ -233,12 +222,31 @@
     ]
   }
 
+  $: {
+    const tools_property_info = get_tools_property_info(
+      run_config?.run_config_properties?.tools_config?.tools || [],
+      project_id,
+      $available_tools,
+    )
+    tools_property_value = tools_property_info.value
+    tool_links = tools_property_info.links
+  }
+
+  $: run_config_properties = get_run_config_properties(
+    run_config,
+    $model_info,
+    $prompts_by_task_composite_id,
+    tools_property_value,
+  )
+
   function get_run_config_properties(
     run_config: TaskRunConfig | null,
+    model_info: ProviderModels | null,
+    prompts_by_task_composite_id: Record<string, PromptResponse>,
     tools_property_value: string | string[],
-  ) {
-    if (!run_config || !$model_info) {
-      return [{ name: "Status", value: "Run Config Not Found", error: true }]
+  ): UiProperty[] {
+    if (!run_config || !model_info) {
+      return []
     }
 
     return [
@@ -252,13 +260,13 @@
       },
       {
         name: "Model",
-        value: `${model_name(run_config.run_config_properties.model_name, $model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
+        value: `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
       },
       {
         name: "Prompt",
         value: getRunConfigPromptDisplayName(
           run_config,
-          $prompts_by_task_composite_id[
+          prompts_by_task_composite_id[
             get_task_composite_id(project_id, task?.id ?? "")
           ] ?? { generators: [], prompts: [] },
         ),
