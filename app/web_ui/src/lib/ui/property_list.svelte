@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation"
   import InfoTooltip from "./info_tooltip.svelte"
   import type { UiProperty } from "./property_list"
   import Warning from "./warning.svelte"
@@ -32,7 +33,56 @@
             tight={true}
           />
         {/if}
-        {#if property.link}
+        {#if Array.isArray(property.value)}
+          {#if property.badge}
+            <div class="flex flex-wrap gap-1">
+              {#each property.value as value, i}
+                {@const link = property.links
+                  ? property.links.length == property.value.length
+                    ? property.links[i]
+                    : null
+                  : null}
+                <button
+                  class="badge badge-outline"
+                  on:click={() => {
+                    if (link) {
+                      goto(link)
+                    }
+                  }}
+                >
+                  {value}
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="flex flex-wrap gap-1">
+              {#each property.value as value, i}
+                {@const link =
+                  property.links &&
+                  property.links.length === property.value.length
+                    ? property.links[i]
+                    : null}
+
+                {#if link}
+                  <a href={link} class="link">{value}</a>
+                {:else}
+                  <span>{value}</span>
+                {/if}
+              {/each}
+            </div>
+          {/if}
+        {:else if property.badge}
+          <button
+            class="badge badge-outline"
+            on:click={() => {
+              if (property.link) {
+                goto(property.link)
+              }
+            }}
+          >
+            {property.value}
+          </button>
+        {:else if property.link}
           <a href={property.link} class="link">{property.value}</a>
         {:else}
           {property.value}

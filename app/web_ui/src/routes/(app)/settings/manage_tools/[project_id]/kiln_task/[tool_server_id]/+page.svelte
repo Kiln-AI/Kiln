@@ -18,9 +18,9 @@
     model_info,
     model_name,
     provider_name_from_id,
-    available_tools,
     load_available_tools,
     get_task_composite_id,
+    available_tools,
   } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -33,6 +33,7 @@
     load_task_prompts,
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
+  import { get_tools_property_info } from "$lib/stores/tools_store"
 
   $: project_id = $page.params.project_id
   $: tool_server_id = $page.params.tool_server_id
@@ -47,20 +48,37 @@
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
   let unarchive_error: KilnError | null = null
+  let tools_property_value: string | string[] = "Loading..."
+  let tool_links: (string | null)[] | undefined = undefined
 
   onMount(async () => {
     await fetch_tool_server()
-    await load_available_models()
-    await load_model_info()
-    if (project_id) {
-      await load_available_tools(project_id)
-    }
+    await Promise.all([
+      load_available_models(),
+      load_model_info(),
+      load_available_tools(project_id),
+    ])
   })
 
   // Use a separate reactive statement to trigger data loading when tool_server changes
   $: if (tool_server) {
     load_tool_server_data(tool_server)
   }
+
+  $: {
+    const tools_property_info = get_tools_property_info(
+      run_config?.run_config_properties?.tools_config?.tools || [],
+      project_id,
+      $available_tools,
+    )
+    tools_property_value = tools_property_info.value
+    tool_links = tools_property_info.links
+  }
+
+  $: run_config_properties = get_run_config_properties(
+    run_config,
+    tools_property_value,
+  )
 
   async function load_tool_server_data(
     tool_server: ExternalToolServerApiDescription,
@@ -183,19 +201,6 @@
     )
   }
 
-  function get_tool_names_from_ids(tool_ids: string[]): string[] {
-    if (!project_id || !$available_tools[project_id]) {
-      return tool_ids // Return IDs if we don't have the tools loaded
-    }
-
-    const all_tools = $available_tools[project_id].flatMap(
-      (tool_set) => tool_set.tools,
-    )
-    const tool_map = new Map(all_tools.map((tool) => [tool.id, tool.name]))
-
-    return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
-  }
-
   function get_tool_properties(tool: ExternalToolServerApiDescription) {
     return [
       { name: "ID", value: tool.id || "N/A" },
@@ -228,7 +233,10 @@
     ]
   }
 
-  function get_run_config_properties(run_config: TaskRunConfig | null) {
+  function get_run_config_properties(
+    run_config: TaskRunConfig | null,
+    tools_property_value: string | string[],
+  ) {
     if (!run_config || !$model_info) {
       return [{ name: "Status", value: "Run Config Not Found", error: true }]
     }
@@ -256,20 +264,10 @@
         ),
       },
       {
-        name: "Tools",
-        value:
-          run_config.run_config_properties.tools_config?.tools &&
-          run_config.run_config_properties.tools_config.tools.length > 0
-            ? (() => {
-                const tool_names = get_tool_names_from_ids(
-                  run_config.run_config_properties.tools_config.tools,
-                )
-                return run_config.run_config_properties.tools_config.tools
-                  .length === 1
-                  ? `One tool (${tool_names.join(", ")})`
-                  : `${run_config.run_config_properties.tools_config.tools.length} tools (${tool_names.join(", ")})`
-              })()
-            : "None",
+        name: "Available Tools",
+        value: tools_property_value,
+        links: tool_links,
+        badge: Array.isArray(tools_property_value) ? true : false,
       },
       {
         name: "Temperature",
@@ -328,9 +326,7 @@
     } finally {
       fetch_tool_server()
       // Re-load available tools to make sure archived tools aren't shown
-      if (project_id) {
-        load_available_tools(project_id, true)
-      }
+      load_available_tools(project_id, true)
     }
   }
 </script>
@@ -422,7 +418,7 @@
             title="Task Properties"
           />
           <PropertyList
-            properties={get_run_config_properties(run_config)}
+            properties={run_config_properties}
             title="Run Configuration"
           />
         </div>
