@@ -9,7 +9,7 @@
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import EmptyDocsLibraryIntro from "./empty_docs_library_intro.svelte"
-  import FileIcon from "../../fileicon.svelte"
+  import FileIcon from "$lib/ui/file_icon.svelte"
   import {
     formatDate,
     formatSize,
@@ -624,7 +624,9 @@
                   {/if}
                   <td>
                     <div class="flex flex-row items-center gap-2">
-                      <FileIcon kind={document.kind} />
+                      <div class="h-8 w-8">
+                        <FileIcon kind={document.kind} />
+                      </div>
                       <span class="text-sm">
                         {mime_type_to_string(document.original_file.mime_type)}
                       </span>
