@@ -56,8 +56,52 @@ def validate_fixed_window_chunker_properties(
     return properties
 
 
+def validate_semantic_chunker_properties(
+    properties: dict[str, str | int | float | bool],
+) -> dict[str, str | int | float | bool]:
+    """Validate the properties for the semantic chunker."""
+    embedding_config_id = properties.get("embedding_config_id")
+    if embedding_config_id is None:
+        raise ValueError("embedding_config_id is required for semantic chunker.")
+    if not isinstance(embedding_config_id, str):
+        raise ValueError("embedding_config_id must be a string.")
+
+    buffer_size = properties.get("buffer_size")
+    if buffer_size is None:
+        raise ValueError("buffer_size is required for semantic chunker.")
+    if not isinstance(buffer_size, int):
+        raise ValueError("buffer_size must be an integer.")
+    if buffer_size < 1:
+        raise ValueError("buffer_size must be greater than or equal to 1.")
+
+    breakpoint_percentile_threshold = properties.get("breakpoint_percentile_threshold")
+    if breakpoint_percentile_threshold is None:
+        raise ValueError(
+            "breakpoint_percentile_threshold is required for semantic chunker."
+        )
+    if not isinstance(breakpoint_percentile_threshold, int):
+        raise ValueError("breakpoint_percentile_threshold must be an integer.")
+    if not (0 <= breakpoint_percentile_threshold <= 100):
+        raise ValueError("breakpoint_percentile_threshold must be between 0 and 100.")
+
+    include_metadata = properties.get("include_metadata")
+    if include_metadata is None:
+        raise ValueError("include_metadata is required for semantic chunker.")
+    if not isinstance(include_metadata, bool):
+        raise ValueError("include_metadata must be a boolean.")
+
+    include_prev_next_rel = properties.get("include_prev_next_rel")
+    if include_prev_next_rel is None:
+        raise ValueError("include_prev_next_rel is required for semantic chunker.")
+    if not isinstance(include_prev_next_rel, bool):
+        raise ValueError("include_prev_next_rel must be a boolean.")
+
+    return properties
+
+
 class ChunkerType(str, Enum):
     FIXED_WINDOW = "fixed_window"
+    SEMANTIC = "semantic"
 
 
 class ChunkerConfig(KilnParentedModel):
@@ -88,6 +132,9 @@ class ChunkerConfig(KilnParentedModel):
         if info.data.get("chunker_type") == ChunkerType.FIXED_WINDOW:
             # do not trigger revalidation of properties
             return validate_fixed_window_chunker_properties(properties)
+        elif info.data.get("chunker_type") == ChunkerType.SEMANTIC:
+            # do not trigger revalidation of properties
+            return validate_semantic_chunker_properties(properties)
         return properties
 
     def chunk_size(self) -> int | None:
@@ -103,6 +150,48 @@ class ChunkerConfig(KilnParentedModel):
         if not isinstance(self.properties["chunk_overlap"], int):
             raise ValueError("Chunk overlap must be an integer.")
         return self.properties["chunk_overlap"]
+
+    def embedding_config_id(self) -> str | None:
+        if self.properties.get("embedding_config_id") is None:
+            return None
+        if not isinstance(self.properties["embedding_config_id"], str):
+            raise ValueError("embedding_config_id must be a string.")
+        return self.properties["embedding_config_id"]
+
+    def buffer_size(self) -> int | None:
+        if self.properties.get("buffer_size") is None:
+            return None
+        if not isinstance(self.properties["buffer_size"], int):
+            raise ValueError("Buffer size must be an integer.")
+        return self.properties["buffer_size"]
+
+    def breakpoint_percentile_threshold(self) -> int | None:
+        if self.properties.get("breakpoint_percentile_threshold") is None:
+            return None
+        if not isinstance(self.properties["breakpoint_percentile_threshold"], int):
+            raise ValueError("Breakpoint percentile threshold must be an integer.")
+        if (
+            self.properties["breakpoint_percentile_threshold"] < 0
+            or self.properties["breakpoint_percentile_threshold"] > 100
+        ):
+            raise ValueError(
+                "Breakpoint percentile threshold must be between 0 and 100."
+            )
+        return int(self.properties["breakpoint_percentile_threshold"])
+
+    def include_metadata(self) -> bool | None:
+        if self.properties.get("include_metadata") is None:
+            return None
+        if not isinstance(self.properties["include_metadata"], bool):
+            raise ValueError("Include metadata must be a boolean.")
+        return self.properties["include_metadata"]
+
+    def include_prev_next_rel(self) -> bool | None:
+        if self.properties.get("include_prev_next_rel") is None:
+            return None
+        if not isinstance(self.properties["include_prev_next_rel"], bool):
+            raise ValueError("Include prev next rel must be a boolean.")
+        return self.properties["include_prev_next_rel"]
 
 
 class Chunk(BaseModel):

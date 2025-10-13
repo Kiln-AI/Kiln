@@ -27,7 +27,10 @@
     provider_name_from_id,
   } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
-  import { extractor_output_format } from "$lib/utils/formatters"
+  import {
+    chunker_type_format,
+    extractor_output_format,
+  } from "$lib/utils/formatters"
   import {
     rag_config_templates,
     build_rag_config_sub_configs,
@@ -144,25 +147,25 @@
       ? [
           {
             label: "Chunkers",
-            options: chunker_configs.map((config) => ({
-              // Build label only from defined properties
-              label: [
-                config.properties?.chunk_size !== null &&
-                config.properties.chunk_size !== undefined
-                  ? `Size: ${config.properties.chunk_size} words`
-                  : null,
-                config.properties?.chunk_overlap !== null &&
-                config.properties.chunk_overlap !== undefined
-                  ? `Overlap: ${config.properties.chunk_overlap} words`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" - "),
-              value: config.id,
-              description:
-                config.name +
-                (config.description ? ` - ${config.description}` : ""),
-            })),
+            options: chunker_configs.map((config) => {
+              const props = config.properties
+              let label = ""
+              if (config.chunker_type === "fixed_window") {
+                label = `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size || "N/A"} words • Overlap: ${props.chunk_overlap || "N/A"} words`
+              } else if (config.chunker_type === "semantic") {
+                label = `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size || "N/A"} • Threshold: ${props.breakpoint_percentile_threshold || "N/A"}`
+              } else {
+                label = config.name
+              }
+
+              return {
+                label,
+                value: config.id,
+                description:
+                  config.name +
+                  (config.description ? ` - ${config.description}` : ""),
+              }
+            }),
           },
         ]
       : []),
@@ -458,7 +461,7 @@
       }
 
       let extractor_model: string | undefined = undefined
-      let chunker_type: "fixed_window" | undefined = undefined
+      let chunker_type: "fixed_window" | "semantic" | undefined = undefined
       let chunker_size: unknown = undefined
       let chunker_overlap: unknown = undefined
       let embedding_model: string | undefined = undefined
