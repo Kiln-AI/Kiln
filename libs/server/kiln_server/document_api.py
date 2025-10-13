@@ -7,6 +7,7 @@ from typing import Annotated, Awaitable, Callable, Dict, List
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
+from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
@@ -273,6 +274,21 @@ class CreateChunkerConfigRequest(BaseModel):
     properties: dict[str, str | int | float | bool] = Field(
         default_factory=dict,
     )
+
+    @model_validator(mode="after")
+    def validate_semantic_chunker_properties(self):
+        if self.chunker_type == ChunkerType.SEMANTIC:
+            # Require an embedding_config_id to be provided
+            embedding_config_id = self.properties.get("embedding_config_id")
+            if not isinstance(embedding_config_id, str):
+                raise ValueError("embedding_config_id is required for semantic chunker")
+            # currently too granular to be exposed to the user in the UI
+            # but we should pass on these fields as part of the config to
+            # make sure the config is stable and complete
+            self.properties["include_metadata"] = False
+            self.properties["include_prev_next_rel"] = False
+
+        return self
 
 
 class CreateEmbeddingConfigRequest(BaseModel):
@@ -1126,14 +1142,56 @@ def connect_document_api(app: FastAPI):
                 detail=f"Document {document_id} not found",
             )
 
+        # should not happen
+        if document.path is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Document path not found",
+            )
+
         extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
         if not extraction:
             raise HTTPException(
                 status_code=404,
                 detail=f"Extraction {extraction_id} not found",
             )
-
         extraction.delete()
+
+        if extraction.extractor_config_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config ID not found",
+            )
+
+        # there may be some cached partial extraction data in cache, which would be picked
+        # up on the next extraction run for this file, so we need to clear it
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extraction.extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Extractor config not found",
+            )
+
+        extractor = extractor_adapter_from_type(
+            extractor_config.extractor_type,
+            extractor_config,
+            filesystem_cache=TemporaryFilesystemCache.shared(),
+        )
+
+        try:
+            await extractor.clear_cache_for_file_path(
+                document.original_file.attachment.resolve_path(document.path.parent)
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to clear extractor cache for document %s (extraction %s): %s",
+                document_id,
+                extraction_id,
+                e,
+                exc_info=True,
+            )
 
         return {"message": f"Extraction removed. ID: {extraction_id}"}
 
@@ -1171,6 +1229,24 @@ def connect_document_api(app: FastAPI):
         request: CreateChunkerConfigRequest,
     ) -> ChunkerConfig:
         project = project_from_id(project_id)
+
+        # if semantic, validate that the referenced embedding config exists
+        if request.chunker_type == ChunkerType.SEMANTIC:
+            embedding_config_id = request.properties.get("embedding_config_id")
+            # should already be enforced by request validator, but needed for type checking
+            if not isinstance(embedding_config_id, str):  # pragma: no cover
+                raise HTTPException(
+                    status_code=422,
+                    detail="embedding_config_id must be provided and be a string",
+                )
+            embedding_config = EmbeddingConfig.from_id_and_parent_path(
+                embedding_config_id, project.path
+            )
+            if not embedding_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Embedding config {embedding_config_id} not found",
+                )
 
         chunker_config = ChunkerConfig(
             parent=project,

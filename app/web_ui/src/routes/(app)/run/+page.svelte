@@ -33,7 +33,6 @@
   $: project_id = $current_project?.id ?? ""
   $: task_id = $current_task?.id ?? ""
   $: input_schema = $current_task?.input_json_schema
-  $: requires_structured_output = !!$current_task?.output_json_schema
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
 
@@ -86,6 +85,9 @@
         mcp_tools: run_config_component
           .get_tools()
           .filter((tool) => tool.startsWith("mcp::")).length,
+        kiln_task_tools: run_config_component
+          .get_tools()
+          .filter((tool) => tool.startsWith("kiln_task::")).length,
       })
       response = data
     } catch (e) {
@@ -200,7 +202,6 @@
             bind:this={run_config_component}
             {project_id}
             current_task={$current_task}
-            {requires_structured_output}
             bind:selected_run_config_id
             bind:save_config_error
             bind:set_default_error

@@ -277,8 +277,8 @@ class TestBuiltInModelsFromProvider:
         """Test provider that doesn't have special attributes"""
         # Test a simpler provider configuration
         result = built_in_models_from_provider(
-            provider_name=ModelProviderName.openai,
-            model_name="gpt_4_1_nano",
+            provider_name=ModelProviderName.openrouter,
+            model_name="mistral_nemo",
         )
         assert result is not None
         assert result.multimodal_capable is False  # Should be False for nano

@@ -27,13 +27,14 @@
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
+  import type { ModelDropdownSettings } from "./model_dropdown_settings"
 
   // Props
   export let project_id: string
   export let current_task: Task
   export let model_name: string = ""
   export let provider: string = ""
-  export let requires_structured_output: boolean = false
+  export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
@@ -43,6 +44,7 @@
   let prompt_method: string = "simple_prompt_builder"
   let tools: string[] = []
   let requires_tool_support: boolean = false
+  $: requires_structured_output = !!current_task.output_json_schema
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -53,6 +55,12 @@
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
+
+  $: updated_model_dropdown_settings = {
+    ...model_dropdown_settings,
+    requires_tool_support: requires_tool_support,
+    requires_structured_output: requires_structured_output,
+  }
 
   let model_dropdown: AvailableModelsDropdown
   let model_dropdown_error_message: string | null = null
@@ -245,8 +253,7 @@
   <AvailableModelsDropdown
     task_id={current_task.id ?? ""}
     bind:model
-    bind:requires_structured_output
-    bind:requires_tool_support
+    settings={updated_model_dropdown_settings}
     bind:error_message={model_dropdown_error_message}
     bind:this={model_dropdown}
   />

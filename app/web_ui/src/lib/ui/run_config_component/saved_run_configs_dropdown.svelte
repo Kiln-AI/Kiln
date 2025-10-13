@@ -41,7 +41,7 @@
   export let info_description: string = ""
   export let description: string = ""
   export let run_page: boolean = true
-  export let auto_select_default: boolean = false
+  export let auto_select_default: boolean = true
 
   $: show_save_button = run_page && selected_run_config_id === "custom"
   $: show_set_default_button =

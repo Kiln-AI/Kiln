@@ -1371,7 +1371,6 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         assert result["golden_dataset_partially_rated_count"] == 1
         assert result["golden_dataset_not_rated_count"] == 1
         assert result["current_eval_method"] is None
-        assert result["current_run_method"] is None
 
         # Verify the function calls
         mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")
@@ -1407,90 +1406,6 @@ async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task)
         assert response.status_code == 404
         assert response.json()["detail"] == "Eval not found. ID: non_existent"
         mock_eval_from_id.assert_called_once_with("project1", "task1", "non_existent")
-
-
-@pytest.mark.asyncio
-async def test_set_default_run_config(
-    client, mock_task_from_id, mock_task, mock_eval, mock_run_config
-):
-    """Test setting the current run config for an evaluation."""
-    mock_task_from_id.return_value = mock_task
-
-    # Get the eval before updating to verify the change
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
-    assert response.status_code == 200
-    eval_before = response.json()
-
-    # The current_run_config_id might be None or different initially
-    initial_run_config_id = eval_before.get("current_run_config_id")
-    assert initial_run_config_id is None
-
-    # Set the current run config
-    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
-        mock_eval_from_id.return_value = mock_eval
-        response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_run_config/run_config1"
-        )
-        assert response.status_code == 200
-        updated_eval = response.json()
-
-    # Verify the current_run_config_id was updated
-    assert updated_eval["current_run_config_id"] == "run_config1"
-    assert updated_eval["id"] == "eval1"
-
-    # Verify the change persists by fetching the eval again
-    eval_from_disk = mock_task.evals()[0]
-    assert eval_from_disk.current_run_config_id == "run_config1"
-
-
-@pytest.mark.asyncio
-async def test_set_default_run_config_not_found(
-    client, mock_task_from_id, mock_task, mock_eval
-):
-    """Test 400 error when setting a non-existent run config as default."""
-    mock_task_from_id.return_value = mock_task
-
-    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
-        mock_eval_from_id.return_value = mock_eval
-        response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_run_config/non_existent_run_config"
-        )
-
-    # Verify the response
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Run config not found."
-
-
-@pytest.mark.asyncio
-async def test_set_default_run_config_none(
-    client, mock_task_from_id, mock_task, mock_eval
-):
-    """Test clearing the current run config for an evaluation by setting it to 'none'."""
-    mock_task_from_id.return_value = mock_task
-
-    # First set a non-null value to verify it can be cleared
-    mock_eval.current_run_config_id = "some_existing_id"
-    mock_eval.save_to_file()
-
-    # Verify the current_run_config_id is set
-    assert mock_task.evals()[0].current_run_config_id == "some_existing_id"
-
-    # Clear the current run config by setting it to "none"
-    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
-        mock_eval_from_id.return_value = mock_eval
-        response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_run_config/None"
-        )
-        assert response.status_code == 200
-        updated_eval = response.json()
-
-    # Verify the current_run_config_id was cleared (set to None)
-    assert updated_eval["current_run_config_id"] is None
-    assert updated_eval["id"] == "eval1"
-
-    # Verify the change persists by fetching the eval again
-    eval_from_disk = mock_task.evals()[0]
-    assert eval_from_disk.current_run_config_id is None
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -18,6 +19,9 @@ class MockBaseExtractor(BaseExtractor):
             content="mock concrete extractor output",
             content_format=OutputFormat.MARKDOWN,
         )
+
+    async def clear_cache_for_file_path(self, file_path: Path) -> None:
+        pass
 
 
 @pytest.fixture
