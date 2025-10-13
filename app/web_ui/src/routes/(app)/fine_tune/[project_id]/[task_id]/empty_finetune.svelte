@@ -1,5 +1,5 @@
 <script lang="ts">
-  import FinetuneIcon from "$lib/ui/finetune_icon.svelte"
+  import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
 
   export let project_id: string
   export let task_id: string

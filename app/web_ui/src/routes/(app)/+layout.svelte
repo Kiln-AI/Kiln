@@ -10,9 +10,9 @@
   import { beforeNavigate } from "$app/navigation"
   import { setContext } from "svelte"
   import { writable } from "svelte/store"
-  import FileIcon from "$lib/ui/file_icon.svelte"
-  import FinetuneIcon from "$lib/ui/finetune_icon.svelte"
-  import EvalIcon from "$lib/ui/eval_icon.svelte"
+  import FileIcon from "$lib/ui/icons/file_icon.svelte"
+  import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
 
   onMount(async () => {
     update_update_store()

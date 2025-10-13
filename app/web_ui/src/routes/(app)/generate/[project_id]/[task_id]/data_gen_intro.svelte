@@ -6,8 +6,8 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import MultiIntro from "$lib/ui/multi_intro.svelte"
   import { onMount } from "svelte"
-  import EvalIcon from "$lib/ui/eval_icon.svelte"
-  import FinetuneIcon from "$lib/ui/finetune_icon.svelte"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void

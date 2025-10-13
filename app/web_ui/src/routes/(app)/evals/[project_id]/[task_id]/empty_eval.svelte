@@ -1,5 +1,5 @@
 <script lang="ts">
-  import EvalIcon from "$lib/ui/eval_icon.svelte"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
 
   export let project_id: string
   export let task_id: string

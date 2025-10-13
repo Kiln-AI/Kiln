@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Checkmark from "./checkmark.svelte"
+  import Checkmark from "./icons/checkmark.svelte"
 
   export let title: string
   export let subtitle: string

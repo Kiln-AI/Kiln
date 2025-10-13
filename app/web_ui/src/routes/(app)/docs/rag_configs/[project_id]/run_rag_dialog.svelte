@@ -9,7 +9,7 @@
     ragProgressStore,
     getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
-  import Checkmark from "$lib/ui/checkmark.svelte"
+  import Checkmark from "$lib/ui/icons/checkmark.svelte"
 
   $: projectStateStore = getProjectRagStateStore(project_id)
   $: ragProgressState = $projectStateStore

@@ -9,7 +9,7 @@
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import EmptyDocsLibraryIntro from "./empty_docs_library_intro.svelte"
-  import FileIcon from "$lib/ui/file_icon.svelte"
+  import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import {
     formatDate,
     formatSize,

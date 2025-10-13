@@ -2,7 +2,7 @@
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import FileIcon from "$lib/ui/file_icon.svelte"
+  import FileIcon from "$lib/ui/icons/file_icon.svelte"
 
   export let guidance_data: SynthDataGuidanceDataModel
   $: selected_template = guidance_data.selected_template
