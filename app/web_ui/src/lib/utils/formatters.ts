@@ -153,6 +153,8 @@ export function chunker_type_format(chunker_type: ChunkerType): string {
   switch (chunker_type) {
     case "fixed_window":
       return "Fixed Window"
+    case "semantic":
+      return "Semantic"
     default: {
       // trigger a type error if there is a new chunker type, but don't handle it
       // in the switch

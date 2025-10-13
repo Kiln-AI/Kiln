@@ -37,8 +37,8 @@ class Project(
     )
 
     # Needed for typechecking. We should fix this in KilnParentModel
-    def tasks(self) -> list[Task]:
-        return super().tasks()  # type: ignore
+    def tasks(self, readonly: bool = False) -> list[Task]:
+        return super().tasks(readonly=readonly)  # type: ignore
 
     def documents(self, readonly: bool = False) -> list[Document]:
         return super().documents(readonly=readonly)  # type: ignore

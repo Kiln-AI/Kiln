@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
-  import type { Eval } from "$lib/types"
+  import type { Eval, Task } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
@@ -29,6 +29,7 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
+    getDetailedModelName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
@@ -38,14 +39,17 @@
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import AddRunMethod from "./add_run_method.svelte"
-  import posthog from "posthog-js"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
   $: eval_id = $page.params.eval_id
+
+  let task: Task | null = null
+  let loading_task = true
+  let task_error: KilnError | null = null
 
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null
@@ -63,16 +67,14 @@
   let score_summary_error: KilnError | null = null
 
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
-  $: loading = eval_loading || eval_configs_loading || run_configs_loading
-  $: error = eval_error || eval_configs_error || run_configs_error
+  $: loading =
+    eval_loading || eval_configs_loading || run_configs_loading || loading_task
+  $: error = eval_error || eval_configs_error || run_configs_error || task_error
 
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
     ] || null
-
-  $: should_select_eval_config =
-    current_task_run_configs?.length && !evaluator?.current_run_config_id
 
   // Check if all run configs are 100% complete
   $: all_run_configs_complete = score_summary?.run_config_percent_complete
@@ -81,20 +83,19 @@
       )
     : false
 
-  $: focus_select_eval_config = !!(
-    should_select_eval_config &&
-    (eval_state?.includes("complete") || all_run_configs_complete)
+  $: focus_run_all = !(
+    eval_state?.includes("complete") || all_run_configs_complete
   )
 
   onMount(async () => {
     // Wait for page params to load
     await tick()
-    // Wait for these 3 to load, as they are needed for better labels. Usually already cached and instant.
+    // Wait for these to load, as they are needed for better labels. Usually already cached and instant.
     await Promise.all([
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
-      load_task(project_id, task_id),
+      get_task(),
     ])
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
@@ -104,7 +105,21 @@
     get_score_summary()
   })
 
-  let add_run_method_component: AddRunMethod | null = null
+  let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+
+  async function get_task() {
+    loading_task = true
+    try {
+      task = await load_task(project_id, task_id)
+      if (!task) {
+        throw createKilnError("Task not found")
+      }
+    } catch (err) {
+      task_error = createKilnError(err)
+    } finally {
+      loading_task = false
+    }
+  }
 
   async function get_eval() {
     try {
@@ -257,8 +272,8 @@
 
     return [...configs].sort((a, b) => {
       // Default run config always comes first
-      if (a.id === evaluator?.current_run_config_id) return -1
-      if (b.id === evaluator?.current_run_config_id) return 1
+      if (a.id === task?.default_run_config_id) return -1
+      if (b.id === task?.default_run_config_id) return 1
 
       // If we have evaluator and score summary, sort by the last output score
       if (evaluator?.output_scores?.length && score_summary?.results) {
@@ -364,42 +379,11 @@
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
-
-  async function set_current_run_config(
-    run_config_id: string | null | undefined,
-  ) {
-    if (!run_config_id) {
-      return
-    }
-    try {
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
-              run_config_id: run_config_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      posthog.capture("set_current_run_config", {})
-      // Update the evaluator with the latest
-      evaluator = data
-    } catch (error) {
-      eval_error = createKilnError(error)
-    }
-  }
 </script>
 
 <AppPage
-  title="Compare Run Methods"
-  subtitle="Find the best method of running your task."
+  title="Compare Run Configurations"
+  subtitle="Find the best configuration for running your task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
   breadcrumbs={[
@@ -439,7 +423,7 @@
         <div>
           <div class="text-xl font-bold">Judge</div>
           <div class="text-sm text-gray-500 mb-2">
-            Select the judge to use when comparing run methods.
+            Select the judge to use when comparing run configurations.
           </div>
 
           <FormElement
@@ -495,12 +479,12 @@
       {#if current_task_run_configs?.length}
         <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
           <div class="grow">
-            <div class="text-xl font-bold">Run Methods</div>
+            <div class="text-xl font-bold">Run Configurations</div>
             <div class="text-xs text-gray-500">
               Find the best method of running your task comparing various
               prompts, models, fine-tunes, and more.
               <InfoTooltip
-                tooltip_text={`Scores are generated by running each 'run method' on each item of your eval dataset, generating task outputs. Then those outputs are evaluated with the selected judge (${current_eval_config?.name || "select above"}).`}
+                tooltip_text={`Scores are generated by running each 'run config' on each item of your eval dataset, generating task outputs. Then those outputs are evaluated with the selected judge (${current_eval_config?.name || "select above"}).`}
                 position="left"
                 no_pad={true}
               />
@@ -516,8 +500,8 @@
             <button
               class="btn btn-mid mr-2"
               on:click={() => {
-                add_run_method_component?.show()
-              }}>Add Run Method</button
+                create_new_run_config_dialog?.show()
+              }}>Add Run Configuration</button
             >
 
             <RunEval
@@ -527,8 +511,8 @@
               {eval_id}
               {current_eval_config_id}
               run_all={true}
-              btn_primary={!focus_select_eval_config}
-              eval_type="run_method"
+              btn_primary={focus_run_all}
+              eval_type="run_config"
               on_run_complete={() => {
                 get_score_summary()
               }}
@@ -544,20 +528,10 @@
               data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
             >
               <Warning
-                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Eval' to generate missing results.`}
+                warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Evals' to generate missing results.`}
                 tight={true}
               />
             </button>
-          </div>
-        {:else if should_select_eval_config}
-          <div class="mb-4">
-            <Warning
-              warning_message="Click 'Set as Default' below to select a winner."
-              warning_color={focus_select_eval_config ? "primary" : "gray"}
-              warning_icon="info"
-              large_icon={focus_select_eval_config}
-              tight={true}
-            />
           </div>
         {/if}
 
@@ -566,7 +540,7 @@
             <thead>
               <tr>
                 <th class="max-w-[400px]">
-                  <div>Run Method</div>
+                  <div>Run Configuration</div>
                   <div class="font-normal">How task output is generated</div>
                 </th>
                 <th class="text-center">Status</th>
@@ -590,13 +564,24 @@
                   getRunConfigPromptInfoText(task_run_config)}
                 <tr class="max-w-[400px]">
                   <td>
-                    <div class="font-medium">
-                      {model_name(
-                        task_run_config?.run_config_properties?.model_name,
+                    <div class="flex items-center gap-2">
+                      <div class="font-medium">
+                        {task_run_config.name}
+                      </div>
+                      {#if task_run_config.id === task?.default_run_config_id}
+                        <span
+                          class="badge badge-sm badge-primary badge-outline"
+                        >
+                          Default
+                        </span>
+                      {/if}
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      Model: {getDetailedModelName(
+                        task_run_config,
                         $model_info,
                       )}
                     </div>
-
                     <div class="text-sm text-gray-500">
                       Prompt: <a
                         href={prompt_link(
@@ -620,15 +605,6 @@
                         />
                       {/if}
                     </div>
-                    <div class="text-sm text-gray-500">
-                      Provider: {provider_name_from_id(
-                        task_run_config?.run_config_properties
-                          ?.model_provider_name,
-                      )}
-                    </div>
-                    <div class="text-sm text-gray-500">
-                      Run Method Name: {task_run_config.name}
-                    </div>
                   </td>
                   <td class="text-sm text-center">
                     {#if percent_complete < 1.0}
@@ -642,7 +618,7 @@
                           {eval_id}
                           {current_eval_config_id}
                           run_config_ids={[task_run_config.id || ""]}
-                          eval_type="run_method"
+                          eval_type="run_config"
                           btn_size="xs"
                           btn_primary={false}
                           btn_class="min-w-[120px]"
@@ -653,27 +629,6 @@
                       </div>
                     {:else}
                       <div>Complete</div>
-                    {/if}
-                    {#if task_run_config.id == evaluator.current_run_config_id}
-                      <button
-                        class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
-                        on:click={() => {
-                          set_current_run_config("None")
-                        }}
-                      >
-                        Default <span class="">&#x2715;</span>
-                      </button>
-                    {:else}
-                      <button
-                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
-                          ? 'btn-primary'
-                          : 'btn-secondary btn-outline'}"
-                        on:click={() => {
-                          set_current_run_config(task_run_config.id)
-                        }}
-                      >
-                        Set as Default
-                      </button>
                     {/if}
                     {#if percent_complete > 0}
                       <div class="mt-1">
@@ -701,11 +656,11 @@
           </table>
         </div>
       {:else}
-        <div class="text-xl font-bold">Compare Run Methods</div>
+        <div class="text-xl font-bold">Compare Run Configurations</div>
         <div class="text-sm text-gray-500">
-          Find the best method of running your task comparing various prompts,
-          models, fine-tunes, and more. Add one or more task run methods to get
-          started.
+          Find the best way of running your task comparing various prompts,
+          models, fine-tunes, and more. Add one or more task run configurations
+          to get started.
         </div>
 
         <button
@@ -713,21 +668,20 @@
             ? 'btn-primary'
             : ''}"
           on:click={() => {
-            add_run_method_component?.show()
+            create_new_run_config_dialog?.show()
           }}
         >
-          Add Run Method
+          Add Run Config
         </button>
       {/if}
     </div>
   {/if}
 </AppPage>
 
-<AddRunMethod
-  bind:this={add_run_method_component}
+<CreateNewRunConfigDialog
+  bind:this={create_new_run_config_dialog}
+  subtitle="Your evaluator can compare multiple run configurations to find which one produces
+    the highest scores on your eval dataset."
   {project_id}
-  {task_id}
-  run_method_added={(_) => {
-    get_task_run_configs()
-  }}
+  {task}
 />

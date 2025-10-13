@@ -136,8 +136,10 @@
     switch (chunker_type) {
       case "fixed_window":
         return `The ${friendly_chunker_type} chunking algorithm splits the text into fixed-size chunks of a specified number of words, while respecting sentence boundaries.`
+      case "semantic":
+        return `The ${friendly_chunker_type} chunking algorithm splits the text into semantically related chunks using semantic similarity to group sentences together.`
       default: {
-        // trigger a type error if there is a new output format, but don't handle it
+        // trigger a type error if there is a new chunker type, but don't handle it
         // in the switch
         const exhaustiveCheck: never = chunker_type
         return exhaustiveCheck

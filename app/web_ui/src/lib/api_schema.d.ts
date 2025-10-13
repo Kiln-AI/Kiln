@@ -437,6 +437,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/tag_counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document Tag Counts */
+        get: operations["get_document_tag_counts_api_projects__project_id__documents_tag_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -1526,23 +1543,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Set Default Run Config */
-        post: operations["set_default_run_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_run_config__run_config_id__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval": {
         parameters: {
             query?: never;
@@ -2233,7 +2233,7 @@ export interface components {
          * ChunkerType
          * @enum {string}
          */
-        ChunkerType: "fixed_window";
+        ChunkerType: "fixed_window" | "semantic";
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -2575,21 +2575,8 @@ export interface components {
              * @description The provider of the model used to generate the input
              */
             input_provider: string;
-            /**
-             * Output Model Name
-             * @description The name of the model to use
-             */
-            output_model_name: string;
-            /**
-             * Output Provider
-             * @description The provider of the model to use
-             */
-            output_provider: string;
-            /**
-             * Prompt Method
-             * @description The prompt method used to generate the output
-             */
-            prompt_method: string;
+            /** @description The run config properties to use for the output */
+            output_run_config_properties: components["schemas"]["RunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
@@ -2905,11 +2892,6 @@ export interface components {
              */
             current_config_id?: string | null;
             /**
-             * Current Run Config Id
-             * @description The id of the a run config which was selected as the best run config for this eval. The run config must belong to the parent Task.
-             */
-            current_run_config_id?: string | null;
-            /**
              * Eval Set Filter Id
              * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id.
              */
@@ -3065,7 +3047,6 @@ export interface components {
             /** Golden Dataset Fully Rated Count */
             golden_dataset_fully_rated_count: number;
             current_eval_method: components["schemas"]["EvalConfig"] | null;
-            current_run_method: components["schemas"]["TaskRunConfig"] | null;
         };
         /** EvalResultSummary */
         EvalResultSummary: {
@@ -3858,6 +3839,8 @@ export interface components {
             uncensored: boolean;
             /** Suggested For Uncensored Data Gen */
             suggested_for_uncensored_data_gen: boolean;
+            /** Supports Vision */
+            supports_vision: boolean;
             /** Supports Doc Extraction */
             supports_doc_extraction: boolean;
             /** Suggested For Doc Extraction */
@@ -6081,6 +6064,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": string[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_tag_counts_api_projects__project_id__documents_tag_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -8527,40 +8543,6 @@ export interface operations {
                 task_id: string;
                 eval_id: string;
                 eval_config_id: string | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Eval"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_default_run_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_run_config__run_config_id__post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                eval_id: string;
-                run_config_id: string | null;
             };
             cookie?: never;
         };

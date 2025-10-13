@@ -622,24 +622,40 @@ class RagIndexingStepRunner(AbstractRagStepRunner):
         async with shared_async_lock_manager.acquire(
             self.lock_key, timeout=LOCK_TIMEOUT_SECONDS
         ):
+            found_records = False
             vector_dimensions: int | None = None
 
             # infer dimensionality - we peek into the first record to get the vector dimensions
             # vector dimensions are not stored in the config because they are derived from the model
             # and in some cases dynamic shortening of the vector (called Matryoshka Representation Learning)
-            async for doc_batch in self.collect_records(
-                batch_size=1,
-            ):
-                if len(doc_batch) == 0:
-                    # there are no records, because there may be nothing in the upstream steps at all yet
-                    return
-                else:
+            records_generator = self.collect_records(batch_size=1)
+            try:
+                async for doc_batch in records_generator:
                     doc = doc_batch[0]
                     embedding = doc.embeddings[0]
                     vector_dimensions = len(embedding.vector)
+                    found_records = True
                     break
+            finally:
+                # since we break out early, we need to explicitly close the generator to avoid warnings
+                await records_generator.aclose()
 
-            if vector_dimensions is None:
+            if not found_records:
+                # there are no records, because there may be nothing in the upstream steps at all yet
+                yield RagStepRunnerProgress(
+                    success_count=0,
+                    error_count=0,
+                    logs=[
+                        LogMessage(
+                            level="info",
+                            message="No records to index.",
+                        ),
+                    ],
+                )
+                return
+
+            # should not happen - we should always be throwing errors earlier if vector dimensions cannot be inferred
+            if vector_dimensions is None:  # pragma: no cover
                 raise ValueError("Vector dimensions are not set")
 
             vector_store = await vector_store_adapter_for_config(

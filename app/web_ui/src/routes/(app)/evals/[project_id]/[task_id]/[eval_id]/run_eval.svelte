@@ -15,7 +15,7 @@
     | "complete"
     | "complete_with_errors" = "not_started"
 
-  export let eval_type: "eval_config" | "run_method"
+  export let eval_type: "eval_config" | "run_config"
   export let project_id: string
   export let task_id: string
   export let eval_id: string
@@ -24,7 +24,7 @@
   export let run_config_ids: string[] = []
   let run_url: string = ""
   $: {
-    if (eval_type === "run_method") {
+    if (eval_type === "run_config") {
       const params = new URLSearchParams()
 
       if (run_all) {
@@ -54,7 +54,7 @@
   let eval_error_count = 0
 
   function run_eval(): boolean {
-    if (eval_type === "run_method" && !current_eval_config_id) {
+    if (eval_type === "run_config" && !current_eval_config_id) {
       eval_run_error = new KilnError(
         "Select all options needed to run the eval.",
         null,
@@ -66,7 +66,7 @@
     }
 
     if (
-      eval_type === "run_method" &&
+      eval_type === "run_config" &&
       !run_all &&
       (!run_config_ids || run_config_ids.length === 0)
     ) {

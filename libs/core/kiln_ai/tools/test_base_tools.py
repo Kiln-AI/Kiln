@@ -1,6 +1,6 @@
 import pytest
 
-from kiln_ai.tools.base_tool import KilnTool, KilnToolInterface
+from kiln_ai.tools.base_tool import KilnTool, KilnToolInterface, ToolCallResult
 
 
 class TestKilnToolInterface:
@@ -15,8 +15,8 @@ class TestKilnToolInterface:
 class ConcreteTestTool(KilnTool):
     """Concrete implementation of KilnTool for testing."""
 
-    def run(self, **kwargs) -> str:
-        return f"test_result: {kwargs}"
+    def run(self, **kwargs) -> ToolCallResult:
+        return ToolCallResult(output=f"test_result: {kwargs}")
 
 
 class TestKilnTool:
@@ -133,7 +133,7 @@ class TestKilnTool:
         )
 
         result = tool.run(message="hello", extra_param=42)
-        assert result == "test_result: {'message': 'hello', 'extra_param': 42}"
+        assert result.output == "test_result: {'message': 'hello', 'extra_param': 42}"
 
     def test_cannot_instantiate_abstract_kiln_tool_directly(self):
         """Test that KilnTool cannot be instantiated directly due to abstract run method."""

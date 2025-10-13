@@ -242,13 +242,16 @@ function createRagProgressStore() {
         ) {
           progress_ui_state.set({
             title: "Processing Documents",
-            body: "",
+            body:
+              status === "completed_with_errors"
+                ? "Completed with errors"
+                : "Completed",
             link: `/docs/rag_configs/${project_id}`,
             cta:
               status === "completed_with_errors"
                 ? "View Errors"
                 : "View Results",
-            progress: 100,
+            progress: 1,
             step_count: null,
             current_step: 0,
           })
@@ -323,9 +326,9 @@ function createRagProgressStore() {
               link: `/docs/rag_configs/${project_id}`,
               cta: "View Progress",
               progress:
-                (payload.total_document_completed_count /
-                  Math.max(payload.total_document_count, 1)) *
-                100,
+                compute_overall_completion_percentage(
+                  getProjectState(project_id).progress[rag_config_id],
+                ) / 100,
               step_count: null,
               current_step: null,
             })
@@ -365,6 +368,20 @@ function createRagProgressStore() {
             ],
           },
         }))
+        if (
+          getProjectState(project_id).last_started_rag_config_id ===
+          rag_config_id
+        ) {
+          progress_ui_state.set({
+            title: "Processing Documents",
+            body: "Completed with errors",
+            link: `/docs/rag_configs/${project_id}`,
+            cta: "View Errors",
+            progress: null,
+            step_count: null,
+            current_step: null,
+          })
+        }
         finalize("completed_with_errors")
       }
     })
@@ -574,25 +591,28 @@ export function compute_overall_completion_percentage(
   }
 
   if (
-    rag_progress?.total_document_completed_count ===
-      rag_progress?.total_document_count &&
-    rag_progress?.total_chunk_completed_count ===
-      rag_progress?.total_chunk_count
+    rag_progress.total_document_completed_count ===
+      rag_progress.total_document_count &&
+    rag_progress.total_chunk_completed_count === rag_progress.total_chunk_count
   ) {
     return 100
   }
 
   const extraction_completion_percentage =
-    rag_progress.total_document_extracted_count /
-    rag_progress.total_document_count
+    (rag_progress.total_document_extracted_count +
+      rag_progress.total_document_extracted_error_count) /
+    (rag_progress.total_document_count || 1)
   const chunking_completion_percentage =
-    rag_progress.total_document_chunked_count /
-    rag_progress.total_document_count
+    (rag_progress.total_document_chunked_count +
+      rag_progress.total_document_chunked_error_count) /
+    (rag_progress.total_document_count || 1)
   const embedding_completion_percentage =
-    rag_progress.total_document_embedded_count /
-    rag_progress.total_document_count
+    (rag_progress.total_document_embedded_count +
+      rag_progress.total_document_embedded_error_count) /
+    (rag_progress.total_document_count || 1)
   const indexing_completion_percentage =
-    rag_progress.total_chunks_indexed_count /
+    (rag_progress.total_chunks_indexed_count +
+      rag_progress.total_chunks_indexed_error_count) /
     (rag_progress?.total_chunk_count || 1)
 
   // arbitrary weights, but roughly based on how long each step takes

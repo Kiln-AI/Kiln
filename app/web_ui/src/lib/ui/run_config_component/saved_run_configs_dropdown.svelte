@@ -30,6 +30,7 @@
   } from "$lib/stores/run_configs_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
+  export let title: string = "Run Configuration"
   export let project_id: string
   export let current_task: Task
   export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
@@ -40,6 +41,7 @@
   export let info_description: string = ""
   export let description: string = ""
   export let run_page: boolean = true
+  export let auto_select_default: boolean = true
 
   $: show_save_button = run_page && selected_run_config_id === "custom"
   $: show_set_default_button =
@@ -57,7 +59,7 @@
   }
 
   // Initialization of selected_run_config_id
-  $: if (selected_run_config_id === null) {
+  $: if (auto_select_default && selected_run_config_id === null) {
     if (default_run_config_id) {
       selected_run_config_id = default_run_config_id
     } else {
@@ -228,7 +230,7 @@
 
 <div>
   <FormElement
-    label="Run Configuration"
+    label={title}
     {description}
     {info_description}
     inputType="fancy_select"

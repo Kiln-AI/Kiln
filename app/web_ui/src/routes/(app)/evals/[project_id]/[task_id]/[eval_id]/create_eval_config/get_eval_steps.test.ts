@@ -32,7 +32,6 @@ function createMockEval(
     description: "A test evaluator",
     template,
     current_config_id: null,
-    current_run_config_id: null,
     eval_set_filter_id: "test-filter-id",
     eval_configs_filter_id: "test-configs-filter-id",
     output_scores: [],

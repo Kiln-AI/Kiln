@@ -12,6 +12,7 @@ from kiln_ai.adapters.vector_store.lancedb_helpers import (
     convert_to_llama_index_node,
     deterministic_chunk_id,
 )
+from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 
@@ -29,12 +30,24 @@ class VectorStoreLoader:
         self.project = project
         self.rag_config = rag_config
 
+    def filtered_documents(self) -> List[Document]:
+        # we target all documents if no tags are specified
+        if not self.rag_config.tags:
+            return self.project.documents()
+
+        filtered_docs: List[Document] = []
+        for document in self.project.documents():
+            if any(tag in document.tags for tag in self.rag_config.tags):
+                filtered_docs.append(document)
+
+        return filtered_docs
+
     async def iter_llama_index_nodes(
         self, batch_size: int = 100
     ) -> AsyncGenerator[List[TextNode], None]:
         """Returns a generator of documents with their corresponding chunks and embeddings."""
         batch: List[TextNode] = []
-        for document in self.project.documents():
+        for document in self.filtered_documents():
             await asyncio.sleep(0)
             for extraction in deduplicate_extractions(document.extractions()):
                 if (

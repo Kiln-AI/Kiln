@@ -9,7 +9,19 @@ export function getDetailedModelName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {
-  return `${model_name(config.run_config_properties.model_name, model_info)} (${provider_name_from_id(config.run_config_properties.model_provider_name)})`
+  return getDetailedModelNameFromParts(
+    config.run_config_properties.model_name,
+    config.run_config_properties.model_provider_name,
+    model_info,
+  )
+}
+
+export function getDetailedModelNameFromParts(
+  model_name_part: string,
+  model_provider_part: string,
+  model_info: ProviderModels | null,
+): string {
+  return `${model_name(model_name_part, model_info)} (${provider_name_from_id(model_provider_part)})`
 }
 
 export function getStaticPromptDisplayName(
@@ -47,7 +59,7 @@ export function getRunConfigPromptDisplayName(
     return prompt_name
   }
 
-  return task_run_config.name || "Unnamed Run Method"
+  return task_run_config.name || "Unnamed Run Config"
 }
 
 export function getRunConfigPromptInfoText(

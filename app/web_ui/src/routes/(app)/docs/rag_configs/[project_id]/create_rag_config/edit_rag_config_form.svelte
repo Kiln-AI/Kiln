@@ -345,7 +345,7 @@
       }
 
       let extractor_model: string | undefined = undefined
-      let chunker_type: "fixed_window" | undefined = undefined
+      let chunker_type: "fixed_window" | "semantic" | undefined = undefined
       let chunker_size: unknown = undefined
       let chunker_overlap: unknown = undefined
       let embedding_model: string | undefined = undefined
