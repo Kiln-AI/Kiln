@@ -71,14 +71,20 @@
       )
       return
     }
-    const eval_id = project_id + "::" + task_id + "::" + (evaluator.id ?? "")
+    const eval_id = evaluator.id
+      ? `${project_id}::${task_id}::${evaluator.id}`
+      : null
     const template_id = evaluator.template ?? null
 
     // build URL with parameters and redirect to synth page
     const params = new URLSearchParams()
     params.set("reason", "eval")
-    if (eval_id) params.set("eval_id", eval_id)
-    if (template_id) params.set("template_id", template_id)
+    if (eval_id) {
+      params.set("eval_id", eval_id)
+    }
+    if (template_id) {
+      params.set("template_id", template_id)
+    }
 
     // .set will automatically URL encode
     params.set("splits", JSON.stringify(splits))
