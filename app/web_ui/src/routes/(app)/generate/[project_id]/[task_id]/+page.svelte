@@ -418,7 +418,7 @@
   // Worker function that processes items until queue is empty
   async function generate_worker(
     queue: SampleData[],
-    run_config_properties: RunConfigProperties | undefined,
+    run_config_properties: RunConfigProperties,
   ) {
     while (queue.length > 0) {
       const sample = queue.shift()!
@@ -452,6 +452,9 @@
       // Grab the run config properties before it is no longer available
       const run_config_properties =
         run_config_component?.run_options_as_run_config_properties()
+      if (!run_config_properties) {
+        throw new KilnError("Run config properties not found")
+      }
 
       generated_count = 0
       generate_all_running = true
@@ -540,12 +543,9 @@
   async function generate_sample(
     sample: SampleData,
     topic_path: string[] | undefined,
-    run_config_properties: RunConfigProperties | undefined,
+    run_config_properties: RunConfigProperties,
   ): Promise<GenerateSampleResponse> {
     try {
-      if (!run_config_properties) {
-        throw new KilnError("Run config properties not found")
-      }
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
