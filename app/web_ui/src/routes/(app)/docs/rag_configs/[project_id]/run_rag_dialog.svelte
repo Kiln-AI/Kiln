@@ -9,7 +9,7 @@
     ragProgressStore,
     getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
-  import Checkmark from "$lib/ui/icons/checkmark.svelte"
+  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
 
   $: projectStateStore = getProjectRagStateStore(project_id)
   $: ragProgressState = $projectStateStore
@@ -267,7 +267,7 @@
           >
             {#if is_step_completed(step.name, config_progress)}
               <div class="w-4 h-4">
-                <Checkmark />
+                <CheckmarkIcon />
               </div>
             {:else if is_running}
               <div class="bg-current rounded-full loading loading-sm"></div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Checkmark from "./icons/checkmark.svelte"
+  import CheckmarkIcon from "./icons/checkmark_icon.svelte"
 
   export let title: string
   export let subtitle: string
@@ -11,7 +11,7 @@
   class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
 >
   <div class="w-10 h-10 text-success mb-2">
-    <Checkmark />
+    <CheckmarkIcon />
   </div>
   <div class="font-medium mb-2">{title}</div>
   <div class="max-w-96 text-center font-light">
