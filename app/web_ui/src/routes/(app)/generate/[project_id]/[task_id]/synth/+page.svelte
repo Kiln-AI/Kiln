@@ -1,23 +1,23 @@
 <script lang="ts">
-  import AppPage from "../../../app_page.svelte"
+  import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
   import { current_task } from "$lib/stores"
   import type { Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import type { SampleDataNode } from "./gen_model"
-  import GeneratedDataNode from "./generated_data_node.svelte"
+  import type { SampleDataNode } from "../gen_model"
+  import GeneratedDataNode from "../generated_data_node.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import { type SampleData } from "./gen_model"
+  import { type SampleData } from "../gen_model"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
-  import DataGenIntro from "./data_gen_intro.svelte"
-  import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
-  import SynthDataGuidance from "./synth_data_guidance.svelte"
+  import DataGenIntro from "../data_gen_intro.svelte"
+  import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
+  import SynthDataGuidance from "../synth_data_guidance.svelte"
   import { onDestroy } from "svelte"
   import { get_splits_from_url_param } from "$lib/utils/splits_util"
-  import DataGenDescription from "./data_gen_description.svelte"
+  import DataGenDescription from "../data_gen_description.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { get } from "svelte/store"
@@ -85,7 +85,7 @@
     if (confirm(msg)) {
       clear_all_state()
       // Load the page again with clear URL params to get fresh state
-      window.location.href = `/generate/${project_id}/${task_id}`
+      window.location.href = `/generate/${project_id}/${task_id}/synth`
     }
   }
 
@@ -108,6 +108,13 @@
     clear_all_state()
     // reload the window keeping the same URL
     window.location.reload()
+    return true
+  }
+
+  function clear_state_and_go_to_intro() {
+    clear_all_state()
+    // Redirect back to intro to choose mode
+    window.location.href = `/generate/${project_id}/${task_id}`
     return true
   }
 
@@ -689,7 +696,6 @@
             }}
             {project_id}
             {task_id}
-            on_setup={setup}
             bind:is_setup
           />
         </div>
@@ -1208,8 +1214,7 @@
     {
       label: "Keep Current Session",
       action: () => {
-        // Load the page without URL params to get fresh state
-        window.location.href = `/generate/${project_id}/${task_id}`
+        window.location.href = `/generate/${project_id}/${task_id}/synth`
         return true
       },
     },
@@ -1239,10 +1244,7 @@
   action_buttons={[
     {
       label: "New Session",
-      action: () => {
-        clear_all_with_confirm()
-        return true
-      },
+      action: clear_state_and_go_to_intro,
     },
     {
       label: "Continue Session",
