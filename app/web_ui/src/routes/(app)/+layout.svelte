@@ -10,6 +10,9 @@
   import { beforeNavigate } from "$app/navigation"
   import { setContext } from "svelte"
   import { writable } from "svelte/store"
+  import FileIcon from "$lib/ui/icons/file_icon.svelte"
+  import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -216,45 +219,9 @@
           href={`/evals/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Evals ? "active" : ""}
         >
-          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-          <svg
-            class="w-6 h-6 mr-2"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M6 15.8L7.14286 17L10 14"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M6 8.8L7.14286 10L10 7"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M13 9L18 9"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M13 16L18 16"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
+          <div class="h-6 w-6 mr-2">
+            <EvalIcon />
+          </div>
 
           Evals</a
         >
@@ -293,74 +260,9 @@
           href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.FineTune ? "active" : ""}
         >
-          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-          <svg
-            class="w-6 h-6 mr-2"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="2"
-              transform="rotate(180 12 12)"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <circle
-              cx="20"
-              cy="14"
-              r="2"
-              transform="rotate(180 20 14)"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <circle
-              cx="2"
-              cy="2"
-              r="2"
-              transform="matrix(-1 8.74228e-08 8.74228e-08 1 6 8)"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M12 8L12 5"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M20 10L20 5"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M4 14L4 19"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M12 19L12 16"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M20 19L20 18"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M4 5L4 6"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
+          <div class="h-6 w-6 mr-2">
+            <FinetuneIcon />
+          </div>
 
           Fine Tune</a
         >
@@ -397,37 +299,9 @@
           href={`/docs/${$ui_state.current_project_id}`}
           class={section == Section.Documents ? "active" : ""}
         >
-          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-          <svg
-            class="w-6 h-6 mr-2"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M3 10C3 6.22876 3 4.34315 4.17157 3.17157C5.34315 2 7.22876 2 11 2H13C16.7712 2 18.6569 2 19.8284 3.17157C21 4.34315 21 6.22876 21 10V14C21 17.7712 21 19.6569 19.8284 20.8284C18.6569 22 16.7712 22 13 22H11C7.22876 22 5.34315 22 4.17157 20.8284C3 19.6569 3 17.7712 3 14V10Z"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M8 12H16"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M8 8H16"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M8 16H13"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-          </svg>
+          <div class="h-6 w-6 mr-2">
+            <FileIcon kind="document" />
+          </div>
           Docs &amp; Search</a
         >
       </li>
