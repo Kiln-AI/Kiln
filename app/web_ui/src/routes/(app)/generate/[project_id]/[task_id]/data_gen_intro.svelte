@@ -6,6 +6,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import MultiIntro from "$lib/ui/multi_intro.svelte"
   import { onMount } from "svelte"
+  import { goto } from "$app/navigation"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
 
@@ -18,17 +19,6 @@
   onMount(async () => {
     load_finetune_dataset_info()
   })
-
-  export let on_setup:
-    | ((
-        gen_type: "training" | "eval",
-        template_id: string | null,
-        eval_id: string | null,
-        project_id: string,
-        task_id: string,
-        splits: Record<string, number>,
-      ) => void)
-    | undefined = undefined
 
   let evals_dialog: Dialog | null = null
   let evals_loading: boolean = false
@@ -83,11 +73,25 @@
       )
       return
     }
-    const eval_id = project_id + "::" + task_id + "::" + (evaluator.id ?? "")
+    const eval_id = evaluator.id
+      ? `${project_id}::${task_id}::${evaluator.id}`
+      : null
     const template_id = evaluator.template ?? null
 
-    on_setup?.("eval", template_id, eval_id, project_id, task_id, splits)
+    // build URL with parameters and redirect to synth page
+    const params = new URLSearchParams()
+    params.set("reason", "eval")
+    if (eval_id) {
+      params.set("eval_id", eval_id)
+    }
+    if (template_id) {
+      params.set("template_id", template_id)
+    }
 
+    // .set will automatically URL encode
+    params.set("splits", JSON.stringify(splits))
+
+    goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
     evals_dialog?.close()
   }
 
@@ -158,7 +162,16 @@
   function generate_fine_tuning_data_for_tag(tag: string) {
     const splits: Record<string, number> = {}
     splits[tag] = 1.0
-    on_setup?.("training", "fine_tuning", null, project_id, task_id, splits)
+
+    // build URL with parameters and redirect to synth page
+    const params = new URLSearchParams()
+    params.set("reason", "fine_tune")
+    params.set("template_id", "fine_tuning")
+
+    // .set will automatically URL encode
+    params.set("splits", JSON.stringify(splits))
+
+    goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
     fine_tuning_dialog?.close()
   }
 
