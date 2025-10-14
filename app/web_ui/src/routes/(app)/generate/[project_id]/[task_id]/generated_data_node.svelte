@@ -6,7 +6,7 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { ui_state } from "$lib/stores"
   import { createEventDispatcher } from "svelte"
-  import IncrementUi from "./increment_ui.svelte"
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
   import GenerateSamplesModal from "./generate_samples_modal.svelte"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
