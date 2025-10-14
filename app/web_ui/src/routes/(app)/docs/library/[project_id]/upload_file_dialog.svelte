@@ -2,14 +2,14 @@
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import TrashIcon from "$lib/ui/trash_icon.svelte"
-  import UploadIcon from "$lib/ui/upload_icon.svelte"
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import { load_document_tags } from "$lib/stores/document_tag_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
   import posthog from "posthog-js"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
+  import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
 
   export let onUploadCompleted: () => void
 
