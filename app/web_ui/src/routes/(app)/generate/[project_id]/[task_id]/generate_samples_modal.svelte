@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { SampleDataNode } from "./gen_model"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
-  import IncrementUi from "./increment_ui.svelte"
-  import { KilnError } from "../../../../../lib/utils/error_handlers"
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
+  import { KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
