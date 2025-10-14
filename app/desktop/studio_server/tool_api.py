@@ -346,6 +346,9 @@ def connect_tool_servers_api(app: FastAPI):
                     is_archived=tool.properties.get("is_archived", False),
                 )
             )
+
+        # Sort the result and put archived tools at the end
+        results.sort(key=lambda x: x.is_archived)
         return results
 
     @app.get("/api/projects/{project_id}/kiln_task_tools")
