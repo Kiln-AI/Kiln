@@ -1033,6 +1033,25 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude 4.5 Haiku
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_4_5_haiku,
+        friendly_name="Claude 4.5 Haiku",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-haiku-4.5",
+                structured_output_mode=StructuredOutputMode.function_calling,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-haiku-4-5-20251001",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+            ),
+        ],
+    ),
     # Claude 3.5 Haiku
     KilnModel(
         family=ModelFamily.claude,
@@ -1053,25 +1072,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="claude-3-5-haiku",
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
-            ),
-        ],
-    ),
-    # Claude 4.5 Haiku
-    KilnModel(
-        family=ModelFamily.claude,
-        name=ModelName.claude_4_5_haiku,
-        friendly_name="Claude 4.5 Haiku",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="anthropic/claude-haiku-4.5",
-                structured_output_mode=StructuredOutputMode.function_calling,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.anthropic,
-                model_id="claude-haiku-4-5-20251001",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                temp_top_p_exclusive=True,
             ),
         ],
     ),
