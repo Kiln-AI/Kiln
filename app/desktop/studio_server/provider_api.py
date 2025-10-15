@@ -1,18 +1,27 @@
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+import httpx
 import litellm
 import openai
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from kiln_ai.adapters.docker_model_runner_tools import (
+    DockerModelRunnerConnection,
+    get_docker_model_runner_connection,
+)
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    KilnEmbeddingModel,
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModel,
     KilnModelProvider,
-    ModelName,
     ModelProviderName,
     StructuredOutputMode,
     built_in_models,
@@ -78,6 +87,52 @@ async def connect_ollama(custom_ollama_url: str | None = None) -> OllamaConnecti
     return ollama_connection
 
 
+async def connect_docker_model_runner(
+    docker_model_runner_custom_url: str | None = None,
+) -> DockerModelRunnerConnection:
+    if (
+        docker_model_runner_custom_url
+        and not docker_model_runner_custom_url.startswith("http://")
+        and not docker_model_runner_custom_url.startswith("https://")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Docker Model Runner URL. It must start with http:// or https://",
+        )
+
+    try:
+        docker_connection = await get_docker_model_runner_connection(
+            docker_model_runner_custom_url
+        )
+
+        if docker_connection is None:
+            raise HTTPException(
+                status_code=417,
+                detail="Failed to connect. Ensure Docker Model Runner is running and you enabled TCP connections. See the Docker Model Runner docs for instructions.",
+            )
+
+    except HTTPException:
+        # Preserve status/details from earlier raises (e.g., 400/417)
+        raise
+    except (openai.APIError, httpx.RequestError) as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to Docker Model Runner: {e}",
+        )
+
+    # Save the custom Docker URL if used to connect
+    if (
+        docker_model_runner_custom_url
+        and docker_model_runner_custom_url
+        != Config.shared().docker_model_runner_base_url
+    ):
+        Config.shared().save_setting(
+            "docker_model_runner_base_url", docker_model_runner_custom_url
+        )
+
+    return docker_connection
+
+
 class ModelDetails(BaseModel):
     id: str
     name: str
@@ -86,6 +141,14 @@ class ModelDetails(BaseModel):
     suggested_for_data_gen: bool
     supports_logprobs: bool
     suggested_for_evals: bool
+    supports_function_calling: bool
+    uncensored: bool
+    suggested_for_uncensored_data_gen: bool
+    supports_vision: bool
+    supports_doc_extraction: bool
+    suggested_for_doc_extraction: bool
+    multimodal_capable: bool = Field(default=False)
+    multimodal_mime_types: List[str] | None = Field(default=None)
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
@@ -99,13 +162,32 @@ class AvailableModels(BaseModel):
     models: List[ModelDetails]
 
 
+class EmbeddingModelDetails(BaseModel):
+    id: str
+    name: str
+    n_dimensions: int
+    max_input_tokens: int | None
+    supports_custom_dimensions: bool
+    suggested_for_chunk_embedding: bool
+
+
+class EmbeddingProvider(BaseModel):
+    provider_name: str
+    provider_id: str
+    models: List[EmbeddingModelDetails]
+
+
 class ProviderModel(BaseModel):
     id: str
     name: str
 
 
 class ProviderModels(BaseModel):
-    models: Dict[ModelName, ProviderModel]
+    models: Dict[str, ProviderModel]
+
+
+class ProviderEmbeddingModels(BaseModel):
+    models: Dict[EmbeddingModelName, ProviderModel]
 
 
 def connect_provider_api(app: FastAPI):
@@ -149,6 +231,15 @@ def connect_provider_api(app: FastAPI):
                         (m for m in models if m.provider_id == provider.name), None
                     )
                     if available_models:
+                        # no need to couple the frontend to our backend mimetypes enum
+                        mime_types_as_str = (
+                            [
+                                str(mime_type)
+                                for mime_type in provider.multimodal_mime_types
+                            ]
+                            if provider.multimodal_mime_types
+                            else None
+                        )
                         available_models.models.append(
                             ModelDetails(
                                 id=model.name,
@@ -157,10 +248,23 @@ def connect_provider_api(app: FastAPI):
                                 supports_data_gen=provider.supports_data_gen,
                                 suggested_for_data_gen=provider.suggested_for_data_gen,
                                 supports_logprobs=provider.supports_logprobs,
+                                supports_function_calling=provider.supports_function_calling,
                                 suggested_for_evals=provider.suggested_for_evals,
+                                uncensored=provider.uncensored,
+                                suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
+                                supports_vision=provider.supports_vision,
+                                supports_doc_extraction=provider.supports_doc_extraction,
+                                suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
+                                multimodal_capable=provider.multimodal_capable,
+                                multimodal_mime_types=mime_types_as_str,
                             )
                         )
+
+        # Docker Model Runner is special: check which models are installed
+        docker_models = await available_docker_model_runner_models()
+        if docker_models:
+            models.insert(0, docker_models)
 
         # Ollama is special: check which models are installed
         ollama_models = await available_ollama_models()
@@ -183,11 +287,74 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
+    @app.get("/api/providers/embedding_models")
+    async def get_providers_embedding_models() -> ProviderEmbeddingModels:
+        models = {}
+        for model in built_in_embedding_models:
+            models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
+        return ProviderEmbeddingModels(models=models)
+
+    # returns map, of provider name to list of model names
+    @app.get("/api/available_embedding_models")
+    async def get_available_embedding_models() -> List[EmbeddingProvider]:
+        # Providers with just keys can return all their models if keys are set
+        key_providers: List[str] = []
+
+        for provider, provider_warning in provider_warnings.items():
+            has_keys = True
+            for required_key in provider_warning.required_config_keys:
+                if Config.shared().get_value(required_key) is None:
+                    has_keys = False
+                    break
+            if has_keys:
+                key_providers.append(provider)
+
+        models: List[EmbeddingProvider] = [
+            EmbeddingProvider(
+                provider_name=provider_name_from_id(provider),
+                provider_id=provider,
+                models=[],
+            )
+            for provider in key_providers
+        ]
+
+        for model in built_in_embedding_models:
+            for provider in model.providers:
+                if provider.name in key_providers:
+                    available_models = next(
+                        (m for m in models if m.provider_id == provider.name), None
+                    )
+                    if available_models:
+                        available_models.models.append(
+                            EmbeddingModelDetails(
+                                id=model.name,
+                                name=model.friendly_name,
+                                n_dimensions=provider.n_dimensions,
+                                max_input_tokens=provider.max_input_tokens,
+                                supports_custom_dimensions=provider.supports_custom_dimensions,
+                                suggested_for_chunk_embedding=provider.suggested_for_chunk_embedding,
+                            )
+                        )
+
+        # Ollama is special: check which models are installed
+        ollama_models = await available_ollama_embedding_models()
+        if ollama_models:
+            models.insert(0, ollama_models)
+
+        return models
+
     @app.get("/api/provider/ollama/connect")
     async def connect_ollama_api(
         custom_ollama_url: str | None = None,
     ) -> OllamaConnection:
         return await connect_ollama(custom_ollama_url)
+
+    @app.get("/api/provider/docker_model_runner/connect")
+    async def connect_docker_model_runner_api(
+        docker_model_runner_custom_url: str | None = None,
+    ) -> DockerModelRunnerConnection:
+        chosen_url = docker_model_runner_custom_url
+        return await connect_docker_model_runner(chosen_url)
 
     @app.post("/api/provider/openai_compatible")
     async def save_openai_compatible_providers(name: str, base_url: str, api_key: str):
@@ -294,11 +461,16 @@ def connect_provider_api(app: FastAPI):
                 )
             case ModelProviderName.together_ai:
                 return await connect_together(parse_api_key(key_data))
+            case ModelProviderName.siliconflow_cn:
+                return await connect_siliconflow(parse_api_key(key_data))
+            case ModelProviderName.cerebras:
+                return await connect_cerebras(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
                 | ModelProviderName.openai_compatible
                 | ModelProviderName.ollama
+                | ModelProviderName.docker_model_runner
             ):
                 return JSONResponse(
                     status_code=400,
@@ -349,11 +521,16 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().vertex_location = None
                 case ModelProviderName.together_ai:
                     Config.shared().together_api_key = None
+                case ModelProviderName.siliconflow_cn:
+                    Config.shared().siliconflow_cn_api_key = None
+                case ModelProviderName.cerebras:
+                    Config.shared().cerebras_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
                     | ModelProviderName.openai_compatible
                     | ModelProviderName.ollama
+                    | ModelProviderName.docker_model_runner
                 ):
                     return JSONResponse(
                         status_code=400,
@@ -403,7 +580,47 @@ async def connect_openrouter(key: str):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenRouter. Error: {str(e)}"},
+            content={"message": f"Failed to connect to OpenRouter. Error: {e!s}"},
+        )
+
+
+async def connect_siliconflow(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.get(
+            "https://api.siliconflow.cn/v1/models",
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to SiliconFlow. Invalid API key."
+                },
+            )
+        elif response.status_code == 200:
+            Config.shared().siliconflow_cn_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to SiliconFlow"},
+            )
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to SiliconFlow. Error: [{response.status_code}] {response.text}"
+                },
+            )
+    except Exception as e:
+        # unexpected error
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to SiliconFlow. Error: {e!s}"},
         )
 
 
@@ -458,7 +675,7 @@ async def connect_fireworks(key_data: dict):
         # unexpected error
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Fireworks. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Fireworks. Error: {e!s}"},
         )
 
 
@@ -483,7 +700,7 @@ async def connect_openai(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to OpenAI. Error: {str(e)}"},
+            content={"message": f"Failed to connect to OpenAI. Error: {e!s}"},
         )
 
     # It worked! Save the key and return success
@@ -517,7 +734,7 @@ async def connect_groq(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Groq. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Groq. Error: {e!s}"},
         )
 
     # It worked! Save the key and return success
@@ -556,7 +773,7 @@ async def connect_gemini(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Gemini. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Gemini. Error: {e!s}"},
         )
 
 
@@ -579,7 +796,7 @@ async def connect_vertex(project_id: str, project_location: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Vertex. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Vertex. Error: {e!s}"},
         )
 
 
@@ -611,7 +828,7 @@ async def connect_together(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Together.ai. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Together.ai. Error: {e!s}"},
         )
 
 
@@ -643,7 +860,7 @@ async def connect_huggingface(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Huggingface. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Huggingface. Error: {e!s}"},
         )
 
 
@@ -677,7 +894,7 @@ async def connect_anthropic(key: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Anthropic. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Anthropic. Error: {e!s}"},
         )
 
 
@@ -743,7 +960,7 @@ async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to W&B. Error: {str(e)}"},
+            content={"message": f"Failed to connect to W&B. Error: {e!s}"},
         )
 
 
@@ -781,7 +998,40 @@ async def connect_azure_openai(key: str, endpoint: str):
     except Exception as e:
         return JSONResponse(
             status_code=400,
-            content={"message": f"Failed to connect to Azure OpenAI. Error: {str(e)}"},
+            content={"message": f"Failed to connect to Azure OpenAI. Error: {e!s}"},
+        )
+
+
+async def connect_cerebras(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get("https://api.cerebras.ai/v1/models", headers=headers)
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"message": "Failed to connect to Cerebras. Invalid API key."},
+            )
+        elif response.status_code != 200:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Cerebras. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            Config.shared().cerebras_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Cerebras"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
         )
 
 
@@ -858,8 +1108,21 @@ async def available_ollama_models() -> AvailableModels | None:
                             supports_logprobs=False,  # Ollama doesn't support logprobs https://github.com/ollama/ollama/issues/2415
                             suggested_for_data_gen=ollama_provider.suggested_for_data_gen,
                             suggested_for_evals=ollama_provider.suggested_for_evals,
+                            supports_function_calling=ollama_provider.supports_function_calling,
+                            uncensored=False,
+                            suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_vision=ollama_provider.supports_vision,
+                            supports_doc_extraction=ollama_provider.supports_doc_extraction,
+                            suggested_for_doc_extraction=ollama_provider.suggested_for_doc_extraction,
+                            multimodal_capable=ollama_provider.multimodal_capable,
+                            multimodal_mime_types=[
+                                str(mime_type)
+                                for mime_type in ollama_provider.multimodal_mime_types
+                            ]
+                            if ollama_provider.multimodal_mime_types
+                            else None,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -870,11 +1133,19 @@ async def available_ollama_models() -> AvailableModels | None:
                     supports_structured_output=False,
                     supports_data_gen=False,
                     supports_logprobs=False,
+                    supports_function_calling=False,
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    uncensored=False,
+                    suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_vision=False,
+                    supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
+                    multimodal_capable=False,
+                    multimodal_mime_types=None,
                 )
             )
 
@@ -887,11 +1158,160 @@ async def available_ollama_models() -> AvailableModels | None:
         return None
 
 
+async def available_ollama_embedding_models() -> EmbeddingProvider | None:
+    # Try to connect to Ollama, and get the list of installed models
+    try:
+        ollama_connection = await connect_ollama()
+        ollama_embedding_models = EmbeddingProvider(
+            provider_name=provider_name_from_id(ModelProviderName.ollama),
+            provider_id=ModelProviderName.ollama,
+            models=[],
+        )
+
+        for ollama_model_tag in ollama_connection.supported_embedding_models:
+            models = embedding_models_from_ollama_tag(ollama_model_tag)
+            for model, ollama_provider in models:
+                if model and ollama_provider:
+                    ollama_embedding_models.models.append(
+                        EmbeddingModelDetails(
+                            id=model.name,
+                            name=model.friendly_name,
+                            n_dimensions=ollama_provider.n_dimensions,
+                            max_input_tokens=ollama_provider.max_input_tokens,
+                            supports_custom_dimensions=ollama_provider.supports_custom_dimensions,
+                            suggested_for_chunk_embedding=ollama_provider.suggested_for_chunk_embedding,
+                        )
+                    )
+
+        if len(ollama_embedding_models.models) > 0:
+            return ollama_embedding_models
+
+        return None
+    except HTTPException:
+        # skip ollama if it's not available
+        return None
+
+
+async def available_docker_model_runner_models() -> AvailableModels | None:
+    # Try to connect to Docker Model Runner, and get the list of installed models
+    try:
+        docker_connection = await get_docker_model_runner_connection()
+        if docker_connection is None:
+            return None
+
+        docker_models = AvailableModels(
+            provider_name=provider_name_from_id(ModelProviderName.docker_model_runner),
+            provider_id=ModelProviderName.docker_model_runner,
+            models=[],
+        )
+
+        for docker_model_id in docker_connection.supported_models:
+            # Get all Kiln models that match the Docker Model Runner model ID
+            models = models_from_docker_model_runner_id(docker_model_id)
+            for model, docker_provider in models:
+                if model and docker_provider:
+                    docker_models.models.append(
+                        ModelDetails(
+                            id=model.name,
+                            name=model.friendly_name,
+                            supports_structured_output=docker_provider.supports_structured_output,
+                            supports_data_gen=docker_provider.supports_data_gen,
+                            supports_logprobs=docker_provider.supports_logprobs,
+                            suggested_for_data_gen=docker_provider.suggested_for_data_gen,
+                            suggested_for_evals=docker_provider.suggested_for_evals,
+                            uncensored=docker_provider.uncensored,
+                            suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
+                            supports_vision=docker_provider.supports_vision,
+                            supports_doc_extraction=docker_provider.supports_doc_extraction,
+                            suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
+                            # Docker Model Runner uses OpenAI-compatible API with JSON schema support
+                            structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_function_calling=docker_provider.supports_function_calling,
+                        )
+                    )
+        for docker_model in docker_connection.untested_models:
+            docker_models.models.append(
+                ModelDetails(
+                    id=docker_model,
+                    name=docker_model,
+                    supports_structured_output=True,
+                    supports_data_gen=False,
+                    supports_logprobs=False,
+                    untested_model=True,
+                    suggested_for_data_gen=False,
+                    suggested_for_evals=False,
+                    uncensored=False,
+                    suggested_for_uncensored_data_gen=False,
+                    supports_vision=False,
+                    supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
+                    # Docker Model Runner uses OpenAI-compatible API with JSON schema support
+                    structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_function_calling=False,
+                )
+            )
+
+        if len(docker_models.models) > 0:
+            return docker_models
+
+        return None
+    except (HTTPException, openai.APIError, httpx.RequestError):
+        # skip docker model runner if it's not available
+        return None
+
+
+def models_from_docker_model_runner_id(
+    model_id: str,
+) -> List[tuple[KilnModel | None, KilnModelProvider | None]]:
+    models: list[tuple[KilnModel | None, KilnModelProvider | None]] = []
+    for model in built_in_models:
+        docker_provider = next(
+            (
+                p
+                for p in model.providers
+                if p.name == ModelProviderName.docker_model_runner
+            ),
+            None,
+        )
+        if not docker_provider:
+            continue
+
+        if model_id == docker_provider.model_id:
+            models.append((model, docker_provider))
+
+    return models
+
+
 def models_from_ollama_tag(
     tag: str,
 ) -> List[tuple[KilnModel | None, KilnModelProvider | None]]:
     models: list[tuple[KilnModel | None, KilnModelProvider | None]] = []
     for model in built_in_models:
+        ollama_provider = next(
+            (p for p in model.providers if p.name == ModelProviderName.ollama), None
+        )
+        if not ollama_provider:
+            continue
+
+        model_name = ollama_provider.model_id
+        if tag in [model_name, f"{model_name}:latest"]:
+            models.append((model, ollama_provider))
+        if ollama_provider.ollama_model_aliases is not None:
+            # all aliases (and :latest)
+            for alias in ollama_provider.ollama_model_aliases:
+                if tag in [alias, f"{alias}:latest"]:
+                    models.append((model, ollama_provider))
+
+    return models
+
+
+def embedding_models_from_ollama_tag(
+    tag: str,
+) -> List[tuple[KilnEmbeddingModel | None, KilnEmbeddingModelProvider | None]]:
+    models: list[
+        tuple[KilnEmbeddingModel | None, KilnEmbeddingModelProvider | None]
+    ] = []
+    for model in built_in_embedding_models:
         ollama_provider = next(
             (p for p in model.providers if p.name == ModelProviderName.ollama), None
         )
@@ -927,11 +1347,19 @@ def custom_models() -> AvailableModels | None:
                     supports_structured_output=False,
                     supports_data_gen=False,
                     supports_logprobs=False,
+                    supports_function_calling=False,
                     untested_model=True,
                     suggested_for_data_gen=False,
                     suggested_for_evals=False,
+                    uncensored=False,
+                    suggested_for_uncensored_data_gen=False,
                     # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
                     structured_output_mode=StructuredOutputMode.json_instructions,
+                    supports_vision=False,
+                    supports_doc_extraction=False,
+                    suggested_for_doc_extraction=False,
+                    multimodal_capable=False,
+                    multimodal_mime_types=None,
                 )
             )
         except Exception:
@@ -959,13 +1387,16 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             id=f"{project.id}::{task.id}::{fine_tune.id}",
                             name=fine_tune.name
                             + f" ({provider_name_from_id(fine_tune.provider)})",
-                            # YMMV, but we'll assume all fine tuned models support structured output and data gen
+                            # YMMV, but we'll assume all fine tuned models support structured output, data gen, and tools as they may have been trained with them
                             supports_structured_output=True,
+                            supports_function_calling=True,
                             supports_data_gen=True,
                             supports_logprobs=False,
                             task_filter=[str(task.id)],
                             suggested_for_data_gen=False,
                             suggested_for_evals=False,
+                            uncensored=False,
+                            suggested_for_uncensored_data_gen=False,
                             structured_output_mode=(
                                 fine_tune_mode
                                 if (
@@ -976,6 +1407,11 @@ def all_fine_tuned_models() -> AvailableModels | None:
                                 and isinstance(fine_tune_mode, StructuredOutputMode)
                                 else StructuredOutputMode.json_instructions
                             ),
+                            supports_vision=False,
+                            supports_doc_extraction=False,
+                            suggested_for_doc_extraction=False,
+                            multimodal_capable=False,
+                            multimodal_mime_types=None,
                         )
                     )
 
@@ -1077,11 +1513,19 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         supports_structured_output=False,
                         supports_data_gen=False,
                         supports_logprobs=False,
+                        supports_function_calling=False,
                         untested_model=True,
                         suggested_for_data_gen=False,
                         suggested_for_evals=False,
+                        uncensored=False,
+                        suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
                         structured_output_mode=StructuredOutputMode.json_instructions,
+                        supports_vision=False,
+                        supports_doc_extraction=False,
+                        suggested_for_doc_extraction=False,
+                        multimodal_capable=False,
+                        multimodal_mime_types=None,
                     )
                 )
 

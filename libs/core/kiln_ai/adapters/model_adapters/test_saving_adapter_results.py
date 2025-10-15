@@ -13,7 +13,7 @@ from kiln_ai.datamodel import (
     Task,
     Usage,
 )
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -41,8 +41,8 @@ def test_task(tmp_path):
 @pytest.fixture
 def adapter(test_task):
     return MockAdapter(
-        run_config=RunConfig(
-            task=test_task,
+        task=test_task,
+        run_config=RunConfigProperties(
             model_name="phi_3_5",
             model_provider_name="ollama",
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -60,7 +60,9 @@ def test_save_run_isolation(test_task, adapter):
     )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data,
+        input_source=None,
+        run_output=run_output,
     )
     task_run.save_to_file()
 
@@ -146,7 +148,9 @@ def test_generate_run_non_ascii(test_task, adapter):
     )
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data,
+        input_source=None,
+        run_output=run_output,
     )
     task_run.save_to_file()
 
@@ -240,8 +244,8 @@ async def test_autosave_true(test_task, adapter):
 def test_properties_for_task_output_custom_values(test_task):
     """Test that _properties_for_task_output includes custom temperature, top_p, and structured_output_mode"""
     adapter = MockAdapter(
-        run_config=RunConfig(
-            task=test_task,
+        task=test_task,
+        run_config=RunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -256,7 +260,9 @@ def test_properties_for_task_output_custom_values(test_task):
     run_output = RunOutput(output=output_data, intermediate_outputs=None)
 
     task_run = adapter.generate_run(
-        input=input_data, input_source=None, run_output=run_output
+        input=input_data,
+        input_source=None,
+        run_output=run_output,
     )
     task_run.save_to_file()
 

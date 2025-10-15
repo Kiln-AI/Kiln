@@ -8,6 +8,7 @@
   import { client } from "$lib/api_client"
   import type { Project } from "$lib/types"
   import { onMount, tick } from "svelte"
+  import posthog from "posthog-js"
 
   let importing = false
   onMount(() => {
@@ -60,6 +61,9 @@
         )
         data = post_data
         error = post_error
+        if (!error) {
+          posthog.capture("create_project", {})
+        }
       } else {
         const { data: put_data, error: put_error } = await client.PATCH(
           "/api/project/{project_id}",
@@ -69,12 +73,14 @@
                 project_id: project.id,
               },
             },
-            // @ts-expect-error Patching only takes some fields
             body,
           },
         )
         data = put_data
         error = put_error
+        if (!error) {
+          posthog.capture("update_project", {})
+        }
       }
       if (error) {
         throw error
@@ -100,7 +106,35 @@
     }
   }
 
+  // File selector may not be available on some platforms or in dev mode. On error we fallback to manual entry.
+  let select_file_unavailable = false
+  $: show_select_file = !select_file_unavailable && !import_project_path
+  $: import_submit_visible = !show_select_file
   let import_project_path = ""
+
+  async function select_project_file() {
+    try {
+      const { data, error: get_error } = await client.GET(
+        "/api/select_kiln_file",
+        {
+          params: {
+            query: {
+              title: "Select project.kiln File",
+            },
+          },
+        },
+      )
+      if (get_error) {
+        throw get_error
+      }
+      import_project_path = data.file_path ?? ""
+    } catch (e) {
+      // We don't like alerts, but this should only appear in developer mode
+      alert("Can't open file selector. Please enter the path manually.")
+      // This allows them to still type it.
+      select_file_unavailable = true
+    }
+  }
 
   const import_project = async () => {
     try {
@@ -120,19 +154,58 @@
         throw post_error
       }
 
+      posthog.capture("import_project", {})
+
       await load_projects()
       created = true
       saved = true
       // Wait for saved to propagate to warn_before_unload
       await tick()
+
       if (redirect_on_created && data?.id) {
-        redirect_to_project(data.id)
+        // Check if the imported project has tasks to decide where to redirect
+        const should_skip_task_creation = await project_has_tasks(data.id)
+
+        if (should_skip_task_creation) {
+          // Project has tasks, go to select task page
+          goto("/setup/select_task")
+        } else {
+          // Project has no tasks, go to task creation page
+          redirect_to_project(data.id)
+        }
         return
       }
     } catch (e) {
       error = createKilnError(e)
     } finally {
       submitting = false
+    }
+  }
+
+  // Check if an imported project has existing tasks
+  async function project_has_tasks(project_id: string): Promise<boolean> {
+    try {
+      const { data: tasks_data, error: tasks_error } = await client.GET(
+        "/api/projects/{project_id}/tasks",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (tasks_error) {
+        // If we can't fetch tasks, assume we need to create one
+        return false
+      }
+
+      // Return true if project has at least one task
+      return tasks_data && tasks_data.length > 0
+    } catch (e) {
+      // If error checking tasks, default to going to task creation
+      return false
     }
   }
 </script>
@@ -179,14 +252,22 @@
         bind:submitting
         bind:error
         bind:saved
+        bind:submit_visible={import_submit_visible}
       >
-        <FormElement
-          label="Existing Project Path"
-          description="The path to the project on your local machine. For example, /Users/username/Kiln Projects/my_project/project.kiln"
-          id="import_project_path"
-          inputType="input"
-          bind:value={import_project_path}
-        />
+        {#if show_select_file}
+          <button class="btn btn-primary" on:click={select_project_file}>
+            Select Project File
+          </button>
+        {:else}
+          <FormElement
+            label="Existing Project Path"
+            description="The path to a project.kiln file. For example, /Users/username/my_project/project.kiln"
+            info_description="You must enter the full path to the file, not just a filename. The path should be to a project.kiln file."
+            id="import_project_path"
+            inputType="input"
+            bind:value={import_project_path}
+          />
+        {/if}
       </FormContainer>
       <p class="mt-4 text-center">
         Or

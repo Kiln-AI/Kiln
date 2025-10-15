@@ -43,7 +43,9 @@ def test_score_schema_five_star():
 
     # Check score property, and that it's an enum of 1-5
     score_prop = schema["properties"]["quality_score"]
-    assert score_prop["enum"] == [1, 2, 3, 4, 5]
+    assert score_prop["type"] == "integer"
+    assert score_prop["minimum"] == 1
+    assert score_prop["maximum"] == 5
     assert "Quality Score" in score_prop["title"]
     assert "Rate the quality" in score_prop["description"]
     assert "between 1 and 5" in score_prop["description"]
@@ -51,7 +53,9 @@ def test_score_schema_five_star():
     # Check overall rating property, and that it's an enum of 1-5
     assert "overall_rating" in schema["properties"]
     overall = schema["properties"]["overall_rating"]
-    assert overall["enum"] == [1, 2, 3, 4, 5]
+    assert overall["type"] == "integer"
+    assert overall["minimum"] == 1
+    assert overall["maximum"] == 5
     assert "Overall Rating" in overall["title"]
     assert "The overall rating for the task output" in overall["description"]
     assert "between 1 and 5" in overall["description"]
@@ -127,6 +131,7 @@ def test_score_schema_pass_fail():
     schema = json.loads(schema_str)
 
     score_prop = schema["properties"]["pass_fail_test"]
+    assert score_prop["type"] == "string"
     assert score_prop["enum"] == ["pass", "fail"]
     assert "Pass Fail Test" in score_prop["title"]
     assert "Check if it passes" in score_prop["description"]
@@ -173,6 +178,7 @@ def test_score_schema_pass_fail_critical():
     score_prop = schema["properties"]["critical_test"]
     assert "enum" in score_prop
     assert score_prop["enum"] == ["pass", "fail", "critical"]
+    assert score_prop["type"] == "string"
     assert "'pass', 'fail', or 'critical'" in score_prop["description"]
 
     assert schema["properties"]["overall_rating"] is not None
@@ -301,9 +307,7 @@ async def test_run_method():
     evaluator = EvalTester(eval_config, run_config.run_config())
 
     # Run the evaluation
-    task_run, eval_scores, intermediate_outputs = await evaluator.run_task_and_eval(
-        "test input"
-    )
+    task_run, eval_scores, _ = await evaluator.run_task_and_eval("test input")
 
     # Verify task run was created
     assert task_run.input == "test input"
@@ -374,7 +378,7 @@ async def test_run_task_and_eval():
         async def run_eval(self, task_run):
             return {"overall_rating": 5, "quality": 4}, {"thinking": "test thinking"}
 
-    evaluator = MockEval(eval_config, run_config.run_config())
+    evaluator = MockEval(eval_config, run_config.run_config_properties)
 
     # Mock dependencies
     mock_adapter = AsyncMock()

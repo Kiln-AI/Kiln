@@ -12,7 +12,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutpu
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, StructuredOutputMode
+from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {
@@ -89,7 +89,7 @@ class GEval(BaseEval):
     }
     """
 
-    def __init__(self, eval_config: EvalConfig, run_config: RunConfig | None):
+    def __init__(self, eval_config: EvalConfig, run_config: RunConfigProperties | None):
         if (
             eval_config.config_type != EvalConfigType.g_eval
             and eval_config.config_type != EvalConfigType.llm_as_judge
@@ -101,6 +101,18 @@ class GEval(BaseEval):
         super().__init__(eval_config, run_config)
 
         self.geval_task = GEvalTask(eval_config)
+
+    def generate_run_description(self, eval_input: str, eval_output: str) -> str:
+        return f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+The model produced the following output for the task:
+<eval_data>
+{eval_output}
+</eval_data>
+"""
 
     async def run_eval(
         self, task_run: TaskRun
@@ -145,19 +157,12 @@ class GEval(BaseEval):
             ),
         )
 
-        input = f"""The model was given the following input for the task: 
-<eval_data>
-{task_run.input}
-</eval_data>
-
-The model produced the following output for the task:
-<eval_data>
-{task_run.output}
-</eval_data>
-"""
+        run_description = self.generate_run_description(
+            task_run.input, task_run.output.output
+        )
 
         # We don't need the run, but invoke_returning_run_output() runs validations for us over _run()
-        _, run_output = await adapter.invoke_returning_run_output(input)
+        _, run_output = await adapter.invoke_returning_run_output(run_description)
 
         if self.eval_config.config_type == EvalConfigType.llm_as_judge:
             return self.build_llm_as_judge_score(
@@ -310,7 +315,7 @@ The model produced the following output for the task:
         """
         primary_token_score = self.score_from_token_string(token_logprob.token)
         # check this is a real rating token, it could just be the ": ", "," or whitespace
-        if not primary_token_score:
+        if primary_token_score is None:
             return None
 
         total_score = 0.0

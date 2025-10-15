@@ -6,29 +6,28 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
+    "certifi>=2024.8.30",
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
+    "mcp[cli]>=1.10.1",
 ]
 
 [dependency-groups]
 dev = [
+    "diff-cover>=9.6.0",
     "isort>=5.13.2",
     "pyright==1.1.376",
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
     "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
-    "ruff>=0.9.0",
+    "ruff>=0.13.0",
+    "watchfiles>=1.1.0",
 ]
-
-
 
 [tool.uv]
-# While Together depends on pyarrow, it doesn't need it, it's 80MB, and it doesn't work on MacOS 11
-override-dependencies = [
-    "pyarrow ; sys_platform == 'never'",
-]
+override-dependencies = []
 
 [tool.uv.workspace]
 members = ["libs/core", "libs/server", "app/desktop"]
@@ -44,8 +43,17 @@ reportMissingTypeArgument = true
 
 
 [tool.ruff]
-exclude = [
-]
+exclude = []
+
+[tool.ruff.lint]
+# I is import sorting
+# F401 is unused imports
+# RUF is ruff rules. In particular 012+008 are mutable defaults (important)
+# FAST is FastAPI related linting
+extend-select = ["I","F401","RUF","FAST","TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.cast" = { msg = "Avoid using typing.cast; prefer safer alternatives." }
 
 [tool.pytest.ini_options]
  addopts="-n auto"

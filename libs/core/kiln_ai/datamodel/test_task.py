@@ -3,22 +3,18 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode, TaskOutputRatingType
 from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.task import RunConfig, RunConfigProperties, Task, TaskRunConfig
+from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 
 
 def test_runconfig_valid_creation():
-    task = Task(id="task1", name="Test Task", instruction="Do something")
-
-    config = RunConfig(
-        task=task,
+    config = RunConfigProperties(
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
         structured_output_mode="json_schema",
     )
 
-    assert config.task == task
     assert config.model_name == "gpt-4"
     assert config.model_provider_name == "openai"
     assert config.prompt_id == PromptGenerators.SIMPLE  # Check default value
@@ -26,13 +22,12 @@ def test_runconfig_valid_creation():
 
 def test_runconfig_missing_required_fields():
     with pytest.raises(ValidationError) as exc_info:
-        RunConfig()
+        RunConfigProperties()  # type: ignore
 
     errors = exc_info.value.errors()
     assert (
-        len(errors) == 5
+        len(errors) == 4
     )  # task, model_name, model_provider_name, and prompt_id are required
-    assert any(error["loc"][0] == "task" for error in errors)
     assert any(error["loc"][0] == "model_name" for error in errors)
     assert any(error["loc"][0] == "model_provider_name" for error in errors)
     assert any(error["loc"][0] == "prompt_id" for error in errors)
@@ -40,10 +35,7 @@ def test_runconfig_missing_required_fields():
 
 
 def test_runconfig_custom_prompt_id():
-    task = Task(id="task1", name="Test Task", instruction="Do something")
-
-    config = RunConfig(
-        task=task,
+    config = RunConfigProperties(
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
@@ -100,28 +92,16 @@ def test_task_run_config_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         TaskRunConfig(
             run_config_properties=RunConfigProperties(
-                task=sample_task, model_name="gpt-4", model_provider_name="openai"
-            ),
+                model_name="gpt-4", model_provider_name="openai"
+            ),  # type: ignore
             parent=sample_task,
-        )
+        )  # type: ignore
     assert "Field required" in str(exc_info.value)
 
     # Test missing run_config
     with pytest.raises(ValidationError) as exc_info:
-        TaskRunConfig(name="Test Config", parent=sample_task)
+        TaskRunConfig(name="Test Config", parent=sample_task)  # type: ignore
     assert "Field required" in str(exc_info.value)
-
-
-def test_task_run_config_missing_task_in_run_config(sample_task):
-    with pytest.raises(
-        ValidationError, match="Input should be a valid dictionary or instance of Task"
-    ):
-        # Create a run config without a task
-        RunConfig(
-            model_name="gpt-4",
-            model_provider_name="openai",
-            task=None,  # type: ignore
-        )
 
 
 @pytest.mark.parametrize(
@@ -165,10 +145,8 @@ def test_normalize_rating_errors(rating_type, rating):
 
 def test_run_config_defaults():
     """RunConfig should require top_p, temperature, and structured_output_mode to be set."""
-    task = Task(id="task1", name="Test Task", instruction="Do something")
 
-    config = RunConfig(
-        task=task,
+    config = RunConfigProperties(
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
@@ -180,11 +158,9 @@ def test_run_config_defaults():
 
 def test_run_config_valid_ranges():
     """RunConfig should accept valid ranges for top_p and temperature."""
-    task = Task(id="task1", name="Test Task", instruction="Do something")
 
     # Test valid values
-    config = RunConfig(
-        task=task,
+    config = RunConfigProperties(
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
@@ -201,10 +177,8 @@ def test_run_config_valid_ranges():
 @pytest.mark.parametrize("top_p", [0.0, 0.5, 1.0])
 def test_run_config_valid_top_p(top_p):
     """Test that RunConfig accepts valid top_p values (0-1)."""
-    task = Task(id="task1", name="Test Task", instruction="Do something")
 
-    config = RunConfig(
-        task=task,
+    config = RunConfigProperties(
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
@@ -219,11 +193,9 @@ def test_run_config_valid_top_p(top_p):
 @pytest.mark.parametrize("top_p", [-0.1, 1.1, 2.0])
 def test_run_config_invalid_top_p(top_p):
     """Test that RunConfig rejects invalid top_p values."""
-    task = Task(id="task1", name="Test Task", instruction="Do something")
 
     with pytest.raises(ValueError, match="top_p must be between 0 and 1"):
-        RunConfig(
-            task=task,
+        RunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,
@@ -236,10 +208,8 @@ def test_run_config_invalid_top_p(top_p):
 @pytest.mark.parametrize("temperature", [0.0, 1.0, 2.0])
 def test_run_config_valid_temperature(temperature):
     """Test that RunConfig accepts valid temperature values (0-2)."""
-    task = Task(id="task1", name="Test Task", instruction="Do something")
 
-    config = RunConfig(
-        task=task,
+    config = RunConfigProperties(
         model_name="gpt-4",
         model_provider_name="openai",
         prompt_id=PromptGenerators.SIMPLE,
@@ -254,11 +224,9 @@ def test_run_config_valid_temperature(temperature):
 @pytest.mark.parametrize("temperature", [-0.1, 2.1, 3.0])
 def test_run_config_invalid_temperature(temperature):
     """Test that RunConfig rejects invalid temperature values."""
-    task = Task(id="task1", name="Test Task", instruction="Do something")
 
     with pytest.raises(ValueError, match="temperature must be between 0 and 2"):
-        RunConfig(
-            task=task,
+        RunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,
@@ -286,7 +254,7 @@ def test_run_config_upgrade_old_entries():
         },
         "prompt": {
             "name": "Dazzling Unicorn",
-            "description": "Frozen copy of prompt 'simple_prompt_builder', created for evaluations.",
+            "description": "Frozen copy of prompt 'simple_prompt_builder'.",
             "generator_id": "simple_prompt_builder",
             "prompt": "Generate a joke, given a theme. The theme will be provided as a word or phrase as the input to the model. The assistant should output a joke that is funny and relevant to the theme. If a style is provided, the joke should be in that style. The output should include a setup and punchline.\n\nYour response should respect the following requirements:\n1) Keep the joke on topic. If the user specifies a theme, the joke must be related to that theme.\n2) Avoid any jokes that are offensive or inappropriate. Keep the joke clean and appropriate for all audiences.\n3) Make the joke funny and engaging. It should be something that someone would want to tell to their friends. Something clever, not just a simple pun.\n",
             "chain_of_thought_instructions": None,
@@ -323,3 +291,42 @@ def test_run_config_upgrade_old_entries():
     assert parsed.name == "test name"
     assert parsed.created_by == "scosman"
     assert parsed.run_config_properties.structured_output_mode == "unknown"
+
+
+def test_task_name_unicode_name():
+    task = Task(name="你好", instruction="Do something")
+    assert task.name == "你好"
+
+
+def test_task_default_run_config_id_property(tmp_path):
+    """Test that default_run_config_id can be set and retrieved."""
+
+    # Create a task
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    # Create a run config for the task
+    run_config = TaskRunConfig(
+        name="Test Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Test None default (should be valid)
+    assert task.default_run_config_id is None
+
+    # Test setting a valid ID
+    task.default_run_config_id = "123456789012"
+    assert task.default_run_config_id == "123456789012"
+
+    # Test setting back to None
+    task.default_run_config_id = None
+    assert task.default_run_config_id is None

@@ -1,25 +1,78 @@
 <script lang="ts">
+  import {
+    computePosition,
+    autoUpdate,
+    offset,
+    flip,
+    shift,
+  } from "@floating-ui/dom"
+  import { onDestroy } from "svelte"
+
   export let tooltip_text: string
   export let position: "left" | "right" | "bottom" | "top" = "left"
   export let no_pad = false
 
-  function get_position_class() {
-    switch (position) {
-      case "right":
-        return "tooltip-right"
-      case "bottom":
-        return "tooltip-bottom"
-      case "top":
-        return "tooltip-top"
-      default:
-        return "tooltip-left"
+  let triggerElement: HTMLButtonElement
+  let tooltipElement: HTMLDivElement
+  let isVisible = false
+  let cleanupAutoUpdate: (() => void) | null = null
+
+  function showTooltip() {
+    if (!triggerElement || !tooltipElement) return
+
+    const updatePosition = () => {
+      computePosition(triggerElement, tooltipElement, {
+        placement: position,
+        strategy: "fixed",
+        middleware: [
+          offset(0), // Gap between trigger and tooltip
+          flip(), // Flip to opposite side if no room
+          shift({ padding: 8 }), // Shift along axis to stay in viewport
+        ],
+      }).then(({ x, y }) => {
+        if (tooltipElement) {
+          Object.assign(tooltipElement.style, {
+            left: `${x}px`,
+            top: `${y}px`,
+          })
+        }
+      })
+    }
+
+    // Initial positioning
+    updatePosition()
+
+    // Auto-update position on scroll/resize
+    cleanupAutoUpdate = autoUpdate(
+      triggerElement,
+      tooltipElement,
+      updatePosition,
+    )
+
+    isVisible = true
+  }
+
+  function hideTooltip() {
+    isVisible = false
+    if (cleanupAutoUpdate) {
+      cleanupAutoUpdate()
+      cleanupAutoUpdate = null
     }
   }
+
+  onDestroy(() => {
+    if (cleanupAutoUpdate) {
+      cleanupAutoUpdate()
+    }
+  })
 </script>
 
 <button
-  class="tooltip before:z-50 {get_position_class()} before:whitespace-normal"
-  data-tip={tooltip_text}
+  bind:this={triggerElement}
+  on:mouseenter={showTooltip}
+  on:mouseleave={hideTooltip}
+  on:focus={showTooltip}
+  on:blur={hideTooltip}
 >
   <svg
     fill="currentColor"
@@ -34,3 +87,16 @@
     /></svg
   >
 </button>
+
+<!-- Custom Floating Tooltip -->
+<div
+  bind:this={tooltipElement}
+  class="fixed z-[50] px-3 py-2 text-sm text-base-content bg-stone-200 rounded-md shadow-lg w-72 whitespace-normal pointer-events-none text-center flex flex-col gap-1 {isVisible
+    ? ''
+    : 'hidden'}"
+  role="tooltip"
+>
+  {#each tooltip_text.split("\n") as line}
+    <p>{line}</p>
+  {/each}
+</div>

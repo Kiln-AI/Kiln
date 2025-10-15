@@ -13,7 +13,7 @@
     title="Prompts"
     subtitle={`Prompts for the task "${$current_task?.name}"`}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.getkiln.ai/docs/prompts"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     action_buttons={[
       {
         label: "Create Prompt",
@@ -119,7 +119,7 @@
                     {:else if prompt.id.startsWith("fine_tune_prompt::")}
                       Fine Tuning Prompt
                     {:else if prompt.id.startsWith("task_run_config::")}
-                      Eval Prompt
+                      Frozen Prompt
                     {:else}
                       Unknown
                     {/if}

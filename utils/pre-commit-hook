@@ -1,0 +1,9 @@
+#!/bin/sh
+#
+# Copy this file to .git/hooks/pre-commit to run Kiln checks before each commit
+#
+
+cd "$(dirname "$0")"
+# --staged-only is useful to only run checks on the files that are staged for commit
+uv run ../../checks.sh --staged-only
+

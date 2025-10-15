@@ -81,10 +81,10 @@
 </script>
 
 <AppPage
-  title="Fine Tune"
+  title="Fine Tunes"
   subtitle="Fine-tune models for the current task."
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.getkiln.ai/docs/fine-tuning-guide"
+  sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
   action_buttons={is_empty
     ? []
     : [

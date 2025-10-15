@@ -1,20 +1,14 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import EmptyEvaluator from "./empty_eval.svelte"
-  import type { Eval, TaskRunConfig } from "$lib/types"
+  import type { Eval } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
-  import {
-    model_info,
-    load_model_info,
-    model_name,
-    prompt_name_from_id,
-    current_task_prompts,
-  } from "$lib/stores"
-  import { prompt_link } from "$lib/utils/link_builder"
+  import { load_model_info } from "$lib/stores"
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -42,8 +36,22 @@
     // Usually cached and fast
     load_model_info()
     // Load the evals and run configs in parallel
-    Promise.all([get_evals(), get_run_configs()])
+    await Promise.all([get_evals(), get_task_run_configs()])
   })
+
+  let run_configs_error: KilnError | null = null
+  let run_configs_loading = true
+
+  async function get_task_run_configs() {
+    run_configs_loading = true
+    try {
+      await load_task_run_configs(project_id, task_id)
+    } catch (err) {
+      run_configs_error = createKilnError(err)
+    } finally {
+      run_configs_loading = false
+    }
+  }
 
   async function get_evals() {
     try {
@@ -70,40 +78,10 @@
     }
   }
 
-  let run_configs: TaskRunConfig[] | null = null
-  let run_configs_error: KilnError | null = null
-  let run_configs_loading = true
-
-  async function get_run_configs() {
-    // "/api/projects/{project_id}/tasks/{task_id}/task_run_configs"
-    try {
-      run_configs_loading = true
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      run_configs = data
-    } catch (error) {
-      run_configs_error = createKilnError(error)
-    } finally {
-      run_configs_loading = false
-    }
-  }
-
   let toggle_eval_favourite_error: KilnError | null = null
 
   $: loading = evals_loading || run_configs_loading
-  $: error = evals_error || run_configs_error || toggle_eval_favourite_error
+  $: error = evals_error || toggle_eval_favourite_error || run_configs_error
 
   async function toggle_eval_favourite(evaluator: Eval) {
     try {
@@ -133,10 +111,11 @@
 </script>
 
 <AppPage
+  limit_max_width={true}
   title="Evals"
-  subtitle="Evaluate task performance. Compare models, prompts, and fine-tunes."
+  subtitle="Evaluate the quality of your prompts, models and tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
-  sub_subtitle_link="https://docs.getkiln.ai/docs/evaluations"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
     ? []
     : [
@@ -165,6 +144,74 @@
       </div>
     </div>
   {:else if evals}
+    <a href={`/evals/${project_id}/${task_id}/compare`} class="group">
+      <div class="card border p-3 mb-4 rounded-md hover:bg-gray-50">
+        <div class="flex flex-row gap-4 items-center">
+          <div class="rounded-lg bg-blue-50 p-4">
+            <svg
+              class="h-12 aspect-760/621"
+              viewBox="0 0 760 621"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <g clip-path="url(#clip0_1603_4)">
+                <rect
+                  x="10"
+                  y="10"
+                  width="740"
+                  height="601"
+                  rx="25"
+                  fill="white"
+                  stroke="#628BD9"
+                  stroke-width="20"
+                />
+                <line
+                  x1="137"
+                  y1="90.9778"
+                  x2="137.999"
+                  y2="541.978"
+                  stroke="#628BD9"
+                  stroke-width="20"
+                />
+                <line
+                  x1="656"
+                  y1="490"
+                  x2="82"
+                  y2="490"
+                  stroke="#628BD9"
+                  stroke-width="20"
+                />
+                <circle cx="352" cy="241" r="28" fill="#628BD9" />
+                <circle cx="473" cy="317" r="28" fill="#628BD9" />
+                <circle cx="564" cy="153" r="28" fill="#628BD9" />
+                <circle cx="232" cy="384" r="28" fill="#628BD9" />
+              </g>
+              <defs>
+                <clipPath id="clip0_1603_4">
+                  <rect width="760" height="621" fill="white" />
+                </clipPath>
+              </defs>
+            </svg>
+          </div>
+
+          <div class="flex-grow flex flex-col text-sm justify-center">
+            <span class="font-medium text-base"
+              >Compare Models, Prompts and Fine-Tunes</span
+            >
+            <span class="text-sm font-light mt-1"
+              >Find the best way to run this task by comparing models, prompts
+              and fine-tunes using evals, cost and performance.</span
+            >
+            <button
+              class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"
+              >Compare Run Configurations</button
+            >
+          </div>
+        </div>
+      </div>
+    </a>
+
+    <div class="text-xl font-bold mt-8 mb-2">All Evals</div>
     <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
@@ -172,27 +219,10 @@
             <th></th>
             <th>Eval Name</th>
             <th>Description</th>
-            <th>Selected Run Method</th>
           </tr>
         </thead>
         <tbody>
           {#each sorted_evals as evaluator}
-            {@const run_config = run_configs?.find(
-              (run_config) => run_config.id === evaluator.current_run_config_id,
-            )}
-            {@const prompt_href = run_config?.run_config_properties.prompt_id
-              ? prompt_link(
-                  project_id,
-                  task_id,
-                  run_config.run_config_properties.prompt_id,
-                )
-              : undefined}
-            {@const prompt_name =
-              run_config?.prompt?.name ||
-              prompt_name_from_id(
-                run_config?.run_config_properties.prompt_id || "",
-                $current_task_prompts,
-              )}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
@@ -212,31 +242,6 @@
               </td>
               <td> {evaluator.name} </td>
               <td> {evaluator.description} </td>
-              <td>
-                {#if run_config}
-                  <div
-                    class="grid grid-cols-[auto_1fr] gap-y-1 gap-x-4 lg:min-w-[260px]"
-                  >
-                    <div>Model:</div>
-                    <div class="text-gray-500">
-                      {model_name(
-                        run_config.run_config_properties.model_name,
-                        $model_info,
-                      )}
-                    </div>
-                    <div>Prompt:</div>
-                    <div class="text-gray-500">
-                      {#if prompt_href}
-                        <a href={prompt_href} class="link">{prompt_name}</a>
-                      {:else}
-                        {prompt_name}
-                      {/if}
-                    </div>
-                  </div>
-                {:else}
-                  <div class="text-gray-500">N/A</div>
-                {/if}
-              </td>
             </tr>
           {/each}
         </tbody>

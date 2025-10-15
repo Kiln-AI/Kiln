@@ -1,3 +1,5 @@
+const FINE_TUNE_PROMPT_PREFIX = "fine_tune_prompt::"
+
 export function prompt_link(
   project_id: string,
   task_id: string,
@@ -6,10 +8,49 @@ export function prompt_link(
   if (!project_id || !task_id || !prompt_id) {
     return undefined
   }
+  // Special case for fine-tuned prompts
+  if (prompt_id.startsWith(FINE_TUNE_PROMPT_PREFIX)) {
+    // Get the last component of the prompt ID. fine_tune_prompt::[project_id]::[task_id]::fine_tune_id
+    const trimmed_prompt_id = prompt_id.replace(FINE_TUNE_PROMPT_PREFIX, "")
+    const fine_tune_id =
+      trimmed_prompt_id.split("::").pop() || trimmed_prompt_id
+    return `/fine_tune/${project_id}/${task_id}/fine_tune/${encodeURIComponent(fine_tune_id)}`
+  }
   if (!prompt_id.includes("::")) {
     // not an ID style prompt, link to static
     return `/prompts/${project_id}/${task_id}/generator_details/${encodeURIComponent(prompt_id)}`
   }
   // ID style prompt, link to saved
   return `/prompts/${project_id}/${task_id}/saved/${encodeURIComponent(prompt_id)}`
+}
+
+export function dataset_item_link(
+  project_id: string,
+  task_id: string,
+  run_id: string,
+): string | null {
+  if (!project_id || !task_id || !run_id) {
+    return null
+  }
+  return `/dataset/${project_id}/${task_id}/${run_id}/run`
+}
+
+export function tool_link(project_id: string, tool_id: string): string | null {
+  if (!project_id || !tool_id) {
+    return null
+  }
+  if (
+    tool_id.startsWith("mcp::remote::") ||
+    tool_id.startsWith("mcp::local::")
+  ) {
+    return `/settings/manage_tools/${project_id}/tool_servers/${tool_id.split("::")[2]}`
+  } else if (tool_id.startsWith("kiln_task::")) {
+    return `/settings/manage_tools/${project_id}/kiln_task/${tool_id.split("::")[1]}`
+  } else if (tool_id.startsWith("kiln_tool::rag::")) {
+    return `/docs/rag_configs/${project_id}/${tool_id.split("::")[2]}/rag_config`
+  } else if (tool_id.startsWith("kiln_tool::")) {
+    return `/settings/manage_tools/${project_id}`
+  } else {
+    return null
+  }
 }

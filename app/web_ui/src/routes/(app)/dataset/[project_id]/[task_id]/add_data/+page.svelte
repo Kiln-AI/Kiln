@@ -5,11 +5,22 @@
   import UploadDatasetDialog from "../../../[project_id]/[task_id]/upload_dataset_dialog.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import { goto } from "$app/navigation"
-  import Splits from "$lib/ui/splits.svelte"
   import OptionList from "$lib/ui/option_list.svelte"
+  import {
+    get_splits_from_url_param,
+    get_splits_subtitle,
+  } from "$lib/utils/splits_util"
+  import { onMount, tick } from "svelte"
 
   const validReasons = ["generic", "eval", "fine_tune"] as const
   type Reason = (typeof validReasons)[number]
+
+  onMount(async () => {
+    await tick()
+    const splitsParam = $page.url.searchParams.get("splits")
+    splits = get_splits_from_url_param(splitsParam)
+    splits_subtitle = get_splits_subtitle(splits)
+  })
 
   let manual_dialog: Dialog | null = null
   let upload_dataset_dialog: UploadDatasetDialog | null = null
@@ -35,6 +46,29 @@
         : "Add Data for Fine-tuning"
   $: reason_name =
     reason === "generic" ? "dataset" : reason === "eval" ? "eval" : "fine tune"
+  $: breadcrumbs =
+    reason === "eval"
+      ? [
+          {
+            label: "Evals",
+            href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+          },
+        ]
+      : reason === "generic"
+        ? [
+            {
+              label: "Dataset",
+              href: `/dataset/${$page.params.project_id}/${$page.params.task_id}`,
+            },
+          ]
+        : reason === "fine_tune"
+          ? [
+              {
+                label: "Fine-tuning",
+                href: `/fine_tune/${$page.params.project_id}/${$page.params.task_id}`,
+              },
+            ]
+          : []
 
   $: data_source_descriptions = [
     {
@@ -45,8 +79,8 @@
     },
     {
       id: "csv",
-      name: "Upload CSV",
-      description: `Add data by uploading a CSV file.`,
+      name: "Add CSV",
+      description: `Add data from a CSV file.`,
     },
     ...(reason === "generic" && splitsArray.length === 0
       ? [
@@ -76,9 +110,18 @@
     } else if (id === "run_task") {
       goto("/run")
     } else if (id === "synthetic") {
-      goto(
-        `/generate/${$page.params.project_id}/${$page.params.task_id}?reason=${reason}&splits=${$page.url.searchParams.get("splits")}`,
-      )
+      const params = new URLSearchParams()
+      if (reason) params.set("reason", reason)
+      const template_id = $page.url.searchParams.get("template_id")
+      if (template_id) params.set("template_id", template_id)
+      const eval_id = $page.url.searchParams.get("eval_id")
+      if (eval_id) params.set("eval_id", eval_id)
+      const splits_param = $page.url.searchParams.get("splits")
+      if (splits_param) params.set("splits", splits_param)
+
+      const query_string = params.toString()
+      const url = `/generate/${$page.params.project_id}/${$page.params.task_id}?${query_string}`
+      goto(url)
     }
   }
 
@@ -100,8 +143,7 @@
   }
 </script>
 
-<AppPage {title} sub_subtitle={splits_subtitle}>
-  <Splits bind:splits bind:subtitle={splits_subtitle} />
+<AppPage {title} sub_subtitle={splits_subtitle} {breadcrumbs}>
   {#if completed}
     <Completed
       title="Data Added"

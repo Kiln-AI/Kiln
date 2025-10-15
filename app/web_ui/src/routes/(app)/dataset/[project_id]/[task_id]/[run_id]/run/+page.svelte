@@ -10,18 +10,28 @@
     load_model_info,
     prompt_name_from_id,
     current_task_prompts,
+    provider_name_from_id,
+    load_available_models,
+    load_available_tools,
+    available_tools,
   } from "$lib/stores"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
+  import { onMount, getContext } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRun } from "$lib/types"
-  import { formatDate } from "$lib/utils/formatters"
+  import type { TaskRun, StructuredOutputMode } from "$lib/types"
+  import {
+    formatDate,
+    structuredOutputModeToString,
+  } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
+  import { isMacOS } from "$lib/utils/platform"
+  import type { Writable } from "svelte/store"
+  import { get_tools_property_info } from "$lib/stores/tools_store"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -29,10 +39,23 @@
   // @ts-expect-error list_page is not a property of PageState
   $: list_page = ($page.state.list_page || []) as string[]
 
-  // TODO: we need to remove task_id from the URL, or load it by ID. $current_task is a lie
+  // We should remove task_id from the URL, or load it by ID. $current_task is a lie
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
+  let see_all_properties = false
+  let tools_property_value: string | string[] = "Loading..."
+  let tool_links: (string | null)[] | undefined
+
+  $: {
+    const tools_property_info = get_tools_property_info(
+      run?.output?.source?.run_config?.tools_config?.tools ?? [],
+      project_id,
+      $available_tools,
+    )
+    tools_property_value = tools_property_info.value
+    tool_links = tools_property_info.links
+  }
 
   function get_properties(
     run: TaskRun | null,
@@ -58,17 +81,10 @@
     }
 
     const model_id = run?.output?.source?.properties?.model_name
-    if (model_id) {
+    if (model_id && typeof model_id === "string") {
       properties.push({
         name: "Output Model",
         value: model_name(model_id, model_info),
-      })
-    }
-
-    if (run?.output?.source?.properties?.model_provider) {
-      properties.push({
-        name: "Model Provider",
-        value: run.output.source.properties.model_provider,
       })
     }
 
@@ -90,26 +106,12 @@
       }
     }
 
-    if (run?.usage?.cost) {
-      properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
-      })
-    }
-
-    if (run?.usage?.total_tokens) {
-      properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
-      })
-    }
-
-    if (run?.input_source?.properties?.created_by) {
-      properties.push({
-        name: "Created By",
-        value: run.input_source.properties.created_by,
-      })
-    }
+    properties.push({
+      name: "Available Tools",
+      value: tools_property_value,
+      links: tool_links,
+      badge: Array.isArray(tools_property_value) ? true : false,
+    })
 
     if (run?.created_at) {
       properties.push({
@@ -138,9 +140,64 @@
     return properties
   }
 
+  function get_advanced_properties(run: TaskRun | null) {
+    let properties = []
+
+    if (run?.output?.source?.properties?.model_provider) {
+      properties.push({
+        name: "Model Provider",
+        value: provider_name_from_id(
+          String(run.output.source.properties.model_provider),
+        ),
+      })
+    }
+
+    if (run?.output?.source?.properties?.temperature !== undefined) {
+      properties.push({
+        name: "Temperature",
+        value: run.output.source.properties.temperature,
+      })
+    }
+
+    if (run?.output?.source?.properties?.top_p !== undefined) {
+      properties.push({
+        name: "Top P",
+        value: run.output.source.properties.top_p,
+      })
+    }
+
+    if (run?.output?.source?.properties?.structured_output_mode) {
+      let mode = run.output.source.properties.structured_output_mode
+      if (typeof mode === "string") {
+        const json_mode = structuredOutputModeToString(
+          mode as StructuredOutputMode,
+        )
+        if (json_mode) {
+          properties.push({
+            name: "JSON Mode",
+            value: json_mode,
+          })
+        }
+      }
+    }
+
+    if (run?.input_source?.properties?.created_by) {
+      properties.push({
+        name: "Created By",
+        value: run.input_source.properties.created_by,
+      })
+    }
+
+    return properties
+  }
+
   onMount(async () => {
-    await load_run()
-    load_model_info()
+    await Promise.all([
+      load_run(),
+      load_model_info(),
+      load_available_models(),
+      load_available_tools(project_id),
+    ])
   })
 
   async function load_run() {
@@ -204,13 +261,6 @@
     load_run()
   }
 
-  function isMac(): boolean {
-    return (
-      typeof window !== "undefined" &&
-      navigator.platform.toUpperCase().indexOf("MAC") >= 0
-    )
-  }
-
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -218,7 +268,7 @@
       buttons.push({
         icon: "/images/delete.svg",
         handler: () => delete_dialog?.show(),
-        shortcut: isMac() ? "Backspace" : "Delete",
+        shortcut: isMacOS() ? "Backspace" : "Delete",
       })
     }
     if (list_page.length > 1) {
@@ -239,6 +289,36 @@
       }
     }
   }
+
+  // Fancy logic to maintain the search string when navigating back to the dataset page (filters, sorting, etc.)
+  const lastPageUrl = getContext<Writable<URL | undefined>>("lastPageUrl")
+  function get_breadcrumbs() {
+    if (!$lastPageUrl) {
+      return []
+    }
+
+    try {
+      const referrerPath = $lastPageUrl.pathname
+
+      // Check if the referrer path is /dataset/{project_id}/{task_id}
+      // since we only want to breadcrumb back to that page
+      const expectedPath = `/dataset/${$page.params.project_id}/${$page.params.task_id}`
+
+      if (referrerPath === expectedPath) {
+        return [
+          {
+            label: "Dataset",
+            // Include the full URL with search params to a
+            href: $lastPageUrl.pathname + $lastPageUrl.search,
+          },
+        ]
+      }
+    } catch (error) {
+      console.warn("Failed to parse referrer URL:", error)
+    }
+
+    return []
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -246,6 +326,7 @@
     title="Dataset Run"
     subtitle={run?.id ? `Run ID: ${run.id}` : undefined}
     action_buttons={buttons}
+    breadcrumbs={get_breadcrumbs()}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -263,9 +344,18 @@
         </div>
         <div class="w-72 2xl:w-96 flex-none flex flex-col">
           <PropertyList
-            properties={get_properties(run, $current_task_prompts, $model_info)}
+            properties={[
+              ...get_properties(run, $current_task_prompts, $model_info),
+              ...(see_all_properties ? get_advanced_properties(run) : []),
+            ]}
             title="Properties"
           />
+          <button
+            class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+            on:click={() => (see_all_properties = !see_all_properties)}
+          >
+            {see_all_properties ? "See Less" : "See All"}
+          </button>
         </div>
       </div>
       <Run initial_run={run} task={$current_task} {project_id} />

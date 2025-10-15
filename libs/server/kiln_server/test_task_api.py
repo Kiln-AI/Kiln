@@ -3,11 +3,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel import (
-    Project,
-    Task,
-    TaskRequirement,
-)
+from kiln_ai.datamodel import Project, Task, TaskRequirement
+from kiln_ai.datamodel.external_tool_server import ToolServerType
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.task_api import connect_task_api, task_from_id
@@ -49,7 +46,7 @@ def test_create_task_success(client, tmp_path):
     project_path.mkdir()
 
     task_data = {
-        "name": "Test Task",
+        "name": "Test Task 啊",
         "description": "This is a test task",
         "instruction": "This is a test instruction",
     }
@@ -67,7 +64,7 @@ def test_create_task_success(client, tmp_path):
 
     assert response.status_code == 200
     res = response.json()
-    assert res["name"] == "Test Task"
+    assert res["name"] == "Test Task 啊"
     assert res["description"] == "This is a test task"
     assert res["id"] is not None
 
@@ -319,26 +316,6 @@ def test_update_task_unexpected_return_type(client, project_and_task):
     assert response.json()["message"] == "Failed to patch task."
 
 
-def test_delete_task_success(client, project_and_task):
-    project, task = project_and_task
-
-    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = project
-
-        # First verify the task exists
-        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
-        assert response.status_code == 200
-
-        # Delete the task
-        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
-        assert response.status_code == 200
-
-        # Verify the task was deleted
-        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
-        assert response.status_code == 404
-        assert response.json()["message"] == f"Task not found. ID: {task.id}"
-
-
 def test_get_rating_options_empty_task(client, project_and_task):
     project, task = project_and_task
 
@@ -510,3 +487,200 @@ def test_get_rating_options_duplicate_requirements(client, project_and_task):
     assert option["requirement"]["name"] == "Duplicate Score"
     assert option["show_for_all"] is False
     assert set(option["show_for_tags"]) == {"golden_set1", "golden_set2"}
+
+
+def test_delete_task_success(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        # First verify the task exists
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
+        assert response.status_code == 200
+
+        # Delete the task
+        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        assert response.status_code == 200
+
+        # Verify the task was deleted
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}")
+        assert response.status_code == 404
+        assert response.json()["message"] == f"Task not found. ID: {task.id}"
+
+
+def test_delete_task_archives_kiln_task_tools(client, project_and_task):
+    """Test that deleting a task archives associated kiln_task tool servers."""
+    project, task = project_and_task
+
+    # Create mock kiln_task tool servers
+    kiln_task_tool_1 = MagicMock()
+    kiln_task_tool_1.type = ToolServerType.kiln_task
+    kiln_task_tool_1.properties = {
+        "task_id": task.id,
+        "run_config_id": "config1",
+        "name": "task_tool_1",
+        "description": "First task tool",
+        "is_archived": False,
+    }
+    kiln_task_tool_1.save_to_file = MagicMock()
+
+    # Create a kiln_task tool for a different task (should not be archived)
+    kiln_task_tool_2 = MagicMock()
+    kiln_task_tool_2.type = ToolServerType.kiln_task
+    kiln_task_tool_2.properties = {
+        "task_id": "different_task_id",
+        "run_config_id": "config2",
+        "name": "task_tool_2",
+        "description": "Second task tool",
+        "is_archived": False,
+    }
+    kiln_task_tool_2.save_to_file = MagicMock()
+
+    # Create a non-kiln_task tool (should not be affected)
+    remote_mcp_tool = MagicMock()
+    remote_mcp_tool.type = ToolServerType.remote_mcp
+    remote_mcp_tool.properties = {
+        "server_url": "https://example.com",
+        "headers": {"Authorization": "Bearer token"},
+    }
+    remote_mcp_tool.save_to_file = MagicMock()
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.task_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_ai.datamodel.project.Project.external_tool_servers",
+            return_value=[kiln_task_tool_1, kiln_task_tool_2, remote_mcp_tool],
+        ),
+        patch("kiln_ai.datamodel.task.Task.parent_project", return_value=project),
+    ):
+        mock_project_from_id.return_value = project
+        mock_task_from_id.return_value = task
+
+        # Delete the task
+        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+
+    assert response.status_code == 200
+
+    # Verify that the matching kiln_task tool was archived
+    assert kiln_task_tool_1.properties["is_archived"] is True
+    kiln_task_tool_1.save_to_file.assert_called_once()
+
+    # Verify that the non-matching kiln_task tool was not affected
+    assert kiln_task_tool_2.properties["is_archived"] is False
+    kiln_task_tool_2.save_to_file.assert_not_called()
+
+    # Verify that the remote_mcp tool was not affected
+    remote_mcp_tool.save_to_file.assert_not_called()
+
+
+def test_delete_task_no_matching_kiln_task_tools(client, project_and_task):
+    """Test that deleting a task works when no matching kiln_task tools exist."""
+    project, task = project_and_task
+
+    # Create a kiln_task tool for a different task
+    kiln_task_tool = MagicMock()
+    kiln_task_tool.type = ToolServerType.kiln_task
+    kiln_task_tool.properties = {
+        "task_id": "different_task_id",
+        "run_config_id": "config1",
+        "name": "task_tool",
+        "description": "Task tool for different task",
+        "is_archived": False,
+    }
+    kiln_task_tool.save_to_file = MagicMock()
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.task_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_ai.datamodel.project.Project.external_tool_servers",
+            return_value=[kiln_task_tool],
+        ),
+        patch("kiln_ai.datamodel.task.Task.parent_project", return_value=project),
+    ):
+        mock_project_from_id.return_value = project
+        mock_task_from_id.return_value = task
+
+        # Delete the task
+        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+
+    assert response.status_code == 200
+
+    # Verify that no tools were modified
+    assert kiln_task_tool.properties["is_archived"] is False
+    kiln_task_tool.save_to_file.assert_not_called()
+
+
+def test_delete_task_no_external_tool_servers(client, project_and_task):
+    """Test that deleting a task works when project has no external tool servers."""
+    project, task = project_and_task
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.task_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_ai.datamodel.project.Project.external_tool_servers",
+            return_value=[],
+        ),
+        patch("kiln_ai.datamodel.task.Task.parent_project", return_value=project),
+    ):
+        mock_project_from_id.return_value = project
+        mock_task_from_id.return_value = task
+
+        # Delete the task
+        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+
+    assert response.status_code == 200
+
+
+def test_delete_task_archive_error_handling(client, project_and_task):
+    """Test error handling when kiln_task tool properties are missing is_archived field."""
+    project, task = project_and_task
+
+    # Create a kiln_task tool without is_archived field
+    kiln_task_tool = MagicMock()
+    kiln_task_tool.type = ToolServerType.kiln_task
+    kiln_task_tool.properties = {
+        "task_id": task.id,
+        "run_config_id": "config1",
+        "name": "task_tool",
+        "description": "Task tool without is_archived field",
+        # Missing "is_archived" field
+    }
+    kiln_task_tool.save_to_file = MagicMock()
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.task_api.task_from_id") as mock_task_from_id,
+        patch(
+            "kiln_ai.datamodel.project.Project.external_tool_servers",
+            return_value=[kiln_task_tool],
+        ),
+        patch("kiln_ai.datamodel.task.Task.parent_project", return_value=project),
+    ):
+        mock_project_from_id.return_value = project
+        mock_task_from_id.return_value = task
+
+        # Delete the task - should raise TypeError
+        with pytest.raises(TypeError, match="Expected archiveable tool task server"):
+            client.delete(f"/api/projects/{project.id}/task/{task.id}")
+
+
+def test_delete_task_parent_project_none(client, project_and_task):
+    """Test that deleting a task works when parent_project() returns None."""
+    project, task = project_and_task
+
+    with (
+        patch("kiln_server.task_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.task_api.task_from_id") as mock_task_from_id,
+        patch("kiln_ai.datamodel.task.Task.parent_project", return_value=None),
+    ):
+        mock_project_from_id.return_value = project
+        mock_task_from_id.return_value = task
+
+        # Delete the task
+        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+
+    assert response.status_code == 200

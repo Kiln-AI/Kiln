@@ -1,17 +1,12 @@
 import json
-from typing import Type
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.adapters.prompt_builders import (
-    BasePromptBuilder,
-    SavedPromptBuilder,
-    prompt_builder_from_id,
-)
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
 
-# TODO add evaluator rating
+# We should add evaluator rating
 class RepairTaskInput(BaseModel):
     original_prompt: str
     original_input: str

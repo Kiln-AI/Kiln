@@ -1,106 +1,114 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
-  import { client } from "$lib/api_client"
-
-  async function view_logs() {
-    try {
-      const { error } = await client.POST("/api/open_logs", {})
-      if (error) {
-        const errorMessage = (error as Record<string, unknown>)?.message
-        if (typeof errorMessage === "string") {
-          throw new Error(errorMessage)
-        } else {
-          throw new Error("Unknown error")
-        }
-      }
-    } catch (e) {
-      alert("Failed to open logs: " + e)
-    }
-  }
+  import SettingsSection from "$lib/ui/settings_section.svelte"
+  import { view_logs } from "$lib/utils/logs"
 
   let sections = [
     {
-      name: "Edit Task",
-      description:
-        "Edit the currently selected task, including the prompt and requirements.",
-      button_text: "Edit Current Task",
-      href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+      category: "Current Workspace",
+      items: [
+        {
+          name: "Edit Current Task",
+          description:
+            "Modify your current task's prompt, requirements, and configuration settings.",
+          button_text: "Edit Task",
+          href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+        },
+        {
+          name: "Edit Current Project",
+          description:
+            "Update your current project's name, description, and settings.",
+          button_text: "Edit Project",
+          href: "/settings/edit_project/" + $ui_state.current_project_id,
+        },
+      ],
     },
     {
-      name: "AI Providers & Models",
-      description:
-        "Connect to AI providers like OpenAI, OpenRouter, or Ollama.",
-      href: "/settings/providers",
-      button_text: "Manage Providers & Models",
+      category: "Tools & MCP",
+      items: [
+        {
+          name: "Manage Tools",
+          description:
+            "Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers",
+          href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
+          button_text: "Manage Tools",
+        },
+      ],
     },
     {
-      name: "Manage Projects",
-      description: "Add, remove or edit projects.",
-      href: "/settings/manage_projects",
-      button_text: "Manage Projects",
+      category: "Models & Providers",
+      items: [
+        {
+          name: "AI Providers",
+          description:
+            "Connect to over a dozen AI providers like Ollama, OpenRouter, Together, OpenAI and more.",
+          href: "/settings/providers",
+          button_text: "Manage Providers",
+        },
+        {
+          name: "Custom Models",
+          description:
+            "Add or remove custom models from one of your connected AI providers.",
+          href: "/settings/providers/add_models",
+          button_text: "Custom Models",
+        },
+      ],
     },
     {
-      name: "Edit Project",
-      description: "Edit the currently selected project.",
-      button_text: "Edit Current Project",
-      href: "/settings/edit_project/" + $ui_state.current_project_id,
+      category: "Projects",
+      items: [
+        {
+          name: "Manage Projects",
+          description:
+            "Create new projects, organize existing ones, or remove projects you no longer need.",
+          href: "/settings/manage_projects",
+          button_text: "Manage Projects",
+        },
+      ],
     },
     {
-      name: "View Logs",
-      description: "View logs of the LLM calls or the application logs.",
-      button_text: "View Logs",
-      on_click: view_logs,
-    },
-    {
-      name: "App Updates",
-      description: "Check if there is a new version of the app available.",
-      href: "/settings/check_for_update",
-      button_text: "Check for Update",
-    },
-    {
-      name: "Replay Introduction",
-      description: "Watch the introduction slide-show.",
-      href: "/settings/intro",
-      button_text: "Play Intro",
-    },
-    {
-      name: "License",
-      description: "View the Kiln AI desktop app License Agreement.",
-      href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
-      button_text: "View EULA",
-      is_external: true,
+      category: "Help & Resources",
+      items: [
+        {
+          name: "Application Logs",
+          description:
+            "View detailed logs of LLM calls and application events for debugging and monitoring.",
+          button_text: "View Logs",
+          on_click: view_logs,
+        },
+        {
+          name: "Check for Update",
+          description:
+            "Check if there is a newer version of the Kiln app available.",
+          href: "/settings/check_for_update",
+          button_text: "Check for Update",
+        },
+        {
+          name: "Docs & Getting Started",
+          description:
+            "Read the docs, including our getting started guide and video tutorials.",
+          href: "https://docs.kiln.tech",
+          button_text: "Docs & Guides",
+          is_external: true,
+        },
+        {
+          name: "License Agreement",
+          description:
+            "View the End User License Agreement (EULA) for the Kiln AI desktop application.",
+          href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
+          button_text: "View EULA",
+          is_external: true,
+        },
+      ],
     },
   ]
 </script>
 
 <AppPage title="Settings">
-  <div class="flex flex-col gap-8 max-w-[700px] mt-16">
+  <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
-      <div class="flex flex-col md:flex-row gap-4 md:items-center">
-        <div class="grow">
-          <h3 class="font-medium">{section.name}</h3>
-          <p class="text-sm text-gray-500">{section.description}</p>
-        </div>
-        {#if section.href}
-          <a
-            href={section.href}
-            class="btn"
-            style="min-width: 14rem"
-            target={section.is_external ? "_blank" : "_self"}
-          >
-            {section.button_text}
-          </a>
-        {:else if section.on_click}
-          <button
-            class="btn"
-            style="min-width: 14rem"
-            on:click={section.on_click}
-          >
-            {section.button_text}
-          </button>
-        {/if}
-      </div>
+      <SettingsSection title={section.category} items={section.items} />
     {/each}
   </div>
 </AppPage>

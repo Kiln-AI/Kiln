@@ -11,6 +11,9 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import RunConfigProperties
 
 from app.desktop.studio_server.data_gen_api import (
     DataGenCategoriesApiInput,
@@ -51,7 +54,7 @@ def test_task(tmp_path) -> Task:
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
 
-    project = Project(name="Test Project", path=str(project_path))
+    project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
     task = Task(name="Test Task", instruction="Test Instruction", parent=project)
@@ -101,7 +104,8 @@ def test_generate_categories_success(
     input_data = DataGenCategoriesApiInput(
         node_path=["parent", "child"],
         num_subtopics=4,
-        human_guidance="Generate tech categories",
+        guidance="Generate tech categories",
+        gen_type="eval",
         model_name="gpt-4",
         provider="openai",
     )
@@ -128,15 +132,15 @@ def test_generate_samples_success(
     # Arrange
     input_data = DataGenSampleApiInput(
         topic=["technology", "AI"],
-        num_samples=5,
-        human_guidance="Make long samples",
+        gen_type="training",
+        guidance="Make long samples",
         model_name="gpt-4",
         provider="openai",
     )
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/generate_samples",
+        "/api/projects/proj-ID/tasks/task-ID/generate_inputs",
         json=input_data.model_dump(),
     )
 
@@ -158,9 +162,12 @@ def test_save_sample_success_paid_run(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_model_name="gpt_4o_mini",
-        output_provider="openai",
-        prompt_method="simple_prompt_builder",
+        output_run_config_properties=RunConfigProperties(
+            model_name="gpt_4o_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
         topic_path=[],  # No topic path
         tags=["test_tag"],
     )
@@ -200,7 +207,7 @@ def test_save_sample_success_paid_run(
     return
 
 
-def test_save_sample_success_with_mock_invoke(
+def test_generate_sample_success_with_mock_invoke(
     mock_task_from_id,
     mock_langchain_adapter,
     client,
@@ -212,9 +219,12 @@ def test_save_sample_success_with_mock_invoke(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_model_name="gpt_4o_mini",
-        output_provider="openai",
-        prompt_method="simple_prompt_builder",
+        output_run_config_properties=RunConfigProperties(
+            model_name="gpt_4o_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
         topic_path=["AI", "Machine Learning", "Deep Learning"],
         tags=["test_tag"],
     )
@@ -222,7 +232,7 @@ def test_save_sample_success_with_mock_invoke(
     # Act
 
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/save_sample?session_id=1234",
+        "/api/projects/proj-ID/tasks/task-ID/generate_sample?session_id=1234",
         json=input_data.model_dump(),
     )
 
@@ -242,6 +252,19 @@ def test_save_sample_success_with_mock_invoke(
     assert response.status_code == 200
     # Verify TaskRun was created with correct properties
     mock_task_from_id.assert_called_once_with("proj-ID", "task-ID")
+
+    # Check none are saved before calling save
+    saved_runs = test_task.runs()
+    assert len(saved_runs) == 0
+
+    # Call save
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/save_sample",
+        json=response.json(),
+    )
+    assert response.status_code == 200
+
+    # Check one is saved after calling save
     saved_runs = test_task.runs()
     assert len(saved_runs) == 1
     saved_run = saved_runs[0]
@@ -259,7 +282,7 @@ def test_save_sample_success_with_mock_invoke(
     assert response.json()["id"] == saved_run.id
 
 
-def test_save_sample_success_with_topic_path(
+def test_generate_sample_success_with_topic_path(
     mock_task_from_id,
     mock_langchain_adapter,
     client,
@@ -271,14 +294,17 @@ def test_save_sample_success_with_topic_path(
         topic_path=["AI", "Machine Learning", "Deep Learning"],
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_model_name="gpt_4o_mini",
-        output_provider="openai",
-        prompt_method="simple_prompt_builder",
+        output_run_config_properties=RunConfigProperties(
+            model_name="gpt_4o_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
     )
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/save_sample",
+        "/api/projects/proj-ID/tasks/task-ID/generate_sample",
         json=input_data.model_dump(),
     )
 
@@ -310,3 +336,125 @@ def test_topic_path_conversions():
     # Test single item path
     assert topic_path_to_string(["AI"]) == "AI"
     assert topic_path_from_string("AI") == ["AI"]
+
+
+@pytest.mark.parametrize(
+    "guidance,topic_path,initial_instruction,expected_wrapped_call,expected_final_instruction,should_call_wrap",
+    [
+        # Test 1: Only guidance provided (no topic path)
+        (
+            "Custom guidance for generation",
+            [],
+            "Test Instruction",
+            "Custom guidance for generation",
+            "wrapped_instruction",
+            True,
+        ),
+        # Test 2: Only topic path provided (no guidance)
+        (
+            None,
+            ["AI", "Machine Learning"],
+            "Original instruction",
+            """
+## Topic Path
+The topic path for this sample is:
+["AI", "Machine Learning"]
+""",
+            "wrapped_instruction_with_topic",
+            True,
+        ),
+        # Test 3: Both guidance and topic path provided
+        (
+            "Focus on technical accuracy",
+            ["Technology", "AI"],
+            "Original instruction",
+            """Focus on technical accuracy
+## Topic Path
+The topic path for this sample is:
+["Technology", "AI"]
+""",
+            "wrapped_instruction_combined",
+            True,
+        ),
+        # Test 4: Neither guidance nor topic path provided
+        (
+            None,
+            [],
+            "Original instruction",
+            None,  # Won't be called
+            "Original instruction",  # Should remain unchanged
+            False,
+        ),
+        # Test 5: Empty guidance string (should be treated as no guidance)
+        (
+            "",
+            [],
+            "Original instruction",
+            None,  # Won't be called
+            "Original instruction",  # Should remain unchanged
+            False,
+        ),
+    ],
+    ids=[
+        "only_guidance",
+        "only_topic_path",
+        "both_guidance_and_topic_path",
+        "neither_guidance_nor_topic_path",
+        "empty_guidance",
+    ],
+)
+def test_generate_sample_guidance_generation(
+    mock_task_from_id,
+    mock_langchain_adapter,
+    client,
+    mock_task_run,
+    test_task,
+    guidance,
+    topic_path,
+    initial_instruction,
+    expected_wrapped_call,
+    expected_final_instruction,
+    should_call_wrap,
+):
+    """Test that guidance is properly generated and applied in save_sample function"""
+    from unittest.mock import patch
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.wrap_task_with_guidance"
+    ) as mock_wrap:
+        # Set up the mock return value and initial task instruction
+        mock_wrap.return_value = expected_final_instruction
+        test_task.instruction = initial_instruction
+
+        input_data = DataGenSaveSamplesApiInput(
+            input="Test input",
+            input_model_name="gpt-4",
+            input_provider="openai",
+            output_run_config_properties=RunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            topic_path=topic_path,
+            guidance=guidance,
+        )
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_sample",
+            json=input_data.model_dump(),
+        )
+
+        assert response.status_code == 200
+
+        if should_call_wrap:
+            # Verify wrap_task_with_guidance was called with expected parameters
+            mock_wrap.assert_called_once_with(
+                initial_instruction, expected_wrapped_call
+            )
+        else:
+            # Verify wrap_task_with_guidance was NOT called
+            mock_wrap.assert_not_called()
+
+        # Verify task instruction final state
+        assert test_task.instruction == expected_final_instruction

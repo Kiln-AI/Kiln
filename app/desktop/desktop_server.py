@@ -3,23 +3,33 @@ import contextlib
 import os
 import threading
 import time
+import tkinter as tk
 from contextlib import asynccontextmanager
 
 import kiln_ai.datamodel.strict_mode as datamodel_strict_mode
 import kiln_server.server as kiln_server
 import uvicorn
 from fastapi import FastAPI
+from kiln_ai.adapters.remote_config import load_remote_models
 from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
+from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.settings_api import connect_settings
+from app.desktop.studio_server.tool_api import connect_tool_servers_api
 from app.desktop.studio_server.webhost import connect_webhost
+
+# Loads github pages hosted JSON config.
+# You can see public config build logs here: https://github.com/Kiln-AI/remote_config/actions/workflows/publish_remote_config.yml
+# Content is hosted on Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
+# V2 explained: Kiln v0.18 was the first release with remote config, but had bugs. We no longer publish v1 URL (client falls back to local) and instead use v2.
+REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 
 @asynccontextmanager
@@ -38,8 +48,10 @@ async def lifespan(app: FastAPI):
     datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
-def make_app():
+def make_app(tk_root: tk.Tk | None = None):
     setup_litellm_logging()
+
+    load_remote_models(REMOTE_MODEL_LIST_URL)
 
     app = kiln_server.make_app(lifespan=lifespan)
     connect_provider_api(app)
@@ -49,15 +61,17 @@ def make_app():
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
     connect_evals_api(app)
+    connect_import_api(app, tk_root=tk_root)
+    connect_tool_servers_api(app)
 
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
 
 
-def server_config(port=8757):
+def server_config(port=8757, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
-        make_app(),
+        make_app(tk_root=tk_root),
         host="127.0.0.1",
         port=port,
         use_colors=False,

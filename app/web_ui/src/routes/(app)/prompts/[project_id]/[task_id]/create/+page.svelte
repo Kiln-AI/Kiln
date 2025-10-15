@@ -7,6 +7,8 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
+  import posthog from "posthog-js"
+  import { onMount } from "svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -20,6 +22,12 @@
     "Think step by step, explaining your reasoning."
   let create_error: KilnError | null = null
   let create_loading = false
+  let warn_before_unload = false
+  let mounted = false
+
+  onMount(() => {
+    mounted = true
+  })
 
   async function create_prompt() {
     try {
@@ -50,6 +58,9 @@
       if (!data || !data.id) {
         throw new Error("Invalid response from server")
       }
+      posthog.capture("create_prompt_manual", {
+        is_chain_of_thought: is_chain_of_thought,
+      })
 
       // Success! Reload then navigate to the new prompt
       await load_available_prompts()
@@ -60,16 +71,40 @@
       create_loading = false
     }
   }
+
+  // Warn before unload if there's any user input
+  $: prompt_name,
+    prompt_description,
+    prompt,
+    is_chain_of_thought,
+    chain_of_thought_instructions,
+    user_input_detected()
+
+  function user_input_detected() {
+    if (mounted) {
+      warn_before_unload = true
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
-  <AppPage title="Create a Prompt" subtitle={`For the task "${task_name}"`}>
+  <AppPage
+    title="Create a Prompt"
+    subtitle={`For the task "${task_name}"`}
+    breadcrumbs={[
+      {
+        label: "Prompts",
+        href: `/prompts/${project_id}/${task_id}`,
+      },
+    ]}
+  >
     <div class="max-w-[800px]">
       <FormContainer
         submit_label="Create Prompt"
         on:submit={create_prompt}
         bind:error={create_error}
         bind:submitting={create_loading}
+        {warn_before_unload}
       >
         <FormElement
           label="Prompt Name"
@@ -92,7 +127,7 @@
           id="prompt"
           bind:value={prompt}
           inputType="textarea"
-          tall={true}
+          height="large"
           description="A prompt to use for this task."
           info_description="A LLM prompt such as 'You are a helpful assistant.'. This prompt is specific to this task. To use this prompt after creation, select it from the prompts dropdown."
         />

@@ -9,7 +9,7 @@
   import type { ChatStrategy } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
-  import PromptTypeSelector from "../../../../run/prompt_type_selector.svelte"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
   import { fine_tune_target_model as model_provider } from "$lib/stores"
   import {
     available_tuning_models,
@@ -19,6 +19,7 @@
   } from "$lib/stores/fine_tune_store"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { goto } from "$app/navigation"
+  import posthog from "posthog-js"
 
   import type {
     FinetuneProvider,
@@ -266,6 +267,11 @@
       if (!create_finetune_response || !create_finetune_response.id) {
         throw new Error("Invalid response from server")
       }
+      posthog.capture("create_finetune", {
+        base_model: base_model_id,
+        provider: provider_id,
+        prompt_method: system_prompt_method,
+      })
       created_finetune = create_finetune_response
       progress_ui_state.set({
         title: "Creating Fine-Tune",
@@ -437,6 +443,9 @@
   <AppPage
     title="Create a New Fine Tune"
     subtitle="Fine-tuned models learn from your dataset."
+    breadcrumbs={[
+      { label: "Fine Tunes", href: `/fine_tune/${project_id}/${task_id}` },
+    ]}
   >
     {#if $available_models_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -482,7 +491,7 @@
             bind:value={$model_provider}
           />
           <button
-            class="mt-1 underline decoration-gray-400"
+            class="mt-2 underline decoration-gray-400"
             on:click={go_to_providers_settings}
           >
             <Warning

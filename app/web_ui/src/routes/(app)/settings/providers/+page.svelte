@@ -5,12 +5,13 @@
 </script>
 
 <AppPage
-  title="AI Providers & Models"
+  title="AI Providers"
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.getkiln.ai/docs/models-and-ai-providers"
+  sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
+  breadcrumbs={[{ label: "Settings", href: "/settings" }]}
   action_buttons={[
     {
-      label: "Add Models",
+      label: "Custom Models",
       href: "/settings/providers/add_models",
       primary: true,
     },
@@ -18,5 +19,8 @@
 >
   <ConnectProviders
     highlight_finetune={$page.url.searchParams.get("highlight") === "finetune"}
+    required_providers={$page.url.searchParams
+      .get("required_providers")
+      ?.split(",") || []}
   />
 </AppPage>

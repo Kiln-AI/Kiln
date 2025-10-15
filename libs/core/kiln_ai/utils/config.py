@@ -6,6 +6,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
+# Configuration keys
+MCP_SECRETS_KEY = "mcp_secrets"
+
 
 class ConfigProperty:
     def __init__(
@@ -53,6 +56,10 @@ class Config:
             "ollama_base_url": ConfigProperty(
                 str,
                 env_var="OLLAMA_BASE_URL",
+            ),
+            "docker_model_runner_base_url": ConfigProperty(
+                str,
+                env_var="DOCKER_MODEL_RUNNER_BASE_URL",
             ),
             "bedrock_access_key": ConfigProperty(
                 str,
@@ -124,6 +131,11 @@ class Config:
                 env_var="WANDB_API_KEY",
                 sensitive=True,
             ),
+            "siliconflow_cn_api_key": ConfigProperty(
+                str,
+                env_var="SILICONFLOW_CN_API_KEY",
+                sensitive=True,
+            ),
             "wandb_base_url": ConfigProperty(
                 str,
                 env_var="WANDB_BASE_URL",
@@ -136,6 +148,26 @@ class Config:
                 list,
                 default_lambda=lambda: [],
                 sensitive_keys=["api_key"],
+            ),
+            "cerebras_api_key": ConfigProperty(
+                str,
+                env_var="CEREBRAS_API_KEY",
+                sensitive=True,
+            ),
+            "enable_demo_tools": ConfigProperty(
+                bool,
+                env_var="ENABLE_DEMO_TOOLS",
+                default=False,
+            ),
+            # Allow the user to set the path to lookup MCP server commands, like npx.
+            "custom_mcp_path": ConfigProperty(
+                str,
+                env_var="CUSTOM_MCP_PATH",
+            ),
+            # Allow the user to set secrets for MCP servers, the key is mcp_server_id::key_name
+            MCP_SECRETS_KEY: ConfigProperty(
+                dict[str, str],
+                sensitive=True,
             ),
         }
         self._lock = threading.Lock()
@@ -189,14 +221,14 @@ class Config:
             raise AttributeError(f"Config has no attribute '{name}'")
 
     @classmethod
-    def settings_dir(cls, create=True):
+    def settings_dir(cls, create=True) -> str:
         settings_dir = os.path.join(Path.home(), ".kiln_ai")
         if create and not os.path.exists(settings_dir):
             os.makedirs(settings_dir)
         return settings_dir
 
     @classmethod
-    def settings_path(cls, create=True):
+    def settings_path(cls, create=True) -> str:
         settings_dir = cls.settings_dir(create)
         return os.path.join(settings_dir, "settings.yaml")
 

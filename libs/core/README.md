@@ -20,7 +20,7 @@ pip install kiln_ai
 
 ## About
 
-This package is the Kiln AI core library. There is also a separate desktop application and server package. Learn more about Kiln AI at [getkiln.ai](https://getkiln.ai) and on Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln).
+This package is the Kiln AI core library. There is also a separate desktop application and server package. Learn more about Kiln AI at [kiln.tech](https://kiln.tech) and on Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln).
 
 # Guide: Using the Kiln Python Library
 
@@ -32,6 +32,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 
 ## Table of Contents
 
+- [Connecting AI Providers](#connecting-ai-providers-openai-openrouter-ollama-etc)
 - [Using the Kiln Data Model](#using-the-kiln-data-model)
   - [Understanding the Kiln Data Model](#understanding-the-kiln-data-model)
   - [Datamodel Overview](#datamodel-overview)
@@ -40,7 +41,12 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
   - [Building and Running a Kiln Task from Code](#building-and-running-a-kiln-task-from-code)
+  - [Tagging Task Runs Programmatically](#tagging-task-runs-programmatically)
   - [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code)
+- [Taking Kiln RAG to production](#taking-kiln-rag-to-production)
+  - [Load a LlamaIndex Vector Store](#load-a-llamaindex-vector-store)
+  - [Example: LanceDB Cloud](#example-lancedb-cloud)
+  - [Deploy RAG without LlamaIndex](#deploy-rag-without-llamaindex)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
@@ -48,6 +54,12 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
 ```bash
 pip install kiln-ai
 ```
+
+## Connecting AI Providers (OpenAI, OpenRouter, Ollama, etc)
+
+The easiest way to connect AI providers is to use the Kiln app UI. Once connected in the UI, credentials will be stored to `~/.kiln_ai/settings.yml`, which will be available to the library.
+
+For configuring credentials from code or connecting custom servers/model, see [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code).
 
 ## Using the Kiln Data Model
 
@@ -146,7 +158,10 @@ item = kiln_ai.datamodel.TaskRun(
             type=kiln_ai.datamodel.DataSourceType.human,
             properties={"created_by": "Jane Doe"},
         ),
-        rating=kiln_ai.datamodel.TaskOutputRating(score=5,type="five_star"),
+        rating=kiln_ai.datamodel.TaskOutputRating(
+            value=5,
+            type=kiln_ai.datamodel.datamodel_enums.five_star,
+        ),
     ),
 )
 item.save_to_file()
@@ -237,14 +252,33 @@ for run in task.runs():
 
 ```
 
+## Tagging Task Runs Programmatically
+
+You can also tag your Kiln Task runs programmatically:
+
+```py
+# Load your Kiln Task from disk
+task_path = "/Users/youruser/Kiln Projects/test project/tasks/632780983478 - Joke Generator/task.kiln"
+task = kiln_ai.datamodel.Task.load_from_file(task_path)
+
+for run in task.runs():
+    # Parse the task output from JSON
+    output = json.loads(run.output.output)
+
+    # Add a tag if the punchline is unusually short
+    if len(output["punchline"]) < 100:
+        run.tags.append("very_short")
+        run.save_to_file()  # Persist the updated tags
+```
+
 ### Adding Custom Model or AI Provider from Code
 
 You can add additional AI models and providers to Kiln.
 
 See our docs for more information, including how to add these from the UI:
 
-- [Custom Models From Existing Providers](https://docs.getkiln.ai/docs/models-and-ai-providers#custom-models-from-existing-providers)
-- [Custom OpenAI Compatible Servers](https://docs.getkiln.ai/docs/models-and-ai-providers#custom-openai-compatible-servers)
+- [Custom Models From Existing Providers](https://docs.kiln.tech/docs/models-and-ai-providers#custom-models-from-existing-providers)
+- [Custom OpenAI Compatible Servers](https://docs.kiln.tech/docs/models-and-ai-providers#custom-openai-compatible-servers)
 
 You can also add these from code. The kiln_ai.utils.Config class helps you manage the Kiln config file (stored at `~/.kiln_settings/config.yaml`):
 
@@ -279,6 +313,78 @@ if existing_model:
 custom_model_ids.append(new_model)
 Config.shared().custom_models = custom_model_ids
 ```
+
+## Taking Kiln RAG to production
+
+When you're ready to deploy your RAG system, you can export your processed documents to any vector store supported by LlamaIndex. This allows you to use your Kiln-configured chunking and embedding settings in production.
+
+### Load a LlamaIndex Vector Store
+
+Kiln provides a `VectorStoreLoader` that yields your processed document chunks as LlamaIndex `TextNode` objects. These nodes contain the same metadata, chunking and embedding data as your Kiln Search Tool configuration.
+
+```py
+from kiln_ai.datamodel import Project
+from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.adapters.vector_store_loaders import VectorStoreLoader
+
+# Load your project and RAG configuration
+project = Project.load_from_file("path/to/your/project.kiln")
+rag_config = RagConfig.from_id_and_parent_path("rag-config-id", project.path)
+
+# Create the loader
+loader = VectorStoreLoader(project=project, rag_config=rag_config)
+
+# Export chunks to any LlamaIndex vector store
+async for batch in loader.iter_llama_index_nodes(batch_size=10):
+    # Insert into your chosen vector store
+    # Examples: LanceDB, Pinecone, Chroma, Qdrant, etc.
+    pass
+```
+
+**Supported Vector Stores:** LlamaIndex supports 20+ vector stores including LanceDB, Pinecone, Weaviate, Chroma, Qdrant, and more. See the [full list](https://developers.llamaindex.ai/python/framework/module_guides/storing/vector_stores/).
+
+### Example: LanceDB Cloud
+
+Internally Kiln uses LanceDB. By using LanceDB cloud you'll get the same indexing behaviour as in app.
+
+Here's a complete example using LanceDB Cloud:
+
+```py
+from kiln_ai.datamodel import Project
+from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
+from kiln_ai.adapters.vector_store_loaders import VectorStoreLoader
+from kiln_ai.adapters.vector_store.lancedb_adapter import lancedb_construct_from_config
+
+# Load configurations
+project = Project.load_from_file("path/to/your/project.kiln")
+rag_config = RagConfig.from_id_and_parent_path("rag-config-id", project.path)
+vector_store_config = VectorStoreConfig.from_id_and_parent_path(
+    rag_config.vector_store_config_id, project.path,
+)
+
+# Create LanceDB vector store
+lancedb_store = lancedb_construct_from_config(
+    vector_store_config=vector_store_config,
+    uri="db://my-project",
+    api_key="sk_...",
+    region="us-east-1",
+    table_name="my-documents",  # Created automatically
+)
+
+# Export and insert your documents
+loader = VectorStoreLoader(project=project, rag_config=rag_config)
+async for batch in loader.iter_llama_index_nodes(batch_size=100):
+    await lancedb_store.async_add(batch)
+
+print("Documents successfully exported to LanceDB!")
+```
+
+After export, query your data using [LlamaIndex](https://developers.llamaindex.ai/python/framework-api-reference/storage/vector_store/lancedb/) or the [LanceDB client](https://lancedb.github.io/lancedb/).
+
+### Deploy RAG without LlamaIndex
+
+While Kiln is designed for deploying to LlamaIndex, you don't need to use it. The `iter_llama_index_nodes` returns a `TextNode` object which includes all the data you need to build a RAG index in any stack: embedding, text, document name, chunk ID, etc.
 
 ## Full API Reference
 

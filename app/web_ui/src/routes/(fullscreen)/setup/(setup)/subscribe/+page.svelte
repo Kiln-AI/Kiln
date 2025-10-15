@@ -12,17 +12,13 @@
     loading = true
     error = null
     try {
-      console.log("Subscribing to newsletter local to remote", email)
-      const res = await fetch(
-        "https://getkiln.ai/api/subscribe_to_newsletter",
-        {
-          method: "POST",
-          body: JSON.stringify({ email }),
-          headers: {
-            "Content-Type": "application/json",
-          },
+      const res = await fetch("https://kiln.tech/api/subscribe_to_newsletter", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+        headers: {
+          "Content-Type": "application/json",
         },
-      )
+      })
       if (res.status !== 200) {
         throw new Error("Failed to subscribe")
       }

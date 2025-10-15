@@ -38,6 +38,15 @@ def test_valid_file_import_data_source():
     assert data_source.properties["file_name"] == "test.txt"
 
 
+def test_empty_valid_tool_call_data_source():
+    data_source = DataSource(
+        type=DataSourceType.tool_call,
+        properties={},
+    )
+    assert data_source.type == DataSourceType.tool_call
+    assert data_source.properties == {}
+
+
 def test_missing_required_property():
     with pytest.raises(ValidationError, match="'created_by' is required for"):
         DataSource(type=DataSourceType.human)
@@ -79,6 +88,35 @@ def test_not_allowed_property():
         )
 
 
+def test_not_allowed_property_tool_call():
+    with pytest.raises(
+        ValidationError,
+        match="'created_by' is not allowed for",
+    ):
+        DataSource(
+            type=DataSourceType.tool_call,
+            properties={
+                "model_name": "GPT-4",
+                "model_provider": "OpenAI",
+                "adapter_name": "langchain",
+                "created_by": "John Doe",
+            },
+        )
+
+
+def test_not_allowed_file_name_tool_call():
+    with pytest.raises(
+        ValidationError,
+        match="'file_name' is not allowed for",
+    ):
+        DataSource(
+            type=DataSourceType.tool_call,
+            properties={
+                "file_name": "test.txt",
+            },
+        )
+
+
 def test_extra_properties():
     data_source = DataSource(
         type=DataSourceType.synthetic,
@@ -86,6 +124,18 @@ def test_extra_properties():
             "model_name": "GPT-4",
             "model_provider": "OpenAI",
             "adapter_name": "langchain",
+            "temperature": 0.7,
+            "max_tokens": 100,
+        },
+    )
+    assert data_source.properties["temperature"] == 0.7
+    assert data_source.properties["max_tokens"] == 100
+
+
+def test_extra_properties_tool_call():
+    data_source = DataSource(
+        type=DataSourceType.tool_call,
+        properties={
             "temperature": 0.7,
             "max_tokens": 100,
         },

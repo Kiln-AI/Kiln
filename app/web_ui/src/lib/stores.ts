@@ -9,11 +9,25 @@ import type {
   RatingOptionResponse,
   TaskRequirement,
   ModelDetails,
+  EmbeddingProvider,
+  EmbeddingModelDetails,
+  VectorStoreType,
+  ToolSetApiDescription,
 } from "./types"
 import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
 import type { Writable } from "svelte/store"
 import type { ProviderModel } from "./types"
+
+export type TaskCompositeId = string & { __brand: "TaskCompositeId" }
+
+// Helper function to create composite keys for a task
+export function get_task_composite_id(
+  project_id: string,
+  task_id: string,
+): TaskCompositeId {
+  return `${project_id}:${task_id}` as TaskCompositeId
+}
 
 export type AllProjects = {
   projects: Project[]
@@ -58,7 +72,11 @@ ui_state.subscribe((state) => {
     current_project.set(get_current_project())
   }
   if (state.current_task_id != previous_ui_state.current_task_id) {
-    load_current_task(get(current_project))
+    // invalidate task caches. Rating options will load on demand.
+    current_task.set(null)
+    current_task_rating_options.set(null)
+    current_task_prompts.set(null)
+    load_current_task(get(current_project)?.id)
   }
   previous_ui_state = { ...state }
 })
@@ -66,7 +84,7 @@ ui_state.subscribe((state) => {
 projects.subscribe((all_projects) => {
   if (all_projects) {
     current_project.set(get_current_project())
-    load_current_task(get(current_project))
+    load_current_task(get(current_project)?.id)
   }
 })
 
@@ -163,14 +181,14 @@ export async function load_task(
   return data
 }
 
-export async function load_current_task(project: Project | null) {
+export async function load_current_task(project_id: string | null | undefined) {
   let task: Task | null = null
   try {
     const task_id = get(ui_state).current_task_id
-    if (!project || !project?.id || !task_id) {
+    if (!project_id || !task_id) {
       return
     }
-    task = await load_task(project.id, task_id)
+    task = await load_task(project_id, task_id)
 
     // Load the current task's prompts after 50ms, as it's not the most critical data
     setTimeout(() => {
@@ -194,17 +212,82 @@ export async function load_current_task(project: Project | null) {
   }
 }
 
+// Available tools, by project ID
+export const available_tools = writable<
+  Record<string, ToolSetApiDescription[]>
+>({})
+let loading_project_tools: string[] = []
+
+export function uncache_available_tools(project_id: string) {
+  // Delete the project_id from the available_tools, so next load it needs to load a updated list.
+  const { [project_id]: _, ...remaining } = get(available_tools)
+  available_tools.set(remaining)
+}
+
+export async function load_available_tools(
+  project_id: string,
+  force: boolean = false,
+) {
+  // Only allow one request per project at a time
+  if (loading_project_tools.includes(project_id)) {
+    return
+  }
+
+  // Don't load if already loaded, unless forced
+  if (get(available_tools)[project_id] && !force) {
+    return
+  }
+
+  try {
+    loading_project_tools.push(project_id)
+
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/available_tools",
+      {
+        params: {
+          path: {
+            project_id: project_id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    available_tools.set({
+      ...get(available_tools),
+      [project_id]: data,
+    })
+  } catch (error: unknown) {
+    console.error(
+      "Failed to load tools for project " +
+        project_id +
+        ": " +
+        createKilnError(error).getMessage(),
+    )
+  } finally {
+    loading_project_tools = loading_project_tools.filter(
+      (id) => id !== project_id,
+    )
+  }
+}
+
 // Available models for each provider
 export const available_models = writable<AvailableModels[]>([])
-let available_models_loaded: "not_loaded" | "loading" | "loaded" = "not_loaded"
+let available_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
 
 export async function load_available_models() {
   try {
     if (
       available_models_loaded === "loading" ||
-      available_models_loaded === "loaded"
+      available_models_loaded === "loaded" ||
+      available_models_loaded === "error_loading"
     ) {
-      // Block parallel requests or if already loaded
+      // Block parallel requests or if already loaded or errored
       return
     }
     available_models_loaded = "loading"
@@ -217,8 +300,44 @@ export async function load_available_models() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     available_models.set([])
-    available_models_loaded = "not_loaded"
+    available_models_loaded = "error_loading"
   }
+}
+
+// Available embedding models for each provider
+export const available_embedding_models = writable<EmbeddingProvider[]>([])
+let available_embedding_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
+
+export async function load_available_embedding_models() {
+  try {
+    if (
+      available_embedding_models_loaded === "loading" ||
+      available_embedding_models_loaded === "loaded" ||
+      available_embedding_models_loaded === "error_loading"
+    ) {
+      return
+    }
+    available_embedding_models_loaded = "loading"
+    const { data, error } = await client.GET("/api/available_embedding_models")
+    if (error) {
+      throw error
+    }
+    available_embedding_models.set(data)
+    available_embedding_models_loaded = "loaded"
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    available_embedding_models.set([])
+    available_embedding_models_loaded = "error_loading"
+  }
+}
+
+export function clear_available_models_cache() {
+  available_models_loaded = "not_loaded"
+  available_models.set([])
 }
 
 // Model Info
@@ -294,6 +413,27 @@ export function get_model_info(
   return null
 }
 
+export function get_embedding_model_info(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): EmbeddingModelDetails | null {
+  if (!model_id) {
+    return null
+  }
+
+  for (const provider of get(available_embedding_models)) {
+    if (provider.provider_id === provider_id) {
+      const models = provider.models || []
+      for (const model of models) {
+        if (model.id === model_id) {
+          return model
+        }
+      }
+    }
+  }
+  return null
+}
+
 export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
@@ -307,6 +447,36 @@ export function model_name(
     return model.name
   }
   return "Model ID: " + model_id
+}
+
+export function embedding_model_name(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): string {
+  if (!model_id) {
+    return "Unknown"
+  }
+  const model = get_embedding_model_info(model_id, provider_id)
+  if (model?.name) {
+    return model.name
+  }
+  return "Model ID: " + model_id
+}
+
+export function vector_store_name(store_type: VectorStoreType | null): string {
+  if (!store_type) {
+    return "Unknown"
+  }
+  switch (store_type) {
+    case "lancedb_fts":
+      return "Full Text Search"
+    case "lancedb_vector":
+      return "Vector Search"
+    case "lancedb_hybrid":
+      return "Hybrid Search"
+    default:
+      return "Unknown"
+  }
 }
 
 export function provider_name_from_id(provider_id: string): string {
@@ -449,4 +619,12 @@ export function rating_options_for_sample(
       return option.show_for_tags.some((tag: string) => tags.includes(tag))
     })
     .map((option) => option.requirement)
+}
+
+export function get_model_friendly_name(model_id: string): string {
+  const model = get_model_info(model_id, get(model_info))
+  if (model?.name) {
+    return model.name
+  }
+  return model_id
 }

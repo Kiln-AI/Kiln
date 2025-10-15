@@ -2,15 +2,48 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { base_url } from "$lib/api_client"
+  import posthog from "posthog-js"
 
-  export let btn_size: "normal" | "mid" = "mid"
+  export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
+  export let btn_primary: boolean = true
+  export let btn_class: string = ""
   export let on_run_complete: () => void = () => {}
-  export let run_url: string
   export let eval_state:
     | "not_started"
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
+
+  export let eval_type: "eval_config" | "run_config"
+  export let project_id: string
+  export let task_id: string
+  export let eval_id: string
+  export let current_eval_config_id: string | null = null
+  export let run_all: boolean = false
+  export let run_config_ids: string[] = []
+  let run_url: string = ""
+  $: {
+    if (eval_type === "run_config") {
+      const params = new URLSearchParams()
+
+      if (run_all) {
+        params.append("all_run_configs", "true")
+      } else {
+        params.append("all_run_configs", "false")
+        // FastAPI expects multiple query parameters with the same name for list[str]
+        run_config_ids.forEach((id) => {
+          params.append("run_config_ids", id)
+        })
+      }
+
+      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/eval/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_task_run_eval?${params.toString()}`
+    } else if (eval_type === "eval_config") {
+      // Eval config only supports running all evals for now
+      run_all = true
+      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/eval/${encodeURIComponent(eval_id)}/run_eval_config_eval`
+    }
+  }
 
   let run_dialog: Dialog | null = null
   let running_progress_dialog: Dialog | null = null
@@ -21,9 +54,24 @@
   let eval_error_count = 0
 
   function run_eval(): boolean {
-    if (!run_url) {
+    if (eval_type === "run_config" && !current_eval_config_id) {
       eval_run_error = new KilnError(
-        "Select all options needed to run the eval",
+        "Select all options needed to run the eval.",
+        null,
+      )
+      eval_state = "complete_with_errors"
+      // True to close the run dialog, and then show the error in the progress dialog
+      running_progress_dialog?.show()
+      return true
+    }
+
+    if (
+      eval_type === "run_config" &&
+      !run_all &&
+      (!run_config_ids || run_config_ids.length === 0)
+    ) {
+      eval_run_error = new KilnError(
+        "Select at least one run config to run the eval.",
         null,
       )
       eval_state = "complete_with_errors"
@@ -38,6 +86,11 @@
     eval_error_count = 0
 
     const eventSource = new EventSource(run_url)
+
+    posthog.capture("run_eval", {
+      eval_type: eval_type,
+      run_all: run_all,
+    })
 
     eventSource.onmessage = (event) => {
       try {
@@ -103,20 +156,31 @@
 
     return buttons
   }
+
+  function run_button_style_class() {
+    if (btn_size === "small") {
+      return "btn-sm rounded-full"
+    } else if (btn_size === "mid") {
+      return "btn-mid"
+    } else if (btn_size === "xs") {
+      return "btn-xs rounded-full"
+    }
+    return ""
+  }
 </script>
 
 {#if eval_state === "not_started"}
   <button
-    class="btn {btn_size === 'mid'
-      ? 'btn-mid'
-      : ''} btn-primary whitespace-nowrap"
+    class="btn {run_button_style_class()} {btn_primary
+      ? 'btn-primary'
+      : 'btn-outline'} whitespace-nowrap {btn_class}"
     on:click={() => {
       run_dialog?.show()
-    }}>Run Eval</button
+    }}>Run {run_all ? "All Evals" : "Eval"}</button
   >
 {:else}
   <button
-    class="btn {btn_size === 'mid' ? 'btn-mid' : ''} whitespace-nowrap"
+    class="btn {run_button_style_class()} whitespace-nowrap {btn_class}"
     on:click={() => {
       running_progress_dialog?.show()
     }}
@@ -127,7 +191,7 @@
     {:else if eval_state === "complete"}
       Eval Complete
     {:else if eval_state === "complete_with_errors"}
-      Eval Complete with Errors
+      Eval Errors
     {:else}
       Eval Status
     {/if}
@@ -148,7 +212,7 @@
         <div>
           If you want to add more data to your eval,
           <a
-            href="https://docs.getkiln.ai/docs/evaluations#create-your-eval-datasets"
+            href="https://docs.kiln.tech/docs/evaluations#create-your-eval-datasets"
             target="_blank"
             class="link">read the docs</a
           > for instructions.

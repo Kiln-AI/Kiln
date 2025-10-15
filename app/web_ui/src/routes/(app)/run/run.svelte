@@ -15,7 +15,7 @@
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
-  import TagDropdown from "./tag_dropdown.svelte"
+  import TagDropdown from "../../../lib/ui/tag_dropdown.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { components } from "../../../lib/api_schema"
   import Warning from "../../../lib/ui/warning.svelte"
@@ -24,6 +24,9 @@
     rating_options_for_sample,
     current_task_rating_options,
   } from "$lib/stores"
+  import posthog from "posthog-js"
+  import TraceComponent from "$lib/ui/trace/trace.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -55,7 +58,6 @@
   let show_raw_data = false
   let save_rating_error: KilnError | null = null
   let show_create_tag = false
-  // TODO warn_before_unload
 
   type RatingValue = number | null
   let overall_rating: RatingValue = null
@@ -135,7 +137,6 @@
             run_id: run?.id || "",
           },
         },
-        // @ts-expect-error type checking and PATCH don't mix
         body: patch_body,
       },
     )
@@ -202,6 +203,7 @@
       }
       updated_run = await patch_run(patch_body)
       save_rating_error = null
+      posthog.capture("save_ratings", {})
     } catch (err) {
       save_rating_error = createKilnError(err)
     }
@@ -378,11 +380,32 @@
     updated_run = repair_run_edited
     repair_run = null
   }
+
+  function get_usage_properties(run: TaskRun | null) {
+    let properties = []
+
+    if (run?.usage?.cost) {
+      properties.push({
+        name: "Cost",
+        value: `$${run.usage.cost.toFixed(6)}`,
+      })
+    }
+
+    if (run?.usage?.total_tokens) {
+      properties.push({
+        name: "Tokens",
+        value: run.usage.total_tokens,
+      })
+    }
+
+    return properties
+  }
+  $: usage_properties = get_usage_properties(run)
 </script>
 
 <div>
   <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
-    <div class="grow">
+    <div class="grow min-w-0 overflow-hidden">
       <div class="text-xl font-bold mb-1">Output</div>
       {#if task.output_json_schema}
         <div class="text-xs font-medium text-gray-500 flex flex-row mb-2">
@@ -398,19 +421,28 @@
           Structure Valid
         </div>
       {/if}
-      <Output raw_output={run.output.output} />
-      {#if run.intermediate_outputs}
-        {#each Object.entries(run.intermediate_outputs) as [name, intermediate_output]}
-          <div
-            class="text-xs font-bold text-gray-500 mt-4 mb-1 flex flex-row items-center gap-1"
-          >
-            {get_intermediate_output_title(name)}
-            <InfoTooltip
-              tooltip_text={`This is intermediate output from the model, and not considered part of the final answer. This thinking helped formulate the final answer above. This is known as 'chain of thought', 'thinking output', or 'inference time compute'.`}
-            />
-          </div>
-          <Output raw_output={intermediate_output} />
-        {/each}
+      {#if run.trace}
+        <!-- Render the output, but leave the COT and other intermediate output rendering to the trace -->
+        <Output raw_output={run.output.output} />
+        <div>
+          <div class="font-bold mt-6 mb-2">All Messages</div>
+          <TraceComponent trace={run.trace} {project_id} />
+        </div>
+      {:else}
+        <Output raw_output={run.output.output} />
+        {#if run.intermediate_outputs}
+          {#each Object.entries(run.intermediate_outputs) as [name, intermediate_output]}
+            <div
+              class="text-xs font-bold text-gray-500 mt-4 mb-1 flex flex-row items-center gap-1"
+            >
+              {get_intermediate_output_title(name)}
+              <InfoTooltip
+                tooltip_text={`This is intermediate output from the model, and not considered part of the final answer. This thinking helped formulate the final answer above. This is known as 'chain of thought', 'thinking output', or 'inference time compute'.`}
+              />
+            </div>
+            <Output raw_output={intermediate_output} />
+          {/each}
+        {/if}
       {/if}
       <div>
         <div class="mt-2">
@@ -582,7 +614,14 @@
             >
           </div>
         {/if}
+        <p class="text-xs text-gray-500 mt-1 font-light">
+          Ratings are defined in the <a
+            href={`/settings/edit_task/${project_id}/${task.id}`}
+            class="link">task settings</a
+          >.
+        </p>
       </div>
+
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">
         {#if rating_requirements}
           {#each rating_requirements as requirement, index}
@@ -645,6 +684,8 @@
               : 'hidden'}"
           >
             <TagDropdown
+              {project_id}
+              task_id={task.id || null}
               on_select={(tag) => add_tags([tag])}
               on_escape={() => (show_create_tag = false)}
               focus_on_mount={true}
@@ -656,6 +697,11 @@
               >
             </div>
           </div>
+        {/if}
+      </div>
+      <div>
+        {#if usage_properties && usage_properties.length > 0}
+          <PropertyList properties={usage_properties} title="Usage" />
         {/if}
       </div>
     </div>

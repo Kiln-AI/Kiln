@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, List, Literal, Optional
 
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
@@ -107,14 +106,12 @@ class TwoMessageCotLegacyFormatter(ChatFormatter):
         if self._state == "awaiting_thinking":
             if previous_output is None:
                 raise ValueError("previous_output required for thinking step")
-            msgs = [
-                ChatMessage("assistant", previous_output),
-                ChatMessage("user", COT_FINAL_ANSWER_PROMPT),
-            ]
             self._intermediate_outputs["chain_of_thought"] = previous_output
             self._state = "awaiting_final"
-            self._messages.extend(msgs)
-            return ChatTurn(messages=msgs, final_call=True)
+            cot_message = ChatMessage("user", COT_FINAL_ANSWER_PROMPT)
+            self._messages.append(ChatMessage("assistant", previous_output))
+            self._messages.append(cot_message)
+            return ChatTurn(messages=[cot_message], final_call=True)
 
         if self._state == "awaiting_final":
             if previous_output is None:
@@ -156,14 +153,12 @@ class TwoMessageCotFormatter(ChatFormatter):
         if self._state == "awaiting_thinking":
             if previous_output is None:
                 raise ValueError("previous_output required for thinking step")
-            msgs = [
-                ChatMessage("assistant", previous_output),
-                ChatMessage("user", COT_FINAL_ANSWER_PROMPT),
-            ]
             self._intermediate_outputs["chain_of_thought"] = previous_output
             self._state = "awaiting_final"
-            self._messages.extend(msgs)
-            return ChatTurn(messages=msgs, final_call=True)
+            self._messages.append(ChatMessage("assistant", previous_output))
+            cot_message = ChatMessage("user", COT_FINAL_ANSWER_PROMPT)
+            self._messages.append(cot_message)
+            return ChatTurn(messages=[cot_message], final_call=True)
 
         if self._state == "awaiting_final":
             if previous_output is None:

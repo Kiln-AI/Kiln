@@ -5,17 +5,25 @@
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import SchemaSection from "./schema_section.svelte"
-  import { current_project } from "$lib/stores"
+  import {
+    current_project,
+    load_current_task,
+    load_rating_options,
+  } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { ui_state, projects } from "$lib/stores"
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
   import { tick } from "svelte"
+  import posthog from "posthog-js"
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
   export let hide_example_task: boolean = false
+
+  // Simplify the create view for onboarding
+  export let onboarding: boolean = false
 
   // @ts-expect-error This is a partial task, which is fine.
   export let task: Task = {
@@ -27,7 +35,7 @@
 
   $: creating = !task.id
   $: editing = !creating
-  $: show_requirements = editing || task.requirements.length > 0
+  $: show_requirements = !onboarding || task.requirements.length > 0
 
   // These have their own custom VM, which is translated back to the model on save
   let outputSchemaSection: SchemaSection
@@ -36,7 +44,6 @@
   let error: KilnError | null = null
   let submitting = false
   export let saved: boolean = false
-
   // Warn before unload if there's any user input
   $: warn_before_unload =
     !saved &&
@@ -95,12 +102,14 @@
                 project_id,
               },
             },
-            // @ts-expect-error This API is not typed
             body: body,
           },
         )
         data = post_data
         network_error = post_error
+        if (!network_error) {
+          posthog.capture("create_task", {})
+        }
       } else {
         const { data: patch_data, error: patch_error } = await client.PATCH(
           "/api/projects/{project_id}/task/{task_id}",
@@ -111,12 +120,14 @@
                 task_id: task.id || "",
               },
             },
-            // @ts-expect-error This API is not typed
             body: body,
           },
         )
         data = patch_data
         network_error = patch_error
+        if (!network_error) {
+          posthog.capture("update_task", {})
+        }
       }
       if (network_error || !data) {
         throw network_error
@@ -128,8 +139,15 @@
         ...get(ui_state),
         current_task_id: data.id,
         current_project_id: target_project_id,
+        current_task_rating_options: null,
       })
       saved = true
+
+      // reload the current task to make sure changes propagate throughout the UI
+      // e.g. the rating options
+      await load_current_task(get(current_project)?.id)
+      await load_rating_options()
+
       // Wait for the saved change to propagate to the warn_before_unload
       await tick()
       if (redirect_on_created) {
@@ -252,28 +270,32 @@
       label="Prompt / Task Instructions"
       inputType="textarea"
       id="task_instructions"
+      height="medium"
       description={prompt_description()}
       bind:value={task.instruction}
     />
 
-    <FormElement
-      label="Task Description"
-      inputType="textarea"
-      id="task_description"
-      description="A description for you and your team, not used by the model."
-      optional={true}
-      bind:value={task.description}
-    />
+    <!-- Don't show these if onboarding, keep onboarding view as simple as possible -->
+    {#if !onboarding}
+      <FormElement
+        label="Task Description"
+        inputType="textarea"
+        id="task_description"
+        description="A description for you and your team, not used by the model."
+        optional={true}
+        bind:value={task.description}
+      />
 
-    <FormElement
-      label="'Thinking' Instructions"
-      inputType="textarea"
-      id="thinking_instructions"
-      optional={true}
-      description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
-      info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
-      bind:value={task.thinking_instruction}
-    />
+      <FormElement
+        label="'Thinking' Instructions"
+        inputType="textarea"
+        id="thinking_instructions"
+        optional={true}
+        description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
+        info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
+        bind:value={task.thinking_instruction}
+      />
+    {/if}
 
     {#if show_requirements}
       <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
@@ -284,7 +306,7 @@
           Define requirements you can use to rate the results of the model.
           These are used in the prompt, ratings, evals and training.
           <a
-            href="https://docs.getkiln.ai/docs/reviewing-and-rating"
+            href="https://docs.kiln.tech/docs/reviewing-and-rating"
             target="_blank"
             class="link">Learn more</a
           >.

@@ -60,11 +60,11 @@ def _check_prompt_id(id: str) -> str:
         return id
 
     if id.startswith("fine_tune_prompt::"):
-        # check it had a fine_tune_id after the :: -- 'fine_tune_prompt::fine_tune_id'
-        fine_tune_id = id[18:]
-        if len(fine_tune_id) == 0:
+        # check it had a fine_tune_id after the :: -- 'fine_tune_prompt::[project_id]::[task_id]::fine_tune_id'
+        parts = id.split("::")
+        if len(parts) != 4 or len(parts[3]) == 0:
             raise ValueError(
-                f"Invalid fine-tune prompt ID: {id}. Expected format: 'fine_tune_prompt::[fine_tune_id]'."
+                f"Invalid fine-tune prompt ID: {id}. Expected format: 'fine_tune_prompt::[project_id]::[task_id]::[fine_tune_id]'."
             )
         return id
 

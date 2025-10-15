@@ -1,3 +1,10 @@
+<script context="module" lang="ts">
+  export type InlineAction = {
+    handler: () => void
+    label: string
+  }
+</script>
+
 <script lang="ts">
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
@@ -5,9 +12,12 @@
 
   export let inputType:
     | "input"
+    | "input_number"
     | "textarea"
     | "select"
     | "fancy_select"
+    | "multi_select"
+    | "header_only"
     | "checkbox" = "input"
   export let id: string
   export let label: string
@@ -26,7 +36,12 @@
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let tall: boolean = false
+  export let height: "base" | "medium" | "large" | "xl" = "base"
+  export let empty_label: string = "Select an option"
+  export let empty_state_message: string = "No options available"
+  export let empty_state_subtitle: string | null = null
+  export let empty_state_link: string | null = null
+  export let inline_action: InlineAction | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -83,6 +98,13 @@
     const target = event.target as HTMLInputElement
     if (target) value = target.checked
   }
+
+  const height_class = {
+    base: "h-18",
+    medium: "h-36",
+    large: "h-60",
+    xl: "h-96",
+  }
 </script>
 
 <div>
@@ -107,29 +129,40 @@
         <span class="pl-1 text-xs text-gray-500 flex-none"
           >{info_msg || (optional ? "Optional" : "")}</span
         >
+        {#if inline_action}
+          <button
+            type="button"
+            class="link font-normal text-gray-500"
+            on:click|stopPropagation={inline_action.handler}
+            >{inline_action.label}</button
+          >
+        {/if}
         {#if info_description}
           <div class="text-gray-500 {light_label ? 'h-4 mt-[-4px]' : ''}">
             <InfoTooltip tooltip_text={info_description} />
           </div>
         {/if}
       </div>
-      {#if description}
+      {#if description || error_message}
         <div class="text-xs text-gray-500">
-          {description}
+          {description || ""}
+          {#if error_message}
+            <span class="text-error">
+              <InfoTooltip tooltip_text={error_message} position="bottom" />
+            </span>
+          {/if}
         </div>
       {/if}
     </label>
   </div>
   <div class="relative">
     {#if inputType === "textarea"}
-      <!-- Ensure compiler doesn't optimize away the heights -->
-      <span class="h-18 h-60 hidden"></span>
       <textarea
         placeholder={error_message || placeholder || label}
         {id}
-        class="textarea text-base textarea-bordered w-full {tall
-          ? 'h-60'
-          : 'h-18'} wrap-pre text-left align-top
+        class="textarea text-base textarea-bordered w-full {height_class[
+          height
+        ]} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
         on:input={run_validator}
@@ -139,6 +172,21 @@
     {:else if inputType === "input"}
       <input
         type="text"
+        placeholder={error_message || placeholder || label}
+        {id}
+        class="input text-base input-bordered w-full font-base {error_message ||
+        inline_error
+          ? 'input-error'
+          : ''}"
+        bind:value
+        on:input={run_validator}
+        autocomplete="off"
+        data-op-ignore="true"
+        {disabled}
+      />
+    {:else if inputType === "input_number"}
+      <input
+        type="number"
         placeholder={error_message || placeholder || label}
         {id}
         class="input text-base input-bordered w-full font-base {error_message ||
@@ -183,8 +231,17 @@
           {/each}
         {/if}
       </select>
-    {:else if inputType === "fancy_select"}
-      <FancySelect bind:options={fancy_select_options} bind:selected={value} />
+    {:else if inputType === "fancy_select" || inputType === "multi_select"}
+      <FancySelect
+        bind:options={fancy_select_options}
+        bind:selected={value}
+        multi_select={inputType === "multi_select"}
+        {disabled}
+        {empty_label}
+        {empty_state_message}
+        {empty_state_subtitle}
+        {empty_state_link}
+      />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span

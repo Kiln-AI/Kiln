@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.17.0"
+version = "0.22.1"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -20,18 +20,27 @@ classifiers = [
 dependencies = [
     "boto3>=1.37.10",
     "coverage>=7.6.4",
+    "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
+    "google-genai>=1.21.1",
     "jsonschema>=4.23.0",
-    "litellm>=1.67.0",
+    "lancedb>=0.24.2",
+    "litellm>=1.72.6",
     "openai>=1.53.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",
+    "pypdf>=6.0.0",
     "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
     "pyyaml>=6.0.2",
     "together",
     "typing-extensions>=4.12.2",
     "vertexai>=1.43.0",
+    "llama-index-vector-stores-lancedb>=0.3.3",
+    "llama-index>=0.13.3",
+    "anyio>=4.10.0",
+    "pypdfium2>=4.30.0",
+    "pillow>=11.1.0",
 ]
 
 [dependency-groups]
@@ -56,7 +65,7 @@ together = { git = "https://github.com/scosman/together-python" }
 
 
 [project.urls]
-Homepage = "https://getkiln.ai"
+Homepage = "https://kiln.tech"
 Repository = "https://github.com/Kiln-AI/kiln"
 Documentation = "https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html"
 Issues = "https://github.com/Kiln-AI/kiln/issues"

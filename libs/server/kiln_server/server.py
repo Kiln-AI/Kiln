@@ -1,14 +1,25 @@
-import os
+import argparse
+from importlib.metadata import version
+from typing import Sequence
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .custom_errors import connect_custom_errors
+from .document_api import connect_document_api
 from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
 from .task_api import connect_task_api
+
+
+def _get_version() -> str:
+    """Get the version of the kiln-server package."""
+    try:
+        return version("kiln-server")
+    except Exception:
+        return "unknown"
 
 
 def make_app(lifespan=None):
@@ -16,6 +27,7 @@ def make_app(lifespan=None):
         title="Kiln AI Server",
         summary="A REST API for the Kiln AI datamodel.",
         description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln",
+        version=_get_version(),
         lifespan=lifespan,
     )
 
@@ -27,6 +39,7 @@ def make_app(lifespan=None):
     connect_task_api(app)
     connect_prompt_api(app)
     connect_run_api(app)
+    connect_document_api(app)
     connect_custom_errors(app)
 
     allowed_origins = [
@@ -47,12 +60,41 @@ def make_app(lifespan=None):
     return app
 
 
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the Kiln AI  REST Server.")
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Host for network transports."
+    )
+    parser.add_argument(
+        "--port", type=int, default=8757, help="Port for network transports."
+    )
+    parser.add_argument(
+        "--log-level",
+        default="info",
+        help="Log level for the server when using network transports.",
+    )
+    parser.add_argument(
+        "--auto-reload",
+        action="store_true",
+        help="Enable auto-reload for the server.",
+    )
+    return parser
+
+
 app = make_app()
-if __name__ == "__main__":
-    auto_reload = os.environ.get("AUTO_RELOAD", "").lower() in ("true", "1", "yes")
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = build_argument_parser()
+    args = parser.parse_args(argv)
     uvicorn.run(
         "kiln_server.server:app",
-        host="127.0.0.1",
-        port=8757,
-        reload=auto_reload,
+        host=args.host,
+        port=args.port,
+        reload=args.auto_reload,
+        log_level=args.log_level,
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -8,7 +8,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
 
 logger = logging.getLogger(__name__)
@@ -160,8 +160,12 @@ class EvalRunner:
         """
         jobs = self.collect_tasks()
 
-        runner = AsyncJobRunner(concurrency=concurrency)
-        async for progress in runner.run(jobs, self.run_job):
+        runner = AsyncJobRunner(
+            concurrency=concurrency,
+            jobs=jobs,
+            run_job_fn=self.run_job,
+        )
+        async for progress in runner.run():
             yield progress
 
     async def run_job(self, job: EvalJob) -> bool:
@@ -169,7 +173,9 @@ class EvalRunner:
             # Create the evaluator for this eval config/run config pair
             evaluator = eval_adapter_from_type(job.eval_config.config_type)(
                 job.eval_config,
-                job.task_run_config.run_config() if job.task_run_config else None,
+                job.task_run_config.run_config_properties
+                if job.task_run_config
+                else None,
             )
             if not isinstance(evaluator, BaseEval):
                 raise ValueError("Not able to create evaluator from eval config")
@@ -177,10 +183,12 @@ class EvalRunner:
             task_output: str | None = None
             scores: EvalScores | None = None
             intermediate_outputs: Dict[str, str] | None = None
+            task_run_usage: Usage | None = None
             if job.type == "eval_config_eval":
                 # Eval config eval, we use the saved input from the task run, not invoking the task again
                 scores, intermediate_outputs = await evaluator.run_eval(job.item)
                 task_output = job.item.output.output
+                task_run_usage = job.item.usage
             else:
                 # Task run eval, we invoke the task again to get a fresh output
                 (
@@ -189,6 +197,7 @@ class EvalRunner:
                     intermediate_outputs,
                 ) = await evaluator.run_task_and_eval(job.item.input)
                 task_output = result_task_run.output.output
+                task_run_usage = result_task_run.usage
 
             # Save the job result
             eval_run = EvalRun(
@@ -202,6 +211,7 @@ class EvalRunner:
                 input=job.item.input,
                 output=task_output,
                 intermediate_outputs=intermediate_outputs,
+                task_run_usage=task_run_usage,
             )
             eval_run.save_to_file()
 

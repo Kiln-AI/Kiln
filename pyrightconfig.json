@@ -1,3 +1,7 @@
 {
-  "exclude": ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv"]
+  "exclude": ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv"],
+  "typeCheckingMode": "basic",
+  "autoImportCompletions": true,
+  "extraPaths": ["./"],
+  "reportIncompatibleMethodOverride": "error",
 }

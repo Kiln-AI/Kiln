@@ -1,4 +1,4 @@
-# Kiln AI Server
+# Kiln AI REST Server
 
 [![PyPI - Version](https://img.shields.io/pypi/v/kiln-server.svg)](https://pypi.org/project/kiln-server)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/kiln-server.svg)](https://pypi.org/project/kiln-server)
@@ -7,7 +7,7 @@
 
 ## About Kiln AI
 
-Learn more about Kiln AI at [getkiln.ai](https://getkiln.ai)
+Learn more about Kiln AI at [kiln.tech](https://kiln.tech)
 
 This package is the Kiln AI server package. There is also a separate desktop application and python library package.
 
@@ -15,24 +15,39 @@ Github: [github.com/Kiln-AI/kiln](https://github.com/Kiln-AI/kiln)
 
 ## Installation
 
+We suggest installing with uv:
+
 ```console
-pip install kiln_server
+uv tool install kiln_server
 ```
 
-## API Docs
+## REST API Docs
 
-Our OpenApi docs: [https://kiln-ai.github.io/Kiln/kiln_server_openapi_docs/index.html](https://kiln-ai.github.io/Kiln/kiln_server_openapi_docs/index.html)
+Our OpenAPI docs: [https://kiln-ai.github.io/Kiln/kiln_server_openapi_docs/index.html](https://kiln-ai.github.io/Kiln/kiln_server_openapi_docs/index.html)
 
 ## Running the server
 
+After installing, run:
+
 ```console
-python -m kiln_server.server
+kiln_server
 ```
 
-With auto-reload:
+## kiln_server Command Options
 
-```console
-AUTO_RELOAD=true python -m kiln_server.server
+```
+usage: kiln_server [-h] [--host HOST] [--port PORT] [--log-level LOG_LEVEL] [--auto-reload AUTO_RELOAD]
+
+Run the Kiln AI REST Server.
+
+options:
+  -h, --help            show this help message and exit
+  --host HOST           Host for network transports.
+  --port PORT           Port for network transports.
+  --log-level LOG_LEVEL
+                        Log level for the server when using network transports.
+  --auto-reload AUTO_RELOAD
+                        Enable auto-reload for the server.
 ```
 
 ## Using the server in another FastAPI app
@@ -45,3 +60,9 @@ from kiln_server.project_api import connect_project_api
 app = FastAPI()
 connect_project_api(app)
 ```
+
+## Kiln MCP Server
+
+Also included in this package is a MCP server for serving Kiln tools.
+
+See [it's README](./kiln_server/mcp/README.md) for details.

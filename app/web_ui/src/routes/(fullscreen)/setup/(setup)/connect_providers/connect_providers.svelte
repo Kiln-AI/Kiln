@@ -1,21 +1,27 @@
 <script lang="ts">
   import { fade } from "svelte/transition"
   import { onMount } from "svelte"
-  import type { OllamaConnection } from "$lib/types"
+  import type {
+    OllamaConnection,
+    DockerModelRunnerConnection,
+  } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client, base_url } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
+  import { clear_available_models_cache } from "$lib/stores"
+  import { get_provider_image } from "$lib/ui/provider_image"
+  import posthog from "posthog-js"
 
   export let highlight_finetune = false
+  export let required_providers: string[] = []
 
   type Provider = {
     name: string
     id: string
     description: string
-    image: string
     featured: boolean
     pill_text?: string
     api_key_steps?: string[]
@@ -29,7 +35,6 @@
       id: "openrouter",
       description:
         "Proxies requests to OpenAI, Anthropic, and more. Works with almost any model.",
-      image: "/images/openrouter.svg",
       featured: !highlight_finetune,
       api_key_steps: [
         "Go to https://openrouter.ai/settings/keys",
@@ -41,7 +46,6 @@
       name: "OpenAI",
       id: "openai",
       description: "The OG home to GPT-4o and more. Supports fine-tuning.",
-      image: "/images/openai.svg",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -57,15 +61,18 @@
       name: "Ollama",
       id: "ollama",
       description: "Run models locally. No API key required.",
-      image: "/images/ollama.svg",
+      featured: false,
+    },
+    {
+      name: "Docker Model Runner",
+      id: "docker_model_runner",
+      description: "Run models locally with Docker. No API key required.",
       featured: false,
     },
     {
       name: "Groq",
       id: "groq",
-      description:
-        "The fastest model host. Providing Llama, Gemma and Mistral models.",
-      image: "/images/groq.svg",
+      description: "Exceptionally fast inference on custom hardware.",
       featured: false,
       api_key_steps: [
         "Go to https://console.groq.com/keys",
@@ -77,7 +84,6 @@
       name: "Fireworks AI",
       id: "fireworks_ai",
       description: "Open models (Llama, Phi), plus the ability to fine-tune.",
-      image: "/images/fireworks.svg",
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
         "Go to https://fireworks.ai/account/api-keys",
@@ -92,7 +98,6 @@
       name: "Anthropic",
       id: "anthropic",
       description: "The home of Sonnet, Haiku, and Opus.",
-      image: "/images/anthropic.svg",
       featured: false,
       api_key_steps: [
         "Go to https://console.anthropic.com/settings/keys",
@@ -105,7 +110,6 @@
       name: "Gemini AI Studio",
       id: "gemini_api",
       description: "Google's Gemini API. Not to be confused with Vertex AI.",
-      image: "/images/gemini.svg",
       featured: false,
       api_key_steps: [
         "Go to https://aistudio.google.com/app/apikey",
@@ -118,7 +122,6 @@
       name: "Azure OpenAI",
       id: "azure_openai",
       description: "Microsoft's Azure OpenAI API.",
-      image: "/images/azure_openai.svg",
       featured: false,
       api_key_steps: [
         "Open the Azure portal, and navigate to the Azure OpenAI resource you want to use. Create a new resource if you don't have one, we suggest 'East US2' for maximal model support.",
@@ -127,13 +130,12 @@
       ],
       api_key_fields: ["API Key", "Endpoint URL"],
       api_key_warning:
-        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#azure-openai-api",
+        "With Azure OpenAI, you must deploy each model manually.\nSee our docs for details: https://docs.kiln.tech/docs/models-and-ai-providers#azure-openai-api",
     },
     {
       name: "Hugging Face",
       id: "huggingface",
       description: "AI community hub, with many models.",
-      image: "/images/hugging_face.svg",
       featured: false,
       api_key_steps: [
         "Go to https://huggingface.co/settings/tokens",
@@ -147,7 +149,6 @@
       id: "vertex",
       description:
         "Google's Vertex AI API. Not to be confused with Gemini AI Studio.",
-      image: "/images/google_logo.svg",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -160,13 +161,12 @@
       ],
       api_key_fields: ["Project ID", "Project Location"],
       api_key_warning:
-        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.getkiln.ai/docs/models-and-ai-providers#google-vertex-ai",
+        "With Vertex AI, you must deploy some models manually.\nSee our docs for details: https://docs.kiln.tech/docs/models-and-ai-providers#google-vertex-ai",
     },
     {
       name: "Together.ai",
       id: "together_ai",
       description: "Inference service from Together.ai",
-      image: "/images/together_ai.svg",
       featured: false,
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
@@ -180,7 +180,6 @@
       name: "Amazon Bedrock",
       id: "amazon_bedrock",
       description: "So your company has an AWS contract?",
-      image: "/images/aws.svg",
       featured: false,
       api_key_steps: [
         "Go to https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/overview - be sure to select us-west-2, as it has the most models, and Kiln defaults to this region",
@@ -193,10 +192,35 @@
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
+      name: "SiliconFlow (硅基流动)",
+      id: "siliconflow_cn",
+      description: "AI provider for users in China.",
+      api_key_warning:
+        "SiliconFlow.cn is a Chinese provider. It is not available to users outside of China.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.siliconflow.cn/account/ak",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
+      name: "Cerebras",
+      id: "cerebras",
+      description: "Exceptionally fast inference on custom hardware.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://cloud.cerebras.ai/platform",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       description: "Track and visualize your experiments.",
-      image: "/images/wandb.svg",
       featured: false,
       api_key_steps: [
         "Create a Weights & Biases account at https://wandb.ai, or host your own instance.",
@@ -211,7 +235,6 @@
       name: "Custom API",
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
-      image: "/images/api.svg",
       featured: false,
     },
   ]
@@ -224,6 +247,12 @@
   }
   let status: { [key: string]: ProviderStatus } = {
     ollama: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    docker_model_runner: {
       connected: false,
       connecting: false,
       error: null,
@@ -307,6 +336,18 @@
       error: null,
       custom_description: null,
     },
+    siliconflow_cn: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    cerebras: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
   }
 
   export let has_connected_providers = false
@@ -314,6 +355,7 @@
     (provider) => provider.connected,
   )
   export let intermediate_step = false
+  export let centered = false
   let api_key_provider: Provider | null = null
   $: {
     intermediate_step = api_key_provider != null
@@ -348,10 +390,16 @@
         throw disconnect_error
       }
 
+      posthog.capture("disconnect_provider", {
+        provider_id: provider.id,
+      })
+
       status[provider.id].connected = false
 
       // Clear the available models list
       available_tuning_models.set(null)
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
     } catch (e) {
       console.error("disconnect_provider error", e)
       alert("Failed to disconnect provider. Unknown error.")
@@ -366,6 +414,9 @@
     if (provider.id === "ollama") {
       connect_ollama()
     }
+    if (provider.id === "docker_model_runner") {
+      connect_docker_model_runner()
+    }
     if (provider.id === "openai_compatible") {
       show_custom_api_dialog()
     }
@@ -377,9 +428,9 @@
 
   let custom_ollama_url: string | null = null
 
-  const connect_ollama = async (user_initated: boolean = true) => {
+  const connect_ollama = async (user_initiated: boolean = true) => {
     status.ollama.connected = false
-    status.ollama.connecting = user_initated
+    status.ollama.connecting = user_initiated
 
     let data: OllamaConnection | null = null
     try {
@@ -437,6 +488,8 @@
     }
     status.ollama.error = null
     status.ollama.connected = true
+    // Clear the available models cache so it refreshes next time
+    clear_available_models_cache()
     const supported_models_str =
       data.supported_models.length > 0
         ? "The following supported models are available: " +
@@ -455,6 +508,86 @@
         : "Custom Ollama URL: " + custom_ollama_url
     status.ollama.custom_description =
       "Ollama connected. " +
+      supported_models_str +
+      untested_models_str +
+      custom_url_str
+  }
+
+  let docker_model_runner_custom_url: string | null = null
+
+  const connect_docker_model_runner = async (
+    user_initiated: boolean = true,
+  ) => {
+    status.docker_model_runner.connected = false
+    status.docker_model_runner.connecting = user_initiated
+
+    let data: DockerModelRunnerConnection | null = null
+    try {
+      const { data: req_data, error: req_error } = await client.GET(
+        "/api/provider/docker_model_runner/connect",
+        {
+          params: {
+            query: {
+              docker_model_runner_custom_url:
+                docker_model_runner_custom_url || undefined,
+            },
+          },
+        },
+      )
+      if (req_error) {
+        throw req_error
+      }
+      data = req_data
+    } catch (e) {
+      if (
+        e &&
+        typeof e === "object" &&
+        "message" in e &&
+        typeof e.message === "string"
+      ) {
+        status.docker_model_runner.error = e.message
+      } else {
+        status.docker_model_runner.error =
+          "Failed to connect. Ensure Docker Model Runner is running."
+      }
+      status.docker_model_runner.connected = false
+      return
+    } finally {
+      status.docker_model_runner.connecting = false
+    }
+
+    if (
+      data.supported_models.length === 0 &&
+      (!data.untested_models || data.untested_models.length === 0)
+    ) {
+      status.docker_model_runner.error =
+        "Docker Model Runner running, but no models available. Pull some models first: https://hub.docker.com/u/ai"
+      return
+    }
+    status.docker_model_runner.error = null
+    status.docker_model_runner.connected = true
+    // Clear the available models cache so it refreshes next time
+    clear_available_models_cache()
+    const supported_models_str =
+      data.supported_models.length > 0
+        ? "The following supported models are available: " +
+          data.supported_models.join(", ") +
+          ". "
+        : "No supported models are loaded. "
+    const untested_models_str =
+      data.untested_models && data.untested_models.length > 0
+        ? "The following untested models are loaded: " +
+          data.untested_models.join(", ") +
+          ". "
+        : ""
+    const custom_url_str =
+      docker_model_runner_custom_url &&
+      docker_model_runner_custom_url !==
+        "http://localhost:12434/engines/llama.cpp"
+        ? "Custom Docker Model Runner URL: " + docker_model_runner_custom_url
+        : ""
+    status.docker_model_runner.custom_description =
+      "Docker Model Runner connected. " +
       supported_models_str +
       untested_models_str +
       custom_url_str
@@ -504,6 +637,10 @@
         return
       }
 
+      posthog.capture("connect_provider", {
+        provider_id: provider_id,
+      })
+
       api_key_issue = false
       api_key_message = null
       status[provider_id].connected = true
@@ -511,6 +648,8 @@
 
       // Clear the available models list
       available_tuning_models.set(null)
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
     } catch (e) {
       console.error("submit_api_key error", e)
       api_key_message = "Failed to connect to provider (Exception: " + e + ")"
@@ -554,6 +693,9 @@
       if (data["ollama_base_url"]) {
         custom_ollama_url = data["ollama_base_url"]
       }
+      if (data["docker_model_runner_base_url"]) {
+        docker_model_runner_custom_url = data["docker_model_runner_base_url"]
+      }
       if (data["anthropic_api_key"]) {
         status.anthropic.connected = true
       }
@@ -569,8 +711,14 @@
       if (data["together_api_key"]) {
         status.together_ai.connected = true
       }
+      if (data["siliconflow_cn_api_key"]) {
+        status.siliconflow_cn.connected = true
+      }
       if (data["wandb_api_key"]) {
         status.wandb.connected = true
+      }
+      if (data["cerebras_api_key"]) {
+        status.cerebras.connected = true
       }
       if (
         data["openai_compatible_providers"] &&
@@ -594,11 +742,21 @@
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
     })
+    // Check Docker Model Runner every load, as it can be closed. More ephemeral (and local/cheap/fast)
+    connect_docker_model_runner(false).then(() => {
+      // Clear the error as the user didn't initiate this run
+      status["docker_model_runner"].error = null
+    })
   })
 
   function show_custom_ollama_url_dialog() {
     // @ts-expect-error showModal is not a method on HTMLElement
     document.getElementById("ollama_dialog")?.showModal()
+  }
+
+  function show_docker_model_runner_custom_url_dialog() {
+    // @ts-expect-error showModal is not a method on HTMLElement
+    document.getElementById("docker_model_runner_dialog")?.showModal()
   }
 
   function show_custom_api_dialog() {
@@ -651,6 +809,8 @@
       new_provider_error = null
 
       status.openai_compatible.connected = true
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
       // @ts-expect-error daisyui does not add types
       document.getElementById("openai_compatible_dialog")?.close()
     } catch (e) {
@@ -689,13 +849,15 @@
       if (custom_openai_compatible_providers.length === 0) {
         status.openai_compatible.connected = false
       }
+      // Clear the available models cache so it refreshes next time
+      clear_available_models_cache()
     } catch (e) {
       alert("Failed to remove provider: " + e)
     }
   }
 </script>
 
-<div class="w-full">
+<div class="w-full {centered && 'flex flex-col items-center'}">
   {#if api_key_provider}
     <div class="grow h-full max-w-[400px] flex flex-col place-content-center">
       <div class="grow"></div>
@@ -770,25 +932,19 @@
           status[provider.id] && status[provider.id].connected}
         <div class="flex flex-row gap-4 items-center">
           <img
-            src={provider.image}
+            src={get_provider_image(provider.id)}
             alt={provider.name}
-            class="flex-none p-1 {provider.featured
-              ? 'size-12'
-              : 'size-10 mx-1'}"
+            class="flex-none p-1 size-10 mx-1"
           />
           <div class="flex flex-col grow pr-4">
-            <h3
-              class={provider.featured
-                ? "text-large font-bold"
-                : "text-base font-medium"}
-            >
+            <h3 class="text-base font-medium flex flex-row gap-2 items-center">
               {provider.name}
-              {#if provider.featured}
-                <div class="badge badge-sm ml-2 badge-secondary">
-                  Recommended
-                </div>
+              {#if required_providers.includes(provider.id)}
+                <div class="badge badge-sm badge-warning">Required</div>
+              {:else if provider.featured}
+                <div class="badge badge-sm badge-secondary">Recommended</div>
               {:else if provider.pill_text}
-                <div class="badge badge-sm ml-2 badge-primary">
+                <div class="badge badge-sm badge-primary">
                   {provider.pill_text}
                 </div>
               {/if}
@@ -808,6 +964,14 @@
                 on:click={show_custom_ollama_url_dialog}
               >
                 Set Custom Ollama URL
+              </button>
+            {/if}
+            {#if provider.id === "docker_model_runner" && status[provider.id] && status[provider.id].error}
+              <button
+                class="link text-left text-sm text-gray-500"
+                on:click={show_docker_model_runner_custom_url_dialog}
+              >
+                Set Docker Model Runner Custom URL
               </button>
             {/if}
           </div>
@@ -892,6 +1056,50 @@
           connect_ollama(true)
           // @ts-expect-error showModal is not a method on HTMLElement
           document.getElementById("ollama_dialog")?.close()
+        }}
+      >
+        Connect
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop">
+    <button>close</button>
+  </form>
+</dialog>
+
+<dialog id="docker_model_runner_dialog" class="modal">
+  <div class="modal-box">
+    <form method="dialog">
+      <button
+        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
+        >✕</button
+      >
+    </form>
+
+    <h3 class="text-lg font-bold">Custom Docker Model Runner URL</h3>
+    <p class="text-sm font-light mb-8">
+      By default, Kiln attempts to connect to Docker Model Runner at
+      http://localhost:12434/engines. If you run it on a different host or port,
+      enter the full base URL here.
+    </p>
+    <FormElement
+      id="docker_model_runner_url"
+      label="Docker Model Runner URL"
+      info_description="It should include the http prefix, host, port and engine path. For example, http://localhost:12434/engines/llama.cpp"
+      bind:value={docker_model_runner_custom_url}
+      placeholder="http://localhost:12434/engines"
+    />
+    <div class="flex flex-row gap-4 items-center mt-4 justify-end">
+      <form method="dialog">
+        <button class="btn">Cancel</button>
+      </form>
+      <button
+        class="btn btn-primary"
+        disabled={!docker_model_runner_custom_url}
+        on:click={() => {
+          connect_docker_model_runner(true)
+          // @ts-expect-error showModal is not a method on HTMLElement
+          document.getElementById("docker_model_runner_dialog")?.close()
         }}
       >
         Connect

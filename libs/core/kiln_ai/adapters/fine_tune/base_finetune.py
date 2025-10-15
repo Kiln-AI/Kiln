@@ -3,12 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from kiln_ai.adapters.ml_model_list import built_in_models
-from kiln_ai.datamodel import (
-    DatasetSplit,
-    FineTuneStatusType,
-    Task,
-)
+from kiln_ai.datamodel import DatasetSplit, FineTuneStatusType, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -21,6 +16,7 @@ class FineTuneStatus(BaseModel):
 
     status: FineTuneStatusType
     message: str | None = None
+    error_details: str | None = None
 
 
 class FineTuneParameter(BaseModel):

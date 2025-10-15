@@ -10,7 +10,7 @@
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
   import { replaceState } from "$app/navigation"
-  import TagDropdown from "../../../run/tag_dropdown.svelte"
+  import TagDropdown from "../../../../../lib/ui/tag_dropdown.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
 
   let runs: RunSummary[] | null = null
@@ -472,6 +472,7 @@
     } finally {
       // Reload UI, even on failure, as partial delete is possible
       selected_runs = new Set()
+      add_tags = new Set()
       select_mode = false
       await get_runs()
     }
@@ -481,7 +482,7 @@
 <AppPage
   title="Dataset"
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.getkiln.ai/docs/organizing-datasets"
+  sub_subtitle_link="https://docs.kiln.tech/docs/organizing-datasets"
   no_y_padding
   action_buttons={[
     {
@@ -762,6 +763,8 @@
       >
         <TagDropdown
           bind:tag={current_tag}
+          {project_id}
+          {task_id}
           on_select={(tag) => {
             add_tags.add(tag)
             add_tags = add_tags

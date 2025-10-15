@@ -6,6 +6,9 @@ export type ProgressUIState = {
   body: string
   cta: string | null
   link: string
+  /**
+   * Number between 0 and 1
+   */
   progress: number | null
   step_count: number | null
   current_step: number | null

@@ -10,6 +10,8 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
   const STORE_NAME = "key_value_store"
   const DB_VERSION = 1
 
+  let initPromise: Promise<void>
+
   if (isBrowser) {
     let db: IDBDatabase | null = null
     let isInitialized = false
@@ -98,7 +100,7 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
     }
 
     // Load initial value from IndexedDB
-    getValue()
+    initPromise = getValue()
       .then((storedValue) => {
         if (storedValue !== null) {
           store.set(storedValue)
@@ -119,7 +121,13 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
         })
       }
     })
+  } else {
+    // If not in browser, resolve immediately
+    initPromise = Promise.resolve()
   }
 
-  return store
+  return {
+    store,
+    initialized: initPromise,
+  }
 }

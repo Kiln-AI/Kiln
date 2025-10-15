@@ -1,5 +1,8 @@
 import datetime
 import json
+import logging
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
@@ -12,10 +15,11 @@ from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
     KilnBaseModel,
     KilnParentedModel,
+    name_validator,
     string_to_valid_name,
 )
 from kiln_ai.datamodel.model_cache import ModelCache
-from kiln_ai.datamodel.task import RunConfig
+from kiln_ai.datamodel.task import RunConfigProperties
 
 
 @pytest.fixture
@@ -328,28 +332,81 @@ def test_delete_no_path():
         model.delete()
 
 
-def test_string_to_valid_name():
-    # Test basic valid strings remain unchanged
-    assert string_to_valid_name("Hello World") == "Hello World"
-    assert string_to_valid_name("Test-123") == "Test-123"
-    assert string_to_valid_name("my_file_name") == "my_file_name"
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        # Basic valid strings remain unchanged
+        ("Hello World", "Hello World"),
+        ("Test-123", "Test-123"),
+        ("my_file_name", "my_file_name"),
+        ("multiple!!!symbols", "multiple!!!symbols"),
+        # Emoji
+        ("Hello 👍", "Hello 👍"),
+        # Invalid characters are replaced
+        ("Hello@World!", "Hello@World!"),
+        ("File.name.txt", "File name txt"),
+        ("Special%%%Chars", "Special Chars"),
+        ("Special#$%Chars", "Special#$ Chars"),
+        # Consecutive invalid characters are replaced
+        ("Special%%%Chars", "Special Chars"),
+        ("path/to/file", "path to file"),
+        # Leading/trailing special characters are removed
+        ("__test__", "test"),
+        ("...test...", "test"),
+        # Whitespace is replaced
+        ("", ""),
+        ("   ", ""),
+        ("Hello   World", "Hello World"),
+        # Unicode characters are replaced
+        ("你好", "你好"),
+        ("你好_世界", "你好_世界"),
+        ("你好_世界_你好", "你好_世界_你好"),
+        # Newlines, tabs, and other control characters are replaced
+        ("Hello\nworld", "Hello world"),
+        ("Hello\tworld", "Hello world"),
+        ("Hello\rworld", "Hello world"),
+        ("Hello\fworld", "Hello world"),
+        ("Hello\bworld", "Hello world"),
+        ("Hello\vworld", "Hello world"),
+        ("Hello\0world", "Hello world"),
+        ("Hello\x00world", "Hello world"),
+    ],
+)
+def test_string_to_valid_name(tmp_path, name, expected):
+    assert string_to_valid_name(name) == expected
 
-    # Test invalid characters are replaced
-    assert string_to_valid_name("Hello@World!") == "Hello_World"
-    assert string_to_valid_name("File.name.txt") == "File_name_txt"
-    assert string_to_valid_name("Special#$%Chars") == "Special_Chars"
+    # check we can create a folder with the valid name
+    dir_path = tmp_path / str(uuid.uuid4()) / expected
+    dir_path.mkdir(parents=True)
 
-    # Test consecutive invalid characters
-    assert string_to_valid_name("multiple!!!symbols") == "multiple_symbols"
-    assert string_to_valid_name("path/to/file") == "path_to_file"
 
-    # Test leading/trailing special characters
-    assert string_to_valid_name("__test__") == "test"
-    assert string_to_valid_name("...test...") == "test"
+@pytest.mark.parametrize(
+    "name,min_length,max_length,should_pass",
+    [
+        # Valid cases
+        ("ValidName", 5, 20, True),
+        ("Short", 1, 10, True),
+        ("LongerValidName", 5, 20, True),
+        # None case (line 53)
+        (None, 5, 20, False),
+        # Too short cases (lines 57-59)
+        ("Hi", 5, 20, False),
+        ("", 1, 20, False),
+        ("a", 2, 20, False),
+        # Too long cases (lines 61-63)
+        ("ThisNameIsTooLong", 5, 10, False),
+        ("VeryVeryVeryLongName", 1, 15, False),
+    ],
+)
+def test_name_validator_error_conditions(name, min_length, max_length, should_pass):
+    validator = name_validator(min_length=min_length, max_length=max_length)
 
-    # Test empty string and whitespace
-    assert string_to_valid_name("") == ""
-    assert string_to_valid_name("   ") == ""
+    if should_pass:
+        result = validator(name)
+        assert result == name
+    else:
+        with pytest.raises(ValueError):
+            validator(name)
 
 
 def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
@@ -436,6 +493,7 @@ def test_from_id_and_parent_path(test_base_parented_file, tmp_model_cache):
     child3.save_to_file()
 
     # Test finding existing child by ID
+    assert child2.id is not None  # Type safety
     found_child = DefaultParentedModel.from_id_and_parent_path(
         child2.id, test_base_parented_file
     )
@@ -458,6 +516,7 @@ def test_from_id_and_parent_path_with_cache(test_base_parented_file, tmp_model_c
     child.save_to_file()
 
     # First load to populate cache
+    assert child.id is not None  # Type safety
     _ = DefaultParentedModel.from_id_and_parent_path(child.id, test_base_parented_file)
 
     # Mock cache to verify it's used
@@ -479,6 +538,258 @@ def test_from_id_and_parent_path_without_parent():
     assert not_found is None
 
 
+def test_from_ids_and_parent_path_basic(test_base_parented_file, tmp_model_cache):
+    """Test basic functionality of from_ids_and_parent_path method"""
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+    child3 = DefaultParentedModel(parent=parent, name="Child3")
+
+    # Save all children
+    child1.save_to_file()
+    child2.save_to_file()
+    child3.save_to_file()
+
+    # Test finding multiple children by IDs
+    assert child1.id is not None and child2.id is not None  # Type safety
+    target_ids = {child1.id, child3.id}
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        target_ids, test_base_parented_file
+    )
+
+    # Verify correct children were found
+    assert len(found_children) == 2
+    assert child1.id in found_children
+    assert child3.id in found_children
+    assert child2.id not in found_children
+
+    # Verify the returned models have correct data
+    assert found_children[child1.id].name == "Child1"
+    assert found_children[child3.id].name == "Child3"
+
+    # Verify they are not the same instances (deep copies)
+    assert found_children[child1.id] is not child1
+    assert found_children[child3.id] is not child3
+
+
+def test_from_ids_and_parent_path_empty_list(test_base_parented_file):
+    """Test from_ids_and_parent_path with empty ID list"""
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        set(), test_base_parented_file
+    )
+    assert found_children == {}
+
+
+def test_from_ids_and_parent_path_none_parent():
+    """Test from_ids_and_parent_path with None parent_path"""
+    found_children = DefaultParentedModel.from_ids_and_parent_path({"any-id"}, None)
+    assert found_children == {}
+
+
+def test_from_ids_and_parent_path_no_matches(test_base_parented_file, tmp_model_cache):
+    """Test from_ids_and_parent_path when no IDs match existing children"""
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child1.save_to_file()
+
+    # Test with non-existent IDs
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        {"nonexistent1", "nonexistent2"}, test_base_parented_file
+    )
+    assert found_children == {}
+
+
+def test_from_ids_and_parent_path_partial_matches(
+    test_base_parented_file, tmp_model_cache
+):
+    """Test from_ids_and_parent_path when only some IDs match"""
+    # Set up parent and children models
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+
+    # Save children
+    child1.save_to_file()
+    child2.save_to_file()
+
+    # Test with mix of existing and non-existent IDs
+    assert child1.id is not None and child2.id is not None  # Type safety
+    target_ids = {child1.id, "nonexistent", child2.id, "another_nonexistent"}
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        target_ids, test_base_parented_file
+    )
+
+    # Should only find the existing children
+    assert len(found_children) == 2
+    assert child1.id in found_children
+    assert child2.id in found_children
+    assert "nonexistent" not in found_children
+    assert "another_nonexistent" not in found_children
+
+
+def test_from_ids_and_parent_path_with_cache_fallback(
+    test_base_parented_file, tmp_model_cache
+):
+    """Test from_ids_and_parent_path when cache returns None and needs to load file"""
+    # Set up parent and child
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+    child = DefaultParentedModel(parent=parent, name="Child")
+    child.save_to_file()
+
+    # Mock cache to return None for get_model_id, forcing file load
+    tmp_model_cache.get_model_id = MagicMock(return_value=None)
+
+    # Test should still work by loading the file
+    assert child.id is not None  # Type safety
+    found_children = DefaultParentedModel.from_ids_and_parent_path(
+        {child.id}, test_base_parented_file
+    )
+
+    assert len(found_children) == 1
+    assert child.id in found_children
+    assert found_children[child.id].name == "Child"
+
+    # Verify cache was checked
+    tmp_model_cache.get_model_id.assert_called()
+
+
+def test_from_ids_and_parent_path_equivalent_to_individual_lookups(
+    test_base_parented_file, tmp_model_cache
+):
+    """Test that from_ids_and_parent_path returns the same results as individual lookups"""
+    # Set up parent and multiple children
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    children = []
+    for i in range(10):
+        child = DefaultParentedModel(parent=parent, name=f"Child{i}")
+        child.save_to_file()
+        children.append(child)
+
+    # Select 5 children to lookup
+    target_ids = {
+        child.id for child in children[::2] if child.id is not None
+    }  # Every other child
+    assert len(target_ids) == 5  # Ensure we have 5 children to test
+
+    # Test bulk method
+    bulk_results = DefaultParentedModel.from_ids_and_parent_path(
+        target_ids, test_base_parented_file
+    )
+
+    # Test individual method
+    individual_results = {}
+    for target_id in target_ids:
+        result = DefaultParentedModel.from_id_and_parent_path(
+            target_id, test_base_parented_file
+        )
+        if result:
+            individual_results[target_id] = result
+
+    # Results should be equivalent
+    assert len(bulk_results) == len(individual_results) == 5
+
+    for target_id in target_ids:
+        assert target_id in bulk_results
+        assert target_id in individual_results
+
+        # Compare the key attributes
+        bulk_child = bulk_results[target_id]
+        individual_child = individual_results[target_id]
+
+        assert bulk_child.id == individual_child.id
+        assert bulk_child.name == individual_child.name
+        assert bulk_child.model_type == individual_child.model_type
+
+
+# Not actually paid, but we want the "must be run manually" feature of the paid marker as this is very slow
+@pytest.mark.paid
+@pytest.mark.parametrize("num_children", [100, 1000, 2500, 5000])
+def test_from_ids_and_parent_path_benchmark(
+    test_base_parented_file, tmp_model_cache, num_children
+):
+    """Benchmark test for from_ids_and_parent_path method performance at scale"""
+    # Set up parent and many children
+    parent = BaseParentExample.load_from_file(test_base_parented_file)
+
+    children = []
+    for i in range(num_children):
+        child = DefaultParentedModel(parent=parent, name=f"Child{i:05d}")
+        child.save_to_file()
+        children.append(child)
+
+    # look up all children
+    lookup_count = num_children
+    target_ids = {child.id for child in children[:lookup_count] if child.id is not None}
+    assert len(target_ids) == lookup_count
+
+    # Benchmark the bulk method using manual timing
+    def bulk_lookup():
+        return DefaultParentedModel.from_ids_and_parent_path(
+            target_ids, test_base_parented_file
+        )
+
+    # Run bulk method once and time it
+    start_time = time.perf_counter()
+    bulk_result = bulk_lookup()
+    end_time = time.perf_counter()
+    bulk_time = end_time - start_time
+
+    # Verify we got the expected results
+    assert len(bulk_result) == lookup_count
+
+    # Calculate bulk method stats
+    bulk_ops_per_second = lookup_count / bulk_time
+
+    # Benchmark the individual lookup method using manual timing
+    def individual_lookups():
+        results = {}
+        for target_id in target_ids:
+            result = DefaultParentedModel.from_id_and_parent_path(
+                target_id, test_base_parented_file
+            )
+            if result:
+                results[target_id] = result
+        return results
+
+    # Run individual lookup method
+    start_time = time.perf_counter()
+    individual_result = individual_lookups()
+    end_time = time.perf_counter()
+    individual_time = end_time - start_time
+
+    assert len(individual_result) == lookup_count
+    individual_ops_per_second = lookup_count / individual_time
+
+    # Calculate performance comparison
+    speedup = individual_time / bulk_time
+    time_savings_pct = (individual_time - bulk_time) / individual_time * 100
+
+    # Use logging to display results (will show with -s flag or --log-cli-level=INFO)
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"Benchmark results for {num_children} children, {lookup_count} lookups:"
+    )
+    logger.info(f"  Bulk method: {bulk_time:.4f}s ({bulk_ops_per_second:.2f} ops/sec)")
+    logger.info(
+        f"  Individual method: {individual_time:.4f}s ({individual_ops_per_second:.2f} ops/sec)"
+    )
+    logger.info(
+        f"  Speedup: {speedup:.2f}x faster, {time_savings_pct:.1f}% time savings"
+    )
+
+    assert bulk_time > 0, "Bulk method should complete successfully"
+    assert individual_time > 0, "Individual method should complete successfully"
+    assert speedup >= 1.0, (
+        f"Expected bulk method to be faster, but got {speedup:.2f}x speedup"
+    )
+
+
 class MockAdapter(BaseAdapter):
     """Implementation of BaseAdapter for testing"""
 
@@ -497,8 +808,8 @@ def base_task():
 @pytest.fixture
 def adapter(base_task):
     return MockAdapter(
-        run_config=RunConfig(
-            task=base_task,
+        task=base_task,
+        run_config=RunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -550,6 +861,143 @@ async def test_invoke_parsing_flow(adapter):
         mock_provider.reasoning_capable = True
         with pytest.raises(
             RuntimeError,
-            match="Reasoning is required for this model, but no reasoning was returned.",
+            match=r"^Reasoning is required for this model, but no reasoning was returned.$",
         ):
             await adapter.invoke("test input")
+
+
+async def test_invoke_parsing_flow_basic_no_reasoning(adapter):
+    """Test for reasoning_optional_for_structured_output
+    when reasoning is not required.
+    This is a special case where we want to return the output as is.
+    """
+    # Mock dependencies
+    mock_provider = MagicMock()
+    mock_provider.parser = "test_parser"
+    mock_provider.formatter = None
+    mock_provider.reasoning_capable = False
+    mock_provider.reasoning_optional_for_structured_output = True
+
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"key": "value"}
+    )
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        # Execute
+        result = await adapter.invoke("test input")
+
+        # Verify parsing occurred
+        mock_parser.parse_output.assert_called_once()
+        parsed_args = mock_parser.parse_output.call_args[1]
+        assert isinstance(parsed_args["original_output"], RunOutput)
+        assert parsed_args["original_output"].output == "test output"
+
+        # Verify result contains parsed output
+        assert isinstance(result, TaskRun)
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"key": "value"}
+        assert result.input == "test input"
+
+
+async def test_invoke_parsing_flow_no_reasoning_with_structured_output(adapter):
+    """Test for reasoning_optional_for_structured_output
+    when reasoning is required but not provided, with structured output enabled.
+    This is a special case where we don't want to error, but we want to return the output as is.
+    """
+    # Mock dependencies
+    mock_provider = MagicMock()
+    mock_provider.parser = "test_parser"
+    mock_provider.formatter = None
+    mock_provider.reasoning_capable = True
+    mock_provider.reasoning_optional_for_structured_output = True
+
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"key": "value"}
+    )
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+        patch.object(adapter, "has_structured_output", return_value=True),
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        # Execute
+        result = await adapter.invoke("test input")
+
+        # Verify parsing occurred
+        mock_parser.parse_output.assert_called_once()
+        parsed_args = mock_parser.parse_output.call_args[1]
+        assert isinstance(parsed_args["original_output"], RunOutput)
+        assert parsed_args["original_output"].output == "test output"
+
+        # Verify result contains parsed output
+        assert isinstance(result, TaskRun)
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"key": "value"}
+        assert result.input == "test input"
+
+
+async def test_invoke_parsing_flow_with_reasoning_and_structured_output(adapter):
+    """Test for reasoning_optional_for_structured_output
+    when reasoning is provided with structured output enabled.
+    This is a special case where we want to return the output as is.
+    """
+    # Mock dependencies
+    mock_provider = MagicMock()
+    mock_provider.parser = "test_parser"
+    mock_provider.formatter = None
+    mock_provider.reasoning_capable = True
+    mock_provider.reasoning_optional_for_structured_output = True
+
+    mock_parser = MagicMock()
+    mock_parser.parse_output.return_value = RunOutput(
+        output="parsed test output", intermediate_outputs={"reasoning": "value"}
+    )
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch("kiln_ai.adapters.model_adapters.base_adapter.Config") as mock_config,
+        patch.object(adapter, "has_structured_output", return_value=True),
+    ):
+        # Disable autosaving for this test
+        mock_config.shared.return_value.autosave_runs = False
+        mock_config.shared.return_value.user_id = "test_user_id"
+
+        # Execute
+        result = await adapter.invoke("test input")
+
+        # Verify parsing occurred
+        mock_parser.parse_output.assert_called_once()
+        parsed_args = mock_parser.parse_output.call_args[1]
+        assert isinstance(parsed_args["original_output"], RunOutput)
+        assert parsed_args["original_output"].output == "test output"
+
+        # Verify result contains parsed output
+        assert isinstance(result, TaskRun)
+        assert result.output.output == "parsed test output"
+        assert result.intermediate_outputs == {"reasoning": "value"}
+        assert result.input == "test input"

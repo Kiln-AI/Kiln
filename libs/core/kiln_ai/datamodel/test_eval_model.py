@@ -1,7 +1,6 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel import BasePrompt
 from kiln_ai.datamodel.basemodel import KilnParentModel
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -9,11 +8,10 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalOutputScore,
     EvalRun,
+    EvalTemplateId,
 )
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.task_output import (
-    TaskOutputRatingType,
-)
+from kiln_ai.datamodel.task_output import TaskOutputRatingType
 
 
 @pytest.fixture
@@ -404,13 +402,13 @@ def test_eval_run_five_star_score_validation(valid_eval_config, valid_eval_run_d
     assert run.scores["accuracy"] == 4.5
 
     # Invalid scores
-    with pytest.raises(ValueError, match="must be a float between 1.0 and 5.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 1.0 and 5.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 0.5}},
         )
 
-    with pytest.raises(ValueError, match="must be a float between 1.0 and 5.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 1.0 and 5.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 5.5}},
@@ -444,13 +442,13 @@ def test_eval_run_pass_fail_score_validation(valid_eval_config, valid_eval_run_d
     assert run.scores["check"] == 0.0
 
     # Invalid scores
-    with pytest.raises(ValueError, match="must be a float between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 0.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"check": -0.1}},
         )
 
-    with pytest.raises(ValueError, match="must be a float between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between 0.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"check": 1.1}},
@@ -487,13 +485,13 @@ def test_eval_run_pass_fail_critical_score_validation(
     assert run.scores["critical"] == -1.0
 
     # Invalid scores
-    with pytest.raises(ValueError, match="must be a float between -1.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between -1.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"critical": -1.1}},
         )
 
-    with pytest.raises(ValueError, match="must be a float between -1.0 and 1.0"):
+    with pytest.raises(ValueError, match=r"must be a float between -1.0 and 1.0"):
         run = EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"critical": 1.1}},
@@ -519,13 +517,13 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
     valid_eval_config.parent = eval
 
     # Correct
-    run = EvalRun(
+    EvalRun(
         parent=valid_eval_config,
         **{**valid_eval_run_data, "scores": {"accuracy": 4.5, "critical": 1.0}},
     )
 
     # Correct but wrong order still okay
-    run = EvalRun(
+    EvalRun(
         parent=valid_eval_config,
         **{**valid_eval_run_data, "scores": {"critical": 1.0, "accuracy": 4.5}},
     )
@@ -535,7 +533,7 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         ValueError,
         match="The scores produced by the evaluator must match the scores expected by the eval",
     ):
-        run = EvalRun(
+        EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 4.5}},
         )
@@ -545,7 +543,7 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         ValueError,
         match="The scores produced by the evaluator must match the scores expected by the eval",
     ):
-        run = EvalRun(
+        EvalRun(
             parent=valid_eval_config,
             **{
                 **valid_eval_run_data,
@@ -558,7 +556,7 @@ def test_eval_run_score_keys_must_match(valid_eval_config, valid_eval_run_data):
         ValueError,
         match="The scores produced by the evaluator must match the scores expected by the eval",
     ):
-        run = EvalRun(
+        EvalRun(
             parent=valid_eval_config,
             **{**valid_eval_run_data, "scores": {"accuracy": 4.5, "wrong": 1.0}},
         )
@@ -568,7 +566,7 @@ def test_eval_run_custom_scores_not_allowed(valid_eval_config, valid_eval_run_da
     with pytest.raises(
         ValueError, match="Custom scores are not supported in evaluators"
     ):
-        eval = Eval(
+        Eval(
             name="Test Eval",
             eval_set_filter_id="tag::tag1",
             eval_configs_filter_id="tag::tag2",
@@ -633,3 +631,147 @@ def test_eval_run_eval_config_eval_validation():
             output="test output",
             scores={"score": 1.0},
         )
+
+
+@pytest.mark.parametrize(
+    "template_properties,should_raise,expected_error",
+    [
+        # Valid cases
+        (
+            {"issue_prompt": "Test issue prompt"},
+            False,
+            None,
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": "Test failure example",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": "Test failure example",
+                "pass_example": "Test pass example",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "issue_prompt": "",
+                "failure_example": "",
+                "pass_example": "",
+            },
+            False,
+            None,
+        ),
+        # Invalid cases
+        (
+            {},
+            True,
+            "issue_prompt is required for issue template",
+        ),
+        (
+            {"failure_example": "Test failure example"},
+            True,
+            "issue_prompt is required for issue template",
+        ),
+        (
+            {"issue_prompt": 123},
+            True,
+            "issue_prompt is required for issue template",
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": 456,
+            },
+            True,
+            "failure_example is optional for issue template, but if provided must be a string",
+        ),
+        (
+            {
+                "issue_prompt": "Test issue prompt",
+                "failure_example": "Test failure example",
+                "pass_example": 789,
+            },
+            True,
+            "pass_example is optional for issue template, but if provided must be a string",
+        ),
+    ],
+)
+def test_eval_template_properties_issue_template_validation(
+    template_properties, should_raise, expected_error
+):
+    """Test issue template validation with various property combinations"""
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            Eval(
+                name="Test Eval",
+                template=EvalTemplateId.issue,
+                eval_set_filter_id="tag::tag1",
+                eval_configs_filter_id="tag::tag2",
+                output_scores=[
+                    EvalOutputScore(
+                        name="score",
+                        type=TaskOutputRatingType.pass_fail,
+                    )
+                ],
+                template_properties=template_properties,
+            )
+    else:
+        eval = Eval(
+            name="Test Eval",
+            template=EvalTemplateId.issue,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="score",
+                    type=TaskOutputRatingType.pass_fail,
+                )
+            ],
+            template_properties=template_properties,
+        )
+        assert eval.template == EvalTemplateId.issue
+        for key, value in template_properties.items():
+            assert eval.template_properties[key] == value
+
+
+@pytest.mark.parametrize(
+    "template,template_properties",
+    [
+        (EvalTemplateId.kiln_requirements, {"random_property": "random_value"}),
+        (EvalTemplateId.toxicity, {}),
+        (EvalTemplateId.bias, {"some_property": 123}),
+        (EvalTemplateId.maliciousness, {"test": True}),
+        (EvalTemplateId.factual_correctness, {"score": 4.5}),
+        (EvalTemplateId.jailbreak, {"prompt": "test"}),
+        (
+            None,
+            {"issue_prompt": "This should not be validated", "failure_example": 123},
+        ),
+    ],
+)
+def test_eval_template_properties_non_issue_templates(template, template_properties):
+    """Test that non-issue templates pass validation regardless of template_properties"""
+    eval = Eval(
+        name="Test Eval",
+        template=template,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        template_properties=template_properties,
+    )
+
+    assert eval.template == template
+    for key, value in template_properties.items():
+        assert eval.template_properties[key] == value

@@ -7,13 +7,14 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
-    NAME_FIELD,
+    FilenameString,
     KilnParentedModel,
     KilnParentModel,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
+from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ class EvalTemplateId(str, Enum):
     """
 
     kiln_requirements = "kiln_requirements"
+    issue = "kiln_issue"
     toxicity = "toxicity"
     bias = "bias"
     maliciousness = "maliciousness"
@@ -109,6 +111,10 @@ class EvalRun(KilnParentedModel):
     )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
+    )
+    task_run_usage: Usage | None = Field(
+        default=None,
+        description="The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
     )
 
     def parent_eval_config(self) -> Union["EvalConfig", None]:
@@ -196,7 +202,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
     A eval might have many configs, example running the same eval with 2 different models. Comparing eval results is only valid within the scope of the same config.
     """
 
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the eval config.")
     model_name: str = Field(
         description="The name of the model to use for this eval config. ",
     )
@@ -246,12 +252,12 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             # This will raise a TypeError if the dict contains non-JSON-serializable objects
             json.dumps(self.properties)
         except TypeError as e:
-            raise ValueError(f"Properties must be JSON serializable: {str(e)}")
+            raise ValueError(f"Properties must be JSON serializable: {e!s}")
         return self
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
-    name: str = NAME_FIELD
+    name: FilenameString = Field(description="The name of the eval.")
     description: str | None = Field(
         default=None, description="The description of the eval"
     )
@@ -262,10 +268,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     current_config_id: ID_TYPE = Field(
         default=None,
         description="The id of the current config to use for this eval. This can be changed over time to run the same eval with different configs.",
-    )
-    current_run_config_id: ID_TYPE = Field(
-        default=None,
-        description="The id of the a run config which was selected as the best run config for this eval. The run config must belong to the parent Task.",
     )
     eval_set_filter_id: DatasetFilterId = Field(
         description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
@@ -279,6 +281,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     favourite: bool = Field(
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
+    )
+    template_properties: dict[str, str | int | bool | float] = Field(
+        default={},
+        description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
     )
 
     # Workaround to return typed parent without importing Task
@@ -303,4 +309,26 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_template_properties(self) -> Self:
+        # Check for properties that are required for the issue template
+        if self.template == EvalTemplateId.issue:
+            if "issue_prompt" not in self.template_properties or not isinstance(
+                self.template_properties["issue_prompt"], str
+            ):
+                raise ValueError("issue_prompt is required for issue template")
+            if "failure_example" in self.template_properties and not isinstance(
+                self.template_properties["failure_example"], str
+            ):
+                raise ValueError(
+                    "failure_example is optional for issue template, but if provided must be a string"
+                )
+            if "pass_example" in self.template_properties and not isinstance(
+                self.template_properties["pass_example"], str
+            ):
+                raise ValueError(
+                    "pass_example is optional for issue template, but if provided must be a string"
+                )
         return self

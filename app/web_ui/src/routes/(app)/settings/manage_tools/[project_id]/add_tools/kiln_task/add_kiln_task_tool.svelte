@@ -1,0 +1,315 @@
+<script lang="ts">
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { client } from "$lib/api_client"
+  import type { Task } from "$lib/types"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import { onMount, tick } from "svelte"
+  import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
+  import { uncache_available_tools } from "$lib/stores"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import { tool_name_validator } from "$lib/utils/input_validators"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import posthog from "posthog-js"
+
+  let error: KilnError | null = null
+  let submitting = false
+  let name: string = ""
+  let description = ""
+  let selected_task_id: string | null = null
+  let selected_run_config_id: string | null = null
+
+  let created_run_config_in_page = false
+
+  // Modal for creating new run config
+  let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+
+  $: project_id = $page.params.project_id
+
+  let selected_task: Task | null = null
+  $: selected_task = tasks.find((t) => t.id === selected_task_id) || null
+
+  onMount(async () => {
+    await load_tasks($page.params.project_id ?? "")
+
+    // Check for URL parameters to pre-fill form (for cloning)
+    const url_params = new URLSearchParams($page.url.search)
+    const clone_name = url_params.get("name")
+    const clone_description = url_params.get("description")
+    const clone_task_id = url_params.get("task_id")
+    const clone_run_config_id = url_params.get("run_config_id")
+    if (clone_task_id) {
+      selected_task_id = clone_task_id
+    }
+    // Wait for reactive statements so we can update name to the clone name
+    await tick()
+    if (clone_name) {
+      name = clone_name
+    }
+    if (clone_run_config_id) {
+      selected_run_config_id = clone_run_config_id
+    }
+    if (clone_description) {
+      description = clone_description
+    }
+
+    data_loaded = true
+  })
+
+  function to_snake_case(str: string): string {
+    return str
+      .replace(/([A-Z])/g, "_$1")
+      .toLowerCase()
+      .replace(/^_/, "")
+      .replace(/\s+/g, "_")
+      .replace(/-/g, "_")
+      .replace(/[^a-z0-9_]/g, "")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "")
+  }
+
+  $: selected_task, handle_task_change()
+
+  function handle_task_change() {
+    clear_error_if_present()
+    selected_run_config_id = null
+    name = ""
+    description = ""
+    if (selected_task) {
+      name = to_snake_case(selected_task.name)
+    }
+  }
+
+  $: task_options = data_loaded ? create_task_options(tasks) : []
+
+  function create_task_options(tasks: Task[]): OptionGroup[] {
+    if (tasks.length === 0) {
+      return []
+    }
+    let option_groups: OptionGroup[] = []
+    option_groups.push({
+      label: "",
+      options: [
+        {
+          label: "New Kiln Task",
+          value: "__create_new_kiln_task__",
+          badge: "＋",
+          badge_color: "primary",
+        },
+      ],
+    })
+    option_groups.push({
+      label: "Project Tasks",
+      options: tasks.map((task) => ({
+        label: `${task.name} (ID: ${task.id})`,
+        value: task.id ?? "",
+      })),
+    })
+    return option_groups
+  }
+
+  let tasks: Task[] = []
+  let tasks_loading_error: string | null = null
+  let data_loaded = false
+
+  async function load_tasks(project_id: string) {
+    if (!project_id) {
+      tasks_loading_error = "No project selected"
+      tasks = []
+      return
+    }
+    try {
+      tasks_loading_error = null
+      const {
+        data: tasks_data, // only present if 2XX response
+        error: fetch_error, // only present if 4XX or 5XX response
+      } = await client.GET("/api/projects/{project_id}/tasks", {
+        params: {
+          path: {
+            project_id: project_id,
+          },
+        },
+      })
+      if (fetch_error) {
+        throw fetch_error
+      }
+      tasks = tasks_data
+    } catch (error) {
+      tasks_loading_error = "Tasks failed to load: " + error
+      tasks = []
+    }
+  }
+
+  // Show the create dialog when the user clicks the create new button
+  $: if (selected_run_config_id === "__create_new_run_config__") {
+    create_new_run_config_dialog?.show()
+  }
+
+  $: if (selected_task_id === "__create_new_kiln_task__") {
+    goto(`/settings/create_task/${project_id}`)
+  }
+
+  // Clear error when form fields change
+  function clear_error_if_present() {
+    if (error) {
+      error = null
+    }
+  }
+
+  async function add_kiln_task_tool() {
+    try {
+      clear_error_if_present()
+      if (!selected_task_id) {
+        error = createKilnError({
+          message: "Please select a task.",
+          status: 400,
+        })
+        return
+      }
+
+      if (!selected_run_config_id) {
+        error = createKilnError({
+          message: "Please select a run configuration.",
+          status: 400,
+        })
+        return
+      }
+
+      if (!name) {
+        error = createKilnError({
+          message: "Please enter a tool name.",
+          status: 400,
+        })
+        return
+      }
+
+      if (!description) {
+        error = createKilnError({
+          message: "Please enter a tool description.",
+          status: 400,
+        })
+        return
+      }
+
+      await client.POST("/api/projects/{project_id}/kiln_task_tool", {
+        params: {
+          path: {
+            project_id: $page.params.project_id,
+          },
+        },
+        body: {
+          name: name,
+          description: description,
+          task_id: selected_task_id,
+          run_config_id: selected_run_config_id,
+          is_archived: false,
+        },
+      })
+
+      // Delete the project_id from the available_tools, so next load it loads the updated list.
+      uncache_available_tools($page.params.project_id)
+
+      posthog.capture("added_kiln_task_tool", {
+        created_run_config_in_page: created_run_config_in_page,
+      })
+
+      // Navigate to the manage tools page for the created tool
+      goto(`/settings/manage_tools/${$page.params.project_id}/kiln_task_tools`)
+    } catch (e) {
+      error = createKilnError(e)
+    } finally {
+      submitting = false
+    }
+  }
+
+  let validate_description: (value: unknown) => string | null = (
+    value: unknown,
+  ) => {
+    if (typeof value !== "string") {
+      return "Tool description must be a string."
+    }
+    if (value.trim() === "") {
+      return "Tool description must not be empty."
+    }
+    return null
+  }
+</script>
+
+<div>
+  <div class="max-w-4xl">
+    {#if !tasks_loading_error}
+      <FormContainer
+        submit_label="Add"
+        on:submit={add_kiln_task_tool}
+        bind:error
+        bind:submitting
+      >
+        <FormElement
+          label="Kiln Task"
+          bind:value={selected_task_id}
+          id="task"
+          inputType="fancy_select"
+          fancy_select_options={task_options}
+          disabled={!data_loaded}
+          description="The Kiln task the tool will call."
+          empty_state_message="Loading tasks..."
+          empty_state_subtitle="Please wait."
+        />
+
+        {#if selected_task}
+          <SavedRunConfigurationsDropdown
+            {project_id}
+            current_task={selected_task}
+            bind:selected_run_config_id
+            run_page={false}
+            description="A configuration defining options the Kiln task will use when called, such as the model and prompt."
+          />
+          <FormElement
+            label="Tool Name"
+            id="task_name"
+            description="A unique short tool name such as 'web_researcher'. Be descriptive about what this task does."
+            info_description="Must be in snake_case format. It should be descriptive of what the tool does as the model will see it. When adding multiple tools to a task each tool needs a unique name, so being unique and descriptive is important."
+            bind:value={name}
+            max_length={128}
+            validator={tool_name_validator}
+            on:change={clear_error_if_present}
+          />
+
+          <FormElement
+            label="Tool Description"
+            inputType="textarea"
+            id="task_description"
+            description="A description for the model to understand what this task does, and when to use it."
+            info_description="It should be descriptive of what the task does as the model will see it. Example of a high quality description: 'Performs research on a topic using reasoning and access to the web to provide expert insights.'"
+            bind:value={description}
+            validator={validate_description}
+            on:change={clear_error_if_present}
+          />
+        {/if}
+      </FormContainer>
+    {:else}
+      <div class="text-sm text-error">
+        {tasks_loading_error}
+      </div>
+    {/if}
+  </div>
+</div>
+
+<CreateNewRunConfigDialog
+  bind:this={create_new_run_config_dialog}
+  {project_id}
+  task={selected_task}
+  new_run_config_created={(run_config) => {
+    if (run_config.id) {
+      created_run_config_in_page = true
+      selected_run_config_id = run_config.id
+    }
+  }}
+  on:close={() => {
+    if (selected_run_config_id === "__create_new_run_config__") {
+      selected_run_config_id = null
+    }
+  }}
+/>

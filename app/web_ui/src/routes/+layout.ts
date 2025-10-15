@@ -8,10 +8,11 @@ export const ssr = false
 export const load = async () => {
   if (browser && !dev) {
     posthog.init("phc_pdNulYUFOFmRcgeQkYCOAiCQiZOC4VP8npDtRkNSirw", {
-      api_host: "https://us.i.posthog.com",
-      person_profiles: "identified_only",
+      api_host: "https://ustat.getkiln.ai",
+      person_profiles: "always",
       capture_pageview: false,
       capture_pageleave: false,
+      autocapture: false,
     })
   }
   return

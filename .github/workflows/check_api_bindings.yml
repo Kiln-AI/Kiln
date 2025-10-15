@@ -1,0 +1,69 @@
+name: Check API Bindings
+
+on:
+  push:
+
+jobs:
+  check-api-bindings:
+    name: Check API Schema Bindings
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install the project
+        run: uv sync --all-extras --dev
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: app/web_ui/package-lock.json
+
+      - name: Install Node.js dependencies
+        run: npm ci
+        working-directory: app/web_ui
+
+      - name: Mock Studio Web UI
+        run: mkdir -p ./app/web_ui/build && echo "test" > ./app/web_ui/build/index.html
+
+      - name: Check API schema bindings
+        run: |
+          # Start dev server in background
+          uv run python -m app.desktop.dev_server &
+          DEV_SERVER_PID=$!
+
+          # Wait for server to be ready
+          echo "Waiting for dev server to start..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:8757/openapi.json > /dev/null 2>&1; then
+              echo "Dev server is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Dev server failed to start within 30 seconds"
+              kill $DEV_SERVER_PID || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Change to the correct directory and run the schema check
+          cd app/web_ui/src/lib
+          ./check_schema.sh
+
+          # Stop dev server
+          kill $DEV_SERVER_PID || true
+          # Wait a moment for graceful shutdown
+          sleep 2
+          # Force kill if still running
+          kill -9 $DEV_SERVER_PID 2>/dev/null || true

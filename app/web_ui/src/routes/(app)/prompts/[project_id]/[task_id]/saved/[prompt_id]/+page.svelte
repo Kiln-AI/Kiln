@@ -11,6 +11,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 
+  $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
   $: prompt_id = $page.params.prompt_id
 
@@ -47,6 +48,12 @@
     title="Saved Prompt"
     subtitle={prompt_model?.name}
     sub_subtitle={prompt_model?.description || undefined}
+    breadcrumbs={[
+      {
+        label: "Prompts",
+        href: `/prompts/${project_id}/${task_id}`,
+      },
+    ]}
     action_buttons={prompt_model?.id.startsWith("id::")
       ? [
           {
@@ -94,10 +101,6 @@
               </div>
             {/each}
           </div>
-          <p class="mt-4 text-sm text-gray-500">
-            Note: Prompt content can't be edited to ensure consistency with
-            prior runs. Instead, copy this prompt and create a new copy.
-          </p>
         </div>
       </div>
     {:else}
@@ -109,6 +112,7 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
+  subtitle="Prompt content can't be edited to ensure consistency with prior runs. If you want to modify the content, create a new prompt instead of editing."
   patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
   delete_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
   fields={[

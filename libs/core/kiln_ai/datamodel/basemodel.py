@@ -2,35 +2,34 @@ import json
 import os
 import re
 import shutil
+import tempfile
+import unicodedata
 import uuid
 from abc import ABCMeta
 from builtins import classmethod
 from datetime import datetime
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Type,
-    TypeVar,
-)
+from typing import Any, Callable, Dict, List, Optional, Set, Type, TypeVar
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
+    SerializationInfo,
     ValidationError,
     ValidationInfo,
     computed_field,
+    model_serializer,
     model_validator,
 )
 from pydantic_core import ErrorDetails
-from typing_extensions import Self
+from typing_extensions import Annotated, Self
 
 from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
+from kiln_ai.utils.mime_type import guess_extension
 
 # ID is a 12 digit random integer string.
 # Should be unique per item, at least inside the context of a parent/child relationship.
@@ -44,31 +43,217 @@ PT = TypeVar("PT", bound="KilnParentedModel")
 
 # Naming conventions:
 # 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
-# 2) Descrptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
+# 2) Descriptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
 
-# Filename compatible names
-NAME_REGEX = r"^[A-Za-z0-9 _-]+$"
-NAME_FIELD = Field(
-    min_length=1,
-    max_length=120,
-    pattern=NAME_REGEX,
-    description="A name for this entity.",
-)
-SHORT_NAME_FIELD = Field(
-    min_length=1,
-    max_length=32,
-    pattern=NAME_REGEX,
-    description="A name for this entity",
-)
+# Forbidden chars are not allowed in filenames on one or more platforms.
+# ref: https://en.wikipedia.org/wiki/Filename#Problematic_characters
+FORBIDDEN_CHARS_REGEX = r"[/\\?%*:|\"<>.,;=\n]"
+FORBIDDEN_CHARS = "/ \\ ? % * : | < > . , ; = \\n"
+
+
+def name_validator(*, min_length: int, max_length: int) -> Callable[[Any], str]:
+    def fn(name: Any) -> str:
+        if name is None:
+            raise ValueError("Name is required")
+        if not isinstance(name, str):
+            raise ValueError(f"Input should be a valid string, got {type(name)}")
+        if len(name) < min_length:
+            raise ValueError(
+                f"Name is too short. Min length is {min_length} characters, got {len(name)}"
+            )
+        if len(name) > max_length:
+            raise ValueError(
+                f"Name is too long. Max length is {max_length} characters, got {len(name)}"
+            )
+        if string_to_valid_name(name) != name:
+            raise ValueError(
+                f"Name is invalid. The name cannot contain any of the following characters: {FORBIDDEN_CHARS}, consecutive whitespace/underscores, or leading/trailing whitespace/underscores"
+            )
+        return name
+
+    return fn
 
 
 def string_to_valid_name(name: str) -> str:
-    # Replace any character not allowed by NAME_REGEX with an underscore
-    valid_name = re.sub(r"[^A-Za-z0-9 _-]", "_", name)
+    # https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
+    valid_name = unicodedata.normalize("NFKD", name)
+    # Replace any forbidden chars with an underscore
+    valid_name = re.sub(FORBIDDEN_CHARS_REGEX, " ", valid_name)
+    # Replace control characters with an underscore
+    valid_name = re.sub(r"[\x00-\x1F]", " ", valid_name)
+    # Replace consecutive whitespace with a single space
+    valid_name = re.sub(r"\s+", " ", valid_name)
     # Replace consecutive underscores with a single underscore
     valid_name = re.sub(r"_+", "_", valid_name)
     # Remove leading and trailing underscores or whitespace
     return valid_name.strip("_").strip()
+
+
+class KilnAttachmentModel(BaseModel):
+    path: Path | None = Field(
+        default=None,
+        description="The path to the attachment relative to the parent model's path",
+    )
+
+    input_path: Path | None = Field(
+        default=None,
+        description="The input absolute path to the attachment. The file will be copied to its permanent location when the model is saved.",
+    )
+
+    @model_validator(mode="after")
+    def check_file_exists(self, info: ValidationInfo) -> Self:
+        context = info.context or {}
+
+        if self.path is None and self.input_path is None:
+            raise ValueError("Path or input path is not set")
+        if self.path is not None and self.input_path is not None:
+            raise ValueError("Path and input path cannot both be set")
+
+        # when loading from file, we only know the relative path so we cannot check if it exists
+        # without knowing the parent path
+        if context.get("loading_from_file", False):
+            if isinstance(self.path, str):
+                self.path = Path(self.path)
+            self.input_path = None
+            return self
+
+        # when creating a new attachment, the path is not set yet (it is set when the model is saved)
+        # so we only expect the absolute path to be set
+        if self.input_path is not None:
+            if isinstance(self.input_path, str):
+                self.input_path = Path(self.input_path)
+            if not self.input_path.is_absolute():
+                raise ValueError(f"Input path is not absolute: {self.input_path}")
+            if not os.path.exists(self.input_path):
+                raise ValueError(f"Input path does not exist: {self.input_path}")
+            if not os.path.isfile(self.input_path):
+                raise ValueError(f"Input path is not a file: {self.input_path}")
+
+            # this normalizes the path and resolves symlinks
+            self.input_path = self.input_path.resolve()
+
+            return self
+
+        if self.path is not None:
+            if isinstance(self.path, str):
+                self.path = Path(self.path)
+            if self.path.is_absolute():
+                raise ValueError(
+                    f"Path is absolute but should be relative: {self.path}"
+                )
+            if not os.path.exists(self.path):
+                raise ValueError(f"Path does not exist: {self.path}")
+            if not os.path.isfile(self.path):
+                raise ValueError(f"Path is not a file: {self.path}")
+
+        return self
+
+    @model_serializer
+    def serialize(self, info: SerializationInfo) -> dict[str, Path] | None:
+        # when the attachment is optional on the model, we get None here
+        if self is None:
+            return None
+
+        context = info.context or {}
+
+        # serialization may also be called by other parts of the system, the callers should
+        # explicitly set save_attachments to True if they want to save attachments
+        save_attachments: bool = context.get("save_attachments", False)
+        if not save_attachments:
+            path_val = self.path if self.path is not None else self.input_path
+            if path_val is None:
+                raise ValueError("Attachment has no path")
+            return {"path": path_val}
+
+        dest_path: Path | None = context.get("dest_path", None)
+        if not dest_path or not isinstance(dest_path, Path):
+            raise ValueError(
+                f"dest_path must be a valid Path object when saving attachments, got: {dest_path}"
+            )
+        if not dest_path.is_dir():
+            raise ValueError("dest_path must be a directory when saving attachments")
+
+        # the attachment is already in the parent folder, so we don't need to copy it
+        # if the path is already relative, we consider it has been copied already
+        if self.path is not None:
+            return {"path": self.path}
+
+        # copy file and update the path to be relative to the dest_path
+        new_path = self.copy_file_to(dest_path, context.get("filename_prefix", None))
+
+        self.path = new_path.relative_to(dest_path)
+        self.input_path = None
+
+        return {"path": self.path}
+
+    def copy_file_to(
+        self, dest_folder: Path, filename_prefix: str | None = None
+    ) -> Path:
+        if self.input_path is None:
+            raise ValueError("Attachment has no input path to copy")
+
+        filename = f"{str(uuid.uuid4().int)[:12]}{self.input_path.suffix}"
+        if filename_prefix:
+            filename = f"{filename_prefix}_{filename}"
+        target_path = dest_folder / filename
+        shutil.copy(self.input_path, target_path)
+        return target_path
+
+    @classmethod
+    def from_data(cls, data: str | bytes, mime_type: str) -> Self:
+        """Create an attachment from str or byte data, in a temp file. The attachment is persisted to
+        its permanent location when the model is saved.
+        """
+        extension = guess_extension(mime_type) or ".unknown"
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
+        if isinstance(data, str):
+            temp_file.write(data.encode("utf-8"))
+        else:
+            temp_file.write(data)
+        temp_file.close()
+        return cls(input_path=Path(temp_file.name))
+
+    @classmethod
+    def from_file(cls, path: Path | str) -> Self:
+        """Create an attachment from a file path. The attachment is persisted to
+        its permanent location when the model is saved.
+        """
+        if isinstance(path, str):
+            path = Path(path)
+        return cls(input_path=path)
+
+    def resolve_path(self, parent_path: Path | None = None) -> Path:
+        """
+        Resolve the path of the attachment relative to the parent path. The attachment does not know
+        its parent, so we need to call this to get the full path.
+        Args:
+            parent_path (Path): The absolute path to the parent folder. Must be provided if the model is saved to disk.
+        Returns:
+            Path: The resolved path of the attachment
+        """
+        if self.input_path is not None:
+            return self.input_path
+        if self.path is None:
+            raise ValueError("Attachment path is not set")
+        if parent_path is None:
+            raise ValueError("Parent path is not set")
+        if not parent_path.is_absolute():
+            raise ValueError(
+                f"Failed to resolve attachment path for {self.path} because parent path is not absolute: {parent_path}"
+            )
+        return (parent_path / self.path).resolve()
+
+
+# Usage:
+# class MyModel(KilnBaseModel):
+#     name: FilenameString = Field(description="The name of the model.")
+#     name_short: FilenameStringShort = Field(description="The short name of the model.")
+FilenameString = Annotated[
+    str, BeforeValidator(name_validator(min_length=1, max_length=120))
+]
+FilenameStringShort = Annotated[
+    str, BeforeValidator(name_validator(min_length=1, max_length=32))
+]
 
 
 class KilnBaseModel(BaseModel):
@@ -197,7 +382,17 @@ class KilnBaseModel(BaseModel):
                 f"id: {getattr(self, 'id', None)}, path: {path}"
             )
         path.parent.mkdir(parents=True, exist_ok=True)
-        json_data = self.model_dump_json(indent=2, exclude={"path"})
+
+        json_data = self.model_dump_json(
+            indent=2,
+            exclude={"path"},
+            # dest_path is used by the attachment serializer to save attachments to the correct location
+            # and update the paths to be relative to path.parent
+            context={
+                "save_attachments": True,
+                "dest_path": path.parent,
+            },
+        )
         with open(path, "w", encoding="utf-8") as file:
             file.write(json_data)
         # save the path so even if something like name changes, the file doesn't move
@@ -399,6 +594,34 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
                     return child
         return None
 
+    @classmethod
+    def from_ids_and_parent_path(
+        cls: Type[PT], ids: Set[str], parent_path: Path | None
+    ) -> Dict[str, PT]:
+        """
+        Bulk equivalent of from_id_and_parent_path, much faster for large collections.
+
+        It picks out the matching models from the directory only once. This avoids
+        doing individual costly lookups that scan the whole directory in scenarios
+        where we need to iterate over a large collection of models (e.g. bulk tagging).
+        """
+        if parent_path is None:
+            return {}
+
+        children = {}
+
+        # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            child_id = ModelCache.shared().get_model_id(child_path, cls)
+            if child_id in ids:
+                children[child_id] = cls.load_from_file(child_path)
+            if child_id is None:
+                child = cls.load_from_file(child_path)
+                if child.id in ids:
+                    children[child.id] = child
+
+        return children
+
 
 # Parent create methods for all child relationships
 # You must pass in parent_of in the subclass definition, defining the child relationships
@@ -470,7 +693,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             ValidationError: If validation fails for the model or any of its children
         """
         # Validate first, then save. Don't want error half way through, and partly persisted
-        # TODO P2: save to tmp dir, then move atomically. But need to merge directories so later.
+        # We should save to a tmp dir and move atomically, but need to merge directories later.
         cls._validate_nested(data, save=False, path=path, parent=parent)
         instance = cls._validate_nested(data, save=True, path=path, parent=parent)
         return instance
