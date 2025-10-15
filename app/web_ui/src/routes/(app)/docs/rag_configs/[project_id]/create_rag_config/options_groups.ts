@@ -11,8 +11,8 @@ import type {
 } from "$lib/types"
 import type { OptionGroup } from "$lib/ui/fancy_select_types"
 import {
-  chunker_type_format,
   extractor_output_format,
+  format_chunker_config_overview,
 } from "$lib/utils/formatters"
 
 function fmt_extractor_label(extractor: ExtractorConfig) {
@@ -50,22 +50,6 @@ export function build_extractor_options(extractor_configs: ExtractorConfig[]) {
   ] as OptionGroup[]
 }
 
-function fmt_chunker_label(config: ChunkerConfig) {
-  const props = config.properties
-  switch (config.chunker_type) {
-    case "fixed_window":
-      return `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size || "N/A"} words • Overlap: ${props.chunk_overlap || "N/A"} words`
-    case "semantic":
-      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size || "N/A"} • Threshold: ${props.breakpoint_percentile_threshold || "N/A"}`
-    default: {
-      // type check will catch missing cases
-      const unknownChunkerType: never = config.chunker_type
-      console.error(`Invalid chunker type: ${unknownChunkerType}`)
-      return "unknown"
-    }
-  }
-}
-
 export function build_chunker_options(chunker_configs: ChunkerConfig[]) {
   return [
     {
@@ -84,7 +68,7 @@ export function build_chunker_options(chunker_configs: ChunkerConfig[]) {
             label: "Chunkers",
             options: chunker_configs.map((config) => {
               return {
-                label: fmt_chunker_label(config),
+                label: format_chunker_config_overview(config),
                 value: config.id,
                 description:
                   config.name +
