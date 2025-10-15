@@ -1,6 +1,5 @@
 <script lang="ts">
   export let kind: string
-  export let class_name: string = ""
 </script>
 
 <!-- The icons come from the Neon Interface Line Icons Collection: https://www.svgrepo.com/collection/neon-interface-line-icons -->
@@ -8,7 +7,7 @@
 {#if kind == "document"}
   <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
   <svg
-    class={`w-8 h-8 ${class_name}`}
+    class="h-full w-full"
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
@@ -40,7 +39,7 @@
 {:else if kind == "image"}
   <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
   <svg
-    class={`w-8 h-8 ${class_name}`}
+    class="h-full w-full"
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
@@ -61,7 +60,7 @@
 {:else if kind == "video"}
   <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
   <svg
-    class={`w-8 h-8 ${class_name}`}
+    class="h-full w-full"
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
@@ -111,7 +110,7 @@
 {:else if kind == "audio"}
   <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
   <svg
-    class={`w-8 h-8 ${class_name}`}
+    class="h-full w-full"
     viewBox="0 0 24 24"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
