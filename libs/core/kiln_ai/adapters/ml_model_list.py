@@ -105,6 +105,7 @@ class ModelName(str, Enum):
     gemma_3n_2b = "gemma_3n_2b"
     gemma_3n_4b = "gemma_3n_4b"
     claude_3_5_haiku = "claude_3_5_haiku"
+    claude_4_5_haiku = "claude_4_5_haiku"
     claude_3_5_sonnet = "claude_3_5_sonnet"
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
@@ -1055,6 +1056,25 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude 4.5 Haiku
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_4_5_haiku,
+        friendly_name="Claude 4.5 Haiku",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-haiku-4.5",
+                structured_output_mode=StructuredOutputMode.function_calling,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-haiku-4-5-20251001",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+            ),
+        ],
+    ),
     # Claude Sonnet 4.5
     KilnModel(
         family=ModelFamily.claude,
@@ -1065,12 +1085,16 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-4.5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-sonnet-4-5-20250929",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
             ),
         ],
     ),
@@ -1084,15 +1108,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-sonnet-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-sonnet-4-20250514",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
