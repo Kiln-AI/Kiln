@@ -561,6 +561,49 @@ describe("typed_json_from_schema_model", () => {
     )
   })
 
+  it("handles pretty-printed JSON arrays", () => {
+    const prettyJsonArray = `[
+      {
+        "role": "user",
+        "content": "Hello world"
+      },
+      {
+        "role": "assistant", 
+        "content": "Hi there!"
+      }
+    ]`
+
+    const inputData = {
+      name: "Alice",
+      age: "30",
+      contact_emails: prettyJsonArray,
+    }
+
+    const result = typed_json_from_schema_model(testSchema, inputData)
+
+    expect(result.contact_emails).toEqual([
+      { role: "user", content: "Hello world" },
+      { role: "assistant", content: "Hi there!" },
+    ])
+  })
+
+  it("handles compact JSON arrays", () => {
+    const compactJsonArray = `[{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi"}]`
+
+    const inputData = {
+      name: "Bob",
+      age: "25",
+      contact_emails: compactJsonArray,
+    }
+
+    const result = typed_json_from_schema_model(testSchema, inputData)
+
+    expect(result.contact_emails).toEqual([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
+    ])
+  })
+
   it("throws error when all required properties are missing", () => {
     const inputData = {
       // Both name and age are missing
