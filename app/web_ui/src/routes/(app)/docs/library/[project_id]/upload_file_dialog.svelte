@@ -409,7 +409,7 @@
             label="Tags"
             id="tags_section"
             description="Add tags to organize your documents"
-            info_description="Add tags to organize your documents"
+            info_description="Any tags set here will be added to each document you add. Tags can be used to filter your document set."
             optional={true}
             value=""
           />
