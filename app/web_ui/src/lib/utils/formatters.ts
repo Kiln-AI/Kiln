@@ -1,4 +1,5 @@
 import {
+  type ChunkerConfig,
   type ChunkerType,
   type EvalConfigType,
   type OutputFormat,
@@ -160,6 +161,22 @@ export function chunker_type_format(chunker_type: ChunkerType): string {
       // in the switch
       const exhaustiveCheck: never = chunker_type
       return exhaustiveCheck
+    }
+  }
+}
+
+export function format_chunker_config_overview(config: ChunkerConfig) {
+  const props = config.properties
+  switch (config.chunker_type) {
+    case "fixed_window":
+      return `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size || "N/A"} words • Overlap: ${props.chunk_overlap || "N/A"} words`
+    case "semantic":
+      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size || "N/A"} • Threshold: ${props.breakpoint_percentile_threshold || "N/A"}`
+    default: {
+      // type check will catch missing cases
+      const unknownChunkerType: never = config.chunker_type
+      console.error(`Invalid chunker type: ${unknownChunkerType}`)
+      return "unknown"
     }
   }
 }
