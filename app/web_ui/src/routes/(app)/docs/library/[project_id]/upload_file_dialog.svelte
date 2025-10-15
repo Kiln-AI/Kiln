@@ -180,9 +180,7 @@
     // reload document tags for the project - because total counts have changed
     // and we cannot know which ones due to partial upload rejection possibly
     // happening on the backend
-    if (project_id) {
-      await load_document_tags(project_id, { invalidate_cache: true })
-    }
+    await load_document_tags(project_id, { invalidate_cache: true })
 
     ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
       console.error("Error running all rag configs", error)
