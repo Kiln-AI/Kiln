@@ -15,6 +15,8 @@
   // controls whether the dropdown is initially visible
   // if not then we show the tags with the + button
   export let initial_expanded: boolean = false
+  export let show_close_button = true
+  export let hide_dropdown_after_select = true
 
   let show_dropdown = initial_expanded
   let current_tag = ""
@@ -45,7 +47,9 @@
       emit_tags_changed_if_different(previous_tags, new_tags)
     }
     current_tag = ""
-    show_dropdown = false
+    if (hide_dropdown_after_select) {
+      show_dropdown = false
+    }
   }
 
   function handle_escape() {
@@ -75,28 +79,30 @@
 </script>
 
 <div class="w-full">
-  <div class="flex flex-row flex-wrap gap-2 mb-2">
-    {#each (tags ?? []).slice().sort() as tag (tag)}
-      <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
-        <span class="truncate">{tag}</span>
-        <button
-          class="pl-3 font-medium shrink-0"
-          on:click={() => handle_remove_tag(tag)}
-          {disabled}>✕</button
-        >
-      </div>
-    {/each}
+  {#if tags.length > 0}
+    <div class="flex flex-row flex-wrap gap-2 mb-2">
+      {#each (tags ?? []).slice().sort() as tag (tag)}
+        <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
+          <span class="truncate">{tag}</span>
+          <button
+            class="pl-3 font-medium shrink-0"
+            on:click={() => handle_remove_tag(tag)}
+            {disabled}>✕</button
+          >
+        </div>
+      {/each}
 
-    {#if !show_dropdown}
-      <button
-        class="badge bg-gray-200 text-gray-500 p-3 font-medium {disabled
-          ? 'opacity-50'
-          : ''}"
-        on:click={toggle_dropdown}
-        {disabled}>+</button
-      >
-    {/if}
-  </div>
+      {#if !show_dropdown}
+        <button
+          class="badge bg-gray-200 text-gray-500 p-3 font-medium {disabled
+            ? 'opacity-50'
+            : ''}"
+          on:click={toggle_dropdown}
+          {disabled}>+</button
+        >
+      {/if}
+    </div>
+  {/if}
 
   {#if show_dropdown}
     <div class="flex flex-row gap-2 items-center">
@@ -109,12 +115,14 @@
         on_escape={handle_escape}
         focus_on_mount={true}
       />
-      <div class="flex-none">
-        <button
-          class="btn btn-sm btn-circle text-xl font-medium"
-          on:click={handle_close_dropdown}>✕</button
-        >
-      </div>
+      {#if show_close_button}
+        <div class="flex-none">
+          <button
+            class="btn btn-sm btn-circle text-xl font-medium"
+            on:click={handle_close_dropdown}>✕</button
+          >
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

@@ -10,6 +10,7 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
   import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
 
   export let onUploadCompleted: () => void
 
@@ -355,63 +356,72 @@
       {/if}
 
       {#if !show_success_dialog}
-        <!-- Dropzone -->
-        <div
-          class="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer {drag_over
-            ? 'border-primary bg-primary/5'
-            : 'border-gray-300 hover:border-gray-400'}"
-          on:dragover={handleDragOver}
-          on:dragleave={handleDragLeave}
-          on:drop={handleDrop}
-          on:click={openFileDialog}
-          role="button"
-          tabindex="0"
-          on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault()
-              openFileDialog()
-            }
-          }}
-        >
-          <div class="space-y-2">
-            <div class="w-10 h-10 mx-auto text-gray-500">
-              <UploadIcon />
-            </div>
-            <div>
-              <p class="text-gray-500">Drop files here or click to select</p>
+        <div class="pb-2">
+          <!-- Dropzone -->
+          <div
+            class="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer {drag_over
+              ? 'border-primary bg-primary/5'
+              : 'border-gray-300 hover:border-gray-400'}"
+            on:dragover={handleDragOver}
+            on:dragleave={handleDragLeave}
+            on:drop={handleDrop}
+            on:click={openFileDialog}
+            role="button"
+            tabindex="0"
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                openFileDialog()
+              }
+            }}
+          >
+            <div class="space-y-2">
+              <div class="w-10 h-10 mx-auto text-gray-500">
+                <UploadIcon />
+              </div>
+              <div>
+                <p class="text-gray-500">Drop files here or click to select</p>
+              </div>
             </div>
           </div>
+
+          <!-- Hidden file input -->
+          <input
+            bind:this={file_input}
+            type="file"
+            multiple
+            class="hidden"
+            on:change={handleFileSelect}
+            accept={supported_file_types.join(",")}
+          />
+
+          {#if unsupported_files_count > 0}
+            <div class="text-error text-sm">
+              {unsupported_files_count} file{unsupported_files_count === 1
+                ? ""
+                : "s"} skipped due to unsupported format
+            </div>
+          {/if}
         </div>
 
-        <!-- Hidden file input -->
-        <input
-          bind:this={file_input}
-          type="file"
-          multiple
-          class="hidden"
-          on:change={handleFileSelect}
-          accept={supported_file_types.join(",")}
-        />
-
-        {#if unsupported_files_count > 0}
-          <div class="text-error text-sm">
-            {unsupported_files_count} file{unsupported_files_count === 1
-              ? ""
-              : "s"} skipped due to unsupported format
-          </div>
-        {/if}
-
         <!-- Tag selection -->
-        <div class="space-y-2">
-          <h4 class="font-medium">Tags (Optional)</h4>
-          <div class="text-sm text-gray-500">
-            Add tags to organize your documents
-          </div>
+        <div>
+          <FormElement
+            inputType="header_only"
+            label="Tags"
+            id="tags_section"
+            description="Add tags to organize your documents"
+            info_description="Add tags to organize your documents"
+            optional={true}
+            value=""
+          />
           <TagPicker
             tags={selected_tags}
             tag_type="doc"
             {project_id}
             initial_expanded={true}
+            hide_dropdown_after_select={false}
+            show_close_button={false}
             on:tags_changed={(event) => {
               selected_tags = event.detail.current
             }}
