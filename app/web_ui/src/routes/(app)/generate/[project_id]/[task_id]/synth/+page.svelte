@@ -2,7 +2,7 @@
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
   import { current_task } from "$lib/stores"
-  import type { Task } from "$lib/types"
+  import type { RunConfigProperties, Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -423,10 +423,17 @@
   let ui_show_errors = false
 
   // Worker function that processes items until queue is empty
-  async function generate_worker(queue: SampleData[]) {
+  async function generate_worker(
+    queue: SampleData[],
+    run_config_properties: RunConfigProperties,
+  ) {
     while (queue.length > 0) {
       const sample = queue.shift()!
-      const result = await generate_sample(sample, sample.topic_path)
+      const result = await generate_sample(
+        sample,
+        sample.topic_path,
+        run_config_properties,
+      )
 
       if (result.error) {
         generate_all_sub_errors.push(result.error)
@@ -449,6 +456,13 @@
   let generated_count = 0
   async function generate_all_samples() {
     try {
+      // Grab the run config properties before it is no longer available
+      const run_config_properties =
+        run_config_component?.run_options_as_run_config_properties()
+      if (!run_config_properties) {
+        throw new KilnError("Run config properties not found")
+      }
+
       generated_count = 0
       generate_all_running = true
       generate_all_error = null
@@ -461,7 +475,7 @@
       // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
       const workers = Array(5)
         .fill(null)
-        .map(() => generate_worker(queue))
+        .map(() => generate_worker(queue, run_config_properties))
 
       // Wait for all workers to complete
       await Promise.all(workers)
@@ -536,13 +550,9 @@
   async function generate_sample(
     sample: SampleData,
     topic_path: string[] | undefined,
+    run_config_properties: RunConfigProperties,
   ): Promise<GenerateSampleResponse> {
-    const run_config_properties =
-      run_config_component?.run_options_as_run_config_properties()
     try {
-      if (!run_config_properties) {
-        throw new KilnError("Run config properties not found")
-      }
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
