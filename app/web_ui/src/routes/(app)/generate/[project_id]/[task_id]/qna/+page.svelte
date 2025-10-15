@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
+  import { base_url } from "$lib/api_client"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { indexedDBStore } from "$lib/stores/index_db_store"
@@ -111,6 +112,7 @@ Avoid:
   let clear_existing_state_dialog: Dialog | null = null
   let edit_splits_dialog: Dialog | null = null
   let show_create_extractor_dialog: Dialog | null = null
+  let generating_dialog: Dialog | null = null
 
   // Tag selection
   let available_tags: string[] = []
@@ -256,6 +258,7 @@ Avoid:
   }
 
   function open_generate_qna_modal() {
+    pending_generation_target = { type: "all" }
     const modal = document.getElementById(GENERATE_QNA_MODAL_ID)
     // @ts-expect-error dialog is not a standard element
     modal?.showModal()
@@ -300,41 +303,215 @@ Avoid:
 
     triggerSaveUiState()
     set_current_step(3)
+
+    // Load extractions for this extractor and split into parts for UI
+    void (async () => {
+      try {
+        const res = await fetch(
+          `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_id}/extractions`,
+        )
+        if (!res.ok)
+          throw new Error(`Failed to fetch extractions: ${res.status}`)
+        const data: Record<
+          string,
+          Array<{ output_content: string }>
+        > = await res.json()
+
+        // For each document in saved state, attach parts sliced to 1000 chars
+        saved_state.update((s) => ({
+          ...s,
+          documents: s.documents.map((doc) => {
+            const docExtractions = data[doc.id] || []
+            const parts = docExtractions.flatMap((extraction) => {
+              const text = extraction.output_content || ""
+              const chunkSize = 1000
+              const slices: {
+                id: string
+                text_preview: string
+                qa_pairs: QnAPair[]
+              }[] = []
+              for (let i = 0; i < text.length; i += chunkSize) {
+                const slice = text.slice(i, i + chunkSize)
+                slices.push({
+                  id: crypto.randomUUID(),
+                  text_preview: slice,
+                  qa_pairs: [],
+                })
+              }
+              return slices
+            })
+
+            return {
+              ...doc,
+              parts: parts.length > 0 ? parts : doc.parts,
+            }
+          }),
+        }))
+        triggerSaveUiState()
+      } catch (e) {
+        console.error("Failed to load/slice extractions", e)
+      }
+    })()
   }
 
-  function handle_generation_complete(event: CustomEvent) {
-    const { pairs_per_part, part_size, guidance, model } = event.detail
+  type GenerationTarget =
+    | { type: "all" }
+    | { type: "document"; document_id: string }
+    | { type: "part"; document_id: string; part_id: string }
+
+  let pending_generation_target: GenerationTarget = { type: "all" }
+
+  function handle_generate_for_document(
+    e: CustomEvent<{ document_id: string }>,
+  ) {
+    pending_generation_target = {
+      type: "document",
+      document_id: e.detail.document_id,
+    }
+    open_generate_qna_modal()
+  }
+
+  function handle_generate_for_part(
+    e: CustomEvent<{ document_id: string; part_id: string }>,
+  ) {
+    pending_generation_target = {
+      type: "part",
+      document_id: e.detail.document_id,
+      part_id: e.detail.part_id,
+    }
+    open_generate_qna_modal()
+  }
+
+  function get_parts_for_target(target: GenerationTarget) {
+    const indices: Array<{ docIdx: number; partIdx: number }> = []
+    if (target.type === "all") {
+      $saved_state.documents.forEach((doc, docIdx) => {
+        doc.parts.forEach((_part, partIdx) => indices.push({ docIdx, partIdx }))
+      })
+    } else if (target.type === "document") {
+      const docIdx = $saved_state.documents.findIndex(
+        (d) => d.id === target.document_id,
+      )
+      if (docIdx !== -1) {
+        $saved_state.documents[docIdx].parts.forEach((_p, partIdx) =>
+          indices.push({ docIdx, partIdx }),
+        )
+      }
+    } else if (target.type === "part") {
+      const docIdx = $saved_state.documents.findIndex(
+        (d) => d.id === target.document_id,
+      )
+      if (docIdx !== -1) {
+        const partIdx = $saved_state.documents[docIdx].parts.findIndex(
+          (p) => p.id === target.part_id,
+        )
+        if (partIdx !== -1) indices.push({ docIdx, partIdx })
+      }
+    }
+    return indices
+  }
+
+  async function handle_generation_complete(event: CustomEvent) {
+    const { pairs_per_part, guidance, model } = event.detail
     const model_provider = model.split("/")[0]
     const model_name = model.split("/").slice(1).join("/")
 
-    // Generate mock Q&A pairs for each document
-    saved_state.update((s) => ({
-      ...s,
-      generation_config: { pairs_per_part, part_size, guidance },
-      documents: s.documents.map((doc) => {
-        // Generate parts based on part_size
-        const num_parts = part_size === "full" ? 1 : 3
+    // Build run config properties compatible with backend expectations
+    const output_run_config_properties: import("$lib/types").RunConfigProperties =
+      {
+        model_name: model_name,
+        // Type cast to satisfy enum type; server will validate
+        model_provider_name:
+          model_provider as unknown as import("$lib/types").ModelProviderName,
+        prompt_id: "simple_prompt_builder",
+        temperature: 1.0,
+        top_p: 1.0,
+        structured_output_mode: "default",
+        tools_config: { tools: [] },
+      }
 
-        const parts = Array.from({ length: num_parts }, (_, i) => ({
+    const targetParts = get_parts_for_target(pending_generation_target)
+    generating_dialog?.show()
+
+    try {
+      for (const { docIdx, partIdx } of targetParts) {
+        const partText =
+          $saved_state.documents[docIdx].parts[partIdx].text_preview
+
+        const { data, error } = await client.POST(
+          "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
+          {
+            body: {
+              document_id: [],
+              part_text: [partText],
+              num_samples: pairs_per_part,
+              output_run_config_properties,
+              guidance: guidance || null,
+              tags: null,
+            },
+            params: {
+              path: {
+                project_id,
+                task_id,
+              },
+            },
+          },
+        )
+        if (error) throw error
+
+        const outputText = (data as unknown as { output: { output: string } })
+          .output.output
+        const response = JSON.parse(outputText) as {
+          generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
+        }
+        const generated = Array.isArray(response.generated_qna_pairs)
+          ? response.generated_qna_pairs
+          : []
+
+        const newPairs = generated.map((qa) => ({
           id: crypto.randomUUID(),
-          text_preview: `Part ${i + 1} of ${doc.name}`,
-          qa_pairs: Array.from({ length: pairs_per_part }, (_, j) => ({
-            id: crypto.randomUUID(),
-            question: `Sample question ${j + 1} for ${doc.name} part ${i + 1}`,
-            answer: `Sample answer ${j + 1} for ${doc.name} part ${i + 1}`,
-            generated: true,
-            model_name,
-            model_provider,
-            saved_id: null,
-          })),
+          question:
+            typeof qa?.question === "string"
+              ? qa.question
+              : JSON.stringify(qa?.question ?? ""),
+          answer:
+            typeof qa?.answer === "string"
+              ? qa.answer
+              : JSON.stringify(qa?.answer ?? ""),
+          generated: true,
+          model_name,
+          model_provider,
+          saved_id: null,
         }))
 
-        return { ...doc, parts }
-      }),
-    }))
+        saved_state.update((s) => {
+          const docs = [...s.documents]
+          const doc = { ...docs[docIdx] }
+          const parts = [...doc.parts]
+          const part = { ...parts[partIdx] }
+          part.qa_pairs = [...part.qa_pairs, ...newPairs]
+          parts[partIdx] = part
+          doc.parts = parts
+          docs[docIdx] = doc
+          return {
+            ...s,
+            generation_config: {
+              pairs_per_part,
+              part_size: s.generation_config.part_size,
+              guidance,
+            },
+            documents: docs,
+          }
+        })
+        triggerSaveUiState()
+      }
 
-    triggerSaveUiState()
-    set_current_step(4)
+      set_current_step(4)
+    } catch (e) {
+      console.error("Q&A generation failed", e)
+    } finally {
+      generating_dialog?.close()
+    }
   }
 
   function handle_create_extractor() {
@@ -654,6 +831,8 @@ Avoid:
                 depth={1}
                 triggerSave={triggerSaveUiState}
                 on:delete_document={delete_document}
+                on:generate_for_document={handle_generate_for_document}
+                on:generate_for_part={handle_generate_for_part}
               />
             {/each}
           </tbody>
@@ -675,6 +854,7 @@ Avoid:
   id={EXTRACTION_MODAL_ID}
   {extractor_configs}
   bind:selected_extractor_id={$saved_state.extractor_id}
+  bind:part_size={$saved_state.generation_config.part_size}
   on:extraction_complete={handle_extraction_complete}
   on:create_extractor={handle_create_extractor}
 />
@@ -683,10 +863,20 @@ Avoid:
   id={GENERATE_QNA_MODAL_ID}
   {task_id}
   bind:pairs_per_part={$saved_state.generation_config.pairs_per_part}
-  bind:part_size={$saved_state.generation_config.part_size}
   bind:guidance={$saved_state.generation_config.guidance}
   on:generation_complete={handle_generation_complete}
 />
+
+<Dialog
+  bind:this={generating_dialog}
+  title="Generating Q&A"
+  width="normal"
+  action_buttons={[]}
+>
+  <div class="flex flex-row justify-center">
+    <div class="loading loading-spinner loading-lg my-6"></div>
+  </div>
+</Dialog>
 
 <Dialog
   title="Existing Session"

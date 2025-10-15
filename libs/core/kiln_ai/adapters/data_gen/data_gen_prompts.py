@@ -156,3 +156,52 @@ The custom guidance is:
 """
 
     return prompt
+
+
+def generate_qna_generation_prompt(guidance: str | None = None) -> str:
+    """
+    Generate a prompt for generating Q&A samples.
+    """
+
+    prompt = """I want to generate Q&A pairs from document content and you should help me generate Q&A pairs for it.
+
+## Task Description
+Your job is to generate a list of Q&A pairs from the provided document content.
+
+In the user message we'll provide the following:
+ - The document content as kiln_data_gen_document_content
+ - The number of Q&A pairs to generate as kiln_data_gen_num_samples
+
+The output must be formatted:
+ - in the provided structured format, as an object with a single property "generated_qna_pairs" that maps to a list of generated Q&A pairs.
+ - With the correct number of Q&A pairs (kiln_data_gen_num_samples).
+ - Do not include any other text or break the schema in any way.
+
+### Example 1
+Example inputs:
+ - kiln_data_gen_document_content: "The quick brown fox jumps over the lazy dog."
+ - kiln_data_gen_num_samples: 3
+Example generated Q&A pairs: {"generated_qna_pairs": [{"question": "What is the color of the fox?", "answer": "The color of the fox is brown."}, {"question": "What is the color of the dog?", "answer": "The color of the dog is brown."}, {"question": "What is the color of the fox?", "answer": "The color of the fox is brown."}]}
+
+"""
+
+    if guidance:
+        prompt += """
+
+## Custom Guidance
+For this specific run we have additional guidance about the style of Q&A pairs we should generate. It's very important we follow this guidance when generating Q&A pairs.
+"""
+        prompt += f"""
+
+The custom guidance is:
+<guidance>
+{guidance}
+</guidance>
+"""
+    else:
+        prompt += """
+
+When generating Q&A pairs, focus on generating questions and answers that are relevant to the document content.
+"""
+
+    return prompt

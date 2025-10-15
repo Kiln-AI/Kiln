@@ -1232,6 +1232,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_qna": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Qna Pairs */
+        post: operations["generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/dataset_splits": {
         parameters: {
             query?: never;
@@ -2514,6 +2531,39 @@ export interface components {
              * @description The provider of the model to use
              */
             provider: string;
+        };
+        /** DataGenQnaApiInput */
+        DataGenQnaApiInput: {
+            /**
+             * Document Id
+             * @description Document IDs for Q&A generation
+             * @default []
+             */
+            document_id: string[];
+            /**
+             * Part Text
+             * @description Part text for Q&A generation
+             * @default []
+             */
+            part_text: string[];
+            /**
+             * Num Samples
+             * @description Number of samples to generate for this part
+             * @default 10
+             */
+            num_samples: number;
+            /** @description The run config properties to use for the output */
+            output_run_config_properties: components["schemas"]["RunConfigProperties"];
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to the sample
+             */
+            tags?: string[] | null;
         };
         /** DataGenSampleApiInput */
         DataGenSampleApiInput: {
@@ -7764,6 +7814,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DataGenSaveSamplesApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post: {
+        parameters: {
+            query?: {
+                session_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataGenQnaApiInput"];
             };
         };
         responses: {

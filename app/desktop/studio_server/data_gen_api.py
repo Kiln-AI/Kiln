@@ -9,6 +9,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     wrap_task_with_guidance,
 )
+from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
@@ -70,6 +71,27 @@ class DataGenSaveSamplesApiInput(BaseModel):
     )
     input_provider: str = Field(
         description="The provider of the model used to generate the input"
+    )
+    output_run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for the output"
+    )
+    guidance: str | None = Field(
+        description="Optional custom guidance for generation",
+        default=None,
+    )
+    tags: list[str] | None = Field(
+        description="Tags to add to the sample",
+        default=None,
+    )
+
+
+class DataGenQnaApiInput(BaseModel):
+    document_id: list[str] = Field(
+        description="Document IDs for Q&A generation", default=[]
+    )
+    part_text: list[str] = Field(description="Part text for Q&A generation", default=[])
+    num_samples: int = Field(
+        description="Number of samples to generate for this part", default=10
     )
     output_run_config_properties: RunConfigProperties = Field(
         description="The run config properties to use for the output"
@@ -217,6 +239,37 @@ The topic path for this sample is:
         run.tags = tags
 
         return run
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_qna")
+    async def generate_qna_pairs(
+        project_id: str,
+        task_id: str,
+        input: DataGenQnaApiInput,
+        session_id: str | None = None,
+    ) -> TaskRun:
+        task = task_from_id(project_id, task_id)
+        qna_task = DataGenQnaTask(target_task=task, guidance=input.guidance)
+        task_input = DataGenQnaTaskInput.from_task(
+            task=task,
+            document_id=input.document_id,
+            part_text=input.part_text,
+            num_samples=input.num_samples,
+        )
+        adapter = adapter_for_task(
+            qna_task,
+            run_config_properties=input.output_run_config_properties,
+        )
+        qna_run = await adapter.invoke(task_input.model_dump())
+
+        tags = ["synthetic"]
+        if session_id:
+            tags.append(f"synthetic_qna_session_{session_id}")
+
+        if input.tags:
+            tags.extend(input.tags)
+        qna_run.tags = tags
+
+        return qna_run
 
 
 def topic_path_to_string(topic_path: list[str]) -> str | None:

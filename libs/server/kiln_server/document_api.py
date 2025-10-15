@@ -689,6 +689,41 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.documents(readonly=True)
 
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions"
+    )
+    async def get_extractions_for_extractor_config(
+        project_id: str, extractor_config_id: str
+    ) -> dict[str, list[ExtractionSummary]]:
+        """Return mapping of document id to list of extractions for the given extractor config id."""
+        project = project_from_id(project_id)
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(status_code=404, detail="Extractor config not found")
+
+        results: dict[str, list[ExtractionSummary]] = {}
+
+        documents = project.documents(readonly=True)
+        for document in documents:
+            matched: list[ExtractionSummary] = []
+            for extraction in document.extractions(readonly=True):
+                if extraction.extractor_config_id == extractor_config_id:
+                    output = await extraction.output_content() or ""
+                    matched.append(
+                        build_extraction_summary(
+                            extraction=extraction,
+                            output_content=output,
+                            extractor_config=extractor_config,
+                        )
+                    )
+            if matched:
+                results[str(document.id)] = matched
+
+        return results
+
     @app.get("/api/projects/{project_id}/documents/tags")
     async def get_document_tags(
         project_id: str,
@@ -887,7 +922,15 @@ def connect_document_api(app: FastAPI):
                     detail="Extractor config is archived. You must unarchive it to use it.",
                 )
 
-            documents = project.documents(readonly=True)
+            # filter out documents that have extractions for this extractor config
+            documents = [
+                document
+                for document in project.documents(readonly=True)
+                if not any(
+                    extraction.extractor_config_id == extractor_config_id
+                    for extraction in document.extractions(readonly=True)
+                )
+            ]
 
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
