@@ -36,7 +36,7 @@
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let tall: boolean | "medium" | "xl" = false
+  export let height: "base" | "medium" | "large" | "xl" = "base"
   export let empty_label: string = "Select an option"
   export let empty_state_message: string = "No options available"
   export let empty_state_subtitle: string | null = null
@@ -98,6 +98,13 @@
     const target = event.target as HTMLInputElement
     if (target) value = target.checked
   }
+
+  const height_class = {
+    base: "h-18",
+    medium: "h-36",
+    large: "h-60",
+    xl: "h-96",
+  }
 </script>
 
 <div>
@@ -150,18 +157,12 @@
   </div>
   <div class="relative">
     {#if inputType === "textarea"}
-      <!-- Ensure compiler doesn't optimize away the heights -->
-      <span class="h-18 h-60 hidden"></span>
       <textarea
         placeholder={error_message || placeholder || label}
         {id}
-        class="textarea text-base textarea-bordered w-full {tall === true
-          ? 'h-60'
-          : tall === 'xl'
-            ? 'h-96'
-            : tall === 'medium'
-              ? 'h-36'
-              : 'h-18'} wrap-pre text-left align-top
+        class="textarea text-base textarea-bordered w-full {height_class[
+          height
+        ]} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
         on:input={run_validator}

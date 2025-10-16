@@ -274,15 +274,20 @@ export async function load_available_tools(
 
 // Available models for each provider
 export const available_models = writable<AvailableModels[]>([])
-let available_models_loaded: "not_loaded" | "loading" | "loaded" = "not_loaded"
+let available_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
 
 export async function load_available_models() {
   try {
     if (
       available_models_loaded === "loading" ||
-      available_models_loaded === "loaded"
+      available_models_loaded === "loaded" ||
+      available_models_loaded === "error_loading"
     ) {
-      // Block parallel requests or if already loaded
+      // Block parallel requests or if already loaded or errored
       return
     }
     available_models_loaded = "loading"
@@ -295,20 +300,24 @@ export async function load_available_models() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     available_models.set([])
-    available_models_loaded = "not_loaded"
+    available_models_loaded = "error_loading"
   }
 }
 
 // Available embedding models for each provider
 export const available_embedding_models = writable<EmbeddingProvider[]>([])
-let available_embedding_models_loaded: "not_loaded" | "loading" | "loaded" =
-  "not_loaded"
+let available_embedding_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
 
 export async function load_available_embedding_models() {
   try {
     if (
       available_embedding_models_loaded === "loading" ||
-      available_embedding_models_loaded === "loaded"
+      available_embedding_models_loaded === "loaded" ||
+      available_embedding_models_loaded === "error_loading"
     ) {
       return
     }
@@ -322,7 +331,7 @@ export async function load_available_embedding_models() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     available_embedding_models.set([])
-    available_embedding_models_loaded = "not_loaded"
+    available_embedding_models_loaded = "error_loading"
   }
 }
 
