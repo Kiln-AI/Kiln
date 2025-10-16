@@ -25,6 +25,8 @@
     reset_ui_store,
   } from "./qna_ui_store"
 
+  let session_id = Math.floor(Math.random() * 1000000000000).toString()
+
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
@@ -105,6 +107,7 @@ Avoid:
   let clear_existing_state_dialog: Dialog | null = null
   let edit_splits_dialog: Dialog | null = null
   let generating_dialog: Dialog | null = null
+  let save_all_dialog: Dialog | null = null
 
   // Tag selection
   let available_tags: string[] = []
@@ -289,6 +292,7 @@ Avoid:
             const docExtractions = data[doc.id] || []
             const parts = docExtractions.flatMap((extraction) => {
               const text = extraction.output_content || ""
+              // TODO: handle chunking properly
               const chunkSize = 1000
               const slices: {
                 id: string
@@ -568,6 +572,126 @@ Avoid:
 
   $: has_documents = $saved_state.documents.length > 0
   $: is_empty = !has_documents
+
+  // Save All state
+  let save_all_running = false
+  let save_all_completed = false
+  let save_all_sub_errors: Error[] = []
+  let saved_count = 0
+
+  function get_pairs_to_save(): Array<{
+    docIdx: number
+    partIdx: number
+    pairIdx: number
+  }> {
+    const indices: Array<{ docIdx: number; partIdx: number; pairIdx: number }> =
+      []
+    $saved_state.documents.forEach((doc, docIdx) => {
+      doc.parts.forEach((part, partIdx) => {
+        part.qa_pairs.forEach((pair, pairIdx) => {
+          if (!pair.saved_id) indices.push({ docIdx, partIdx, pairIdx })
+        })
+      })
+    })
+    return indices
+  }
+
+  function show_save_all_modal() {
+    // Reset unless already running
+    if (!save_all_running) {
+      save_all_completed = false
+      save_all_sub_errors = []
+      saved_count = 0
+    }
+    save_all_dialog?.show()
+  }
+
+  function get_random_split_tag(): string | undefined {
+    const splits = $saved_state.splits
+    const keys = Object.keys(splits)
+    if (keys.length === 0) return undefined
+    const r = Math.random()
+    let acc = 0
+    for (const k of keys) {
+      acc += splits[k]
+      if (r <= acc) return k
+    }
+    return keys[0]
+  }
+
+  function isTaskRun(obj: unknown): obj is { id: string } {
+    return (
+      typeof obj === "object" &&
+      obj !== null &&
+      "id" in obj &&
+      typeof (obj as { id: unknown }).id === "string"
+    )
+  }
+
+  async function save_all_qna_pairs() {
+    try {
+      save_all_running = true
+
+      save_all_completed = false
+      save_all_sub_errors = []
+      saved_count = 0
+
+      const queue = get_pairs_to_save()
+      for (const { docIdx, partIdx, pairIdx } of queue) {
+        const pair =
+          $saved_state.documents[docIdx].parts[partIdx].qa_pairs[pairIdx]
+        const split_tag = get_random_split_tag()
+        try {
+          const { data, error } = await client.POST(
+            "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
+            {
+              params: {
+                path: { project_id, task_id },
+                query: {
+                  session_id: session_id,
+                },
+              },
+              body: {
+                question: pair.question,
+                answer: pair.answer,
+                model_name: pair.model_name || null,
+                model_provider: pair.model_provider || null,
+                tags: split_tag ? [split_tag] : null,
+              },
+            },
+          )
+          if (error || !data || !isTaskRun(data))
+            throw error || new Error("Save failed")
+
+          const saved_id = data.id
+          saved_state.update((s) => {
+            const docs = [...s.documents]
+            const doc = { ...docs[docIdx] }
+            const parts = [...doc.parts]
+            const part = { ...parts[partIdx] }
+            const pairs = [...part.qa_pairs]
+            const updated = { ...pairs[pairIdx], saved_id }
+            pairs[pairIdx] = updated
+            part.qa_pairs = pairs
+            parts[partIdx] = part
+            doc.parts = parts
+            docs[docIdx] = doc
+            return { ...s, documents: docs }
+          })
+          saved_count++
+          triggerSaveUiState()
+        } catch (e) {
+          save_all_sub_errors.push(e as Error)
+          save_all_sub_errors = save_all_sub_errors
+        }
+      }
+    } catch (e) {
+      // ignore; errors are tracked per item in save_all_sub_errors
+    } finally {
+      save_all_running = false
+      save_all_completed = true
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -750,9 +874,16 @@ Avoid:
                   Generate Q&A Pairs
                 </button>
               {:else if $current_step == 4}
-                <button class="btn btn-sm btn-primary">
-                  Save All ({total_qa_pairs} pairs)
-                </button>
+                {#if total_qa_pairs > 0}
+                  <button
+                    class="btn btn-sm btn-primary"
+                    on:click={show_save_all_modal}
+                  >
+                    Save All ({get_pairs_to_save().length})
+                  </button>
+                {:else}
+                  <button class="btn btn-sm btn-disabled">Save All</button>
+                {/if}
               {/if}
             </div>
           </div>
@@ -844,6 +975,43 @@ Avoid:
   <div class="flex flex-row justify-center">
     <div class="loading loading-spinner loading-lg my-6"></div>
   </div>
+</Dialog>
+
+<Dialog title="Save All Q&A" bind:this={save_all_dialog} action_buttons={[]}>
+  {#if save_all_running}
+    <div class="min-h-[200px] flex flex-col justify-center items-center">
+      <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+      <div class="font-light text-xs text-center mt-1">
+        {saved_count} saved — {get_pairs_to_save().length} total
+        {#if save_all_sub_errors && save_all_sub_errors.length > 0}
+          — {save_all_sub_errors.length} failed
+        {/if}
+      </div>
+    </div>
+  {:else if save_all_completed}
+    <div
+      class="text-center flex flex-col items-center justify-center min-h-[150px] p-12"
+    >
+      <div class="font-medium">Saved {saved_count} items.</div>
+      {#if save_all_sub_errors.length > 0}
+        <div class="text-error font-light text-sm mt-4">
+          {save_all_sub_errors.length} items failed to save.
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <div class="flex flex-col gap-3">
+      <div class="font-medium text-sm">Status</div>
+      <div class="font-light text-sm">
+        {get_pairs_to_save().length} items pending
+      </div>
+      <div>
+        <button class="btn btn-sm btn-primary" on:click={save_all_qna_pairs}>
+          Save All
+        </button>
+      </div>
+    </div>
+  {/if}
 </Dialog>
 
 <Dialog

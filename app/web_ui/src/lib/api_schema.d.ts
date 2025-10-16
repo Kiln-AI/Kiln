@@ -1286,6 +1286,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Qna Pair
+         * @description Save a single QnA pair as a TaskRun. We store the task's system prompt
+         *     as the system message, the question as the user message, and the answer
+         *     as the assistant message in the trace. The output is the answer.
+         */
+        post: operations["save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/dataset_splits": {
         parameters: {
             query?: never;
@@ -4553,6 +4575,34 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /** Tags */
+            tags?: string[] | null;
+        };
+        /** SaveQnaPairInput */
+        SaveQnaPairInput: {
+            /**
+             * Question
+             * @description User question text
+             */
+            question: string;
+            /**
+             * Answer
+             * @description Assistant answer text
+             */
+            answer: string;
+            /**
+             * Model Name
+             * @description Optional model name for provenance
+             */
+            model_name?: string | null;
+            /**
+             * Model Provider
+             * @description Optional model provider for provenance
+             */
+            model_provider?: string | null;
+            /**
+             * Tags
+             * @description Optional tags
+             */
             tags?: string[] | null;
         };
         /** ScoreSummary */
@@ -7966,6 +8016,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DataGenQnaApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveQnaPairInput"];
             };
         };
         responses: {

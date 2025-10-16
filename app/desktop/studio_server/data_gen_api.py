@@ -16,8 +16,17 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionAssistantMessageParamWrapper,
+    ChatCompletionMessageParam,
+)
 from kiln_server.run_api import model_provider_from_string
 from kiln_server.task_api import task_from_id
+from openai.types.chat import (
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -261,7 +270,7 @@ The topic path for this sample is:
         )
         qna_run = await adapter.invoke(task_input.model_dump())
 
-        tags = ["synthetic"]
+        tags = ["synthetic", "qna"]
         if session_id:
             tags.append(f"synthetic_qna_session_{session_id}")
 
@@ -270,6 +279,93 @@ The topic path for this sample is:
         qna_run.tags = tags
 
         return qna_run
+
+    class SaveQnaPairInput(BaseModel):
+        question: str = Field(description="User question text")
+        answer: str = Field(description="Assistant answer text")
+        model_name: str | None = Field(
+            default=None, description="Optional model name for provenance"
+        )
+        model_provider: str | None = Field(
+            default=None, description="Optional model provider for provenance"
+        )
+        tags: list[str] | None = Field(default=None, description="Optional tags")
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/save_qna_pair")
+    async def save_qna_pair(
+        project_id: str,
+        task_id: str,
+        input: SaveQnaPairInput,
+        session_id: str,
+    ) -> TaskRun:
+        """
+        Save a single QnA pair as a TaskRun. We store the task's system prompt
+        as the system message, the question as the user message, and the answer
+        as the assistant message in the trace. The output is the answer.
+        """
+        task = task_from_id(project_id, task_id)
+
+        # Build trace in OpenAI message format using the task instruction as system prompt
+        system_msg: ChatCompletionSystemMessageParam = {
+            "role": "system",
+            "content": task.instruction,
+        }
+        user_msg: ChatCompletionUserMessageParam = {
+            "role": "user",
+            "content": input.question,
+        }
+        assistant_msg: ChatCompletionAssistantMessageParamWrapper = {
+            "role": "assistant",
+            "content": input.answer,
+        }
+        trace: list[ChatCompletionMessageParam] = [
+            system_msg,
+            user_msg,
+            assistant_msg,
+        ]
+
+        if not input.model_name or not input.model_provider:
+            raise ValueError("Model name and provider are required")
+
+        print(f"Saving QnA pair: {session_id}")
+
+        task_run = TaskRun(
+            input=input.question,
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties=(
+                    {
+                        "model_name": input.model_name,
+                        "model_provider": input.model_provider,
+                        "adapter_name": "kiln_qna_manual_save",
+                    }
+                ),
+            ),
+            output=TaskOutput(
+                output=input.answer,
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties=(
+                        {
+                            "model_name": input.model_name,
+                            "model_provider": input.model_provider,
+                            "adapter_name": "kiln_qna_manual_save",
+                        }
+                    ),
+                ),
+            ),
+            tags=[
+                "synthetic",
+                "qna",
+                f"synthetic_qna_session_{session_id}",
+                *(input.tags or []),
+            ],
+            trace=trace,
+        )
+
+        task_run.parent = task
+        task_run.save_to_file()
+        return task_run
 
 
 def topic_path_to_string(topic_path: list[str]) -> str | None:
