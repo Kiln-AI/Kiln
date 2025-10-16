@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "../../../routes/(app)/run/output.svelte"
+  import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
 
@@ -258,20 +259,9 @@
                     >
                       <div class="flex flex-row items-center gap-1">
                         <span>Subtask Message Trace</span>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          class="w-3 h-3 opacity-80 group-hover:opacity-100 transition-opacity"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M7 17L17 7M7 7h10v10"
-                          />
-                        </svg>
+                        <div class="w-4 h-4">
+                          <ArrowRightUpIcon />
+                        </div>
                       </div>
                     </button>
                   </div>
