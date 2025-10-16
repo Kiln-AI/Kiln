@@ -2,14 +2,14 @@
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
-  import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
-  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
+  import TagPicker from "$lib/ui/tag_picker.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import { load_document_tags } from "$lib/stores/document_tag_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
   import posthog from "posthog-js"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
+  import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
 
   export let onUploadCompleted: () => void
@@ -103,8 +103,7 @@
   let show_success_dialog = false
 
   // tags
-  let selected_tags: Set<string> = new Set()
-  let current_tag = ""
+  let selected_tags: string[] = []
 
   async function handleUpload(): Promise<boolean> {
     upload_error = null
@@ -144,8 +143,8 @@
       formData.append(`names`, file.name)
     })
 
-    if (selected_tags.size > 0) {
-      Array.from(selected_tags).forEach((tag) => {
+    if (selected_tags.length > 0) {
+      selected_tags.forEach((tag) => {
         formData.append("tags", tag)
       })
     }
@@ -268,8 +267,7 @@
     show_upload_result = false
     show_success_dialog = false
     unsupported_files_count = 0
-    selected_tags = new Set()
-    current_tag = ""
+    selected_tags = []
   }
 
   export function close() {
@@ -279,8 +277,7 @@
     show_upload_result = false
     show_success_dialog = false
     unsupported_files_count = 0
-    selected_tags = new Set()
-    current_tag = ""
+    selected_tags = []
     return true
   }
 
@@ -416,38 +413,17 @@
             optional={true}
             value=""
           />
-          {#if selected_tags.size > 0}
-            <div class="flex flex-row flex-wrap gap-2 my-2">
-              {#each Array.from(selected_tags).sort() as tag}
-                <div
-                  class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
-                >
-                  <span class="truncate">{tag}</span>
-                  <button
-                    class="pl-3 font-medium shrink-0"
-                    on:click={() => {
-                      selected_tags.delete(tag)
-                      selected_tags = selected_tags
-                    }}>✕</button
-                  >
-                </div>
-              {/each}
-            </div>
-          {/if}
-          <div class="flex flex-row gap-2 items-center">
-            <TagDropdown
-              bind:tag={current_tag}
-              {project_id}
-              example_tag_set="doc"
-              on_select={(tag) => {
-                selected_tags.add(tag)
-                selected_tags = selected_tags
-                current_tag = ""
-              }}
-              on_escape={() => {}}
-              focus_on_mount={false}
-            />
-          </div>
+          <TagPicker
+            tags={selected_tags}
+            tag_type="doc"
+            {project_id}
+            initial_expanded={true}
+            hide_dropdown_after_select={false}
+            show_close_button={false}
+            on:tags_changed={(event) => {
+              selected_tags = event.detail.current
+            }}
+          />
         </div>
 
         {#if show_upload_result && upload_result}
