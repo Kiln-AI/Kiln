@@ -1,9 +1,9 @@
 <script lang="ts">
   import TableButton from "../table_button.svelte"
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Output from "../../../../run/output.svelte"
   import { createEventDispatcher } from "svelte"
+  import { max_available_step } from "./qna_ui_store"
 
   type QnAPair = {
     id: string
@@ -35,6 +35,9 @@
 
   let expandedQAPairs: Record<string, boolean> = {}
   const dispatch = createEventDispatcher()
+
+  // we don't enable the part dialog until after the extraction step
+  $: output_dialog_possible = $max_available_step > 2
 
   // Dialogs
   let part_output_dialog: Dialog | null = null
@@ -79,7 +82,7 @@
 </script>
 
 <!-- Document Header Row -->
-<tr class="bg-base-200 border-t-2 border-base-100">
+<tr class="bg-base-200 border-base-100">
   <td colspan="3" class="py-2" style="padding-left: {(depth - 1) * 25 + 20}px">
     <div class="font-medium flex flex-row pr-4 w-full">
       <div class="flex-1">
@@ -87,26 +90,20 @@
           <span class="text-xs relative" style="top: -3px">⮑</span>
         {/if}
         <button
-          class="hover:underline"
-          on:click|stopPropagation={open_document_parts_dialog}
+          on:click|stopPropagation={output_dialog_possible
+            ? open_document_parts_dialog
+            : null}
+          class:cursor-pointer={output_dialog_possible}
+          class:hover:underline={output_dialog_possible}
         >
           {document.name}
         </button>
         <span class="text-xs text-gray-500 font-normal">
           ({total_qa_pairs} pairs)
         </span>
-        {#if !document.extracted}
+        {#if $max_available_step > 2 && !document.extracted}
           <span class="badge badge-warning badge-sm ml-2">Not Extracted</span>
         {/if}
-        <span class="relative inline-block w-3 h-3">
-          <div class="absolute top-[-3px] left-0">
-            <InfoTooltip
-              tooltip_text="This is a document. Q&A pairs will be generated from its content."
-              position="bottom"
-              no_pad={true}
-            />
-          </div>
-        </span>
       </div>
     </div>
   </td>
@@ -119,9 +116,6 @@
         class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
       >
         <li>
-          <button>Regenerate Q&A</button>
-        </li>
-        <li>
           <button
             on:click|stopPropagation={() =>
               dispatch("generate_for_document", { document_id: document.id })}
@@ -130,14 +124,14 @@
           </button>
         </li>
         <li>
-          <button>Delete Document</button>
+          <button>Remove Document</button>
         </li>
       </ul>
     </div>
   </td>
 </tr>
 
-{#if !has_parts}
+{#if $max_available_step > 2 && !has_parts}
   <tr>
     <td colspan="4" style="padding-left: {depth * 25 + 20}px" class="py-2">
       <div class="text-sm text-gray-500 italic">No Q&A pairs generated yet</div>
@@ -148,29 +142,17 @@
     {#if document.parts.length > 1}
       <!-- Part Header Row (only show if document has multiple parts) -->
       <tr
-        class="bg-base-200 border-t border-base-100 cursor-pointer"
-        on:click={() => open_part_dialog(part.text_preview)}
+        class="bg-base-200 border-t border-base-100"
+        on:click={() =>
+          output_dialog_possible ? open_part_dialog(part.text_preview) : null}
+        class:cursor-pointer={output_dialog_possible}
+        class:hover:underline={output_dialog_possible}
       >
         <td colspan="3" class="py-2" style="padding-left: {depth * 25 + 20}px">
           <div class="font-medium flex flex-row pr-4 w-full">
             <div class="flex-1">
               <span class="text-xs relative" style="top: -3px">⮑</span>
               Part {partIndex + 1}
-              <span class="text-xs text-gray-500 font-normal">
-                ({part.qa_pairs.length} pairs)
-              </span>
-              <span class="relative inline-block w-3 h-3">
-                <div class="absolute top-[-3px] left-0">
-                  <InfoTooltip
-                    tooltip_text="A part of the document. Preview: {part.text_preview.substring(
-                      0,
-                      60,
-                    )}..."
-                    position="bottom"
-                    no_pad={true}
-                  />
-                </div>
-              </span>
             </div>
           </div>
         </td>
@@ -252,11 +234,6 @@
                   Remove Q&A Pair
                 </button>
               </li>
-              {#if qa.answer && !qa.saved_id}
-                <li>
-                  <button>Remove Answer</button>
-                </li>
-              {/if}
               {#if qa.saved_id}
                 <li>
                   <button>View in Dataset</button>

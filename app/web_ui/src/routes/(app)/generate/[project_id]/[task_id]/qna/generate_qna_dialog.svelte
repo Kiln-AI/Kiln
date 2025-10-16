@@ -6,6 +6,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
@@ -68,21 +69,6 @@
           <IncrementUi bind:value={pairs_per_part} />
         </div>
 
-        <!-- Part size moved to extraction modal -->
-        <div>
-          <label class="label" for="guidance_textarea_modal">
-            <span class="label-text font-medium">Guidance</span>
-          </label>
-          <textarea
-            id="guidance_textarea_modal"
-            class="textarea textarea-bordered w-full h-64 font-mono text-xs"
-            bind:value={guidance}
-          />
-          <div class="text-xs text-gray-500 mt-1">
-            Instructions for the AI on how to generate Q&A pairs
-          </div>
-        </div>
-
         <AvailableModelsDropdown
           {task_id}
           settings={{
@@ -91,6 +77,16 @@
             suggested_mode: "data_gen",
           }}
           bind:model
+        />
+
+        <!-- Part size moved to extraction modal -->
+        <FormElement
+          id="guidance_textarea_modal"
+          inputType="textarea"
+          label="Guidance"
+          description="Instructions for the AI on how to generate Q&A pairs"
+          bind:value={guidance}
+          height="large"
         />
       </div>
     {/if}

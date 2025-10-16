@@ -15,13 +15,22 @@
   import QnaDocumentNode from "./qna_document_node.svelte"
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import QnaGenIntro from "./qna_gen_intro.svelte"
+  import {
+    current_step,
+    set_current_step,
+    step_numbers,
+    step_names,
+    step_descriptions,
+    max_available_step,
+    reset_ui_store,
+  } from "./qna_ui_store"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  const DEFAULT_QNA_GUIDANCE = `You are generating question-answer pairs from document content to create a dataset for training and evaluating AI systems.
+  const DEFAULT_QNA_GUIDANCE = `You are generating question-answer pairs from document content to create a dataset for evaluating AI systems.
 
-For each document part:
+For each text:
 1. Generate clear, specific questions that can be answered using the content
 2. Provide accurate, complete answers based solely on the document content
 3. Vary question types (factual, conceptual, procedural, etc.)
@@ -70,6 +79,7 @@ Avoid:
     generation_config: {
       pairs_per_part: number
       part_size: "small" | "medium" | "large" | "full"
+      use_full_documents: boolean
       guidance: string
     }
     documents: QnADocumentNode[]
@@ -84,28 +94,12 @@ Avoid:
     generation_config: {
       pairs_per_part: 5,
       part_size: "medium" as const,
+      use_full_documents: false,
       guidance: DEFAULT_QNA_GUIDANCE,
     },
     documents: [],
     splits: {},
   })
-
-  // UI state
-  type StepNumber = 1 | 2 | 3 | 4
-  const step_numbers: StepNumber[] = [1, 2, 3, 4]
-  let current_step: StepNumber = 1
-  const step_names: Record<StepNumber, string> = {
-    1: "Select Documents",
-    2: "Extraction",
-    3: "Generate Q&A",
-    4: "Save Data",
-  }
-  const step_descriptions: Record<StepNumber, string> = {
-    1: "Choose which documents to generate Q&A pairs from",
-    2: "Extract text content from selected documents",
-    3: "Generate question and answer pairs from extracted content",
-    4: "Save generated Q&A pairs to dataset",
-  }
 
   // Dialogs
   let clear_existing_state_dialog: Dialog | null = null
@@ -127,6 +121,7 @@ Avoid:
       generation_config: {
         pairs_per_part: 5,
         part_size: "medium" as const,
+        use_full_documents: false,
         guidance: DEFAULT_QNA_GUIDANCE,
       },
       documents: [],
@@ -159,11 +154,8 @@ Avoid:
     }
   }
 
-  function set_current_step(step: StepNumber) {
-    current_step = step
-  }
-
   function clear_all_state() {
+    reset_ui_store()
     saved_state.update((s) => ({
       ...s,
       selected_tags: [],
@@ -172,6 +164,7 @@ Avoid:
       generation_config: {
         pairs_per_part: 5,
         part_size: "medium" as const,
+        use_full_documents: false,
         guidance: DEFAULT_QNA_GUIDANCE,
       },
       documents: [],
@@ -289,7 +282,7 @@ Avoid:
           Array<{ output_content: string }>
         > = await res.json()
 
-        // For each document in saved state, attach parts sliced to 1000 chars
+        // For each document in saved state, attach parts
         saved_state.update((s) => ({
           ...s,
           documents: s.documents.map((doc) => {
@@ -468,6 +461,7 @@ Avoid:
             generation_config: {
               pairs_per_part,
               part_size: s.generation_config.part_size,
+              use_full_documents: s.generation_config.use_full_documents,
               guidance,
             },
             documents: docs,
@@ -592,7 +586,6 @@ Avoid:
             )
           ) {
             clear_all_state()
-            set_current_step(1)
           }
         },
       },
@@ -696,74 +689,76 @@ Avoid:
     </div>
 
     <!-- Stepper -->
-    <div
-      class="pb-1 2xl:pt-1 mt-12 mb-4 gap-2 sticky top-0 z-2 backdrop-blur bg-white/70 z-10"
-    >
-      <div class="flex flex-col">
-        <div class="flex justify-center">
-          <ul class="steps">
-            {#each step_numbers as step}
-              <li class="step {current_step >= step ? 'step-primary' : ''}">
-                <button
-                  class="px-4 text-sm md:min-w-[155px] {current_step == step
-                    ? 'font-medium cursor-default'
-                    : 'text-gray-500 hover:underline hover:text-gray-700'}"
-                  on:click={() => set_current_step(step)}
-                  aria-label={`Go to step ${step} - ${step_names[step]}`}
-                >
-                  {step_names[step]}
-                </button>
-              </li>
-            {/each}
-          </ul>
-        </div>
-        <div class="max-w-3xl mx-auto mt-2 2xl:mt-4 text-center">
-          <div class="font-light">
-            <span class="font-medium">Step {current_step}:</span>
-            {step_descriptions[current_step]}
+    {#if $max_available_step > 1}
+      <div
+        class="pb-1 2xl:pt-1 mt-12 mb-4 gap-2 sticky top-0 z-2 backdrop-blur bg-white/70 z-10"
+      >
+        <div class="flex flex-col">
+          <div class="flex justify-center">
+            <ul class="steps">
+              {#each step_numbers as step}
+                <li class="step {$current_step >= step ? 'step-primary' : ''}">
+                  <button
+                    class="px-4 text-sm md:min-w-[155px] {$current_step == step
+                      ? 'font-medium cursor-default'
+                      : 'text-gray-500 hover:underline hover:text-gray-700'}"
+                    on:click={() => set_current_step(step)}
+                    aria-label={`Go to step ${step} - ${step_names[step]}`}
+                  >
+                    {step_names[step]}
+                  </button>
+                </li>
+              {/each}
+            </ul>
           </div>
-          <div class="mt-1 2xl:mt-2">
-            {#if current_step == 1}
-              <button
-                class="btn btn-sm btn-primary"
-                on:click={open_select_documents_modal}
-              >
-                Select Documents
-              </button>
-            {:else if current_step == 2}
-              {#if !$saved_state.extraction_complete}
+          <div class="max-w-3xl mx-auto mt-2 2xl:mt-4 text-center">
+            <div class="font-light">
+              <span class="font-medium">Step {$current_step}:</span>
+              {step_descriptions[$current_step]}
+            </div>
+            <div class="mt-1 2xl:mt-2">
+              {#if $current_step == 1}
                 <button
                   class="btn btn-sm btn-primary"
-                  on:click={open_extraction_modal}
-                  disabled={!has_documents}
+                  on:click={open_select_documents_modal}
                 >
-                  Run Extraction
+                  Select Documents
                 </button>
-              {:else}
+              {:else if $current_step == 2}
+                {#if !$saved_state.extraction_complete}
+                  <button
+                    class="btn btn-sm btn-primary"
+                    on:click={open_extraction_modal}
+                    disabled={!has_documents}
+                  >
+                    Run Extraction
+                  </button>
+                {:else}
+                  <button
+                    class="btn btn-sm btn-primary"
+                    on:click={() => set_current_step(3)}
+                  >
+                    Next Step
+                  </button>
+                {/if}
+              {:else if $current_step == 3}
                 <button
                   class="btn btn-sm btn-primary"
-                  on:click={() => set_current_step(3)}
+                  on:click={open_generate_qna_modal}
+                  disabled={!$saved_state.extraction_complete}
                 >
-                  Next Step
+                  Generate Q&A Pairs
+                </button>
+              {:else if $current_step == 4}
+                <button class="btn btn-sm btn-primary">
+                  Save All ({total_qa_pairs} pairs)
                 </button>
               {/if}
-            {:else if current_step == 3}
-              <button
-                class="btn btn-sm btn-primary"
-                on:click={open_generate_qna_modal}
-                disabled={!$saved_state.extraction_complete}
-              >
-                Generate Q&A Pairs
-              </button>
-            {:else if current_step == 4}
-              <button class="btn btn-sm btn-primary">
-                Save All ({total_qa_pairs} pairs)
-              </button>
-            {/if}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    {/if}
 
     <!-- Empty State or Table Display -->
     {#if is_empty}
@@ -771,24 +766,26 @@ Avoid:
     {:else}
       <div class="rounded-lg border">
         <table class="table table-fixed">
-          <thead class={total_qa_pairs === 0 ? "hidden-header" : ""}>
-            <tr>
-              <th style="width: calc(50% - 70px)"
-                >Question <InfoTooltip
-                  tooltip_text="The question to ask about the document content."
-                  position="bottom"
-                /></th
-              >
-              <th style="width: calc(50% - 110px)"
-                >Answer <InfoTooltip
-                  tooltip_text="The answer to the question based on the document content."
-                  position="bottom"
-                /></th
-              >
-              <th style="width: 140px">Status</th>
-              <th style="width: 40px"></th>
-            </tr>
-          </thead>
+          {#if total_qa_pairs > 1}
+            <thead>
+              <tr>
+                <th style="width: calc(50% - 70px)"
+                  >Question <InfoTooltip
+                    tooltip_text="The question to ask about the document content."
+                    position="bottom"
+                  /></th
+                >
+                <th style="width: calc(50% - 110px)"
+                  >Answer <InfoTooltip
+                    tooltip_text="The answer to the question based on the document content."
+                    position="bottom"
+                  /></th
+                >
+                <th style="width: 140px">Status</th>
+                <th style="width: 40px"></th>
+              </tr>
+            </thead>
+          {/if}
           <tbody>
             {#each $saved_state.documents as document}
               <QnaDocumentNode
@@ -822,6 +819,7 @@ Avoid:
   bind:dialog={show_extraction_modal}
   bind:selected_extractor_id={$saved_state.extractor_id}
   bind:part_size={$saved_state.generation_config.part_size}
+  bind:use_full_documents={$saved_state.generation_config.use_full_documents}
   on:extraction_complete={handle_extraction_complete}
   on:extractor_config_selected={handle_extractor_config_selected}
   on:close={() => (current_dialog_type = null)}
