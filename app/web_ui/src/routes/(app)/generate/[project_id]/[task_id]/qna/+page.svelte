@@ -8,11 +8,10 @@
   import { writable, type Writable } from "svelte/store"
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import CreateExtractorForm from "../../../../docs/extractors/[project_id]/create_extractor/create_extractor_form.svelte"
-  import type { ExtractorConfig } from "$lib/types"
-  import SelectDocumentsModal from "./select_documents_modal.svelte"
-  import ExtractionModal from "./extraction_modal.svelte"
-  import GenerateQnaModal from "./generate_qna_modal.svelte"
+  import type { ModelProviderName, RunConfigProperties } from "$lib/types"
+  import SelectDocumentsModal from "./select_documents_dialog.svelte"
+  import ExtractionModal from "./extraction_dialog.svelte"
+  import GenerateQnaModal from "./generate_qna_dialog.svelte"
   import QnaDocumentNode from "./qna_document_node.svelte"
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import QnaGenIntro from "./qna_gen_intro.svelte"
@@ -111,48 +110,37 @@ Avoid:
   // Dialogs
   let clear_existing_state_dialog: Dialog | null = null
   let edit_splits_dialog: Dialog | null = null
-  let show_create_extractor_dialog: Dialog | null = null
   let generating_dialog: Dialog | null = null
 
   // Tag selection
   let available_tags: string[] = []
 
-  // Extractor selection
-  let extractor_configs: ExtractorConfig[] = []
-
   // Splits editing
   let editable_splits: Array<{ tag: string; percent: number }> = []
 
-  // Modal IDs
-  const SELECT_DOCUMENTS_MODAL_ID = "select-documents-modal"
-  const EXTRACTION_MODAL_ID = "extraction-modal"
-  const GENERATE_QNA_MODAL_ID = "generate-qna-modal"
-
   onMount(async () => {
-    if (project_id && task_id) {
-      const qna_data_key = `qna_data_${project_id}_${task_id}`
-      const { store, initialized } = indexedDBStore<QnASession>(qna_data_key, {
-        selected_tags: [],
-        extractor_id: null,
-        extraction_complete: false,
-        generation_config: {
-          pairs_per_part: 5,
-          part_size: "medium" as const,
-          guidance: DEFAULT_QNA_GUIDANCE,
-        },
-        documents: [],
-        splits: {},
-      })
-      await initialized
-      saved_state = store
+    const qna_data_key = `qna_data_${project_id}_${task_id}`
+    const { store, initialized } = indexedDBStore<QnASession>(qna_data_key, {
+      selected_tags: [],
+      extractor_id: null,
+      extraction_complete: false,
+      generation_config: {
+        pairs_per_part: 5,
+        part_size: "medium" as const,
+        guidance: DEFAULT_QNA_GUIDANCE,
+      },
+      documents: [],
+      splits: {},
+    })
+    await initialized
+    saved_state = store
 
-      // Show continue session dialog if there's existing data
-      if ($saved_state.documents.length > 0) {
-        clear_existing_state_dialog?.show()
-      }
+    // Show continue session dialog if there's existing data
+    if ($saved_state.documents.length > 0) {
+      clear_existing_state_dialog?.show()
     }
 
-    await Promise.all([loadAvailableTags(), loadExtractorConfigs()])
+    await loadAvailableTags()
     update_current_step()
   })
 
@@ -221,47 +209,29 @@ Avoid:
     }
   }
 
-  async function loadExtractorConfigs() {
-    try {
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/extractor_configs",
-        {
-          params: {
-            path: {
-              project_id,
-            },
-          },
-        },
-      )
-
-      if (error) {
-        throw error
-      }
-
-      extractor_configs = data || []
-    } catch (e) {
-      console.error("Error loading extractors:", e)
-      extractor_configs = []
-    }
-  }
+  let current_dialog_type:
+    | "select_documents"
+    | "extraction"
+    | "generate_qna"
+    | null = null
+  let show_select_documents_modal: Dialog | null = null
+  let show_extraction_modal: Dialog | null = null
+  let show_generate_qna_modal: Dialog | null = null
 
   function open_select_documents_modal() {
-    const modal = document.getElementById(SELECT_DOCUMENTS_MODAL_ID)
-    // @ts-expect-error dialog is not a standard element
-    modal?.showModal()
+    current_dialog_type = "select_documents"
+    show_select_documents_modal?.show()
   }
 
   function open_extraction_modal() {
-    const modal = document.getElementById(EXTRACTION_MODAL_ID)
-    // @ts-expect-error dialog is not a standard element
-    modal?.showModal()
+    current_dialog_type = "extraction"
+    show_extraction_modal?.show()
   }
 
   function open_generate_qna_modal() {
+    current_dialog_type = "generate_qna"
     pending_generation_target = { type: "all" }
-    const modal = document.getElementById(GENERATE_QNA_MODAL_ID)
-    // @ts-expect-error dialog is not a standard element
-    modal?.showModal()
+    show_generate_qna_modal?.show()
   }
 
   function handle_documents_added(event: CustomEvent) {
@@ -288,12 +258,14 @@ Avoid:
     set_current_step(2)
   }
 
-  function handle_extraction_complete(event: CustomEvent) {
-    const { extractor_id } = event.detail
+  function handle_extraction_complete(
+    event: CustomEvent<{ extractor_config_id: string }>,
+  ) {
+    const { extractor_config_id } = event.detail
 
     saved_state.update((s) => ({
       ...s,
-      extractor_id,
+      extractor_id: extractor_config_id,
       extraction_complete: true,
       documents: s.documents.map((doc) => ({
         ...doc,
@@ -308,7 +280,7 @@ Avoid:
     void (async () => {
       try {
         const res = await fetch(
-          `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_id}/extractions`,
+          `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_config_id}/extractions`,
         )
         if (!res.ok)
           throw new Error(`Failed to fetch extractions: ${res.status}`)
@@ -417,18 +389,16 @@ Avoid:
     const model_name = model.split("/").slice(1).join("/")
 
     // Build run config properties compatible with backend expectations
-    const output_run_config_properties: import("$lib/types").RunConfigProperties =
-      {
-        model_name: model_name,
-        // Type cast to satisfy enum type; server will validate
-        model_provider_name:
-          model_provider as unknown as import("$lib/types").ModelProviderName,
-        prompt_id: "simple_prompt_builder",
-        temperature: 1.0,
-        top_p: 1.0,
-        structured_output_mode: "default",
-        tools_config: { tools: [] },
-      }
+    const output_run_config_properties: RunConfigProperties = {
+      model_name: model_name,
+      // Type cast to satisfy enum type; server will validate
+      model_provider_name: model_provider as unknown as ModelProviderName,
+      prompt_id: "simple_prompt_builder",
+      temperature: 1.0,
+      top_p: 1.0,
+      structured_output_mode: "default",
+      tools_config: { tools: [] },
+    }
 
     const targetParts = get_parts_for_target(pending_generation_target)
     generating_dialog?.show()
@@ -514,14 +484,9 @@ Avoid:
     }
   }
 
-  function handle_create_extractor() {
-    show_create_extractor_dialog?.show()
-  }
-
-  async function handle_extractor_created(
+  async function handle_extractor_config_selected(
     e: CustomEvent<{ extractor_config_id: string }>,
   ) {
-    await loadExtractorConfigs()
     saved_state.update((s) => ({
       ...s,
       extractor_id: e.detail.extractor_config_id,
@@ -844,27 +809,32 @@ Avoid:
 
 <!-- Modals -->
 <SelectDocumentsModal
-  id={SELECT_DOCUMENTS_MODAL_ID}
+  bind:dialog={show_select_documents_modal}
   {project_id}
   {available_tags}
   on:documents_added={handle_documents_added}
+  on:close={() => (current_dialog_type = null)}
+  keyboard_submit={current_dialog_type === "select_documents"}
 />
 
 <ExtractionModal
-  id={EXTRACTION_MODAL_ID}
-  {extractor_configs}
+  keyboard_submit={current_dialog_type === "extraction"}
+  bind:dialog={show_extraction_modal}
   bind:selected_extractor_id={$saved_state.extractor_id}
   bind:part_size={$saved_state.generation_config.part_size}
   on:extraction_complete={handle_extraction_complete}
-  on:create_extractor={handle_create_extractor}
+  on:extractor_config_selected={handle_extractor_config_selected}
+  on:close={() => (current_dialog_type = null)}
 />
 
 <GenerateQnaModal
-  id={GENERATE_QNA_MODAL_ID}
+  bind:dialog={show_generate_qna_modal}
   {task_id}
   bind:pairs_per_part={$saved_state.generation_config.pairs_per_part}
   bind:guidance={$saved_state.generation_config.guidance}
   on:generation_complete={handle_generation_complete}
+  on:close={() => (current_dialog_type = null)}
+  keyboard_submit={current_dialog_type === "generate_qna"}
 />
 
 <Dialog
@@ -986,21 +956,4 @@ Avoid:
       </div>
     </div>
   {/if}
-</Dialog>
-
-<Dialog
-  bind:this={show_create_extractor_dialog}
-  title="Extractor Configuration"
-  subtitle="Extractors convert your documents into text."
-  width="wide"
-  on:close={() => {
-    if ($saved_state.extractor_id === "create_new") {
-      $saved_state.extractor_id = null
-    }
-  }}
->
-  <CreateExtractorForm
-    keyboard_submit={true}
-    on:success={handle_extractor_created}
-  />
 </Dialog>

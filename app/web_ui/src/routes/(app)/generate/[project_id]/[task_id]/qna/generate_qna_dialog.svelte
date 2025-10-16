@@ -4,13 +4,23 @@
   import { ui_state } from "$lib/stores"
   import { createEventDispatcher } from "svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
 
-  export let id: string
+  export let dialog: Dialog | null = null
+  export let keyboard_submit: boolean = false
   export let task_id: string
   export let pairs_per_part: number = 5
   export let guidance: string = ""
 
-  const dispatch = createEventDispatcher()
+  const dispatch = createEventDispatcher<{
+    generation_complete: {
+      pairs_per_part: number
+      guidance: string
+      model: string
+    }
+    close: void
+  }>()
 
   let model: string = $ui_state.selected_model
   let generating = false
@@ -24,28 +34,24 @@
         guidance,
         model,
       })
-      const modal = document.getElementById(id)
-      // @ts-expect-error dialog is not a standard element
-      modal?.close()
+      dialog?.close()
     } finally {
       generating = false
     }
   }
 </script>
 
-<dialog {id} class="modal">
-  <div class="modal-box">
-    <form method="dialog">
-      <button
-        class="btn btn-sm text-xl btn-circle btn-ghost absolute right-2 top-2 focus:outline-none"
-        >✕</button
-      >
-    </form>
-    <h3 class="text-lg font-bold">Generate Q&A Pairs</h3>
-    <p class="text-sm font-light mb-8">
-      Generate question and answer pairs from extracted document content.
-    </p>
-
+<Dialog bind:this={dialog} title="Generate Q&A Pairs" width="normal">
+  <FormContainer
+    submit_visible={true}
+    submit_label="Generate Q&A Pairs"
+    gap={4}
+    {keyboard_submit}
+    on:submit={async (_) => {
+      await generate_qa_pairs()
+    }}
+    on:close={() => dispatch("close")}
+  >
     {#if generating}
       <div class="flex flex-row justify-center">
         <div class="loading loading-spinner loading-lg my-12"></div>
@@ -63,7 +69,6 @@
         </div>
 
         <!-- Part size moved to extraction modal -->
-
         <div>
           <label class="label" for="guidance_textarea_modal">
             <span class="label-text font-medium">Guidance</span>
@@ -87,14 +92,7 @@
           }}
           bind:model
         />
-
-        <button class="btn btn-primary mt-6" on:click={generate_qa_pairs}>
-          Generate Q&A Pairs
-        </button>
       </div>
     {/if}
-  </div>
-  <form method="dialog" class="modal-backdrop">
-    <button>close</button>
-  </form>
-</dialog>
+  </FormContainer>
+</Dialog>
