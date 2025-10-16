@@ -58,7 +58,7 @@
     }
   }
 
-  function delete_part(part_id: string) {
+  function remove_part(part_id: string) {
     document.parts = document.parts.filter((p) => p.id !== part_id)
     document = document
     triggerSave()
@@ -165,8 +165,8 @@
               class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
             >
               <li>
-                <button on:click|stopPropagation={() => delete_part(part.id)}>
-                  Delete Part
+                <button on:click|stopPropagation={() => remove_part(part.id)}>
+                  Remove Part
                 </button>
               </li>
               <li>

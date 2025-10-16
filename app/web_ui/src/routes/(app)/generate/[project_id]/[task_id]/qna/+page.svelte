@@ -641,6 +641,10 @@ Avoid:
         const pair =
           $saved_state.documents[docIdx].parts[partIdx].qa_pairs[pairIdx]
         const split_tag = get_random_split_tag()
+        if (!pair.model_name || !pair.model_provider) {
+          throw new Error("Model name and provider are required")
+        }
+
         try {
           const { data, error } = await client.POST(
             "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
@@ -654,8 +658,8 @@ Avoid:
               body: {
                 question: pair.question,
                 answer: pair.answer,
-                model_name: pair.model_name || null,
-                model_provider: pair.model_provider || null,
+                model_name: pair.model_name,
+                model_provider: pair.model_provider,
                 tags: split_tag ? [split_tag] : null,
               },
             },

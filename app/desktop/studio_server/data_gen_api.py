@@ -115,6 +115,16 @@ class DataGenQnaApiInput(BaseModel):
     )
 
 
+class SaveQnaPairInput(BaseModel):
+    question: str = Field(description="User question text")
+    answer: str = Field(description="Assistant answer text")
+    model_name: str = Field(description="Model name used to generate the question")
+    model_provider: str = Field(
+        description="Model provider used to generate the question"
+    )
+    tags: list[str] | None = Field(default=None, description="Optional tags")
+
+
 def connect_data_gen_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_categories")
     async def generate_categories(
@@ -280,17 +290,6 @@ The topic path for this sample is:
 
         return qna_run
 
-    class SaveQnaPairInput(BaseModel):
-        question: str = Field(description="User question text")
-        answer: str = Field(description="Assistant answer text")
-        model_name: str | None = Field(
-            default=None, description="Optional model name for provenance"
-        )
-        model_provider: str | None = Field(
-            default=None, description="Optional model provider for provenance"
-        )
-        tags: list[str] | None = Field(default=None, description="Optional tags")
-
     @app.post("/api/projects/{project_id}/tasks/{task_id}/save_qna_pair")
     async def save_qna_pair(
         project_id: str,
@@ -323,11 +322,6 @@ The topic path for this sample is:
             user_msg,
             assistant_msg,
         ]
-
-        if not input.model_name or not input.model_provider:
-            raise ValueError("Model name and provider are required")
-
-        print(f"Saving QnA pair: {session_id}")
 
         task_run = TaskRun(
             input=input.question,

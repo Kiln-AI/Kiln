@@ -4591,14 +4591,14 @@ export interface components {
             answer: string;
             /**
              * Model Name
-             * @description Optional model name for provenance
+             * @description Model name used to generate the question
              */
-            model_name?: string | null;
+            model_name: string;
             /**
              * Model Provider
-             * @description Optional model provider for provenance
+             * @description Model provider used to generate the question
              */
-            model_provider?: string | null;
+            model_provider: string;
             /**
              * Tags
              * @description Optional tags
