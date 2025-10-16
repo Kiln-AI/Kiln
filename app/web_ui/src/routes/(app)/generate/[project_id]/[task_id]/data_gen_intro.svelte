@@ -271,8 +271,9 @@
           ],
         },
         {
-          title: "Q&A from Documents",
-          description: "Generate questions and answers from documents.",
+          title: "Search Tool Evaluator",
+          description:
+            "Generate question and answer dataset, using documents from your document library. Useful for creating evaluators which check that that a search tool (RAG) can find relevant answers.",
           action_buttons: [
             {
               label: "Generate Q&A Data",

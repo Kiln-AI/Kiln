@@ -75,6 +75,16 @@ class BulkCreateDocumentsResponse(BaseModel):
     failed_files: List[str]
 
 
+def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
+    try:
+        if tags:
+            # split tags by commas
+            return [tag.strip() for tag in tags.split(",") if tag.strip()]
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid tags: {e!s}")
+
+
 def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
     rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
     if rag_config is None:
@@ -483,6 +493,12 @@ class RagSearchResponse(BaseModel):
     )
 
 
+class DocumentLibraryState(BaseModel):
+    is_empty: bool = Field(
+        description="Whether the library is empty",
+    )
+
+
 async def build_rag_workflow_runner(
     project: Project,
     rag_config_id: str,
@@ -687,9 +703,22 @@ def connect_document_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/documents")
     async def get_documents(
         project_id: str,
+        tags: str | None = None,
     ) -> list[Document]:
         project = project_from_id(project_id)
-        return project.documents(readonly=True)
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
+
+        documents = project.documents(readonly=True)
+        if target_tags:
+            return [
+                document
+                for document in documents
+                if any(tag in document.tags for tag in target_tags)
+            ]
+
+        return documents
 
     @app.get(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions"
@@ -1739,3 +1768,11 @@ def connect_document_api(app: FastAPI):
                 status_code=500,
                 detail=f"Search failed: {e!s}",
             )
+
+    @app.get("/api/projects/{project_id}/check_library_state")
+    async def check_library_state(
+        project_id: str,
+    ) -> DocumentLibraryState:
+        project = project_from_id(project_id)
+        documents = project.documents(readonly=True)
+        return DocumentLibraryState(is_empty=len(documents) == 0)

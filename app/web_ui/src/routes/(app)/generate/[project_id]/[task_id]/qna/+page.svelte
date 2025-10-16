@@ -578,7 +578,7 @@ Avoid:
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Q&A from Documents"
+    title="Search Tool Evaluator"
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/qna-data-generation"
@@ -623,7 +623,7 @@ Avoid:
         <div class="flex flex-col">
           <div class="text-xs text-gray-500 uppercase font-medium">Goal</div>
           <div class="whitespace-nowrap">
-            Q&A from Documents
+            Search Tool Evaluator
             <InfoTooltip
               tooltip_text="Generate question-answer pairs from document content"
               no_pad={true}
@@ -643,7 +643,7 @@ Avoid:
             Template
           </div>
           <div class="whitespace-nowrap">
-            qna
+            Q&A
             <InfoTooltip
               tooltip_text="Q&A generation template for extracting question-answer pairs from documents"
               no_pad={true}

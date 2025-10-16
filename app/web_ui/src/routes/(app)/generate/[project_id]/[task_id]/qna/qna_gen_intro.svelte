@@ -7,7 +7,7 @@
 
 <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
   <Intro
-    title="Q&A from Documents"
+    title="Search Tool Evaluator"
     description_paragraphs={[]}
     action_buttons={[
       {

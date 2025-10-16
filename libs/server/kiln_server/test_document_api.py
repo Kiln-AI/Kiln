@@ -33,6 +33,7 @@ from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
     build_rag_workflow_runner,
     connect_document_api,
+    parse_comma_separated_tags,
     run_rag_workflow_runner_with_status,
 )
 
@@ -212,6 +213,229 @@ async def test_get_documents_success(client, mock_document):
 
 
 @pytest.mark.asyncio
+async def test_get_documents_filter_by_tags_match(client, mock_project):
+    project = mock_project
+
+    # create two documents with different tags
+    file_bytes = b"abc"
+    doc1 = Document(
+        parent=project,
+        name="doc1",
+        description="",
+        kind=Kind.DOCUMENT,
+        tags=["news", "finance"],
+        original_file=FileInfo(
+            filename="a.txt",
+            mime_type="text/plain",
+            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
+            size=len(file_bytes),
+        ),
+    )
+    doc1.save_to_file()
+
+    doc2 = Document(
+        parent=project,
+        name="doc2",
+        description="",
+        kind=Kind.DOCUMENT,
+        tags=["sports"],
+        original_file=FileInfo(
+            filename="b.txt",
+            mime_type="text/plain",
+            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
+            size=len(file_bytes),
+        ),
+    )
+    doc2.save_to_file()
+
+    doc3 = Document(
+        parent=project,
+        name="doc2",
+        description="",
+        kind=Kind.DOCUMENT,
+        tags=["international"],
+        original_file=FileInfo(
+            filename="b.txt",
+            mime_type="text/plain",
+            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
+            size=len(file_bytes),
+        ),
+    )
+    doc3.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project = MagicMock()
+        mock_project.documents.return_value = [doc1, doc2, doc3]
+        mock_project_from_id.return_value = mock_project
+
+        # filter for tags that match doc1 and doc3 (multiple tags)
+        response = client.get(
+            f"/api/projects/{project.id}/documents?tags=news,international"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 2
+    assert result[0]["id"] == doc1.id
+    assert result[1]["id"] == doc3.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filter_by_tags_no_match(client, mock_project):
+    project = mock_project
+
+    # single document without requested tag
+    file_bytes = b"abc"
+    doc = Document(
+        parent=project,
+        name="doc",
+        description="",
+        kind=Kind.DOCUMENT,
+        tags=["alpha"],
+        original_file=FileInfo(
+            filename="a.txt",
+            mime_type="text/plain",
+            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
+            size=len(file_bytes),
+        ),
+    )
+    doc.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project = MagicMock()
+        mock_project.documents.return_value = [doc]
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(f"/api/projects/{project.id}/documents?tags=beta,gamma")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filter_by_tags_with_spaces(client, mock_project):
+    project = mock_project
+
+    file_bytes = b"abc"
+    doc = Document(
+        parent=project,
+        name="doc",
+        description="",
+        kind=Kind.DOCUMENT,
+        tags=["tag_a"],
+        original_file=FileInfo(
+            filename="a.txt",
+            mime_type="text/plain",
+            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
+            size=len(file_bytes),
+        ),
+    )
+    doc.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project = MagicMock()
+        mock_project.documents.return_value = [doc]
+        mock_project_from_id.return_value = mock_project
+
+        # spaces around tags should be trimmed by parser
+        response = client.get(
+            f"/api/projects/{project.id}/documents?tags= tag_a , tag_b "
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 1
+    assert result[0]["id"] == doc.id
+
+
+@pytest.mark.asyncio
+async def test_check_library_state_empty(client, mock_project):
+    project = mock_project
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project = MagicMock()
+        mock_project.documents.return_value = []
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(f"/api/projects/{project.id}/check_library_state")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["is_empty"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_library_state_not_empty(client, mock_project):
+    project = mock_project
+
+    # create one document to indicate non-empty
+    file_bytes = b"data"
+    doc = Document(
+        parent=project,
+        name="doc",
+        description="",
+        kind=Kind.DOCUMENT,
+        original_file=FileInfo(
+            filename="a.txt",
+            mime_type="text/plain",
+            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
+            size=len(file_bytes),
+        ),
+    )
+    doc.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project = MagicMock()
+        mock_project.documents.return_value = [doc]
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(f"/api/projects/{project.id}/check_library_state")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["is_empty"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_documents_invalid_tags_raises_422(client, mock_project):
+    project = mock_project
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.parse_comma_separated_tags",
+            side_effect=HTTPException(status_code=422, detail="Invalid tags: boom"),
+        ),
+    ):
+        mock_project = MagicMock()
+        mock_project.documents.return_value = []
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(f"/api/projects/{project.id}/documents?tags=bad_input")
+
+    assert response.status_code == 422
+    assert "Invalid tags" in response.json()["message"]
+
+
+def test_parse_comma_separated_tags_basic():
+    assert parse_comma_separated_tags("a,b,c") == ["a", "b", "c"]
+    assert parse_comma_separated_tags(" a , b ,  c ") == ["a", "b", "c"]
+
+
+def test_parse_comma_separated_tags_empty_and_none():
+    assert parse_comma_separated_tags(None) is None
+    assert parse_comma_separated_tags("") is None
+    # Whitespace yields empty list (not None) because the function treats non-empty inputs as parseable
+    assert parse_comma_separated_tags("   ") == []
+
+
+def test_parse_comma_separated_tags_extra_commas():
+    # Multiple commas and blanks are ignored; result can be empty list
+    assert parse_comma_separated_tags(",,,") == []
+    assert parse_comma_separated_tags(", a ,, b ,") == ["a", "b"]
+
+
 async def test_get_document_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]

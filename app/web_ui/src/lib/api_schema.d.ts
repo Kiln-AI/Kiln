@@ -420,6 +420,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Extractions For Extractor Config
+         * @description Return mapping of document id to list of extractions for the given extractor config id.
+         */
+        get: operations["get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/tags": {
         parameters: {
             query?: never;
@@ -881,6 +901,23 @@ export interface paths {
          * @description Search the vector store associated with a RAG config.
          */
         post: operations["search_rag_config_api_projects__project_id__rag_configs__rag_config_id__search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/check_library_state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Library State */
+        get: operations["check_library_state_api_projects__project_id__check_library_state_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2832,6 +2869,14 @@ export interface components {
             readonly model_type: string;
             /** Friendly Name */
             readonly friendly_name: string;
+        };
+        /** DocumentLibraryState */
+        DocumentLibraryState: {
+            /**
+             * Is Empty
+             * @description Whether the library is empty
+             */
+            is_empty: boolean;
         };
         /** EmbeddingConfig */
         EmbeddingConfig: {
@@ -6069,7 +6114,9 @@ export interface operations {
     };
     get_documents_api_projects__project_id__documents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tags?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6085,6 +6132,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["ExtractionSummary"][];
+                    };
                 };
             };
             /** @description Validation Error */
@@ -7162,6 +7243,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RagSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_library_state_api_projects__project_id__check_library_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLibraryState"];
                 };
             };
             /** @description Validation Error */
