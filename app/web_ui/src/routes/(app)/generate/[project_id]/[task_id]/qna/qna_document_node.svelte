@@ -101,7 +101,9 @@
         <span class="text-xs text-gray-500 font-normal">
           ({total_qa_pairs} pairs)
         </span>
-        {#if $max_available_step > 2 && !document.extracted}
+        {#if document.extracted}
+          <span class="badge badge-success badge-sm ml-2">Extracted</span>
+        {:else if $max_available_step > 2}
           <span class="badge badge-warning badge-sm ml-2">Not Extracted</span>
         {/if}
       </div>

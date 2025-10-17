@@ -163,13 +163,13 @@ def generate_qna_generation_prompt(guidance: str | None = None) -> str:
     Generate a prompt for generating Q&A samples.
     """
 
-    prompt = """I want to generate Q&A pairs from document content and you should help me generate Q&A pairs for it.
+    prompt = """I want to generate Q&A pairs from document content.
 
 ## Task Description
-Your job is to generate a list of Q&A pairs from the provided document content.
+Your job is to generate a list of Q&A pairs from the provided document content. The generated Q&A will be used to evaluate a RAG system by comparing the RAG system's output for the same question, with the generated answer.
 
 In the user message we'll provide the following:
- - The document content as kiln_data_gen_document_content
+ - A document chunk content as kiln_data_gen_document_content
  - The number of Q&A pairs to generate as kiln_data_gen_num_samples
 
 The output must be formatted:
@@ -189,7 +189,7 @@ Example generated Q&A pairs: {"generated_qna_pairs": [{"question": "What is the 
         prompt += """
 
 ## Custom Guidance
-For this specific run we have additional guidance about the style of Q&A pairs we should generate. It's very important we follow this guidance when generating Q&A pairs.
+For this specific execution we have additional guidance about the style of Q&A pairs we should generate. It's very important we follow this guidance when generating Q&A pairs.
 """
         prompt += f"""
 

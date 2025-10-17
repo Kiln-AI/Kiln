@@ -80,9 +80,9 @@ Avoid:
     extraction_complete: boolean
     generation_config: {
       pairs_per_part: number
-      part_size: "small" | "medium" | "large" | "full"
-      use_full_documents: boolean
       guidance: string
+      chunk_size_tokens: number | null
+      chunk_overlap_tokens: number | null
     }
     documents: QnADocumentNode[]
     splits: Record<string, number>
@@ -95,9 +95,9 @@ Avoid:
     extraction_complete: false,
     generation_config: {
       pairs_per_part: 5,
-      part_size: "medium" as const,
-      use_full_documents: false,
       guidance: DEFAULT_QNA_GUIDANCE,
+      chunk_size_tokens: null,
+      chunk_overlap_tokens: null,
     },
     documents: [],
     splits: {},
@@ -123,9 +123,9 @@ Avoid:
       extraction_complete: false,
       generation_config: {
         pairs_per_part: 5,
-        part_size: "medium" as const,
-        use_full_documents: false,
         guidance: DEFAULT_QNA_GUIDANCE,
+        chunk_size_tokens: null,
+        chunk_overlap_tokens: null,
       },
       documents: [],
       splits: {},
@@ -166,9 +166,9 @@ Avoid:
       extraction_complete: false,
       generation_config: {
         pairs_per_part: 5,
-        part_size: "medium" as const,
-        use_full_documents: false,
         guidance: DEFAULT_QNA_GUIDANCE,
+        chunk_size_tokens: null,
+        chunk_overlap_tokens: null,
       },
       documents: [],
       splits: {},
@@ -271,56 +271,6 @@ Avoid:
 
     triggerSaveUiState()
     set_current_step(3)
-
-    // Load extractions for this extractor and split into parts for UI
-    void (async () => {
-      try {
-        const res = await fetch(
-          `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_config_id}/extractions`,
-        )
-        if (!res.ok)
-          throw new Error(`Failed to fetch extractions: ${res.status}`)
-        const data: Record<
-          string,
-          Array<{ output_content: string }>
-        > = await res.json()
-
-        // For each document in saved state, attach parts
-        saved_state.update((s) => ({
-          ...s,
-          documents: s.documents.map((doc) => {
-            const docExtractions = data[doc.id] || []
-            const parts = docExtractions.flatMap((extraction) => {
-              const text = extraction.output_content || ""
-              // TODO: handle chunking properly
-              const chunkSize = 1000
-              const slices: {
-                id: string
-                text_preview: string
-                qa_pairs: QnAPair[]
-              }[] = []
-              for (let i = 0; i < text.length; i += chunkSize) {
-                const slice = text.slice(i, i + chunkSize)
-                slices.push({
-                  id: crypto.randomUUID(),
-                  text_preview: slice,
-                  qa_pairs: [],
-                })
-              }
-              return slices
-            })
-
-            return {
-              ...doc,
-              parts: parts.length > 0 ? parts : doc.parts,
-            }
-          }),
-        }))
-        triggerSaveUiState()
-      } catch (e) {
-        console.error("Failed to load/slice extractions", e)
-      }
-    })()
   }
 
   type GenerationTarget =
@@ -380,8 +330,77 @@ Avoid:
     return indices
   }
 
+  async function fetch_chunks_for_doc(
+    docIdx: number,
+    extractor_id: string,
+    chunk_size_tokens: number | null,
+    chunk_overlap_tokens: number | null,
+  ) {
+    const doc = $saved_state.documents[docIdx]
+    const body: { chunk_size: number | null; chunk_overlap: number | null } = {
+      chunk_size: chunk_size_tokens ?? null,
+      chunk_overlap: chunk_overlap_tokens ?? null,
+    }
+    const res = await fetch(
+      `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_id}/documents/${doc.id}/ephemeral_split`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    )
+    if (!res.ok) throw new Error(`Chunking failed for ${doc.id}`)
+    const data: { chunks: Array<{ id: string; text: string }> } =
+      await res.json()
+    const parts = data.chunks.map((c) => ({
+      id: c.id,
+      text_preview: c.text,
+      qa_pairs: [] as QnAPair[],
+    }))
+    saved_state.update((s) => {
+      const docs = [...s.documents]
+      const d = { ...docs[docIdx] }
+      d.parts = parts
+      docs[docIdx] = d
+      return { ...s, documents: docs }
+    })
+    triggerSaveUiState()
+  }
+
+  async function run_chunking_queue(
+    queue: number[],
+    extractor_id: string,
+    chunk_size_tokens: number | null,
+    chunk_overlap_tokens: number | null,
+    concurrency: number = 5,
+  ) {
+    console.info("run chunking queue", queue)
+    async function worker() {
+      while (queue.length > 0) {
+        const idx = queue.shift()!
+        await fetch_chunks_for_doc(
+          idx,
+          extractor_id,
+          chunk_size_tokens,
+          chunk_overlap_tokens,
+        )
+      }
+    }
+    const workers = Array(concurrency)
+      .fill(null)
+      .map(() => worker())
+    await Promise.all(workers)
+  }
+
   async function handle_generation_complete(event: CustomEvent) {
-    const { pairs_per_part, guidance, model } = event.detail
+    console.info("handle_generation_complete", $saved_state.documents)
+    const {
+      pairs_per_part,
+      guidance,
+      model,
+      chunk_size_tokens,
+      chunk_overlap_tokens,
+    } = event.detail
     const model_provider = model.split("/")[0]
     const model_name = model.split("/").slice(1).join("/")
 
@@ -397,11 +416,66 @@ Avoid:
       tools_config: { tools: [] },
     }
 
-    const targetParts = get_parts_for_target(pending_generation_target)
     generating_dialog?.show()
 
     try {
-      for (const { docIdx, partIdx } of targetParts) {
+      // Before generating, ensure parts exist per target document according to chunking config
+      const targetDocs = new Set<number>()
+
+      // Get target documents based on the generation target, not just from existing parts
+      if (pending_generation_target.type === "all") {
+        $saved_state.documents.forEach((_doc, docIdx) => {
+          targetDocs.add(docIdx)
+        })
+      } else if (pending_generation_target.type === "document") {
+        const target = pending_generation_target
+        const docIdx = $saved_state.documents.findIndex(
+          (d) => d.id === target.document_id,
+        )
+        if (docIdx !== -1) {
+          targetDocs.add(docIdx)
+        }
+      } else if (pending_generation_target.type === "part") {
+        const target = pending_generation_target
+        const docIdx = $saved_state.documents.findIndex(
+          (d) => d.id === target.document_id,
+        )
+        if (docIdx !== -1) {
+          targetDocs.add(docIdx)
+        }
+      }
+
+      // If parts missing or chunk size changed, (re)fetch chunks from server
+      const queue: Array<number> = []
+      targetDocs.forEach((docIdx) => {
+        console.info("checking target docs -> docIdx", docIdx)
+        const doc = $saved_state.documents[docIdx]
+        console.info("doc", doc)
+        const hasParts = doc.parts && doc.parts.length > 0
+        console.info("hasParts", doc.parts)
+        const shouldReplace = hasParts && chunk_size_tokens !== null
+        console.info("shouldReplace->chunk_size_tokens", chunk_size_tokens)
+        if (!hasParts || shouldReplace) {
+          console.info("pushing", docIdx)
+          queue.push(docIdx)
+        }
+      })
+
+      const extractor_id = $saved_state.extractor_id
+      if (extractor_id) {
+        await run_chunking_queue(
+          queue,
+          extractor_id,
+          chunk_size_tokens ?? null,
+          chunk_overlap_tokens ?? null,
+          5,
+        )
+      }
+
+      // Regenerate targetParts after chunking to get the fresh parts
+      const freshTargetParts = get_parts_for_target(pending_generation_target)
+
+      for (const { docIdx, partIdx } of freshTargetParts) {
         const partText =
           $saved_state.documents[docIdx].parts[partIdx].text_preview
 
@@ -464,9 +538,9 @@ Avoid:
             ...s,
             generation_config: {
               pairs_per_part,
-              part_size: s.generation_config.part_size,
-              use_full_documents: s.generation_config.use_full_documents,
               guidance,
+              chunk_size_tokens,
+              chunk_overlap_tokens,
             },
             documents: docs,
           }
@@ -953,8 +1027,6 @@ Avoid:
   keyboard_submit={current_dialog_type === "extraction"}
   bind:dialog={show_extraction_modal}
   bind:selected_extractor_id={$saved_state.extractor_id}
-  bind:part_size={$saved_state.generation_config.part_size}
-  bind:use_full_documents={$saved_state.generation_config.use_full_documents}
   on:extraction_complete={handle_extraction_complete}
   on:extractor_config_selected={handle_extractor_config_selected}
   on:close={() => (current_dialog_type = null)}
@@ -965,6 +1037,9 @@ Avoid:
   {task_id}
   bind:pairs_per_part={$saved_state.generation_config.pairs_per_part}
   bind:guidance={$saved_state.generation_config.guidance}
+  bind:chunk_size_tokens={$saved_state.generation_config.chunk_size_tokens}
+  bind:chunk_overlap_tokens={$saved_state.generation_config
+    .chunk_overlap_tokens}
   on:generation_complete={handle_generation_complete}
   on:close={() => (current_dialog_type = null)}
   keyboard_submit={current_dialog_type === "generate_qna"}

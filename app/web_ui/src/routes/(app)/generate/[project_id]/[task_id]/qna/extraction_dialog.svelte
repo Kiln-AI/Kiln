@@ -11,13 +11,10 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import CreateExtractorDialog from "../../../../docs/rag_configs/[project_id]/create_rag_config/create_extractor_dialog.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { number_validator } from "$lib/utils/input_validators"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
   export let selected_extractor_id: string | null = null
-  export let part_size: "small" | "medium" | "large" | "full" = "medium"
-  export let use_full_documents: boolean = false
 
   let extractor_configs: ExtractorConfig[] = []
   let extractor_config_error: KilnError | null = null
@@ -184,36 +181,6 @@
           bind:value={selected_extractor_id}
           error_message={extractor_config_error?.message}
         />
-
-        <FormElement
-          id="use_full_documents_checkbox"
-          inputType="checkbox"
-          label="Use entire documents without splitting into parts"
-          description="Generate Q&A using whole documents."
-          bind:value={use_full_documents}
-        />
-
-        <div>
-          <FormElement
-            id="part_size_select_modal"
-            label="Document Part Size"
-            description="The Q&A will be generated for each part of the document."
-            inputType="input_number"
-            placeholder="Number of tokens"
-            info_description="The approximate number of words to include in each part."
-            bind:value={part_size}
-            disabled={use_full_documents}
-            validator={(value) =>
-              use_full_documents
-                ? null
-                : number_validator({
-                    min: 1,
-                    integer: true,
-                    label: "Document Part Size",
-                    optional: false,
-                  })(value)}
-          />
-        </div>
       </div>
     {/if}
   </FormContainer>

@@ -6,6 +6,7 @@ from typing import Annotated, Awaitable, Callable, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
@@ -73,6 +74,20 @@ background_tasks: set[asyncio.Task] = set()
 class BulkCreateDocumentsResponse(BaseModel):
     created_documents: List[Document]
     failed_files: List[str]
+
+
+class EphemeralSplitRequest(BaseModel):
+    chunk_size: int | None = Field(default=None)
+    chunk_overlap: int | None = Field(default=None)
+
+
+class EphemeralSplitChunk(BaseModel):
+    id: str
+    text: str
+
+
+class EphemeralSplitResponse(BaseModel):
+    chunks: list[EphemeralSplitChunk]
 
 
 def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
@@ -1776,3 +1791,78 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         documents = project.documents(readonly=True)
         return DocumentLibraryState(is_empty=len(documents) == 0)
+
+    @app.post(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split"
+    )
+    async def ephemeral_split_document(
+        project_id: str,
+        extractor_config_id: str,
+        document_id: str,
+        request: EphemeralSplitRequest,
+    ) -> EphemeralSplitResponse:
+        """Return chunks for a document extraction using FixedWindowChunker without persisting.
+
+        If chunk_size is None, return a single chunk with the full extraction output.
+        chunk_overlap defaults to 0 when not provided.
+        """
+        project = project_from_id(project_id)
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(status_code=404, detail="Extractor config not found")
+
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Find the latest extraction for this extractor config
+        extractions = [
+            e
+            for e in document.extractions(readonly=True)
+            if e.extractor_config_id == extractor_config_id
+        ]
+        if not extractions:
+            raise HTTPException(
+                status_code=404, detail="No extraction found for document and extractor"
+            )
+
+        extraction = sorted(extractions, key=lambda e: e.created_at, reverse=True)[0]
+        output_text = await extraction.output_content() or ""
+
+        if request.chunk_size is None:
+            # Single full chunk
+            return EphemeralSplitResponse(
+                chunks=[EphemeralSplitChunk(id=str(extraction.id), text=output_text)]
+            )
+
+        # Validate chunk size
+        if request.chunk_size is None or request.chunk_size <= 0:
+            raise HTTPException(
+                status_code=422, detail="chunk_size must be > 0 or null"
+            )
+
+        overlap = request.chunk_overlap or 0
+        if overlap < 0:
+            raise HTTPException(status_code=422, detail="chunk_overlap must be >= 0")
+        if overlap >= request.chunk_size:
+            raise HTTPException(
+                status_code=422, detail="chunk_overlap must be < chunk_size"
+            )
+
+        chunker_config = ChunkerConfig(
+            name="ephemeral-fixed-window",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={"chunk_size": request.chunk_size, "chunk_overlap": overlap},
+        )
+
+        chunker = chunker_adapter_from_type(ChunkerType.FIXED_WINDOW, chunker_config)
+        result = await chunker.chunk(output_text)
+
+        chunks = [
+            EphemeralSplitChunk(id=str(i), text=chunk.text)
+            for i, chunk in enumerate(result.chunks)
+        ]
+        return EphemeralSplitResponse(chunks=chunks)

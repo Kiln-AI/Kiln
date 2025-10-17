@@ -924,6 +924,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ephemeral Split Document
+         * @description Return chunks for a document extraction using FixedWindowChunker without persisting.
+         *
+         *     If chunk_size is None, return a single chunk with the full extraction output.
+         *     chunk_overlap defaults to 0 when not provided.
+         */
+        post: operations["ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -1936,23 +1959,6 @@ export interface paths {
         };
         /** Get Search Tools */
         get: operations["get_search_tools_api_projects__project_id__search_tools_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/search_tools_with_tags": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Search Tools With Tags */
-        get: operations["get_search_tools_with_tags_api_projects__project_id__search_tools_with_tags_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2991,6 +2997,25 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
+        };
+        /** EphemeralSplitChunk */
+        EphemeralSplitChunk: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** EphemeralSplitRequest */
+        EphemeralSplitRequest: {
+            /** Chunk Size */
+            chunk_size?: number | null;
+            /** Chunk Overlap */
+            chunk_overlap?: number | null;
+        };
+        /** EphemeralSplitResponse */
+        EphemeralSplitResponse: {
+            /** Chunks */
+            chunks: components["schemas"]["EphemeralSplitChunk"][];
         };
         /** Eval */
         Eval: {
@@ -7354,6 +7379,43 @@ export interface operations {
             };
         };
     };
+    ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EphemeralSplitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EphemeralSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_providers_models_api_providers_models_get: {
         parameters: {
             query?: never;
@@ -9546,39 +9608,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchToolApiDescription"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_search_tools_with_tags_api_projects__project_id__search_tools_with_tags_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
                 };
             };
             /** @description Validation Error */
