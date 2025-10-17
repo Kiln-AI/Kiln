@@ -182,9 +182,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for information on how to setup a develop
 
 ## Licenses & Trademarks
 
-- Python Library: [MIT License](libs/core/LICENSE.txt)
-- Python REST Server/API: [MIT License](libs/server/LICENSE.txt)
-- Desktop App: free to download and use under our [EULA](app/EULA.md), and [source-available](/app). [License](app/LICENSE.txt)
-- The Kiln names and logos are trademarks of Chesterfield Laboratories Inc.
+Kiln uses an open-core model: the library with Kiln’s core functionality is fully open source (MIT), while the desktop app is free to use, source-available, and may be licensed to enterprises in the future.
+
+Why? We’re aiming to make Kiln fair and sustainable:
+
+- Kiln is always free for personal use.
+- Larger for-profit companies using Kiln Desktop may require a license in the future, but it is currently free.
+- This is based on the [fair code model](https://faircode.io), with the goal of making Kiln sustainable.
+
+Open Library and Data Format:
+
+- Kiln’s MIT OSS library contains all of the core logic of Kiln. It can do anything the app can do, just without the font-end/UI.
+- Kiln’s data format is open. You own and control your datasets, we don’t have access to them. The data is JSON formatted for maximal compatibility, ensuring zero lock-in.
+
+Licenses:
+
+- Python Library (core logic/features): [MIT License](libs/core/LICENSE.txt)
+- Python Server (REST API): [MIT License](libs/server/LICENSE.txt)
+- Desktop App: free to download and use. 100% [source-available](app) with public builds for maximum transparency.
+
+Tracemarks: The Kiln name and logos are trademarks of Chesterfield Laboratories Inc.
 
 Copyright 2024 - Chesterfield Laboratories Inc.

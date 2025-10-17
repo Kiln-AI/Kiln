@@ -16,3 +16,5 @@ This repository contains components under different licenses:
    All rights reserved.
 
 For the full text of each license, please see the respective LICENSE.txt files in each directory.
+
+See our README section "Licenses & Trademarks" for more details.
