@@ -850,7 +850,7 @@ Avoid:
                   class="btn btn-sm btn-primary"
                   on:click={open_select_documents_modal}
                 >
-                  Select Documents
+                  Select Search Tool
                 </button>
               {:else if $current_step == 2}
                 {#if !$saved_state.extraction_complete}

@@ -6,6 +6,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { createEventDispatcher, onMount } from "svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
@@ -13,11 +14,24 @@
   export let available_tags: string[] = []
   const dispatch = createEventDispatcher()
 
+  type SearchToolWithTags = {
+    id: string
+    tool_name: string
+    name: string
+    description: string | null
+    tags: string[] | null
+  }
+
   let selected_tags: string[] = []
   let submitting = false
   let library_state: DocumentLibraryState | null = null
   let library_state_loading = false
   let error: KilnError | null = null
+
+  let search_tools_loading = false
+  let search_tools: SearchToolWithTags[] = []
+  let selected_search_tool_id: string | null = null
+  let use_custom_tags = false
 
   function get_fancy_select_options_tags(document_tags: string[]) {
     if (document_tags.length === 0) {
@@ -34,11 +48,34 @@
     ]
   }
 
+  function get_search_tool_options(tools: SearchToolWithTags[]): OptionGroup[] {
+    console.info("get_search_tool_options", tools)
+    if (!tools || tools.length === 0) {
+      return []
+    }
+    return [
+      {
+        label: "Search Tools",
+        options: tools.map((t) => ({
+          value: t.id,
+          label: t.name,
+          description: t.description || undefined,
+        })),
+      },
+    ]
+  }
+
   async function select_documents_by_tag() {
     submitting = true
     error = null
 
     try {
+      // If not using custom, derive tags from selected search tool
+      if (!use_custom_tags) {
+        const tool = search_tools.find((t) => t.id === selected_search_tool_id)
+        selected_tags = tool?.tags ?? []
+      }
+
       // Fetch documents based on selected tags
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/documents",
@@ -103,13 +140,38 @@
     }
   }
 
+  async function load_search_tools() {
+    search_tools = []
+    try {
+      search_tools_loading = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/rag_configs",
+        {
+          params: {
+            path: { project_id },
+          },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      console.info(data)
+      search_tools = (data || []) as SearchToolWithTags[]
+    } catch (e) {
+      error = createKilnError(e as unknown)
+      search_tools = []
+    } finally {
+      search_tools_loading = false
+    }
+  }
+
   onMount(async () => {
-    await check_library_state()
+    await Promise.all([check_library_state(), load_search_tools()])
   })
 </script>
 
-<Dialog bind:this={dialog} title="Select Documents" width="normal">
-  {#if submitting || library_state_loading}
+<Dialog bind:this={dialog} title="Select a Search Tool" width="normal">
+  {#if submitting || library_state_loading || search_tools_loading}
     <div class="flex flex-row justify-center">
       <div class="loading loading-spinner loading-lg my-12"></div>
     </div>
@@ -126,7 +188,7 @@
   {:else}
     <FormContainer
       submit_visible={true}
-      submit_label="Select Documents"
+      submit_label="Select"
       on:submit={async (_) => {
         await select_documents_by_tag()
       }}
@@ -137,18 +199,74 @@
       on:close={() => dispatch("close")}
     >
       <FormElement
-        id="tags_selector_modal"
-        label="Document Selection"
-        description="Choose which documents to generate Q&A pairs from."
-        info_description="If tag filters are applied, only documents with those tags will be used. Leave empty to use all documents."
-        inputType="multi_select"
-        empty_label="All Documents in Library"
-        fancy_select_options={get_fancy_select_options_tags(available_tags)}
-        bind:value={selected_tags}
-        empty_state_message="No Document Tags"
-        empty_state_subtitle="Add tags to documents in the document library to filter documents."
-        empty_state_link={`/docs/library/${project_id}`}
+        id="search_tool_selector"
+        label="Search Tool"
+        description="Choose a Search Tool to evaluate."
+        inputType="fancy_select"
+        fancy_select_options={get_search_tool_options(search_tools)}
+        bind:value={selected_search_tool_id}
+        empty_state_message={search_tools.length === 0
+          ? "No Search Tools"
+          : undefined}
+        empty_state_subtitle="Create a RAG Config to use it as a Search Tool."
+        empty_state_link={`/settings/rag/${project_id}`}
       />
+
+      {#if selected_search_tool_id}
+        {#if !use_custom_tags}
+          <div class="text-xs text-gray-500">
+            {#if (search_tools.find((t) => t.id === selected_search_tool_id)?.tags ?? null) === null}
+              <div class="mb-2">The following documents will be used:</div>
+              <div class="badge badge-outline">All Documents</div>
+            {:else}
+              <div class="mb-2">
+                The documents with the following tags will be used:
+              </div>
+              <div class="flex flex-wrap gap-2">
+                {#each search_tools.find((t) => t.id === selected_search_tool_id)?.tags || [] as tag}
+                  <div class="badge badge-outline">{tag}</div>
+                {/each}
+              </div>
+            {/if}
+            <div class="mt-3">
+              <button
+                type="button"
+                class="btn btn-sm px-6"
+                on:click={() => {
+                  use_custom_tags = true
+                  const tool = search_tools.find(
+                    (t) => t.id === selected_search_tool_id,
+                  )
+                  selected_tags = tool?.tags ? [...tool.tags] : []
+                }}>Use Custom Tags</button
+              >
+            </div>
+          </div>
+        {:else}
+          <FormElement
+            id="custom_tags_selector_modal"
+            label="Custom Tags"
+            description="Override the Search Tool tags. Leave empty to use all documents."
+            info_description="If a tag filter is applied, only documents with those tags will be used during Q&A generation. You can add tags to your documents in the document library."
+            inputType="multi_select"
+            empty_label="All Documents in Library"
+            fancy_select_options={get_fancy_select_options_tags(available_tags)}
+            bind:value={selected_tags}
+            empty_state_message="No Document Tags"
+            empty_state_subtitle="Add tags to documents in the document library to filter documents."
+            empty_state_link={`/docs/library/${project_id}`}
+          />
+          <div class="mt-2">
+            <button
+              type="button"
+              class="btn btn-sm px-6"
+              on:click={() => {
+                use_custom_tags = false
+              }}>Use Same Tags as Search Tool</button
+            >
+          </div>
+        {/if}
+      {/if}
     </FormContainer>
   {/if}
 </Dialog>
