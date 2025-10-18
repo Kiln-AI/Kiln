@@ -7,6 +7,7 @@
   import { registration_state } from "$lib/stores/registration_store"
 
   let email = ""
+  let full_name = ""
   let allow_personal_email_domains = false
   let entered_personal_email = false
   let loading = false
@@ -28,20 +29,24 @@
         entered_personal_email = true
         return
       }
+      if (!full_name) {
+        throw new Error("Full name is required")
+      }
       registration_state.update((state) => ({
         ...state,
         work_email: email,
       }))
-      const res = await fetch(
-        "https://kiln.tech/api/subscribe_to_newsletter?work_use=true",
-        {
-          method: "POST",
-          body: JSON.stringify({ email }),
-          headers: {
-            "Content-Type": "application/json",
-          },
+      const res = await fetch("https://kiln.tech/api/subscribe_to_newsletter", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          work_use: "true",
+          full_name,
+        }),
+        headers: {
+          "Content-Type": "application/json",
         },
-      )
+      })
       if (res.status !== 200) {
         throw new Error("Failed to register")
       }
@@ -101,6 +106,12 @@
       submitting={loading}
       {error}
     >
+      <FormElement
+        id="full_name"
+        inputType="input"
+        label="Full Name"
+        bind:value={full_name}
+      />
       <FormElement
         id="email"
         inputType="input"
