@@ -20,10 +20,10 @@
 
 <div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
   {#if completed}
-    <a href="/setup/subscribe">
+    <a href="/setup/select_account">
       <button class="btn btn-primary w-full min-w-[130px]"> Continue </button>
     </a>
   {:else}
-    <a class="btn" href="/setup/subscribe"> Skip Tutorial </a>
+    <a class="btn" href="/setup/select_account"> Skip Tutorial </a>
   {/if}
 </div>
