@@ -5,6 +5,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
+  import { setup_ph_work_user } from "$lib/utils/connect_ph"
 
   let email = ""
   let full_name = ""
@@ -69,6 +70,9 @@
       if (res.status !== 200) {
         throw new Error("Failed to register")
       }
+
+      // No need to await this
+      setup_ph_work_user()
 
       goto("/setup/connect_providers")
     } catch (e) {
