@@ -4,7 +4,7 @@
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
   import { goto } from "$app/navigation"
-  import { registration_state } from "$lib/stores/registration_store"
+  import { client } from "$lib/api_client"
 
   let email = ""
   let full_name = ""
@@ -14,11 +14,25 @@
   let error: KilnError | null = null
 
   async function switch_to_personal() {
-    registration_state.update((state) => ({
-      ...state,
-      selected_account_type: "personal",
-    }))
-    goto("/setup/connect_providers")
+    loading = true
+    error = null
+    try {
+      const { error: settings_error } = await client.POST("/api/settings", {
+        body: {
+          user_type: "personal",
+          work_use_contact: null,
+        },
+      })
+      if (settings_error) {
+        throw settings_error
+      }
+      goto("/setup/connect_providers")
+    } catch (e) {
+      console.error("Error switching to personal", e)
+      error = createKilnError(e)
+    } finally {
+      loading = false
+    }
   }
 
   async function register() {
@@ -32,10 +46,15 @@
       if (!full_name) {
         throw new Error("Full name is required")
       }
-      registration_state.update((state) => ({
-        ...state,
-        work_email: email,
-      }))
+      const { error } = await client.POST("/api/settings", {
+        body: {
+          user_type: "work",
+          work_use_contact: email,
+        },
+      })
+      if (error) {
+        throw error
+      }
       const res = await fetch("https://kiln.tech/api/subscribe_to_newsletter", {
         method: "POST",
         body: JSON.stringify({
