@@ -18,7 +18,9 @@
   <Tutorial bind:completed />
 </div>
 
-<div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
+<div
+  class="flex-none flex flex-col place-content-center md:flex-row gap-4 pt-2"
+>
   {#if completed}
     <a href="/setup/select_account">
       <button class="btn btn-primary w-full min-w-[130px]"> Continue </button>
