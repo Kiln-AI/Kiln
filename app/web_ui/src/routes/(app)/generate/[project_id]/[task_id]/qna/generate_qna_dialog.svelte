@@ -44,7 +44,7 @@
         chunk_size_tokens,
         chunk_overlap_tokens,
       })
-      // dialog?.close()
+      dialog?.close()
     } finally {
       generating = false
     }

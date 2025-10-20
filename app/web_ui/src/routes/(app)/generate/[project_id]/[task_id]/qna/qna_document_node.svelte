@@ -37,7 +37,7 @@
   const dispatch = createEventDispatcher()
 
   // we don't enable the part dialog until after the extraction step
-  $: output_dialog_possible = $max_available_step > 2
+  $: output_dialog_possible = $max_available_step > 3
 
   // Dialogs
   let part_output_dialog: Dialog | null = null
@@ -85,7 +85,7 @@
 <tr class="bg-base-200 border-base-100">
   <td colspan="3" class="py-2" style="padding-left: {(depth - 1) * 25 + 20}px">
     <div class="font-medium flex flex-row pr-4 w-full">
-      <div class="flex-1">
+      <div class="flex items-center">
         {#if depth > 1}
           <span class="text-xs relative" style="top: -3px">⮑</span>
         {/if}
@@ -102,9 +102,13 @@
           ({total_qa_pairs} pairs)
         </span>
         {#if document.extracted}
-          <span class="badge badge-success badge-sm ml-2">Extracted</span>
+          <div class="badge badge-sm badge-secondary badge-outline ml-2">
+            Extracted
+          </div>
         {:else if $max_available_step > 2}
-          <span class="badge badge-warning badge-sm ml-2">Not Extracted</span>
+          <span class="badge badge-sm badge-warning badge-outline ml-2"
+            >Not Extracted</span
+          >
         {/if}
       </div>
     </div>
