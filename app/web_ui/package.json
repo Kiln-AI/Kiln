@@ -50,6 +50,12 @@
   "overrides": {
     "@sveltejs/kit": {
       "cookie": "^0.7.0"
+    },
+    "vite": {
+      "esbuild": "^0.25.0"
+    },
+    "vitest": {
+      "esbuild": "^0.25.0"
     }
   }
 }
