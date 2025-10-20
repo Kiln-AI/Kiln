@@ -14,10 +14,14 @@
   export let task_id: string
   export let pairs_per_part: number = 5
   export let guidance: string = ""
+  export let target_description: string = "all documents"
+  export let generation_target_type: "all" | "document" | "part" = "all"
 
   export let use_full_documents: boolean = true
   export let chunk_size_tokens: number | null = null
   export let chunk_overlap_tokens: number | null = null
+
+  $: show_chunking_options = generation_target_type === "all"
 
   const dispatch = createEventDispatcher<{
     generation_complete: {
@@ -31,64 +35,70 @@
   }>()
 
   let model: string = $ui_state.selected_model
-  let generating = false
 
-  async function generate_qa_pairs() {
-    generating = true
-    try {
-      // Emit configuration; page component will perform API call
-      dispatch("generation_complete", {
-        pairs_per_part,
-        guidance,
-        model,
-        chunk_size_tokens,
-        chunk_overlap_tokens,
-      })
-      dialog?.close()
-    } finally {
-      generating = false
+  let submitting = false
+  function generate_qa_pairs() {
+    dispatch("generation_complete", {
+      pairs_per_part,
+      guidance,
+      model,
+      chunk_size_tokens,
+      chunk_overlap_tokens,
+    })
+
+    // We need this to prevent the button from staying in loading state forever
+    submitting = false
+  }
+
+  $: {
+    if (use_full_documents) {
+      chunk_size_tokens = null
+      chunk_overlap_tokens = null
+    } else {
+      chunk_size_tokens = 8192
+      chunk_overlap_tokens = 256
     }
   }
 </script>
 
-<Dialog bind:this={dialog} title="Generate Q&A Pairs" width="normal">
+<Dialog
+  bind:this={dialog}
+  title="Generate Q&A Pairs"
+  width="normal"
+  subtitle={target_description === "all documents"
+    ? "All Documents"
+    : `Document: ${target_description}`}
+>
   <FormContainer
-    submit_visible={true}
+    bind:submitting
     submit_label="Generate Q&A Pairs"
     gap={4}
     {keyboard_submit}
-    on:submit={async (_) => {
-      await generate_qa_pairs()
-    }}
+    on:submit={generate_qa_pairs}
     on:close={() => dispatch("close")}
   >
-    {#if generating}
-      <div class="flex flex-row justify-center">
-        <div class="loading loading-spinner loading-lg my-12"></div>
-      </div>
-    {:else}
-      <div class="flex flex-col gap-6">
-        <div class="flex flex-row items-center gap-4 mt-4 mb-2">
-          <div class="flex-grow font-medium text-sm">
-            Q&A Pairs per Document Part
-            <InfoTooltip
-              tooltip_text="Number of question-answer pairs to generate from each document section"
-            />
-          </div>
-          <IncrementUi bind:value={pairs_per_part} />
+    <div class="flex flex-col gap-6">
+      <div class="flex flex-row items-center gap-4 mt-4 mb-2">
+        <div class="flex-grow font-medium text-sm">
+          Q&A Pairs per Document Part
+          <InfoTooltip
+            tooltip_text="Number of question-answer pairs to generate from each document section"
+          />
         </div>
+        <IncrementUi bind:value={pairs_per_part} />
+      </div>
 
-        <AvailableModelsDropdown
-          {task_id}
-          settings={{
-            requires_data_gen: true,
-            requires_uncensored_data_gen: false,
-            suggested_mode: "data_gen",
-          }}
-          bind:model
-        />
-        <!-- Chunking controls moved here from extraction -->
+      <AvailableModelsDropdown
+        {task_id}
+        settings={{
+          requires_data_gen: true,
+          requires_uncensored_data_gen: false,
+          suggested_mode: "data_gen",
+        }}
+        bind:model
+      />
 
+      {#if show_chunking_options}
         <FormElement
           id="use_full_documents_checkbox"
           inputType="checkbox"
@@ -123,7 +133,7 @@
               inputType="input_number"
               label="Part Overlap"
               description="The number of words to overlap between chunks."
-              info_description="Without overlap, sentences that span chunk boundaries can be lost because they aren’t fully contained in any chunk."
+              info_description="Without overlap, sentences that span chunk boundaries can be lost because they aren't fully contained in any chunk."
               bind:value={chunk_overlap_tokens}
               disabled={use_full_documents}
               validator={(value) =>
@@ -139,16 +149,16 @@
             />
           </div>
         {/if}
+      {/if}
 
-        <FormElement
-          id="guidance_textarea_modal"
-          inputType="textarea"
-          label="Guidance"
-          description="Instructions for the AI on how to generate Q&A pairs"
-          bind:value={guidance}
-          height="large"
-        />
-      </div>
-    {/if}
+      <FormElement
+        id="guidance_textarea_modal"
+        inputType="textarea"
+        label="Guidance"
+        description="Instructions for the AI on how to generate Q&A pairs"
+        bind:value={guidance}
+        height="large"
+      />
+    </div>
   </FormContainer>
 </Dialog>

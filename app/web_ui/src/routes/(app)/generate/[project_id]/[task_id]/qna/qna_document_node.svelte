@@ -3,8 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Output from "../../../../run/output.svelte"
   import { createEventDispatcher } from "svelte"
-  import { removeQAPair, removePart } from "./qna_ui_store"
-  import { max_available_step } from "./qna_ui_store"
+  import type { QnaStore } from "./qna_ui_store"
 
   type QnAPair = {
     id: string
@@ -30,15 +29,19 @@
     parts: QnADocPart[]
   }
 
+  export let project_id: string
+  export let task_id: string
+
   export let document: QnADocumentNode
-  export let triggerSave: () => void
+  export let qna: QnaStore
   export let depth: number = 1
 
   let expandedQAPairs: Record<string, boolean> = {}
   const dispatch = createEventDispatcher()
 
+  $: qnaMaxStep = qna?.maxStep
   // we don't enable the part dialog until after the extraction step
-  $: output_dialog_possible = $max_available_step > 3
+  $: output_dialog_possible = $qnaMaxStep && $qnaMaxStep > 3
 
   // Dialogs
   let part_output_dialog: Dialog | null = null
@@ -51,13 +54,11 @@
   }
 
   function delete_qa_pair(part_id: string, qa_id: string) {
-    removeQAPair(document.id, part_id, qa_id)
-    triggerSave()
+    qna.removePair(document.id, part_id, qa_id)
   }
 
   function remove_part(part_id: string) {
-    removePart(document.id, part_id)
-    triggerSave()
+    qna.removePart(document.id, part_id)
   }
 
   $: total_qa_pairs = document.parts.reduce(
@@ -74,6 +75,13 @@
 
   function open_document_parts_dialog() {
     document_parts_dialog?.show()
+  }
+
+  function openQAPairInDataset(qa: QnAPair) {
+    window.open(
+      `/dataset/${project_id}/${task_id}/${qa.saved_id}/run`,
+      "_blank",
+    )
   }
 </script>
 
@@ -101,7 +109,7 @@
           <div class="badge badge-sm badge-secondary badge-outline ml-2">
             Extracted
           </div>
-        {:else if $max_available_step > 2}
+        {:else if $qnaMaxStep && $qnaMaxStep > 2}
           <span class="badge badge-sm badge-warning badge-outline ml-2"
             >Not Extracted</span
           >
@@ -126,14 +134,19 @@
           </button>
         </li>
         <li>
-          <button>Remove Document</button>
+          <button
+            on:click|stopPropagation={() =>
+              dispatch("delete_document", { document_id: document.id })}
+          >
+            Remove Document
+          </button>
         </li>
       </ul>
     </div>
   </td>
 </tr>
 
-{#if $max_available_step > 2 && !has_parts}
+{#if $qnaMaxStep && $qnaMaxStep > 2 && !has_parts}
   <tr>
     <td colspan="4" style="padding-left: {depth * 25 + 20}px" class="py-2">
       <div class="text-sm text-gray-500 italic">No Q&A pairs generated yet</div>
@@ -238,7 +251,11 @@
               </li>
               {#if qa.saved_id}
                 <li>
-                  <button>View in Dataset</button>
+                  <button
+                    on:click|stopPropagation={() => openQAPairInDataset(qa)}
+                  >
+                    View in Dataset</button
+                  >
                 </li>
               {/if}
             </ul>

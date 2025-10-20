@@ -14,59 +14,53 @@
   import QnaGenIntro from "./qna_gen_intro.svelte"
   import { DEFAULT_QNA_GUIDANCE } from "./guidance"
   import {
-    current_step,
-    set_current_step,
+    createQnaStore,
     step_numbers,
     step_names,
     step_descriptions,
-    max_available_step,
-    handleGenerationComplete as storeHandleGenerationComplete,
-    initSession,
-    saved_state as qna_saved_state,
-    triggerSaveUiState,
-    setPendingGenerationTarget,
-    addDocuments,
-    markExtractionComplete,
-    deleteDocument as storeDeleteDocument,
-    availableTags,
-    fetchAvailableTags,
-    recomputeStep,
-    saveAllQnaPairs,
-    saveAllRunning,
-    saveAllCompleted,
-    saveAllSubErrors,
-    savedCount,
-    clearAllState,
-    getPairsToSave,
+    type QnaStore,
     type QnADocPart,
   } from "./qna_ui_store"
+  import Warning from "$lib/ui/warning.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
+  let qna: QnaStore
+  $: qnaCurrentStep = qna?.currentStep
+  $: qnaMaxStep = qna?.maxStep
+  $: qnaAvailableTags = qna?.availableTags
+  $: qnaPendingSaveCount = qna?.pendingSaveCount
+  $: qnaSaveAllStatus = qna?.saveAllStatus
+  $: qnaExtractorId = qna?.extractorId
+  $: qnaPairsPerPart = qna?.pairsPerPart
+  $: qnaGuidance = qna?.guidance
+  $: qnaChunkSizeTokens = qna?.chunkSizeTokens
+  $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
+
   // Dialogs
   let clear_existing_state_dialog: Dialog | null = null
   let edit_splits_dialog: Dialog | null = null
   let generating_dialog: Dialog | null = null
   let save_all_dialog: Dialog | null = null
+  let rechunk_warning_dialog: Dialog | null = null
 
   // Splits editing
   let editable_splits: Array<{ tag: string; percent: number }> = []
 
   onMount(async () => {
-    await initSession(project_id, task_id, DEFAULT_QNA_GUIDANCE)
-    // Show continue session dialog if there's existing data
-    if (get(qna_saved_state).documents.length > 0) {
+    qna = createQnaStore(project_id, task_id)
+    await qna.init(DEFAULT_QNA_GUIDANCE)
+    if (get(qna).documents.length > 0) {
       clear_existing_state_dialog?.show()
     }
-    await fetchAvailableTags(project_id)
-    recomputeStep()
+    await qna.fetchAvailableTags()
   })
 
   function clear_all_state() {
-    clearAllState(DEFAULT_QNA_GUIDANCE)
+    qna.clearAll(DEFAULT_QNA_GUIDANCE)
   }
 
   function clear_state_and_go_to_intro() {
@@ -85,6 +79,8 @@
   let show_select_documents_modal: Dialog | null = null
   let show_extraction_modal: Dialog | null = null
   let show_generate_qna_modal: Dialog | null = null
+  let generation_target_description: string = "all documents"
+  let generation_target_type: "all" | "document" | "part" = "all"
 
   function open_select_documents_modal() {
     current_dialog_type = "select_documents"
@@ -98,59 +94,80 @@
 
   function open_generate_qna_modal() {
     current_dialog_type = "generate_qna"
-    setPendingGenerationTarget({ type: "all" })
+    qna.setPendingTarget({ type: "all" })
+    generation_target_description = "all documents"
+    generation_target_type = "all"
+
+    const has_existing_parts = $qna.documents.some((d) => d.parts.length > 0)
+    if (has_existing_parts) {
+      rechunk_warning_dialog?.show()
+    } else {
+      show_generate_qna_modal?.show()
+    }
+  }
+
+  function proceed_with_regeneration() {
+    rechunk_warning_dialog?.close()
     show_generate_qna_modal?.show()
   }
 
   function handle_documents_added(event: CustomEvent) {
     const { documents, tags } = event.detail
-    // Centralized state update in store
-    addDocuments(documents, tags)
-    recomputeStep()
+    qna.addDocuments(documents, tags)
   }
 
   function handle_extraction_complete(
     event: CustomEvent<{ extractor_config_id: string }>,
   ) {
     const { extractor_config_id } = event.detail
-    markExtractionComplete(extractor_config_id)
-    recomputeStep()
+    qna.markExtractionComplete(extractor_config_id)
   }
 
   function handle_generate_for_document(
     e: CustomEvent<{ document_id: string }>,
   ) {
-    setPendingGenerationTarget({
+    qna.setPendingTarget({
       type: "document",
       document_id: e.detail.document_id,
     })
-    open_generate_qna_modal()
+    const doc = $qna.documents.find((d) => d.id === e.detail.document_id)
+    generation_target_description = doc ? doc.name : "selected document"
+    generation_target_type = "document"
+    current_dialog_type = "generate_qna"
+    show_generate_qna_modal?.show()
   }
 
   function handle_generate_for_part(
     e: CustomEvent<{ document_id: string; part_id: string }>,
   ) {
-    setPendingGenerationTarget({
+    qna.setPendingTarget({
       type: "part",
       document_id: e.detail.document_id,
       part_id: e.detail.part_id,
     })
-    open_generate_qna_modal()
+    const doc = $qna.documents.find((d) => d.id === e.detail.document_id)
+    const partIdx = doc?.parts.findIndex((p) => p.id === e.detail.part_id)
+    generation_target_description =
+      doc && partIdx !== undefined && partIdx >= 0
+        ? `${doc.name} - Part ${partIdx + 1}`
+        : "selected part"
+    generation_target_type = "part"
+    current_dialog_type = "generate_qna"
+    show_generate_qna_modal?.show()
   }
 
   async function handle_generation_complete(event: CustomEvent) {
+    show_generate_qna_modal?.close()
+    current_dialog_type = null
     generating_dialog?.show()
     try {
-      await storeHandleGenerationComplete(
-        {
-          pairs_per_part: event.detail.pairs_per_part,
-          guidance: event.detail.guidance,
-          model: event.detail.model,
-          chunk_size_tokens: event.detail.chunk_size_tokens,
-          chunk_overlap_tokens: event.detail.chunk_overlap_tokens,
-        },
-        { project_id, task_id },
-      )
+      await qna.generate({
+        pairsPerPart: get(qna.pairsPerPart),
+        guidance: get(qna.guidance),
+        model: event.detail.model,
+        chunkSizeTokens: get(qna.chunkSizeTokens),
+        chunkOverlapTokens: get(qna.chunkOverlapTokens),
+      })
     } catch (e) {
       console.error("Q&A generation failed", e)
     } finally {
@@ -161,25 +178,20 @@
   async function handle_extractor_config_selected(
     e: CustomEvent<{ extractor_config_id: string }>,
   ) {
-    qna_saved_state.update((s) => ({
-      ...s,
-      extractor_id: e.detail.extractor_config_id,
-    }))
+    qna.setExtractor(e.detail.extractor_config_id)
   }
 
   function delete_document(event: CustomEvent) {
     const { document_id } = event.detail
-    storeDeleteDocument(document_id)
+    qna.deleteDocument(document_id)
   }
 
   // Tag splits management
   function edit_splits() {
-    editable_splits = Object.entries($qna_saved_state.splits).map(
-      ([tag, percent]) => ({
-        tag,
-        percent: percent * 100,
-      }),
-    )
+    editable_splits = Object.entries($qna.splits).map(([tag, percent]) => ({
+      tag,
+      percent: percent * 100,
+    }))
     edit_splits_dialog?.show()
   }
 
@@ -216,7 +228,7 @@
     editable_splits.forEach((split) => {
       new_splits[split.tag] = split.percent / 100
     })
-    qna_saved_state.update((s) => ({ ...s, splits: new_splits }))
+    qna.setSplits(new_splits)
     edit_splits_dialog?.close()
     return true
   }
@@ -226,51 +238,28 @@
     return true
   }
 
-  $: total_qa_pairs = $qna_saved_state.documents.reduce(
-    (total, doc) =>
-      total +
-      doc.parts.reduce(
-        (partTotal: number, part: QnADocPart) =>
-          partTotal + part.qa_pairs.length,
+  $: total_qa_pairs = $qna
+    ? $qna.documents.reduce(
+        (total, doc) =>
+          total +
+          doc.parts.reduce(
+            (partTotal: number, part: QnADocPart) =>
+              partTotal + part.qa_pairs.length,
+            0,
+          ),
         0,
-      ),
-    0,
-  )
+      )
+    : 0
 
-  $: has_documents = $qna_saved_state.documents.length > 0
+  $: has_documents = $qna ? $qna.documents.length > 0 : false
   $: is_empty = !has_documents
 
-  function get_pairs_to_save(): Array<{
-    docIdx: number
-    partIdx: number
-    pairIdx: number
-  }> {
-    const indices: Array<{ docIdx: number; partIdx: number; pairIdx: number }> =
-      []
-    $qna_saved_state.documents.forEach((doc, docIdx) => {
-      doc.parts.forEach((part, partIdx) => {
-        part.qa_pairs.forEach((pair, pairIdx) => {
-          if (!pair.saved_id) indices.push({ docIdx, partIdx, pairIdx })
-        })
-      })
-    })
-    return indices
-  }
-
   function show_save_all_modal() {
-    // Reset unless already running
-    if (!$saveAllRunning) {
-      saveAllCompleted.set(false)
-      saveAllSubErrors.set([])
-      savedCount.set(0)
-    }
     save_all_dialog?.show()
   }
 
-  // split tag selection moved to store saveAllQnaPairs
-
   async function save_all_qna_pairs() {
-    await saveAllQnaPairs(project_id, task_id, session_id)
+    await qna.saveAll(session_id)
   }
 </script>
 
@@ -378,12 +367,12 @@
           <div class="text-xs text-gray-500 uppercase font-medium">Tags</div>
           <div>
             <button class="hover:underline text-left" on:click={edit_splits}>
-              {#if Object.keys($qna_saved_state.splits).length == 0}
+              {#if $qna && Object.keys($qna.splits).length == 0}
                 No tag assignments
-              {:else}
-                {@const split_descriptions = Object.entries(
-                  $qna_saved_state.splits,
-                ).map(([split, percent]) => `${split} (${percent * 100}%)`)}
+              {:else if $qna}
+                {@const split_descriptions = Object.entries($qna.splits).map(
+                  ([split, percent]) => `${split} (${percent * 100}%)`,
+                )}
                 {split_descriptions.join(", ")}
               {/if}
             </button>
@@ -393,7 +382,7 @@
     </div>
 
     <!-- Stepper -->
-    {#if $max_available_step > 1}
+    {#if $qnaMaxStep && $qnaMaxStep > 1}
       <div
         class="pb-1 2xl:pt-1 mt-12 mb-4 gap-2 sticky top-0 z-2 backdrop-blur bg-white/70 z-10"
       >
@@ -401,12 +390,17 @@
           <div class="flex justify-center">
             <ul class="steps">
               {#each step_numbers as step}
-                <li class="step {$current_step >= step ? 'step-primary' : ''}">
+                <li
+                  class="step {$qnaCurrentStep && $qnaCurrentStep >= step
+                    ? 'step-primary'
+                    : ''}"
+                >
                   <button
-                    class="px-4 text-sm md:min-w-[155px] {$current_step == step
+                    class="px-4 text-sm md:min-w-[155px] {$qnaCurrentStep &&
+                    $qnaCurrentStep == step
                       ? 'font-medium cursor-default'
                       : 'text-gray-500 hover:underline hover:text-gray-700'}"
-                    on:click={() => set_current_step(step)}
+                    on:click={() => qna.setCurrentStep(step)}
                     aria-label={`Go to step ${step} - ${step_names[step]}`}
                   >
                     {step_names[step]}
@@ -417,19 +411,21 @@
           </div>
           <div class="max-w-3xl mx-auto mt-2 2xl:mt-4 text-center">
             <div class="font-light">
-              <span class="font-medium">Step {$current_step}:</span>
-              {step_descriptions[$current_step]}
+              <span class="font-medium">Step {$qnaCurrentStep}:</span>
+              {#if $qnaCurrentStep}
+                {step_descriptions[$qnaCurrentStep]}
+              {/if}
             </div>
             <div class="mt-1 2xl:mt-2">
-              {#if $current_step == 1}
+              {#if $qnaCurrentStep == 1}
                 <button
                   class="btn btn-sm btn-primary"
                   on:click={open_select_documents_modal}
                 >
                   Select Search Tool
                 </button>
-              {:else if $current_step == 2}
-                {#if !$qna_saved_state.extraction_complete}
+              {:else if $qnaCurrentStep == 2}
+                {#if $qna && !$qna.extraction_complete}
                   <button
                     class="btn btn-sm btn-primary"
                     on:click={open_extraction_modal}
@@ -440,26 +436,26 @@
                 {:else}
                   <button
                     class="btn btn-sm btn-primary"
-                    on:click={() => set_current_step(3)}
+                    on:click={() => qna.setCurrentStep(3)}
                   >
                     Next Step
                   </button>
                 {/if}
-              {:else if $current_step == 3}
+              {:else if $qnaCurrentStep == 3}
                 <button
                   class="btn btn-sm btn-primary"
                   on:click={open_generate_qna_modal}
-                  disabled={!$qna_saved_state.extraction_complete}
+                  disabled={$qna && !$qna.extraction_complete}
                 >
                   Generate Q&A Pairs
                 </button>
-              {:else if $current_step == 4}
+              {:else if $qnaCurrentStep == 4}
                 {#if total_qa_pairs > 0}
                   <button
                     class="btn btn-sm btn-primary"
                     on:click={show_save_all_modal}
                   >
-                    Save All ({getPairsToSave().length})
+                    Save All ({$qnaPendingSaveCount || 0})
                   </button>
                 {:else}
                   <button class="btn btn-sm btn-disabled">Save All</button>
@@ -498,16 +494,20 @@
             </thead>
           {/if}
           <tbody>
-            {#each $qna_saved_state.documents as document}
-              <QnaDocumentNode
-                {document}
-                depth={1}
-                triggerSave={triggerSaveUiState}
-                on:delete_document={delete_document}
-                on:generate_for_document={handle_generate_for_document}
-                on:generate_for_part={handle_generate_for_part}
-              />
-            {/each}
+            {#if $qna}
+              {#each $qna.documents as document}
+                <QnaDocumentNode
+                  {project_id}
+                  {task_id}
+                  {document}
+                  {qna}
+                  depth={1}
+                  on:delete_document={delete_document}
+                  on:generate_for_document={handle_generate_for_document}
+                  on:generate_for_part={handle_generate_for_part}
+                />
+              {/each}
+            {/if}
           </tbody>
         </table>
       </div>
@@ -516,36 +516,39 @@
 </div>
 
 <!-- Modals -->
-<SelectDocumentsModal
-  bind:dialog={show_select_documents_modal}
-  {project_id}
-  available_tags={$availableTags}
-  on:documents_added={handle_documents_added}
-  on:close={() => (current_dialog_type = null)}
-  keyboard_submit={current_dialog_type === "select_documents"}
-/>
+{#if qna}
+  <SelectDocumentsModal
+    bind:dialog={show_select_documents_modal}
+    {project_id}
+    available_tags={$qnaAvailableTags || []}
+    on:documents_added={handle_documents_added}
+    on:close={() => (current_dialog_type = null)}
+    keyboard_submit={current_dialog_type === "select_documents"}
+  />
 
-<ExtractionModal
-  keyboard_submit={current_dialog_type === "extraction"}
-  bind:dialog={show_extraction_modal}
-  bind:selected_extractor_id={$qna_saved_state.extractor_id}
-  on:extraction_complete={handle_extraction_complete}
-  on:extractor_config_selected={handle_extractor_config_selected}
-  on:close={() => (current_dialog_type = null)}
-/>
+  <ExtractionModal
+    keyboard_submit={current_dialog_type === "extraction"}
+    bind:dialog={show_extraction_modal}
+    bind:selected_extractor_id={$qnaExtractorId}
+    on:extraction_complete={handle_extraction_complete}
+    on:extractor_config_selected={handle_extractor_config_selected}
+    on:close={() => (current_dialog_type = null)}
+  />
 
-<GenerateQnaModal
-  bind:dialog={show_generate_qna_modal}
-  {task_id}
-  bind:pairs_per_part={$qna_saved_state.generation_config.pairs_per_part}
-  bind:guidance={$qna_saved_state.generation_config.guidance}
-  bind:chunk_size_tokens={$qna_saved_state.generation_config.chunk_size_tokens}
-  bind:chunk_overlap_tokens={$qna_saved_state.generation_config
-    .chunk_overlap_tokens}
-  on:generation_complete={handle_generation_complete}
-  on:close={() => (current_dialog_type = null)}
-  keyboard_submit={current_dialog_type === "generate_qna"}
-/>
+  <GenerateQnaModal
+    bind:dialog={show_generate_qna_modal}
+    {task_id}
+    bind:pairs_per_part={$qnaPairsPerPart}
+    bind:guidance={$qnaGuidance}
+    bind:chunk_size_tokens={$qnaChunkSizeTokens}
+    bind:chunk_overlap_tokens={$qnaChunkOverlapTokens}
+    target_description={generation_target_description}
+    {generation_target_type}
+    on:generation_complete={handle_generation_complete}
+    on:close={() => (current_dialog_type = null)}
+    keyboard_submit={current_dialog_type === "generate_qna"}
+  />
+{/if}
 
 <Dialog
   bind:this={generating_dialog}
@@ -559,39 +562,43 @@
 </Dialog>
 
 <Dialog title="Save All Q&A" bind:this={save_all_dialog} action_buttons={[]}>
-  {#if $saveAllRunning}
-    <div class="min-h-[200px] flex flex-col justify-center items-center">
-      <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
-      <div class="font-light text-xs text-center mt-1">
-        {$savedCount} saved — {getPairsToSave().length} total
-        {#if $saveAllSubErrors && $saveAllSubErrors.length > 0}
-          — {$saveAllSubErrors.length} failed
+  {#if $qnaSaveAllStatus}
+    {#if $qnaSaveAllStatus.running}
+      <div class="min-h-[200px] flex flex-col justify-center items-center">
+        <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+        <div class="font-light text-xs text-center mt-1">
+          {$qnaSaveAllStatus.savedCount} saved — {$qnaPendingSaveCount || 0} total
+          {#if $qnaSaveAllStatus.errors.length > 0}
+            — {$qnaSaveAllStatus.errors.length} failed
+          {/if}
+        </div>
+      </div>
+    {:else if $qnaSaveAllStatus.completed}
+      <div
+        class="text-center flex flex-col items-center justify-center min-h-[150px] p-12"
+      >
+        <div class="font-medium">
+          Saved {$qnaSaveAllStatus.savedCount} items.
+        </div>
+        {#if $qnaSaveAllStatus.errors.length > 0}
+          <div class="text-error font-light text-sm mt-4">
+            {$qnaSaveAllStatus.errors.length} items failed to save.
+          </div>
         {/if}
       </div>
-    </div>
-  {:else if $saveAllCompleted}
-    <div
-      class="text-center flex flex-col items-center justify-center min-h-[150px] p-12"
-    >
-      <div class="font-medium">Saved {$savedCount} items.</div>
-      {#if $saveAllSubErrors.length > 0}
-        <div class="text-error font-light text-sm mt-4">
-          {$saveAllSubErrors.length} items failed to save.
+    {:else}
+      <div class="flex flex-col gap-3">
+        <div class="font-medium text-sm">Status</div>
+        <div class="font-light text-sm">
+          {$qnaPendingSaveCount || 0} items pending
         </div>
-      {/if}
-    </div>
-  {:else}
-    <div class="flex flex-col gap-3">
-      <div class="font-medium text-sm">Status</div>
-      <div class="font-light text-sm">
-        {get_pairs_to_save().length} items pending
+        <div>
+          <button class="btn btn-sm btn-primary" on:click={save_all_qna_pairs}>
+            Save All
+          </button>
+        </div>
       </div>
-      <div>
-        <button class="btn btn-sm btn-primary" on:click={save_all_qna_pairs}>
-          Save All
-        </button>
-      </div>
-    </div>
+    {/if}
   {/if}
 </Dialog>
 
@@ -607,7 +614,6 @@
       label: "Continue Session",
       isPrimary: true,
       action: () => {
-        recomputeStep()
         clear_existing_state_dialog?.close()
         return true
       },
@@ -704,4 +710,42 @@
       </div>
     </div>
   {/if}
+</Dialog>
+
+<Dialog
+  title="Regenerate Q&A Pairs?"
+  bind:this={rechunk_warning_dialog}
+  action_buttons={[
+    {
+      label: "Cancel",
+      action: () => {
+        rechunk_warning_dialog?.close()
+        return true
+      },
+    },
+    {
+      label: "Regenerate",
+      action: () => {
+        proceed_with_regeneration()
+        return true
+      },
+      isPrimary: true,
+    },
+  ]}
+>
+  <div class="flex flex-col gap-3">
+    <p class="font-light">
+      Regenerating Q&A pairs will re-chunk all documents into parts based on
+      your chunking settings. This will replace existing document parts and
+      their Q&A pairs.
+    </p>
+    <div class="mt-2">
+      <Warning
+        warning_icon="exclaim"
+        warning_color="warning"
+        warning_message="All existing Q&A pairs will be lost. Consider generating Q&A for
+        specific documents or parts instead."
+      />
+    </div>
+  </div>
 </Dialog>

@@ -23,7 +23,6 @@
   }
 
   let selected_tags: string[] = []
-  let submitting = false
   let library_state: DocumentLibraryState | null = null
   let library_state_loading = false
   let error: KilnError | null = null
@@ -49,7 +48,6 @@
   }
 
   function get_search_tool_options(tools: SearchToolWithTags[]): OptionGroup[] {
-    console.info("get_search_tool_options", tools)
     if (!tools || tools.length === 0) {
       return []
     }
@@ -66,7 +64,6 @@
   }
 
   async function select_documents_by_tag() {
-    submitting = true
     error = null
 
     try {
@@ -107,8 +104,6 @@
       selected_tags = []
     } catch (e) {
       error = createKilnError(e as unknown)
-    } finally {
-      submitting = false
     }
   }
 
@@ -155,7 +150,6 @@
       if (fetch_error) {
         throw fetch_error
       }
-      console.info(data)
       search_tools = (data || []) as SearchToolWithTags[]
     } catch (e) {
       error = createKilnError(e as unknown)
@@ -171,7 +165,7 @@
 </script>
 
 <Dialog bind:this={dialog} title="Select a Search Tool" width="normal">
-  {#if submitting || library_state_loading || search_tools_loading}
+  {#if library_state_loading || search_tools_loading}
     <div class="flex flex-row justify-center">
       <div class="loading loading-spinner loading-lg my-12"></div>
     </div>
@@ -194,7 +188,6 @@
       }}
       {error}
       gap={4}
-      bind:submitting
       {keyboard_submit}
       on:close={() => dispatch("close")}
     >
