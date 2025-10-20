@@ -3,6 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Output from "../../../../run/output.svelte"
   import { createEventDispatcher } from "svelte"
+  import { removeQAPair, removePart } from "./qna_ui_store"
   import { max_available_step } from "./qna_ui_store"
 
   type QnAPair = {
@@ -50,17 +51,12 @@
   }
 
   function delete_qa_pair(part_id: string, qa_id: string) {
-    const part = document.parts.find((p) => p.id === part_id)
-    if (part) {
-      part.qa_pairs = part.qa_pairs.filter((qa) => qa.id !== qa_id)
-      document = document
-      triggerSave()
-    }
+    removeQAPair(document.id, part_id, qa_id)
+    triggerSave()
   }
 
   function remove_part(part_id: string) {
-    document.parts = document.parts.filter((p) => p.id !== part_id)
-    document = document
+    removePart(document.id, part_id)
     triggerSave()
   }
 

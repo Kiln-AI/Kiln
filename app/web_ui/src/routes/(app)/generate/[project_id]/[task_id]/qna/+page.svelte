@@ -1,20 +1,18 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import { client } from "$lib/api_client"
-  import { base_url } from "$lib/api_client"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import { indexedDBStore } from "$lib/stores/index_db_store"
-  import { writable, type Writable } from "svelte/store"
+  import { get } from "svelte/store"
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import type { ModelProviderName, RunConfigProperties } from "$lib/types"
+
   import SelectDocumentsModal from "./select_documents_dialog.svelte"
   import ExtractionModal from "./extraction_dialog.svelte"
   import GenerateQnaModal from "./generate_qna_dialog.svelte"
   import QnaDocumentNode from "./qna_document_node.svelte"
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import QnaGenIntro from "./qna_gen_intro.svelte"
+  import { DEFAULT_QNA_GUIDANCE } from "./guidance"
   import {
     current_step,
     set_current_step,
@@ -22,7 +20,25 @@
     step_names,
     step_descriptions,
     max_available_step,
-    reset_ui_store,
+    handleGenerationComplete as storeHandleGenerationComplete,
+    initSession,
+    saved_state as qna_saved_state,
+    triggerSaveUiState,
+    setPendingGenerationTarget,
+    addDocuments,
+    markExtractionComplete,
+    deleteDocument as storeDeleteDocument,
+    availableTags,
+    fetchAvailableTags,
+    recomputeStep,
+    saveAllQnaPairs,
+    saveAllRunning,
+    saveAllCompleted,
+    saveAllSubErrors,
+    savedCount,
+    clearAllState,
+    getPairsToSave,
+    type QnADocPart,
   } from "./qna_ui_store"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
@@ -30,149 +46,27 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  const DEFAULT_QNA_GUIDANCE = `You are generating question-answer pairs from document content to create a dataset for evaluating AI systems.
-
-For each text:
-1. Generate clear, specific questions that can be answered using the content
-2. Provide accurate, complete answers based solely on the document content
-3. Vary question types (factual, conceptual, procedural, etc.)
-4. Ensure questions are self-contained and answerable
-
-Focus on:
-- Key concepts and important information
-- Practical applications and examples
-- Definitions and explanations
-- Relationships between ideas
-
-Avoid:
-- Yes/no questions unless they lead to explanatory follow-up
-- Questions requiring information not in the document
-- Ambiguous or unclear phrasing`
-
-  // Data types
-  type QnAPair = {
-    id: string
-    question: string
-    answer: string
-    generated: boolean
-    model_name?: string
-    model_provider?: string
-    saved_id: string | null
-  }
-
-  type QnADocPart = {
-    id: string
-    text_preview: string
-    qa_pairs: QnAPair[]
-  }
-
-  type QnADocumentNode = {
-    id: string
-    name: string
-    tags: string[]
-    extracted: boolean
-    parts: QnADocPart[]
-  }
-
-  type QnASession = {
-    selected_tags: string[]
-    extractor_id: string | null
-    extraction_complete: boolean
-    generation_config: {
-      pairs_per_part: number
-      guidance: string
-      chunk_size_tokens: number | null
-      chunk_overlap_tokens: number | null
-    }
-    documents: QnADocumentNode[]
-    splits: Record<string, number>
-  }
-
-  // Session state
-  let saved_state: Writable<QnASession> = writable({
-    selected_tags: [],
-    extractor_id: null,
-    extraction_complete: false,
-    generation_config: {
-      pairs_per_part: 5,
-      guidance: DEFAULT_QNA_GUIDANCE,
-      chunk_size_tokens: null,
-      chunk_overlap_tokens: null,
-    },
-    documents: [],
-    splits: {},
-  })
-
   // Dialogs
   let clear_existing_state_dialog: Dialog | null = null
   let edit_splits_dialog: Dialog | null = null
   let generating_dialog: Dialog | null = null
   let save_all_dialog: Dialog | null = null
 
-  // Tag selection
-  let available_tags: string[] = []
-
   // Splits editing
   let editable_splits: Array<{ tag: string; percent: number }> = []
 
   onMount(async () => {
-    const qna_data_key = `qna_data_${project_id}_${task_id}`
-    const { store, initialized } = indexedDBStore<QnASession>(qna_data_key, {
-      selected_tags: [],
-      extractor_id: null,
-      extraction_complete: false,
-      generation_config: {
-        pairs_per_part: 5,
-        guidance: DEFAULT_QNA_GUIDANCE,
-        chunk_size_tokens: null,
-        chunk_overlap_tokens: null,
-      },
-      documents: [],
-      splits: {},
-    })
-    await initialized
-    saved_state = store
-
+    await initSession(project_id, task_id, DEFAULT_QNA_GUIDANCE)
     // Show continue session dialog if there's existing data
-    if ($saved_state.documents.length > 0) {
+    if (get(qna_saved_state).documents.length > 0) {
       clear_existing_state_dialog?.show()
     }
-
-    await loadAvailableTags()
-    update_current_step()
+    await fetchAvailableTags(project_id)
+    recomputeStep()
   })
 
-  function update_current_step() {
-    const has_qa_pairs = $saved_state.documents.some((doc) =>
-      doc.parts.some((part: QnADocPart) => part.qa_pairs.length > 0),
-    )
-    if (has_qa_pairs) {
-      set_current_step(4)
-    } else if ($saved_state.extraction_complete) {
-      set_current_step(3)
-    } else if ($saved_state.documents.length > 0) {
-      set_current_step(2)
-    } else {
-      set_current_step(1)
-    }
-  }
-
   function clear_all_state() {
-    reset_ui_store()
-    saved_state.update((s) => ({
-      ...s,
-      selected_tags: [],
-      extractor_id: null,
-      extraction_complete: false,
-      generation_config: {
-        pairs_per_part: 5,
-        guidance: DEFAULT_QNA_GUIDANCE,
-        chunk_size_tokens: null,
-        chunk_overlap_tokens: null,
-      },
-      documents: [],
-      splits: {},
-    }))
+    clearAllState(DEFAULT_QNA_GUIDANCE)
   }
 
   function clear_state_and_go_to_intro() {
@@ -181,29 +75,7 @@ Avoid:
     return true
   }
 
-  async function loadAvailableTags() {
-    try {
-      const { data, error } = await client.GET(
-        "/api/projects/{project_id}/documents/tags",
-        {
-          params: {
-            path: {
-              project_id,
-            },
-          },
-        },
-      )
-
-      if (error) {
-        throw error
-      }
-
-      available_tags = data || []
-    } catch (e) {
-      console.error("Error loading tags:", e)
-      available_tags = []
-    }
-  }
+  // Available tags are provided by store: $availableTags
 
   let current_dialog_type:
     | "select_documents"
@@ -226,329 +98,59 @@ Avoid:
 
   function open_generate_qna_modal() {
     current_dialog_type = "generate_qna"
-    pending_generation_target = { type: "all" }
+    setPendingGenerationTarget({ type: "all" })
     show_generate_qna_modal?.show()
   }
 
   function handle_documents_added(event: CustomEvent) {
     const { documents, tags } = event.detail
-
-    // Convert API documents to QnADocumentNode format
-    const new_documents: QnADocumentNode[] = documents.map(
-      (doc: { id: string; name: string; tags?: string[] }) => ({
-        id: doc.id,
-        name: doc.name,
-        tags: doc.tags || [],
-        extracted: false,
-        parts: [],
-      }),
-    )
-
-    saved_state.update((s) => ({
-      ...s,
-      documents: [...s.documents, ...new_documents],
-      selected_tags: tags,
-    }))
-
-    triggerSaveUiState()
-    set_current_step(2)
+    // Centralized state update in store
+    addDocuments(documents, tags)
+    recomputeStep()
   }
 
   function handle_extraction_complete(
     event: CustomEvent<{ extractor_config_id: string }>,
   ) {
     const { extractor_config_id } = event.detail
-
-    saved_state.update((s) => ({
-      ...s,
-      extractor_id: extractor_config_id,
-      extraction_complete: true,
-      documents: s.documents.map((doc) => ({
-        ...doc,
-        extracted: true,
-      })),
-    }))
-
-    triggerSaveUiState()
-    set_current_step(3)
+    markExtractionComplete(extractor_config_id)
+    recomputeStep()
   }
-
-  type GenerationTarget =
-    | { type: "all" }
-    | { type: "document"; document_id: string }
-    | { type: "part"; document_id: string; part_id: string }
-
-  let pending_generation_target: GenerationTarget = { type: "all" }
 
   function handle_generate_for_document(
     e: CustomEvent<{ document_id: string }>,
   ) {
-    pending_generation_target = {
+    setPendingGenerationTarget({
       type: "document",
       document_id: e.detail.document_id,
-    }
+    })
     open_generate_qna_modal()
   }
 
   function handle_generate_for_part(
     e: CustomEvent<{ document_id: string; part_id: string }>,
   ) {
-    pending_generation_target = {
+    setPendingGenerationTarget({
       type: "part",
       document_id: e.detail.document_id,
       part_id: e.detail.part_id,
-    }
+    })
     open_generate_qna_modal()
   }
 
-  function get_parts_for_target(target: GenerationTarget) {
-    const indices: Array<{ docIdx: number; partIdx: number }> = []
-    if (target.type === "all") {
-      $saved_state.documents.forEach((doc, docIdx) => {
-        doc.parts.forEach((_part, partIdx) => indices.push({ docIdx, partIdx }))
-      })
-    } else if (target.type === "document") {
-      const docIdx = $saved_state.documents.findIndex(
-        (d) => d.id === target.document_id,
-      )
-      if (docIdx !== -1) {
-        $saved_state.documents[docIdx].parts.forEach((_p, partIdx) =>
-          indices.push({ docIdx, partIdx }),
-        )
-      }
-    } else if (target.type === "part") {
-      const docIdx = $saved_state.documents.findIndex(
-        (d) => d.id === target.document_id,
-      )
-      if (docIdx !== -1) {
-        const partIdx = $saved_state.documents[docIdx].parts.findIndex(
-          (p) => p.id === target.part_id,
-        )
-        if (partIdx !== -1) indices.push({ docIdx, partIdx })
-      }
-    }
-    return indices
-  }
-
-  async function fetch_chunks_for_doc(
-    docIdx: number,
-    extractor_id: string,
-    chunk_size_tokens: number | null,
-    chunk_overlap_tokens: number | null,
-  ) {
-    const doc = $saved_state.documents[docIdx]
-    const body: { chunk_size: number | null; chunk_overlap: number | null } = {
-      chunk_size: chunk_size_tokens ?? null,
-      chunk_overlap: chunk_overlap_tokens ?? null,
-    }
-    const res = await fetch(
-      `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_id}/documents/${doc.id}/ephemeral_split`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    )
-    if (!res.ok) throw new Error(`Chunking failed for ${doc.id}`)
-    const data: { chunks: Array<{ id: string; text: string }> } =
-      await res.json()
-    const parts = data.chunks.map((c) => ({
-      id: c.id,
-      text_preview: c.text,
-      qa_pairs: [] as QnAPair[],
-    }))
-    saved_state.update((s) => {
-      const docs = [...s.documents]
-      const d = { ...docs[docIdx] }
-      d.parts = parts
-      docs[docIdx] = d
-      return { ...s, documents: docs }
-    })
-    triggerSaveUiState()
-  }
-
-  async function run_chunking_queue(
-    queue: number[],
-    extractor_id: string,
-    chunk_size_tokens: number | null,
-    chunk_overlap_tokens: number | null,
-    concurrency: number = 5,
-  ) {
-    console.info("run chunking queue", queue)
-    async function worker() {
-      while (queue.length > 0) {
-        const idx = queue.shift()!
-        await fetch_chunks_for_doc(
-          idx,
-          extractor_id,
-          chunk_size_tokens,
-          chunk_overlap_tokens,
-        )
-      }
-    }
-    const workers = Array(concurrency)
-      .fill(null)
-      .map(() => worker())
-    await Promise.all(workers)
-  }
-
   async function handle_generation_complete(event: CustomEvent) {
-    console.info("handle_generation_complete", $saved_state.documents)
-    const {
-      pairs_per_part,
-      guidance,
-      model,
-      chunk_size_tokens,
-      chunk_overlap_tokens,
-    } = event.detail
-    const model_provider = model.split("/")[0]
-    const model_name = model.split("/").slice(1).join("/")
-
-    // Build run config properties compatible with backend expectations
-    const output_run_config_properties: RunConfigProperties = {
-      model_name: model_name,
-      // Type cast to satisfy enum type; server will validate
-      model_provider_name: model_provider as unknown as ModelProviderName,
-      prompt_id: "simple_prompt_builder",
-      temperature: 1.0,
-      top_p: 1.0,
-      structured_output_mode: "default",
-      tools_config: { tools: [] },
-    }
-
     generating_dialog?.show()
-
     try {
-      // Before generating, ensure parts exist per target document according to chunking config
-      const targetDocs = new Set<number>()
-
-      // Get target documents based on the generation target, not just from existing parts
-      if (pending_generation_target.type === "all") {
-        $saved_state.documents.forEach((_doc, docIdx) => {
-          targetDocs.add(docIdx)
-        })
-      } else if (pending_generation_target.type === "document") {
-        const target = pending_generation_target
-        const docIdx = $saved_state.documents.findIndex(
-          (d) => d.id === target.document_id,
-        )
-        if (docIdx !== -1) {
-          targetDocs.add(docIdx)
-        }
-      } else if (pending_generation_target.type === "part") {
-        const target = pending_generation_target
-        const docIdx = $saved_state.documents.findIndex(
-          (d) => d.id === target.document_id,
-        )
-        if (docIdx !== -1) {
-          targetDocs.add(docIdx)
-        }
-      }
-
-      // If parts missing or chunk size changed, (re)fetch chunks from server
-      const queue: Array<number> = []
-      targetDocs.forEach((docIdx) => {
-        console.info("checking target docs -> docIdx", docIdx)
-        const doc = $saved_state.documents[docIdx]
-        console.info("doc", doc)
-        const hasParts = doc.parts && doc.parts.length > 0
-        console.info("hasParts", doc.parts)
-        const shouldReplace = hasParts && chunk_size_tokens !== null
-        console.info("shouldReplace->chunk_size_tokens", chunk_size_tokens)
-        if (!hasParts || shouldReplace) {
-          console.info("pushing", docIdx)
-          queue.push(docIdx)
-        }
-      })
-
-      const extractor_id = $saved_state.extractor_id
-      if (extractor_id) {
-        await run_chunking_queue(
-          queue,
-          extractor_id,
-          chunk_size_tokens ?? null,
-          chunk_overlap_tokens ?? null,
-          5,
-        )
-      }
-
-      // Regenerate targetParts after chunking to get the fresh parts
-      const freshTargetParts = get_parts_for_target(pending_generation_target)
-
-      for (const { docIdx, partIdx } of freshTargetParts) {
-        const partText =
-          $saved_state.documents[docIdx].parts[partIdx].text_preview
-
-        const { data, error } = await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
-          {
-            body: {
-              document_id: [],
-              part_text: [partText],
-              num_samples: pairs_per_part,
-              output_run_config_properties,
-              guidance: guidance || null,
-              tags: null,
-            },
-            params: {
-              path: {
-                project_id,
-                task_id,
-              },
-            },
-          },
-        )
-        if (error) throw error
-
-        const outputText = (data as unknown as { output: { output: string } })
-          .output.output
-        const response = JSON.parse(outputText) as {
-          generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
-        }
-        const generated = Array.isArray(response.generated_qna_pairs)
-          ? response.generated_qna_pairs
-          : []
-
-        const newPairs = generated.map((qa) => ({
-          id: crypto.randomUUID(),
-          question:
-            typeof qa?.question === "string"
-              ? qa.question
-              : JSON.stringify(qa?.question ?? ""),
-          answer:
-            typeof qa?.answer === "string"
-              ? qa.answer
-              : JSON.stringify(qa?.answer ?? ""),
-          generated: true,
-          model_name,
-          model_provider,
-          saved_id: null,
-        }))
-
-        saved_state.update((s) => {
-          const docs = [...s.documents]
-          const doc = { ...docs[docIdx] }
-          const parts = [...doc.parts]
-          const part = { ...parts[partIdx] }
-          part.qa_pairs = [...part.qa_pairs, ...newPairs]
-          parts[partIdx] = part
-          doc.parts = parts
-          docs[docIdx] = doc
-          return {
-            ...s,
-            generation_config: {
-              pairs_per_part,
-              guidance,
-              chunk_size_tokens,
-              chunk_overlap_tokens,
-            },
-            documents: docs,
-          }
-        })
-        triggerSaveUiState()
-      }
-
-      set_current_step(4)
+      await storeHandleGenerationComplete(
+        {
+          pairs_per_part: event.detail.pairs_per_part,
+          guidance: event.detail.guidance,
+          model: event.detail.model,
+          chunk_size_tokens: event.detail.chunk_size_tokens,
+          chunk_overlap_tokens: event.detail.chunk_overlap_tokens,
+        },
+        { project_id, task_id },
+      )
     } catch (e) {
       console.error("Q&A generation failed", e)
     } finally {
@@ -559,7 +161,7 @@ Avoid:
   async function handle_extractor_config_selected(
     e: CustomEvent<{ extractor_config_id: string }>,
   ) {
-    saved_state.update((s) => ({
+    qna_saved_state.update((s) => ({
       ...s,
       extractor_id: e.detail.extractor_config_id,
     }))
@@ -567,21 +169,12 @@ Avoid:
 
   function delete_document(event: CustomEvent) {
     const { document_id } = event.detail
-    saved_state.update((s) => ({
-      ...s,
-      documents: s.documents.filter((doc) => doc.id !== document_id),
-    }))
-    triggerSaveUiState()
-  }
-
-  function triggerSaveUiState() {
-    // Just trigger reactivity - IndexedDB store handles persistence
-    saved_state = saved_state
+    storeDeleteDocument(document_id)
   }
 
   // Tag splits management
   function edit_splits() {
-    editable_splits = Object.entries($saved_state.splits).map(
+    editable_splits = Object.entries($qna_saved_state.splits).map(
       ([tag, percent]) => ({
         tag,
         percent: percent * 100,
@@ -623,7 +216,7 @@ Avoid:
     editable_splits.forEach((split) => {
       new_splits[split.tag] = split.percent / 100
     })
-    saved_state.update((s) => ({ ...s, splits: new_splits }))
+    qna_saved_state.update((s) => ({ ...s, splits: new_splits }))
     edit_splits_dialog?.close()
     return true
   }
@@ -633,7 +226,7 @@ Avoid:
     return true
   }
 
-  $: total_qa_pairs = $saved_state.documents.reduce(
+  $: total_qa_pairs = $qna_saved_state.documents.reduce(
     (total, doc) =>
       total +
       doc.parts.reduce(
@@ -644,14 +237,8 @@ Avoid:
     0,
   )
 
-  $: has_documents = $saved_state.documents.length > 0
+  $: has_documents = $qna_saved_state.documents.length > 0
   $: is_empty = !has_documents
-
-  // Save All state
-  let save_all_running = false
-  let save_all_completed = false
-  let save_all_sub_errors: Error[] = []
-  let saved_count = 0
 
   function get_pairs_to_save(): Array<{
     docIdx: number
@@ -660,7 +247,7 @@ Avoid:
   }> {
     const indices: Array<{ docIdx: number; partIdx: number; pairIdx: number }> =
       []
-    $saved_state.documents.forEach((doc, docIdx) => {
+    $qna_saved_state.documents.forEach((doc, docIdx) => {
       doc.parts.forEach((part, partIdx) => {
         part.qa_pairs.forEach((pair, pairIdx) => {
           if (!pair.saved_id) indices.push({ docIdx, partIdx, pairIdx })
@@ -672,103 +259,18 @@ Avoid:
 
   function show_save_all_modal() {
     // Reset unless already running
-    if (!save_all_running) {
-      save_all_completed = false
-      save_all_sub_errors = []
-      saved_count = 0
+    if (!$saveAllRunning) {
+      saveAllCompleted.set(false)
+      saveAllSubErrors.set([])
+      savedCount.set(0)
     }
     save_all_dialog?.show()
   }
 
-  function get_random_split_tag(): string | undefined {
-    const splits = $saved_state.splits
-    const keys = Object.keys(splits)
-    if (keys.length === 0) return undefined
-    const r = Math.random()
-    let acc = 0
-    for (const k of keys) {
-      acc += splits[k]
-      if (r <= acc) return k
-    }
-    return keys[0]
-  }
-
-  function isTaskRun(obj: unknown): obj is { id: string } {
-    return (
-      typeof obj === "object" &&
-      obj !== null &&
-      "id" in obj &&
-      typeof (obj as { id: unknown }).id === "string"
-    )
-  }
+  // split tag selection moved to store saveAllQnaPairs
 
   async function save_all_qna_pairs() {
-    try {
-      save_all_running = true
-
-      save_all_completed = false
-      save_all_sub_errors = []
-      saved_count = 0
-
-      const queue = get_pairs_to_save()
-      for (const { docIdx, partIdx, pairIdx } of queue) {
-        const pair =
-          $saved_state.documents[docIdx].parts[partIdx].qa_pairs[pairIdx]
-        const split_tag = get_random_split_tag()
-        if (!pair.model_name || !pair.model_provider) {
-          throw new Error("Model name and provider are required")
-        }
-
-        try {
-          const { data, error } = await client.POST(
-            "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
-            {
-              params: {
-                path: { project_id, task_id },
-                query: {
-                  session_id: session_id,
-                },
-              },
-              body: {
-                question: pair.question,
-                answer: pair.answer,
-                model_name: pair.model_name,
-                model_provider: pair.model_provider,
-                tags: split_tag ? [split_tag] : null,
-              },
-            },
-          )
-          if (error || !data || !isTaskRun(data))
-            throw error || new Error("Save failed")
-
-          const saved_id = data.id
-          saved_state.update((s) => {
-            const docs = [...s.documents]
-            const doc = { ...docs[docIdx] }
-            const parts = [...doc.parts]
-            const part = { ...parts[partIdx] }
-            const pairs = [...part.qa_pairs]
-            const updated = { ...pairs[pairIdx], saved_id }
-            pairs[pairIdx] = updated
-            part.qa_pairs = pairs
-            parts[partIdx] = part
-            doc.parts = parts
-            docs[docIdx] = doc
-            return { ...s, documents: docs }
-          })
-          saved_count++
-          triggerSaveUiState()
-        } catch (e) {
-          save_all_sub_errors.push(e as Error)
-          save_all_sub_errors = save_all_sub_errors
-        }
-      }
-    } catch (e) {
-      // ignore; errors are tracked per item in save_all_sub_errors
-    } finally {
-      save_all_running = false
-      save_all_completed = true
-    }
+    await saveAllQnaPairs(project_id, task_id, session_id)
   }
 </script>
 
@@ -876,11 +378,11 @@ Avoid:
           <div class="text-xs text-gray-500 uppercase font-medium">Tags</div>
           <div>
             <button class="hover:underline text-left" on:click={edit_splits}>
-              {#if Object.keys($saved_state.splits).length == 0}
+              {#if Object.keys($qna_saved_state.splits).length == 0}
                 No tag assignments
               {:else}
                 {@const split_descriptions = Object.entries(
-                  $saved_state.splits,
+                  $qna_saved_state.splits,
                 ).map(([split, percent]) => `${split} (${percent * 100}%)`)}
                 {split_descriptions.join(", ")}
               {/if}
@@ -927,7 +429,7 @@ Avoid:
                   Select Search Tool
                 </button>
               {:else if $current_step == 2}
-                {#if !$saved_state.extraction_complete}
+                {#if !$qna_saved_state.extraction_complete}
                   <button
                     class="btn btn-sm btn-primary"
                     on:click={open_extraction_modal}
@@ -947,7 +449,7 @@ Avoid:
                 <button
                   class="btn btn-sm btn-primary"
                   on:click={open_generate_qna_modal}
-                  disabled={!$saved_state.extraction_complete}
+                  disabled={!$qna_saved_state.extraction_complete}
                 >
                   Generate Q&A Pairs
                 </button>
@@ -957,7 +459,7 @@ Avoid:
                     class="btn btn-sm btn-primary"
                     on:click={show_save_all_modal}
                   >
-                    Save All ({get_pairs_to_save().length})
+                    Save All ({getPairsToSave().length})
                   </button>
                 {:else}
                   <button class="btn btn-sm btn-disabled">Save All</button>
@@ -996,7 +498,7 @@ Avoid:
             </thead>
           {/if}
           <tbody>
-            {#each $saved_state.documents as document}
+            {#each $qna_saved_state.documents as document}
               <QnaDocumentNode
                 {document}
                 depth={1}
@@ -1017,7 +519,7 @@ Avoid:
 <SelectDocumentsModal
   bind:dialog={show_select_documents_modal}
   {project_id}
-  {available_tags}
+  available_tags={$availableTags}
   on:documents_added={handle_documents_added}
   on:close={() => (current_dialog_type = null)}
   keyboard_submit={current_dialog_type === "select_documents"}
@@ -1026,7 +528,7 @@ Avoid:
 <ExtractionModal
   keyboard_submit={current_dialog_type === "extraction"}
   bind:dialog={show_extraction_modal}
-  bind:selected_extractor_id={$saved_state.extractor_id}
+  bind:selected_extractor_id={$qna_saved_state.extractor_id}
   on:extraction_complete={handle_extraction_complete}
   on:extractor_config_selected={handle_extractor_config_selected}
   on:close={() => (current_dialog_type = null)}
@@ -1035,10 +537,10 @@ Avoid:
 <GenerateQnaModal
   bind:dialog={show_generate_qna_modal}
   {task_id}
-  bind:pairs_per_part={$saved_state.generation_config.pairs_per_part}
-  bind:guidance={$saved_state.generation_config.guidance}
-  bind:chunk_size_tokens={$saved_state.generation_config.chunk_size_tokens}
-  bind:chunk_overlap_tokens={$saved_state.generation_config
+  bind:pairs_per_part={$qna_saved_state.generation_config.pairs_per_part}
+  bind:guidance={$qna_saved_state.generation_config.guidance}
+  bind:chunk_size_tokens={$qna_saved_state.generation_config.chunk_size_tokens}
+  bind:chunk_overlap_tokens={$qna_saved_state.generation_config
     .chunk_overlap_tokens}
   on:generation_complete={handle_generation_complete}
   on:close={() => (current_dialog_type = null)}
@@ -1057,24 +559,24 @@ Avoid:
 </Dialog>
 
 <Dialog title="Save All Q&A" bind:this={save_all_dialog} action_buttons={[]}>
-  {#if save_all_running}
+  {#if $saveAllRunning}
     <div class="min-h-[200px] flex flex-col justify-center items-center">
       <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
       <div class="font-light text-xs text-center mt-1">
-        {saved_count} saved — {get_pairs_to_save().length} total
-        {#if save_all_sub_errors && save_all_sub_errors.length > 0}
-          — {save_all_sub_errors.length} failed
+        {$savedCount} saved — {getPairsToSave().length} total
+        {#if $saveAllSubErrors && $saveAllSubErrors.length > 0}
+          — {$saveAllSubErrors.length} failed
         {/if}
       </div>
     </div>
-  {:else if save_all_completed}
+  {:else if $saveAllCompleted}
     <div
       class="text-center flex flex-col items-center justify-center min-h-[150px] p-12"
     >
-      <div class="font-medium">Saved {saved_count} items.</div>
-      {#if save_all_sub_errors.length > 0}
+      <div class="font-medium">Saved {$savedCount} items.</div>
+      {#if $saveAllSubErrors.length > 0}
         <div class="text-error font-light text-sm mt-4">
-          {save_all_sub_errors.length} items failed to save.
+          {$saveAllSubErrors.length} items failed to save.
         </div>
       {/if}
     </div>
@@ -1105,6 +607,7 @@ Avoid:
       label: "Continue Session",
       isPrimary: true,
       action: () => {
+        recomputeStep()
         clear_existing_state_dialog?.close()
         return true
       },
