@@ -127,7 +127,7 @@
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
         "Create a Google Cloud account.",
-        "Install the glcoud CLI, then run `gcloud auth application-default login` in the terminal. This will add Google Vertex credentials to you environment.",
+        "Install the gcloud CLI, then run `gcloud auth application-default login` in the terminal. This will add Google Vertex credentials to your environment.",
         "Create a project in the console, enable Vertex AI for that project, and click 'Enable Recommended APIs' in the Vertex AI console.",
         "Add the project ID below. Be sure to use the project ID, not the project name.",
         "Add a Google Cloud location, example: 'us-central1'. We suggest 'us-central1' as it has the widest model support.",
