@@ -174,7 +174,7 @@
     return options
   }
 
-  $: selected_run_config_id, clear_run_options_errors()
+  $: void (selected_run_config_id, clear_run_options_errors())
 
   function clear_run_options_errors() {
     save_config_error = null
@@ -209,7 +209,7 @@
 
   let inline_action: InlineAction | null = null
 
-  $: show_save_button, show_set_default_button, update_inline_action()
+  $: void (show_save_button, show_set_default_button, update_inline_action())
 
   function update_inline_action() {
     if (show_save_button) {

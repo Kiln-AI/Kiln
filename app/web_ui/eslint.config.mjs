@@ -87,6 +87,10 @@ export default [
 
     rules: {
       ...sveltePlugin.configs.recommended.rules,
+      // Svelte uses self-assignment to trigger reactivity, we don't want to lint them.
+      "no-self-assign": "off",
+      // Functions in <script> tags are not "inner declarations" in the problematic sense. Ignore in svelte files.
+      "no-inner-declarations": "off",
     },
   },
 ]

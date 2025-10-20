@@ -46,7 +46,7 @@
     try {
       const json = JSON.parse(data)
       return JSON.stringify(json, null, 2)
-    } catch (e) {
+    } catch (_) {
       // Not JSON
     }
 
