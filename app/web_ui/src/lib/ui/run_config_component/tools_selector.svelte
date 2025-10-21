@@ -8,30 +8,35 @@
   import { goto } from "$app/navigation"
 
   export let project_id: string
-  export let task_id: string
+  export let task_id: string | null = null
   export let tools: string[] = []
   export let hide_create_kiln_task_tool_button: boolean = false
 
+  let tools_store_loaded_task_id: string | null = null
   onMount(async () => {
     await load_tools(project_id, task_id)
   })
 
-  let tools_store_loaded_task_id: string | null = null
-  async function load_tools(project_id: string, task_id: string) {
+  // Load tools if project_id or task_id changes
+  $: load_tools(project_id, task_id)
+
+  async function load_tools(project_id: string, task_id: string | null) {
     // Load available tools
     if (project_id) {
       load_available_tools(project_id)
     }
 
-    // load selected tools for this task from tools_store
-    if (task_id !== tools_store_loaded_task_id) {
+    if (!task_id) {
+      tools = []
+      tools_store_loaded_task_id = null
+      return
+    } else if (task_id !== tools_store_loaded_task_id) {
+      // load selected tools for this task from tools_store
       await tools_store_initialized
       tools = $tools_store.selected_tool_ids_by_task_id[task_id] || []
       tools_store_loaded_task_id = task_id
     }
   }
-  // Load tools if project_id or task_id changes
-  $: load_tools(project_id, task_id)
 
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
   $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
@@ -44,7 +49,9 @@
     }))
   }
 
-  // filter out tools that are not in the available tools (server offline, tool removed, etc)
+  $: filter_unavailable_tools($available_tools[project_id], tools)
+
+  // Filter out tools that are not in the available tools (server offline, tool removed, etc)
   function filter_unavailable_tools(
     available_tools: ToolSetApiDescription[] | undefined,
     current_tools: string[],
@@ -74,7 +81,6 @@
       tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
     }
   }
-  $: filter_unavailable_tools($available_tools[project_id], tools)
 
   const tool_set_order: ToolSetType[] = ["search", "kiln_task", "mcp", "demo"]
 

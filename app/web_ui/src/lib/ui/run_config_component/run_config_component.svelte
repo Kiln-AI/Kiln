@@ -270,7 +270,7 @@
     <ToolsSelector
       bind:tools
       {project_id}
-      task_id={current_task?.id ?? ""}
+      task_id={current_task?.id ?? null}
       {hide_create_kiln_task_tool_button}
     />
     <Collapse title="Advanced Options">
@@ -287,7 +287,7 @@
         <ToolsSelector
           bind:tools
           {project_id}
-          task_id={current_task?.id ?? ""}
+          task_id={current_task?.id ?? null}
           {hide_create_kiln_task_tool_button}
         />
         <AdvancedRunOptions
