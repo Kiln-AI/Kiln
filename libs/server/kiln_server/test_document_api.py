@@ -436,6 +436,22 @@ def test_parse_comma_separated_tags_extra_commas():
     assert parse_comma_separated_tags(", a ,, b ,") == ["a", "b"]
 
 
+def test_parse_comma_separated_tags_exception():
+    """Test parse_comma_separated_tags raises HTTPException on error"""
+
+    class BadString(str):
+        def split(self, *args, **kwargs):
+            raise ValueError("Test error")
+
+    bad_tags = BadString("tag1,tag2")
+
+    with pytest.raises(HTTPException) as exc_info:
+        parse_comma_separated_tags(bad_tags)
+
+    assert exc_info.value.status_code == 422
+    assert "Invalid tags" in exc_info.value.detail
+
+
 async def test_get_document_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -4294,3 +4310,291 @@ async def test_delete_extraction_failed_to_clear_cache(
             warning_args[0]
             == "Failed to clear extractor cache for document %s (extraction %s): %s"
         )
+
+
+async def test_get_extractions_for_extractor_config_success(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test GET extractions for extractor config endpoint"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "test extraction output", "text/plain"
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/extractions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+        assert str(document.id) in data
+        assert len(data[str(document.id)]) == 1
+        assert data[str(document.id)][0]["output_content"] == "test extraction output"
+
+
+async def test_get_extractions_for_extractor_config_not_found(client, mock_project):
+    """Test GET extractions for extractor config endpoint when config not found"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/extractions"
+        )
+
+        assert response.status_code == 404
+        assert "Extractor config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_extractor_config_no_documents_to_extract(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config when all documents already have extractions"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "test extraction output", "text/plain"
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+        )
+
+        assert response.status_code == 200
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 0
+
+
+async def test_ephemeral_split_document_success_with_chunks(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with valid chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "This is a test extraction output that will be split into chunks. "
+                * 10,
+                "text/plain",
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 20, "chunk_overlap": 5},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "chunks" in data
+        assert len(data["chunks"]) > 1
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_no_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with null chunk_size returns single chunk"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+        test_output = "This is the full extraction output."
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(test_output, "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": None},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "chunks" in data
+        assert len(data["chunks"]) == 1
+        assert data["chunks"][0]["text"] == test_output
+        assert data["chunks"][0]["id"] == str(extraction.id)
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_extractor_config_not_found(
+    client, mock_project, mock_document
+):
+    """Test ephemeral_split_document with non-existent extractor config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "Extractor config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_document_not_found(
+    client, mock_project, mock_extractor_config
+):
+    """Test ephemeral_split_document with non-existent document"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/non-existent-id/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "Document not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_no_extraction_found(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document when no extraction exists for the document and extractor"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "No extraction found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_invalid_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with invalid chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 0},
+        )
+
+        assert response.status_code == 422
+        assert "chunk_size must be > 0" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_negative_chunk_overlap(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with negative chunk_overlap"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100, "chunk_overlap": -1},
+        )
+
+        assert response.status_code == 422
+        assert "chunk_overlap must be >= 0" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_overlap_exceeds_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document when chunk_overlap >= chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100, "chunk_overlap": 100},
+        )
+
+        assert response.status_code == 422
+        assert "chunk_overlap must be < chunk_size" in response.json()["message"]
