@@ -83,24 +83,25 @@
   }
 
   function check_personal_email_domain(email: string): boolean {
+    const lower_email = email.toLowerCase()
     return (
-      email.includes("@gmail.com") ||
-      email.includes("@yahoo.com") ||
-      email.includes("@hotmail.com") ||
-      email.includes("@outlook.com") ||
-      email.includes("@icloud.com") ||
-      email.includes("@aol.com") ||
-      email.includes("@verizon.net") ||
-      email.includes("@comcast.net") ||
-      email.includes("@sbcglobal.net") ||
-      email.includes("@att.net") ||
-      email.includes("@yahoo.co.uk") ||
-      email.includes("@yahoo.com.au") ||
-      email.includes("@qq.com") ||
-      email.includes("@163.com") ||
-      email.includes("@126.com") ||
-      email.includes("@yeah.net") ||
-      email.includes("@sina.com")
+      lower_email.includes("@gmail.com") ||
+      lower_email.includes("@yahoo.com") ||
+      lower_email.includes("@hotmail.com") ||
+      lower_email.includes("@outlook.com") ||
+      lower_email.includes("@icloud.com") ||
+      lower_email.includes("@aol.com") ||
+      lower_email.includes("@verizon.net") ||
+      lower_email.includes("@comcast.net") ||
+      lower_email.includes("@sbcglobal.net") ||
+      lower_email.includes("@att.net") ||
+      lower_email.includes("@yahoo.co.uk") ||
+      lower_email.includes("@yahoo.com.au") ||
+      lower_email.includes("@qq.com") ||
+      lower_email.includes("@163.com") ||
+      lower_email.includes("@126.com") ||
+      lower_email.includes("@yeah.net") ||
+      lower_email.includes("@sina.com")
     )
   }
 </script>
