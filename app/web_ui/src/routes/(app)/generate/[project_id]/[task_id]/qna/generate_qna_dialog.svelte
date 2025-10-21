@@ -7,6 +7,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { number_validator } from "$lib/utils/input_validators"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
@@ -20,6 +21,9 @@
   export let chunk_size_tokens: number | null = null
   export let chunk_overlap_tokens: number | null = null
 
+  let temperature: number = 1.0
+  let top_p: number = 1.0
+
   $: show_chunking_options = generation_target_type === "all"
 
   const dispatch = createEventDispatcher<{
@@ -29,9 +33,57 @@
       model: string
       chunk_size_tokens: number | null
       chunk_overlap_tokens: number | null
+      temperature: number
+      top_p: number
     }
     close: void
   }>()
+
+  function validate_temperature(value: unknown): string | null {
+    if (typeof value === "string") {
+      if (value.trim() === "") {
+        return "Value is required"
+      }
+      const numValue = parseFloat(value)
+      if (isNaN(numValue)) {
+        return "Please enter a valid number"
+      }
+      value = numValue
+    }
+    if (typeof value !== "number") {
+      return "Please enter a valid number"
+    }
+    if (value < 0) {
+      return "Temperature must be at least 0"
+    }
+    if (value > 2) {
+      return "Temperature must be at most 2"
+    }
+    return null
+  }
+
+  function validate_top_p(value: unknown): string | null {
+    if (typeof value === "string") {
+      if (value.trim() === "") {
+        return "Value is required"
+      }
+      const numValue = parseFloat(value)
+      if (isNaN(numValue)) {
+        return "Please enter a valid number"
+      }
+      value = numValue
+    }
+    if (typeof value !== "number") {
+      return "Please enter a valid number"
+    }
+    if (value < 0) {
+      return "Top P must be at least 0"
+    }
+    if (value > 1) {
+      return "Top P must be at most 1"
+    }
+    return null
+  }
 
   let selected_model: string
   let submitting = false
@@ -46,6 +98,8 @@
       model: selected_model,
       chunk_size_tokens,
       chunk_overlap_tokens,
+      temperature,
+      top_p,
     })
 
     // We need this to prevent the button from staying in loading state forever
@@ -161,6 +215,26 @@
         bind:value={guidance}
         height="large"
       />
+
+      <Collapse title="Advanced">
+        <FormElement
+          id="temperature"
+          label="Temperature"
+          inputType="input"
+          info_description="A value from 0.0 to 2.0.\nTemperature is a parameter that controls the randomness of the model's output.\nLower values make the output more focused and deterministic, while higher values make it more creative and varied."
+          bind:value={temperature}
+          validator={validate_temperature}
+        />
+
+        <FormElement
+          id="top_p"
+          label="Top P"
+          inputType="input"
+          info_description="A value from 0.0 to 1.0.\nTop P is a parameter that controls the diversity of the model's output.\nLower values make the output more focused and deterministic, while higher values make it more creative and varied."
+          bind:value={top_p}
+          validator={validate_top_p}
+        />
+      </Collapse>
     </div>
   </FormContainer>
 </Dialog>

@@ -75,6 +75,8 @@ type GenerationParams = {
   model: string
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
+  temperature: number
+  top_p: number
 }
 
 export type QnaStore = {
@@ -726,6 +728,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     model,
     chunkSizeTokens,
     chunkOverlapTokens,
+    temperature,
+    top_p,
   }: GenerationParams): Promise<void> {
     const modelProvider = model.split("/")[0] as ModelProviderName
     const modelName = model.split("/").slice(1).join("/")
@@ -734,8 +738,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       model_name: modelName,
       model_provider_name: modelProvider,
       prompt_id: "simple_prompt_builder",
-      temperature: 1.0,
-      top_p: 1.0,
+      temperature,
+      top_p,
       structured_output_mode: "default",
       tools_config: { tools: [] },
     }

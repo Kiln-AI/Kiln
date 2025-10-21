@@ -165,6 +165,8 @@
         model: event.detail.model,
         chunkSizeTokens: get(qna.chunkSizeTokens),
         chunkOverlapTokens: get(qna.chunkOverlapTokens),
+        temperature: event.detail.temperature,
+        top_p: event.detail.top_p,
       })
     } catch (e) {
       console.error("Q&A generation failed", e)
