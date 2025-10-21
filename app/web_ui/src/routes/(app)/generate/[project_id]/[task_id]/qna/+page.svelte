@@ -44,6 +44,8 @@
   $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
   $: qnaTargetType = qna?.targetType
   $: qnaTargetDescription = qna?.targetDescription
+  $: qnaGeneratedCount = qna?.generatedCount
+  $: qnaTotalCount = qna?.totalCount
 
   $: available_tags = derived(document_tag_store_by_project_id, ($store) => {
     const tag_counts = $store[project_id]
@@ -550,8 +552,18 @@
   width="normal"
   action_buttons={[]}
 >
-  <div class="flex flex-row justify-center">
-    <div class="loading loading-spinner loading-lg my-6"></div>
+  <div class="min-h-[200px] flex flex-col justify-center items-center">
+    <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+    {#if $qnaTotalCount && $qnaTotalCount > 0}
+      <progress
+        class="progress w-56 progress-success"
+        value={$qnaGeneratedCount}
+        max={$qnaTotalCount}
+      ></progress>
+      <div class="font-light text-xs text-center mt-1">
+        {$qnaGeneratedCount} of {$qnaTotalCount} generated
+      </div>
+    {/if}
   </div>
 </Dialog>
 

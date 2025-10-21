@@ -80,6 +80,8 @@ export type QnaStore = {
   subscribe: (run: (s: QnASession) => void) => () => void
   status: Readable<"idle" | "running" | "done" | "error">
   progress: Readable<number>
+  generatedCount: Readable<number>
+  totalCount: Readable<number>
   error: Readable<string | null>
   currentStep: Readable<StepNumber>
   maxStep: Readable<StepNumber>
@@ -136,6 +138,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   // Progress and statuses
   const status = writable<"idle" | "running" | "done" | "error">("idle")
   const progress = writable<number>(0)
+  const generatedCount = writable<number>(0)
+  const totalCount = writable<number>(0)
   const error = writable<string | null>(null)
   const pendingTarget = writable<GenerationTarget>({ type: "all" })
   const manualStep = writable<StepNumber | null>(null)
@@ -664,14 +668,21 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     chunkOverlapTokens: number | null,
   ): Promise<void> {
     let completed = 0
+    const total = parts.length * pairsPerPart
+    totalCount.set(total)
+    generatedCount.set(0)
 
     for (const { documentId, partId } of parts) {
       const state = get(_state)
       const doc = findDocumentById(state, documentId)
-      if (!doc) continue
+      if (!doc) {
+        continue
+      }
 
       const part = findPartById(doc, partId)
-      if (!part) continue
+      if (!part) {
+        continue
+      }
 
       const newPairs = await callGenerateQnAAPI(
         part.text_preview,
@@ -703,8 +714,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         }
       })
 
-      completed += 1
-      progress.set(Math.round((completed / parts.length) * 100))
+      generatedCount.set(newPairs.length)
+      progress.set(Math.round((newPairs.length / total) * 100))
     }
   }
 
@@ -730,6 +741,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
     status.set("running")
     progress.set(0)
+    generatedCount.set(0)
+    totalCount.set(0)
     error.set(null)
 
     try {
@@ -898,6 +911,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     subscribe: _state.subscribe,
     status,
     progress,
+    generatedCount,
+    totalCount,
     error,
     currentStep,
     maxStep,
