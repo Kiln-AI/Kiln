@@ -167,6 +167,14 @@
     load_initial_step()
   })
 
+  // if the user comes back through internal navigation + query params, onMount does not run, so we need
+  // to watch for query params changes and reload the state
+  $: if ($page.url.searchParams) {
+    load_initial_state()
+    update_status()
+    load_initial_step()
+  }
+
   let clear_all_dialog: Dialog | null = null
   let clear_existing_state_no_url_dialog: Dialog | null = null
 
