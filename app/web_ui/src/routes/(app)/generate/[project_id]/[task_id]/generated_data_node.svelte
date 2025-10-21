@@ -3,9 +3,8 @@
   import { tick } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { ui_state } from "$lib/stores"
   import { createEventDispatcher } from "svelte"
-  import IncrementUi from "./increment_ui.svelte"
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
   import GenerateSamplesModal from "./generate_samples_modal.svelte"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
@@ -22,7 +21,6 @@
   // Local instance for dynamic reactive updates
   const selected_template = guidance_data.selected_template
 
-  $: task = guidance_data.task
   $: project_id = guidance_data.project_id
   let run_config_component: RunConfigComponent | null = null
 
@@ -30,8 +28,6 @@
   export let path: string[]
   $: depth = path.length
   export let triggerSave: () => void
-
-  let model: string = $ui_state.selected_model
 
   // Unique ID for this node
   const id = crypto.randomUUID()

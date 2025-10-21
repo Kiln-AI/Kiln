@@ -13,7 +13,7 @@
   import { goto } from "$app/navigation"
   import Output from "../../../../run/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
-  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
+  import TagPicker from "$lib/ui/tag_picker.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
@@ -138,20 +138,7 @@
     get_extractions()
   }
 
-  let show_create_tag = false
   let tags_error: KilnError | null = null
-  function add_tags(tags: string[]) {
-    let prior_tags = document?.tags || []
-    let new_tags = [...prior_tags, ...tags]
-    let unique_tags = [...new Set(new_tags)]
-    save_tags(unique_tags)
-  }
-
-  function remove_tag(tag: string) {
-    let prior_tags = document?.tags || []
-    let new_tags = prior_tags.filter((t) => t !== tag)
-    save_tags(new_tags)
-  }
 
   async function patch_document(patch_body: {
     name?: string
@@ -182,7 +169,6 @@
         tags: tags,
       }
       updated_document = await patch_document(patch_body)
-      show_create_tag = false
       tags_error = null
     } catch (err) {
       tags_error = createKilnError(err)
@@ -372,44 +358,17 @@
         />
         <div class="mt-8 mb-4">
           <div class="text-xl font-bold">Tags</div>
-          <div class="flex flex-row flex-wrap gap-2 mt-2">
-            {#each (document.tags || []).sort() as tag}
-              <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
-                <span class="truncate">{tag}</span>
-                <button
-                  class="pl-3 font-medium shrink-0"
-                  on:click={() => remove_tag(tag)}>✕</button
-                >
-              </div>
-            {/each}
-            <button
-              class="badge bg-gray-200 text-gray-500 p-3 font-medium {show_create_tag
-                ? 'hidden'
-                : ''}"
-              on:click={() => (show_create_tag = true)}>+</button
-            >
-          </div>
-          {#if show_create_tag}
-            <div
-              class="mt-3 flex flex-row gap-2 items-center {show_create_tag
-                ? ''
-                : 'hidden'}"
-            >
-              <TagDropdown
-                {project_id}
-                example_tag_set="doc"
-                on_select={(tag) => add_tags([tag])}
-                on_escape={() => (show_create_tag = false)}
-                focus_on_mount={true}
-              />
-              <div class="flex-none">
-                <button
-                  class="btn btn-sm btn-circle text-xl font-medium"
-                  on:click={() => (show_create_tag = false)}>✕</button
-                >
-              </div>
-            </div>
-          {/if}
+          <TagPicker
+            tags={document.tags}
+            tag_type="doc"
+            {project_id}
+            initial_expanded={false}
+            on:tags_changed={(event) => {
+              const { current } = event.detail
+              document.tags = current
+              save_tags(current)
+            }}
+          />
           {#if tags_error}
             <div class="text-error text-sm mt-2">
               {tags_error.getMessage() || "Error updating tags"}

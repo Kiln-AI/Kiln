@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "../../../routes/(app)/run/output.svelte"
+  import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
 
@@ -245,19 +246,26 @@
                 <div>
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Tool Result
-                    {#if kiln_task_tool_data}
-                      <button
-                        class="text-primary link ml-2 font-normal"
-                        on:click={() => {
-                          tool_messages_dialog?.show(kiln_task_tool_data)
-                        }}
-                      >
-                        Messages
-                      </button>
-                    {/if}
                   </div>
                   <Output raw_output={content} no_padding={true} />
                 </div>
+                {#if kiln_task_tool_data}
+                  <div>
+                    <button
+                      class="link text-xs text-gray-500"
+                      on:click={() => {
+                        tool_messages_dialog?.show(kiln_task_tool_data)
+                      }}
+                    >
+                      <div class="flex flex-row items-center gap-1">
+                        <span>Subtask Message Trace</span>
+                        <div class="w-4 h-4">
+                          <ArrowRightUpIcon />
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                {/if}
               {:else if content}
                 <div>
                   <!-- Header logic: skip if only a message, just for a cleaner ui -->

@@ -1,3 +1,5 @@
+import type { ToolSetApiDescription } from "$lib/types"
+import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
 
 type ToolsStore = {
@@ -9,3 +11,37 @@ export const { store: tools_store, initialized: tools_store_initialized } =
   indexedDBStore<ToolsStore>(tools_store_key, {
     selected_tool_ids_by_task_id: {},
   })
+
+export function get_tools_property_info(
+  tool_ids: string[],
+  project_id: string,
+  available_tools: Record<string, ToolSetApiDescription[]>,
+): { value: string | string[]; links: (string | null)[] | undefined } {
+  const project_tools = available_tools[project_id]
+  if (!project_tools) {
+    return { value: "Loading...", links: undefined }
+  }
+  if (tool_ids.length > 0) {
+    const tool_names = get_tool_names_from_ids(tool_ids, project_tools)
+    return {
+      value: tool_names,
+      links: tool_ids.map((id) => tool_link(project_id, id)),
+    }
+  } else {
+    return { value: "None", links: undefined }
+  }
+}
+
+function get_tool_names_from_ids(
+  tool_ids: string[],
+  project_tools: ToolSetApiDescription[],
+): string[] {
+  if (!project_tools) {
+    return tool_ids // Return IDs if we don't have the tools loaded for some reason
+  }
+
+  const all_tools = project_tools.flatMap((tool_set) => tool_set.tools)
+  const tool_map = new Map(all_tools.map((tool) => [tool.id, tool.name]))
+
+  return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
+}

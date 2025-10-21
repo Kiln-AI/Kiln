@@ -30,6 +30,7 @@ class TestMCPServerTool:
             description="Test server",
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
 
@@ -62,6 +63,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -91,6 +93,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -116,6 +119,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -142,6 +146,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -168,6 +173,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -193,6 +199,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -227,6 +234,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "target_tool")
@@ -253,6 +261,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "missing_tool")
@@ -281,6 +290,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -314,6 +324,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -339,6 +350,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -356,6 +368,7 @@ class TestMCPServerTool:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
         tool = MCPServerTool(server, "test_tool")
@@ -405,6 +418,7 @@ class TestMCPServerToolIntegration:
         description="Postman Echo MCP Server for testing",
         properties={
             "server_url": "https://postman-echo-mcp.fly.dev/",
+            "is_archived": False,
         },
     )
 

@@ -63,6 +63,7 @@ class ExternalToolServerCreationRequest(BaseModel):
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
     secret_header_keys: List[str] = Field(default_factory=list)
+    is_archived: bool
 
 
 class LocalToolServerCreationRequest(BaseModel):
@@ -72,6 +73,7 @@ class LocalToolServerCreationRequest(BaseModel):
     args: List[str]
     env_vars: Dict[str, str] = Field(default_factory=dict)
     secret_env_var_keys: List[str] = Field(default_factory=list)
+    is_archived: bool
 
 
 class KilnTaskToolServerCreationRequest(BaseModel):
@@ -247,6 +249,9 @@ def connect_tool_servers_api(app: FastAPI):
         task_tools = []
         mcp_tool_sets = []
         for server in project.external_tool_servers(readonly=True):
+            if server.properties.get("is_archived", False):
+                continue
+
             server_tools = []
             match server.type:
                 case ToolServerType.remote_mcp | ToolServerType.local_mcp:
@@ -256,14 +261,13 @@ def connect_tool_servers_api(app: FastAPI):
                         # Skip the tool when we can't connect to the server
                         continue
                 case ToolServerType.kiln_task:
-                    if not server.properties.get("is_archived", False):
-                        task_tools.append(
-                            ToolApiDescription(
-                                id=build_kiln_task_tool_id(server.id),
-                                name=server.properties.get("name") or "",
-                                description=server.properties.get("description") or "",
-                            )
+                    task_tools.append(
+                        ToolApiDescription(
+                            id=build_kiln_task_tool_id(server.id),
+                            name=server.properties.get("name") or "",
+                            description=server.properties.get("description") or "",
                         )
+                    )
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
@@ -342,6 +346,9 @@ def connect_tool_servers_api(app: FastAPI):
                     is_archived=tool.properties.get("is_archived", False),
                 )
             )
+
+        # Sort the result and put archived tools at the end
+        results.sort(key=lambda x: x.is_archived)
         return results
 
     @app.get("/api/projects/{project_id}/kiln_task_tools")
@@ -492,6 +499,7 @@ def connect_tool_servers_api(app: FastAPI):
             "server_url": tool_data.server_url,
             "headers": tool_data.headers,
             "secret_header_keys": tool_data.secret_header_keys,
+            "is_archived": tool_data.is_archived,
         }
 
     @app.post("/api/projects/{project_id}/connect_local_mcp")
@@ -551,6 +559,7 @@ def connect_tool_servers_api(app: FastAPI):
             "args": tool_data.args,
             "env_vars": tool_data.env_vars,
             "secret_env_var_keys": tool_data.secret_env_var_keys,
+            "is_archived": tool_data.is_archived,
         }
 
     def _validate_kiln_task_tool_task_and_run_config(

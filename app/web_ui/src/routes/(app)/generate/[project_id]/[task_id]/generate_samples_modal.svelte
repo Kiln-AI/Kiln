@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SampleDataNode } from "./gen_model"
-  import IncrementUi from "./increment_ui.svelte"
-  import { KilnError } from "../../../../../lib/utils/error_handlers"
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
+  import { KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { createKilnError } from "$lib/utils/error_handlers"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
@@ -14,7 +14,6 @@
   // Local instance for dynamic reactive updates
   const selected_template = guidance_data.selected_template
 
-  $: task = guidance_data.task
   $: project_id = guidance_data.project_id
   let run_config_component: RunConfigComponent | null = null
 

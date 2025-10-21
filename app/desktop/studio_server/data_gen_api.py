@@ -9,13 +9,9 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     wrap_task_with_guidance,
 )
-from kiln_ai.adapters.ml_model_list import (
-    default_structured_output_mode_for_model_provider,
-)
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_server.run_api import model_provider_from_string
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, Field
 
