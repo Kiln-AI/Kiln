@@ -65,11 +65,8 @@
 </h3>
 
 <div class="md:w-[400px] max-w-[400px] mx-auto flex flex-col gap-6 mt-8">
-  <button
+  <div
     class="card card-bordered border-base-300 shadow-md hover:shadow-xl transition-all duration-300 group p-4"
-    on:click={() => {
-      document.getElementById("email_input")?.focus()
-    }}
   >
     <div class="flex flex-row gap-2 items-center">
       <svg
@@ -141,7 +138,7 @@
         />
       </div>
     {/if}
-  </button>
+  </div>
 
   <button
     class="card card-bordered p-4 border-base-300 shadow-md hover:shadow-xl transition-all duration-300 flex flex-row gap-2 group items-center"
@@ -161,12 +158,6 @@
       />
     </svg>
     <div class="grow text-left pl-1 text-lg font-medium">Star us on GitHub</div>
-
-    <img
-      src="https://img.shields.io/github/stars/kiln-ai/kiln?cacheSeconds=600"
-      alt="GitHub Stars"
-      class="h-6 hidden"
-    />
   </button>
 </div>
 
