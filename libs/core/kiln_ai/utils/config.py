@@ -169,6 +169,14 @@ class Config:
                 dict[str, str],
                 sensitive=True,
             ),
+            # has the user indicated it's for personal or work use?
+            "user_type": ConfigProperty(
+                str,  # "personal" or "work"
+            ),
+            # if the user has provided their work contact
+            "work_use_contact": ConfigProperty(
+                str,
+            ),
         }
         self._lock = threading.Lock()
         self._settings = self.load_settings()

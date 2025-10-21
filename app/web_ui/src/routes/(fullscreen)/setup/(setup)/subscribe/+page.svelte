@@ -31,7 +31,6 @@
   }
 </script>
 
-<div class="grow"></div>
 <div class="flex-none flex flex-row items-center justify-center">
   <img src="/logo.svg" alt="logo" class="size-8 mb-3" />
 </div>
@@ -41,16 +40,14 @@
 </h3>
 
 <div
-  class="flex-none min-h-[50vh] py-8 h-full flex flex-col py-18 w-full mx-auto items-center justify-center"
+  class="flex-none h-full flex flex-col w-full mx-auto items-center justify-center"
 >
   {#if !subscribed}
-    <h3
-      class="text-base mb-5 font-light text-center mt-3 max-w-[420px] mx-auto"
-    >
-      Subscribe to our newsletter to learn about new features, updates, new
-      models, and other Kiln AI news.
+    <h3 class="text-base font-light text-center mt-3 max-w-[420px] mx-auto">
+      Subscribe to our newsletter to learn about new features, guides, models,
+      and other Kiln news.
     </h3>
-    <div class="max-w-[280px] mx-auto">
+    <div class="max-w-[280px] mx-auto mt-6">
       <FormContainer
         on:submit={subscribe}
         submit_label="Subscribe"
@@ -68,7 +65,7 @@
     </div>
   {:else}
     <div
-      class="text-center text-lg font-medium text-success flex flex-row items-center justify-center gap-2 mb-2"
+      class="text-center text-lg font-medium text-success flex flex-row items-center justify-center gap-2 mb-2 mt-6"
     >
       <svg
         fill="currentColor"
@@ -86,7 +83,9 @@
   {/if}
 </div>
 
-<div class="flex-none flex flex-col place-content-center md:flex-row gap-4">
+<div
+  class="flex-none flex flex-col place-content-center md:flex-row gap-4 mt-32"
+>
   <a href="/setup/connect_providers">
     <button class="btn {subscribed ? 'btn-primary' : ''} w-full min-w-[130px]">
       Continue {subscribed ? "" : " Without Subscribing"}

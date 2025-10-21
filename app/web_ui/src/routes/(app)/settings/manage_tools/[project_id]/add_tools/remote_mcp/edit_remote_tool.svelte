@@ -21,6 +21,7 @@
   let name = ""
   let server_url = ""
   let description = ""
+  let is_archived = false
 
   let headers: McpServerKeyValuePair[] = []
 
@@ -58,6 +59,9 @@
 
     // We should fix the server type, so it's not "never" and we don't need a cast
     const props = editing_tool_server.properties as Record<string, unknown>
+    if (typeof props.is_archived === "boolean") {
+      is_archived = props.is_archived
+    }
 
     if (props.server_url && typeof props.server_url === "string") {
       server_url = props.server_url
@@ -150,6 +154,7 @@
         headers: headersData.headersObj,
         secret_header_keys: headersData.secret_header_keys,
         description: description || null,
+        is_archived: is_archived,
       }
 
       let server_id: string | null | undefined = undefined

@@ -1,5 +1,5 @@
 import type { Writable } from "svelte/store"
-import { localStorageStore } from "../stores"
+import { localStorageStore } from "./local_storage_store"
 
 export type ProgressUIState = {
   title: string

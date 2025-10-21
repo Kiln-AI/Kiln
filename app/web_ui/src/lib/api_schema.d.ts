@@ -3405,6 +3405,8 @@ export interface components {
             };
             /** Secret Header Keys */
             secret_header_keys?: string[];
+            /** Is Archived */
+            is_archived: boolean;
         };
         /** ExtractionProgress */
         ExtractionProgress: {
@@ -3935,6 +3937,8 @@ export interface components {
             };
             /** Secret Env Var Keys */
             secret_env_var_keys?: string[];
+            /** Is Archived */
+            is_archived: boolean;
         };
         /** LocalToolServerCreationRequest */
         LocalToolServerCreationRequest: {
@@ -3952,6 +3956,8 @@ export interface components {
             };
             /** Secret Env Var Keys */
             secret_env_var_keys?: string[];
+            /** Is Archived */
+            is_archived: boolean;
         };
         /** LogMessage */
         LogMessage: {
@@ -4499,6 +4505,8 @@ export interface components {
             };
             /** Secret Header Keys */
             secret_header_keys?: string[];
+            /** Is Archived */
+            is_archived: boolean;
         };
         /** RepairRunPost */
         RepairRunPost: {
