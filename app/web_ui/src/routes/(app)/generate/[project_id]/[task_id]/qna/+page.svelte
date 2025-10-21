@@ -6,9 +6,9 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
-  import SelectDocumentsModal from "./select_documents_dialog.svelte"
-  import ExtractionModal from "./extraction_dialog.svelte"
-  import GenerateQnaModal from "./generate_qna_dialog.svelte"
+  import SelectDocumentsdialog from "./select_documents_dialog.svelte"
+  import Extractiondialog from "./extraction_dialog.svelte"
+  import GenerateQnadialog from "./generate_qna_dialog.svelte"
   import QnaDocumentNode from "./qna_document_node.svelte"
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import QnaGenIntro from "./qna_gen_intro.svelte"
@@ -40,6 +40,15 @@
   $: qnaChunkSizeTokens = qna?.chunkSizeTokens
   $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
 
+  onMount(async () => {
+    qna = createQnaStore(project_id, task_id)
+    await qna.init(DEFAULT_QNA_GUIDANCE)
+    if (get(qna).documents.length > 0) {
+      clear_existing_state_dialog?.show()
+    }
+    await qna.fetchAvailableTags()
+  })
+
   // Dialogs
   let clear_existing_state_dialog: Dialog | null = null
   let edit_splits_dialog: Dialog | null = null
@@ -49,15 +58,6 @@
 
   // Splits editing
   let editable_splits: Array<{ tag: string; percent: number }> = []
-
-  onMount(async () => {
-    qna = createQnaStore(project_id, task_id)
-    await qna.init(DEFAULT_QNA_GUIDANCE)
-    if (get(qna).documents.length > 0) {
-      clear_existing_state_dialog?.show()
-    }
-    await qna.fetchAvailableTags()
-  })
 
   function clear_all_state() {
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
@@ -69,30 +69,28 @@
     return true
   }
 
-  // Available tags are provided by store: $availableTags
-
   let current_dialog_type:
     | "select_documents"
     | "extraction"
     | "generate_qna"
     | null = null
-  let show_select_documents_modal: Dialog | null = null
-  let show_extraction_modal: Dialog | null = null
-  let show_generate_qna_modal: Dialog | null = null
+  let show_select_documents_dialog: Dialog | null = null
+  let show_extraction_dialog: Dialog | null = null
+  let show_generate_qna_dialog: Dialog | null = null
   let generation_target_description: string = "all documents"
   let generation_target_type: "all" | "document" | "part" = "all"
 
-  function open_select_documents_modal() {
+  function open_select_documents_dialog() {
     current_dialog_type = "select_documents"
-    show_select_documents_modal?.show()
+    show_select_documents_dialog?.show()
   }
 
-  function open_extraction_modal() {
+  function open_extraction_dialog() {
     current_dialog_type = "extraction"
-    show_extraction_modal?.show()
+    show_extraction_dialog?.show()
   }
 
-  function open_generate_qna_modal() {
+  function open_generate_qna_dialog() {
     current_dialog_type = "generate_qna"
     qna.setPendingTarget({ type: "all" })
     generation_target_description = "all documents"
@@ -102,13 +100,13 @@
     if (has_existing_parts) {
       rechunk_warning_dialog?.show()
     } else {
-      show_generate_qna_modal?.show()
+      show_generate_qna_dialog?.show()
     }
   }
 
   function proceed_with_regeneration() {
     rechunk_warning_dialog?.close()
-    show_generate_qna_modal?.show()
+    show_generate_qna_dialog?.show()
   }
 
   function handle_documents_added(event: CustomEvent) {
@@ -134,7 +132,7 @@
     generation_target_description = doc ? doc.name : "selected document"
     generation_target_type = "document"
     current_dialog_type = "generate_qna"
-    show_generate_qna_modal?.show()
+    show_generate_qna_dialog?.show()
   }
 
   function handle_generate_for_part(
@@ -153,11 +151,11 @@
         : "selected part"
     generation_target_type = "part"
     current_dialog_type = "generate_qna"
-    show_generate_qna_modal?.show()
+    show_generate_qna_dialog?.show()
   }
 
   async function handle_generation_complete(event: CustomEvent) {
-    show_generate_qna_modal?.close()
+    show_generate_qna_dialog?.close()
     current_dialog_type = null
     generating_dialog?.show()
     try {
@@ -254,7 +252,7 @@
   $: has_documents = $qna ? $qna.documents.length > 0 : false
   $: is_empty = !has_documents
 
-  function show_save_all_modal() {
+  function show_save_all_dialog() {
     save_all_dialog?.show()
   }
 
@@ -420,7 +418,7 @@
               {#if $qnaCurrentStep == 1}
                 <button
                   class="btn btn-sm btn-primary"
-                  on:click={open_select_documents_modal}
+                  on:click={open_select_documents_dialog}
                 >
                   Select Search Tool
                 </button>
@@ -428,7 +426,7 @@
                 {#if $qna && !$qna.extraction_complete}
                   <button
                     class="btn btn-sm btn-primary"
-                    on:click={open_extraction_modal}
+                    on:click={open_extraction_dialog}
                     disabled={!has_documents}
                   >
                     Run Extraction
@@ -444,7 +442,7 @@
               {:else if $qnaCurrentStep == 3}
                 <button
                   class="btn btn-sm btn-primary"
-                  on:click={open_generate_qna_modal}
+                  on:click={open_generate_qna_dialog}
                   disabled={$qna && !$qna.extraction_complete}
                 >
                   Generate Q&A Pairs
@@ -453,7 +451,7 @@
                 {#if total_qa_pairs > 0}
                   <button
                     class="btn btn-sm btn-primary"
-                    on:click={show_save_all_modal}
+                    on:click={show_save_all_dialog}
                   >
                     Save All ({$qnaPendingSaveCount || 0})
                   </button>
@@ -469,7 +467,7 @@
 
     <!-- Empty State or Table Display -->
     {#if is_empty}
-      <QnaGenIntro on_select_documents={open_select_documents_modal} />
+      <QnaGenIntro on_select_documents={open_select_documents_dialog} />
     {:else}
       <div class="rounded-lg border">
         <table class="table table-fixed">
@@ -515,10 +513,10 @@
   </AppPage>
 </div>
 
-<!-- Modals -->
+<!-- dialogs -->
 {#if qna}
-  <SelectDocumentsModal
-    bind:dialog={show_select_documents_modal}
+  <SelectDocumentsdialog
+    bind:dialog={show_select_documents_dialog}
     {project_id}
     available_tags={$qnaAvailableTags || []}
     on:documents_added={handle_documents_added}
@@ -526,17 +524,17 @@
     keyboard_submit={current_dialog_type === "select_documents"}
   />
 
-  <ExtractionModal
+  <Extractiondialog
     keyboard_submit={current_dialog_type === "extraction"}
-    bind:dialog={show_extraction_modal}
+    bind:dialog={show_extraction_dialog}
     bind:selected_extractor_id={$qnaExtractorId}
     on:extraction_complete={handle_extraction_complete}
     on:extractor_config_selected={handle_extractor_config_selected}
     on:close={() => (current_dialog_type = null)}
   />
 
-  <GenerateQnaModal
-    bind:dialog={show_generate_qna_modal}
+  <GenerateQnadialog
+    bind:dialog={show_generate_qna_dialog}
     {task_id}
     bind:pairs_per_part={$qnaPairsPerPart}
     bind:guidance={$qnaGuidance}
