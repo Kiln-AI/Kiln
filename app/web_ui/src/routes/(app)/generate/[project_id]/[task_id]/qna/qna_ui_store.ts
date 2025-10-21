@@ -8,6 +8,7 @@ import {
 import { client, base_url } from "$lib/api_client"
 import { indexedDBStore } from "$lib/stores/index_db_store"
 import type { ModelProviderName, RunConfigProperties } from "$lib/types"
+import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 export type StepNumber = 1 | 2 | 3 | 4
 export const step_numbers: StepNumber[] = [1, 2, 3, 4]
@@ -89,7 +90,7 @@ export type QnaStore = {
   saveAllStatus: Readable<{
     running: boolean
     completed: boolean
-    errors: Error[]
+    errors: KilnError[]
     savedCount: number
   }>
   targetType: Readable<"all" | "document" | "part">
@@ -148,7 +149,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   // Save all
   const _saveAllRunning = writable<boolean>(false)
   const _saveAllCompleted = writable<boolean>(false)
-  const _saveAllErrors = writable<Error[]>([])
+  const _saveAllErrors = writable<KilnError[]>([])
   const _savedCount = writable<number>(0)
 
   // Generation config
@@ -667,7 +668,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     chunkSizeTokens: number | null,
     chunkOverlapTokens: number | null,
   ): Promise<void> {
-    let completed = 0
     const total = parts.length * pairsPerPart
     totalCount.set(total)
     generatedCount.set(0)
@@ -714,8 +714,9 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         }
       })
 
-      generatedCount.set(newPairs.length)
-      progress.set(Math.round((newPairs.length / total) * 100))
+      // Increment the generated count by the number of new pairs
+      generatedCount.update((prevCount: number) => prevCount + newPairs.length)
+      progress.set(Math.round((get(generatedCount) / total) * 100))
     }
   }
 
@@ -898,7 +899,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         try {
           await saveSinglePair(ref, sessionId)
         } catch (e) {
-          _saveAllErrors.update((arr) => [...arr, e as Error])
+          _saveAllErrors.update((arr) => [...arr, createKilnError(e)])
         }
       }
     } finally {

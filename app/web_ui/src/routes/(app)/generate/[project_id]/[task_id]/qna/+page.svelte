@@ -27,8 +27,11 @@
     document_tag_store_by_project_id,
     load_document_tags,
   } from "$lib/stores/document_tag_store"
+  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
+  let ui_show_errors = false
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -83,6 +86,7 @@
     | "select_documents"
     | "extraction"
     | "generate_qna"
+    | "save_all"
     | null = null
   let show_select_documents_dialog: Dialog | null = null
   let show_extraction_dialog: Dialog | null = null
@@ -201,6 +205,7 @@
   $: is_empty = !has_documents
 
   function show_save_all_dialog() {
+    current_dialog_type = "save_all"
     save_all_dialog?.show()
   }
 
@@ -396,13 +401,27 @@
                   Generate Q&A Pairs
                 </button>
               {:else if $qnaCurrentStep == 4}
-                {#if total_qa_pairs > 0}
+                {@const already_saved_count =
+                  total_qa_pairs - ($qnaPendingSaveCount || 0)}
+                {@const has_pending = ($qnaPendingSaveCount || 0) > 0}
+                {@const all_saved = already_saved_count > 0 && !has_pending}
+
+                {#if has_pending}
                   <button
                     class="btn btn-sm btn-primary"
                     on:click={show_save_all_dialog}
                   >
                     Save All ({$qnaPendingSaveCount || 0})
                   </button>
+                {:else if all_saved}
+                  <div class="flex flex-row justify-center">
+                    <Warning
+                      warning_message="All items saved into the dataset!"
+                      warning_color="success"
+                      warning_icon="check"
+                      tight
+                    />
+                  </div>
                 {:else}
                   <button class="btn btn-sm btn-disabled">Save All</button>
                 {/if}
@@ -516,15 +535,24 @@
   </div>
 </Dialog>
 
-<Dialog title="Save All Q&A" bind:this={save_all_dialog} action_buttons={[]}>
+<Dialog
+  title="Save Q&A Pairs to Dataset"
+  subtitle="All the unsaved Q&A pairs will be saved to the dataset."
+  bind:this={save_all_dialog}
+>
   {#if $qnaSaveAllStatus}
     {#if $qnaSaveAllStatus.running}
       <div class="min-h-[200px] flex flex-col justify-center items-center">
         <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+        <progress
+          class="progress w-56 progress-success"
+          value={$qnaSaveAllStatus.savedCount}
+          max={$qnaPendingSaveCount || 0}
+        ></progress>
         <div class="font-light text-xs text-center mt-1">
-          {$qnaSaveAllStatus.savedCount} saved — {$qnaPendingSaveCount || 0} total
+          {$qnaSaveAllStatus.savedCount} of {$qnaPendingSaveCount || 0}
           {#if $qnaSaveAllStatus.errors.length > 0}
-            — {$qnaSaveAllStatus.errors.length} failed
+            complete — {$qnaSaveAllStatus.errors.length} failed
           {/if}
         </div>
       </div>
@@ -532,27 +560,75 @@
       <div
         class="text-center flex flex-col items-center justify-center min-h-[150px] p-12"
       >
+        {#if $qnaSaveAllStatus.savedCount > 0}
+          <div class="size-10 text-success mb-2">
+            <CheckmarkIcon />
+          </div>
+        {/if}
         <div class="font-medium">
-          Saved {$qnaSaveAllStatus.savedCount} items.
+          Saved {$qnaSaveAllStatus.savedCount} new items.
+        </div>
+        <div class="font-light text-sm">
+          These are now available in the <a
+            href={`/dataset/${project_id}/${task_id}`}
+            class="link">dataset tab</a
+          >.
+        </div>
+        <div class="font-light text-xs mt-4 text-gray-500">
+          All items are tagged with &quot;qna_session_{session_id}&quot;
         </div>
         {#if $qnaSaveAllStatus.errors.length > 0}
           <div class="text-error font-light text-sm mt-4">
-            {$qnaSaveAllStatus.errors.length} items failed to save.
+            {$qnaSaveAllStatus.errors.length} samples failed to save. Running again
+            may resolve transient issues.
+            <button
+              class="link"
+              on:click={() => (ui_show_errors = !ui_show_errors)}
+            >
+              {ui_show_errors ? "Hide Errors" : "Show Errors"}
+            </button>
+          </div>
+          <div
+            class="flex flex-col gap-2 mt-4 text-xs text-error {ui_show_errors
+              ? ''
+              : 'hidden'}"
+          >
+            {#each $qnaSaveAllStatus.errors as error}
+              <div>{error.message}</div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {:else if ($qnaPendingSaveCount || 0) === 0}
+      {@const already_saved_count =
+        total_qa_pairs - ($qnaPendingSaveCount || 0)}
+      <div
+        class="flex flex-col items-center justify-center min-h-[150px] gap-2"
+      >
+        <div class="font-medium">No Items to Save</div>
+        <div class="font-light">
+          Generate Q&A pairs before attempting to save.
+        </div>
+        {#if already_saved_count > 0}
+          <div class="font-light text-sm">
+            {already_saved_count} existing items already saved.
           </div>
         {/if}
       </div>
     {:else}
-      <div class="flex flex-col gap-3">
-        <div class="font-medium text-sm">Status</div>
-        <div class="font-light text-sm">
-          {$qnaPendingSaveCount || 0} items pending
-        </div>
+      {@const already_saved_count =
+        total_qa_pairs - ($qnaPendingSaveCount || 0)}
+      <FormContainer submit_label="Save All" on:submit={save_all_qna_pairs}>
         <div>
-          <button class="btn btn-sm btn-primary" on:click={save_all_qna_pairs}>
-            Save All
-          </button>
+          <div class="font-medium text-sm">Status</div>
+          <div class="font-light">
+            {$qnaPendingSaveCount || 0} items pending
+            {#if already_saved_count > 0}
+              / {already_saved_count} already saved
+            {/if}
+          </div>
         </div>
-      </div>
+      </FormContainer>
     {/if}
   {/if}
 </Dialog>
