@@ -509,12 +509,12 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       chunkOverlapTokens,
     } = params
 
-    const modelProvider = model.split("/")[0]
+    const modelProvider = model.split("/")[0] as ModelProviderName
     const modelName = model.split("/").slice(1).join("/")
 
     const outputRunConfigProperties: RunConfigProperties = {
       model_name: modelName,
-      model_provider_name: modelProvider as unknown as ModelProviderName,
+      model_provider_name: modelProvider,
       prompt_id: "simple_prompt_builder",
       temperature: 1.0,
       top_p: 1.0,
@@ -593,8 +593,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         )
         if (apiError) throw apiError
 
-        const outputText = (data as unknown as { output: { output: string } })
-          .output.output
+        const outputText = data.output.output
         const response = JSON.parse(outputText) as {
           generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
         }
@@ -715,14 +714,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
               },
             },
           )
-          if (
-            apiError ||
-            !data ||
-            typeof (data as unknown as { id?: unknown }).id !== "string"
-          )
+          if (apiError || !data || !data.id)
             throw apiError || new Error("Save failed")
 
-          const savedId = (data as unknown as { id: string }).id
+          const savedId = data.id
           _state.update((s) => {
             const docs = [...s.documents]
             const doc = { ...docs[docIdx] }
