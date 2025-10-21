@@ -66,7 +66,7 @@
 
 <img width="600" alt="Logo Grid" src="https://github.com/user-attachments/assets/fa633000-d0db-4140-b3be-485e4c4a71c0" />
 
-<sub>People from these companies have registered for Kiln, starred Kiln on Github, or joined our Discord.</sub>
+<sub>People from these companies have registered for Kiln, starred Kiln on GitHub, or joined our Discord.</sub>
 
 ## Download Kiln Desktop Apps
 
