@@ -94,7 +94,7 @@ def connect_data_gen_api(app: FastAPI):
             existing_topics=input.existing_topics,
         )
 
-        run_config_properties = input.run_config_properties
+        run_config_properties = input.run_config_properties.model_copy()
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
@@ -122,7 +122,7 @@ def connect_data_gen_api(app: FastAPI):
             num_samples=input.num_samples,
         )
 
-        run_config_properties = input.run_config_properties
+        run_config_properties = input.run_config_properties.model_copy()
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
