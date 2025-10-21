@@ -152,6 +152,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   const chunkOverlapTokens = writable<number | null>(null)
 
   let persistenceUnsubscribe: (() => void) | null = null
+  let configUnsubscribes: Array<() => void> = []
 
   async function init(defaultGuidance: string): Promise<void> {
     const key = `qna_data_${projectId}_${taskId}`
@@ -173,7 +174,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     const initialValue = get(store)
     if (initialValue) {
       _state.set(initialValue)
-      // Sync simple writables from loaded state
       extractorId.set(initialValue.extractor_id)
       pairsPerPart.set(initialValue.generation_config.pairs_per_part)
       guidance.set(initialValue.generation_config.guidance)
@@ -183,45 +183,53 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       )
     }
 
-    // Persist state to IndexedDB
     persistenceUnsubscribe = _state.subscribe((value) => {
       ;(store as Writable<QnASession>).set(value)
     })
 
-    // Sync simple writables to state when they change
-    extractorId.subscribe((value) => {
-      _state.update((s) => ({ ...s, extractor_id: value }))
-    })
-    pairsPerPart.subscribe((value) => {
-      _state.update((s) => ({
-        ...s,
-        generation_config: { ...s.generation_config, pairs_per_part: value },
-      }))
-    })
-    guidance.subscribe((value) => {
-      _state.update((s) => ({
-        ...s,
-        generation_config: { ...s.generation_config, guidance: value },
-      }))
-    })
-    chunkSizeTokens.subscribe((value) => {
-      _state.update((s) => ({
-        ...s,
-        generation_config: {
-          ...s.generation_config,
-          chunk_size_tokens: value,
-        },
-      }))
-    })
-    chunkOverlapTokens.subscribe((value) => {
-      _state.update((s) => ({
-        ...s,
-        generation_config: {
-          ...s.generation_config,
-          chunk_overlap_tokens: value,
-        },
-      }))
-    })
+    configUnsubscribes.push(
+      extractorId.subscribe((value) => {
+        _state.update((s) => ({ ...s, extractor_id: value }))
+      }),
+    )
+    configUnsubscribes.push(
+      pairsPerPart.subscribe((value) => {
+        _state.update((s) => ({
+          ...s,
+          generation_config: { ...s.generation_config, pairs_per_part: value },
+        }))
+      }),
+    )
+    configUnsubscribes.push(
+      guidance.subscribe((value) => {
+        _state.update((s) => ({
+          ...s,
+          generation_config: { ...s.generation_config, guidance: value },
+        }))
+      }),
+    )
+    configUnsubscribes.push(
+      chunkSizeTokens.subscribe((value) => {
+        _state.update((s) => ({
+          ...s,
+          generation_config: {
+            ...s.generation_config,
+            chunk_size_tokens: value,
+          },
+        }))
+      }),
+    )
+    configUnsubscribes.push(
+      chunkOverlapTokens.subscribe((value) => {
+        _state.update((s) => ({
+          ...s,
+          generation_config: {
+            ...s.generation_config,
+            chunk_overlap_tokens: value,
+          },
+        }))
+      }),
+    )
   }
 
   function destroy(): void {
@@ -229,6 +237,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       persistenceUnsubscribe()
       persistenceUnsubscribe = null
     }
+    configUnsubscribes.forEach((unsub) => unsub())
+    configUnsubscribes = []
   }
 
   const autoStep = derived(_state, ($state): StepNumber => {
@@ -340,14 +350,21 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
   function removePair(documentId: string, partId: string, qaId: string): void {
     _state.update((s) => {
-      const docs = s.documents.map((doc) => {
-        if (doc.id !== documentId) return doc
-        const parts = doc.parts.map((p) =>
-          p.id === partId
-            ? { ...p, qa_pairs: p.qa_pairs.filter((qa) => qa.id !== qaId) }
-            : p,
-        )
-        return { ...doc, parts }
+      const doc = findDocumentById(s, documentId)
+      if (!doc) return s
+
+      const part = findPartById(doc, partId)
+      if (!part) return s
+
+      const docs = s.documents.map((d) => {
+        if (d.id !== documentId) return d
+        return {
+          ...d,
+          parts: d.parts.map((p) => {
+            if (p.id !== partId) return p
+            return { ...p, qa_pairs: p.qa_pairs.filter((qa) => qa.id !== qaId) }
+          }),
+        }
       })
       return { ...s, documents: docs }
     })
@@ -355,11 +372,13 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
   function removePart(documentId: string, partId: string): void {
     _state.update((s) => {
-      const docs = s.documents.map((doc) =>
-        doc.id === documentId
-          ? { ...doc, parts: doc.parts.filter((p) => p.id !== partId) }
-          : doc,
-      )
+      const doc = findDocumentById(s, documentId)
+      if (!doc) return s
+
+      const docs = s.documents.map((d) => {
+        if (d.id !== documentId) return d
+        return { ...d, parts: d.parts.filter((p) => p.id !== partId) }
+      })
       return { ...s, documents: docs }
     })
   }
@@ -405,38 +424,22 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     }
   }
 
-  function getPartsForTarget(
+  function findDocumentById(
     state: QnASession,
-    target: GenerationTarget,
-  ): Array<{ docIdx: number; partIdx: number }> {
-    const indices: Array<{ docIdx: number; partIdx: number }> = []
-    if (target.type === "all") {
-      state.documents.forEach((_, docIdx) => {
-        state.documents[docIdx].parts.forEach((_, partIdx) =>
-          indices.push({ docIdx, partIdx }),
-        )
-      })
-    } else if (target.type === "document") {
-      const docIdx = state.documents.findIndex(
-        (d) => d.id === target.document_id,
-      )
-      if (docIdx !== -1) {
-        state.documents[docIdx].parts.forEach((_, partIdx) =>
-          indices.push({ docIdx, partIdx }),
-        )
-      }
-    } else if (target.type === "part") {
-      const docIdx = state.documents.findIndex(
-        (d) => d.id === target.document_id,
-      )
-      if (docIdx !== -1) {
-        const partIdx = state.documents[docIdx].parts.findIndex(
-          (p) => p.id === target.part_id,
-        )
-        if (partIdx !== -1) indices.push({ docIdx, partIdx })
-      }
-    }
-    return indices
+    docId: string,
+  ): QnADocumentNode | null {
+    return state.documents.find((d) => d.id === docId) ?? null
+  }
+
+  function findPartById(
+    doc: QnADocumentNode,
+    partId: string,
+  ): QnADocPart | null {
+    return doc.parts.find((p) => p.id === partId) ?? null
+  }
+
+  function findPairById(part: QnADocPart, pairId: string): QnAPair | null {
+    return part.qa_pairs.find((qa) => qa.id === pairId) ?? null
   }
 
   async function fetchChunksForDoc(
@@ -500,15 +503,201 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     await Promise.all(workers)
   }
 
-  async function generate(params: GenerationParams): Promise<void> {
-    const {
-      pairsPerPart,
-      guidance,
-      model,
-      chunkSizeTokens,
-      chunkOverlapTokens,
-    } = params
+  function getTargetDocumentIds(
+    state: QnASession,
+    target: GenerationTarget,
+  ): string[] {
+    if (target.type === "all") {
+      return state.documents.map((d) => d.id)
+    } else if (target.type === "document") {
+      const doc = findDocumentById(state, target.document_id)
+      return doc ? [doc.id] : []
+    } else if (target.type === "part") {
+      const doc = findDocumentById(state, target.document_id)
+      return doc ? [doc.id] : []
+    }
+    return []
+  }
 
+  async function ensureDocumentsChunked(
+    documentIds: string[],
+    extractorId: string | null,
+    chunkSizeTokens: number | null,
+    chunkOverlapTokens: number | null,
+  ): Promise<void> {
+    if (!extractorId) return
+
+    const queue: number[] = []
+    const state = get(_state)
+
+    documentIds.forEach((docId) => {
+      const docIdx = state.documents.findIndex((d) => d.id === docId)
+      if (docIdx === -1) return
+
+      const doc = state.documents[docIdx]
+      const hasParts = doc.parts && doc.parts.length > 0
+      const shouldReplace = hasParts && chunkSizeTokens !== null
+
+      if (!hasParts || shouldReplace) {
+        queue.push(docIdx)
+      }
+    })
+
+    if (queue.length > 0) {
+      await runChunkingQueue(
+        queue,
+        extractorId,
+        chunkSizeTokens,
+        chunkOverlapTokens,
+        5,
+      )
+    }
+  }
+
+  async function callGenerateQnAAPI(
+    partText: string,
+    pairsPerPart: number,
+    guidance: string,
+    outputRunConfigProperties: RunConfigProperties,
+  ): Promise<QnAPair[]> {
+    const { data, error: apiError } = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
+      {
+        body: {
+          document_id: [],
+          part_text: [partText],
+          num_samples: pairsPerPart,
+          output_run_config_properties: outputRunConfigProperties,
+          guidance: guidance || null,
+          tags: null,
+        },
+        params: { path: { project_id: projectId, task_id: taskId } },
+      },
+    )
+    if (apiError) throw apiError
+
+    const outputText = data.output.output
+    const response = JSON.parse(outputText) as {
+      generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
+    }
+    const generated = Array.isArray(response.generated_qna_pairs)
+      ? response.generated_qna_pairs
+      : []
+
+    const modelProvider = outputRunConfigProperties.model_provider_name
+    const modelName = outputRunConfigProperties.model_name
+
+    return generated.map((qa) => ({
+      id: crypto.randomUUID(),
+      question:
+        typeof qa?.question === "string"
+          ? qa.question
+          : JSON.stringify(qa?.question ?? ""),
+      answer:
+        typeof qa?.answer === "string"
+          ? qa.answer
+          : JSON.stringify(qa?.answer ?? ""),
+      generated: true,
+      model_name: modelName,
+      model_provider: modelProvider,
+      saved_id: null,
+    }))
+  }
+
+  type PartReference = { documentId: string; partId: string }
+
+  function getPartsForTargetById(
+    state: QnASession,
+    target: GenerationTarget,
+  ): PartReference[] {
+    const parts: PartReference[] = []
+
+    if (target.type === "all") {
+      state.documents.forEach((doc) => {
+        doc.parts.forEach((part) => {
+          parts.push({ documentId: doc.id, partId: part.id })
+        })
+      })
+    } else if (target.type === "document") {
+      const doc = findDocumentById(state, target.document_id)
+      if (doc) {
+        doc.parts.forEach((part) => {
+          parts.push({ documentId: doc.id, partId: part.id })
+        })
+      }
+    } else if (target.type === "part") {
+      const doc = findDocumentById(state, target.document_id)
+      if (doc) {
+        const part = findPartById(doc, target.part_id)
+        if (part) {
+          parts.push({ documentId: doc.id, partId: part.id })
+        }
+      }
+    }
+
+    return parts
+  }
+
+  async function generateQnAPairsForParts(
+    parts: PartReference[],
+    pairsPerPart: number,
+    guidance: string,
+    outputRunConfigProperties: RunConfigProperties,
+    chunkSizeTokens: number | null,
+    chunkOverlapTokens: number | null,
+  ): Promise<void> {
+    let completed = 0
+
+    for (const { documentId, partId } of parts) {
+      const state = get(_state)
+      const doc = findDocumentById(state, documentId)
+      if (!doc) continue
+
+      const part = findPartById(doc, partId)
+      if (!part) continue
+
+      const newPairs = await callGenerateQnAAPI(
+        part.text_preview,
+        pairsPerPart,
+        guidance,
+        outputRunConfigProperties,
+      )
+
+      _state.update((s) => {
+        const docs = s.documents.map((d) => {
+          if (d.id !== documentId) return d
+          return {
+            ...d,
+            parts: d.parts.map((p) => {
+              if (p.id !== partId) return p
+              return { ...p, qa_pairs: [...p.qa_pairs, ...newPairs] }
+            }),
+          }
+        })
+        return {
+          ...s,
+          generation_config: {
+            pairs_per_part: pairsPerPart,
+            guidance,
+            chunk_size_tokens: chunkSizeTokens,
+            chunk_overlap_tokens: chunkOverlapTokens,
+          },
+          documents: docs,
+        }
+      })
+
+      completed += 1
+      progress.set(Math.round((completed / parts.length) * 100))
+    }
+  }
+
+  async function generate({
+    pairsPerPart,
+    guidance,
+    model,
+    chunkSizeTokens,
+    chunkOverlapTokens,
+  }: GenerationParams): Promise<void> {
     const modelProvider = model.split("/")[0] as ModelProviderName
     const modelName = model.split("/").slice(1).join("/")
 
@@ -529,117 +718,27 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     try {
       const state = get(_state)
       const targetSel = get(pendingTarget)
-      const targetDocs = new Set<number>()
 
       if (targetSel.type === "all") {
-        state.documents.forEach((_, docIdx) => {
-          targetDocs.add(docIdx)
-        })
-      } else if (targetSel.type === "document") {
-        const docIdx = state.documents.findIndex(
-          (d) => d.id === targetSel.document_id,
+        const documentIds = getTargetDocumentIds(state, targetSel)
+        await ensureDocumentsChunked(
+          documentIds,
+          state.extractor_id,
+          chunkSizeTokens,
+          chunkOverlapTokens,
         )
-        if (docIdx !== -1) targetDocs.add(docIdx)
-      } else if (targetSel.type === "part") {
-        const docIdx = state.documents.findIndex(
-          (d) => d.id === targetSel.document_id,
-        )
-        if (docIdx !== -1) targetDocs.add(docIdx)
       }
 
-      const queue: Array<number> = []
-      if (targetSel.type === "all") {
-        targetDocs.forEach((docIdx) => {
-          const s = get(_state)
-          const doc = s.documents[docIdx]
-          const hasParts = doc.parts && doc.parts.length > 0
-          const shouldReplace = hasParts && chunkSizeTokens !== null
-          if (!hasParts || shouldReplace) {
-            queue.push(docIdx)
-          }
-        })
+      const targetParts = getPartsForTargetById(get(_state), targetSel)
 
-        const extractorId = get(_state).extractor_id
-        if (extractorId) {
-          await runChunkingQueue(
-            queue,
-            extractorId,
-            chunkSizeTokens ?? null,
-            chunkOverlapTokens ?? null,
-            5,
-          )
-        }
-      }
-
-      const freshTargetParts = getPartsForTarget(get(_state), targetSel)
-      let completed = 0
-      for (const { docIdx, partIdx } of freshTargetParts) {
-        const partText =
-          get(_state).documents[docIdx].parts[partIdx].text_preview
-
-        const { data, error: apiError } = await client.POST(
-          "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
-          {
-            body: {
-              document_id: [],
-              part_text: [partText],
-              num_samples: pairsPerPart,
-              output_run_config_properties: outputRunConfigProperties,
-              guidance: guidance || null,
-              tags: null,
-            },
-            params: { path: { project_id: projectId, task_id: taskId } },
-          },
-        )
-        if (apiError) throw apiError
-
-        const outputText = data.output.output
-        const response = JSON.parse(outputText) as {
-          generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
-        }
-        const generated = Array.isArray(response.generated_qna_pairs)
-          ? response.generated_qna_pairs
-          : []
-
-        const newPairs: QnAPair[] = generated.map((qa) => ({
-          id: crypto.randomUUID(),
-          question:
-            typeof qa?.question === "string"
-              ? qa.question
-              : JSON.stringify(qa?.question ?? ""),
-          answer:
-            typeof qa?.answer === "string"
-              ? qa.answer
-              : JSON.stringify(qa?.answer ?? ""),
-          generated: true,
-          model_name: modelName,
-          model_provider: modelProvider,
-          saved_id: null,
-        }))
-
-        _state.update((s) => {
-          const docs = [...s.documents]
-          const doc = { ...docs[docIdx] }
-          const parts = [...doc.parts]
-          const part = { ...parts[partIdx] }
-          part.qa_pairs = [...part.qa_pairs, ...newPairs]
-          parts[partIdx] = part
-          doc.parts = parts
-          docs[docIdx] = doc
-          return {
-            ...s,
-            generation_config: {
-              pairs_per_part: pairsPerPart,
-              guidance,
-              chunk_size_tokens: chunkSizeTokens,
-              chunk_overlap_tokens: chunkOverlapTokens,
-            },
-            documents: docs,
-          }
-        })
-        completed += 1
-        progress.set(Math.round((completed / freshTargetParts.length) * 100))
-      }
+      await generateQnAPairsForParts(
+        targetParts,
+        pairsPerPart,
+        guidance,
+        outputRunConfigProperties,
+        chunkSizeTokens,
+        chunkOverlapTokens,
+      )
 
       setCurrentStep(4)
       status.set("done")
@@ -654,6 +753,107 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     }
   }
 
+  type PairReference = {
+    documentId: string
+    partId: string
+    pairId: string
+  }
+
+  function buildSaveQueue(state: QnASession): PairReference[] {
+    const queue: PairReference[] = []
+    state.documents.forEach((doc) => {
+      doc.parts.forEach((part) => {
+        part.qa_pairs.forEach((pair) => {
+          if (!pair.saved_id) {
+            queue.push({
+              documentId: doc.id,
+              partId: part.id,
+              pairId: pair.id,
+            })
+          }
+        })
+      })
+    })
+    return queue
+  }
+
+  function calculateSplitTag(
+    splits: Record<string, number>,
+  ): string | undefined {
+    const keys = Object.keys(splits)
+    if (keys.length === 0) return undefined
+
+    const r = Math.random()
+    let acc = 0
+    for (const k of keys) {
+      acc += splits[k]
+      if (r <= acc) return k
+    }
+    return keys[0]
+  }
+
+  async function saveSinglePair(
+    ref: PairReference,
+    sessionId: string,
+  ): Promise<void> {
+    const state = get(_state)
+    const doc = findDocumentById(state, ref.documentId)
+    if (!doc) return
+
+    const part = findPartById(doc, ref.partId)
+    if (!part) return
+
+    const pair = findPairById(part, ref.pairId)
+    if (!pair) return
+
+    if (!pair.model_name || !pair.model_provider) {
+      throw new Error("Model name and provider are required")
+    }
+
+    const splitTag = calculateSplitTag(state.splits)
+
+    const { data, error: apiError } = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
+      {
+        params: {
+          path: { project_id: projectId, task_id: taskId },
+          query: { session_id: sessionId },
+        },
+        body: {
+          question: pair.question,
+          answer: pair.answer,
+          model_name: pair.model_name,
+          model_provider: pair.model_provider,
+          tags: splitTag ? [splitTag] : null,
+        },
+      },
+    )
+    if (apiError || !data || !data.id)
+      throw apiError || new Error("Save failed")
+
+    const savedId = data.id
+    _state.update((s) => {
+      const docs = s.documents.map((d) => {
+        if (d.id !== ref.documentId) return d
+        return {
+          ...d,
+          parts: d.parts.map((p) => {
+            if (p.id !== ref.partId) return p
+            return {
+              ...p,
+              qa_pairs: p.qa_pairs.map((qa) => {
+                if (qa.id !== ref.pairId) return qa
+                return { ...qa, saved_id: savedId }
+              }),
+            }
+          }),
+        }
+      })
+      return { ...s, documents: docs }
+    })
+    _savedCount.update((c) => c + 1)
+  }
+
   async function saveAll(sessionId: string): Promise<void> {
     try {
       _saveAllRunning.set(true)
@@ -661,78 +861,12 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       _saveAllErrors.set([])
       _savedCount.set(0)
 
-      const queue: Array<{
-        docIdx: number
-        partIdx: number
-        pairIdx: number
-      }> = []
-      const s = get(_state)
-      s.documents.forEach((doc, docIdx) => {
-        doc.parts.forEach((part, partIdx) => {
-          part.qa_pairs.forEach((pair, pairIdx) => {
-            if (!pair.saved_id) queue.push({ docIdx, partIdx, pairIdx })
-          })
-        })
-      })
+      const state = get(_state)
+      const queue = buildSaveQueue(state)
 
-      for (const { docIdx, partIdx, pairIdx } of queue) {
-        const ss = get(_state)
-        const pair = ss.documents[docIdx].parts[partIdx].qa_pairs[pairIdx]
-        const splits = ss.splits
-        const keys = Object.keys(splits)
-        const splitTag =
-          keys.length > 0
-            ? (() => {
-                const r = Math.random()
-                let acc = 0
-                for (const k of keys) {
-                  acc += splits[k]
-                  if (r <= acc) return k
-                }
-                return keys[0]
-              })()
-            : undefined
-
-        if (!pair.model_name || !pair.model_provider) {
-          throw new Error("Model name and provider are required")
-        }
-
+      for (const ref of queue) {
         try {
-          const { data, error: apiError } = await client.POST(
-            "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
-            {
-              params: {
-                path: { project_id: projectId, task_id: taskId },
-                query: { session_id: sessionId },
-              },
-              body: {
-                question: pair.question,
-                answer: pair.answer,
-                model_name: pair.model_name,
-                model_provider: pair.model_provider,
-                tags: splitTag ? [splitTag] : null,
-              },
-            },
-          )
-          if (apiError || !data || !data.id)
-            throw apiError || new Error("Save failed")
-
-          const savedId = data.id
-          _state.update((s) => {
-            const docs = [...s.documents]
-            const doc = { ...docs[docIdx] }
-            const parts = [...doc.parts]
-            const part = { ...parts[partIdx] }
-            const pairs = [...part.qa_pairs]
-            const updated = { ...pairs[pairIdx], saved_id: savedId }
-            pairs[pairIdx] = updated
-            part.qa_pairs = pairs
-            parts[partIdx] = part
-            doc.parts = parts
-            docs[docIdx] = doc
-            return { ...s, documents: docs }
-          })
-          _savedCount.update((c) => c + 1)
+          await saveSinglePair(ref, sessionId)
         } catch (e) {
           _saveAllErrors.update((arr) => [...arr, e as Error])
         }
