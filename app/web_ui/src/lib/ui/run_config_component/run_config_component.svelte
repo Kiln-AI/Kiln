@@ -31,7 +31,7 @@
 
   // Props
   export let project_id: string
-  export let current_task: Task | null = null
+  export let current_task: Task | null = null // When task is null, certain functionality is disabled such as saving a new run config
   export let model_name: string = ""
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}

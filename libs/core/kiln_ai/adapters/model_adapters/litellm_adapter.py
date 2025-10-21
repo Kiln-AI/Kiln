@@ -306,7 +306,7 @@ class LiteLlmAdapter(BaseAdapter):
             return {}
 
         structured_output_mode = self.run_config.structured_output_mode
-        print("HERE", structured_output_mode)
+
         match structured_output_mode:
             case StructuredOutputMode.json_mode:
                 return {"response_format": {"type": "json_object"}}

@@ -152,17 +152,18 @@
 
   let topic_generating: boolean = false
   async function generate_topics() {
+    // Grab the run config properties before it is no longer available
+    const run_config_properties =
+      run_config_component?.run_options_as_run_config_properties() ?? null
     try {
       topic_generating = true
       topic_generation_error = null
       if (!guidance_data.gen_type) {
         throw new KilnError("No generation type selected.", null)
       }
-      if (!run_config_component) {
-        throw new KilnError("No run config component.", null)
+      if (!run_config_properties) {
+        throw new KilnError("No run config properties.", null)
       }
-      const run_config_properties =
-        run_config_component.run_options_as_run_config_properties()
       if (
         !run_config_properties.model_name ||
         !run_config_properties.model_provider_name
