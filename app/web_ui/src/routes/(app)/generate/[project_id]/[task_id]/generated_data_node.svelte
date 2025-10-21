@@ -152,7 +152,7 @@
 
   let topic_generating: boolean = false
   async function generate_topics() {
-    // Grab the run config properties before it is no longer available
+    // Capture run config properties before modal closes and component is destroyed
     const run_config_properties =
       run_config_component?.run_options_as_run_config_properties() ?? null
     try {
