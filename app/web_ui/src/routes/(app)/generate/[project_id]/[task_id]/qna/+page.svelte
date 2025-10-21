@@ -2,7 +2,7 @@
   import AppPage from "../../../../app_page.svelte"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import { get } from "svelte/store"
+  import { get, derived } from "svelte/store"
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -22,6 +22,10 @@
     type QnADocPart,
   } from "./qna_ui_store"
   import Warning from "$lib/ui/warning.svelte"
+  import {
+    document_tag_store_by_project_id,
+    load_document_tags,
+  } from "$lib/stores/document_tag_store"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
 
@@ -31,7 +35,6 @@
   let qna: QnaStore
   $: qnaCurrentStep = qna?.currentStep
   $: qnaMaxStep = qna?.maxStep
-  $: qnaAvailableTags = qna?.availableTags
   $: qnaPendingSaveCount = qna?.pendingSaveCount
   $: qnaSaveAllStatus = qna?.saveAllStatus
   $: qnaExtractorId = qna?.extractorId
@@ -42,13 +45,18 @@
   $: qnaTargetType = qna?.targetType
   $: qnaTargetDescription = qna?.targetDescription
 
+  $: available_tags = derived(document_tag_store_by_project_id, ($store) => {
+    const tag_counts = $store[project_id]
+    return tag_counts ? Object.keys(tag_counts) : []
+  })
+
   onMount(async () => {
     qna = createQnaStore(project_id, task_id)
     await qna.init(DEFAULT_QNA_GUIDANCE)
     if (get(qna).documents.length > 0) {
       clear_existing_state_dialog?.show()
     }
-    await qna.fetchAvailableTags()
+    await load_document_tags(project_id)
   })
 
   // Dialogs
@@ -142,7 +150,7 @@
     show_generate_qna_dialog?.show()
   }
 
-  async function handle_generation_complete(event: CustomEvent) {
+  async function handle_generate_requested(event: CustomEvent) {
     show_generate_qna_dialog?.close()
     current_dialog_type = null
     generating_dialog?.show()
@@ -506,7 +514,7 @@
   <SelectDocumentsdialog
     bind:dialog={show_select_documents_dialog}
     {project_id}
-    available_tags={$qnaAvailableTags || []}
+    available_tags={$available_tags}
     on:documents_added={handle_documents_added}
     on:close={() => (current_dialog_type = null)}
     keyboard_submit={current_dialog_type === "select_documents"}
@@ -530,7 +538,7 @@
     bind:chunk_overlap_tokens={$qnaChunkOverlapTokens}
     target_description={$qnaTargetDescription || "all documents"}
     generation_target_type={$qnaTargetType || "all"}
-    on:generation_complete={handle_generation_complete}
+    on:generate_requested={handle_generate_requested}
     on:close={() => (current_dialog_type = null)}
     keyboard_submit={current_dialog_type === "generate_qna"}
   />

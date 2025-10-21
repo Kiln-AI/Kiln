@@ -83,7 +83,6 @@ export type QnaStore = {
   error: Readable<string | null>
   currentStep: Readable<StepNumber>
   maxStep: Readable<StepNumber>
-  availableTags: Readable<string[]>
   pendingSaveCount: Readable<number>
   saveAllStatus: Readable<{
     running: boolean
@@ -115,7 +114,6 @@ export type QnaStore = {
   removePart(documentId: string, partId: string): void
   setCurrentStep(step: StepNumber): void
   clearAll(defaultGuidance: string): void
-  fetchAvailableTags(): Promise<void>
   generate(params: GenerationParams): Promise<void>
   saveAll(sessionId: string): Promise<void>
 }
@@ -135,18 +133,21 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     splits: {},
   })
 
+  // Progress and statuses
   const status = writable<"idle" | "running" | "done" | "error">("idle")
   const progress = writable<number>(0)
   const error = writable<string | null>(null)
-  const availableTags = writable<string[]>([])
   const pendingTarget = writable<GenerationTarget>({ type: "all" })
   const manualStep = writable<StepNumber | null>(null)
   const _maxStep = writable<StepNumber>(1)
 
+  // Save all
   const _saveAllRunning = writable<boolean>(false)
   const _saveAllCompleted = writable<boolean>(false)
   const _saveAllErrors = writable<Error[]>([])
   const _savedCount = writable<number>(0)
+
+  // Generation config
   const extractorId = writable<string | null>(null)
   const pairsPerPart = writable<number>(5)
   const guidance = writable<string>("")
@@ -157,6 +158,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   let configUnsubscribes: Array<() => void> = []
 
   async function init(defaultGuidance: string): Promise<void> {
+    /**
+     * Load the state from IndexedDB and register subscriptions to the stores
+     * and clean up on destroy.
+     */
     const key = `qna_data_${projectId}_${taskId}`
     const { store, initialized } = indexedDBStore<QnASession>(key, {
       selected_tags: [],
@@ -434,20 +439,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       documents: [],
       splits: {},
     }))
-  }
-
-  async function fetchAvailableTags(): Promise<void> {
-    try {
-      const { data, error: apiError } = await client.GET(
-        "/api/projects/{project_id}/documents/tags",
-        { params: { path: { project_id: projectId } } },
-      )
-      if (apiError) throw apiError
-      availableTags.set(data || [])
-    } catch (e) {
-      console.error("Error loading tags:", e)
-      availableTags.set([])
-    }
   }
 
   function findDocumentById(
@@ -910,7 +901,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     error,
     currentStep,
     maxStep,
-    availableTags,
     pendingSaveCount,
     saveAllStatus,
     targetType,
@@ -932,7 +922,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     removePart,
     setCurrentStep,
     clearAll,
-    fetchAvailableTags,
     generate,
     saveAll,
   }

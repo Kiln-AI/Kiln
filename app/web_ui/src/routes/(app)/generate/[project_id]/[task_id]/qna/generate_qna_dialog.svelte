@@ -23,7 +23,7 @@
   $: show_chunking_options = generation_target_type === "all"
 
   const dispatch = createEventDispatcher<{
-    generation_complete: {
+    generate_requested: {
       pairs_per_part: number
       guidance: string
       model: string
@@ -40,7 +40,7 @@
       throw new Error("Model is required")
     }
 
-    dispatch("generation_complete", {
+    dispatch("generate_requested", {
       pairs_per_part,
       guidance,
       model: selected_model,
