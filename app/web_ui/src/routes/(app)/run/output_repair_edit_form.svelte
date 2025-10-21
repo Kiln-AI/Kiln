@@ -18,7 +18,7 @@
     if (task.output_json_schema) {
       try {
         return JSON.stringify(JSON.parse(text), null, 2)
-      } catch (err) {
+      } catch (_) {
         return text
       }
     }
