@@ -39,6 +39,8 @@
   $: qnaGuidance = qna?.guidance
   $: qnaChunkSizeTokens = qna?.chunkSizeTokens
   $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
+  $: qnaTargetType = qna?.targetType
+  $: qnaTargetDescription = qna?.targetDescription
 
   onMount(async () => {
     qna = createQnaStore(project_id, task_id)
@@ -77,8 +79,6 @@
   let show_select_documents_dialog: Dialog | null = null
   let show_extraction_dialog: Dialog | null = null
   let show_generate_qna_dialog: Dialog | null = null
-  let generation_target_description: string = "all documents"
-  let generation_target_type: "all" | "document" | "part" = "all"
 
   function open_select_documents_dialog() {
     current_dialog_type = "select_documents"
@@ -93,8 +93,6 @@
   function open_generate_qna_dialog() {
     current_dialog_type = "generate_qna"
     qna.setPendingTarget({ type: "all" })
-    generation_target_description = "all documents"
-    generation_target_type = "all"
 
     const has_existing_parts = $qna.documents.some((d) => d.parts.length > 0)
     if (has_existing_parts) {
@@ -128,9 +126,6 @@
       type: "document",
       document_id: e.detail.document_id,
     })
-    const doc = $qna.documents.find((d) => d.id === e.detail.document_id)
-    generation_target_description = doc ? doc.name : "selected document"
-    generation_target_type = "document"
     current_dialog_type = "generate_qna"
     show_generate_qna_dialog?.show()
   }
@@ -143,13 +138,6 @@
       document_id: e.detail.document_id,
       part_id: e.detail.part_id,
     })
-    const doc = $qna.documents.find((d) => d.id === e.detail.document_id)
-    const partIdx = doc?.parts.findIndex((p) => p.id === e.detail.part_id)
-    generation_target_description =
-      doc && partIdx !== undefined && partIdx >= 0
-        ? `${doc.name} - Part ${partIdx + 1}`
-        : "selected part"
-    generation_target_type = "part"
     current_dialog_type = "generate_qna"
     show_generate_qna_dialog?.show()
   }
@@ -540,8 +528,8 @@
     bind:guidance={$qnaGuidance}
     bind:chunk_size_tokens={$qnaChunkSizeTokens}
     bind:chunk_overlap_tokens={$qnaChunkOverlapTokens}
-    target_description={generation_target_description}
-    {generation_target_type}
+    target_description={$qnaTargetDescription || "all documents"}
+    generation_target_type={$qnaTargetType || "all"}
     on:generation_complete={handle_generation_complete}
     on:close={() => (current_dialog_type = null)}
     keyboard_submit={current_dialog_type === "generate_qna"}

@@ -1,7 +1,6 @@
 <script lang="ts">
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import IncrementUi from "$lib/ui/increment_ui.svelte"
-  import { ui_state } from "$lib/stores"
   import { createEventDispatcher } from "svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -34,14 +33,17 @@
     close: void
   }>()
 
-  let model: string = $ui_state.selected_model
-
+  let selected_model: string
   let submitting = false
   function generate_qa_pairs() {
+    if (!selected_model) {
+      throw new Error("Model is required")
+    }
+
     dispatch("generation_complete", {
       pairs_per_part,
       guidance,
-      model,
+      model: selected_model,
       chunk_size_tokens,
       chunk_overlap_tokens,
     })
@@ -95,7 +97,7 @@
           requires_uncensored_data_gen: false,
           suggested_mode: "data_gen",
         }}
-        bind:model
+        bind:model={selected_model}
       />
 
       {#if show_chunking_options}

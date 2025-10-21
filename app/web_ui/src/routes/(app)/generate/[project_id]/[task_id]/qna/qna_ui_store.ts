@@ -91,6 +91,8 @@ export type QnaStore = {
     errors: Error[]
     savedCount: number
   }>
+  targetType: Readable<"all" | "document" | "part">
+  targetDescription: Readable<string>
 
   extractorId: Writable<string | null>
   pairsPerPart: Writable<number>
@@ -281,6 +283,30 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       errors: $errors,
       savedCount: $saved,
     }),
+  )
+
+  const targetType = derived(
+    pendingTarget,
+    ($target): "all" | "document" | "part" => $target.type,
+  )
+
+  const targetDescription = derived(
+    [pendingTarget, _state],
+    ([$target, $state]): string => {
+      if ($target.type === "all") {
+        return "all documents"
+      } else if ($target.type === "document") {
+        const doc = findDocumentById($state, $target.document_id)
+        return doc ? doc.name : "selected document"
+      } else if ($target.type === "part") {
+        const doc = findDocumentById($state, $target.document_id)
+        const partIdx = doc?.parts.findIndex((p) => p.id === $target.part_id)
+        return doc && partIdx !== undefined && partIdx >= 0
+          ? `${doc.name} - Part ${partIdx + 1}`
+          : "selected part"
+      }
+      return "all documents"
+    },
   )
 
   function setPendingTarget(target: GenerationTarget): void {
@@ -887,6 +913,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     availableTags,
     pendingSaveCount,
     saveAllStatus,
+    targetType,
+    targetDescription,
     extractorId,
     pairsPerPart,
     guidance,
