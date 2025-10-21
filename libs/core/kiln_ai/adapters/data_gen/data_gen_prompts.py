@@ -165,23 +165,114 @@ def generate_qna_generation_prompt(guidance: str | None = None) -> str:
 
     prompt = """I want to generate Q&A pairs from document content.
 
+# Knowledge Graph Q&A Generation
+
 ## Task Description
-Your job is to generate a list of Q&A pairs from the provided document content. The generated Q&A will be used to evaluate a RAG system by comparing the RAG system's output for the same question, with the generated answer.
+Generate Q&A pairs from document content in two phases:
+1. **Phase 1**: Extract complete knowledge graph (entities and relationships)
+2. **Phase 2**: Generate Q&A pairs from the graph
 
-In the user message we'll provide the following:
- - A document chunk content as kiln_data_gen_document_content
- - The number of Q&A pairs to generate as kiln_data_gen_num_samples
+Input:
+- Document content as `kiln_data_gen_document_content`
+- Number of Q&A pairs as `kiln_data_gen_num_samples`
 
-The output must be formatted:
- - in the provided structured format, as an object with a single property "generated_qna_pairs" that maps to a list of generated Q&A pairs.
- - With the correct number of Q&A pairs (kiln_data_gen_num_samples).
- - Do not include any other text or break the schema in any way.
+---
 
-### Example 1
-Example inputs:
- - kiln_data_gen_document_content: "The quick brown fox jumps over the lazy dog."
- - kiln_data_gen_num_samples: 3
-Example generated Q&A pairs: {"generated_qna_pairs": [{"question": "What is the color of the fox?", "answer": "The color of the fox is brown."}, {"question": "What is the color of the dog?", "answer": "The color of the dog is brown."}, {"question": "What is the color of the fox?", "answer": "The color of the fox is brown."}]}
+## PHASE 1: Extract Knowledge Graph
+
+### Step 1: Create Extraction Lists
+
+Identify all key elements in the document across four categories:
+
+1. **Named Entities**: People, organizations, systems, products
+2. **Locations**: Places, buildings, cities, regions  
+3. **Events**: Meetings, incidents, deployments, milestones
+4. **Concepts**: Themes, ideas, goals, groups (TEAM/COMMITTEE/USERS)
+
+### Step 2: Create Nodes
+
+For EVERY item in your extraction lists, create a node:
+- Format: `"ENTITY_NAME<|>TYPE<|>Description"`
+- Use consistent naming throughout
+- Description: 1-2 sentences
+
+### Step 3: Create Edges
+
+Connect nodes with relationships:
+- Format: `"SOURCE<|>RELATIONSHIP<|>TARGET<|>Description<|>Strength"`
+- Both SOURCE and TARGET must exist in nodes
+- Strength: 1-10 (8-10=critical, 5-7=moderate, 1-4=minor)
+
+---
+
+## PHASE 2: Generate Q&A Pairs
+
+Each Q&A pair is based on a SINGLE edge from the knowledge graph. Create questions that test understanding of that specific relationship.
+
+### Question Quality: Must Work as Search Queries
+
+**CRITICAL: Each question must work as a Google search query by someone who doesn't know the document.**
+
+Bad questions (too vague):
+- ❌ "Who crashed the plane?" (what plane? where?)
+- ❌ "Who supervises the engineer?" (which engineer? where?)
+- ❌ "What did the manager propose?" (which manager? when?)
+
+Good questions (specific, contextual):
+- ✅ "Who crashed the spaceship on Neutopia?" (location + context)
+- ✅ "Who supervises the software engineer on the database team?" (role + team)
+- ✅ "What funding solution did the project manager propose after the budget cut?" (role + situation)
+
+**Every question must include:**
+1. **NO pronouns** - Never he/she/it/they/their
+2. **Specific roles/titles** - Not just "the manager" → "the project manager" or "the operations manager"  
+3. **Disambiguating context** - Location, project name, time period, or situation
+4. **Full entity names** - Use the actual names from nodes when possible
+5. **Edge meaning reflected** - The question should test what the relationship actually says
+
+**Think: If I paste this question into Google, would it find the specific answer? Or would it be too generic?**
+
+### Requirements
+
+- Each Q&A pair uses exactly ONE edge from the knowledge graph
+- Use high-strength edges (7-10) when possible
+- Generate diverse questions covering different types of relationships and entities
+- Generate exactly `kiln_data_gen_num_samples` Q&A pairs
+
+---
+
+## Output Format
+
+```json
+{
+  "extraction_lists": {
+    "named_entities": ["Name1", "Name2", ...],
+    "locations": ["Place1", "Place2", ...],
+    "events": ["Event1", "Event2", ...],
+    "concepts": ["Concept1", "Concept2", ...]
+  },
+  "knowledge_graph": {
+    "nodes": ["ENTITY<|>TYPE<|>Description"],
+    "edges": ["SOURCE<|>RELATIONSHIP<|>TARGET<|>Description<|>Strength"]
+  },
+  "generated_qna_pairs": [
+    {
+      "edge_verification": {...},
+      "question": "The question",
+      "answer": "The answer"
+    }
+  ]
+}
+```
+
+**edge_verification** format:
+```json
+{
+  "edge_used": "SOURCE<|>RELATIONSHIP<|>TARGET<|>Description<|>Strength",
+  "source": "SOURCE_ENTITY_NAME",
+  "target": "TARGET_ENTITY_NAME"
+}
+```
 
 """
 

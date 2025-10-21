@@ -113,7 +113,11 @@ def test_list_json_schema_for_task_without_schemas(base_task):
     assert qna_pair_schema["type"] == "object"
     assert qna_pair_schema["properties"]["question"]["type"] == "string"
     assert qna_pair_schema["properties"]["answer"]["type"] == "string"
-    assert set(qna_pair_schema["required"]) == {"question", "answer"}
+    assert set(qna_pair_schema["required"]) == {
+        "question",
+        "answer",
+        "edge_verification",
+    }
 
 
 def test_list_json_schema_for_task_with_structured_schemas(structured_task):
@@ -142,7 +146,11 @@ def test_list_json_schema_for_task_with_structured_schemas(structured_task):
     assert "answer" in answer_schema["properties"]
     assert "confidence" in answer_schema["properties"]
 
-    assert set(qna_pair_schema["required"]) == {"question", "answer"}
+    assert set(qna_pair_schema["required"]) == {
+        "question",
+        "answer",
+        "edge_verification",
+    }
 
 
 def test_list_json_schema_for_task_with_mixed_schemas():

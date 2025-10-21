@@ -39,13 +39,64 @@ def list_json_schema_for_task(task: Task) -> str:
     else:
         answer_schema = {"type": "string"}
 
+    # Extraction lists schema - domain-agnostic
+    extraction_lists_schema = {
+        "type": "object",
+        "properties": {
+            "named_entities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all people, organizations, systems, products, or named entities",
+            },
+            "locations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all places, locations, or spatial references",
+            },
+            "events": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all major events, actions, or processes",
+            },
+            "concepts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all important concepts, objects, themes, or ideas",
+            },
+        },
+        "required": ["named_entities", "locations", "events", "concepts"],
+    }
+
+    # Edge verification schema - single edge only
+    edge_verification_schema = {
+        "type": "object",
+        "properties": {
+            "edge_used": {"type": "string"},
+            "source": {"type": "string"},
+            "target": {"type": "string"},
+        },
+        "required": ["edge_used", "source", "target"],
+    }
+
+    # Knowledge graph schema
+    knowledge_graph_schema = {
+        "type": "object",
+        "properties": {
+            "nodes": {"type": "array", "items": {"type": "string"}},
+            "edges": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["nodes", "edges"],
+    }
+
+    # Q&A pair schema with edge verification
     qna_pair_schema = {
         "type": "object",
         "properties": {
+            "edge_verification": edge_verification_schema,
             "question": question_schema,
             "answer": answer_schema,
         },
-        "required": ["question", "answer"],
+        "required": ["edge_verification", "question", "answer"],
     }
 
     list_schema = {
@@ -53,12 +104,15 @@ def list_json_schema_for_task(task: Task) -> str:
         "items": qna_pair_schema,
     }
 
+    # Top level schema
     top_level_schema = {
         "type": "object",
         "properties": {
+            "extraction_lists": extraction_lists_schema,
+            "knowledge_graph": knowledge_graph_schema,
             "generated_qna_pairs": list_schema,
         },
-        "required": ["generated_qna_pairs"],
+        "required": ["extraction_lists", "knowledge_graph", "generated_qna_pairs"],
     }
 
     return json.dumps(top_level_schema, ensure_ascii=False)
