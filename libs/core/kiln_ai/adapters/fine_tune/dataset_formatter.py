@@ -1,38 +1,17 @@
 import json
 import tempfile
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
 
 from kiln_ai.adapters.chat.chat_formatter import ChatMessage, get_chat_formatter
+from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
+from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
+    TraceBasedDatasetFormatter,
+)
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-
-
-class DatasetFormat(str, Enum):
-    """Formats for dataset generation. Both for file format (like JSONL), and internal structure (like chat/toolcall)"""
-
-    """OpenAI chat format with plaintext response"""
-    OPENAI_CHAT_JSONL = "openai_chat_jsonl"
-
-    """OpenAI chat format with json response_format"""
-    OPENAI_CHAT_JSON_SCHEMA_JSONL = "openai_chat_json_schema_jsonl"
-
-    """OpenAI chat format with tool call response"""
-    OPENAI_CHAT_TOOLCALL_JSONL = "openai_chat_toolcall_jsonl"
-
-    """HuggingFace chat template in JSONL"""
-    HUGGINGFACE_CHAT_TEMPLATE_JSONL = "huggingface_chat_template_jsonl"
-
-    """HuggingFace chat template with tool calls in JSONL"""
-    HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL = (
-        "huggingface_chat_template_toolcall_jsonl"
-    )
-
-    """Vertex Gemini format"""
-    VERTEX_GEMINI = "vertex_gemini"
 
 
 class FormatGenerator(Protocol):
@@ -370,13 +349,24 @@ class DatasetFormatter:
                         f"Task run {run_id} not found. This is required by this dataset."
                     )
 
-                training_chat = build_training_chat(
-                    task_run=task_run,
-                    system_message=self.system_message,
-                    data_strategy=data_strategy,
-                    thinking_instructions=self.thinking_instructions,
-                )
-                example = generator(training_chat)
+                # create example based on trace if available
+                if task_run.trace is not None:
+                    print("trace:", task_run.trace)
+                    # Call build_training_chat_from_trace
+                    formatter = TraceBasedDatasetFormatter()
+                    example = formatter.build_training_chat_from_trace(
+                        task_run=task_run,
+                        data_format=format_type,
+                    )
+                else:
+                    # Training_chat is a list of ChatMessage
+                    training_chat = build_training_chat(
+                        task_run=task_run,
+                        system_message=self.system_message,
+                        data_strategy=data_strategy,
+                        thinking_instructions=self.thinking_instructions,
+                    )
+                    example = generator(training_chat)
                 # Allow non-ascii characters in the dataset.
                 # Better readability for non-English users. If you don't support UTF-8... you should.
                 f.write(json.dumps(example, ensure_ascii=False) + "\n")

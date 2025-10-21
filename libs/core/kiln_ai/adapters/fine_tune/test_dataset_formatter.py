@@ -69,6 +69,7 @@ def mock_task():
                         ),
                     },
                 ),
+                "trace": None,
             },
         )
         for i in range(1, 4)
