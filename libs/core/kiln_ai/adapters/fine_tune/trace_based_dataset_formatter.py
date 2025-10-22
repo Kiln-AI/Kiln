@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict
 
 from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
@@ -71,9 +72,8 @@ class TraceBasedDatasetFormatter:
                         "tool_call_id": message.get("tool_call_id", None),
                     }
                 case _:
-                    raise ValueError(
-                        f"Unsupported role for OpenAI fine-tuning chat format: {role}"
-                    )
+                    # Skip unsupported traces types
+                    continue
 
             messages.append(chat_message)
 
@@ -93,9 +93,32 @@ class TraceBasedDatasetFormatter:
         self,
         trace: list[ChatCompletionMessageParam],
     ) -> Dict[str, Any]:
-        """Generate json schema message from trace"""
+        """
+        Generate json schema message from trace.
+        This mode checks if the answer (last assistant message) is a valid JSON structured output
+        """
 
-        return {}
+        last_message = trace[-1]
+        content = last_message.get("content", "")
+        if not isinstance(content, str):
+            raise ValueError(
+                "assistant message content must be a string for JSON validation"
+            )
+
+        try:
+            json_data = json.loads(content or "")
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Last message is not JSON (structured), and this format expects structured data: {e}"
+            )
+
+        if not isinstance(json_data, dict):
+            raise ValueError(
+                "Last message is not a JSON Dictionary (structured data), and this format expects structured_data."
+            )
+
+        # The response is valid structured output. Put this into OpenAI format.
+        return self.generate_openai_chat_message_response(trace)
 
     def generate_openai_toolcall_message(
         self,
