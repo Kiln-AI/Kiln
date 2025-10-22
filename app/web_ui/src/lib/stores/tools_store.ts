@@ -33,7 +33,7 @@ export function get_tools_property_info(
   }
 }
 
-export function get_tool_names_from_ids(
+function get_tool_names_from_ids(
   tool_ids: string[],
   project_tools: ToolSetApiDescription[],
 ): string[] {
