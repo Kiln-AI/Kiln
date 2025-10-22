@@ -72,11 +72,9 @@ type GenerationTarget =
 type GenerationParams = {
   pairsPerPart: number
   guidance: string
-  model: string
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
-  temperature: number
-  top_p: number
+  runConfig: RunConfigProperties
 }
 
 export type QnaStore = {
@@ -725,25 +723,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   async function generate({
     pairsPerPart,
     guidance,
-    model,
+    runConfig,
     chunkSizeTokens,
     chunkOverlapTokens,
-    temperature,
-    top_p,
   }: GenerationParams): Promise<void> {
-    const modelProvider = model.split("/")[0] as ModelProviderName
-    const modelName = model.split("/").slice(1).join("/")
-
-    const outputRunConfigProperties: RunConfigProperties = {
-      model_name: modelName,
-      model_provider_name: modelProvider,
-      prompt_id: "simple_prompt_builder",
-      temperature,
-      top_p,
-      structured_output_mode: "default",
-      tools_config: { tools: [] },
-    }
-
     status.set("running")
     progress.set(0)
     generatedCount.set(0)
@@ -770,7 +753,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         targetParts,
         pairsPerPart,
         guidance,
-        outputRunConfigProperties,
+        runConfig,
         chunkSizeTokens,
         chunkOverlapTokens,
       )

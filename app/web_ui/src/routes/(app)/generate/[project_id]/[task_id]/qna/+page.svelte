@@ -162,11 +162,9 @@
       await qna.generate({
         pairsPerPart: get(qna.pairsPerPart),
         guidance: get(qna.guidance),
-        model: event.detail.model,
         chunkSizeTokens: get(qna.chunkSizeTokens),
         chunkOverlapTokens: get(qna.chunkOverlapTokens),
-        temperature: event.detail.temperature,
-        top_p: event.detail.top_p,
+        runConfig: event.detail.run_config,
       })
     } catch (e) {
       console.error("Q&A generation failed", e)
@@ -503,6 +501,7 @@
 
   <GenerateQnadialog
     bind:dialog={show_generate_qna_dialog}
+    {project_id}
     {task_id}
     bind:pairs_per_part={$qnaPairsPerPart}
     bind:guidance={$qnaGuidance}
