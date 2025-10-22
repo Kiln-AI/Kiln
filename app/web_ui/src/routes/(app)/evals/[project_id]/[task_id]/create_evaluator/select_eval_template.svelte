@@ -54,7 +54,7 @@
       name: "Tool Call Eval",
       description:
         "Evaluate your model's ability to decide if a tool should be called — and when it shouldn't.",
-      recommended: true,
+      recommended: true, // TODO: Only recommend if task default run config has tools selected
     },
     {
       id: "none",

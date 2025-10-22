@@ -1070,6 +1070,7 @@
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
         </div>
         {#if task}
+          <!-- TODO: Should automatically set the tool selector to the eval tool if tool call eval -->
           <RunConfigComponent
             bind:this={run_config_component}
             {project_id}
