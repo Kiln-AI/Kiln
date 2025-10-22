@@ -22,9 +22,7 @@
 
   async function load_tools(project_id: string, task_id: string | null) {
     // Load available tools
-    if (project_id) {
-      load_available_tools(project_id)
-    }
+    load_available_tools(project_id)
 
     if (!task_id) {
       tools = []

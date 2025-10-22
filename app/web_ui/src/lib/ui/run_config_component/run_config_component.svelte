@@ -178,7 +178,7 @@
   }
 
   export async function save_new_run_config(): Promise<TaskRunConfig | null> {
-    if (!project_id || !current_task?.id) {
+    if (!current_task?.id) {
       return null
     }
     try {
@@ -203,8 +203,11 @@
   async function get_selected_run_config(): Promise<
     TaskRunConfig | "custom" | null
   > {
+    if (!current_task?.id) {
+      return null
+    }
     // Make sure the task run configs are loaded, will be quick if they already are
-    await load_task_run_configs(project_id, current_task?.id ?? "")
+    await load_task_run_configs(project_id, current_task.id)
 
     // Map selected ID back to TaskRunConfig object
     if (!selected_run_config_id) {
@@ -215,7 +218,7 @@
       // Find the config by ID
       const all_configs =
         $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task?.id ?? "")
+          get_task_composite_id(project_id, current_task.id)
         ] ?? []
       let run_config = all_configs.find(
         (config) => config.id === selected_run_config_id,
@@ -253,7 +256,7 @@
 
 <div class="w-full flex flex-col gap-4">
   <AvailableModelsDropdown
-    task_id={current_task?.id ?? ""}
+    task_id={current_task?.id ?? null}
     bind:model
     settings={updated_model_dropdown_settings}
     bind:error_message={model_dropdown_error_message}
