@@ -183,7 +183,7 @@
       class="btn btn-sm {tag && tag.length > 0
         ? 'btn-primary'
         : 'btn-disabled'} btn-circle text-xl font-medium"
-      on:click={() => add_tag()}>+</button
+      on:click={() => add_tag()}>＋</button
     >
   </div>
   <datalist id={datalist_id}>
