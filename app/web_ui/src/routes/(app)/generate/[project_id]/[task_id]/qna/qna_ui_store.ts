@@ -7,7 +7,11 @@ import {
 } from "svelte/store"
 import { client, base_url } from "$lib/api_client"
 import { indexedDBStore } from "$lib/stores/index_db_store"
-import type { ModelProviderName, RunConfigProperties } from "$lib/types"
+import type {
+  KilnDocument,
+  ModelProviderName,
+  RunConfigProperties,
+} from "$lib/types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 export type StepNumber = 1 | 2 | 3 | 4
@@ -72,11 +76,9 @@ type GenerationTarget =
 type GenerationParams = {
   pairsPerPart: number
   guidance: string
-  model: string
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
-  temperature: number
-  top_p: number
+  runConfigProperties: RunConfigProperties
 }
 
 export type QnaStore = {
@@ -86,6 +88,7 @@ export type QnaStore = {
   generatedCount: Readable<number>
   totalCount: Readable<number>
   error: Readable<string | null>
+  generationErrors: Readable<KilnError[]>
   currentStep: Readable<StepNumber>
   maxStep: Readable<StepNumber>
   pendingSaveCount: Readable<number>
@@ -107,10 +110,7 @@ export type QnaStore = {
   init(defaultGuidance: string): Promise<void>
   destroy(): void
   setPendingTarget(target: GenerationTarget): void
-  addDocuments(
-    docs: Array<{ id: string; name: string; tags?: string[] }>,
-    tags: string[],
-  ): void
+  addDocuments(documents: KilnDocument[], tags: string[]): void
   setExtractor(id: string): void
   markExtractionComplete(id: string): void
   deleteDocument(id: string): void
@@ -153,6 +153,9 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   const _saveAllCompleted = writable<boolean>(false)
   const _saveAllErrors = writable<KilnError[]>([])
   const _savedCount = writable<number>(0)
+
+  // Generation errors
+  const _generateErrors = writable<KilnError[]>([])
 
   // Generation config
   const extractorId = writable<string | null>(null)
@@ -325,19 +328,22 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     pendingTarget.set(target)
   }
 
-  function addDocuments(
-    documents: Array<{ id: string; name: string; tags?: string[] }>,
-    tags: string[],
-  ): void {
+  function addDocuments(documents: KilnDocument[], tags: string[]): void {
     extractorId.set(null)
     _state.update((s) => {
-      const newDocuments: QnADocumentNode[] = documents.map((doc) => ({
-        id: doc.id,
-        name: doc.name,
-        tags: doc.tags || [],
-        extracted: false,
-        parts: [],
-      }))
+      const newDocuments: QnADocumentNode[] = documents.map((doc) => {
+        if (!doc.id) {
+          throw new Error("Document ID is required")
+        }
+
+        return {
+          id: doc.id,
+          name: doc.friendly_name,
+          tags: doc.tags || [],
+          extracted: false,
+          parts: [],
+        }
+      })
       return {
         ...s,
         documents: [...s.documents, ...newDocuments],
@@ -582,7 +588,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     partText: string,
     pairsPerPart: number,
     guidance: string,
-    outputRunConfigProperties: RunConfigProperties,
+    runConfigProperties: RunConfigProperties,
   ): Promise<QnAPair[]> {
     const { data, error: apiError } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
@@ -591,7 +597,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           document_id: [],
           part_text: [partText],
           num_samples: pairsPerPart,
-          run_config_properties: outputRunConfigProperties,
+          run_config_properties: runConfigProperties,
           guidance: guidance || null,
           tags: null,
         },
@@ -608,8 +614,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       ? response.generated_qna_pairs
       : []
 
-    const modelProvider = outputRunConfigProperties.model_provider_name
-    const modelName = outputRunConfigProperties.model_name
+    const modelProvider = runConfigProperties.model_provider_name
+    const modelName = runConfigProperties.model_name
 
     return generated.map((qa) => ({
       id: crypto.randomUUID(),
@@ -666,7 +672,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     parts: PartReference[],
     pairsPerPart: number,
     guidance: string,
-    outputRunConfigProperties: RunConfigProperties,
+    runConfigProperties: RunConfigProperties,
     chunkSizeTokens: number | null,
     chunkOverlapTokens: number | null,
   ): Promise<void> {
@@ -686,38 +692,49 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         continue
       }
 
-      const newPairs = await callGenerateQnAAPI(
-        part.text_preview,
-        pairsPerPart,
-        guidance,
-        outputRunConfigProperties,
-      )
+      try {
+        const newPairs = await callGenerateQnAAPI(
+          part.text_preview,
+          pairsPerPart,
+          guidance,
+          runConfigProperties,
+        )
 
-      _state.update((s) => {
-        const docs = s.documents.map((d) => {
-          if (d.id !== documentId) return d
+        _state.update((s) => {
+          const docs = s.documents.map((d) => {
+            if (d.id !== documentId) return d
+            return {
+              ...d,
+              parts: d.parts.map((p) => {
+                if (p.id !== partId) return p
+                return { ...p, qa_pairs: [...p.qa_pairs, ...newPairs] }
+              }),
+            }
+          })
           return {
-            ...d,
-            parts: d.parts.map((p) => {
-              if (p.id !== partId) return p
-              return { ...p, qa_pairs: [...p.qa_pairs, ...newPairs] }
-            }),
+            ...s,
+            generation_config: {
+              pairs_per_part: pairsPerPart,
+              guidance,
+              chunk_size_tokens: chunkSizeTokens,
+              chunk_overlap_tokens: chunkOverlapTokens,
+            },
+            documents: docs,
           }
         })
-        return {
-          ...s,
-          generation_config: {
-            pairs_per_part: pairsPerPart,
-            guidance,
-            chunk_size_tokens: chunkSizeTokens,
-            chunk_overlap_tokens: chunkOverlapTokens,
-          },
-          documents: docs,
-        }
-      })
 
-      // Increment the generated count by the number of new pairs
-      generatedCount.update((prevCount: number) => prevCount + newPairs.length)
+        generatedCount.update(
+          (prevCount: number) => prevCount + newPairs.length,
+        )
+      } catch (e) {
+        const kilnError = createKilnError(e)
+        const docName = doc.name || "Unknown document"
+        const partIndex =
+          doc.parts.findIndex((p) => p.id === partId) + 1 || "Unknown"
+        kilnError.message = `${docName} - Part ${partIndex}: ${kilnError.message}`
+        _generateErrors.update((arr) => [...arr, kilnError])
+      }
+
       progress.set(Math.round((get(generatedCount) / total) * 100))
     }
   }
@@ -725,30 +742,16 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   async function generate({
     pairsPerPart,
     guidance,
-    model,
+    runConfigProperties,
     chunkSizeTokens,
     chunkOverlapTokens,
-    temperature,
-    top_p,
   }: GenerationParams): Promise<void> {
-    const modelProvider = model.split("/")[0] as ModelProviderName
-    const modelName = model.split("/").slice(1).join("/")
-
-    const outputRunConfigProperties: RunConfigProperties = {
-      model_name: modelName,
-      model_provider_name: modelProvider,
-      prompt_id: "simple_prompt_builder",
-      temperature,
-      top_p,
-      structured_output_mode: "default",
-      tools_config: { tools: [] },
-    }
-
     status.set("running")
     progress.set(0)
     generatedCount.set(0)
     totalCount.set(0)
     error.set(null)
+    _generateErrors.set([])
 
     try {
       const state = get(_state)
@@ -770,7 +773,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         targetParts,
         pairsPerPart,
         guidance,
-        outputRunConfigProperties,
+        runConfigProperties,
         chunkSizeTokens,
         chunkOverlapTokens,
       )
@@ -919,6 +922,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     generatedCount,
     totalCount,
     error,
+    generationErrors: _generateErrors,
     currentStep,
     maxStep,
     pendingSaveCount,

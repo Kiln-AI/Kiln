@@ -7,12 +7,19 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { createEventDispatcher, onMount } from "svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import type { KilnDocument } from "$lib/types"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
   export let project_id: string
   export let available_tags: string[] = []
-  const dispatch = createEventDispatcher()
+  const dispatch = createEventDispatcher<{
+    documents_added: {
+      documents: KilnDocument[]
+      tags: string[]
+    }
+    close: void
+  }>()
 
   type SearchToolWithTags = {
     id: string
@@ -63,7 +70,7 @@
     ]
   }
 
-  async function select_documents_by_tag() {
+  async function fetch_documents_by_tag() {
     error = null
 
     try {
@@ -184,7 +191,7 @@
       submit_visible={true}
       submit_label="Select"
       on:submit={async (_) => {
-        await select_documents_by_tag()
+        await fetch_documents_by_tag()
       }}
       {error}
       gap={4}
