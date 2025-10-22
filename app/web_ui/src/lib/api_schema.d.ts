@@ -2535,16 +2535,8 @@ export interface components {
              * @description Optional list of existing topics to avoid
              */
             existing_topics?: string[] | null;
-            /**
-             * Model Name
-             * @description The name of the model to use
-             */
-            model_name: string;
-            /**
-             * Provider
-             * @description The provider of the model to use
-             */
-            provider: string;
+            /** @description The run config properties to use for topic generation */
+            run_config_properties: components["schemas"]["RunConfigProperties"];
         };
         /** DataGenSampleApiInput */
         DataGenSampleApiInput: {
@@ -2571,16 +2563,8 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
-            /**
-             * Model Name
-             * @description The name of the model to use
-             */
-            model_name: string;
-            /**
-             * Provider
-             * @description The provider of the model to use
-             */
-            provider: string;
+            /** @description The run config properties to use for input generation */
+            run_config_properties: components["schemas"]["RunConfigProperties"];
         };
         /** DataGenSaveSamplesApiInput */
         DataGenSaveSamplesApiInput: {
@@ -2606,8 +2590,8 @@ export interface components {
              * @description The provider of the model used to generate the input
              */
             input_provider: string;
-            /** @description The run config properties to use for the output */
-            output_run_config_properties: components["schemas"]["RunConfigProperties"];
+            /** @description The run config properties to use for output generation */
+            run_config_properties: components["schemas"]["RunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
