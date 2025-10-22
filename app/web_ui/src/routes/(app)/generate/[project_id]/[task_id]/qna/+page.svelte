@@ -372,21 +372,22 @@
                 <button
                   class="btn btn-sm btn-primary"
                   on:click={open_select_documents_dialog}
+                  disabled={$qnaMaxStep && $qnaMaxStep > 1}
                 >
                   Select Search Tool
                 </button>
               {:else if $qnaCurrentStep == 2}
-                {#if $qna && !$qna.extraction_complete}
+                <button
+                  class="btn btn-sm btn-primary"
+                  on:click={open_extraction_dialog}
+                  disabled={!has_documents ||
+                    ($qna && $qna.extraction_complete)}
+                >
+                  Run Extraction
+                </button>
+                {#if $qna && $qna.extraction_complete}
                   <button
-                    class="btn btn-sm btn-primary"
-                    on:click={open_extraction_dialog}
-                    disabled={!has_documents}
-                  >
-                    Run Extraction
-                  </button>
-                {:else}
-                  <button
-                    class="btn btn-sm btn-primary"
+                    class="btn btn-sm btn-primary ml-2"
                     on:click={() => qna.setCurrentStep(3)}
                   >
                     Next Step
@@ -394,12 +395,24 @@
                 {/if}
               {:else if $qnaCurrentStep == 3}
                 <button
-                  class="btn btn-sm btn-primary"
+                  class="btn btn-sm {total_qa_pairs > 0
+                    ? 'btn-outline btn-primary'
+                    : 'btn-primary'}"
                   on:click={open_generate_qna_dialog}
                   disabled={$qna && !$qna.extraction_complete}
                 >
-                  Generate Q&A Pairs
+                  {total_qa_pairs > 0
+                    ? "Regenerate Q&A Pairs"
+                    : "Generate Q&A Pairs"}
                 </button>
+                {#if total_qa_pairs > 0}
+                  <button
+                    class="btn btn-sm btn-primary ml-2"
+                    on:click={() => qna.setCurrentStep(4)}
+                  >
+                    Next Step
+                  </button>
+                {/if}
               {:else if $qnaCurrentStep == 4}
                 {@const already_saved_count =
                   total_qa_pairs - ($qnaPendingSaveCount || 0)}
