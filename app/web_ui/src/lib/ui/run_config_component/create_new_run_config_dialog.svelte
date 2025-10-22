@@ -66,6 +66,7 @@
           bind:this={run_config_component}
           {project_id}
           current_task={task}
+          requires_structured_output={!!task.output_json_schema}
           hide_create_kiln_task_tool_button={true}
         />
       {/if}

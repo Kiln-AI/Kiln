@@ -463,7 +463,7 @@
   let generated_count = 0
   async function generate_all_samples() {
     try {
-      // Grab the run config properties before it is no longer available
+      // Capture run config properties before modal closes and component is destroyed
       const run_config_properties =
         run_config_component?.run_options_as_run_config_properties()
       if (!run_config_properties) {
@@ -587,7 +587,7 @@
             input: formatted_input,
             input_model_name: sample.model_name,
             input_provider: sample.model_provider,
-            output_run_config_properties: run_config_properties,
+            run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
             tags,
@@ -1081,6 +1081,7 @@
             bind:this={run_config_component}
             {project_id}
             current_task={task}
+            requires_structured_output={!!task.output_json_schema}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema
                 ? true
