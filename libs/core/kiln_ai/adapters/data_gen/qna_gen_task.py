@@ -46,25 +46,48 @@ def list_json_schema_for_task(task: Task) -> str:
             "named_entities": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of all people, organizations, systems, products, or named entities",
+                "description": "List of all people, organizations, or teams",
             },
             "locations": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of all places, locations, or spatial references",
+                "description": "List of all places, buildings, facilities, or regions",
             },
             "events": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of all major events, actions, or processes",
+                "description": "List of all meetings, incidents, deployments, actions, or milestones",
             },
             "concepts": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "List of all important concepts, objects, themes, or ideas",
+                "description": "List of all themes, ideas, goals, problems, solutions, or policies",
+            },
+            "objects": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all physical items, parts, products, vehicles, equipment, or assets",
+            },
+            "documents": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all records, files, agreements, reports, or forms",
+            },
+            "systems": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all technical components, software, processes, APIs, or architectures",
             },
         },
-        "required": ["named_entities", "locations", "events", "concepts"],
+        "required": [
+            "named_entities",
+            "locations",
+            "events",
+            "concepts",
+            "objects",
+            "documents",
+            "systems",
+        ],
     }
 
     # Edge verification schema - single edge only
@@ -72,10 +95,8 @@ def list_json_schema_for_task(task: Task) -> str:
         "type": "object",
         "properties": {
             "edge_used": {"type": "string"},
-            "source": {"type": "string"},
-            "target": {"type": "string"},
         },
-        "required": ["edge_used", "source", "target"],
+        "required": ["edge_used"],
     }
 
     # Knowledge graph schema
