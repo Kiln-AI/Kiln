@@ -167,8 +167,7 @@
     load_initial_step()
   })
 
-  // if the user comes back through internal navigation + query params, onMount does not run, so we need
-  // to watch for query params changes and reload the state
+  // this page may redirect back to itself after finding state
   $: if ($page.url.searchParams && !is_setup) {
     load_initial_state()
     update_status()
