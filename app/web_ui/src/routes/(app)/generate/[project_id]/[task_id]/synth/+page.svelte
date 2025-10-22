@@ -167,6 +167,13 @@
     load_initial_step()
   })
 
+  // this page may redirect back to itself after finding state
+  $: if ($page.url.searchParams && !is_setup) {
+    load_initial_state()
+    update_status()
+    load_initial_step()
+  }
+
   let clear_all_dialog: Dialog | null = null
   let clear_existing_state_no_url_dialog: Dialog | null = null
 
