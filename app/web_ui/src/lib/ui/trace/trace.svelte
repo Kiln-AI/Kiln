@@ -97,7 +97,7 @@
           if (parsed && typeof parsed === "object" && "output" in parsed) {
             return parsed.output
           }
-        } catch (e) {
+        } catch (_) {
           // Content is not JSON, return as-is
         }
       }

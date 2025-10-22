@@ -70,7 +70,7 @@
       .replace(/^_|_$/g, "")
   }
 
-  $: selected_task, handle_task_change()
+  $: void (selected_task, handle_task_change())
 
   function handle_task_change() {
     clear_error_if_present()
