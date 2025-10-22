@@ -72,7 +72,11 @@ class ModelCache:
             if readonly:
                 return model
             else:
-                return model.model_copy(deep=True)
+                # Use mutable_copy for KilnBaseModel, fallback to model_copy for regular BaseModel
+                if hasattr(model, 'mutable_copy'):
+                    return model.mutable_copy(deep=True)
+                else:
+                    return model.model_copy(deep=True)
         return None
 
     def get_model_id(self, path: Path, model_type: Type[T]) -> Optional[str]:
@@ -87,6 +91,9 @@ class ModelCache:
         # disable caching if the filesystem doesn't support fine-grained timestamps
         if not self._enabled:
             return
+        # Mark all cached models as readonly to prevent accidental mutations
+        if hasattr(model, 'mark_as_readonly'):
+            model.mark_as_readonly()
         self.model_cache[path] = (model, mtime_ns)
 
     def invalidate(self, path: Path):

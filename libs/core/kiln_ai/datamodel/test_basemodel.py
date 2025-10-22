@@ -15,6 +15,7 @@ from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
     KilnBaseModel,
     KilnParentedModel,
+    ReadOnlyMutationError,
     name_validator,
     string_to_valid_name,
 )
@@ -1001,3 +1002,98 @@ async def test_invoke_parsing_flow_with_reasoning_and_structured_output(adapter)
         assert result.output.output == "parsed test output"
         assert result.intermediate_outputs == {"reasoning": "value"}
         assert result.input == "test input"
+
+
+# Readonly tests
+
+
+class ReadonlyTestModel(KilnBaseModel):
+    """Simple test model for readonly functionality."""
+    name: str = "test"
+    value: int = 42
+
+
+def test_readonly_protection():
+    """Test that readonly models raise exceptions when mutated."""
+    model = ReadonlyTestModel(name="original", value=100)
+
+    # Model should not be readonly initially
+    assert model._readonly is False
+
+    # Should be able to mutate non-readonly model
+    model.name = "changed"
+    model.value = 200
+    assert model.name == "changed"
+    assert model.value == 200
+
+    # Mark as readonly
+    model.mark_as_readonly()
+    assert model._readonly is True
+
+    # Should raise exception when trying to mutate readonly model
+    with pytest.raises(ReadOnlyMutationError) as exc_info:
+        model.name = "should_fail"
+    assert "Cannot mutate readonly model" in str(exc_info.value)
+    assert "name" in str(exc_info.value)
+
+    with pytest.raises(ReadOnlyMutationError) as exc_info:
+        model.value = 999
+    assert "Cannot mutate readonly model" in str(exc_info.value)
+    assert "value" in str(exc_info.value)
+
+
+def test_mutable_copy():
+    """Test that mutable_copy creates a mutable copy of readonly models."""
+    model = ReadonlyTestModel(name="readonly_model", value=123)
+    model.mark_as_readonly()
+
+    # Create mutable copy
+    mutable_copy = model.mutable_copy(deep=True)
+
+    # Copy should be mutable
+    assert mutable_copy._readonly is False
+
+    # Should be able to mutate the copy
+    mutable_copy.name = "mutated_name"
+    mutable_copy.value = 456
+    assert mutable_copy.name == "mutated_name"
+    assert mutable_copy.value == 456
+
+    # Original should remain unchanged
+    assert model.name == "readonly_model"
+    assert model.value == 123
+    assert model._readonly is True
+
+
+def test_readonly_cache_integration(tmp_model_cache, tmp_path):
+    """Test that cache integration properly marks models as readonly."""
+    # Create a test model file
+    test_file = tmp_path / "test_readonly.kiln"
+    model = ReadonlyTestModel(name="cached_model", value=999)
+    model.path = test_file
+    model.save_to_file()
+
+    # Load readonly model (should be cached and readonly)
+    readonly_model = ReadonlyTestModel.load_from_file(test_file, readonly=True)
+    assert readonly_model._readonly is True
+    assert readonly_model.name == "cached_model"
+
+    # Should be protected from mutation
+    with pytest.raises(ReadOnlyMutationError):
+        readonly_model.name = "should_fail"
+
+    # Load mutable copy
+    mutable_model = ReadonlyTestModel.load_from_file(test_file, readonly=False)
+    assert mutable_model._readonly is False
+    assert mutable_model.name == "cached_model"
+
+    # Should be mutable
+    mutable_model.name = "mutated"
+    mutable_model.value = 777
+    assert mutable_model.name == "mutated"
+    assert mutable_model.value == 777
+
+    # Readonly model should still be cached and unchanged
+    cached_readonly = ReadonlyTestModel.load_from_file(test_file, readonly=True)
+    assert cached_readonly._readonly is True
+    assert cached_readonly.name == "cached_model"

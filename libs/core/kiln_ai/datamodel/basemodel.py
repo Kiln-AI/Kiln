@@ -41,6 +41,11 @@ T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
 
 
+class ReadOnlyMutationError(RuntimeError):
+    """Raised when attempting to mutate a readonly KilnBaseModel instance."""
+    pass
+
+
 # Naming conventions:
 # 1) Names are filename safe as they may be used as file names. They are informational and not to be used in prompts/training/validation.
 # 2) Descriptions are for Kiln users to describe/understanding the purpose of this object. They must never be used in prompts/training/validation. Use "instruction/requirements" instead.
@@ -276,10 +281,45 @@ class KilnBaseModel(BaseModel):
     created_by: str = Field(default_factory=lambda: Config.shared().user_id)
 
     _loaded_from_file: bool = False
+    _readonly: bool = False
 
     @computed_field()
     def model_type(self) -> str:
         return self.type_name()
+
+    def mark_as_readonly(self) -> None:
+        """Mark this model instance as readonly to prevent mutations."""
+        self._readonly = True
+
+    def _ensure_not_readonly(self, attr_name: str = None) -> None:
+        """Check if model is readonly and raise exception if mutation is attempted."""
+        if self._readonly:
+            attr_msg = f" '{attr_name}'" if attr_name else ""
+            raise ReadOnlyMutationError(
+                f"Cannot mutate readonly model{attr_msg} of type {self.__class__.__name__}. "
+                f"Load with readonly=False to get a mutable copy."
+            )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Override setattr to prevent mutations on readonly models."""
+        # Check for error condition: attempting to mutate readonly model
+        # Allow private attributes and certain safe operations even on readonly models
+        readonly_safe_attrs = {'parent', 'path'}
+        if (not name.startswith('_') and
+            hasattr(self, '_readonly') and
+            self._readonly and
+            name not in readonly_safe_attrs):
+            self._ensure_not_readonly(name)
+
+        # Normal case: proceed with attribute setting
+        super().__setattr__(name, value)
+
+    def mutable_copy(self, *, update: dict | None = None, deep: bool = False) -> Self:
+        """Create a mutable copy of the model, resetting readonly flag."""
+        copy = super().model_copy(update=update, deep=deep)
+        # Reset readonly flag on copies so they can be mutated
+        copy._readonly = False
+        return copy
 
     # if changing the model name, should keep the original name here for parsing old files
     @classmethod

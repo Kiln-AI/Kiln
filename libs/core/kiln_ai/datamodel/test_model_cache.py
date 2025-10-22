@@ -4,11 +4,18 @@ from unittest import mock
 import pytest
 from pydantic import BaseModel
 
-from libs.core.kiln_ai.datamodel.model_cache import ModelCache
+from kiln_ai.datamodel.basemodel import KilnBaseModel
+from kiln_ai.datamodel.model_cache import ModelCache
 
 
 # Define a simple Pydantic model for testing
 class ModelTest(BaseModel):
+    name: str
+    value: int
+
+
+# Define a test model that inherits from KilnBaseModel for readonly testing
+class KilnModelTest(KilnBaseModel):
     name: str
     value: int
 
@@ -266,3 +273,38 @@ def test_get_model_readonly(model_cache, test_path):
 
     # Both should have the same data
     assert readonly_model == copied_model == model
+
+
+def test_cached_models_marked_readonly(model_cache, test_path):
+    """Test that models are marked as readonly when stored in cache."""
+    if not model_cache._enabled:
+        pytest.skip("Cache is disabled on this fs")
+
+    model = KilnModelTest(name="test_model", value=456)
+    mtime_ns = test_path.stat().st_mtime_ns
+
+    # Model should not be readonly initially
+    assert model._readonly is False
+
+    # Set the model in the cache
+    model_cache.set_model(test_path, model, mtime_ns)
+
+    # The original model should now be marked as readonly
+    assert model._readonly is True
+
+    # Get the model in readonly mode - should be the same instance
+    readonly_model = model_cache.get_model(test_path, KilnModelTest, readonly=True)
+    assert readonly_model is model  # Same instance
+    assert readonly_model._readonly is True
+
+    # Get the model in mutable mode - should be a copy
+    mutable_model = model_cache.get_model(test_path, KilnModelTest, readonly=False)
+    assert mutable_model is not model  # Different instance
+    assert mutable_model._readonly is False
+
+    # Should be able to mutate the copy
+    mutable_model.name = "mutated_name"
+    assert mutable_model.name == "mutated_name"
+
+    # Original should remain unchanged
+    assert model.name == "test_model"
