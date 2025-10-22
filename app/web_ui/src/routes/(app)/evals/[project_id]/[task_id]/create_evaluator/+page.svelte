@@ -40,6 +40,7 @@
   let default_eval_tag: string | undefined = undefined
   let default_golden_tag: string | undefined = undefined
   let template_properties: Record<string, string | number | boolean> = {}
+  let evaluation_data_type: string | undefined = undefined
   function on_selected_template(template: EvalTemplateResult) {
     // Populate out model from the template
     name = template.name
@@ -49,6 +50,7 @@
     default_eval_tag = template.default_eval_tag
     default_golden_tag = template.default_golden_tag
     template_properties = template.template_properties
+    evaluation_data_type = template.evaluation_data_type
   }
 
   // Update default tag when a default tag is set
@@ -109,6 +111,10 @@
               eval_set_filter_id,
               eval_configs_filter_id,
               template_properties,
+              evaluation_data_type: (evaluation_data_type || "final_answer") as
+                | "final_answer"
+                | "full_trace"
+                | "tool_call_list",
             },
           },
         )

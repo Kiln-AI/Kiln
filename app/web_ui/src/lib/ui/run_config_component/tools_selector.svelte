@@ -11,6 +11,8 @@
   export let task_id: string
   export let tools: string[] = []
   export let hide_create_kiln_task_tool_button: boolean = false
+  export let single_select: boolean = false
+  export let single_select_selected_tool: string | null = null // Only used if single_select is true
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -134,23 +136,38 @@
         })
       }
     })
-
     return option_groups
   }
 </script>
 
 <div>
-  <FormElement
-    id="tools"
-    label="Tools & Search"
-    inputType="multi_select"
-    info_description="Select the tools available to the model. The model may or may not choose to use them."
-    bind:value={tools}
-    fancy_select_options={get_tool_options($available_tools[project_id])}
-    empty_state_message={$available_tools[project_id] === undefined
-      ? "Loading tools..."
-      : "No Tools Available"}
-    empty_state_subtitle="Add Tools"
-    empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
-  />
+  {#if single_select}
+    <FormElement
+      id="tools"
+      label="Tools & Search"
+      inputType="fancy_select"
+      info_description="Select the tools available to the model. The model may or may not choose to use them."
+      bind:value={single_select_selected_tool}
+      fancy_select_options={get_tool_options($available_tools[project_id])}
+      empty_state_message={$available_tools[project_id] === undefined
+        ? "Loading tools..."
+        : "No Tools Available"}
+      empty_state_subtitle="Add Tools"
+      empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
+    />
+  {:else}
+    <FormElement
+      id="tools"
+      label="Tools & Search"
+      inputType="multi_select"
+      info_description="Select the tools available to the model. The model may or may not choose to use them."
+      bind:value={tools}
+      fancy_select_options={get_tool_options($available_tools[project_id])}
+      empty_state_message={$available_tools[project_id] === undefined
+        ? "Loading tools..."
+        : "No Tools Available"}
+      empty_state_subtitle="Add Tools"
+      empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
+    />
+  {/if}
 </div>

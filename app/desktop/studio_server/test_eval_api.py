@@ -194,6 +194,7 @@ def valid_evaluator_request():
         eval_set_filter_id="tag::eval_set",
         eval_configs_filter_id="tag::golden",
         template_properties={"test_property": "test_value", "numeric_property": 42},
+        evaluation_data_type="final_answer",
     )
 
 

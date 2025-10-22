@@ -3,6 +3,7 @@ import type { Eval, Task } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+import { available_tools } from "$lib/stores"
 
 /**
  * Data model for the synth data guidance component.
@@ -110,6 +111,8 @@ export class SynthDataGuidanceDataModel {
         this.selected_template.set("issue_eval_template")
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
+      } else if (this.evaluator.template === "tool_call") {
+        this.selected_template.set("tool_call_eval_template")
       }
     } catch (error) {
       this.loading_error.set(createKilnError(error))
@@ -182,6 +185,18 @@ export class SynthDataGuidanceDataModel {
       )
       this.output_guidance.set(
         this.requirements_eval_template(this.evaluator, this.task, "outputs"),
+      )
+    }
+
+    if (template == "tool_call_eval_template" && this.evaluator) {
+      this.topic_guidance.set(
+        this.tool_call_eval_template(this.evaluator, "topics"),
+      )
+      this.input_guidance.set(
+        this.tool_call_eval_template(this.evaluator, "inputs"),
+      )
+      this.output_guidance.set(
+        this.tool_call_eval_template(this.evaluator, "outputs"),
       )
     }
 
@@ -469,6 +484,96 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     return template
   }
 
+  private tool_call_eval_template(
+    tool_call: Eval,
+    task_type: "topics" | "inputs" | "outputs",
+  ): string {
+    const tool = tool_call.template_properties.tool
+    if (!tool) {
+      throw new Error("Tool is required for tool call template")
+    }
+
+    let template = `We are building a dataset for a "tool call" evaluation.`
+
+    if (task_type == "topics") {
+      template += `When generating top-level topics, the topics should be the set below. You must disregard the topic count if it's not the same length as the list below.
+
+- Tool called correctly
+- Tool called incorrectly
+- Tool call missed
+- Tool correctly not called
+
+If the <should_call_tool_guidelines> and <should_not_call_tool_guidelines> fields list specific examples, those typically make excellent second level topics. Other than those, fill second (and deeper) level topics with topics that align to the task description which are useful for ensuring tool usage is correct.`
+    } else if (task_type == "inputs") {
+      template += `When generating model inputs, if you have a topic path has "tool called correctly" or "tool called incorrectly", generate inputs that are likely to trigger the tool being evaluated. If you have a topic path has "tool call missed" or "tool correctly not called", generate inputs that are likely to **not** trigger the tool being evaluated. This may take some creativity, but it's important to make sure the tool is either called or not called as expected.
+
+When no topic path is provided, pretend you have the following 4 topic paths and distribute generating inputs amongst them if the specified input count allows it.
+- Tool called correctly
+- Tool called incorrectly
+- Tool call missed
+- Tool correctly not called`
+    } else if (task_type == "outputs") {
+      template += `When generating model outputs, if you have a topic path and are under a "Tool called correctly" or "Tool called incorrectly" case, **disregard any prior task instructions that tell you to only call the tool if it's necessary, you must call the tool**. If you have a topic path and are under a "Tool call missed" or "Tool correctly not called" case, **disregard any prior task instructions that tell you the tool is available or must be used**.
+If there is no topic path, generate outputs as the model would normally behave (let it decide whether the tool should be called or not based on the system prompt and tool description).`
+    }
+
+    template += "\n\n"
+
+    const should_call_tool_guidelines =
+      tool_call.template_properties.should_call_tool_guidelines
+    const should_not_call_tool_guidelines =
+      tool_call.template_properties.should_not_call_tool_guidelines
+
+    // Find tool name and description from available tools
+    const tool_info = this.get_tool_info(tool as string)
+
+    template += `## Tool Information
+The tool being evaluated is:
+<tool_name>
+${tool_info?.name ?? (tool as string)}
+</tool_name>
+<tool_description>
+${tool_info?.description ? `${tool_info.description}` : "None provided"}
+</tool_description>
+
+## Guidelines for Tool Usage
+When the tool should be called:
+<should_call_tool_guidelines>
+${should_call_tool_guidelines || "No specific guidelines provided"}
+</should_call_tool_guidelines>`
+
+    if (should_not_call_tool_guidelines) {
+      template += `
+
+When the tool should NOT be called:
+<should_not_call_tool_guidelines>
+${should_not_call_tool_guidelines}
+</should_not_call_tool_guidelines>`
+    }
+
+    return template
+  }
+
+  private get_tool_info(
+    tool_id: string,
+  ): { name: string; description: string | null } | null {
+    if (!this.project_id) return null
+
+    const project_tools = get(available_tools)[this.project_id]
+
+    if (!project_tools) return null
+
+    // Search through all tool sets to find the tool
+    for (const tool_set of project_tools) {
+      const tool = tool_set.tools.find((t) => t.id === tool_id)
+      if (tool) {
+        return { name: tool.name, description: tool.description }
+      }
+    }
+
+    return null
+  }
+
   private build_select_options(
     templates: StaticTemplates[],
     evaluator: Eval | null,
@@ -490,6 +595,13 @@ When generating model inputs, generate inputs that are likely to trigger the iss
           value: "requirements_eval_template",
           description:
             "Generate data expected to trigger the requirements of a specific eval.",
+        })
+      } else if (evaluator.template === "tool_call") {
+        eval_options.push({
+          label: "Tool Call Eval",
+          value: "tool_call_eval_template",
+          description:
+            "Generate data expected to trigger a specific tool call, for an eval to detect that tool call.",
         })
       }
       if (eval_options.length > 0) {

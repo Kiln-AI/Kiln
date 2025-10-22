@@ -10,17 +10,23 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { generate_issue_eval_tag } from "./eval_utils"
+  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import { tool_id_to_function_name } from "$lib/stores/tools_store"
 
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
   let overall_task_performance_dialog: Dialog | undefined
 
+  $: project_id = $page.params.project_id
+  $: task_id = $page.params.task_id
   interface EvaluatorTemplateDescription {
     id:
       | EvalTemplateId
       | "none"
       | "kiln_requirements_preview"
       | "kiln_issue_preview"
+      | "tool_call_preview"
     name: string
     description: string
     recommended?: boolean
@@ -44,6 +50,13 @@
       recommended: true,
     },
     {
+      id: "tool_call_preview",
+      name: "Tool Call Eval",
+      description:
+        "Evaluate your model's ability to decide if a tool should be called — and when it shouldn't.",
+      recommended: true,
+    },
+    {
       id: "none",
       name: "Custom Goal and Scores",
       highlight_title: "Create Your Own",
@@ -64,6 +77,7 @@
         default_eval_tag: "eval_set",
         default_golden_tag: "golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       },
     },
     {
@@ -84,6 +98,7 @@
         default_eval_tag: "toxicity_eval_set",
         default_golden_tag: "toxicity_golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       },
     },
     {
@@ -106,6 +121,7 @@
         default_eval_tag: "bias_eval_set",
         default_golden_tag: "bias_golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       },
     },
     {
@@ -128,6 +144,7 @@
         default_eval_tag: "maliciousness_eval_set",
         default_golden_tag: "maliciousness_golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       },
     },
     {
@@ -150,6 +167,7 @@
         default_eval_tag: "factual_eval_set",
         default_golden_tag: "factual_golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       },
     },
     {
@@ -173,6 +191,7 @@
         default_eval_tag: "jailbreak_eval_set",
         default_golden_tag: "jailbreak_golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       },
     },
   ]
@@ -182,7 +201,8 @@
       | EvalTemplateId
       | "none"
       | "kiln_requirements_preview"
-      | "kiln_issue_preview",
+      | "kiln_issue_preview"
+      | "tool_call_preview",
     template: EvalTemplateResult | undefined,
   ) {
     // No op
@@ -199,6 +219,11 @@
     // Issue eval shows a list of issues
     if (template_id === "kiln_issue_preview") {
       issue_eval_dialog?.show()
+      return
+    }
+
+    if (template_id === "tool_call_preview") {
+      tool_call_eval_dialog?.show()
       return
     }
 
@@ -236,6 +261,7 @@
         default_eval_tag: "eval_set",
         default_golden_tag: "golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       })
       return
     }
@@ -286,7 +312,92 @@
         failure_example: failure_example,
         pass_example: pass_example,
       },
+      evaluation_data_type: "final_answer",
     })
+  }
+
+  let tool_call_eval_dialog: Dialog | undefined = undefined
+  let selected_tool: string | null = null
+  let tool_call_eval_name = ""
+  let tool_call_eval_create_complete = false
+  let should_call_tool_guidelines = ""
+  let should_not_call_tool_guidelines = ""
+  let tool_call_eval_error: KilnError | null = null
+  let submitting_tool_call_eval = false
+
+  function create_tool_call_eval() {
+    try {
+      submitting_tool_call_eval = true
+      tool_call_eval_error = null
+      if (!selected_tool) {
+        tool_call_eval_error = createKilnError({
+          message: "Please select a tool for this eval.",
+          status: 400,
+        })
+        return
+      }
+      tool_call_eval_create_complete = true
+      const eval_tag = generate_issue_eval_tag(tool_call_eval_name)
+
+      selected_template_callback({
+        template_id: "tool_call",
+        name: "Tool Call - " + tool_call_eval_name,
+        description:
+          "An eval to check tool call performance: " + tool_call_eval_name,
+        output_scores: [
+          {
+            name: tool_call_eval_name,
+            type: "pass_fail",
+            instruction: `Evaluate if the model's tool call behavior regarding the tool: "${selected_tool}" is correct.`,
+          },
+        ],
+        default_eval_tag: "eval_" + eval_tag,
+        default_golden_tag: "eval_golden_" + eval_tag,
+        template_properties: {
+          tool: selected_tool,
+          tool_function_name: selected_tool_function_name,
+          should_not_call_tool_guidelines: should_not_call_tool_guidelines,
+          should_call_tool_guidelines: should_call_tool_guidelines,
+        },
+        evaluation_data_type: "tool_call_list",
+      })
+    } catch (e) {
+      tool_call_eval_error = createKilnError(e)
+    } finally {
+      submitting_tool_call_eval = false
+    }
+  }
+
+  let selected_tool_function_name: string = ""
+
+  async function update_selected_tool_function_name() {
+    if (!selected_tool) {
+      return ""
+    }
+    if (!project_id || !task_id) {
+      return selected_tool
+    }
+
+    try {
+      const tool_function_name = await tool_id_to_function_name(
+        selected_tool,
+        project_id,
+        task_id,
+      )
+
+      if (!tool_function_name) {
+        return selected_tool
+      }
+
+      selected_tool_function_name = tool_function_name
+    } catch {
+      selected_tool_function_name = selected_tool
+    }
+  }
+
+  // Reactive statement to populate cache when selected_tool changes
+  $: if (selected_tool && project_id && task_id) {
+    update_selected_tool_function_name()
   }
 </script>
 
@@ -426,6 +537,58 @@
       id="pass_example"
       optional={true}
       bind:value={pass_example}
+    />
+  </FormContainer>
+</Dialog>
+
+<Dialog bind:this={tool_call_eval_dialog} title="Create Tool Call Eval">
+  <FormContainer
+    submit_label="Create Tool Call Eval"
+    submitting={submitting_tool_call_eval}
+    bind:error={tool_call_eval_error}
+    on:submit={create_tool_call_eval}
+    warn_before_unload={!!(
+      !tool_call_eval_create_complete &&
+      (tool_call_eval_name ||
+        should_call_tool_guidelines ||
+        should_not_call_tool_guidelines ||
+        selected_tool !== null)
+    )}
+  >
+    <div class="font-light text-sm">
+      Tool call evals test whether your model correctly calls tools when needed
+      and avoids calling them when it shouldn't.
+    </div>
+
+    <FormElement
+      label="Eval Name"
+      description="Give your tool call eval a short name that will help you identify it."
+      inputType="input"
+      id="name"
+      bind:value={tool_call_eval_name}
+    />
+    <ToolsSelector
+      {project_id}
+      {task_id}
+      single_select={true}
+      bind:single_select_selected_tool={selected_tool}
+    />
+    <FormElement
+      label="Should Call Guidelines"
+      description="Guidelines or examples for when the tool should be called."
+      info_description="Include guidelines or examples to help the judge model understand when the tool should be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
+      inputType="textarea"
+      id="should_call_example"
+      bind:value={should_call_tool_guidelines}
+    />
+    <FormElement
+      label="Should Not Call Guidelines"
+      description="Guidelines for when the tool should not be called."
+      info_description="Include guidelines or examples to help the judge model understand when the tool should not be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
+      inputType="textarea"
+      id="should_not_call_example"
+      optional={true}
+      bind:value={should_not_call_tool_guidelines}
     />
   </FormContainer>
 </Dialog>

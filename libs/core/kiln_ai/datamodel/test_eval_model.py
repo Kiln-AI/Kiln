@@ -6,6 +6,7 @@ from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
@@ -756,8 +757,10 @@ def test_eval_template_properties_issue_template_validation(
         ),
     ],
 )
-def test_eval_template_properties_non_issue_templates(template, template_properties):
-    """Test that non-issue templates pass validation regardless of template_properties"""
+def test_eval_template_properties_non_validated_templates(
+    template, template_properties
+):
+    """Test that templates without specific validation pass regardless of template_properties"""
     eval = Eval(
         name="Test Eval",
         template=template,
@@ -771,7 +774,593 @@ def test_eval_template_properties_non_issue_templates(template, template_propert
         ],
         template_properties=template_properties,
     )
-
     assert eval.template == template
     for key, value in template_properties.items():
         assert eval.template_properties[key] == value
+
+
+@pytest.mark.parametrize(
+    "template_properties,should_raise,expected_error",
+    [
+        # Valid cases
+        (
+            {"tool": "search_tool", "tool_function_name": "search"},
+            False,
+            None,
+        ),
+        (
+            {
+                "tool": "calculator",
+                "tool_function_name": "calculate",
+                "should_not_call_tool_guidelines": "Don't call the tool for simple math",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "tool": "weather_api",
+                "tool_function_name": "get_weather",
+                "should_call_tool_guidelines": "Call the tool when user asks about weather",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "tool": "database_query",
+                "tool_function_name": "query_db",
+                "should_not_call_tool_guidelines": "Don't call for personal questions",
+                "should_call_tool_guidelines": "Call for data retrieval requests",
+            },
+            False,
+            None,
+        ),
+        (
+            {
+                "tool": "",
+                "tool_function_name": "",
+                "should_not_call_tool_guidelines": "",
+                "should_call_tool_guidelines": "",
+            },
+            False,
+            None,
+        ),
+        # Invalid cases - missing required fields
+        (
+            {},
+            True,
+            "tool is required for tool call template",
+        ),
+        (
+            {"tool_function_name": "search"},
+            True,
+            "tool is required for tool call template",
+        ),
+        (
+            {"tool": "search_tool"},
+            True,
+            "tool_function_name is required for tool call template",
+        ),
+        # Invalid cases - wrong types
+        (
+            {"tool": 123, "tool_function_name": "search"},
+            True,
+            "tool is required for tool call template",
+        ),
+        (
+            {"tool": "search_tool", "tool_function_name": 456},
+            True,
+            "tool_function_name is required for tool call template",
+        ),
+        (
+            {
+                "tool": "search_tool",
+                "tool_function_name": "search",
+                "should_not_call_tool_guidelines": 789,
+            },
+            True,
+            "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string",
+        ),
+        (
+            {
+                "tool": "search_tool",
+                "tool_function_name": "search",
+                "should_call_tool_guidelines": True,
+            },
+            True,
+            "should_call_tool_guidelines is optional for tool call template, but if provided must be a string",
+        ),
+    ],
+)
+def test_eval_template_properties_tool_call_template_validation(
+    template_properties, should_raise, expected_error
+):
+    """Test tool_call template validation with various property combinations"""
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            Eval(
+                name="Test Eval",
+                template=EvalTemplateId.tool_call,
+                eval_set_filter_id="tag::tag1",
+                eval_configs_filter_id="tag::tag2",
+                output_scores=[
+                    EvalOutputScore(
+                        name="score",
+                        type=TaskOutputRatingType.pass_fail,
+                    )
+                ],
+                template_properties=template_properties,
+            )
+    else:
+        eval = Eval(
+            name="Test Eval",
+            template=EvalTemplateId.tool_call,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="score",
+                    type=TaskOutputRatingType.pass_fail,
+                )
+            ],
+            template_properties=template_properties,
+        )
+        assert eval.template == EvalTemplateId.tool_call
+        for key, value in template_properties.items():
+            assert eval.template_properties[key] == value
+
+
+def test_eval_run_tool_call_list_property(mock_task, valid_eval_config_data, tmp_path):
+    """Test EvalRun with tool_call_list property"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    eval_run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        tool_call_list=["tool1", "tool2", "tool3"],
+    )
+    eval_run.save_to_file()
+
+    # Verify the properties are saved correctly
+    assert eval_run.tool_call_list == ["tool1", "tool2", "tool3"]
+    assert eval_run.tool_call_list is not None
+    assert len(eval_run.tool_call_list) == 3
+
+    # Verify persistence by reloading from disk
+    runs = config.runs()
+    assert len(runs) == 1
+    assert runs[0].tool_call_list == ["tool1", "tool2", "tool3"]
+
+
+def test_eval_run_full_trace_property(mock_task, valid_eval_config_data, tmp_path):
+    """Test EvalRun with full_trace property"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    trace_data = '{"messages": [{"role": "user", "content": "test"}]}'
+    eval_run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        full_trace=trace_data,
+    )
+    eval_run.save_to_file()
+
+    # Verify the properties are saved correctly
+    assert eval_run.full_trace == trace_data
+    assert isinstance(eval_run.full_trace, str)
+
+    # Verify persistence by reloading from disk
+    runs = config.runs()
+    assert len(runs) == 1
+    assert runs[0].full_trace == trace_data
+
+
+def test_eval_run_both_new_properties(mock_task, valid_eval_config_data, tmp_path):
+    """Test EvalRun with both tool_call_list and full_trace properties"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    trace_data = '{"messages": [{"role": "assistant", "tool_calls": []}]}'
+    eval_run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        tool_call_list=["search_tool", "calculator"],
+        full_trace=trace_data,
+    )
+    eval_run.save_to_file()
+
+    # Verify the properties are saved correctly
+    assert eval_run.tool_call_list == ["search_tool", "calculator"]
+    assert eval_run.full_trace == trace_data
+
+    # Verify persistence by reloading from disk
+    runs = config.runs()
+    assert len(runs) == 1
+    assert runs[0].tool_call_list == ["search_tool", "calculator"]
+    assert runs[0].full_trace == trace_data
+
+
+def test_eval_run_new_properties_default_none(
+    mock_task, valid_eval_config_data, tmp_path
+):
+    """Test that new properties default to None when not provided"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    eval_run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+    )
+    eval_run.save_to_file()
+
+    # Verify the properties default to None
+    assert eval_run.tool_call_list is None
+    assert eval_run.full_trace is None
+
+    # Verify persistence by reloading from disk
+    runs = config.runs()
+    assert len(runs) == 1
+    assert runs[0].tool_call_list is None
+    assert runs[0].full_trace is None
+
+
+def test_eval_run_empty_tool_call_list(mock_task, valid_eval_config_data, tmp_path):
+    """Test EvalRun with empty tool_call_list"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    eval_run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        tool_call_list=[],
+    )
+    eval_run.save_to_file()
+
+    # Verify the properties are saved correctly
+    assert eval_run.tool_call_list == []
+    assert eval_run.tool_call_list is not None
+    assert len(eval_run.tool_call_list) == 0
+
+    # Verify persistence by reloading from disk
+    runs = config.runs()
+    assert len(runs) == 1
+    assert runs[0].tool_call_list == []
+
+
+def test_eval_run_empty_full_trace(mock_task, valid_eval_config_data, tmp_path):
+    """Test EvalRun with empty full_trace"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    eval_run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        full_trace="",
+    )
+    eval_run.save_to_file()
+
+    # Verify the properties are saved correctly
+    assert eval_run.full_trace == ""
+    assert isinstance(eval_run.full_trace, str)
+
+    # Verify persistence by reloading from disk
+    runs = config.runs()
+    assert len(runs) == 1
+    assert runs[0].full_trace == ""
+
+
+def test_eval_data_type_enum_values():
+    """Test EvalDataType enum has correct values"""
+    assert EvalDataType.final_answer == "final_answer"
+    assert EvalDataType.full_trace == "full_trace"
+    assert EvalDataType.tool_call_list == "tool_call_list"
+
+
+def test_eval_default_evaluation_data_type():
+    """Test that Eval defaults to final_answer for evaluation_data_type"""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.evaluation_data_type == EvalDataType.final_answer
+
+
+def test_eval_custom_evaluation_data_type():
+    """Test Eval with custom evaluation_data_type"""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.full_trace,
+    )
+
+    assert eval.evaluation_data_type == EvalDataType.full_trace
+
+
+def test_eval_tool_call_list_evaluation_data_type():
+    """Test Eval with tool_call_list evaluation_data_type"""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.tool_call_list,
+    )
+
+    assert eval.evaluation_data_type == EvalDataType.tool_call_list
+
+
+@pytest.mark.parametrize(
+    "evaluation_data_type",
+    [EvalDataType.final_answer, EvalDataType.full_trace, EvalDataType.tool_call_list],
+)
+def test_eval_all_evaluation_data_types(evaluation_data_type):
+    """Test Eval with all possible evaluation_data_type values"""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=evaluation_data_type,
+    )
+
+    assert eval.evaluation_data_type == evaluation_data_type
+
+
+def test_eval_run_eval_config_eval_data_type_validation(
+    mock_task, valid_eval_config_data, tmp_path
+):
+    """Test that eval_config_eval works with all evaluation data types"""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    # Test with final_answer - should work
+    eval_final_answer = Eval(
+        name="Test Eval Final Answer",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.final_answer,
+    )
+    eval_final_answer.save_to_file()
+
+    config_final_answer = EvalConfig(parent=eval_final_answer, **valid_eval_config_data)
+    config_final_answer.save_to_file()
+
+    # This should work - eval_config_eval with final_answer
+    EvalRun(
+        parent=config_final_answer,
+        dataset_id="dataset123",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+    )
+
+    # Test with full_trace - should work
+    eval_full_trace = Eval(
+        name="Test Eval Full Trace",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.full_trace,
+    )
+    eval_full_trace.save_to_file()
+
+    config_full_trace = EvalConfig(parent=eval_full_trace, **valid_eval_config_data)
+    config_full_trace.save_to_file()
+
+    # This should work - eval_config_eval with full_trace
+    EvalRun(
+        parent=config_full_trace,
+        dataset_id="dataset123",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+    )
+
+    # Test with tool_call_list - should work
+    eval_tool_call_list = Eval(
+        name="Test Eval Tool Call List",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.tool_call_list,
+    )
+    eval_tool_call_list.save_to_file()
+
+    config_tool_call_list = EvalConfig(
+        parent=eval_tool_call_list, **valid_eval_config_data
+    )
+    config_tool_call_list.save_to_file()
+
+    # This should work - eval_config_eval with tool_call_list
+    EvalRun(
+        parent=config_tool_call_list,
+        dataset_id="dataset123",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+    )

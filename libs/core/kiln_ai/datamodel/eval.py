@@ -30,6 +30,7 @@ class EvalTemplateId(str, Enum):
 
     kiln_requirements = "kiln_requirements"
     issue = "kiln_issue"
+    tool_call = "tool_call"
     toxicity = "toxicity"
     bias = "bias"
     maliciousness = "maliciousness"
@@ -108,6 +109,14 @@ class EvalRun(KilnParentedModel):
     intermediate_outputs: Dict[str, str] | None = Field(
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
+    )
+    full_trace: str | None = Field(
+        default=None,
+        description="The JSON formatted full trace of the task run that produced the output.",
+    )
+    tool_call_list: list[str] | None = Field(
+        default=None,
+        description="The list of tool calls made by the model.",
     )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
@@ -256,6 +265,12 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         return self
 
 
+class EvalDataType(str, Enum):
+    final_answer = "final_answer"
+    full_trace = "full_trace"
+    tool_call_list = "tool_call_list"
+
+
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
     name: FilenameString = Field(description="The name of the eval.")
     description: str | None = Field(
@@ -285,6 +300,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     template_properties: dict[str, str | int | bool | float] = Field(
         default={},
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
+    )
+    evaluation_data_type: EvalDataType = Field(
+        default=EvalDataType.final_answer,
+        description="The output of the task run to evaluate. Can be final answer, full trace, or tool call list.",
     )
 
     # Workaround to return typed parent without importing Task
@@ -330,5 +349,34 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             ):
                 raise ValueError(
                     "pass_example is optional for issue template, but if provided must be a string"
+                )
+        if self.template == EvalTemplateId.tool_call:
+            if "tool" not in self.template_properties or not isinstance(
+                self.template_properties["tool"], str
+            ):
+                raise ValueError("tool is required for tool call template")
+            if "tool_function_name" not in self.template_properties or not isinstance(
+                self.template_properties["tool_function_name"], str
+            ):
+                raise ValueError(
+                    "tool_function_name is required for tool call template"
+                )
+            if (
+                "should_not_call_tool_guidelines" in self.template_properties
+                and not isinstance(
+                    self.template_properties["should_not_call_tool_guidelines"], str
+                )
+            ):
+                raise ValueError(
+                    "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string"
+                )
+            if (
+                "should_call_tool_guidelines" in self.template_properties
+                and not isinstance(
+                    self.template_properties["should_call_tool_guidelines"], str
+                )
+            ):
+                raise ValueError(
+                    "should_call_tool_guidelines is optional for tool call template, but if provided must be a string"
                 )
         return self

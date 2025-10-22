@@ -1,3 +1,4 @@
+import json
 import math
 from typing import Dict, List, Tuple
 
@@ -5,14 +6,16 @@ from litellm.types.utils import ChatCompletionTokenLogprob
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.eval_utils import EvalUtils
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutput
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
-from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
+from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
 from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {
@@ -102,7 +105,9 @@ class GEval(BaseEval):
 
         self.geval_task = GEvalTask(eval_config)
 
-    def generate_run_description(self, eval_input: str, eval_output: str) -> str:
+    def generate_final_answer_run_description(
+        self, eval_input: str, eval_output: str
+    ) -> str:
         return f"""The model was given the following input for the task: 
 <eval_data>
 {eval_input}
@@ -113,6 +118,40 @@ The model produced the following output for the task:
 {eval_output}
 </eval_data>
 """
+
+    def generate_full_trace_run_description(
+        self, eval_input: str, eval_output: str
+    ) -> str:
+        return f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+This is the full trace of the task run including the final output produced:
+<eval_data>
+{eval_output}
+</eval_data>
+"""
+
+    def generate_tool_call_list_run_description(
+        self, eval_input: str, eval_output: str
+    ) -> str:
+        return f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+This is the list of tools the model called:
+<eval_data>
+{eval_output}
+</eval_data>
+"""
+
+    @staticmethod
+    def tool_call_list_from_trace(trace: list[ChatCompletionMessageParam]) -> str:
+        tool_names = EvalUtils.called_tool_names_from_trace(trace)
+
+        return "[" + ", ".join(tool_names) + "]" if tool_names else "[]"
 
     async def run_eval(
         self, task_run: TaskRun
@@ -157,9 +196,20 @@ The model produced the following output for the task:
             ),
         )
 
-        run_description = self.generate_run_description(
-            task_run.input, task_run.output.output
-        )
+        if self.eval.evaluation_data_type == EvalDataType.full_trace:
+            run_description = self.generate_full_trace_run_description(
+                task_run.input,
+                json.dumps(task_run.trace, ensure_ascii=False, pretty=2),
+            )
+        elif self.eval.evaluation_data_type == EvalDataType.tool_call_list:
+            # TODO: Log error if trace is None?
+            run_description = self.generate_tool_call_list_run_description(
+                task_run.input, GEval.tool_call_list_from_trace(task_run.trace or [])
+            )
+        else:  # EvalDataType.final_answer
+            run_description = self.generate_final_answer_run_description(
+                task_run.input, task_run.output.output
+            )
 
         # We don't need the run, but invoke_returning_run_output() runs validations for us over _run()
         _, run_output = await adapter.invoke_returning_run_output(run_description)

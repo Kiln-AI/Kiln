@@ -273,13 +273,15 @@ def test_token_case():
         assert token.lower() == token
 
 
-def test_generate_run_description(test_eval_config, test_run_config, test_task_run):
-    """Test that generate_run_description correctly uses task_run.output.output (the string) rather than task_run.output (the object)."""
+def test_generate_final_answer_run_description(
+    test_eval_config, test_run_config, test_task_run
+):
+    """Test that generate_final_answer_run_description correctly uses task_run.output.output (the string) rather than task_run.output (the object)."""
     # Create G-Eval instance
     g_eval = GEval(test_eval_config, test_run_config)
 
-    # Call generate_run_description
-    description = g_eval.generate_run_description(
+    # Call generate_final_answer_run_description
+    description = g_eval.generate_final_answer_run_description(
         test_task_run.input, test_task_run.output.output
     )
 

@@ -2,7 +2,7 @@ import type { EvalTemplateId, Task, Eval } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
-  "kiln_requirements" | "kiln_issue"
+  "kiln_requirements" | "kiln_issue" | "tool_call"
 >
 
 const eval_steps_static_templates: Record<StaticEvalTemplates, string[]> = {
@@ -87,6 +87,41 @@ export function get_eval_steps(
     }
     steps.push(
       "Considering the above, does the model's output contain the issue described? It should pass if it does not contain the issue, and fail if it does contain the issue.",
+    )
+    return steps
+  }
+
+  if (template === "tool_call") {
+    const tool_function_name = evaluator.template_properties.tool_function_name
+    if (!tool_function_name) {
+      throw new Error(
+        "Tool function name is required for tool call eval template",
+      )
+    }
+
+    const steps: string[] = [
+      `Does the list of tools the model called contain the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
+    ]
+
+    const should_call_tool_guidelines =
+      evaluator.template_properties.should_call_tool_guidelines
+    if (!should_call_tool_guidelines) {
+      throw new Error(
+        "Should call tool guidelines are required for tool call eval template",
+      )
+    }
+    steps.push(
+      `Does the model input indicate that the tool should have been called, according to the following guidelines: \n<should_call_tool_guidelines>\n${should_call_tool_guidelines}\n</should_call_tool_guidelines>`,
+    )
+    const should_not_call_tool_guidelines =
+      evaluator.template_properties.should_not_call_tool_guidelines
+    if (should_not_call_tool_guidelines) {
+      steps.push(
+        `Does the model input indicate that the tool should not have been called, according to the following guidelines: \n<should_not_call_tool_guidelines>\n${should_not_call_tool_guidelines}\n</should_not_call_tool_guidelines>`,
+      )
+    }
+    steps.push(
+      "Considering the above, does whether or not the task called the tool call match whether it should have called it or not? It should pass if it matches, and fail if it doesn't.",
     )
     return steps
   }
