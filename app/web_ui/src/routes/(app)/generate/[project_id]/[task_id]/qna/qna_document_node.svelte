@@ -61,11 +61,6 @@
     qna.removePart(document.id, part_id)
   }
 
-  $: total_qa_pairs = document.parts.reduce(
-    (total, part) => total + part.qa_pairs.length,
-    0,
-  )
-
   $: has_parts = document.parts.length > 0
 
   function open_part_dialog(part_text: string) {
@@ -102,9 +97,6 @@
         >
           {document.name}
         </button>
-        <span class="text-xs text-gray-500 font-normal">
-          ({total_qa_pairs} pairs)
-        </span>
         {#if document.extracted}
           <div class="badge badge-sm badge-secondary badge-outline ml-2">
             Extracted

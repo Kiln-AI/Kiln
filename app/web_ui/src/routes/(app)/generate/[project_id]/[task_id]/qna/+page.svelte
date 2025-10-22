@@ -29,9 +29,11 @@
   } from "$lib/stores/document_tag_store"
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import type { KilnDocument } from "$lib/types"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
   let ui_show_errors = false
+  let ui_show_generation_errors = false
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -50,6 +52,8 @@
   $: qnaTargetDescription = qna?.targetDescription
   $: qnaGeneratedCount = qna?.generatedCount
   $: qnaTotalCount = qna?.totalCount
+  $: qnaGenerationErrors = qna?.generationErrors
+  $: qnaStatus = qna?.status
 
   $: available_tags = derived(document_tag_store_by_project_id, ($store) => {
     const tag_counts = $store[project_id]
@@ -119,7 +123,12 @@
     show_generate_qna_dialog?.show()
   }
 
-  function handle_documents_added(event: CustomEvent) {
+  function handle_documents_added(
+    event: CustomEvent<{
+      documents: KilnDocument[]
+      tags: string[]
+    }>,
+  ) {
     const { documents, tags } = event.detail
     qna.addDocuments(documents, tags)
   }
@@ -157,6 +166,7 @@
   async function handle_generate_requested(event: CustomEvent) {
     show_generate_qna_dialog?.close()
     current_dialog_type = null
+    ui_show_generation_errors = false
     generating_dialog?.show()
     try {
       await qna.generate({
@@ -169,7 +179,12 @@
     } catch (e) {
       console.error("Q&A generation failed", e)
     } finally {
-      generating_dialog?.close()
+      if (
+        !get(qna.generationErrors) ||
+        get(qna.generationErrors).length === 0
+      ) {
+        generating_dialog?.close()
+      }
     }
   }
 
@@ -413,6 +428,28 @@
                     Next Step
                   </button>
                 {/if}
+                {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
+                  <div class="mt-3">
+                    <Warning
+                      warning_message="{$qnaGenerationErrors.length} error{$qnaGenerationErrors.length >
+                      1
+                        ? 's'
+                        : ''} occurred during generation"
+                      warning_color="error"
+                      warning_icon="exclaim"
+                      tight
+                    />
+                    <button
+                      class="link text-sm mt-1"
+                      on:click={() => {
+                        ui_show_generation_errors = true
+                        generating_dialog?.show()
+                      }}
+                    >
+                      Show Errors
+                    </button>
+                  </div>
+                {/if}
               {:else if $qnaCurrentStep == 4}
                 {@const already_saved_count =
                   total_qa_pairs - ($qnaPendingSaveCount || 0)}
@@ -437,6 +474,28 @@
                   </div>
                 {:else}
                   <button class="btn btn-sm btn-disabled">Save All</button>
+                {/if}
+                {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
+                  <div class="mt-3">
+                    <Warning
+                      warning_message="{$qnaGenerationErrors.length} error{$qnaGenerationErrors.length >
+                      1
+                        ? 's'
+                        : ''} occurred during generation"
+                      warning_color="error"
+                      warning_icon="exclaim"
+                      tight
+                    />
+                    <button
+                      class="link text-sm mt-1"
+                      on:click={() => {
+                        ui_show_generation_errors = true
+                        generating_dialog?.show()
+                      }}
+                    >
+                      Show Errors
+                    </button>
+                  </div>
                 {/if}
               {/if}
             </div>
@@ -531,10 +590,23 @@
   bind:this={generating_dialog}
   title="Generating Q&A"
   width="normal"
-  action_buttons={[]}
+  action_buttons={$qnaStatus && $qnaStatus !== "running"
+    ? [
+        {
+          label: "Close",
+          action: () => {
+            generating_dialog?.close()
+            return true
+          },
+          isPrimary: true,
+        },
+      ]
+    : []}
 >
   <div class="min-h-[200px] flex flex-col justify-center items-center">
-    <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+    {#if $qnaStatus === "running"}
+      <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+    {/if}
     {#if $qnaTotalCount && $qnaTotalCount > 0}
       <progress
         class="progress w-56 progress-success"
@@ -544,6 +616,29 @@
       <div class="font-light text-xs text-center mt-1">
         {$qnaGeneratedCount} of {$qnaTotalCount} generated
       </div>
+      {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
+        <div class="text-error font-light text-sm mt-4">
+          {$qnaGenerationErrors.length} part(s) failed to generate
+          <button
+            class="link"
+            on:click={() =>
+              (ui_show_generation_errors = !ui_show_generation_errors)}
+          >
+            {ui_show_generation_errors ? "Hide Errors" : "Show Errors"}
+          </button>
+        </div>
+        <div
+          class="flex flex-col gap-2 mt-4 text-xs text-error max-w-md max-h-48 overflow-y-auto {ui_show_generation_errors
+            ? ''
+            : 'hidden'}"
+        >
+          {#each $qnaGenerationErrors as error}
+            <div class="text-left border-l-2 border-error pl-2 py-1">
+              {error.message}
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   </div>
 </Dialog>
