@@ -2,10 +2,10 @@
   import SettingsHeader from "./settings_header.svelte"
   import SettingsItem from "./settings_item.svelte"
   import EvalTemplateItem from "./eval_template_item.svelte"
-  import type { SettingsSectionItem } from "./settings_section_types"
+  import type { KilnSectionItem } from "./kiln_section_types"
 
   export let title: string
-  export let items: Array<SettingsSectionItem>
+  export let items: Array<KilnSectionItem>
 </script>
 
 <div class="space-y-6">

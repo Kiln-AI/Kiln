@@ -35,6 +35,7 @@ class EvalTemplateId(str, Enum):
     maliciousness = "maliciousness"
     factual_correctness = "factual_correctness"
     jailbreak = "jailbreak"
+    search_tool_reference_answer = "search_tool_reference_answer"
 
 
 class EvalConfigType(str, Enum):
@@ -330,5 +331,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             ):
                 raise ValueError(
                     "pass_example is optional for issue template, but if provided must be a string"
+                )
+        if self.template == EvalTemplateId.search_tool_reference_answer:
+            if "search_tool_id" not in self.template_properties or not isinstance(
+                self.template_properties["search_tool_id"], str
+            ):
+                raise ValueError(
+                    "search_tool_id is required for search tool reference answer template"
                 )
         return self

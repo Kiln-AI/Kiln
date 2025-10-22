@@ -15,10 +15,11 @@
     <div class="font-medium text-lg">
       Improve Quality and Move Faster with Evaluations
     </div>
-    <div>Create powerful evaluators using LLMs to judge performance.</div>
     <div>
-      Quickly compare many approaches to find what works best for your task.
+      Create powerful evaluators for your task or search tools using LLMs to
+      judge performance.
     </div>
+    <div>Quickly compare many approaches to find what works best.</div>
     <div>
       Ensure quality over time, back testing prior bugs and benchmarking new
       approaches.

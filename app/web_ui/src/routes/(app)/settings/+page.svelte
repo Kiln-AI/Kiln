@@ -1,14 +1,16 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import { ui_state } from "$lib/stores"
-  import SettingsSection from "$lib/ui/settings_section.svelte"
+  import KilnSection from "$lib/ui/kiln_section.svelte"
   import { view_logs } from "$lib/utils/logs"
+  import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
 
-  let sections = [
+  let sections: Array<{ category: string; items: Array<KilnSectionItem> }> = [
     {
       category: "Current Workspace",
       items: [
         {
+          type: "settings",
           name: "Edit Current Task",
           description:
             "Modify your current task's prompt, requirements, and configuration settings.",
@@ -16,6 +18,7 @@
           href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
         },
         {
+          type: "settings",
           name: "Edit Current Project",
           description:
             "Update your current project's name, description, and settings.",
@@ -28,6 +31,7 @@
       category: "Tools & MCP",
       items: [
         {
+          type: "settings",
           name: "Manage Tools",
           description:
             "Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers",
@@ -40,6 +44,7 @@
       category: "Models & Providers",
       items: [
         {
+          type: "settings",
           name: "AI Providers",
           description:
             "Connect to over a dozen AI providers like Ollama, OpenRouter, Together, OpenAI and more.",
@@ -47,6 +52,7 @@
           button_text: "Manage Providers",
         },
         {
+          type: "settings",
           name: "Custom Models",
           description:
             "Add or remove custom models from one of your connected AI providers.",
@@ -59,6 +65,7 @@
       category: "Projects",
       items: [
         {
+          type: "settings",
           name: "Manage Projects",
           description:
             "Create new projects, organize existing ones, or remove projects you no longer need.",
@@ -71,6 +78,7 @@
       category: "Help & Resources",
       items: [
         {
+          type: "settings",
           name: "Application Logs",
           description:
             "View detailed logs of LLM calls and application events for debugging and monitoring.",
@@ -78,6 +86,7 @@
           on_click: view_logs,
         },
         {
+          type: "settings",
           name: "Check for Update",
           description:
             "Check if there is a newer version of the Kiln app available.",
@@ -85,6 +94,7 @@
           button_text: "Check for Update",
         },
         {
+          type: "settings",
           name: "Docs & Getting Started",
           description:
             "Read the docs, including our getting started guide and video tutorials.",
@@ -93,6 +103,7 @@
           is_external: true,
         },
         {
+          type: "settings",
           name: "License Agreement",
           description:
             "View the End User License Agreement (EULA) for the Kiln AI desktop application.",
@@ -108,7 +119,7 @@
 <AppPage title="Settings">
   <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
-      <SettingsSection title={section.category} items={section.items} />
+      <KilnSection title={section.category} items={section.items} />
     {/each}
   </div>
 </AppPage>

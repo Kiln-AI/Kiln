@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import SettingsSection from "$lib/ui/settings_section.svelte"
+  import KilnSection from "$lib/ui/kiln_section.svelte"
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { client } from "$lib/api_client"
@@ -185,10 +185,11 @@
     </h3>
     <FeatureCarousel features={suggested_search_tools} />
     <div class="max-w-4xl mt-12">
-      <SettingsSection
+      <KilnSection
         title="Custom Configuration"
         items={[
           {
+            type: "settings",
             name: "Custom Search Tool",
             badge_text: "Advanced",
             description:

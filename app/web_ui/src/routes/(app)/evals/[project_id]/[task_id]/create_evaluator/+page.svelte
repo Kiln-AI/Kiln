@@ -138,8 +138,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Create a New Evaluator"
-    subtitle="Evaluators judge task performance and help you find the best method of running your task."
+    title="Create New Evaluator"
     breadcrumbs={[
       {
         label: "Evals",

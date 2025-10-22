@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import SettingsSection from "$lib/ui/settings_section.svelte"
+  import KilnSection from "$lib/ui/kiln_section.svelte"
   import { client } from "$lib/api_client"
   import type { McpServerKeyValuePair } from "$lib/tools"
   import { uncache_available_tools } from "$lib/stores"
@@ -220,10 +220,11 @@
     <h2 class="text-lg font-medium text-gray-900 mb-3">Suggested Tools</h2>
     <FeatureCarousel features={sample_tools} />
     <div class="max-w-4xl mt-8">
-      <SettingsSection
+      <KilnSection
         title="Custom Tools"
         items={[
           {
+            type: "settings",
             name: "Search Tools (RAG)",
             description:
               "Create a tool to search for information in documents.",
@@ -231,6 +232,7 @@
             href: `/docs/rag_configs/${project_id}/add_search_tool`,
           },
           {
+            type: "settings",
             name: "Kiln Task as Tool",
             description:
               "Allow your tasks to call another Kiln task, as a tool call.",
@@ -239,6 +241,7 @@
               goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`),
           },
           {
+            type: "settings",
             name: "Remote MCP Servers",
             description:
               "Connect to remote MCP servers to add tools to your project.",
@@ -247,6 +250,7 @@
               goto(`/settings/manage_tools/${project_id}/add_tools/remote_mcp`),
           },
           {
+            type: "settings",
             name: "Local MCP Servers",
             description:
               "Connect to local MCP servers to add tools to your project.",
