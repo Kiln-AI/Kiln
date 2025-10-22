@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { SampleDataNode } from "./gen_model"
-  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
@@ -8,10 +7,15 @@
   import SynthDataGuidance from "./synth_data_guidance.svelte"
   import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import posthog from "posthog-js"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import type { RunConfigProperties } from "$lib/types"
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
   const selected_template = guidance_data.selected_template
+
+  $: project_id = guidance_data.project_id
+  let run_config_component: RunConfigComponent | null = null
 
   type GenerateSamplesOutcome = {
     topic: TopicNodeWithPath
@@ -26,7 +30,6 @@
   export let id: string
   export let data: SampleDataNode
   export let path: string[]
-  export let model: string
   export let num_samples_to_generate: number = 8
   export let custom_topics_string: string | null = null
 
@@ -81,17 +84,19 @@
   let sample_generating: boolean = false
   async function request_generate_samples(
     topic: TopicNodeWithPath,
+    run_config_properties: RunConfigProperties | null,
   ): Promise<GenerateSampleResponse> {
     try {
-      if (!model) {
-        throw new KilnError("No model selected.", null)
+      if (!run_config_properties) {
+        throw new KilnError("No run config properties.", null)
       }
       if (!guidance_data.gen_type) {
         throw new KilnError("No generation type selected.", null)
       }
-      const model_provider = model.split("/")[0]
-      const model_name = model.split("/").slice(1).join("/")
-      if (!model_name || !model_provider) {
+      if (
+        !run_config_properties.model_name ||
+        !run_config_properties.model_provider_name
+      ) {
         throw new KilnError("Invalid model selected.", null)
       }
       const input_guidance = guidance_data.guidance_for_type("inputs")
@@ -102,8 +107,7 @@
             body: {
               topic: topic.path,
               num_samples: num_samples_to_generate,
-              model_name: model_name,
-              provider: model_provider,
+              run_config_properties: run_config_properties,
               guidance: input_guidance ? input_guidance : null, // clear empty string
               gen_type: guidance_data.gen_type,
             },
@@ -120,8 +124,10 @@
       }
       posthog.capture("generate_synthetic_inputs", {
         num_samples: num_samples_to_generate,
-        model_name: model_name,
-        provider: model_provider,
+        model_name: run_config_properties.model_name,
+        provider: run_config_properties.model_provider_name,
+        tools: run_config_properties.tools_config?.tools ?? [],
+        structured_output_mode: run_config_properties.structured_output_mode,
         gen_type: guidance_data.gen_type,
       })
       const response = JSON.parse(generate_response.output.output)
@@ -136,8 +142,8 @@
       add_synthetic_samples(
         topic.node,
         response.generated_samples,
-        model_name,
-        model_provider,
+        run_config_properties.model_name,
+        run_config_properties.model_provider_name,
       )
     } catch (e) {
       if (e instanceof KilnError) {
@@ -186,6 +192,10 @@
   }
 
   async function generate_samples() {
+    // Capture run config properties before modal closes and component is destroyed
+    const run_config_properties =
+      run_config_component?.run_options_as_run_config_properties() ?? null
+
     sample_generating = true
     generate_samples_outcomes = {}
 
@@ -197,7 +207,7 @@
     // 5 because browsers can only handle 6 concurrent requests. The 6th is for the rest of the UI to keep working.
     const workers = Array(5)
       .fill(null)
-      .map(() => worker(queue))
+      .map(() => worker(queue, run_config_properties))
 
     // Wait for all workers to complete
     await Promise.all(workers)
@@ -211,10 +221,16 @@
     }
   }
 
-  async function worker(queue: TopicNodeWithPath[]) {
+  async function worker(
+    queue: TopicNodeWithPath[],
+    run_config_properties: RunConfigProperties | null,
+  ) {
     while (queue.length > 0) {
       const topic = queue.shift()!
-      const result = await request_generate_samples(topic)
+      const result = await request_generate_samples(
+        topic,
+        run_config_properties,
+      )
 
       const path_serialized = serialize_topic_path(topic.path)
       if (result.error) {
@@ -268,9 +284,13 @@
         <div>
           <SynthDataGuidance guidance_type="inputs" {guidance_data} />
         </div>
-        <AvailableModelsDropdown
-          task_id={guidance_data.task_id}
-          settings={{
+        <RunConfigComponent
+          bind:this={run_config_component}
+          {project_id}
+          requires_structured_output={true}
+          hide_prompt_selector={true}
+          show_tools_selector_in_advanced={true}
+          model_dropdown_settings={{
             requires_data_gen: true,
             requires_uncensored_data_gen:
               guidance_data.suggest_uncensored($selected_template),
@@ -278,7 +298,6 @@
               ? "uncensored_data_gen"
               : "data_gen",
           }}
-          bind:model
         />
 
         <!-- display errors after the generation has completed -->

@@ -25,7 +25,7 @@
           language: "json",
         }).value
       }
-    } catch (e) {
+    } catch (_) {
       formatted_json_html = null
     }
   }

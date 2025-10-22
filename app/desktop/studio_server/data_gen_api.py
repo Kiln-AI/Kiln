@@ -10,9 +10,6 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     wrap_task_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
-from kiln_ai.adapters.ml_model_list import (
-    default_structured_output_mode_for_model_provider,
-)
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -21,13 +18,12 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
 )
-from kiln_server.run_api import model_provider_from_string
 from kiln_server.task_api import task_from_id
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class DataGenCategoriesApiInput(BaseModel):
@@ -46,11 +42,9 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Optional list of existing topics to avoid",
         default=None,
     )
-    model_name: str = Field(description="The name of the model to use")
-    provider: str = Field(description="The provider of the model to use")
-
-    # Allows use of the model_name field (usually pydantic will reserve model_*)
-    model_config = ConfigDict(protected_namespaces=())
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for topic generation"
+    )
 
 
 class DataGenSampleApiInput(BaseModel):
@@ -63,11 +57,9 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
-    model_name: str = Field(description="The name of the model to use")
-    provider: str = Field(description="The provider of the model to use")
-
-    # Allows use of the model_name field (usually pydantic will reserve model_*)
-    model_config = ConfigDict(protected_namespaces=())
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for input generation"
+    )
 
 
 class DataGenSaveSamplesApiInput(BaseModel):
@@ -81,8 +73,8 @@ class DataGenSaveSamplesApiInput(BaseModel):
     input_provider: str = Field(
         description="The provider of the model used to generate the input"
     )
-    output_run_config_properties: RunConfigProperties = Field(
-        description="The run config properties to use for the output"
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for output generation"
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",
@@ -102,7 +94,7 @@ class DataGenQnaApiInput(BaseModel):
     num_samples: int = Field(
         description="Number of samples to generate for this part", default=10
     )
-    output_run_config_properties: RunConfigProperties = Field(
+    run_config_properties: RunConfigProperties = Field(
         description="The run config properties to use for the output"
     )
     guidance: str | None = Field(
@@ -143,17 +135,12 @@ def connect_data_gen_api(app: FastAPI):
             existing_topics=input.existing_topics,
         )
 
+        run_config_properties = input.run_config_properties.model_copy()
+        # Override prompt id to simple just in case we change the default in the UI in the future.
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
             categories_task,
-            run_config_properties=RunConfigProperties(
-                model_name=input.model_name,
-                model_provider_name=model_provider_from_string(input.provider),
-                prompt_id=PromptGenerators.SIMPLE,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    input.model_name, model_provider_from_string(input.provider)
-                ),
-            ),
+            run_config_properties=run_config_properties,
         )
 
         categories_run = await adapter.invoke(task_input.model_dump())
@@ -176,17 +163,12 @@ def connect_data_gen_api(app: FastAPI):
             num_samples=input.num_samples,
         )
 
+        run_config_properties = input.run_config_properties.model_copy()
+        # Override prompt id to simple just in case we change the default in the UI in the future.
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
             sample_task,
-            run_config_properties=RunConfigProperties(
-                model_name=input.model_name,
-                model_provider_name=model_provider_from_string(input.provider),
-                prompt_id=PromptGenerators.SIMPLE,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    input.model_name, model_provider_from_string(input.provider)
-                ),
-            ),
+            run_config_properties=run_config_properties,
         )
 
         samples_run = await adapter.invoke(task_input.model_dump())
@@ -229,7 +211,7 @@ The topic path for this sample is:
 
         adapter = adapter_for_task(
             task,
-            run_config_properties=sample.output_run_config_properties,
+            run_config_properties=sample.run_config_properties,
         )
 
         properties: dict[str, str | int | float] = {
@@ -276,7 +258,7 @@ The topic path for this sample is:
         )
         adapter = adapter_for_task(
             qna_task,
-            run_config_properties=input.output_run_config_properties,
+            run_config_properties=input.run_config_properties,
         )
         qna_run = await adapter.invoke(task_input.model_dump())
 

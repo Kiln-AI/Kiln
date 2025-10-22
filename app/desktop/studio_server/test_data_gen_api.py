@@ -108,8 +108,12 @@ def test_generate_categories_success(
         num_subtopics=4,
         guidance="Generate tech categories",
         gen_type="eval",
-        model_name="gpt-4",
-        provider="openai",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
     )
 
     # Act
@@ -136,8 +140,12 @@ def test_generate_samples_success(
         topic=["technology", "AI"],
         gen_type="training",
         guidance="Make long samples",
-        model_name="gpt-4",
-        provider="openai",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
     )
 
     # Act
@@ -164,7 +172,7 @@ def test_save_sample_success_paid_run(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_run_config_properties=RunConfigProperties(
+        run_config_properties=RunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -221,7 +229,7 @@ def test_generate_sample_success_with_mock_invoke(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_run_config_properties=RunConfigProperties(
+        run_config_properties=RunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -296,7 +304,7 @@ def test_generate_sample_success_with_topic_path(
         topic_path=["AI", "Machine Learning", "Deep Learning"],
         input_model_name="gpt_4o",
         input_provider="openai",
-        output_run_config_properties=RunConfigProperties(
+        run_config_properties=RunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -432,7 +440,7 @@ def test_generate_sample_guidance_generation(
             input="Test input",
             input_model_name="gpt-4",
             input_provider="openai",
-            output_run_config_properties=RunConfigProperties(
+            run_config_properties=RunConfigProperties(
                 model_name="gpt-4",
                 model_provider_name=ModelProviderName.openai,
                 prompt_id=PromptGenerators.SIMPLE,
@@ -472,7 +480,7 @@ def test_generate_qna_success_with_session_and_tags(
         document_id=["doc1", "doc2"],
         part_text=["section a", "section b"],
         num_samples=3,
-        output_run_config_properties=RunConfigProperties(
+        run_config_properties=RunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,

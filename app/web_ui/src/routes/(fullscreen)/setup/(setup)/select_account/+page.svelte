@@ -82,9 +82,8 @@
       <div class="text-sm text-gray-500">
         {settings_error.getMessage()}
       </div>
-      <button
-        class="btn btn-ghose btn-sm mt-4"
-        on:click={() => window.location.reload()}>Reload</button
+      <button class="btn btn-sm mt-4" on:click={() => window.location.reload()}
+        >Reload</button
       >
     </div>
   </div>

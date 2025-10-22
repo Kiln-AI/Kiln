@@ -10,6 +10,7 @@
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import QnaIcon from "$lib/ui/icons/qna_icon.svelte"
+  import { encode_splits_for_url } from "$lib/utils/splits_util"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -90,7 +91,7 @@
     }
 
     // .set will automatically URL encode
-    params.set("splits", JSON.stringify(splits))
+    params.set("splits", encode_splits_for_url(splits))
 
     goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
     evals_dialog?.close()
@@ -170,7 +171,7 @@
     params.set("template_id", "fine_tuning")
 
     // .set will automatically URL encode
-    params.set("splits", JSON.stringify(splits))
+    params.set("splits", encode_splits_for_url(splits))
 
     goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
     fine_tuning_dialog?.close()
