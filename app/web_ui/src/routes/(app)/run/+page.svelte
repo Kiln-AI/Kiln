@@ -202,6 +202,7 @@
             bind:this={run_config_component}
             {project_id}
             current_task={$current_task}
+            requires_structured_output={!!$current_task.output_json_schema}
             bind:selected_run_config_id
             bind:save_config_error
             bind:set_default_error

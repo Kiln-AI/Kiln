@@ -73,12 +73,12 @@
   }
 
   // Warn before unload if there's any user input
-  $: prompt_name,
-    prompt_description,
-    prompt,
-    is_chain_of_thought,
-    chain_of_thought_instructions,
-    user_input_detected()
+  $: void (prompt_name,
+  prompt_description,
+  prompt,
+  is_chain_of_thought,
+  chain_of_thought_instructions,
+  user_input_detected())
 
   function user_input_detected() {
     if (mounted) {

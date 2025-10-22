@@ -128,7 +128,7 @@
         throw get_error
       }
       import_project_path = data.file_path ?? ""
-    } catch (e) {
+    } catch (_) {
       // We don't like alerts, but this should only appear in developer mode
       alert("Can't open file selector. Please enter the path manually.")
       // This allows them to still type it.
@@ -203,7 +203,7 @@
 
       // Return true if project has at least one task
       return tasks_data && tasks_data.length > 0
-    } catch (e) {
+    } catch (_) {
       // If error checking tasks, default to going to task creation
       return false
     }

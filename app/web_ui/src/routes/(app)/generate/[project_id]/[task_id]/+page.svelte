@@ -37,7 +37,7 @@
     // Eval/Fine-tuning modes redirect to synth page - this is when we explicitly link back
     // to the synth page (e.g. via toast UI)
     if (reason_param === "eval" || reason_param === "fine_tune") {
-      const params = new URLSearchParams($page.url.searchParams)
+      const params = $page.url.searchParams
       await goto(
         `/generate/${project_id}/${task_id}/synth?${params.toString()}`,
       )

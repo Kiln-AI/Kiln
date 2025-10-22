@@ -395,10 +395,14 @@
   }
 
   // Watch for filter changes
-  $: searchQuery, selectedProvider, selectedCapability, models, applyFilters()
+  $: void (searchQuery,
+  selectedProvider,
+  selectedCapability,
+  models,
+  applyFilters())
 
   // Watch for sort changes
-  $: sortBy, sortDirection, applySorting()
+  $: void (sortBy, sortDirection, applySorting())
 
   onMount(async () => {
     await load_available_models()

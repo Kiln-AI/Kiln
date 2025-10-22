@@ -13,9 +13,7 @@
   let plaintext_input: string = ""
   let structured_input_data: Record<string, string> = {}
 
-  $: {
-    plaintext_input, structured_input_data, onInputChange?.()
-  }
+  $: void (plaintext_input, structured_input_data, onInputChange?.())
 
   $: structured_input_model = input_schema
     ? model_from_schema_string(input_schema)

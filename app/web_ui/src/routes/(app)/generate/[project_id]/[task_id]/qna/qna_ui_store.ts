@@ -591,7 +591,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           document_id: [],
           part_text: [partText],
           num_samples: pairsPerPart,
-          output_run_config_properties: outputRunConfigProperties,
+          run_config_properties: outputRunConfigProperties,
           guidance: guidance || null,
           tags: null,
         },

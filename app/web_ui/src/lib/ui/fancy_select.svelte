@@ -139,7 +139,7 @@
   }
 
   // Watch for changes to options and recheck scrollability
-  $: options, setTimeout(checkIfScrollable, 0)
+  $: void (options, setTimeout(checkIfScrollable, 0))
 
   // Set up floating UI positioning when dropdown becomes visible
   $: if (listVisible && selectedElement && dropdownElement && mounted) {
