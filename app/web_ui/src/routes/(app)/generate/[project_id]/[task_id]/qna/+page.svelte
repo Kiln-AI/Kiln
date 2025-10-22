@@ -164,7 +164,7 @@
         guidance: get(qna.guidance),
         chunkSizeTokens: get(qna.chunkSizeTokens),
         chunkOverlapTokens: get(qna.chunkOverlapTokens),
-        runConfig: event.detail.run_config,
+        runConfigProperties: event.detail.runConfigProperties,
       })
     } catch (e) {
       console.error("Q&A generation failed", e)
@@ -502,7 +502,6 @@
   <GenerateQnadialog
     bind:dialog={show_generate_qna_dialog}
     {project_id}
-    {task_id}
     bind:pairs_per_part={$qnaPairsPerPart}
     bind:guidance={$qnaGuidance}
     bind:chunk_size_tokens={$qnaChunkSizeTokens}

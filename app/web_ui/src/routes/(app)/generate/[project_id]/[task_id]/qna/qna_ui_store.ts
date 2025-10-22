@@ -74,7 +74,7 @@ type GenerationParams = {
   guidance: string
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
-  runConfig: RunConfigProperties
+  runConfigProperties: RunConfigProperties
 }
 
 export type QnaStore = {
@@ -580,7 +580,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     partText: string,
     pairsPerPart: number,
     guidance: string,
-    outputRunConfigProperties: RunConfigProperties,
+    runConfigProperties: RunConfigProperties,
   ): Promise<QnAPair[]> {
     const { data, error: apiError } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
@@ -589,7 +589,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           document_id: [],
           part_text: [partText],
           num_samples: pairsPerPart,
-          run_config_properties: outputRunConfigProperties,
+          run_config_properties: runConfigProperties,
           guidance: guidance || null,
           tags: null,
         },
@@ -606,8 +606,8 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       ? response.generated_qna_pairs
       : []
 
-    const modelProvider = outputRunConfigProperties.model_provider_name
-    const modelName = outputRunConfigProperties.model_name
+    const modelProvider = runConfigProperties.model_provider_name
+    const modelName = runConfigProperties.model_name
 
     return generated.map((qa) => ({
       id: crypto.randomUUID(),
@@ -664,7 +664,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     parts: PartReference[],
     pairsPerPart: number,
     guidance: string,
-    outputRunConfigProperties: RunConfigProperties,
+    runConfigProperties: RunConfigProperties,
     chunkSizeTokens: number | null,
     chunkOverlapTokens: number | null,
   ): Promise<void> {
@@ -688,7 +688,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         part.text_preview,
         pairsPerPart,
         guidance,
-        outputRunConfigProperties,
+        runConfigProperties,
       )
 
       _state.update((s) => {
@@ -723,7 +723,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   async function generate({
     pairsPerPart,
     guidance,
-    runConfig,
+    runConfigProperties,
     chunkSizeTokens,
     chunkOverlapTokens,
   }: GenerationParams): Promise<void> {
@@ -753,7 +753,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         targetParts,
         pairsPerPart,
         guidance,
-        runConfig,
+        runConfigProperties,
         chunkSizeTokens,
         chunkOverlapTokens,
       )
