@@ -44,6 +44,18 @@ class TraceBasedDatasetFormatter:
 
     # Helpers
 
+    def _validate_json_dictionary(self, s: str) -> dict[str, Any]:
+        """Validate if a string is valid JSON dictionary, raises ValueError if not"""
+        try:
+            json_data = json.loads(s)
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            raise ValueError(f"Invalid JSON: {e}")
+
+        if not isinstance(json_data, dict):
+            raise ValueError("JSON must be a dictionary object")
+
+        return json_data
+
     def generate_openai_chat_message_list(
         self,
         trace: list[ChatCompletionMessageParam],
@@ -118,16 +130,11 @@ class TraceBasedDatasetFormatter:
             )
 
         try:
-            json_data = json.loads(content or "")
-        except json.JSONDecodeError as e:
+            _ = self._validate_json_dictionary(content or "")
+        except ValueError as e:
             raise ValueError(
-                f"Last message is not JSON (structured), and this format expects structured data: {e}"
-            )
-
-        if not isinstance(json_data, dict):
-            raise ValueError(
-                "Last message is not a JSON Dictionary (structured data), and this format expects structured_data."
-            )
+                f"Last message is not a JSON Dictionary (structured data), and this format expects structured_data: {e}"
+            ) from e
 
         # The response is valid structured output. Put this into OpenAI format.
         return self.generate_openai_chat_message_response(trace)
