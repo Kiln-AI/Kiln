@@ -119,6 +119,7 @@
           {project_id}
           requires_structured_output={true}
           hide_prompt_selector={true}
+          hide_tools_selector={true}
           model_dropdown_settings={{
             requires_data_gen: true,
           }}
