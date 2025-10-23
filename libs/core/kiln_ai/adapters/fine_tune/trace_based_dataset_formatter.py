@@ -144,7 +144,32 @@ class TraceBasedDatasetFormatter:
         trace: list[ChatCompletionMessageParam],
     ) -> Dict[str, Any]:
         """Generate toolcall message from trace"""
-        return {}
+
+        # Get last message
+        last_message = trace[-1]
+        # Remove last message from trace
+        new_trace = trace[:-1]
+        # Generate messages from trace without last message
+        messages = self.generate_openai_chat_message_list(new_trace)
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "task_response",
+                            "arguments": json.dumps(last_message, ensure_ascii=False),
+                        },
+                    }
+                ],
+            },
+        )
+
+        return {"messages": messages}
 
     def generate_huggingface_chat_template(
         self,
