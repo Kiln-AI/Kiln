@@ -31,7 +31,7 @@
 
   // Props
   export let project_id: string
-  export let current_task: Task
+  export let current_task: Task | null = null // When task is null, certain functionality is disabled such as saving a new run config
   export let model_name: string = ""
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
@@ -39,12 +39,14 @@
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
+  export let hide_prompt_selector: boolean = false
+  export let show_tools_selector_in_advanced: boolean = false
+  export let requires_structured_output: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
   let tools: string[] = []
   let requires_tool_support: boolean = false
-  $: requires_structured_output = !!current_task.output_json_schema
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -69,7 +71,7 @@
     await load_available_models()
   })
 
-  $: if (project_id && current_task.id) {
+  $: if (project_id && current_task?.id) {
     load_task_prompts(project_id, current_task.id)
   }
 
@@ -176,7 +178,7 @@
   }
 
   export async function save_new_run_config(): Promise<TaskRunConfig | null> {
-    if (!project_id || !current_task.id) {
+    if (!current_task?.id) {
       return null
     }
     try {
@@ -201,8 +203,11 @@
   async function get_selected_run_config(): Promise<
     TaskRunConfig | "custom" | null
   > {
+    if (!current_task?.id) {
+      return null
+    }
     // Make sure the task run configs are loaded, will be quick if they already are
-    await load_task_run_configs(project_id, current_task.id ?? "")
+    await load_task_run_configs(project_id, current_task.id)
 
     // Map selected ID back to TaskRunConfig object
     if (!selected_run_config_id) {
@@ -213,7 +218,7 @@
       // Find the config by ID
       const all_configs =
         $run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id ?? "")
+          get_task_composite_id(project_id, current_task.id)
         ] ?? []
       let run_config = all_configs.find(
         (config) => config.id === selected_run_config_id,
@@ -251,29 +256,50 @@
 
 <div class="w-full flex flex-col gap-4">
   <AvailableModelsDropdown
-    task_id={current_task.id ?? ""}
+    task_id={current_task?.id ?? null}
     bind:model
     settings={updated_model_dropdown_settings}
     bind:error_message={model_dropdown_error_message}
     bind:this={model_dropdown}
   />
-  <PromptTypeSelector
-    bind:prompt_method
-    info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-    bind:linked_model_selection={model}
-  />
-  <ToolsSelector
-    bind:tools
-    {project_id}
-    task_id={current_task.id ?? ""}
-    {hide_create_kiln_task_tool_button}
-  />
-  <Collapse title="Advanced Options">
-    <AdvancedRunOptions
-      bind:temperature
-      bind:top_p
-      bind:structured_output_mode
-      has_structured_output={requires_structured_output}
+  {#if !hide_prompt_selector}
+    <PromptTypeSelector
+      bind:prompt_method
+      info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+      bind:linked_model_selection={model}
     />
-  </Collapse>
+  {/if}
+  {#if !show_tools_selector_in_advanced}
+    <ToolsSelector
+      bind:tools
+      {project_id}
+      task_id={current_task?.id ?? null}
+      {hide_create_kiln_task_tool_button}
+    />
+    <Collapse title="Advanced Options">
+      <AdvancedRunOptions
+        bind:temperature
+        bind:top_p
+        bind:structured_output_mode
+        has_structured_output={requires_structured_output}
+      />
+    </Collapse>
+  {:else}
+    <Collapse title="Advanced Options">
+      <div class="flex flex-col gap-0">
+        <ToolsSelector
+          bind:tools
+          {project_id}
+          task_id={current_task?.id ?? null}
+          {hide_create_kiln_task_tool_button}
+        />
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </div>
+    </Collapse>
+  {/if}
 </div>
