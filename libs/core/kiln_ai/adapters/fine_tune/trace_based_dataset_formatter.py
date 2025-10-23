@@ -1,5 +1,6 @@
 import json
 from typing import Any, Dict
+from uuid import uuid4
 
 from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
 from kiln_ai.datamodel import TaskRun
@@ -176,14 +177,39 @@ class TraceBasedDatasetFormatter:
         trace: list[ChatCompletionMessageParam],
     ) -> Dict[str, Any]:
         """Generate huggingface chat template message from trace"""
-        return {}
+        messages = self.generate_openai_chat_message_list(trace)
+        return {"conversations": messages}
 
     def generate_huggingface_chat_template_toolcall(
         self,
         trace: list[ChatCompletionMessageParam],
     ) -> Dict[str, Any]:
         """Generate huggingface chat template toolcall message from trace"""
-        return {}
+
+        # Get last message
+        last_message = trace[-1]
+        # Remove last message from trace
+        new_trace = trace[:-1]
+        # Generate messages from trace without last message
+        conversations = self.generate_openai_chat_message_list(new_trace)
+
+        conversations.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "task_response",
+                            "id": str(uuid4()).replace("-", "")[:9],
+                            "arguments": last_message,
+                        },
+                    }
+                ],
+            },
+        )
+
+        return {"conversations": conversations}
 
     def generate_vertex_gemini(
         self,
