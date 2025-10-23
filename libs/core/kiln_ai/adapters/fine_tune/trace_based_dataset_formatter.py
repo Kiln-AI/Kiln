@@ -9,6 +9,12 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 class TraceBasedDatasetFormatter:
     """Generate dataset for training from a task run trace"""
 
+    def __init__(
+        self,
+        system_message: str,
+    ):
+        self.system_message = system_message
+
     def build_training_chat_from_trace(
         self,
         task_run: TaskRun,
@@ -52,7 +58,13 @@ class TraceBasedDatasetFormatter:
             chat_message = {}
 
             match role:
-                case "system" | "user":
+                case "system":
+                    # Use the supplied system message
+                    chat_message = {
+                        "role": "system",
+                        "content": self.system_message,
+                    }
+                case "user":
                     chat_message = {
                         "role": role,
                         "content": message.get("content", None),
