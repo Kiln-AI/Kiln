@@ -9,9 +9,11 @@
   import { page } from "$app/stores"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { generate_issue_eval_tag } from "./eval_utils"
+  import { generate_eval_tag } from "./eval_utils"
   import KilnSection from "$lib/ui/kiln_section.svelte"
   import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
+  import SearchToolSelector from "$lib/components/search_tool_selector.svelte"
+  import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
@@ -323,7 +325,7 @@
 
   function create_issue_eval() {
     issue_eval_create_complete = true
-    const eval_tag = generate_issue_eval_tag(issue_eval_name)
+    const eval_tag = generate_eval_tag(issue_eval_name)
 
     selected_template_callback({
       template_id: "kiln_issue",
@@ -348,13 +350,20 @@
 
   let search_tool_reference_answer_dialog: Dialog | undefined = undefined
   let search_tool_id = ""
+  let search_tool_error: KilnError | null = null
 
   function search_tool_name(search_tool_id: string): string {
     return search_tool_id
   }
 
   function create_search_tool_reference_answer_eval() {
+    if (!search_tool_id) {
+      search_tool_error = createKilnError("Search tool is required")
+      return
+    }
+    search_tool_error = null
     const name = search_tool_name(search_tool_id)
+    const eval_tag = generate_eval_tag(name)
     selected_template_callback({
       template_id: "search_tool_reference_answer",
       name: "Reference Answer Eval - " + name,
@@ -368,8 +377,8 @@
             "Evaluate if the model's output is accurate as per the reference answer.",
         },
       ],
-      default_eval_tag: "reference_answer_eval_set_" + name,
-      default_golden_tag: "reference_answer_golden_" + name,
+      default_eval_tag: "reference_answer_eval_set_" + eval_tag,
+      default_golden_tag: "reference_answer_golden_" + eval_tag,
       template_properties: {
         search_tool_id: search_tool_id,
       },
@@ -492,10 +501,11 @@
     submit_label="Create Reference Answer Eval"
     on:submit={create_search_tool_reference_answer_eval}
     warn_before_unload={!!search_tool_id}
+    error={search_tool_error}
   >
-    <ToolSelector
-      project_id={$current_project?.id}
-      task_id={$current_task?.id}
+    <SearchToolSelector
+      project_id={$current_project?.id || ""}
+      bind:selected_search_tool_id={search_tool_id}
     />
   </FormContainer>
 </Dialog>

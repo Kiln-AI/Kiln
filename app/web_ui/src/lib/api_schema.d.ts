@@ -2433,7 +2433,7 @@ export interface components {
             eval_configs_filter_id: string;
             /** Template Properties */
             template_properties: {
-                [key: string]: string | number | boolean;
+                [key: string]: string | number | boolean | string[];
             };
         };
         /** CreateExtractorConfigRequest */
@@ -3063,7 +3063,7 @@ export interface components {
              * @default {}
              */
             template_properties: {
-                [key: string]: string | number | boolean;
+                [key: string]: string | number | boolean | string[];
             };
             /** Model Type */
             readonly model_type: string;

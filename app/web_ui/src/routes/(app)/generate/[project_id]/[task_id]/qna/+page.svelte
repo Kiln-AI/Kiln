@@ -2,9 +2,10 @@
   import AppPage from "../../../../app_page.svelte"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import { get, derived } from "svelte/store"
+  import { get } from "svelte/store"
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import { get_splits_from_url_param } from "$lib/utils/splits_util"
 
   import SelectDocumentsdialog from "./select_documents_dialog.svelte"
   import Extractiondialog from "./extraction_dialog.svelte"
@@ -23,10 +24,6 @@
     type QnADocPart,
   } from "./qna_ui_store"
   import Warning from "$lib/ui/warning.svelte"
-  import {
-    document_tag_store_by_project_id,
-    load_document_tags,
-  } from "$lib/stores/document_tag_store"
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import type { KilnDocument } from "$lib/types"
@@ -55,18 +52,40 @@
   $: qnaGenerationErrors = qna?.generationErrors
   $: qnaStatus = qna?.status
 
-  $: available_tags = derived(document_tag_store_by_project_id, ($store) => {
-    const tag_counts = $store[project_id]
-    return tag_counts ? Object.keys(tag_counts) : []
-  })
-
   onMount(async () => {
     qna = createQnaStore(project_id, task_id)
     await qna.init(DEFAULT_QNA_GUIDANCE)
+
+    // Check for splits in URL parameters (for non-reference answer evals)
+    const splitsParam = $page.url.searchParams.get("splits")
+    if (splitsParam) {
+      const splits = get_splits_from_url_param(splitsParam)
+      if (Object.keys(splits).length > 0) {
+        qna.setSplits(splits)
+      }
+    }
+
+    // Check for individual tag parameters (for reference answer evals)
+    const defaultEvalTag = $page.url.searchParams.get("default_eval_tag")
+    const defaultGoldenTag = $page.url.searchParams.get("default_golden_tag")
+    if (defaultEvalTag && defaultGoldenTag) {
+      // Set splits to 0.8 for eval tag and 0.2 for golden tag
+      const splits = {
+        [defaultEvalTag]: 0.8,
+        [defaultGoldenTag]: 0.2,
+      }
+      qna.setSplits(splits)
+    }
+
+    // Check for search tool ID in URL parameters (for reference answer evals)
+    const searchToolId = $page.url.searchParams.get("search_tool_id")
+    if (searchToolId) {
+      qna.setSearchToolId(searchToolId)
+    }
+
     if (get(qna).documents.length > 0) {
       clear_existing_state_dialog?.show()
     }
-    await load_document_tags(project_id)
   })
 
   // Dialogs
@@ -77,12 +96,13 @@
   let rechunk_warning_dialog: Dialog | null = null
 
   function clear_all_state() {
+    // TODO: This doesn't do what we want exactly, we want to keep search tool and splits if they're coming from a reference answer eval and had something on this page already
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
   }
 
   function clear_state_and_go_to_intro() {
     clear_all_state()
-    window.location.href = `/generate/${project_id}/${task_id}`
+    qna.setCurrentStep(1) // Go back to step 1 (document selector)
     return true
   }
 
@@ -389,7 +409,7 @@
                   on:click={open_select_documents_dialog}
                   disabled={$qnaMaxStep && $qnaMaxStep > 1}
                 >
-                  Select Search Tool
+                  Select Documents
                 </button>
               {:else if $qnaCurrentStep == 2}
                 <button
@@ -556,10 +576,10 @@
   <SelectDocumentsdialog
     bind:dialog={show_select_documents_dialog}
     {project_id}
-    available_tags={$available_tags}
     on:documents_added={handle_documents_added}
     on:close={() => (current_dialog_type = null)}
     keyboard_submit={current_dialog_type === "select_documents"}
+    search_tool_id={$qna.search_tool_id}
   />
 
   <Extractiondialog

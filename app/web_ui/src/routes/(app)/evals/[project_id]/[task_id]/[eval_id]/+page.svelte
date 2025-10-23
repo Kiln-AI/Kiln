@@ -301,8 +301,30 @@
       params.set("template_id", evaluator.template)
     }
     params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
-    params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
     params.set("eval_link", window.location.pathname)
+
+    // For reference answer evals, pass the search tool and tag names
+    if (
+      evaluator.template === "search_tool_reference_answer" &&
+      evaluator.template_properties
+    ) {
+      if (evaluator.template_properties.search_tool_id) {
+        params.set(
+          "search_tool_id",
+          String(evaluator.template_properties.search_tool_id),
+        )
+      }
+      // Pass the individual tag names instead of splits
+      if (eval_tag) {
+        params.set("default_eval_tag", eval_tag)
+      }
+      if (golden_tag) {
+        params.set("default_golden_tag", golden_tag)
+      }
+    } else {
+      // For other templates, use the splits approach
+      params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
+    }
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)

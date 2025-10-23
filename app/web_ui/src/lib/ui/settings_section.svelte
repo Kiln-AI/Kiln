@@ -1,7 +1,6 @@
 <script lang="ts">
   import SettingsHeader from "./settings_header.svelte"
   import SettingsItem from "./settings_item.svelte"
-  import EvalTemplateItem from "./eval_template_item.svelte"
   import type { SettingsSectionItem } from "./settings_section_types"
 
   export let title: string
@@ -24,12 +23,12 @@
           is_external={item.is_external || false}
         />
       {:else if item.type === "eval_template"}
-        <EvalTemplateItem
-          name={item.name}
+        <SettingsItem
+          name={item.highlight_title || item.name}
           description={item.description}
-          recommended={item.recommended || false}
-          highlight_title={item.highlight_title}
-          on_select={item.on_select}
+          button_text="Create"
+          on_click={item.on_select}
+          badge_text={item.recommended ? "Recommended" : undefined}
         />
       {/if}
     {/each}

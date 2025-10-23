@@ -283,7 +283,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
-    template_properties: dict[str, str | int | bool | float] = Field(
+    template_properties: dict[str, str | int | bool | float | list[str]] = Field(
         default={},
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
     )
