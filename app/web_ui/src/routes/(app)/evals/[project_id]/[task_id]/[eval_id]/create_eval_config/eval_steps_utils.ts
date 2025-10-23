@@ -121,7 +121,20 @@ export function get_eval_steps(
       )
     }
     steps.push(
-      "Considering the above, does whether or not the task called the tool call match whether it should have called it or not? It should pass if it matches, and fail if it doesn't.",
+      `Considering the above steps, classify the tool usage into one of these categories:
+
+**Tool Called Correctly**: The model called the tool with correct parameters at the appropriate time. The user request clearly required the tool, and the model responded appropriately.
+
+**Tool Called Incorrectly**: The model called the tool but shouldn't have, OR called it with wrong/incomplete parameters. This includes:
+- Calling with incorrect or malformed parameters
+- Calling when it shouldn't have been used at all
+- Misinterpreting the input and calling inappropriately (e.g., using a math tool when user says "add people to guest list")
+
+**Tool Call Missed**: The model should have called the tool but did not. The input was in the tool's domain but phrased indirectly/ambiguously, causing the model to miss the opportunity.
+
+**Tool Correctly Not Called**: The model correctly did not call the tool. The input was out-of-domain, a meta-question, or otherwise inappropriate for tool usage.
+
+Based on this classification, the eval should PASS if the model's behavior matches what it should have done (called correctly, or correctly not called), and FAIL if it doesn't match (called incorrectly, or missed the call).`,
     )
     return steps
   }
