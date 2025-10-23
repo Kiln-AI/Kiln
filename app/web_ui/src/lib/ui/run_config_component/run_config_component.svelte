@@ -40,6 +40,7 @@
   export let set_default_error: KilnError | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
   export let hide_prompt_selector: boolean = false
+  export let hide_tools_selector: boolean = false
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
 
@@ -270,12 +271,14 @@
     />
   {/if}
   {#if !show_tools_selector_in_advanced}
-    <ToolsSelector
-      bind:tools
-      {project_id}
-      task_id={current_task?.id ?? null}
-      {hide_create_kiln_task_tool_button}
-    />
+    {#if !hide_tools_selector}
+      <ToolsSelector
+        bind:tools
+        {project_id}
+        task_id={current_task?.id ?? null}
+        {hide_create_kiln_task_tool_button}
+      />
+    {/if}
     <Collapse title="Advanced Options">
       <AdvancedRunOptions
         bind:temperature
@@ -287,12 +290,14 @@
   {:else}
     <Collapse title="Advanced Options">
       <div class="flex flex-col gap-0">
-        <ToolsSelector
-          bind:tools
-          {project_id}
-          task_id={current_task?.id ?? null}
-          {hide_create_kiln_task_tool_button}
-        />
+        {#if !hide_tools_selector}
+          <ToolsSelector
+            bind:tools
+            {project_id}
+            task_id={current_task?.id ?? null}
+            {hide_create_kiln_task_tool_button}
+          />
+        {/if}
         <AdvancedRunOptions
           bind:temperature
           bind:top_p
