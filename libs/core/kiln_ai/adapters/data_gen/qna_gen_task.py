@@ -39,13 +39,85 @@ def list_json_schema_for_task(task: Task) -> str:
     else:
         answer_schema = {"type": "string"}
 
+    # Extraction lists schema - domain-agnostic
+    extraction_lists_schema = {
+        "type": "object",
+        "properties": {
+            "named_entities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all people, organizations, or teams",
+            },
+            "locations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all places, buildings, facilities, or regions",
+            },
+            "events": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all meetings, incidents, deployments, actions, or milestones",
+            },
+            "concepts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all themes, ideas, goals, problems, solutions, or policies",
+            },
+            "objects": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all physical items, parts, products, vehicles, equipment, or assets",
+            },
+            "documents": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all records, files, agreements, reports, or forms",
+            },
+            "systems": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of all technical components, software, processes, APIs, or architectures",
+            },
+        },
+        "required": [
+            "named_entities",
+            "locations",
+            "events",
+            "concepts",
+            "objects",
+            "documents",
+            "systems",
+        ],
+    }
+
+    # Edge verification schema - single edge only
+    edge_verification_schema = {
+        "type": "object",
+        "properties": {
+            "edge_used": {"type": "string"},
+        },
+        "required": ["edge_used"],
+    }
+
+    # Knowledge graph schema
+    knowledge_graph_schema = {
+        "type": "object",
+        "properties": {
+            "nodes": {"type": "array", "items": {"type": "string"}},
+            "edges": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["nodes", "edges"],
+    }
+
+    # Q&A pair schema with edge verification
     qna_pair_schema = {
         "type": "object",
         "properties": {
+            "edge_verification": edge_verification_schema,
             "question": question_schema,
             "answer": answer_schema,
         },
-        "required": ["question", "answer"],
+        "required": ["edge_verification", "question", "answer"],
     }
 
     list_schema = {
@@ -53,12 +125,15 @@ def list_json_schema_for_task(task: Task) -> str:
         "items": qna_pair_schema,
     }
 
+    # Top level schema
     top_level_schema = {
         "type": "object",
         "properties": {
+            "extraction_lists": extraction_lists_schema,
+            "knowledge_graph": knowledge_graph_schema,
             "generated_qna_pairs": list_schema,
         },
-        "required": ["generated_qna_pairs"],
+        "required": ["extraction_lists", "knowledge_graph", "generated_qna_pairs"],
     }
 
     return json.dumps(top_level_schema, ensure_ascii=False)

@@ -122,6 +122,7 @@
           hide_tools_selector={true}
           model_dropdown_settings={{
             requires_data_gen: true,
+            suggested_mode: "data_gen",
           }}
         />
       </div>
