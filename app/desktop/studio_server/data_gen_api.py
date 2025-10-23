@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
@@ -11,6 +11,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
+from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
@@ -18,6 +19,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
 )
+from kiln_ai.utils.project_utils import project_from_id
 from kiln_server.task_api import task_from_id
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
@@ -87,9 +89,7 @@ class DataGenSaveSamplesApiInput(BaseModel):
 
 
 class DataGenQnaApiInput(BaseModel):
-    document_id: list[str] = Field(
-        description="Document IDs for Q&A generation", default=[]
-    )
+    document_id: str = Field(description="Document ID for Q&A generation")
     part_text: list[str] = Field(description="Part text for Q&A generation", default=[])
     num_samples: int = Field(
         description="Number of samples to generate for this part", default=10
@@ -248,11 +248,22 @@ The topic path for this sample is:
         input: DataGenQnaApiInput,
         session_id: str | None = None,
     ) -> TaskRun:
+        project = project_from_id(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
         task = task_from_id(project_id, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        doc = Document.from_id_and_parent_path(input.document_id, project.path)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
         qna_task = DataGenQnaTask(target_task=task, guidance=input.guidance)
         task_input = DataGenQnaTaskInput.from_task(
             task=task,
-            document_id=input.document_id,
+            document_name=doc.friendly_name,
             part_text=input.part_text,
             num_samples=input.num_samples,
         )

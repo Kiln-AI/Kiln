@@ -8,7 +8,7 @@ from .data_gen_prompts import generate_qna_generation_prompt
 
 
 class DataGenQnaTaskInput(BaseModel):
-    kiln_data_gen_document_id: list[str]
+    kiln_data_gen_document_name: str
     kiln_data_gen_part_text: list[str]
     kiln_data_gen_num_samples: int
 
@@ -16,12 +16,12 @@ class DataGenQnaTaskInput(BaseModel):
     def from_task(
         cls,
         task: Task,
-        document_id: list[str] = [],
+        document_name: str = "",
         part_text: list[str] = [],
         num_samples: int = 8,
     ) -> "DataGenQnaTaskInput":
         return cls(
-            kiln_data_gen_document_id=document_id,
+            kiln_data_gen_document_name=document_name,
             kiln_data_gen_part_text=part_text,
             kiln_data_gen_num_samples=num_samples,
         )

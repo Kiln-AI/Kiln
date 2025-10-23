@@ -585,6 +585,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   }
 
   async function callGenerateQnAAPI(
+    documentId: string,
     partText: string,
     pairsPerPart: number,
     guidance: string,
@@ -594,7 +595,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
       {
         body: {
-          document_id: [],
+          document_id: documentId,
           part_text: [partText],
           num_samples: pairsPerPart,
           run_config_properties: runConfigProperties,
@@ -694,6 +695,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
       try {
         const newPairs = await callGenerateQnAAPI(
+          documentId,
           part.text_preview,
           pairsPerPart,
           guidance,

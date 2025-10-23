@@ -56,20 +56,20 @@ def structured_task():
 
 def test_data_gen_qna_task_input_initialization(base_task):
     # Arrange
-    document_id = ["doc1", "doc2"]
+    document_name = "doc1"
     part_text = ["Content 1", "Content 2"]
     num_samples = 5
 
     # Act
     input_model = DataGenQnaTaskInput.from_task(
         task=base_task,
-        document_id=document_id,
+        document_name=document_name,
         part_text=part_text,
         num_samples=num_samples,
     )
 
     # Assert
-    assert input_model.kiln_data_gen_document_id == document_id
+    assert input_model.kiln_data_gen_document_name == document_name
     assert input_model.kiln_data_gen_part_text == part_text
     assert input_model.kiln_data_gen_num_samples == num_samples
 
@@ -80,7 +80,7 @@ def test_data_gen_qna_task_input_default_values(base_task):
 
     # Assert
     assert input_model.kiln_data_gen_num_samples == 8
-    assert input_model.kiln_data_gen_document_id == []
+    assert input_model.kiln_data_gen_document_name == ""
     assert input_model.kiln_data_gen_part_text == []
 
 

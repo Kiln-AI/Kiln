@@ -2612,10 +2612,9 @@ export interface components {
         DataGenQnaApiInput: {
             /**
              * Document Id
-             * @description Document IDs for Q&A generation
-             * @default []
+             * @description Document ID for Q&A generation
              */
-            document_id: string[];
+            document_id: string;
             /**
              * Part Text
              * @description Part text for Q&A generation

@@ -169,7 +169,8 @@ def generate_qna_generation_prompt(guidance: str | None = None) -> str:
 Your job is to generate a list of Q&A pairs from the provided document content. The generated Q&A will be used to evaluate a RAG system by comparing the RAG system's output for the same question, with the generated answer.
 
 In the user message we'll provide the following:
- - A document chunk content as kiln_data_gen_document_content
+ - A document name as kiln_data_gen_document_name
+ - The content of chunks of the document as kiln_data_gen_part_text
  - The number of Q&A pairs to generate as kiln_data_gen_num_samples
 
 The output must be formatted:
@@ -179,7 +180,8 @@ The output must be formatted:
 
 ### Example 1
 Example inputs:
- - kiln_data_gen_document_content: "The quick brown fox jumps over the lazy dog."
+ - kiln_data_gen_document_name: "Fox Document"
+ - kiln_data_gen_part_text: ["The quick brown fox jumps over the lazy dog."]
  - kiln_data_gen_num_samples: 3
 Example generated Q&A pairs: {"generated_qna_pairs": [{"question": "What is the color of the fox?", "answer": "The color of the fox is brown."}, {"question": "What is the color of the dog?", "answer": "The color of the dog is brown."}, {"question": "What is the color of the fox?", "answer": "The color of the fox is brown."}]}
 
