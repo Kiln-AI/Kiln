@@ -105,12 +105,14 @@
       ] as OptionGroup[])
 
   async function run_extraction() {
-    if (!selected_extractor_id || selected_extractor_id === "create_new") {
-      return
-    }
-
     extracting = true
+    extractor_config_error = null
+
     try {
+      if (!selected_extractor_id || selected_extractor_id === "create_new") {
+        throw new Error("Please select an extractor")
+      }
+
       const url = `${base_url}/api/projects/${project_id}/${"extractor_configs"}/${selected_extractor_id}/run_extractor_config`
       const es = new EventSource(url)
 
@@ -142,7 +144,8 @@
         extracting = false
       }
     } catch (e) {
-      console.error("Failed to start extraction", e)
+      extractor_config_error = createKilnError(e)
+    } finally {
       extracting = false
     }
   }
@@ -160,6 +163,8 @@
     submit_label="Run Extraction"
     gap={4}
     {keyboard_submit}
+    bind:error={extractor_config_error}
+    bind:submitting={extracting}
     on:submit={async (_) => {
       await run_extraction()
     }}
@@ -190,5 +195,11 @@
   bind:dialog={create_extractor_dialog}
   keyboard_submit={true}
   on:success={handle_create_extractor_success}
-  on:close={() => create_extractor_dialog?.close()}
+  on:close={() => {
+    create_extractor_dialog?.close()
+    extractor_config_error = null
+    if (selected_extractor_id === "create_new") {
+      selected_extractor_id = null
+    }
+  }}
 />
