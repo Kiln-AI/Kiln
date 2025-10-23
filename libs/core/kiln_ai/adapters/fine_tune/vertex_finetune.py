@@ -219,7 +219,7 @@ class VertexFinetune(BaseFinetuneAdapter):
 
     @classmethod
     def _unique_bucket_name(cls) -> str:
-        project_id = Config.shared().vertex_project_id
+        project_id, _ = cls.get_vertex_provider_location()
         # See https://cloud.google.com/storage/docs/buckets#naming
         # Bucket names must contain 3-63 characters
         # See https://cloud.google.com/resource-manager/docs/creating-managing-projects
