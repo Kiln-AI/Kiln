@@ -1,6 +1,6 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import { createEventDispatcher, onMount } from "svelte"
+  import { createEventDispatcher, onDestroy, onMount } from "svelte"
   import type { ExtractorConfig } from "$lib/types"
   import { get_model_friendly_name, provider_name_from_id } from "$lib/stores"
   import { extractor_output_format } from "$lib/utils/formatters"
@@ -38,6 +38,11 @@
 
   onMount(async () => {
     await loadExtractorConfigs()
+  })
+
+  onDestroy(() => {
+    es?.close()
+    es = null
   })
 
   async function handle_create_extractor_success(
