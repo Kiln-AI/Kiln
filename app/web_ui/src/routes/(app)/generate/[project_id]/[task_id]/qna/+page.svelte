@@ -46,6 +46,7 @@
   $: qnaExtractorId = qna?.extractorId
   $: qnaPairsPerPart = qna?.pairsPerPart
   $: qnaGuidance = qna?.guidance
+  $: qnaUseFullDocuments = qna?.useFullDocuments
   $: qnaChunkSizeTokens = qna?.chunkSizeTokens
   $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
   $: qnaTargetType = qna?.targetType
@@ -172,6 +173,7 @@
       await qna.generate({
         pairsPerPart: get(qna.pairsPerPart),
         guidance: get(qna.guidance),
+        useFullDocuments: get(qna.useFullDocuments),
         chunkSizeTokens: get(qna.chunkSizeTokens),
         chunkOverlapTokens: get(qna.chunkOverlapTokens),
         runConfigProperties: event.detail.runConfigProperties,
@@ -576,6 +578,7 @@
     {project_id}
     bind:pairs_per_part={$qnaPairsPerPart}
     bind:guidance={$qnaGuidance}
+    bind:use_full_documents={$qnaUseFullDocuments}
     bind:chunk_size_tokens={$qnaChunkSizeTokens}
     bind:chunk_overlap_tokens={$qnaChunkOverlapTokens}
     target_description={$qnaTargetDescription || "all documents"}

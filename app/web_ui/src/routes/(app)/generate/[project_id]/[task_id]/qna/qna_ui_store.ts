@@ -61,6 +61,7 @@ export type QnASession = {
   generation_config: {
     pairs_per_part: number
     guidance: string
+    use_full_documents: boolean
     chunk_size_tokens: number | null
     chunk_overlap_tokens: number | null
   }
@@ -76,9 +77,16 @@ type GenerationTarget =
 type GenerationParams = {
   pairsPerPart: number
   guidance: string
+  useFullDocuments: boolean
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
   runConfigProperties: RunConfigProperties
+}
+
+export type ChunkingConfig = {
+  use_full_documents: boolean
+  chunk_size_tokens: number | null
+  chunk_overlap_tokens: number | null
 }
 
 export type QnaStore = {
@@ -104,6 +112,7 @@ export type QnaStore = {
   extractorId: Writable<string | null>
   pairsPerPart: Writable<number>
   guidance: Writable<string>
+  useFullDocuments: Writable<boolean>
   chunkSizeTokens: Writable<number | null>
   chunkOverlapTokens: Writable<number | null>
 
@@ -131,6 +140,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     generation_config: {
       pairs_per_part: 5,
       guidance: "",
+      use_full_documents: true,
       chunk_size_tokens: null,
       chunk_overlap_tokens: null,
     },
@@ -161,6 +171,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   const extractorId = writable<string | null>(null)
   const pairsPerPart = writable<number>(5)
   const guidance = writable<string>("")
+  const useFullDocuments = writable<boolean>(true)
   const chunkSizeTokens = writable<number | null>(null)
   const chunkOverlapTokens = writable<number | null>(null)
 
@@ -180,6 +191,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       generation_config: {
         pairs_per_part: 5,
         guidance: defaultGuidance,
+        use_full_documents: true,
         chunk_size_tokens: null,
         chunk_overlap_tokens: null,
       },
@@ -194,6 +206,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       extractorId.set(initialValue.extractor_id)
       pairsPerPart.set(initialValue.generation_config.pairs_per_part)
       guidance.set(initialValue.generation_config.guidance)
+      useFullDocuments.set(initialValue.generation_config.use_full_documents)
       chunkSizeTokens.set(initialValue.generation_config.chunk_size_tokens)
       chunkOverlapTokens.set(
         initialValue.generation_config.chunk_overlap_tokens,
@@ -446,6 +459,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       generation_config: {
         pairs_per_part: 5,
         guidance: defaultGuidance,
+        use_full_documents: true,
         chunk_size_tokens: null,
         chunk_overlap_tokens: null,
       },
@@ -674,6 +688,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     pairsPerPart: number,
     guidance: string,
     runConfigProperties: RunConfigProperties,
+    useFullDocuments: boolean,
     chunkSizeTokens: number | null,
     chunkOverlapTokens: number | null,
   ): Promise<void> {
@@ -718,8 +733,11 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
             generation_config: {
               pairs_per_part: pairsPerPart,
               guidance,
-              chunk_size_tokens: chunkSizeTokens,
-              chunk_overlap_tokens: chunkOverlapTokens,
+              use_full_documents: true,
+              chunk_size_tokens: useFullDocuments ? null : chunkSizeTokens,
+              chunk_overlap_tokens: useFullDocuments
+                ? null
+                : chunkOverlapTokens,
             },
             documents: docs,
           }
@@ -745,6 +763,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     pairsPerPart,
     guidance,
     runConfigProperties,
+    useFullDocuments,
     chunkSizeTokens,
     chunkOverlapTokens,
   }: GenerationParams): Promise<void> {
@@ -776,6 +795,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         pairsPerPart,
         guidance,
         runConfigProperties,
+        useFullDocuments,
         chunkSizeTokens,
         chunkOverlapTokens,
       )
@@ -934,6 +954,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     extractorId,
     pairsPerPart,
     guidance,
+    useFullDocuments,
     chunkSizeTokens,
     chunkOverlapTokens,
     init,
