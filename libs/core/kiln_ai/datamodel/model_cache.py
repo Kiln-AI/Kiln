@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.basemodel import KilnBaseModel
 
     T = TypeVar("T", bound="KilnBaseModel")
+else:
+    T = TypeVar("T")
 
 
 class ModelCache:
