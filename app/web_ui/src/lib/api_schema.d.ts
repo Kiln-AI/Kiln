@@ -1321,7 +1321,7 @@ export interface paths {
         /**
          * Save Qna Pair
          * @description Save a single QnA pair as a TaskRun. We store the task's system prompt
-         *     as the system message, the question as the user message, and the answer
+         *     as the system message, the query as the user message, and the answer
          *     as the assistant message in the trace. The output is the answer.
          */
         post: operations["save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post"];
@@ -2612,10 +2612,9 @@ export interface components {
         DataGenQnaApiInput: {
             /**
              * Document Id
-             * @description Document IDs for Q&A generation
-             * @default []
+             * @description Document ID for Q&A generation
              */
-            document_id: string[];
+            document_id: string;
             /**
              * Part Text
              * @description Part text for Q&A generation
@@ -2624,7 +2623,7 @@ export interface components {
             part_text: string[];
             /**
              * Num Samples
-             * @description Number of samples to generate for this part
+             * @description Number of Q&A pairs to generate for this part
              * @default 10
              */
             num_samples: number;
@@ -2991,9 +2990,15 @@ export interface components {
         };
         /** EphemeralSplitRequest */
         EphemeralSplitRequest: {
-            /** Chunk Size */
+            /**
+             * Chunk Size
+             * @description The size of each chunk in tokens. If None, return a single chunk with the full extraction output.
+             */
             chunk_size?: number | null;
-            /** Chunk Overlap */
+            /**
+             * Chunk Overlap
+             * @description The overlap between chunks in tokens. If None, use the default overlap for the chunker.
+             */
             chunk_overlap?: number | null;
         };
         /** EphemeralSplitResponse */
@@ -4614,23 +4619,23 @@ export interface components {
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
-             * Question
-             * @description User question text
+             * Query
+             * @description The synthetic user query
              */
-            question: string;
+            query: string;
             /**
              * Answer
-             * @description Assistant answer text
+             * @description The synthetic assistant answer/response for the given user query
              */
             answer: string;
             /**
              * Model Name
-             * @description Model name used to generate the question
+             * @description Model name used to generate the Q&A pair
              */
             model_name: string;
             /**
              * Model Provider
-             * @description Model provider used to generate the question
+             * @description Model provider used to generate the Q&A pair
              */
             model_provider: string;
             /**

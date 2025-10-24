@@ -1,6 +1,6 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import { createEventDispatcher, onMount } from "svelte"
+  import { createEventDispatcher, onDestroy, onMount } from "svelte"
   import type { ExtractorConfig } from "$lib/types"
   import { get_model_friendly_name, provider_name_from_id } from "$lib/stores"
   import { extractor_output_format } from "$lib/utils/formatters"
@@ -27,12 +27,22 @@
   }>()
 
   let extracting = false
+  let es: EventSource | null = null
   $: project_id = $page.params.project_id
+
+  let extraction_progress = 0
+  let extraction_total = 0
+  let extraction_errors = 0
 
   let create_extractor_dialog: Dialog | null = null
 
   onMount(async () => {
     await loadExtractorConfigs()
+  })
+
+  onDestroy(() => {
+    es?.close()
+    es = null
   })
 
   async function handle_create_extractor_success(
@@ -105,20 +115,29 @@
       ] as OptionGroup[])
 
   async function run_extraction() {
-    if (!selected_extractor_id || selected_extractor_id === "create_new") {
-      return
-    }
-
     extracting = true
+    extractor_config_error = null
+    extraction_progress = 0
+    extraction_total = 0
+    extraction_errors = 0
+
     try {
+      if (!selected_extractor_id || selected_extractor_id === "create_new") {
+        throw new Error("Please select an extractor")
+      }
+
       const url = `${base_url}/api/projects/${project_id}/${"extractor_configs"}/${selected_extractor_id}/run_extractor_config`
-      const es = new EventSource(url)
+      // ensure only one live stream - we do not block the user while extraction is running, but we don't want the user to somehow
+      // trigger parallel conflicting extraction runs
+      es?.close()
+      es = new EventSource(url)
 
       es.onmessage = (event: MessageEvent) => {
         console.info("Extraction message", event.data)
         // server sends progress JSON and a final "complete" message
         if (event.data === "complete") {
-          es.close()
+          es?.close()
+          es = null
           extracting = false
 
           // should not happen, but typecheck doesn't know
@@ -133,16 +152,35 @@
 
           // Close modal
           dialog?.close()
+        } else {
+          try {
+            const progress_data = JSON.parse(event.data)
+            if (progress_data.progress !== undefined) {
+              extraction_progress = progress_data.progress
+            }
+            if (progress_data.total !== undefined) {
+              extraction_total = progress_data.total
+            }
+            if (progress_data.errors !== undefined) {
+              extraction_errors = progress_data.errors
+            }
+          } catch (parse_error) {
+            console.warn("Failed to parse progress data", parse_error)
+          }
         }
       }
 
       es.onerror = (e) => {
         console.error("Extraction stream error", e)
-        es.close()
+        es?.close()
+        es = null
+        extractor_config_error = createKilnError(e)
         extracting = false
       }
     } catch (e) {
-      console.error("Failed to start extraction", e)
+      extractor_config_error = createKilnError(e)
+      es?.close()
+      es = null
       extracting = false
     }
   }
@@ -156,16 +194,43 @@
 
 <Dialog bind:this={dialog} title="Run Extraction" width="normal">
   <FormContainer
-    submit_visible={true}
+    submit_visible={!extracting}
     submit_label="Run Extraction"
     gap={4}
     {keyboard_submit}
+    bind:error={extractor_config_error}
+    bind:submitting={extracting}
     on:submit={async (_) => {
       await run_extraction()
     }}
-    on:close={() => dispatch("close")}
+    on:close={() => {
+      es?.close()
+      es = null
+      extractor_config_error = null
+      extracting = false
+      dispatch("close")
+    }}
   >
-    {#if extracting || loading_extractor_configs}
+    {#if extracting}
+      <div class="min-h-[200px] flex flex-col justify-center items-center">
+        <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
+        {#if extraction_total > 0}
+          <progress
+            class="progress w-56 progress-success"
+            value={extraction_progress}
+            max={extraction_total}
+          ></progress>
+          <div class="font-light text-xs text-center mt-1">
+            {extraction_progress} of {extraction_total} extracted
+          </div>
+          {#if extraction_errors > 0}
+            <div class="text-error font-light text-sm mt-4">
+              {extraction_errors} error(s) occurred during extraction
+            </div>
+          {/if}
+        {/if}
+      </div>
+    {:else if loading_extractor_configs}
       <div class="flex flex-row justify-center">
         <div class="loading loading-spinner loading-lg my-12"></div>
       </div>
@@ -190,5 +255,11 @@
   bind:dialog={create_extractor_dialog}
   keyboard_submit={true}
   on:success={handle_create_extractor_success}
-  on:close={() => create_extractor_dialog?.close()}
+  on:close={() => {
+    create_extractor_dialog?.close()
+    extractor_config_error = null
+    if (selected_extractor_id === "create_new") {
+      selected_extractor_id = null
+    }
+  }}
 />

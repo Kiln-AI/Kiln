@@ -8,31 +8,17 @@ from .data_gen_prompts import generate_qna_generation_prompt
 
 
 class DataGenQnaTaskInput(BaseModel):
-    kiln_data_gen_document_id: list[str]
+    kiln_data_gen_document_name: str
     kiln_data_gen_part_text: list[str]
     kiln_data_gen_num_samples: int
 
-    @classmethod
-    def from_task(
-        cls,
-        task: Task,
-        document_id: list[str] = [],
-        part_text: list[str] = [],
-        num_samples: int = 8,
-    ) -> "DataGenQnaTaskInput":
-        return cls(
-            kiln_data_gen_document_id=document_id,
-            kiln_data_gen_part_text=part_text,
-            kiln_data_gen_num_samples=num_samples,
-        )
-
 
 def list_json_schema_for_task(task: Task) -> str:
-    # Parse input schema for question field
+    # Parse input schema for query field
     if task.input_json_schema:
-        question_schema = json.loads(task.input_json_schema)
+        query_schema = json.loads(task.input_json_schema)
     else:
-        question_schema = {"type": "string"}
+        query_schema = {"type": "string"}
 
     if task.output_json_schema:
         answer_schema = json.loads(task.output_json_schema)
@@ -42,10 +28,10 @@ def list_json_schema_for_task(task: Task) -> str:
     qna_pair_schema = {
         "type": "object",
         "properties": {
-            "question": question_schema,
+            "query": query_schema,
             "answer": answer_schema,
         },
-        "required": ["question", "answer"],
+        "required": ["query", "answer"],
     }
 
     list_schema = {

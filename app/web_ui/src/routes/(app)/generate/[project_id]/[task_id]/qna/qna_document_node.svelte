@@ -7,7 +7,7 @@
 
   type QnAPair = {
     id: string
-    question: string
+    query: string
     answer: string
     generated: boolean
     model_name?: string
@@ -40,7 +40,8 @@
   const dispatch = createEventDispatcher()
 
   $: qnaMaxStep = qna?.maxStep
-  // we don't enable the part dialog until after the extraction step
+
+  // we don't enable the part dialog until after the extraction step and the chunking step
   $: output_dialog_possible = $qnaMaxStep && $qnaMaxStep > 3
 
   // Dialogs
@@ -202,9 +203,9 @@
           class="py-2"
         >
           {#if expandedQAPairs[qa.id]}
-            <pre class="whitespace-pre-wrap">{qa.question}</pre>
+            <pre class="whitespace-pre-wrap">{qa.query}</pre>
           {:else}
-            <div class="truncate w-0 min-w-full">{qa.question}</div>
+            <div class="truncate w-0 min-w-full">{qa.query}</div>
           {/if}
         </td>
         <td class="py-2">

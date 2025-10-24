@@ -26,13 +26,13 @@ export const step_names: Record<StepNumber, string> = {
 export const step_descriptions: Record<StepNumber, string> = {
   1: "Choose which documents to generate Q&A pairs from",
   2: "Extract text content from selected documents",
-  3: "Generate question and answer pairs from extracted content",
+  3: "Generate query and answer pairs from extracted content",
   4: "Save generated Q&A pairs to dataset",
 }
 
 export type QnAPair = {
   id: string
-  question: string
+  query: string
   answer: string
   generated: boolean
   model_name?: string
@@ -61,6 +61,7 @@ export type QnASession = {
   generation_config: {
     pairs_per_part: number
     guidance: string
+    use_full_documents: boolean
     chunk_size_tokens: number | null
     chunk_overlap_tokens: number | null
   }
@@ -77,9 +78,16 @@ type GenerationTarget =
 type GenerationParams = {
   pairsPerPart: number
   guidance: string
+  useFullDocuments: boolean
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
   runConfigProperties: RunConfigProperties
+}
+
+export type ChunkingConfig = {
+  use_full_documents: boolean
+  chunk_size_tokens: number | null
+  chunk_overlap_tokens: number | null
 }
 
 export type QnaStore = {
@@ -105,6 +113,7 @@ export type QnaStore = {
   extractorId: Writable<string | null>
   pairsPerPart: Writable<number>
   guidance: Writable<string>
+  useFullDocuments: Writable<boolean>
   chunkSizeTokens: Writable<number | null>
   chunkOverlapTokens: Writable<number | null>
 
@@ -133,6 +142,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     generation_config: {
       pairs_per_part: 5,
       guidance: "",
+      use_full_documents: true,
       chunk_size_tokens: null,
       chunk_overlap_tokens: null,
     },
@@ -164,6 +174,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   const extractorId = writable<string | null>(null)
   const pairsPerPart = writable<number>(5)
   const guidance = writable<string>("")
+  const useFullDocuments = writable<boolean>(true)
   const chunkSizeTokens = writable<number | null>(null)
   const chunkOverlapTokens = writable<number | null>(null)
 
@@ -183,6 +194,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       generation_config: {
         pairs_per_part: 5,
         guidance: defaultGuidance,
+        use_full_documents: true,
         chunk_size_tokens: null,
         chunk_overlap_tokens: null,
       },
@@ -198,6 +210,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       extractorId.set(initialValue.extractor_id)
       pairsPerPart.set(initialValue.generation_config.pairs_per_part)
       guidance.set(initialValue.generation_config.guidance)
+      useFullDocuments.set(initialValue.generation_config.use_full_documents)
       chunkSizeTokens.set(initialValue.generation_config.chunk_size_tokens)
       chunkOverlapTokens.set(
         initialValue.generation_config.chunk_overlap_tokens,
@@ -226,6 +239,17 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         _state.update((s) => ({
           ...s,
           generation_config: { ...s.generation_config, guidance: value },
+        }))
+      }),
+    )
+    configUnsubscribes.push(
+      useFullDocuments.subscribe((value) => {
+        _state.update((s) => ({
+          ...s,
+          generation_config: {
+            ...s.generation_config,
+            use_full_documents: value,
+          },
         }))
       }),
     )
@@ -454,6 +478,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       generation_config: {
         pairs_per_part: 5,
         guidance: defaultGuidance,
+        use_full_documents: true,
         chunk_size_tokens: null,
         chunk_overlap_tokens: null,
       },
@@ -492,17 +517,23 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       chunk_size: chunkSizeTokens ?? null,
       chunk_overlap: chunkOverlapTokens ?? null,
     }
-    const res = await fetch(
-      `${base_url}/api/projects/${projectId}/extractor_configs/${extractorId}/documents/${doc.id}/ephemeral_split`,
+    const { data, error } = await client.POST(
+      "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        params: {
+          path: {
+            project_id: projectId,
+            extractor_config_id: extractorId,
+            document_id: doc.id,
+          },
+        },
+        body,
       },
     )
-    if (!res.ok) throw new Error(`Chunking failed for ${doc.id}`)
-    const data: { chunks: Array<{ id: string; text: string }> } =
-      await res.json()
+    if (error) {
+      throw createKilnError(error)
+    }
+
     const parts: QnADocPart[] = data.chunks.map((c) => ({
       id: c.id,
       text_preview: c.text,
@@ -593,6 +624,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   }
 
   async function callGenerateQnAAPI(
+    documentId: string,
     partText: string,
     pairsPerPart: number,
     guidance: string,
@@ -602,7 +634,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
       {
         body: {
-          document_id: [],
+          document_id: documentId,
           part_text: [partText],
           num_samples: pairsPerPart,
           run_config_properties: runConfigProperties,
@@ -612,11 +644,13 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         params: { path: { project_id: projectId, task_id: taskId } },
       },
     )
-    if (apiError) throw apiError
+    if (apiError) {
+      throw createKilnError(apiError)
+    }
 
     const outputText = data.output.output
     const response = JSON.parse(outputText) as {
-      generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
+      generated_qna_pairs?: Array<{ query: unknown; answer: unknown }>
     }
     const generated = Array.isArray(response.generated_qna_pairs)
       ? response.generated_qna_pairs
@@ -627,10 +661,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
     return generated.map((qa) => ({
       id: crypto.randomUUID(),
-      question:
-        typeof qa?.question === "string"
-          ? qa.question
-          : JSON.stringify(qa?.question ?? ""),
+      query:
+        typeof qa?.query === "string"
+          ? qa.query
+          : JSON.stringify(qa?.query ?? ""),
       answer:
         typeof qa?.answer === "string"
           ? qa.answer
@@ -681,6 +715,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     pairsPerPart: number,
     guidance: string,
     runConfigProperties: RunConfigProperties,
+    useFullDocuments: boolean,
     chunkSizeTokens: number | null,
     chunkOverlapTokens: number | null,
   ): Promise<void> {
@@ -702,6 +737,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
       try {
         const newPairs = await callGenerateQnAAPI(
+          documentId,
           part.text_preview,
           pairsPerPart,
           guidance,
@@ -724,8 +760,11 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
             generation_config: {
               pairs_per_part: pairsPerPart,
               guidance,
-              chunk_size_tokens: chunkSizeTokens,
-              chunk_overlap_tokens: chunkOverlapTokens,
+              use_full_documents: useFullDocuments,
+              chunk_size_tokens: useFullDocuments ? null : chunkSizeTokens,
+              chunk_overlap_tokens: useFullDocuments
+                ? null
+                : chunkOverlapTokens,
             },
             documents: docs,
           }
@@ -751,6 +790,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     pairsPerPart,
     guidance,
     runConfigProperties,
+    useFullDocuments,
     chunkSizeTokens,
     chunkOverlapTokens,
   }: GenerationParams): Promise<void> {
@@ -765,8 +805,23 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       const state = get(_state)
       const targetSel = get(pendingTarget)
 
+      const documentIds = getTargetDocumentIds(state, targetSel)
+
       if (targetSel.type === "all") {
-        const documentIds = getTargetDocumentIds(state, targetSel)
+        _state.update((s) => ({
+          ...s,
+          documents: s.documents.map((doc) => {
+            // we clear the parts for all documents because corpus-wide regeneration can change the chunking
+            // and result in totally different chunks
+            if (documentIds.includes(doc.id)) {
+              return { ...doc, parts: [] }
+            }
+            return doc
+          }),
+        }))
+      }
+
+      if (targetSel.type === "all" || targetSel.type === "document") {
         await ensureDocumentsChunked(
           documentIds,
           state.extractor_id,
@@ -782,6 +837,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         pairsPerPart,
         guidance,
         runConfigProperties,
+        useFullDocuments,
         chunkSizeTokens,
         chunkOverlapTokens,
       )
@@ -866,7 +922,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           query: { session_id: sessionId },
         },
         body: {
-          question: pair.question,
+          query: pair.query,
           answer: pair.answer,
           model_name: pair.model_name,
           model_provider: pair.model_provider,
@@ -940,6 +996,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     extractorId,
     pairsPerPart,
     guidance,
+    useFullDocuments,
     chunkSizeTokens,
     chunkOverlapTokens,
     init,

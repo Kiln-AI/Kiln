@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -12,6 +12,7 @@ from kiln_ai.datamodel import (
     TaskRun,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import RunConfigProperties
 
@@ -475,39 +476,51 @@ def test_generate_qna_success_with_session_and_tags(
     mock_task_adapter,
     client,
     mock_task_run,
+    test_task,
 ):
-    input_data = DataGenQnaApiInput(
-        document_id=["doc1", "doc2"],
-        part_text=["section a", "section b"],
-        num_samples=3,
-        run_config_properties=RunConfigProperties(
-            model_name="gpt_4o_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id=PromptGenerators.SIMPLE,
-            structured_output_mode=StructuredOutputMode.json_schema,
-        ),
-        guidance="Make concise QnA",
-        tags=["custom_tag"],
-    )
+    with (
+        patch(
+            "kiln_ai.datamodel.extraction.Document.from_id_and_parent_path"
+        ) as mock_document,
+        patch(
+            "app.desktop.studio_server.data_gen_api.project_from_id"
+        ) as mock_project_from_id,
+    ):
+        mock_document.return_value = MagicMock(friendly_name="doc1", spec=Document)
+        mock_project_from_id.return_value = test_task.parent
 
-    response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/generate_qna?session_id=abcd",
-        json=input_data.model_dump(),
-    )
+        input_data = DataGenQnaApiInput(
+            document_id="doc1",
+            part_text=["section a", "section b"],
+            num_samples=3,
+            run_config_properties=RunConfigProperties(
+                model_name="gpt_4o_mini",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            guidance="Make concise QnA",
+            tags=["custom_tag"],
+        )
 
-    assert response.status_code == 200
-    res = response.json()
-    assert set(
-        ["synthetic", "qna", "synthetic_qna_session_abcd", "custom_tag"]
-    ).issubset(set(res.get("tags", [])))
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_qna?session_id=abcd",
+            json=input_data.model_dump(),
+        )
 
-    # Verify adapter was invoked with the expected positional dict payload
-    called_args, called_kwargs = mock_task_adapter.invoke.await_args
-    assert called_kwargs == {}
-    payload = called_args[0]
-    assert payload["kiln_data_gen_document_id"] == ["doc1", "doc2"]
-    assert payload["kiln_data_gen_part_text"] == ["section a", "section b"]
-    assert payload["kiln_data_gen_num_samples"] == 3
+        assert response.status_code == 200
+        res = response.json()
+        assert set(
+            ["synthetic", "qna", "synthetic_qna_session_abcd", "custom_tag"]
+        ).issubset(set(res.get("tags", [])))
+
+        # Verify adapter was invoked with the expected positional dict payload
+        called_args, called_kwargs = mock_task_adapter.invoke.await_args
+        assert called_kwargs == {}
+        payload = called_args[0]
+        assert payload["kiln_data_gen_document_name"] == "doc1"
+        assert payload["kiln_data_gen_part_text"] == ["section a", "section b"]
+        assert payload["kiln_data_gen_num_samples"] == 3
 
 
 def test_save_qna_pair_persists_task_run(
@@ -516,7 +529,7 @@ def test_save_qna_pair_persists_task_run(
     test_task,
 ):
     input_data = SaveQnaPairInput(
-        question="What is Kiln?",
+        query="What is Kiln?",
         answer="Kiln is an app for building AI systems.",
         model_name="gpt-4",
         model_provider="openai",

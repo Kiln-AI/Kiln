@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
@@ -11,6 +11,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
+from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
@@ -18,6 +19,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
 )
+from kiln_ai.utils.project_utils import project_from_id
 from kiln_server.task_api import task_from_id
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
@@ -87,12 +89,10 @@ class DataGenSaveSamplesApiInput(BaseModel):
 
 
 class DataGenQnaApiInput(BaseModel):
-    document_id: list[str] = Field(
-        description="Document IDs for Q&A generation", default=[]
-    )
+    document_id: str = Field(description="Document ID for Q&A generation")
     part_text: list[str] = Field(description="Part text for Q&A generation", default=[])
     num_samples: int = Field(
-        description="Number of samples to generate for this part", default=10
+        description="Number of Q&A pairs to generate for this part", default=10
     )
     run_config_properties: RunConfigProperties = Field(
         description="The run config properties to use for the output"
@@ -108,11 +108,13 @@ class DataGenQnaApiInput(BaseModel):
 
 
 class SaveQnaPairInput(BaseModel):
-    question: str = Field(description="User question text")
-    answer: str = Field(description="Assistant answer text")
-    model_name: str = Field(description="Model name used to generate the question")
+    query: str = Field(description="The synthetic user query")
+    answer: str = Field(
+        description="The synthetic assistant answer/response for the given user query"
+    )
+    model_name: str = Field(description="Model name used to generate the Q&A pair")
     model_provider: str = Field(
-        description="Model provider used to generate the question"
+        description="Model provider used to generate the Q&A pair"
     )
     tags: list[str] | None = Field(default=None, description="Optional tags")
 
@@ -248,13 +250,23 @@ The topic path for this sample is:
         input: DataGenQnaApiInput,
         session_id: str | None = None,
     ) -> TaskRun:
+        project = project_from_id(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
         task = task_from_id(project_id, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        doc = Document.from_id_and_parent_path(input.document_id, project.path)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
         qna_task = DataGenQnaTask(target_task=task, guidance=input.guidance)
-        task_input = DataGenQnaTaskInput.from_task(
-            task=task,
-            document_id=input.document_id,
-            part_text=input.part_text,
-            num_samples=input.num_samples,
+        task_input = DataGenQnaTaskInput(
+            kiln_data_gen_document_name=doc.friendly_name,
+            kiln_data_gen_part_text=input.part_text,
+            kiln_data_gen_num_samples=input.num_samples,
         )
         adapter = adapter_for_task(
             qna_task,
@@ -281,7 +293,7 @@ The topic path for this sample is:
     ) -> TaskRun:
         """
         Save a single QnA pair as a TaskRun. We store the task's system prompt
-        as the system message, the question as the user message, and the answer
+        as the system message, the query as the user message, and the answer
         as the assistant message in the trace. The output is the answer.
         """
         task = task_from_id(project_id, task_id)
@@ -293,7 +305,7 @@ The topic path for this sample is:
         }
         user_msg: ChatCompletionUserMessageParam = {
             "role": "user",
-            "content": input.question,
+            "content": input.query,
         }
         assistant_msg: ChatCompletionAssistantMessageParamWrapper = {
             "role": "assistant",
@@ -306,7 +318,7 @@ The topic path for this sample is:
         ]
 
         task_run = TaskRun(
-            input=input.question,
+            input=input.query,
             input_source=DataSource(
                 type=DataSourceType.synthetic,
                 properties=(

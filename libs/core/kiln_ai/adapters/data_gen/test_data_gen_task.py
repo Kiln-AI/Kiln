@@ -627,12 +627,7 @@ def test_generate_qna_generation_prompt_without_guidance():
     prompt = generate_qna_generation_prompt(guidance=None)
 
     assert isinstance(prompt, str)
-    assert "I want to generate Q&A pairs from document content." in prompt
-    assert "## Task Description" in prompt
-    assert (
-        "When generating Q&A pairs, focus on generating questions and answers that are relevant to the document content."
-        in prompt
-    )
+    assert "You are a **Q&A generation assistant**" in prompt
     assert "## Custom Guidance" not in prompt
 
 
@@ -644,10 +639,10 @@ def test_generate_qna_generation_prompt_with_guidance():
     prompt = generate_qna_generation_prompt(guidance=guidance)
 
     assert isinstance(prompt, str)
-    assert "I want to generate Q&A pairs from document content." in prompt
+    assert "You are a **Q&A generation assistant**" in prompt
     assert "## Custom Guidance" in prompt
     assert f"<guidance>\n{guidance}\n</guidance>" in prompt
     assert (
-        "When generating Q&A pairs, focus on generating questions and answers that are relevant to the document content."
+        "When generating Q&A pairs, focus on generating queries and answers that are relevant to the document content."
         not in prompt
     )

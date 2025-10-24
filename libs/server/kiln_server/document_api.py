@@ -62,7 +62,7 @@ from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
 
@@ -77,8 +77,15 @@ class BulkCreateDocumentsResponse(BaseModel):
 
 
 class EphemeralSplitRequest(BaseModel):
-    chunk_size: int | None = Field(default=None)
-    chunk_overlap: int | None = Field(default=None)
+    chunk_size: PositiveInt | None = Field(
+        default=None,
+        description="The size of each chunk in tokens. If None, return a single chunk with the full extraction output.",
+    )
+    chunk_overlap: int | None = Field(
+        ge=0,
+        default=None,
+        description="The overlap between chunks in tokens. If None, use the default overlap for the chunker.",
+    )
 
 
 class EphemeralSplitChunk(BaseModel):
@@ -1832,30 +1839,19 @@ def connect_document_api(app: FastAPI):
         extraction = sorted(extractions, key=lambda e: e.created_at, reverse=True)[0]
         output_text = await extraction.output_content() or ""
 
+        # chunk_size is None - return a single chunk with the full extraction output
         if request.chunk_size is None:
-            # Single full chunk
             return EphemeralSplitResponse(
                 chunks=[EphemeralSplitChunk(id=str(extraction.id), text=output_text)]
-            )
-
-        # Validate chunk size
-        if request.chunk_size is None or request.chunk_size <= 0:
-            raise HTTPException(
-                status_code=422, detail="chunk_size must be > 0 or null"
-            )
-
-        overlap = request.chunk_overlap or 0
-        if overlap < 0:
-            raise HTTPException(status_code=422, detail="chunk_overlap must be >= 0")
-        if overlap >= request.chunk_size:
-            raise HTTPException(
-                status_code=422, detail="chunk_overlap must be < chunk_size"
             )
 
         chunker_config = ChunkerConfig(
             name="ephemeral-fixed-window",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": request.chunk_size, "chunk_overlap": overlap},
+            properties={
+                "chunk_size": request.chunk_size,
+                "chunk_overlap": request.chunk_overlap or 0,
+            },
         )
 
         chunker = chunker_adapter_from_type(ChunkerType.FIXED_WINDOW, chunker_config)

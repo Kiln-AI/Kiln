@@ -7,9 +7,16 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import type { RunConfigProperties } from "$lib/types"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
-  import ChunkingConfigComponent, {
-    type ChunkingConfig,
-  } from "./chunking_config_form.svelte"
+  import ChunkingConfigForm from "./chunking_config_form.svelte"
+
+  type GenerateQnAPairsEvent = {
+    pairs_per_part: number
+    guidance: string
+    use_full_documents: boolean
+    chunk_size_tokens: number | null
+    chunk_overlap_tokens: number | null
+    runConfigProperties: RunConfigProperties
+  }
 
   export let project_id: string
   export let dialog: Dialog | null = null
@@ -25,28 +32,10 @@
 
   $: show_chunking_options = generation_target_type === "all"
 
-  let chunking_config: ChunkingConfig = {
-    use_full_documents,
-    chunk_size_tokens,
-    chunk_overlap_tokens,
-  }
-
-  $: {
-    use_full_documents = chunking_config.use_full_documents
-    chunk_size_tokens = chunking_config.chunk_size_tokens
-    chunk_overlap_tokens = chunking_config.chunk_overlap_tokens
-  }
-
   let run_config_component: RunConfigComponent | null = null
 
   const dispatch = createEventDispatcher<{
-    generate_requested: {
-      pairs_per_part: number
-      guidance: string
-      chunk_size_tokens: number | null
-      chunk_overlap_tokens: number | null
-      runConfigProperties: RunConfigProperties
-    }
+    generate_requested: GenerateQnAPairsEvent
     close: void
   }>()
 
@@ -59,6 +48,7 @@
     dispatch("generate_requested", {
       pairs_per_part,
       guidance,
+      use_full_documents,
       runConfigProperties:
         run_config_component.run_options_as_run_config_properties(),
       chunk_size_tokens,
@@ -88,7 +78,11 @@
     <div class="flex flex-col gap-4">
       {#if show_chunking_options}
         <div class="pt-4">
-          <ChunkingConfigComponent bind:config={chunking_config} />
+          <ChunkingConfigForm
+            bind:use_full_documents
+            bind:chunk_size_tokens
+            bind:chunk_overlap_tokens
+          />
         </div>
       {/if}
 
@@ -96,7 +90,7 @@
         <div class="flex-grow text-sm">
           Q&A Pairs per {use_full_documents ? "Document" : "Part"}
           <InfoTooltip
-            tooltip_text={`Number of question-answer pairs to generate from each ${use_full_documents ? "document" : "part"}`}
+            tooltip_text={`Number of query-answer pairs to generate from each ${use_full_documents ? "document" : "part"}`}
           />
         </div>
         <IncrementUi bind:value={pairs_per_part} />
@@ -104,12 +98,13 @@
 
       <div class="border-t pt-4">
         <FormElement
-          id="guidance_textarea_modal"
+          id="guidance_textarea"
           inputType="textarea"
           label="Guidance"
-          description="Instructions for the AI on how to generate Q&A pairs"
+          description="Instructions for the AI on how to generate query-answer pairs"
           bind:value={guidance}
           height="medium"
+          optional={true}
         />
       </div>
 
@@ -119,6 +114,7 @@
           {project_id}
           requires_structured_output={true}
           hide_prompt_selector={true}
+          hide_tools_selector={true}
           model_dropdown_settings={{
             requires_data_gen: true,
           }}

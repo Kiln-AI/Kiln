@@ -56,32 +56,21 @@ def structured_task():
 
 def test_data_gen_qna_task_input_initialization(base_task):
     # Arrange
-    document_id = ["doc1", "doc2"]
+    document_name = "doc1"
     part_text = ["Content 1", "Content 2"]
     num_samples = 5
 
     # Act
-    input_model = DataGenQnaTaskInput.from_task(
-        task=base_task,
-        document_id=document_id,
-        part_text=part_text,
-        num_samples=num_samples,
+    input_model = DataGenQnaTaskInput(
+        kiln_data_gen_document_name=document_name,
+        kiln_data_gen_part_text=part_text,
+        kiln_data_gen_num_samples=num_samples,
     )
 
     # Assert
-    assert input_model.kiln_data_gen_document_id == document_id
+    assert input_model.kiln_data_gen_document_name == document_name
     assert input_model.kiln_data_gen_part_text == part_text
     assert input_model.kiln_data_gen_num_samples == num_samples
-
-
-def test_data_gen_qna_task_input_default_values(base_task):
-    # Act
-    input_model = DataGenQnaTaskInput.from_task(task=base_task)
-
-    # Assert
-    assert input_model.kiln_data_gen_num_samples == 8
-    assert input_model.kiln_data_gen_document_id == []
-    assert input_model.kiln_data_gen_part_text == []
 
 
 def test_data_gen_qna_task_initialization(base_task):
@@ -111,9 +100,9 @@ def test_list_json_schema_for_task_without_schemas(base_task):
     # Check QnA pair structure
     qna_pair_schema = generated_qna_pairs_schema["items"]
     assert qna_pair_schema["type"] == "object"
-    assert qna_pair_schema["properties"]["question"]["type"] == "string"
+    assert qna_pair_schema["properties"]["query"]["type"] == "string"
     assert qna_pair_schema["properties"]["answer"]["type"] == "string"
-    assert set(qna_pair_schema["required"]) == {"question", "answer"}
+    assert set(qna_pair_schema["required"]) == {"query", "answer"}
 
 
 def test_list_json_schema_for_task_with_structured_schemas(structured_task):
@@ -131,7 +120,7 @@ def test_list_json_schema_for_task_with_structured_schemas(structured_task):
     assert qna_pair_schema["type"] == "object"
 
     # Question should match input schema
-    question_schema = qna_pair_schema["properties"]["question"]
+    question_schema = qna_pair_schema["properties"]["query"]
     assert question_schema["type"] == "object"
     assert "question" in question_schema["properties"]
     assert "context" in question_schema["properties"]
@@ -142,7 +131,7 @@ def test_list_json_schema_for_task_with_structured_schemas(structured_task):
     assert "answer" in answer_schema["properties"]
     assert "confidence" in answer_schema["properties"]
 
-    assert set(qna_pair_schema["required"]) == {"question", "answer"}
+    assert set(qna_pair_schema["required"]) == {"query", "answer"}
 
 
 def test_list_json_schema_for_task_with_mixed_schemas():
@@ -171,7 +160,7 @@ def test_list_json_schema_for_task_with_mixed_schemas():
     qna_pair_schema = parsed_schema["properties"]["generated_qna_pairs"]["items"]
 
     # Question should use input schema
-    question_schema = qna_pair_schema["properties"]["question"]
+    question_schema = qna_pair_schema["properties"]["query"]
     assert question_schema["type"] == "object"
     assert "query" in question_schema["properties"]
 

@@ -79,30 +79,28 @@
 </script>
 
 <div class="w-full">
-  {#if tags.length > 0}
-    <div class="flex flex-row flex-wrap gap-2 mb-2">
-      {#each (tags ?? []).slice().sort() as tag (tag)}
-        <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
-          <span class="truncate">{tag}</span>
-          <button
-            class="pl-3 font-medium shrink-0"
-            on:click={() => handle_remove_tag(tag)}
-            {disabled}>✕</button
-          >
-        </div>
-      {/each}
-
-      {#if !show_dropdown}
+  <div class="flex flex-row flex-wrap gap-2 mb-2">
+    {#each tags.slice().sort() as tag (tag)}
+      <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
+        <span class="truncate">{tag}</span>
         <button
-          class="badge bg-gray-200 text-gray-500 p-3 font-medium {disabled
-            ? 'opacity-50'
-            : ''}"
-          on:click={toggle_dropdown}
-          {disabled}>+</button
+          class="pl-3 font-medium shrink-0"
+          on:click={() => handle_remove_tag(tag)}
+          {disabled}>✕</button
         >
-      {/if}
-    </div>
-  {/if}
+      </div>
+    {/each}
+
+    {#if !show_dropdown}
+      <button
+        class="badge bg-gray-200 text-gray-500 p-3 font-medium {disabled
+          ? 'opacity-50'
+          : ''}"
+        on:click={toggle_dropdown}
+        {disabled}>＋</button
+      >
+    {/if}
+  </div>
 
   {#if show_dropdown}
     <div class="flex flex-row gap-2 items-center">

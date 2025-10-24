@@ -26,7 +26,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import type { KilnDocument } from "$lib/types"
+  import type { KilnDocument, RunConfigProperties } from "$lib/types"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
   let ui_show_errors = false
@@ -43,6 +43,7 @@
   $: qnaExtractorId = qna?.extractorId
   $: qnaPairsPerPart = qna?.pairsPerPart
   $: qnaGuidance = qna?.guidance
+  $: qnaUseFullDocuments = qna?.useFullDocuments
   $: qnaChunkSizeTokens = qna?.chunkSizeTokens
   $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
   $: qnaTargetType = qna?.targetType
@@ -183,17 +184,27 @@
     show_generate_qna_dialog?.show()
   }
 
-  async function handle_generate_requested(event: CustomEvent) {
+  async function handle_generate_requested(
+    event: CustomEvent<{
+      pairs_per_part: number
+      guidance: string
+      use_full_documents: boolean
+      chunk_size_tokens: number | null
+      chunk_overlap_tokens: number | null
+      runConfigProperties: RunConfigProperties
+    }>,
+  ) {
     show_generate_qna_dialog?.close()
     current_dialog_type = null
     ui_show_generation_errors = false
     generating_dialog?.show()
     try {
       await qna.generate({
-        pairsPerPart: get(qna.pairsPerPart),
-        guidance: get(qna.guidance),
-        chunkSizeTokens: get(qna.chunkSizeTokens),
-        chunkOverlapTokens: get(qna.chunkOverlapTokens),
+        pairsPerPart: event.detail.pairs_per_part,
+        guidance: event.detail.guidance,
+        useFullDocuments: event.detail.use_full_documents,
+        chunkSizeTokens: event.detail.chunk_size_tokens,
+        chunkOverlapTokens: event.detail.chunk_overlap_tokens,
         runConfigProperties: event.detail.runConfigProperties,
       })
     } catch (e) {
@@ -297,7 +308,7 @@
           <div class="whitespace-nowrap">
             Search Tool Evaluator
             <InfoTooltip
-              tooltip_text="Generate question-answer pairs from document content"
+              tooltip_text="Generate query-answer pairs from document content"
               no_pad={true}
             />
           </div>
@@ -317,7 +328,7 @@
           <div class="whitespace-nowrap">
             Q&A
             <InfoTooltip
-              tooltip_text="Q&A generation template for extracting question-answer pairs from documents"
+              tooltip_text="Q&A generation template for extracting query-answer pairs from documents"
               no_pad={true}
             />
           </div>
@@ -534,14 +545,14 @@
             <thead>
               <tr>
                 <th style="width: calc(50% - 70px)"
-                  >Question <InfoTooltip
-                    tooltip_text="The question to ask about the document content."
+                  >Query <InfoTooltip
+                    tooltip_text="The query to ask about the document content."
                     position="bottom"
                   /></th
                 >
                 <th style="width: calc(50% - 110px)"
                   >Answer <InfoTooltip
-                    tooltip_text="The answer to the question based on the document content."
+                    tooltip_text="The answer to the query based on the document content."
                     position="bottom"
                   /></th
                 >
@@ -585,7 +596,7 @@
   <Extractiondialog
     keyboard_submit={current_dialog_type === "extraction"}
     bind:dialog={show_extraction_dialog}
-    bind:selected_extractor_id={$qnaExtractorId}
+    selected_extractor_id={$qnaExtractorId}
     on:extraction_complete={handle_extraction_complete}
     on:extractor_config_selected={handle_extractor_config_selected}
     on:close={() => (current_dialog_type = null)}
@@ -594,10 +605,11 @@
   <GenerateQnadialog
     bind:dialog={show_generate_qna_dialog}
     {project_id}
-    bind:pairs_per_part={$qnaPairsPerPart}
-    bind:guidance={$qnaGuidance}
-    bind:chunk_size_tokens={$qnaChunkSizeTokens}
-    bind:chunk_overlap_tokens={$qnaChunkOverlapTokens}
+    pairs_per_part={$qnaPairsPerPart}
+    guidance={$qnaGuidance}
+    use_full_documents={$qnaUseFullDocuments}
+    chunk_size_tokens={$qnaChunkSizeTokens}
+    chunk_overlap_tokens={$qnaChunkOverlapTokens}
     target_description={$qnaTargetDescription || "all documents"}
     generation_target_type={$qnaTargetType || "all"}
     on:generate_requested={handle_generate_requested}
