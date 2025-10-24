@@ -23,6 +23,7 @@
       data. <a
         href="https://docs.kiln.tech/docs/qna-data-generation"
         target="_blank"
+        rel="noopener noreferrer"
         class="link">Guide</a
       >.
     </div>
