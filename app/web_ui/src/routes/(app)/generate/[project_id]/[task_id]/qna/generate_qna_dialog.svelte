@@ -9,6 +9,15 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import ChunkingConfigForm from "./chunking_config_form.svelte"
 
+  type GenerateQnAPairsEvent = {
+    pairs_per_part: number
+    guidance: string
+    use_full_documents: boolean
+    chunk_size_tokens: number | null
+    chunk_overlap_tokens: number | null
+    runConfigProperties: RunConfigProperties
+  }
+
   export let project_id: string
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
@@ -26,13 +35,7 @@
   let run_config_component: RunConfigComponent | null = null
 
   const dispatch = createEventDispatcher<{
-    generate_requested: {
-      pairs_per_part: number
-      guidance: string
-      chunk_size_tokens: number | null
-      chunk_overlap_tokens: number | null
-      runConfigProperties: RunConfigProperties
-    }
+    generate_requested: GenerateQnAPairsEvent
     close: void
   }>()
 
@@ -45,6 +48,7 @@
     dispatch("generate_requested", {
       pairs_per_part,
       guidance,
+      use_full_documents,
       runConfigProperties:
         run_config_component.run_options_as_run_config_properties(),
       chunk_size_tokens,
@@ -86,7 +90,7 @@
         <div class="flex-grow text-sm">
           Q&A Pairs per {use_full_documents ? "Document" : "Part"}
           <InfoTooltip
-            tooltip_text={`Number of question-answer pairs to generate from each ${use_full_documents ? "document" : "part"}`}
+            tooltip_text={`Number of query-answer pairs to generate from each ${use_full_documents ? "document" : "part"}`}
           />
         </div>
         <IncrementUi bind:value={pairs_per_part} />
@@ -94,12 +98,13 @@
 
       <div class="border-t pt-4">
         <FormElement
-          id="guidance_textarea_modal"
+          id="guidance_textarea"
           inputType="textarea"
           label="Guidance"
-          description="Instructions for the AI on how to generate Q&A pairs"
+          description="Instructions for the AI on how to generate query-answer pairs"
           bind:value={guidance}
           height="medium"
+          optional={true}
         />
       </div>
 

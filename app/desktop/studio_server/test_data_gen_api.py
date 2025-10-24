@@ -529,7 +529,7 @@ def test_save_qna_pair_persists_task_run(
     test_task,
 ):
     input_data = SaveQnaPairInput(
-        question="What is Kiln?",
+        query="What is Kiln?",
         answer="Kiln is an app for building AI systems.",
         model_name="gpt-4",
         model_provider="openai",

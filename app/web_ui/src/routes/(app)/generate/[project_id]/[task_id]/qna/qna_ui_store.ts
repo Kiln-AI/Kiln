@@ -26,13 +26,13 @@ export const step_names: Record<StepNumber, string> = {
 export const step_descriptions: Record<StepNumber, string> = {
   1: "Choose which documents to generate Q&A pairs from",
   2: "Extract text content from selected documents",
-  3: "Generate question and answer pairs from extracted content",
+  3: "Generate query and answer pairs from extracted content",
   4: "Save generated Q&A pairs to dataset",
 }
 
 export type QnAPair = {
   id: string
-  question: string
+  query: string
   answer: string
   generated: boolean
   model_name?: string
@@ -642,7 +642,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
     const outputText = data.output.output
     const response = JSON.parse(outputText) as {
-      generated_qna_pairs?: Array<{ question: unknown; answer: unknown }>
+      generated_qna_pairs?: Array<{ query: unknown; answer: unknown }>
     }
     const generated = Array.isArray(response.generated_qna_pairs)
       ? response.generated_qna_pairs
@@ -653,10 +653,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
     return generated.map((qa) => ({
       id: crypto.randomUUID(),
-      question:
-        typeof qa?.question === "string"
-          ? qa.question
-          : JSON.stringify(qa?.question ?? ""),
+      query:
+        typeof qa?.query === "string"
+          ? qa.query
+          : JSON.stringify(qa?.query ?? ""),
       answer:
         typeof qa?.answer === "string"
           ? qa.answer
@@ -914,7 +914,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           query: { session_id: sessionId },
         },
         body: {
-          question: pair.question,
+          query: pair.query,
           answer: pair.answer,
           model_name: pair.model_name,
           model_provider: pair.model_provider,
