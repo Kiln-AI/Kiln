@@ -498,17 +498,23 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       chunk_size: chunkSizeTokens ?? null,
       chunk_overlap: chunkOverlapTokens ?? null,
     }
-    const res = await fetch(
-      `${base_url}/api/projects/${projectId}/extractor_configs/${extractorId}/documents/${doc.id}/ephemeral_split`,
+    const { data, error } = await client.POST(
+      "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        params: {
+          path: {
+            project_id: projectId,
+            extractor_config_id: extractorId,
+            document_id: doc.id,
+          },
+        },
+        body,
       },
     )
-    if (!res.ok) throw new Error(`Chunking failed for ${doc.id}`)
-    const data: { chunks: Array<{ id: string; text: string }> } =
-      await res.json()
+    if (error) {
+      throw createKilnError(error)
+    }
+
     const parts: QnADocPart[] = data.chunks.map((c) => ({
       id: c.id,
       text_preview: c.text,
