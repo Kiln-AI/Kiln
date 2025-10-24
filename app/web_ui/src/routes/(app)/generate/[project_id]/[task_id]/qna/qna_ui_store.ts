@@ -239,6 +239,17 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       }),
     )
     configUnsubscribes.push(
+      useFullDocuments.subscribe((value) => {
+        _state.update((s) => ({
+          ...s,
+          generation_config: {
+            ...s.generation_config,
+            use_full_documents: value,
+          },
+        }))
+      }),
+    )
+    configUnsubscribes.push(
       chunkSizeTokens.subscribe((value) => {
         _state.update((s) => ({
           ...s,
@@ -739,7 +750,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
             generation_config: {
               pairs_per_part: pairsPerPart,
               guidance,
-              use_full_documents: true,
+              use_full_documents: useFullDocuments,
               chunk_size_tokens: useFullDocuments ? null : chunkSizeTokens,
               chunk_overlap_tokens: useFullDocuments
                 ? null

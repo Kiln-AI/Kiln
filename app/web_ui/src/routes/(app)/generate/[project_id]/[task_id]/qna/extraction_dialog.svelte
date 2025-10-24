@@ -179,6 +179,9 @@
       }
     } catch (e) {
       extractor_config_error = createKilnError(e)
+      es?.close()
+      es = null
+      extracting = false
     }
   }
 
@@ -204,6 +207,7 @@
       es?.close()
       es = null
       extractor_config_error = null
+      extracting = false
       dispatch("close")
     }}
   >
