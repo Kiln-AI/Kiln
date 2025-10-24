@@ -92,15 +92,10 @@ export function get_eval_steps(
   }
 
   if (template === "search_tool_reference_answer") {
-    const search_tool_id = evaluator.template_properties.search_tool_id
-    if (!search_tool_id) {
-      throw new Error(
-        "Search tool ID is required for search_tool_reference_answer template",
-      )
-    }
     const steps: string[] = [
-      `Does the model's output contain the reference answer described here: \n<reference_answer>\n${reference_answer}\n</reference_answer>`,
+      `Evaluate if the model's output is accurate as per the reference answer.`,
     ]
+    return steps
   }
 
   return []

@@ -24,7 +24,7 @@
     items: Array<KilnSectionItem>
   }> = [
     {
-      category: "Behavioral Checks",
+      category: "Behavioural Checks",
       items: [
         {
           type: "eval_template",

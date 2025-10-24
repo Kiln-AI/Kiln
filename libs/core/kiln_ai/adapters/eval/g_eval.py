@@ -114,6 +114,25 @@ The model produced the following output for the task:
 </eval_data>
 """
 
+    def generate_ref_ans_run_description(
+        self, eval_input: str, eval_output: str, reference_answer: str
+    ) -> str:
+        return f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+The model produced the following output for the task:
+<eval_data>
+{eval_output}
+</eval_data>
+
+This is the reference answer:
+<eval_data>
+{reference_answer}
+</eval_data>
+"""
+
     async def run_eval(
         self, task_run: TaskRun
     ) -> tuple[EvalScores, Dict[str, str] | None]:
@@ -160,6 +179,7 @@ The model produced the following output for the task:
         run_description = self.generate_run_description(
             task_run.input, task_run.output.output
         )
+        # If type if ref answer, self.generate_ref_ans_run_description(task_run.input, task_run.output.output, ref_ans)
 
         # We don't need the run, but invoke_returning_run_output() runs validations for us over _run()
         _, run_output = await adapter.invoke_returning_run_output(run_description)
