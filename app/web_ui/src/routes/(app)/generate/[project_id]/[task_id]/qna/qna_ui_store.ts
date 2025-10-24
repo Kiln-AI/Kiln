@@ -636,7 +636,9 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         params: { path: { project_id: projectId, task_id: taskId } },
       },
     )
-    if (apiError) throw apiError
+    if (apiError) {
+      throw createKilnError(apiError)
+    }
 
     const outputText = data.output.output
     const response = JSON.parse(outputText) as {
