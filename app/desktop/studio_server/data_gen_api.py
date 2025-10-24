@@ -108,9 +108,9 @@ class DataGenQnaApiInput(BaseModel):
 
 
 class SaveQnaPairInput(BaseModel):
-    question: str = Field(description="The synthetic user question")
+    query: str = Field(description="The synthetic user query")
     answer: str = Field(
-        description="The synthetic assistant answer/response for the given user question"
+        description="The synthetic assistant answer/response for the given user query"
     )
     model_name: str = Field(description="Model name used to generate the Q&A pair")
     model_provider: str = Field(
@@ -293,7 +293,7 @@ The topic path for this sample is:
     ) -> TaskRun:
         """
         Save a single QnA pair as a TaskRun. We store the task's system prompt
-        as the system message, the question as the user message, and the answer
+        as the system message, the query as the user message, and the answer
         as the assistant message in the trace. The output is the answer.
         """
         task = task_from_id(project_id, task_id)
@@ -305,7 +305,7 @@ The topic path for this sample is:
         }
         user_msg: ChatCompletionUserMessageParam = {
             "role": "user",
-            "content": input.question,
+            "content": input.query,
         }
         assistant_msg: ChatCompletionAssistantMessageParamWrapper = {
             "role": "assistant",
@@ -318,7 +318,7 @@ The topic path for this sample is:
         ]
 
         task_run = TaskRun(
-            input=input.question,
+            input=input.query,
             input_source=DataSource(
                 type=DataSourceType.synthetic,
                 properties=(

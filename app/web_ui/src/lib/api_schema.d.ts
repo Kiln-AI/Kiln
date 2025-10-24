@@ -1321,7 +1321,7 @@ export interface paths {
         /**
          * Save Qna Pair
          * @description Save a single QnA pair as a TaskRun. We store the task's system prompt
-         *     as the system message, the question as the user message, and the answer
+         *     as the system message, the query as the user message, and the answer
          *     as the assistant message in the trace. The output is the answer.
          */
         post: operations["save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post"];
@@ -4619,13 +4619,13 @@ export interface components {
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
-             * Question
-             * @description The synthetic user question
+             * Query
+             * @description The synthetic user query
              */
-            question: string;
+            query: string;
             /**
              * Answer
-             * @description The synthetic assistant answer/response for the given user question
+             * @description The synthetic assistant answer/response for the given user query
              */
             answer: string;
             /**

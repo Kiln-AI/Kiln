@@ -14,11 +14,11 @@ class DataGenQnaTaskInput(BaseModel):
 
 
 def list_json_schema_for_task(task: Task) -> str:
-    # Parse input schema for question field
+    # Parse input schema for query field
     if task.input_json_schema:
-        question_schema = json.loads(task.input_json_schema)
+        query_schema = json.loads(task.input_json_schema)
     else:
-        question_schema = {"type": "string"}
+        query_schema = {"type": "string"}
 
     if task.output_json_schema:
         answer_schema = json.loads(task.output_json_schema)
@@ -28,10 +28,10 @@ def list_json_schema_for_task(task: Task) -> str:
     qna_pair_schema = {
         "type": "object",
         "properties": {
-            "question": question_schema,
+            "query": query_schema,
             "answer": answer_schema,
         },
-        "required": ["question", "answer"],
+        "required": ["query", "answer"],
     }
 
     list_schema = {
