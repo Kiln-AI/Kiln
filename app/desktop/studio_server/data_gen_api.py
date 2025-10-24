@@ -92,7 +92,7 @@ class DataGenQnaApiInput(BaseModel):
     document_id: str = Field(description="Document ID for Q&A generation")
     part_text: list[str] = Field(description="Part text for Q&A generation", default=[])
     num_samples: int = Field(
-        description="Number of samples to generate for this part", default=10
+        description="Number of Q&A pairs to generate for this part", default=10
     )
     run_config_properties: RunConfigProperties = Field(
         description="The run config properties to use for the output"
@@ -108,11 +108,13 @@ class DataGenQnaApiInput(BaseModel):
 
 
 class SaveQnaPairInput(BaseModel):
-    question: str = Field(description="User question text")
-    answer: str = Field(description="Assistant answer text")
-    model_name: str = Field(description="Model name used to generate the question")
+    question: str = Field(description="The synthetic user question")
+    answer: str = Field(
+        description="The synthetic assistant answer/response for the given user question"
+    )
+    model_name: str = Field(description="Model name used to generate the Q&A pair")
     model_provider: str = Field(
-        description="Model provider used to generate the question"
+        description="Model provider used to generate the Q&A pair"
     )
     tags: list[str] | None = Field(default=None, description="Optional tags")
 

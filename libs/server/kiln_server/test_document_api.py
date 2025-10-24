@@ -4543,7 +4543,9 @@ async def test_ephemeral_split_document_invalid_chunk_size(
         )
 
         assert response.status_code == 422
-        assert "chunk_size must be > 0" in response.json()["message"]
+        assert (
+            "Chunk_size: Input should be greater than 0" in response.json()["message"]
+        )
 
 
 @pytest.mark.asyncio
@@ -4570,7 +4572,10 @@ async def test_ephemeral_split_document_negative_chunk_overlap(
         )
 
         assert response.status_code == 422
-        assert "chunk_overlap must be >= 0" in response.json()["message"]
+        assert (
+            "Chunk_overlap: Input should be greater than or equal to 0"
+            in response.json()["message"]
+        )
 
 
 @pytest.mark.asyncio
@@ -4597,4 +4602,6 @@ async def test_ephemeral_split_document_overlap_exceeds_chunk_size(
         )
 
         assert response.status_code == 422
-        assert "chunk_overlap must be < chunk_size" in response.json()["message"]
+        assert (
+            "Chunk overlap must be less than chunk size" in response.json()["message"]
+        )

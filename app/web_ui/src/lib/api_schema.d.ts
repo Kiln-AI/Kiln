@@ -2623,7 +2623,7 @@ export interface components {
             part_text: string[];
             /**
              * Num Samples
-             * @description Number of samples to generate for this part
+             * @description Number of Q&A pairs to generate for this part
              * @default 10
              */
             num_samples: number;
@@ -2990,9 +2990,15 @@ export interface components {
         };
         /** EphemeralSplitRequest */
         EphemeralSplitRequest: {
-            /** Chunk Size */
+            /**
+             * Chunk Size
+             * @description The size of each chunk in tokens. If None, return a single chunk with the full extraction output.
+             */
             chunk_size?: number | null;
-            /** Chunk Overlap */
+            /**
+             * Chunk Overlap
+             * @description The overlap between chunks in tokens. If None, use the default overlap for the chunker.
+             */
             chunk_overlap?: number | null;
         };
         /** EphemeralSplitResponse */
@@ -4614,22 +4620,22 @@ export interface components {
         SaveQnaPairInput: {
             /**
              * Question
-             * @description User question text
+             * @description The synthetic user question
              */
             question: string;
             /**
              * Answer
-             * @description Assistant answer text
+             * @description The synthetic assistant answer/response for the given user question
              */
             answer: string;
             /**
              * Model Name
-             * @description Model name used to generate the question
+             * @description Model name used to generate the Q&A pair
              */
             model_name: string;
             /**
              * Model Provider
-             * @description Model provider used to generate the question
+             * @description Model provider used to generate the Q&A pair
              */
             model_provider: string;
             /**
