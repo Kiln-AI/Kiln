@@ -12,20 +12,6 @@ class DataGenQnaTaskInput(BaseModel):
     kiln_data_gen_part_text: list[str]
     kiln_data_gen_num_samples: int
 
-    @classmethod
-    def from_task(
-        cls,
-        task: Task,
-        document_name: str = "",
-        part_text: list[str] = [],
-        num_samples: int = 8,
-    ) -> "DataGenQnaTaskInput":
-        return cls(
-            kiln_data_gen_document_name=document_name,
-            kiln_data_gen_part_text=part_text,
-            kiln_data_gen_num_samples=num_samples,
-        )
-
 
 def list_json_schema_for_task(task: Task) -> str:
     # Parse input schema for question field

@@ -261,11 +261,10 @@ The topic path for this sample is:
             raise HTTPException(status_code=404, detail="Document not found")
 
         qna_task = DataGenQnaTask(target_task=task, guidance=input.guidance)
-        task_input = DataGenQnaTaskInput.from_task(
-            task=task,
-            document_name=doc.friendly_name,
-            part_text=input.part_text,
-            num_samples=input.num_samples,
+        task_input = DataGenQnaTaskInput(
+            kiln_data_gen_document_name=doc.friendly_name,
+            kiln_data_gen_part_text=input.part_text,
+            kiln_data_gen_num_samples=input.num_samples,
         )
         adapter = adapter_for_task(
             qna_task,

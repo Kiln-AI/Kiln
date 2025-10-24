@@ -61,27 +61,16 @@ def test_data_gen_qna_task_input_initialization(base_task):
     num_samples = 5
 
     # Act
-    input_model = DataGenQnaTaskInput.from_task(
-        task=base_task,
-        document_name=document_name,
-        part_text=part_text,
-        num_samples=num_samples,
+    input_model = DataGenQnaTaskInput(
+        kiln_data_gen_document_name=document_name,
+        kiln_data_gen_part_text=part_text,
+        kiln_data_gen_num_samples=num_samples,
     )
 
     # Assert
     assert input_model.kiln_data_gen_document_name == document_name
     assert input_model.kiln_data_gen_part_text == part_text
     assert input_model.kiln_data_gen_num_samples == num_samples
-
-
-def test_data_gen_qna_task_input_default_values(base_task):
-    # Act
-    input_model = DataGenQnaTaskInput.from_task(task=base_task)
-
-    # Assert
-    assert input_model.kiln_data_gen_num_samples == 8
-    assert input_model.kiln_data_gen_document_name == ""
-    assert input_model.kiln_data_gen_part_text == []
 
 
 def test_data_gen_qna_task_initialization(base_task):
