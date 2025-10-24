@@ -40,7 +40,8 @@
   const dispatch = createEventDispatcher()
 
   $: qnaMaxStep = qna?.maxStep
-  // we don't enable the part dialog until after the extraction step
+
+  // we don't enable the part dialog until after the extraction step and the chunking step
   $: output_dialog_possible = $qnaMaxStep && $qnaMaxStep > 3
 
   // Dialogs
