@@ -16,11 +16,12 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Type, TypeVar
 
-from pydantic import BaseModel
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.basemodel import KilnBaseModel
 
-T = TypeVar("T", bound=BaseModel)
+    T = TypeVar("T", bound="KilnBaseModel")
 
 
 class ModelCache:
@@ -28,7 +29,7 @@ class ModelCache:
 
     def __init__(self):
         # Store both the model and the modified time of the cached file contents
-        self.model_cache: Dict[Path, Tuple[BaseModel, int]] = {}
+        self.model_cache: Dict[Path, Tuple[KilnBaseModel, int]] = {}
         self._enabled = self._check_timestamp_granularity()
         if not self._enabled:
             warnings.warn(
@@ -72,14 +73,12 @@ class ModelCache:
             if readonly:
                 return model
             else:
-                # Use mutable_copy for KilnBaseModel, fallback to model_copy for regular BaseModel
-                if hasattr(model, 'mutable_copy'):
-                    return model.mutable_copy(deep=True)
-                else:
-                    return model.model_copy(deep=True)
+                return model.mutable_copy()
         return None
 
-    def get_model_id(self, path: Path, model_type: Type[T]) -> Optional[str]:
+    def get_model_id(
+        self, path: Path, model_type: Type["KilnBaseModel"]
+    ) -> Optional[str]:
         model = self._get_model(path, model_type)
         if model and hasattr(model, "id"):
             id = model.id  # type: ignore
@@ -87,13 +86,15 @@ class ModelCache:
                 return id
         return None
 
-    def set_model(self, path: Path, model: BaseModel, mtime_ns: int):
+    def set_model(self, path: Path, model: "KilnBaseModel", mtime_ns: int):
         # disable caching if the filesystem doesn't support fine-grained timestamps
         if not self._enabled:
             return
-        # Mark all cached models as readonly to prevent accidental mutations
-        if hasattr(model, 'mark_as_readonly'):
-            model.mark_as_readonly()
+
+        if not model._readonly:
+            raise RuntimeError(
+                "Mutable models are not allowed to be cached. Model should be readonly."
+            )
         self.model_cache[path] = (model, mtime_ns)
 
     def invalidate(self, path: Path):

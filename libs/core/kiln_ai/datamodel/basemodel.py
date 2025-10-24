@@ -43,6 +43,7 @@ PT = TypeVar("PT", bound="KilnParentedModel")
 
 class ReadOnlyMutationError(RuntimeError):
     """Raised when attempting to mutate a readonly KilnBaseModel instance."""
+
     pass
 
 
@@ -291,7 +292,7 @@ class KilnBaseModel(BaseModel):
         """Mark this model instance as readonly to prevent mutations."""
         self._readonly = True
 
-    def _ensure_not_readonly(self, attr_name: str = None) -> None:
+    def _ensure_not_readonly(self, attr_name: str) -> None:
         """Check if model is readonly and raise exception if mutation is attempted."""
         if self._readonly:
             attr_msg = f" '{attr_name}'" if attr_name else ""
@@ -304,19 +305,21 @@ class KilnBaseModel(BaseModel):
         """Override setattr to prevent mutations on readonly models."""
         # Check for error condition: attempting to mutate readonly model
         # Allow private attributes and certain safe operations even on readonly models
-        readonly_safe_attrs = {'parent', 'path'}
-        if (not name.startswith('_') and
-            hasattr(self, '_readonly') and
-            self._readonly and
-            name not in readonly_safe_attrs):
+        readonly_safe_attrs = {"parent", "path"}
+        if (
+            not name.startswith("_")
+            and hasattr(self, "_readonly")
+            and self._readonly
+            and name not in readonly_safe_attrs
+        ):
             self._ensure_not_readonly(name)
 
         # Normal case: proceed with attribute setting
         super().__setattr__(name, value)
 
-    def mutable_copy(self, *, update: dict | None = None, deep: bool = False) -> Self:
+    def mutable_copy(self) -> Self:
         """Create a mutable copy of the model, resetting readonly flag."""
-        copy = super().model_copy(update=update, deep=deep)
+        copy = super().model_copy(deep=True)
         # Reset readonly flag on copies so they can be mutated
         copy._readonly = False
         return copy
@@ -387,7 +390,12 @@ class KilnBaseModel(BaseModel):
                 f"Class: {m.__class__.__name__}, id: {getattr(m, 'id', None)}, path: {path}, "
                 f"version: {m.v}, max version: {m.max_schema_version()}"
             )
-        ModelCache.shared().set_model(path, m, mtime_ns)
+
+        if readonly:
+            m.mark_as_readonly()
+            # Cache, but only if readonly. Mutable models should not be cached.
+            ModelCache.shared().set_model(path, m, mtime_ns)
+
         return m
 
     def loaded_from_file(self, info: ValidationInfo | None = None) -> bool:

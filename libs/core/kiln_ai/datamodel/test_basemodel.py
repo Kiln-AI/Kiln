@@ -414,18 +414,19 @@ def test_load_from_file_with_cache(test_base_file, tmp_model_cache):
     tmp_model_cache.get_model = MagicMock(return_value=None)
     tmp_model_cache.set_model = MagicMock()
 
-    # Load the model
-    model = KilnBaseModel.load_from_file(test_base_file)
+    # Load the model with readonly=True to enable caching
+    model = KilnBaseModel.load_from_file(test_base_file, readonly=True)
 
     # Check that the cache was checked and set
     tmp_model_cache.get_model.assert_called_once_with(
-        test_base_file, KilnBaseModel, readonly=False
+        test_base_file, KilnBaseModel, readonly=True
     )
     tmp_model_cache.set_model.assert_called_once()
 
     # Ensure the model is correctly loaded
     assert model.v == 1
     assert model.path == test_base_file
+    assert model._readonly is True
 
 
 def test_save_to_file_invalidates_cache(test_base_file, tmp_model_cache):
@@ -446,9 +447,9 @@ def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
     model = KilnBaseModel(path=file_path)
     model.save_to_file()
 
-    # populate and check cache
-    model = KilnBaseModel.load_from_file(file_path)
-    cached_model = tmp_model_cache.get_model(file_path, KilnBaseModel)
+    # populate and check cache with readonly=True
+    model = KilnBaseModel.load_from_file(file_path, readonly=True)
+    cached_model = tmp_model_cache.get_model(file_path, KilnBaseModel, readonly=True)
     assert cached_model.id == model.id
 
     tmp_model_cache.invalidate = MagicMock()
@@ -459,6 +460,26 @@ def test_delete_invalidates_cache(tmp_path, tmp_model_cache):
     # Check that the cache was invalidated
     tmp_model_cache.invalidate.assert_called_with(file_path)
     assert tmp_model_cache.get_model(file_path, KilnBaseModel) is None
+
+
+def test_no_cache_when_readonly_false(test_base_file, tmp_model_cache):
+    """Test that models are not cached when loaded with readonly=False."""
+    tmp_model_cache.get_model = MagicMock(return_value=None)
+    tmp_model_cache.set_model = MagicMock()
+
+    # Load the model with readonly=False (default)
+    model = KilnBaseModel.load_from_file(test_base_file, readonly=False)
+
+    # Check that the cache was checked but NOT set
+    tmp_model_cache.get_model.assert_called_once_with(
+        test_base_file, KilnBaseModel, readonly=False
+    )
+    tmp_model_cache.set_model.assert_not_called()
+
+    # Ensure the model is correctly loaded but not readonly
+    assert model.v == 1
+    assert model.path == test_base_file
+    assert model._readonly is False
 
 
 def test_load_from_file_with_cached_model(test_base_file, tmp_model_cache):
@@ -1009,6 +1030,7 @@ async def test_invoke_parsing_flow_with_reasoning_and_structured_output(adapter)
 
 class ReadonlyTestModel(KilnBaseModel):
     """Simple test model for readonly functionality."""
+
     name: str = "test"
     value: int = 42
 
@@ -1048,7 +1070,7 @@ def test_mutable_copy():
     model.mark_as_readonly()
 
     # Create mutable copy
-    mutable_copy = model.mutable_copy(deep=True)
+    mutable_copy = model.mutable_copy()
 
     # Copy should be mutable
     assert mutable_copy._readonly is False
