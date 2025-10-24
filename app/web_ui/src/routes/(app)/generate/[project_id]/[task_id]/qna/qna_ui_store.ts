@@ -778,8 +778,23 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       const state = get(_state)
       const targetSel = get(pendingTarget)
 
+      const documentIds = getTargetDocumentIds(state, targetSel)
+
       if (targetSel.type === "all") {
-        const documentIds = getTargetDocumentIds(state, targetSel)
+        _state.update((s) => ({
+          ...s,
+          documents: s.documents.map((doc) => {
+            // we clear the parts for all documents because corpus-wide regeneration can change the chunking
+            // and result in totally different chunks
+            if (documentIds.includes(doc.id)) {
+              return { ...doc, parts: [] }
+            }
+            return doc
+          }),
+        }))
+      }
+
+      if (targetSel.type === "all" || targetSel.type === "document") {
         await ensureDocumentsChunked(
           documentIds,
           state.extractor_id,
