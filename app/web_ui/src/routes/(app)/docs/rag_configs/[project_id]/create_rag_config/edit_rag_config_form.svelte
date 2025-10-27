@@ -35,6 +35,10 @@
   import TemplatePropertyOverview from "./template_property_overview.svelte"
   import type { RagConfigWithSubConfigs } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import {
+    fixedWindowChunkerProperties,
+    semanticChunkerProperties,
+  } from "$lib/utils/properties_cast"
 
   const dispatch = createEventDispatcher<{
     success: { rag_config_id: string }
@@ -350,25 +354,35 @@
       let chunker_overlap: unknown = undefined
       let embedding_model: string | undefined = undefined
       let vector_store_type: string | undefined = undefined
+      let breakpoint_percentile_threshold: unknown = undefined
+      let buffer_size: unknown = undefined
       try {
         extractor_model = extractor_configs.find(
           (config) => config.id === selected_extractor_config_id,
         )?.model_name
-        chunker_type = chunker_configs.find(
-          (config) => config.id === selected_chunker_config_id,
-        )?.chunker_type
-        chunker_size = chunker_configs.find(
-          (config) => config.id === selected_chunker_config_id,
-        )?.properties.chunk_size
-        chunker_overlap = chunker_configs.find(
-          (config) => config.id === selected_chunker_config_id,
-        )?.properties.chunk_overlap
         embedding_model = embedding_configs.find(
           (config) => config.id === selected_embedding_config_id,
         )?.model_name
         vector_store_type = vector_store_configs.find(
           (config) => config.id === selected_vector_store_config_id,
         )?.store_type
+
+        const chunker_config = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )
+        chunker_type = chunker_config?.chunker_type
+
+        if (chunker_type === "fixed_window" && chunker_config) {
+          const fixed_window_properties =
+            fixedWindowChunkerProperties(chunker_config)
+          chunker_size = fixed_window_properties.chunk_size
+          chunker_overlap = fixed_window_properties.chunk_overlap
+        } else if (chunker_type === "semantic" && chunker_config) {
+          const semantic_properties = semanticChunkerProperties(chunker_config)
+          breakpoint_percentile_threshold =
+            semantic_properties.breakpoint_percentile_threshold
+          buffer_size = semantic_properties.buffer_size
+        }
       } catch (e) {
         console.error(e)
       }
@@ -380,6 +394,9 @@
         chunker_type: chunker_type,
         chunker_size: chunker_size,
         chunker_overlap: chunker_overlap,
+        chunker_breakpoint_percentile_threshold:
+          breakpoint_percentile_threshold,
+        chunker_buffer_size: buffer_size,
         embedding_model: embedding_model,
         vector_store_type: vector_store_type,
       })

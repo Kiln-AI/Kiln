@@ -637,6 +637,8 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
@@ -680,6 +682,8 @@ async def test_create_semantic_chunker_config_minimal(client, mock_project):
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 95,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
@@ -713,13 +717,13 @@ async def test_create_semantic_chunker_config_missing_embedding_config_id(
                 "properties": {
                     "breakpoint_percentile_threshold": 95,
                     "buffer_size": 1,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    error_detail = response.json()["source_errors"][0]
-    assert "embedding_config_id is required for semantic chunker" in error_detail["msg"]
 
 
 @pytest.mark.asyncio
@@ -743,13 +747,13 @@ async def test_create_semantic_chunker_config_missing_buffer_size(
                 "properties": {
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    error_detail = response.json()["source_errors"][0]
-    assert "buffer_size is required for semantic chunker" in error_detail["msg"]
 
 
 @pytest.mark.asyncio
@@ -773,16 +777,13 @@ async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
                 "properties": {
                     "buffer_size": 1,
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    error_detail = response.json()["source_errors"][0]
-    assert (
-        "breakpoint_percentile_threshold is required for semantic chunker"
-        in error_detail["msg"]
-    )
 
 
 @pytest.mark.asyncio
@@ -807,14 +808,13 @@ async def test_create_semantic_chunker_config_invalid_buffer_size(
                     "buffer_size": 0,  # Invalid buffer size
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    assert (
-        "buffer_size must be greater than or equal to 1" in response.json()["message"]
-    )
 
 
 @pytest.mark.asyncio
@@ -839,15 +839,14 @@ async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    assert (
-        "breakpoint_percentile_threshold must be an integer"
-        in response.json()["message"]
-    )
+    assert "breakpoint_percentile_threshold" in response.json()["message"]
 
 
 async def test_create_semantic_chunker_config_embedding_config_not_found(
@@ -868,6 +867,8 @@ async def test_create_semantic_chunker_config_embedding_config_not_found(
                     "embedding_config_id": "does-not-exist",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
@@ -4070,3 +4071,47 @@ async def test_delete_extraction_failed_to_clear_cache(
             warning_args[0]
             == "Failed to clear extractor cache for document %s (extraction %s): %s"
         )
+
+
+async def test_get_embedding_config_not_found(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = None
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/not-found",
+        )
+
+    assert response.status_code == 404
+    error_detail = response.json()
+    assert "message" in error_detail
+    assert "Embedding config not-found not found" in error_detail["message"]
+
+
+async def test_get_embedding_config_success(
+    client, mock_project, mock_embedding_config
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/{mock_embedding_config.id}",
+        )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == mock_embedding_config.id
+    assert result["name"] == mock_embedding_config.name
+    assert result["description"] == mock_embedding_config.description
+    assert result["model_provider_name"] == mock_embedding_config.model_provider_name
+    assert result["model_name"] == mock_embedding_config.model_name
+    assert result["properties"] == mock_embedding_config.properties

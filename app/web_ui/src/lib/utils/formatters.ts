@@ -6,6 +6,10 @@ import {
   type StructuredOutputMode,
   type ToolServerType,
 } from "$lib/types"
+import {
+  fixedWindowChunkerProperties,
+  semanticChunkerProperties,
+} from "./properties_cast"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
@@ -166,12 +170,15 @@ export function chunker_type_format(chunker_type: ChunkerType): string {
 }
 
 export function format_chunker_config_overview(config: ChunkerConfig) {
-  const props = config.properties
   switch (config.chunker_type) {
-    case "fixed_window":
+    case "fixed_window": {
+      const props = fixedWindowChunkerProperties(config)
       return `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size || "N/A"} words • Overlap: ${props.chunk_overlap || "N/A"} words`
-    case "semantic":
+    }
+    case "semantic": {
+      const props = semanticChunkerProperties(config)
       return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size || "N/A"} • Threshold: ${props.breakpoint_percentile_threshold || "N/A"}`
+    }
     default: {
       // type check will catch missing cases
       const unknownChunkerType: never = config.chunker_type
