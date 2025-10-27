@@ -396,6 +396,96 @@ def test_build_extra_body_openrouter_usage(
         assert "usage" not in extra_body
 
 
+def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
+    """Test build_extra_body sets default provider order for OpenRouter"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a mock OpenRouter provider with minimal attributes
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    # Verify default provider order is set
+    assert "provider" in extra_body
+    assert "order" in extra_body["provider"]
+    expected_order = [
+        "fireworks",
+        "parasail",
+        "together",
+        "deepinfra",
+        "novita",
+        "groq",
+        "amazon-bedrock",
+        "azure",
+        "nebius",
+    ]
+    assert extra_body["provider"]["order"] == expected_order
+
+
+def test_build_extra_body_r1_overrides_default_order(config, mock_task):
+    """Test that R1 specific options override the default provider order"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a mock OpenRouter provider with R1 options enabled
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = True  # R1 special case
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    # Verify R1 specific order overrides default
+    assert "provider" in extra_body
+    assert "order" in extra_body["provider"]
+    # R1 has a specific order that should override the default
+    assert extra_body["provider"]["order"] == ["Fireworks", "Together"]
+    # R1 also sets require_parameters and ignore
+    assert extra_body["provider"]["require_parameters"] is True
+    assert extra_body["provider"]["ignore"] == ["DeepInfra"]
+
+
+def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
+    """Test that non-OpenRouter providers don't get provider order"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Test with various non-OpenRouter providers
+    for provider_name in [
+        ModelProviderName.openai,
+        ModelProviderName.anthropic,
+        ModelProviderName.groq,
+    ]:
+        mock_provider = Mock()
+        mock_provider.name = provider_name
+        mock_provider.thinking_level = None
+        mock_provider.require_openrouter_reasoning = False
+        mock_provider.gemini_reasoning_enabled = False
+        mock_provider.anthropic_extended_thinking = False
+        mock_provider.r1_openrouter_options = False
+        mock_provider.logprobs_openrouter_options = False
+        mock_provider.openrouter_skip_required_parameters = False
+        mock_provider.siliconflow_enable_thinking = None
+
+        extra_body = adapter.build_extra_body(mock_provider)
+
+        # Non-OpenRouter providers should not have provider options
+        assert "provider" not in extra_body
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_task):
     """Test build_completion_kwargs with custom temperature and top_p values"""

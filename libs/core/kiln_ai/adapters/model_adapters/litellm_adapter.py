@@ -412,6 +412,22 @@ class LiteLlmAdapter(BaseAdapter):
             # Ask OpenRouter to include usage in the response (cost)
             extra_body["usage"] = {"include": True}
 
+            # Set a default provider order for more deterministic routing.
+            # OpenRouter will ignore providers that don't support the model.
+            # Special cases below (like R1) can override this order.
+            # allow_fallbacks is true by default, but we can override it here.
+            provider_options["order"] = [
+                "fireworks",
+                "parasail",
+                "together",
+                "deepinfra",
+                "novita",
+                "groq",
+                "amazon-bedrock",
+                "azure",
+                "nebius",
+            ]
+
         if provider.anthropic_extended_thinking:
             extra_body["thinking"] = {"type": "enabled", "budget_tokens": 4000}
 
