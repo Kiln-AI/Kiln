@@ -167,7 +167,8 @@ class VertexFinetune(BaseFinetuneAdapter):
         project, location = self.get_vertex_provider_location()
         storage_client = storage.Client(project=project)
 
-        bucket_name = "kiln-ai-data"
+        # Bucket name needs to be globally unique
+        bucket_name = self._unique_bucket_name()
 
         # Check if bucket exists and create it if it doesn't
         if not storage_client.lookup_bucket(bucket_name):
@@ -215,3 +216,12 @@ class VertexFinetune(BaseFinetuneAdapter):
                 "Google Vertex project and location must be set in Kiln settings to fine tune."
             )
         return project, location
+
+    @classmethod
+    def _unique_bucket_name(cls) -> str:
+        project_id, _ = cls.get_vertex_provider_location()
+        # See https://cloud.google.com/storage/docs/buckets#naming
+        # Bucket names must contain 3-63 characters
+        # See https://cloud.google.com/resource-manager/docs/creating-managing-projects
+        # Project IDs are 6-30 lowercase letters, digits, or hyphens.
+        return f"kiln-ai-data-{project_id}"
