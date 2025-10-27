@@ -7,6 +7,10 @@
 
   const friendly_chunker_type = chunker_type_format("fixed_window")
   const strategy_tooltip = `The ${friendly_chunker_type} chunking algorithm splits the text into fixed-size chunks of a specified number of words, while respecting sentence boundaries.`
+
+  function not_nullish<T>(value: T | null | undefined): value is T {
+    return value !== null && value !== undefined
+  }
 </script>
 
 <PropertyList
@@ -19,18 +23,14 @@
     },
     {
       name: "Chunk Size",
-      value:
-        chunk_size !== undefined && chunk_size !== null
-          ? `${String(chunk_size)} words`
-          : "N/A",
+      value: not_nullish(chunk_size) ? `${String(chunk_size)} words` : "N/A",
       tooltip: "The approximate number of words to include in each chunk",
     },
     {
       name: "Overlap",
-      value:
-        chunk_overlap !== undefined && chunk_overlap !== null
-          ? `${String(chunk_overlap)} words`
-          : "N/A",
+      value: not_nullish(chunk_overlap)
+        ? `${String(chunk_overlap)} words`
+        : "N/A",
       tooltip: "The approximate number of words to overlap between chunks",
     },
   ]}
