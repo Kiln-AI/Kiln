@@ -456,16 +456,16 @@
       return
     }
 
-    if (!tool_name || !tool_name.trim()) {
-      throw new Error("Please provide a search tool name.")
-    }
-
-    if (!tool_description || !tool_description.trim()) {
-      throw new Error("Please provide a search tool description.")
-    }
-
     try {
       loading = true
+
+      if (!tool_name || !tool_name.trim()) {
+        throw new Error("Please provide a search tool name.")
+      }
+
+      if (!tool_description || !tool_description.trim()) {
+        throw new Error("Please provide a search tool description.")
+      }
 
       // Fetch or build the sub configs
       const {
