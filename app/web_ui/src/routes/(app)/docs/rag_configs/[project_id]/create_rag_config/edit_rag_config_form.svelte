@@ -282,6 +282,14 @@
       loading = true
       error = null
 
+      if (!tool_name || !tool_name.trim()) {
+        throw new Error("Please provide a search tool name.")
+      }
+
+      if (!tool_description || !tool_description.trim()) {
+        throw new Error("Please provide a search tool description.")
+      }
+
       // Validate that all required configs are selected
       if (
         !selected_extractor_config_id ||
@@ -378,8 +386,8 @@
         chunker_overlap: chunker_overlap,
         embedding_model: embedding_model,
         vector_store_type: vector_store_type,
-        // we force users to customize the name and description when editing a rag config
-        // and we keep these for backwards compatibility of the event
+        // tool_name and tool_description have no defaults, requiring user input
+        // but we keep these for backwards compatibility of the event (we had a default before)
         custom_name: true,
         custom_description: true,
       })
@@ -448,6 +456,14 @@
       return
     }
 
+    if (!tool_name || !tool_name.trim()) {
+      throw new Error("Please provide a search tool name.")
+    }
+
+    if (!tool_description || !tool_description.trim()) {
+      throw new Error("Please provide a search tool description.")
+    }
+
     try {
       loading = true
 
@@ -500,8 +516,8 @@
       posthog.capture("create_rag_config_from_template", {
         template_name: template.name,
         tag_filter: selected_tags.length > 0,
-        // we force users to customize the name and description when creating a rag config from a template
-        // and we keep these for backwards compatibility of the event
+        // tool_name and tool_description have no defaults, requiring user input
+        // but we keep these for backwards compatibility of the event (we had a default before)
         custom_name: true,
         custom_description: true,
       })
