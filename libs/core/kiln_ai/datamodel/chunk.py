@@ -92,10 +92,7 @@ ChunkerConfigTypeAdapters = {
 }
 
 
-class ChunkerConfig(
-    # TODO: reenable - disabled to reenable typecheck
-    KilnParentedModel
-):
+class ChunkerConfig(KilnParentedModel):
     name: FilenameString = Field(
         description="A name to identify the chunker config.",
     )
