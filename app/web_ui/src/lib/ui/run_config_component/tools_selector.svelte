@@ -10,11 +10,13 @@
   export let project_id: string
   export let task_id: string | null = null
   export let tools: string[] = []
+  export let mandatory_tools: string[] | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
   export let single_select: boolean = false
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
 
   let tools_store_loaded_task_id: string | null = null
+
   onMount(async () => {
     await load_tools(project_id, task_id)
   })
@@ -27,13 +29,19 @@
     load_available_tools(project_id)
 
     if (!task_id) {
-      tools = []
+      tools = mandatory_tools || []
       tools_store_loaded_task_id = null
-      return
     } else if (task_id !== tools_store_loaded_task_id) {
       // load selected tools for this task from tools_store
       await tools_store_initialized
-      tools = $tools_store.selected_tool_ids_by_task_id[task_id] || []
+      const existing_tools =
+        $tools_store.selected_tool_ids_by_task_id[task_id] || []
+
+      // Combine mandatory tools with existing selected tools
+      const combined_tools = [...(mandatory_tools || []), ...existing_tools]
+      // Remove duplicates while preserving order (mandatory tools first)
+      tools = [...new Set(combined_tools)]
+
       tools_store_loaded_task_id = task_id
     }
   }
@@ -59,7 +67,6 @@
     if (
       !available_tools ||
       !project_id ||
-      !tools_store_loaded_task_id ||
       !current_tools ||
       current_tools.length === 0
     ) {
@@ -120,6 +127,9 @@
             value: tool.id,
             label: tool.name,
             description: tool.description ? tool.description.trim() : undefined,
+            disabled: mandatory_tools
+              ? mandatory_tools.includes(tool.id)
+              : false,
           }))
 
           option_groups.push({

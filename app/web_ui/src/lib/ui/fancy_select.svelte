@@ -630,13 +630,22 @@
                   : selected === item.value}
                 class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
-                  : 'hover:bg-transparent'}"
+                  : 'hover:bg-transparent'} {item.disabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''}"
+                disabled={item.disabled}
                 on:mousedown={(event) => {
+                  if (item.disabled) {
+                    event.preventDefault()
+                    return
+                  }
                   event.stopPropagation()
                   selectOption(item.value)
                 }}
                 on:mouseenter={() => {
-                  focusedIndex = overallIndex
+                  if (!item.disabled) {
+                    focusedIndex = overallIndex
+                  }
                 }}
               >
                 <div class="flex flex-row gap-3 items-center flex-1">
@@ -645,6 +654,7 @@
                       type="checkbox"
                       class="checkbox checkbox-sm no-animation"
                       checked={selected_values.includes(item.value)}
+                      disabled={item.disabled}
                     />
                   {/if}
                   <div class="flex-grow flex flex-col text-left gap-[1px]">
