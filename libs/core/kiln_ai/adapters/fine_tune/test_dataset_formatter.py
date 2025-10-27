@@ -3,7 +3,7 @@ import logging
 import re
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -19,6 +19,9 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_huggingface_chat_template_toolcall,
     generate_vertex_gemini,
     serialize_r1_style_message,
+)
+from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
+    TraceBasedDatasetFormatter,
 )
 from kiln_ai.datamodel import (
     DatasetSplit,
@@ -875,3 +878,36 @@ def test_vertex_gemini_role_map_coverage():
     assert set(VERTEX_GEMINI_ROLE_MAP.keys()) == set(possible_roles), (
         "VERTEX_GEMINI_ROLE_MAP has extra mappings"
     )
+
+
+def test_should_call_trace_based_dataset_formatter(mock_dataset):
+    """Test that if trace is avaialble we should call trace based dataset formatter"""
+    sample_trace = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there!"},
+    ]
+
+    task_runs = mock_dataset.parent_task().runs()
+    task_runs[0].trace = sample_trace
+
+    formatter = DatasetFormatter(
+        dataset=mock_dataset,
+        system_message="You are a helpful assistant.",
+    )
+
+    with patch.object(
+        TraceBasedDatasetFormatter,
+        "build_training_chat_from_trace",
+        return_value={"messages": [{"role": "user", "content": "test"}]},
+    ) as mock_trace_formatter:
+        formatter.dump_to_file(
+            split_name="train",
+            format_type=DatasetFormat.OPENAI_CHAT_JSONL,
+            data_strategy=ChatStrategy.single_turn,
+        )
+
+        mock_trace_formatter.assert_called_once()
+        call_args = mock_trace_formatter.call_args
+        assert call_args.kwargs["task_run"] == task_runs[0]
+        assert call_args.kwargs["data_format"] == DatasetFormat.OPENAI_CHAT_JSONL
