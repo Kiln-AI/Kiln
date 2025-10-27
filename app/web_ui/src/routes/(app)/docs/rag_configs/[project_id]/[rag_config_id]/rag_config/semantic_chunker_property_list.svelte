@@ -63,15 +63,16 @@
     },
     {
       name: "Buffer Size",
-      value: buffer_size ? format_buffer_size(buffer_size) : "N/A",
+      value: buffer_size ?? null ? format_buffer_size(buffer_size) : "N/A",
       tooltip:
         "The number of sentences to group together when evaluating semantic similarity.",
     },
     {
       name: "Breakpoint Percentile",
-      value: breakpoint_percentile_threshold
-        ? format_percentile(breakpoint_percentile_threshold)
-        : "N/A",
+      value:
+        breakpoint_percentile_threshold ?? null
+          ? format_percentile(breakpoint_percentile_threshold)
+          : "N/A",
       tooltip:
         "The percentile of cosine dissimilarity that must be exceeded between a group of sentences and the next to create a breakpoint.",
     },
