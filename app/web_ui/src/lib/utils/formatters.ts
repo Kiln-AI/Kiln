@@ -173,11 +173,11 @@ export function format_chunker_config_overview(config: ChunkerConfig) {
   switch (config.chunker_type) {
     case "fixed_window": {
       const props = fixedWindowChunkerProperties(config)
-      return `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size || "N/A"} words • Overlap: ${props.chunk_overlap ?? "N/A"} words`
+      return `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size ?? "N/A"} words • Overlap: ${props.chunk_overlap ?? "N/A"} words`
     }
     case "semantic": {
       const props = semanticChunkerProperties(config)
-      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size || "N/A"} • Threshold: ${props.breakpoint_percentile_threshold || "N/A"}`
+      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size ?? "N/A"} • Threshold: ${props.breakpoint_percentile_threshold ?? "N/A"}`
     }
     default: {
       // type check will catch missing cases
