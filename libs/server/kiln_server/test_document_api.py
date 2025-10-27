@@ -656,6 +656,49 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
     assert result["properties"]["include_prev_next_rel"] is False
 
 
+async def test_create_semantic_chunker_config_override_include_metadata_and_include_prev_next_rel(
+    client, mock_project
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Test Semantic Chunker Config",
+                "description": "Test Semantic Chunker Config description",
+                "chunker_type": "semantic",
+                "properties": {
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+
+    # we currently override these in the API layer - they are too granular to be exposed to the user in the UI
+    # we could expose those in the future, if we want to allow users to override them
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
 @pytest.mark.asyncio
 async def test_create_semantic_chunker_config_minimal(client, mock_project):
     """Test creating semantic chunker config with only required fields."""

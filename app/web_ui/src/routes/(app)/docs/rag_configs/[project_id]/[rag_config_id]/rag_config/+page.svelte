@@ -39,7 +39,7 @@
   let loading: boolean = false
   let error: KilnError | null = null
   let update_error: KilnError | null = null
-  let rag_config: RagConfigWithSubConfigs
+  let rag_config: RagConfigWithSubConfigs | null = null
 
   let edit_dialog: EditDialog | null = null
 
@@ -56,12 +56,11 @@
   }> = []
 
   onMount(async () => {
-    // need to load available models to get the model store populated
-    await load_available_models()
-    await load_available_embedding_models()
-
-    await get_rag_config()
-    await load_available_models()
+    await Promise.all([
+      load_available_models(),
+      load_available_embedding_models(),
+      get_rag_config(),
+    ])
   })
 
   async function get_rag_config() {
@@ -201,11 +200,11 @@
   )
 
   $: fixed_window_properties =
-    rag_config.chunker_config.chunker_type === "fixed_window"
+    rag_config?.chunker_config.chunker_type === "fixed_window"
       ? fixedWindowChunkerProperties(rag_config.chunker_config)
       : null
   $: semantic_properties =
-    rag_config.chunker_config.chunker_type === "semantic"
+    rag_config?.chunker_config.chunker_type === "semantic"
       ? semanticChunkerProperties(rag_config.chunker_config)
       : null
 </script>

@@ -19,12 +19,18 @@
     },
     {
       name: "Chunk Size",
-      value: chunk_size ? `${String(chunk_size)} words` : "N/A",
+      value:
+        chunk_size !== undefined && chunk_size !== null
+          ? `${String(chunk_size)} words`
+          : "N/A",
       tooltip: "The approximate number of words to include in each chunk",
     },
     {
       name: "Overlap",
-      value: chunk_overlap ? `${String(chunk_overlap)} words` : "N/A",
+      value:
+        chunk_overlap !== undefined && chunk_overlap !== null
+          ? `${String(chunk_overlap)} words`
+          : "N/A",
       tooltip: "The approximate number of words to overlap between chunks",
     },
   ]}

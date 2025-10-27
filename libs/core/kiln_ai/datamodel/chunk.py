@@ -40,7 +40,7 @@ class ChunkerType(str, Enum):
 class SemanticChunkerProperties(TypedDict, total=True):
     embedding_config_id: str
     buffer_size: PositiveInt
-    breakpoint_percentile_threshold: PositiveInt
+    breakpoint_percentile_threshold: NonNegativeInt
     include_metadata: bool
     include_prev_next_rel: bool
 

@@ -43,6 +43,14 @@
       loading_embedding_config = false
     }
   }
+
+  function format_percentile(percentile: number) {
+    return `${String(percentile)}%`
+  }
+
+  function format_buffer_size(buffer_size: number) {
+    return `${String(buffer_size)} sentences`
+  }
 </script>
 
 <PropertyList
@@ -55,14 +63,14 @@
     },
     {
       name: "Buffer Size",
-      value: buffer_size ? `${String(buffer_size)}` : "N/A",
+      value: buffer_size ? format_buffer_size(buffer_size) : "N/A",
       tooltip:
         "The number of sentences to group together when evaluating semantic similarity.",
     },
     {
       name: "Breakpoint Percentile",
       value: breakpoint_percentile_threshold
-        ? `${String(breakpoint_percentile_threshold)}`
+        ? format_percentile(breakpoint_percentile_threshold)
         : "N/A",
       tooltip:
         "The percentile of cosine dissimilarity that must be exceeded between a group of sentences and the next to create a breakpoint.",
@@ -72,7 +80,7 @@
       value: loading_embedding_config
         ? "Loading..."
         : error
-          ? error.message
+          ? error.getMessage()
           : embedding_config
             ? `${embedding_model_name(embedding_config.model_name, embedding_config.model_provider_name)}`
             : "N/A",

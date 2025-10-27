@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Awaitable, Callable, Dict, List
+from typing import Annotated, Any, Awaitable, Callable, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -280,17 +280,22 @@ class CreateChunkerConfigRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def validate_semantic_chunker_properties(
-        cls, properties: SemanticChunkerProperties
-    ) -> SemanticChunkerProperties:
-        if properties.get("chunker_type") == ChunkerType.SEMANTIC:
+    def validate_semantic_chunker_properties(cls, data: Any) -> Any:
+        chunker_type = data.get("chunker_type")
+
+        properties = data.get("properties") or {}
+        if not isinstance(properties, dict):
+            return data
+
+        if chunker_type == ChunkerType.SEMANTIC:
             # currently too granular to be exposed to the user in the UI
             # but we should pass on these fields as part of the config to
             # make sure the config is stable and complete
             properties["include_metadata"] = False
             properties["include_prev_next_rel"] = False
+            data["properties"] = properties
 
-        return properties
+        return data
 
 
 class CreateEmbeddingConfigRequest(BaseModel):
