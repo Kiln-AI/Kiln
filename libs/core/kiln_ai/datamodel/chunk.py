@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, List, TypedDict, Union
+from typing import TYPE_CHECKING, Annotated, List, Union
 
 import anyio
 from pydantic import (
@@ -14,6 +14,7 @@ from pydantic import (
     field_serializer,
     model_validator,
 )
+from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
