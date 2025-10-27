@@ -216,4 +216,86 @@ class TraceBasedDatasetFormatter:
         trace: list[ChatCompletionMessageParam],
     ) -> Dict[str, Any]:
         """Generate vertex gemini message from trace"""
-        return {}
+        # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/tune-function-calling
+
+        # Get the first system message
+        system_msg = next((m for m in trace if m.get("role") == "system"), None)
+        if not system_msg:
+            raise ValueError("System message not found in trace")
+        system_instruction = system_msg.get("content", "")
+
+        contents: list[Dict[str, Any]] = []
+        for message in trace[1:]:
+            role = message["role"]
+            current_function_name = None
+
+            match role:
+                case "system" | "user":
+                    contents.append(
+                        {
+                            "role": role,
+                            "parts": [{"text": message.get("content", None)}],
+                        }
+                    )
+                case "assistant":
+                    parts: list[dict[str, Any]] = []
+
+                    if tool_calls := message.get("tool_calls"):
+                        # every tool call is a single "part"
+                        for tool_call in tool_calls:
+                            arguments_str = tool_call["function"]["arguments"]
+                            # arguments needs to be a JSON dictionary
+                            arguments = self._validate_json_dictionary(arguments_str)
+                            current_function_name = tool_call["function"]["name"]
+                            parts.append(
+                                {
+                                    "functionCall": {
+                                        "name": current_function_name,
+                                        "args": arguments,  # arguments are "args" in Vertex
+                                    }
+                                }
+                            )
+                    else:
+                        # don't include text if there is a tool call
+                        parts.append({"text": message.get("content", None)})
+
+                    contents.append(
+                        {
+                            "role": "model",  # Vertex uses "model" for assistant role
+                            "parts": parts,
+                        }
+                    )
+                case "tool":
+                    # tool role is "user" with "functionResponse" in Vertex
+                    # response needs to be a dict
+                    content = message.get("content", None)
+                    if not isinstance(content, str):
+                        raise ValueError(
+                            f"Tool message content must be a string, got {type(content)}"
+                        )
+                    response = self._validate_json_dictionary(content)
+                    contents.append(
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "functionResponse": {
+                                        "name": current_function_name,
+                                        "response": response,
+                                    },
+                                }
+                            ],
+                        }
+                    )
+
+        return {
+            "systemInstruction": {
+                "role": "system",
+                "parts": [
+                    {
+                        "text": system_instruction,
+                    }
+                ],
+            },
+            "contents": contents,
+        }
