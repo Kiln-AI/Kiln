@@ -169,6 +169,10 @@ export function chunker_type_format(chunker_type: ChunkerType): string {
   }
 }
 
+function format_percentile(percentile: number) {
+  return `${String(percentile)}%`
+}
+
 export function format_chunker_config_overview(config: ChunkerConfig) {
   switch (config.chunker_type) {
     case "fixed_window": {
@@ -177,7 +181,7 @@ export function format_chunker_config_overview(config: ChunkerConfig) {
     }
     case "semantic": {
       const props = semanticChunkerProperties(config)
-      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size ?? "N/A"} • Threshold: ${props.breakpoint_percentile_threshold ?? "N/A"}`
+      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size ?? "N/A"} • Threshold: ${format_percentile(props.breakpoint_percentile_threshold) ?? "N/A"}`
     }
     default: {
       // type check will catch missing cases
