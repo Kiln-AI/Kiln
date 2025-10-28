@@ -50,11 +50,9 @@ class TestRerankResult:
         """Test RerankResult field validation."""
         doc = RerankDocument(id="doc1", text="Sample document text")
 
-        # Test with negative index - this should work as there's no validation constraint
-        result = RerankResult(index=-1, document=doc, relevance_score=0.95)
-        assert result.index == -1
-        assert result.document == doc
-        assert result.relevance_score == 0.95
+        # Test with negative index
+        with pytest.raises(ValidationError):
+            RerankResult(index=-1, document=doc, relevance_score=0.95)
 
         # Test with invalid relevance score - this should work as there's no validation constraint
         result = RerankResult(index=0, document=doc, relevance_score=-0.1)

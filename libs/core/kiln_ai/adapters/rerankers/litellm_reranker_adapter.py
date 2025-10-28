@@ -48,7 +48,12 @@ class LitellmRerankerAdapter(BaseReranker):
 
         results = []
         for result in response.results:
-            document = original_candidates[result["index"]]
+            idx = int(result.get("index"))
+            if idx < 0 or idx >= len(original_candidates):
+                raise ValueError(
+                    f"Reranker returned invalid index {idx} (len={len(original_candidates)})"
+                )
+            document = original_candidates[idx]
             results.append(
                 RerankResult(
                     document=document,

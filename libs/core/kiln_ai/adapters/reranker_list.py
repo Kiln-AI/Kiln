@@ -58,7 +58,7 @@ built_in_rerankers: List[KilnRerankerModel] = [
 ]
 
 
-def get_model_by_name(name: RerankerModelName) -> KilnRerankerModel:
+def get_model_by_name(name: str | RerankerModelName) -> KilnRerankerModel:
     for model in built_in_rerankers:
         if model.name == name:
             return model
@@ -66,7 +66,7 @@ def get_model_by_name(name: RerankerModelName) -> KilnRerankerModel:
 
 
 def built_in_reranker_models_from_provider(
-    provider_name: ModelProviderName, model_name: str
+    provider_name: ModelProviderName, model_name: str | RerankerModelName
 ) -> KilnRerankerModelProvider | None:
     for model in built_in_rerankers:
         if model.name == model_name:

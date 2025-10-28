@@ -289,7 +289,7 @@ class TestLitellmRerankerAdapterConvertToRerankResponse:
             {"index": 5, "relevance_score": 0.95},  # Index out of bounds
         ]
 
-        with pytest.raises(IndexError):
+        with pytest.raises(ValueError, match="Reranker returned invalid index 5"):
             adapter.convert_to_rerank_response(sample_documents, mock_litellm_response)
 
 

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 from kiln_ai.datamodel.reranker import RerankerConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeInt
 
 
 class RerankDocument(BaseModel):
@@ -14,7 +14,7 @@ class RerankDocument(BaseModel):
 
 
 class RerankResult(BaseModel):
-    index: int = Field(
+    index: NonNegativeInt = Field(
         description="The index of the reranked document in the original list of documents."
     )
     document: RerankDocument = Field(description="The reranked document.")
