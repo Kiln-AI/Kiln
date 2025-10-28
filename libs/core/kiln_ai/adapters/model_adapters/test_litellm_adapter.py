@@ -453,10 +453,10 @@ def test_build_extra_body_r1_overrides_default_order(config, mock_task):
     assert "provider" in extra_body
     assert "order" in extra_body["provider"]
     # R1 has a specific order that should override the default
-    assert extra_body["provider"]["order"] == ["Fireworks", "Together"]
+    assert extra_body["provider"]["order"] == ["fireworks", "together"]
     # R1 also sets require_parameters and ignore
     assert extra_body["provider"]["require_parameters"] is True
-    assert extra_body["provider"]["ignore"] == ["DeepInfra"]
+    assert extra_body["provider"]["ignore"] == ["deepinfra"]
 
 
 def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
