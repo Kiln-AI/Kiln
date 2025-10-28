@@ -18,6 +18,7 @@ from kiln_ai.datamodel import (
     eval,
     extraction,
     rag,
+    reranker,
     strict_mode,
 )
 from kiln_ai.datamodel.datamodel_enums import (
@@ -78,5 +79,6 @@ __all__ = [
     "extraction",
     "prompt_generator_values",
     "rag",
+    "reranker",
     "strict_mode",
 ]
