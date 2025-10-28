@@ -1,6 +1,7 @@
-from typing import TYPE_CHECKING, List, TypedDict, Union
+from typing import TYPE_CHECKING, List, Union
 
 from pydantic import BaseModel, Field, PositiveInt
+from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
