@@ -150,11 +150,8 @@ def list_json_schema_for_task(task: Task) -> str:
     """
     if task.input_json_schema:
         items_schema = json.loads(task.input_json_schema)
-        # Add additionalProperties: false if not present (required by OpenAI/OpenRouter)
-        if "additionalProperties" not in items_schema:
-            items_schema["additionalProperties"] = False
     else:
-        items_schema = {"type": "string", "additionalProperties": False}
+        items_schema = {"type": "string"}
 
     list_schema = {
         "type": "array",
