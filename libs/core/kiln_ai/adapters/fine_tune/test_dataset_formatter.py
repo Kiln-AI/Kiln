@@ -881,7 +881,7 @@ def test_vertex_gemini_role_map_coverage():
 
 
 def test_should_call_trace_based_dataset_formatter(mock_dataset):
-    """Test that if trace is avaialble we should call trace based dataset formatter"""
+    """Test that if trace is available we should call trace based dataset formatter"""
     sample_trace = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello"},
