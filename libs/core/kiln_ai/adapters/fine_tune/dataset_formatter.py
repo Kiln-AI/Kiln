@@ -349,7 +349,7 @@ class DatasetFormatter:
                         f"Task run {run_id} not found. This is required by this dataset."
                     )
 
-                # Create example if trace is avaialble and not empty
+                # Create example if trace is available and not empty
                 if task_run.trace is not None and len(task_run.trace) > 0:
                     # Call build_training_chat_from_trace
                     formatter = TraceBasedDatasetFormatter(
