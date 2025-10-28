@@ -489,22 +489,48 @@
                     rag_config.chunker_config.chunker_type,
                   ),
                 },
-                {
-                  name: "Chunk Size",
-                  value: rag_config.chunker_config.properties?.chunk_size
-                    ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
-                    : "N/A",
-                  tooltip:
-                    "The approximate number of words to include in each chunk",
-                },
-                {
-                  name: "Overlap",
-                  value: rag_config.chunker_config.properties?.chunk_overlap
-                    ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
-                    : "N/A",
-                  tooltip:
-                    "The approximate number of words to overlap between chunks",
-                },
+                ...(rag_config.chunker_config.chunker_type === "fixed_window"
+                  ? [
+                      {
+                        name: "Chunk Size",
+                        value: rag_config.chunker_config.properties?.chunk_size
+                          ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
+                          : "N/A",
+                        tooltip:
+                          "The approximate number of words to include in each chunk",
+                      },
+                      {
+                        name: "Overlap",
+                        value: rag_config.chunker_config.properties
+                          ?.chunk_overlap
+                          ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
+                          : "N/A",
+                        tooltip:
+                          "The approximate number of words to overlap between chunks",
+                      },
+                    ]
+                  : []),
+                ...(rag_config.chunker_config.chunker_type === "semantic"
+                  ? [
+                      {
+                        name: "Buffer Size",
+                        value: rag_config.chunker_config.properties?.buffer_size
+                          ? `${String(rag_config.chunker_config.properties.buffer_size)}`
+                          : "N/A",
+                        tooltip:
+                          "The number of sentences to group together when evaluating semantic similarity.",
+                      },
+                      {
+                        name: "Breakpoint Percentile",
+                        value: rag_config.chunker_config.properties
+                          ?.breakpoint_percentile_threshold
+                          ? `${String(rag_config.chunker_config.properties.breakpoint_percentile_threshold)}`
+                          : "N/A",
+                        tooltip:
+                          "The percentile of cosine dissimilarity that must be exceeded between a group of sentences and the next to create a breakpoint.",
+                      },
+                    ]
+                  : []),
               ]}
             />
 
