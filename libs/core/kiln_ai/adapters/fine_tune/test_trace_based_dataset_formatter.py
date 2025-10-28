@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -84,6 +85,73 @@ def trace_with_tools(jsonOutput: bool = False) -> list[ChatCompletionMessagePara
     ]
 
 
+def correct_openai_chat_messages(jsonOutput: bool = False) -> list[dict[str, Any]]:
+    return [
+        {
+            "role": "system",
+            "content": "Test System Message",
+        },  # system message should come from the formatter not trace
+        {"role": "user", "content": "What's the result of (18 - 6) / (3 + 3)"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_m91m9tVSGZlOjlGX5ueUXMUX",
+                    "function": {
+                        "arguments": '{"a": 18, "b": 6}',
+                        "name": "subtract",
+                    },
+                    "type": "function",
+                },
+                {
+                    "id": "call_Yc2l2die7FDuMcjwZ46vjd9A",
+                    "function": {
+                        "arguments": '{"a": 3, "b": 3}',
+                        "name": "add",
+                    },
+                    "type": "function",
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "content": "12",
+            "tool_call_id": "call_m91m9tVSGZlOjlGX5ueUXMUX",
+        },
+        {
+            "role": "tool",
+            "content": "6",
+            "tool_call_id": "call_Yc2l2die7FDuMcjwZ46vjd9A",
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_MZPbRcNAN6l2tjCs7gZfj3sl",
+                    "function": {
+                        "arguments": '{"a":12,"b":6}',
+                        "name": "divide",
+                    },
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "content": "2.0",
+            "tool_call_id": "call_MZPbRcNAN6l2tjCs7gZfj3sl",
+        },
+        {
+            "role": "assistant",
+            "content": '{"answer": 2.0}'
+            if jsonOutput
+            else "The result of \\((18 - 6) / (3 + 3)\\) is \\(2.0\\).",
+        },
+    ]
+
+
 class TestTraceBasedDatasetFormatter:
     """Tests for TraceBasedDatasetFormatter"""
 
@@ -116,23 +184,17 @@ class TestTraceBasedDatasetFormatter:
                 "invalid",  # type: ignore
             )
 
-    # OPENAI_CHAT_JSONL, HUGGINGFACE_CHAT_TEMPLATE_JSONL
+    # OPENAI_CHAT_JSONL
 
-    @pytest.mark.parametrize(
-        "data_format",
-        [
-            DatasetFormat.OPENAI_CHAT_JSONL,
-            # HuggingFace is using the OpenAI chat format
-            DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL,
-        ],
-    )
-    def test_OPENAI_CHAT_JSONL_without_tools(self, data_format):
+    def test_OPENAI_CHAT_JSONL_without_tools(self):
         """Test generate openai chat message response"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
         task = Mock(spec=TaskRun)
         task.trace = trace_without_tools()
 
-        result = formatter.build_training_chat_from_trace(task, data_format)
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.OPENAI_CHAT_JSONL
+        )
         assert result == {
             "messages": [
                 {
@@ -144,84 +206,17 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    @pytest.mark.parametrize(
-        "data_format",
-        [
-            DatasetFormat.OPENAI_CHAT_JSONL,
-            # HuggingFace is using the OpenAI chat format
-            DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL,
-        ],
-    )
-    def test_OPENAI_CHAT_JSONL_with_tools(self, data_format):
+    def test_OPENAI_CHAT_JSONL_with_tools(self):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
         task = Mock(spec=TaskRun)
         task.trace = trace_with_tools()
 
-        result = formatter.build_training_chat_from_trace(task, data_format)
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.OPENAI_CHAT_JSONL
+        )
         assert result == {
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Test System Message",
-                },  # system message should come from the formatter not trace
-                {"role": "user", "content": "What's the result of (18 - 6) / (3 + 3)"},
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call_m91m9tVSGZlOjlGX5ueUXMUX",
-                            "function": {
-                                "arguments": '{"a": 18, "b": 6}',
-                                "name": "subtract",
-                            },
-                            "type": "function",
-                        },
-                        {
-                            "id": "call_Yc2l2die7FDuMcjwZ46vjd9A",
-                            "function": {
-                                "arguments": '{"a": 3, "b": 3}',
-                                "name": "add",
-                            },
-                            "type": "function",
-                        },
-                    ],
-                },
-                {
-                    "role": "tool",
-                    "content": "12",
-                    "tool_call_id": "call_m91m9tVSGZlOjlGX5ueUXMUX",
-                },
-                {
-                    "role": "tool",
-                    "content": "6",
-                    "tool_call_id": "call_Yc2l2die7FDuMcjwZ46vjd9A",
-                },
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "call_MZPbRcNAN6l2tjCs7gZfj3sl",
-                            "function": {
-                                "arguments": '{"a":12,"b":6}',
-                                "name": "divide",
-                            },
-                            "type": "function",
-                        }
-                    ],
-                },
-                {
-                    "role": "tool",
-                    "content": "2.0",
-                    "tool_call_id": "call_MZPbRcNAN6l2tjCs7gZfj3sl",
-                },
-                {
-                    "role": "assistant",
-                    "content": "The result of \\((18 - 6) / (3 + 3)\\) is \\(2.0\\).",
-                },
-            ]
+            "messages": correct_openai_chat_messages(),
         }
 
     # OPENAI_CHAT_JSON_SCHEMA_JSONL
@@ -375,6 +370,41 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
+    # HUGGINGFACE_CHAT_TEMPLATE_JSONL
+
+    def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_without_tools(self):
+        """Test generate openai chat message response"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        task = Mock(spec=TaskRun)
+        task.trace = trace_without_tools()
+
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL
+        )
+        assert result == {
+            "conversations": [
+                {
+                    "role": "system",
+                    "content": "Test System Message",
+                },  # system message should come from the formatter not trace
+                {"role": "user", "content": "What is 2+2?"},
+                {"role": "assistant", "content": "The answer is 4."},
+            ]
+        }
+
+    def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_with_tools(self):
+        """Test generate openai chat message response with tools"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        task = Mock(spec=TaskRun)
+        task.trace = trace_with_tools()
+
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL
+        )
+        assert result == {
+            "conversations": correct_openai_chat_messages(),
+        }
+
     # HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
 
     def test_HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL_without_tools(self):
@@ -390,14 +420,14 @@ class TestTraceBasedDatasetFormatter:
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
         )
 
-        assert len(result["messages"]) == 3
-        assert result["messages"][0] == {
+        assert len(result["conversations"]) == 3
+        assert result["conversations"][0] == {
             "role": "system",
             "content": "Test System Message",
         }
-        assert result["messages"][1] == {"role": "user", "content": "What is 2+2?"}
+        assert result["conversations"][1] == {"role": "user", "content": "What is 2+2?"}
 
-        assistant_msg = result["messages"][2]
+        assistant_msg = result["conversations"][2]
         assert assistant_msg["role"] == "assistant"
         assert len(assistant_msg["tool_calls"]) == 1
 
