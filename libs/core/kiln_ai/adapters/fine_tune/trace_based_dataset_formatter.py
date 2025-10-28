@@ -45,7 +45,7 @@ class TraceBasedDatasetFormatter:
 
     # Helpers
 
-    def _validate_json_dictionary(self, s: str) -> dict[str, Any]:
+    def _validate_json_dictionary(self, s: str, property_name: str) -> dict[str, Any]:
         """Validate if a string is valid JSON dictionary, raises ValueError if not"""
         try:
             json_data = json.loads(s)
@@ -53,7 +53,9 @@ class TraceBasedDatasetFormatter:
             raise ValueError(f"Invalid JSON: {e}")
 
         if not isinstance(json_data, dict):
-            raise ValueError("JSON must be a dictionary object")
+            raise ValueError(
+                f"{property_name} must be a dictionary object, got {type(json_data)}"
+            )
 
         return json_data
 
@@ -131,7 +133,7 @@ class TraceBasedDatasetFormatter:
             )
 
         try:
-            _ = self._validate_json_dictionary(content or "")
+            _ = self._validate_json_dictionary(content or "", "last message content")
         except ValueError as e:
             raise ValueError(
                 f"Last message is not a JSON Dictionary (structured data), and this format expects structured_data: {e}"
@@ -245,7 +247,9 @@ class TraceBasedDatasetFormatter:
                         for tool_call in tool_calls:
                             arguments_str = tool_call["function"]["arguments"]
                             # arguments needs to be a JSON dictionary
-                            arguments = self._validate_json_dictionary(arguments_str)
+                            arguments = self._validate_json_dictionary(
+                                arguments_str, "tool call arguments"
+                            )
                             current_function_name = tool_call["function"]["name"]
                             parts.append(
                                 {
@@ -273,7 +277,6 @@ class TraceBasedDatasetFormatter:
                         raise ValueError(
                             f"Tool message content must be a string, got {type(content)}"
                         )
-                    response = self._validate_json_dictionary(content)
                     contents.append(
                         {
                             "role": "user",
@@ -281,7 +284,9 @@ class TraceBasedDatasetFormatter:
                                 {
                                     "functionResponse": {
                                         "name": current_function_name,
-                                        "response": response,
+                                        "response": {
+                                            "content": content,  # hardcode the content using 'content' key, Vertex expects 'response' to be a dict
+                                        },
                                     },
                                 }
                             ],
