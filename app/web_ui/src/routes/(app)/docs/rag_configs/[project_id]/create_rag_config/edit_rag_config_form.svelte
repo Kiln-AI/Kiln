@@ -46,10 +46,8 @@
   let customize_template_mode = false
 
   let error: KilnError | null = null
-  const DEFAULT_TOOL_NAME = "search_docs"
-  const DEFAULT_TOOL_DESCRIPTION = "Search documents for knowledge."
-  let tool_name: string = DEFAULT_TOOL_NAME
-  let tool_description: string = DEFAULT_TOOL_DESCRIPTION
+  let tool_name: string
+  let tool_description: string
   let name: string | null = null
   let description: string = ""
   let selected_tags: string[] = []
@@ -284,6 +282,14 @@
       loading = true
       error = null
 
+      if (!tool_name || !tool_name.trim()) {
+        throw new Error("Please provide a search tool name.")
+      }
+
+      if (!tool_description || !tool_description.trim()) {
+        throw new Error("Please provide a search tool description.")
+      }
+
       // Validate that all required configs are selected
       if (
         !selected_extractor_config_id ||
@@ -374,14 +380,16 @@
       }
       posthog.capture("create_custom_rag_config", {
         tag_filter: selected_tags.length > 0,
-        custom_name: tool_name !== DEFAULT_TOOL_NAME,
-        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
         extractor_model: extractor_model,
         chunker_type: chunker_type,
         chunker_size: chunker_size,
         chunker_overlap: chunker_overlap,
         embedding_model: embedding_model,
         vector_store_type: vector_store_type,
+        // tool_name and tool_description have no defaults, requiring user input
+        // but we keep these for backwards compatibility of the event (we had a default before)
+        custom_name: true,
+        custom_description: true,
       })
 
       uncache_available_tools(project_id)
@@ -451,6 +459,14 @@
     try {
       loading = true
 
+      if (!tool_name || !tool_name.trim()) {
+        throw new Error("Please provide a search tool name.")
+      }
+
+      if (!tool_description || !tool_description.trim()) {
+        throw new Error("Please provide a search tool description.")
+      }
+
       // Fetch or build the sub configs
       const {
         extractor_config_id,
@@ -500,8 +516,10 @@
       posthog.capture("create_rag_config_from_template", {
         template_name: template.name,
         tag_filter: selected_tags.length > 0,
-        custom_name: tool_name !== DEFAULT_TOOL_NAME,
-        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
+        // tool_name and tool_description have no defaults, requiring user input
+        // but we keep these for backwards compatibility of the event (we had a default before)
+        custom_name: true,
+        custom_description: true,
       })
 
       uncache_available_tools(project_id)
@@ -546,6 +564,7 @@
       id="tool_name"
       bind:value={tool_name}
       validator={tool_name_validator}
+      placeholder="e.g. knowledge_base_search, customer_support_search"
     />
     <FormElement
       label="Search Tool Description"
@@ -555,6 +574,7 @@
       id="tool_description"
       max_length={128}
       bind:value={tool_description}
+      placeholder="e.g. Search the ACME Inc. knowledge base for information about the product."
     />
 
     <!-- Tag Selection -->
