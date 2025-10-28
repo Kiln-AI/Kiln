@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
+from kiln_ai.adapters.reranker_list import KilnRerankerModelProvider
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -17,7 +18,9 @@ class LitellmProviderInfo:
 
 
 def get_litellm_provider_info(
-    model_provider: KilnEmbeddingModelProvider | KilnModelProvider,
+    model_provider: KilnEmbeddingModelProvider
+    | KilnModelProvider
+    | KilnRerankerModelProvider,
 ) -> LitellmProviderInfo:
     """
     Maps a Kiln model provider to a litellm provider.

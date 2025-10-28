@@ -8,7 +8,6 @@ from kiln_ai.adapters.reranker_list import (
     KilnRerankerModelProvider,
     RerankerModelName,
     built_in_reranker_models_from_provider,
-    built_in_rerankers,
     get_model_by_name,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
