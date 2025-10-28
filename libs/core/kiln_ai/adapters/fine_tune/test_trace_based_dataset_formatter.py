@@ -374,3 +374,36 @@ class TestTraceBasedDatasetFormatter:
                 },
             ]
         }
+
+    # HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
+
+    def test_HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL_without_tools(self):
+        """
+        Test generate huggingface chat template message response with tool call
+        This format is similar to OPENAI_CHAT_TOOLCALL_JSONL, but with a 9 char UUID
+        """
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        task = Mock(spec=TaskRun)
+        task.trace = trace_without_tools()
+
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
+        )
+
+        assert len(result["messages"]) == 3
+        assert result["messages"][0] == {
+            "role": "system",
+            "content": "Test System Message",
+        }
+        assert result["messages"][1] == {"role": "user", "content": "What is 2+2?"}
+
+        assistant_msg = result["messages"][2]
+        assert assistant_msg["role"] == "assistant"
+        assert len(assistant_msg["tool_calls"]) == 1
+
+        tool_call = assistant_msg["tool_calls"][0]
+        assert tool_call["type"] == "function"
+        assert tool_call["function"]["name"] == "task_response"
+        assert tool_call["function"]["arguments"] == "The answer is 4."
+        assert len(tool_call["function"]["id"]) == 9  # UUID is truncated to 9 chars
+        assert tool_call["function"]["id"].isalnum()  # Check ID is alphanumeric
