@@ -43,7 +43,7 @@ from kiln_ai.datamodel.basemodel import (
 )
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from kiln_ai.datamodel.embedding import EmbeddingConfig
+from kiln_ai.datamodel.embedding import EmbeddingConfig, EmbeddingProperties
 from kiln_ai.datamodel.extraction import (
     Document,
     Extraction,
@@ -306,9 +306,31 @@ class CreateEmbeddingConfigRequest(BaseModel):
     model_name: EmbeddingModelName = Field(
         description="The name of the embedding model",
     )
-    properties: dict[str, str | int | float | bool] = Field(
-        default_factory=dict,
+    properties: EmbeddingProperties = Field(
+        default_factory=lambda: {},
+        description="Properties to be used to execute the embedding config.",
     )
+
+    @model_validator(mode="after")
+    def validate_properties(self):
+        model = built_in_embedding_models_from_provider(
+            provider_name=self.model_provider_name,
+            model_name=self.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {self.model_name} not found in {self.model_provider_name}",
+            )
+
+        if "dimensions" in self.properties:
+            if self.properties["dimensions"] > model.n_dimensions:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Dimensions must be less than the model's dimensions",
+                )
+
+        return self
 
 
 class CreateVectorStoreConfigRequest(BaseModel):
@@ -1272,27 +1294,11 @@ def connect_document_api(app: FastAPI):
         request: CreateEmbeddingConfigRequest,
     ) -> EmbeddingConfig:
         project = project_from_id(project_id)
-
-        model = built_in_embedding_models_from_provider(
-            provider_name=request.model_provider_name,
-            model_name=request.model_name,
-        )
-        if model is None:
+        if not project:
             raise HTTPException(
                 status_code=404,
-                detail=f"Model {request.model_name} not found in {request.model_provider_name}",
+                detail="Project not found",
             )
-
-        if "dimensions" in request.properties:
-            if (
-                not isinstance(request.properties["dimensions"], int)
-                or request.properties["dimensions"] <= 0
-                or request.properties["dimensions"] > model.n_dimensions
-            ):
-                raise HTTPException(
-                    status_code=422,
-                    detail="Dimensions must be a positive integer and less than the model's dimensions",
-                )
 
         embedding_config = EmbeddingConfig(
             parent=project,
