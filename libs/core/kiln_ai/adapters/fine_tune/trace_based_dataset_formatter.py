@@ -184,8 +184,8 @@ class TraceBasedDatasetFormatter:
 
         # See https://huggingface.co/docs/transformers/en/chat_templating
 
-        messages = self.generate_openai_chat_message_list(trace)
-        return {"messages": messages}
+        conversations = self.generate_openai_chat_message_list(trace)
+        return {"conversations": conversations}
 
     def generate_huggingface_chat_template_toolcall(
         self,
@@ -198,11 +198,11 @@ class TraceBasedDatasetFormatter:
         # Remove last message from trace
         new_trace = trace[:-1]
         # Generate messages from trace without last message
-        messages = self.generate_openai_chat_message_list(new_trace)
+        conversations = self.generate_openai_chat_message_list(new_trace)
         # Get content of last message
         last_message_content = last_message.get("content", None)
 
-        messages.append(
+        conversations.append(
             {
                 "role": "assistant",
                 "tool_calls": [
@@ -218,7 +218,7 @@ class TraceBasedDatasetFormatter:
             },
         )
 
-        return {"messages": messages}
+        return {"conversations": conversations}
 
     def generate_vertex_gemini(
         self,
