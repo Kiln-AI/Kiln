@@ -154,6 +154,8 @@ class TraceBasedDatasetFormatter:
         new_trace = trace[:-1]
         # Generate messages from trace without last message
         messages = self.generate_openai_chat_message_list(new_trace)
+        # Get content of last message
+        last_message_content = last_message.get("content", None)
 
         messages.append(
             {
@@ -165,7 +167,7 @@ class TraceBasedDatasetFormatter:
                         "type": "function",
                         "function": {
                             "name": "task_response",
-                            "arguments": json.dumps(last_message, ensure_ascii=False),
+                            "arguments": last_message_content,  # pass a string directly
                         },
                     }
                 ],
