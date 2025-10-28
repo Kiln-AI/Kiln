@@ -435,9 +435,9 @@ class LiteLlmAdapter(BaseAdapter):
             # Require providers that support the reasoning parameter
             provider_options["require_parameters"] = True
             # Prefer R1 providers with reasonable perf/quants
-            provider_options["order"] = ["Fireworks", "Together"]
+            provider_options["order"] = ["fireworks", "together"]
             # R1 providers with unreasonable quants
-            provider_options["ignore"] = ["DeepInfra"]
+            provider_options["ignore"] = ["deepinfra"]
 
         # Only set of this request is to get logprobs.
         if (
@@ -447,7 +447,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Don't let OpenRouter choose a provider that doesn't support logprobs.
             provider_options["require_parameters"] = True
             # DeepInfra silently fails to return logprobs consistently.
-            provider_options["ignore"] = ["DeepInfra"]
+            provider_options["ignore"] = ["deepinfra"]
 
         if provider.openrouter_skip_required_parameters:
             # Oddball case, R1 14/8/1.5B fail with this param, even though they support thinking params.
