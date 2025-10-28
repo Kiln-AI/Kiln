@@ -116,17 +116,23 @@ class TestTraceBasedDatasetFormatter:
                 "invalid",  # type: ignore
             )
 
-    # OPENAI_CHAT_JSONL
+    # OPENAI_CHAT_JSONL, HUGGINGFACE_CHAT_TEMPLATE_JSONL
 
-    def test_OPENAI_CHAT_JSONL_without_tools(self):
+    @pytest.mark.parametrize(
+        "data_format",
+        [
+            DatasetFormat.OPENAI_CHAT_JSONL,
+            # HuggingFace is using the OpenAI chat format
+            DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL,
+        ],
+    )
+    def test_OPENAI_CHAT_JSONL_without_tools(self, data_format):
         """Test generate openai chat message response"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
         task = Mock(spec=TaskRun)
         task.trace = trace_without_tools()
 
-        result = formatter.build_training_chat_from_trace(
-            task, DatasetFormat.OPENAI_CHAT_JSONL
-        )
+        result = formatter.build_training_chat_from_trace(task, data_format)
         assert result == {
             "messages": [
                 {
@@ -138,15 +144,21 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_OPENAI_CHAT_JSONL_with_tools(self):
+    @pytest.mark.parametrize(
+        "data_format",
+        [
+            DatasetFormat.OPENAI_CHAT_JSONL,
+            # HuggingFace is using the OpenAI chat format
+            DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL,
+        ],
+    )
+    def test_OPENAI_CHAT_JSONL_with_tools(self, data_format):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
         task = Mock(spec=TaskRun)
         task.trace = trace_with_tools()
 
-        result = formatter.build_training_chat_from_trace(
-            task, DatasetFormat.OPENAI_CHAT_JSONL
-        )
+        result = formatter.build_training_chat_from_trace(task, data_format)
         assert result == {
             "messages": [
                 {
