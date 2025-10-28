@@ -47,6 +47,7 @@ function get_tool_names_from_ids(
   return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
 }
 
+// Fetches OpenAI-compatible tool definition's function name for a given tool ID
 export async function tool_id_to_function_name(
   tool_id: string,
   project_id: string,

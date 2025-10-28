@@ -784,7 +784,11 @@ def test_eval_template_properties_non_validated_templates(
     [
         # Valid cases
         (
-            {"tool": "search_tool", "tool_function_name": "search"},
+            {
+                "tool": "search_tool",
+                "tool_function_name": "search",
+                "should_call_tool_guidelines": "Call the tool when user asks for search",
+            },
             False,
             None,
         ),
@@ -792,6 +796,7 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "calculator",
                 "tool_function_name": "calculate",
+                "should_call_tool_guidelines": "Call the tool for math calculations",
                 "should_not_call_tool_guidelines": "Don't call the tool for simple math",
             },
             False,
@@ -810,8 +815,8 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "database_query",
                 "tool_function_name": "query_db",
-                "should_not_call_tool_guidelines": "Don't call for personal questions",
                 "should_call_tool_guidelines": "Call for data retrieval requests",
+                "should_not_call_tool_guidelines": "Don't call for personal questions",
             },
             False,
             None,
@@ -820,8 +825,8 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "",
                 "tool_function_name": "",
-                "should_not_call_tool_guidelines": "",
                 "should_call_tool_guidelines": "",
+                "should_not_call_tool_guidelines": "",
             },
             False,
             None,
@@ -842,6 +847,11 @@ def test_eval_template_properties_non_validated_templates(
             True,
             "tool_function_name is required for tool call template",
         ),
+        (
+            {"tool": "search_tool", "tool_function_name": "search"},
+            True,
+            "should_call_tool_guidelines is required for tool call template",
+        ),
         # Invalid cases - wrong types
         (
             {"tool": 123, "tool_function_name": "search"},
@@ -857,19 +867,20 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "search_tool",
                 "tool_function_name": "search",
-                "should_not_call_tool_guidelines": 789,
+                "should_call_tool_guidelines": 123,
             },
             True,
-            "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string",
+            "should_call_tool_guidelines is required for tool call template",
         ),
         (
             {
                 "tool": "search_tool",
                 "tool_function_name": "search",
-                "should_call_tool_guidelines": True,
+                "should_call_tool_guidelines": "Call for data retrieval requests",
+                "should_not_call_tool_guidelines": 789,
             },
             True,
-            "should_call_tool_guidelines is optional for tool call template, but if provided must be a string",
+            "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string",
         ),
     ],
 )

@@ -362,6 +362,15 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                     "tool_function_name is required for tool call template"
                 )
             if (
+                "should_call_tool_guidelines" not in self.template_properties
+                or not isinstance(
+                    self.template_properties["should_call_tool_guidelines"], str
+                )
+            ):
+                raise ValueError(
+                    "should_call_tool_guidelines is required for tool call template"
+                )
+            if (
                 "should_not_call_tool_guidelines" in self.template_properties
                 and not isinstance(
                     self.template_properties["should_not_call_tool_guidelines"], str
@@ -369,14 +378,5 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             ):
                 raise ValueError(
                     "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string"
-                )
-            if (
-                "should_call_tool_guidelines" in self.template_properties
-                and not isinstance(
-                    self.template_properties["should_call_tool_guidelines"], str
-                )
-            ):
-                raise ValueError(
-                    "should_call_tool_guidelines is optional for tool call template, but if provided must be a string"
                 )
         return self

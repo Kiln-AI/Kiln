@@ -202,7 +202,6 @@ This is the list of tools the model called:
                 json.dumps(task_run.trace, ensure_ascii=False, pretty=2),
             )
         elif self.eval.evaluation_data_type == EvalDataType.tool_call_list:
-            # TODO: Log error if trace is None?
             run_description = self.generate_tool_call_list_run_description(
                 task_run.input, GEval.tool_call_list_from_trace(task_run.trace or [])
             )
