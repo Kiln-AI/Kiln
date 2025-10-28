@@ -320,6 +320,8 @@ class DatasetFormatter:
         Note:
             The output is written in UTF-8 encoding with ensure_ascii=False to properly
             support international text content while maintaining readability.
+
+            When task runs contain traces, the trace-based formatter is used and data_strategy and thinking_instructions are ignored.
         """
         if format_type not in FORMAT_GENERATORS:
             raise ValueError(f"Unsupported format: {format_type}")
