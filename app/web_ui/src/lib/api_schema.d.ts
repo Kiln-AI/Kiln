@@ -2314,10 +2314,8 @@ export interface components {
             model_provider_name: components["schemas"]["ModelProviderName"];
             /** @description The name of the embedding model */
             model_name: components["schemas"]["EmbeddingModelName"];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            /** @description Properties to be used to execute the embedding config. */
+            properties?: components["schemas"]["EmbeddingProperties"];
         };
         /** CreateEvalConfigRequest */
         CreateEvalConfigRequest: {
@@ -2815,13 +2813,8 @@ export interface components {
              * @description The model to use to generate embeddings.
              */
             model_name: string;
-            /**
-             * Properties
-             * @description Properties to be used to execute the embedding config.
-             */
-            properties: {
-                [key: string]: string | number | boolean;
-            };
+            /** @description Properties to be used to execute the embedding config. */
+            properties: components["schemas"]["EmbeddingProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2846,6 +2839,11 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1";
+        /** EmbeddingProperties */
+        EmbeddingProperties: {
+            /** Dimensions */
+            dimensions?: number;
+        };
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */

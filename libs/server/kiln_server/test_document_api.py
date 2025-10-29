@@ -1091,9 +1091,11 @@ async def test_create_embedding_config_invalid_dimensions(
         )
 
     assert response.status_code == 422, response.text
+    error_message = response.json()["message"]
+    assert error_message
     assert (
-        "Dimensions must be a positive integer and less than the model's dimensions"
-        in response.json()["message"]
+        "Properties.Dimensions: Input should be greater than 0" in error_message
+        or "Dimensions must be less than the model's dimensions" in error_message
     )
 
 
