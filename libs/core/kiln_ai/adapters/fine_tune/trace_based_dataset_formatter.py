@@ -312,6 +312,13 @@ class TraceBasedDatasetFormatter:
 
         tool_response_parts: list[dict[str, Any]] = []
 
+        def flush_tool_responses() -> None:
+            """Helper to flush buffered tool responses into contents"""
+            nonlocal tool_response_parts
+            if tool_response_parts:
+                contents.append({"parts": tool_response_parts})
+                tool_response_parts = []
+
         for message in trace[1:]:
             role = message["role"]
             current_function_name = None
@@ -320,6 +327,8 @@ class TraceBasedDatasetFormatter:
                 case "system":
                     continue  # system messages are not included in the contents
                 case "user":
+                    # Flush any buffered tool responses before adding user message
+                    flush_tool_responses()
                     contents.append(
                         {
                             "role": "user",
@@ -328,13 +337,7 @@ class TraceBasedDatasetFormatter:
                     )
                 case "assistant":
                     # Flush any buffered tool responses before adding assistant message
-                    if tool_response_parts:
-                        contents.append(
-                            {
-                                "parts": tool_response_parts,
-                            }
-                        )
-                        tool_response_parts = []
+                    flush_tool_responses()
 
                     parts: list[dict[str, Any]] = []
 
@@ -397,12 +400,7 @@ class TraceBasedDatasetFormatter:
                     )
 
         # Flush any remaining buffered tool responses
-        if tool_response_parts:
-            contents.append(
-                {
-                    "parts": tool_response_parts,
-                }
-            )
+        flush_tool_responses()
 
         return {
             "systemInstruction": {
