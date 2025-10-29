@@ -21,8 +21,9 @@ def test_chunker_adapter_from_type():
         ),
     )
     assert isinstance(chunker, FixedWindowChunker)
-    assert chunker.chunker_config.chunk_size() == 5555
-    assert chunker.chunker_config.chunk_overlap() == 1111
+    assert chunker.chunker_config.chunker_type == ChunkerType.FIXED_WINDOW
+    assert chunker.chunker_config.fixed_window_properties["chunk_size"] == 5555
+    assert chunker.chunker_config.fixed_window_properties["chunk_overlap"] == 1111
 
 
 def test_chunker_adapter_from_type_invalid():

@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Awaitable, Callable, Dict, List
+from typing import Annotated, Any, Awaitable, Callable, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -41,7 +41,12 @@ from kiln_ai.datamodel.basemodel import (
     KilnAttachmentModel,
     string_to_valid_name,
 )
-from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+from kiln_ai.datamodel.chunk import (
+    ChunkerConfig,
+    ChunkerType,
+    FixedWindowChunkerProperties,
+    SemanticChunkerProperties,
+)
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig, EmbeddingProperties
 from kiln_ai.datamodel.extraction import (
@@ -271,24 +276,26 @@ class CreateChunkerConfigRequest(BaseModel):
     chunker_type: ChunkerType = Field(
         description="The type of the chunker",
     )
-    properties: dict[str, str | int | float | bool] = Field(
-        default_factory=dict,
-    )
+    properties: SemanticChunkerProperties | FixedWindowChunkerProperties = Field()
 
-    @model_validator(mode="after")
-    def validate_semantic_chunker_properties(self):
-        if self.chunker_type == ChunkerType.SEMANTIC:
-            # Require an embedding_config_id to be provided
-            embedding_config_id = self.properties.get("embedding_config_id")
-            if not isinstance(embedding_config_id, str):
-                raise ValueError("embedding_config_id is required for semantic chunker")
+    @model_validator(mode="before")
+    @classmethod
+    def validate_semantic_chunker_properties(cls, data: Any) -> Any:
+        chunker_type = data.get("chunker_type")
+
+        properties = data.get("properties") or {}
+        if not isinstance(properties, dict):
+            return data
+
+        if chunker_type == ChunkerType.SEMANTIC:
             # currently too granular to be exposed to the user in the UI
             # but we should pass on these fields as part of the config to
             # make sure the config is stable and complete
-            self.properties["include_metadata"] = False
-            self.properties["include_prev_next_rel"] = False
+            properties["include_metadata"] = False
+            properties["include_prev_next_rel"] = False
+            data["properties"] = properties
 
-        return self
+        return data
 
 
 class CreateEmbeddingConfigRequest(BaseModel):
@@ -1318,6 +1325,22 @@ def connect_document_api(app: FastAPI):
     ) -> list[EmbeddingConfig]:
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
+
+    @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
+    async def get_embedding_config(
+        project_id: str,
+        embedding_config_id: str,
+    ) -> EmbeddingConfig:
+        project = project_from_id(project_id)
+        embedding_config = EmbeddingConfig.from_id_and_parent_path(
+            embedding_config_id, project.path
+        )
+        if embedding_config is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Embedding config {embedding_config_id} not found",
+            )
+        return embedding_config
 
     @app.post("/api/projects/{project_id}/create_vector_store_config")
     async def create_vector_store_config(
