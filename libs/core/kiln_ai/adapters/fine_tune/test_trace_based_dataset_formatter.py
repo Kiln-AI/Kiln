@@ -437,3 +437,114 @@ class TestTraceBasedDatasetFormatter:
         assert tool_call["function"]["arguments"] == "The answer is 4."
         assert len(tool_call["function"]["id"]) == 9  # UUID is truncated to 9 chars
         assert tool_call["function"]["id"].isalnum()  # Check ID is alphanumeric
+
+    # VERTEX_GEMINI
+
+    def test_VERTEX_GEMINI_without_tools(self):
+        """Test generate vertex gemini message without tools"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        task = Mock(spec=TaskRun)
+        task.trace = trace_without_tools()
+
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.VERTEX_GEMINI
+        )
+        assert result == {
+            "systemInstruction": {
+                "role": "system",
+                "parts": [{"text": "Test System Message"}],
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": "What is 2+2?"}],
+                },
+                {
+                    "role": "model",
+                    "parts": [{"text": "The answer is 4."}],
+                },
+            ],
+        }
+
+    def test_VERTEX_GEMINI_with_tools(self):
+        """Test generate vertex gemini message with multiple tool calls"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        task = Mock(spec=TaskRun)
+        task.trace = trace_with_tools()
+
+        result = formatter.build_training_chat_from_trace(
+            task, DatasetFormat.VERTEX_GEMINI
+        )
+
+        assert result == {
+            "systemInstruction": {
+                "role": "system",
+                "parts": [{"text": "Test System Message"}],
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": "What's the result of (18 - 6) / (3 + 3)"}],
+                },
+                {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "subtract",
+                                "args": {"a": 18, "b": 6},
+                            }
+                        },
+                        {
+                            "functionCall": {
+                                "name": "add",
+                                "args": {"a": 3, "b": 3},
+                            }
+                        },
+                    ],
+                },
+                {
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": "subtract",
+                                "response": {"content": "12"},
+                            }
+                        },
+                        {
+                            "functionResponse": {
+                                "name": "add",
+                                "response": {"content": "6"},
+                            }
+                        },
+                    ],
+                },
+                {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "divide",
+                                "args": {"a": 12, "b": 6},
+                            }
+                        }
+                    ],
+                },
+                {
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": "divide",
+                                "response": {"content": "2.0"},
+                            }
+                        }
+                    ],
+                },
+                {
+                    "role": "model",
+                    "parts": [
+                        {"text": "The result of \\((18 - 6) / (3 + 3)\\) is \\(2.0\\)."}
+                    ],
+                },
+            ],
+        }
