@@ -767,6 +767,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Embedding Config */
+        get: operations["get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/create_vector_store_config": {
         parameters: {
             query?: never;
@@ -2324,9 +2341,7 @@ export interface components {
              * Properties
              * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
              */
-            properties: {
-                [key: string]: string | number | boolean;
-            };
+            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2367,9 +2382,7 @@ export interface components {
             /** @description The type of the chunker */
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
         };
         /**
          * CreateDatasetSplitRequest
@@ -2400,10 +2413,8 @@ export interface components {
             model_provider_name: components["schemas"]["ModelProviderName"];
             /** @description The name of the embedding model */
             model_name: components["schemas"]["EmbeddingModelName"];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            /** @description Properties to be used to execute the embedding config. */
+            properties?: components["schemas"]["EmbeddingProperties"];
         };
         /** CreateEvalConfigRequest */
         CreateEvalConfigRequest: {
@@ -2941,13 +2952,8 @@ export interface components {
              * @description The model to use to generate embeddings.
              */
             model_name: string;
-            /**
-             * Properties
-             * @description Properties to be used to execute the embedding config.
-             */
-            properties: {
-                [key: string]: string | number | boolean;
-            };
+            /** @description Properties to be used to execute the embedding config. */
+            properties: components["schemas"]["EmbeddingProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2972,6 +2978,11 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1";
+        /** EmbeddingProperties */
+        EmbeddingProperties: {
+            /** Dimensions */
+            dimensions?: number;
+        };
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -3756,6 +3767,13 @@ export interface components {
         FinetuneWithStatus: {
             finetune: components["schemas"]["Finetune"];
             status: components["schemas"]["FineTuneStatus"];
+        };
+        /** FixedWindowChunkerProperties */
+        FixedWindowChunkerProperties: {
+            /** Chunk Overlap */
+            chunk_overlap: number;
+            /** Chunk Size */
+            chunk_size: number;
         };
         /** Function */
         Function: {
@@ -4682,6 +4700,19 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /** SemanticChunkerProperties */
+        SemanticChunkerProperties: {
+            /** Embedding Config Id */
+            embedding_config_id: string;
+            /** Buffer Size */
+            buffer_size: number;
+            /** Breakpoint Percentile Threshold */
+            breakpoint_percentile_threshold: number;
+            /** Include Metadata */
+            include_metadata: boolean;
+            /** Include Prev Next Rel */
+            include_prev_next_rel: boolean;
         };
         /**
          * StructuredOutputMode
@@ -7027,6 +7058,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                embedding_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"];
                 };
             };
             /** @description Validation Error */

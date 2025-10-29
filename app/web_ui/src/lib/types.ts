@@ -50,6 +50,7 @@ export type ExtractorType = components["schemas"]["ExtractorType"]
 export type OutputFormat = components["schemas"]["OutputFormat"]
 export type ExtractionProgress = components["schemas"]["ExtractionProgress"]
 export type EmbeddingConfig = components["schemas"]["EmbeddingConfig"]
+export type EmbeddingProperties = components["schemas"]["EmbeddingProperties"]
 export type EmbeddingModelDetails =
   components["schemas"]["EmbeddingModelDetails"]
 export type EmbeddingProvider = components["schemas"]["EmbeddingProvider"]
