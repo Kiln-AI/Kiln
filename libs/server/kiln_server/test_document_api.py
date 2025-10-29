@@ -2914,15 +2914,6 @@ async def test_search_rag_config_hybrid_success(
     client, mock_project, mock_rag_config_hybrid, mock_vector_store_config_hybrid
 ):
     """Test successful hybrid search in RAG config"""
-    # Update vector store config to use hybrid search
-    mock_vector_store_config_hybrid.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config_hybrid.store_type = VectorStoreType.LANCE_DB_HYBRID
-    mock_vector_store_config_hybrid.save_to_file()
-
     search_query = "test search query"
     mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
     mock_search_results = [
@@ -3070,15 +3061,6 @@ async def test_search_rag_config_embedding_generation_failure(
     client, mock_project, mock_rag_config_vector, mock_vector_store_config_vector
 ):
     """Test search when embedding generation fails"""
-    # Update vector store config to use vector search
-    mock_vector_store_config_vector.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config_vector.store_type = VectorStoreType.LANCE_DB_VECTOR
-    mock_vector_store_config_vector.save_to_file()
-
     search_query = "test search query"
 
     with (
