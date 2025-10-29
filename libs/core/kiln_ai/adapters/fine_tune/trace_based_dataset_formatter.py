@@ -227,15 +227,91 @@ class TraceBasedDatasetFormatter:
         """Generate vertex gemini message from trace"""
         # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/tune-function-calling
 
-        # Get the first system message
-        system_msg = next((m for m in trace if m.get("role") == "system"), None)
-        if not system_msg:
-            raise ValueError("System message not found in trace")
-        system_instruction = system_msg.get("content", "")
-
         contents: list[Dict[str, Any]] = []
         # keep track of the function name by tool call id
         call_name_by_id: dict[str, str] = {}
+        """        
+        Store consecutive tool responses
+        OpenAI format expects tool responses to be in separate tool role messages
+        #Vertex expects all tool responses from a single assistant message to be in the same list.
+
+
+        OpenAI:
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_m91m9tVSGZlOjlGX5ueUXMUX",
+                            "function": {
+                                "arguments": '{"a": 18, "b": 6}',
+                                "name": "subtract",
+                            },
+                            "type": "function",
+                        },
+                        {
+                            "id": "call_Yc2l2die7FDuMcjwZ46vjd9A",
+                            "function": {
+                                "arguments": '{"a": 3, "b": 3}',
+                                "name": "add",
+                            },
+                            "type": "function",
+                        },
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "content": "12",
+                    "tool_call_id": "call_m91m9tVSGZlOjlGX5ueUXMUX",
+                },
+                {
+                    "role": "tool",
+                    "content": "6",
+                    "tool_call_id": "call_Yc2l2die7FDuMcjwZ46vjd9A",
+                },
+
+        Vertex: 
+                {
+                    "role": "user",
+                    "parts": [{"text": "What's the result of (18 - 6) / (3 + 3)"}],
+                },
+                {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "functionCall": {
+                                "name": "subtract",
+                                "args": {"a": 18, "b": 6},
+                            }
+                        },
+                        {
+                            "functionCall": {
+                                "name": "add",
+                                "args": {"a": 3, "b": 3},
+                            }
+                        },
+                    ],
+                },
+                {   # Here is the difference in formatting, all tool responses are in the same list.
+                    "parts": [
+                        {
+                            "functionResponse": {
+                                "name": "subtract",
+                                "response": {"content": "12"},
+                            }
+                        },
+                        {
+                            "functionResponse": {
+                                "name": "add",
+                                "response": {"content": "6"},
+                            }
+                        },
+                    ],
+                },
+        """
+
+        tool_response_parts: list[dict[str, Any]] = []
+
         for message in trace[1:]:
             role = message["role"]
             current_function_name = None
@@ -251,6 +327,15 @@ class TraceBasedDatasetFormatter:
                         }
                     )
                 case "assistant":
+                    # Flush any buffered tool responses before adding assistant message
+                    if tool_response_parts:
+                        contents.append(
+                            {
+                                "parts": tool_response_parts,
+                            }
+                        )
+                        tool_response_parts = []
+
                     parts: list[dict[str, Any]] = []
 
                     if tool_calls := message.get("tool_calls"):
@@ -299,28 +384,32 @@ class TraceBasedDatasetFormatter:
                         tool_call_id or "", current_function_name
                     )
 
-                    contents.append(
+                    # Buffer the function response part instead of immediately adding to contents
+                    tool_response_parts.append(
                         {
-                            "role": "user",
-                            "parts": [
-                                {
-                                    "functionResponse": {
-                                        "name": function_name,
-                                        "response": {
-                                            "content": content,  # hardcode the content using 'content' key, Vertex expects 'response' to be a dict
-                                        },
-                                    },
-                                }
-                            ],
+                            "functionResponse": {
+                                "name": function_name,
+                                "response": {
+                                    "content": content,  # hardcode the content using 'content' key, Vertex expects 'response' to be a dict
+                                },
+                            },
                         }
                     )
+
+        # Flush any remaining buffered tool responses
+        if tool_response_parts:
+            contents.append(
+                {
+                    "parts": tool_response_parts,
+                }
+            )
 
         return {
             "systemInstruction": {
                 "role": "system",
                 "parts": [
                     {
-                        "text": system_instruction,
+                        "text": self.system_message,
                     }
                 ],
             },
