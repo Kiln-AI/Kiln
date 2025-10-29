@@ -1,4 +1,3 @@
-import json
 import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
@@ -8,10 +7,11 @@ from kiln_ai.adapters.eval.eval_utils import EvalUtils
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
-from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
+from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +183,7 @@ class EvalRunner:
                 raise ValueError("Not able to create evaluator from eval config")
 
             task_output: str | None = None
-            full_trace: str | None = None
-            tool_call_list: list[str] | None = None
+            trace: list[ChatCompletionMessageParam] | None = None
             scores: EvalScores | None = None
             intermediate_outputs: Dict[str, str] | None = None
             task_run_usage: Usage | None = None
@@ -193,29 +192,7 @@ class EvalRunner:
                 scores, intermediate_outputs = await evaluator.run_eval(job.item)
                 task_output = job.item.output.output
                 task_run_usage = job.item.usage
-
-                # Handle different evaluation data types for eval_config_eval
-                parent_eval = job.eval_config.parent_eval()
-                if (
-                    parent_eval
-                    and parent_eval.evaluation_data_type == EvalDataType.tool_call_list
-                ):
-                    tool_call_list = EvalUtils.called_tool_names_from_trace(
-                        job.item.trace or []
-                    )
-                else:
-                    tool_call_list = None
-                if (
-                    parent_eval
-                    and parent_eval.evaluation_data_type == EvalDataType.full_trace
-                ):
-                    full_trace = (
-                        json.dumps(job.item.trace, ensure_ascii=False)
-                        if job.item.trace
-                        else None
-                    )
-                else:
-                    full_trace = None
+                trace = job.item.trace
             else:
                 # Task run eval, we invoke the task again to get a fresh output
                 (
@@ -224,28 +201,12 @@ class EvalRunner:
                     intermediate_outputs,
                 ) = await evaluator.run_task_and_eval(job.item.input)
                 task_output = result_task_run.output.output
-                parent_eval = job.eval_config.parent_eval()
-                if (
-                    parent_eval
-                    and parent_eval.evaluation_data_type == EvalDataType.tool_call_list
-                ):
-                    tool_call_list = EvalUtils.called_tool_names_from_trace(
-                        result_task_run.trace or []
-                    )
-                else:
-                    tool_call_list = None
-                if (
-                    parent_eval
-                    and parent_eval.evaluation_data_type == EvalDataType.full_trace
-                ):
-                    full_trace = (
-                        json.dumps(result_task_run.trace, ensure_ascii=False)
-                        if result_task_run.trace
-                        else None
-                    )
-                else:
-                    full_trace = None
                 task_run_usage = result_task_run.usage
+                trace = result_task_run.trace
+
+            full_trace, tool_call_list = EvalUtils.additional_eval_data(
+                job.eval_config, trace
+            )
 
             # Save the job result
             eval_run = EvalRun(

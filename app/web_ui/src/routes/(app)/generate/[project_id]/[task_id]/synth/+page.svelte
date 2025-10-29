@@ -76,7 +76,7 @@
   })
   // Reactivity: update state in indexedDB when splits is modified
   // Only update if we're not in the middle of loading initial state
-  $: if (is_setup) {
+  $: if (is_setup && $saved_state.splits !== $splits) {
     saved_state.update((s) => ({
       ...s,
       splits: $splits,
@@ -84,7 +84,11 @@
   }
 
   // Reactivity: update guidance_data splits when saved_state splits change
-  $: if ($saved_state.splits && Object.keys($saved_state.splits).length > 0) {
+  $: if (
+    $saved_state.splits &&
+    Object.keys($saved_state.splits).length > 0 &&
+    $saved_state.splits !== $splits
+  ) {
     guidance_data.splits.set($saved_state.splits)
   }
 
@@ -199,6 +203,9 @@
     // 4. There's no URL state and there is saved state: setup the saved state (with a UI option to clear it)
     // 5. No state, don't setup, and wait for the user to setup via UI
 
+    // Generate a new session ID to use in the case we're starting a new session or if we have a legacy session with no session ID.
+    const new_session_id = Math.floor(Math.random() * 1000000000000).toString()
+
     // The URL params can specify a specific setup for the data gen.
     const reason_param = $page.url.searchParams.get("reason")
     // Map "fine_tune" (user facing string) to "training" (pre-existing internal value)
@@ -208,14 +215,15 @@
       const eval_id: string | null = $page.url.searchParams.get("eval_id")
       const template_id: string | null =
         $page.url.searchParams.get("template_id")
-      const tool_id: string | null = $page.url.searchParams.get("tool_id")
+      const tool_id_param = $page.url.searchParams.get("tool_id")
+      const tool_id: string | null =
+        tool_id_param && tool_id_param.length > 0 ? tool_id_param : null
       const splitsParam = $page.url.searchParams.get("splits")
       const splits = get_splits_from_url_param(splitsParam)
 
       const has_saved_state = $saved_state.gen_type !== null
       if (!has_saved_state) {
         // Case 1: No saved state: setup the URL state
-        const session_id = Math.floor(Math.random() * 1000000000000).toString()
         setup(
           gen_type,
           template_id,
@@ -224,7 +232,7 @@
           project_id,
           task_id,
           splits,
-          session_id,
+          new_session_id,
         )
         return
       } else {
@@ -243,7 +251,7 @@
             project_id,
             task_id,
             $saved_state.splits,
-            $saved_state.session_id,
+            $saved_state.session_id ?? new_session_id,
           )
           return
         } else {
@@ -263,7 +271,7 @@
         project_id,
         task_id,
         $saved_state.splits,
-        $saved_state.session_id,
+        $saved_state.session_id ?? new_session_id,
       )
       // Only show the dialog if we haven't already continued the session from eval -> synth
       const session_continued =

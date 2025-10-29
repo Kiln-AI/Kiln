@@ -828,8 +828,8 @@ def test_eval_template_properties_non_validated_templates(
                 "should_call_tool_guidelines": "",
                 "should_not_call_tool_guidelines": "",
             },
-            False,
-            None,
+            True,
+            "tool is required for tool call template",
         ),
         # Invalid cases - missing required fields
         (
@@ -902,6 +902,7 @@ def test_eval_template_properties_tool_call_template_validation(
                     )
                 ],
                 template_properties=template_properties,
+                evaluation_data_type=EvalDataType.tool_call_list,
             )
     else:
         eval = Eval(
@@ -916,6 +917,7 @@ def test_eval_template_properties_tool_call_template_validation(
                 )
             ],
             template_properties=template_properties,
+            evaluation_data_type=EvalDataType.tool_call_list,
         )
         assert eval.template == EvalTemplateId.tool_call
         for key, value in template_properties.items():
@@ -939,6 +941,7 @@ def test_eval_run_tool_call_list_property(mock_task, valid_eval_config_data, tmp
                 type=TaskOutputRatingType.pass_fail,
             )
         ],
+        evaluation_data_type=EvalDataType.tool_call_list,
     )
     eval.save_to_file()
 
@@ -984,6 +987,7 @@ def test_eval_run_full_trace_property(mock_task, valid_eval_config_data, tmp_pat
                 type=TaskOutputRatingType.pass_fail,
             )
         ],
+        evaluation_data_type=EvalDataType.full_trace,
     )
     eval.save_to_file()
 
@@ -1012,8 +1016,10 @@ def test_eval_run_full_trace_property(mock_task, valid_eval_config_data, tmp_pat
     assert runs[0].full_trace == trace_data
 
 
-def test_eval_run_both_new_properties(mock_task, valid_eval_config_data, tmp_path):
-    """Test EvalRun with both tool_call_list and full_trace properties"""
+def test_eval_run_both_new_properties_raises_error(
+    mock_task, valid_eval_config_data, tmp_path
+):
+    """Test EvalRun with both tool_call_list and full_trace properties raises error"""
     task_path = tmp_path / "task.kiln"
     mock_task.path = task_path
     mock_task.save_to_file()
@@ -1029,6 +1035,7 @@ def test_eval_run_both_new_properties(mock_task, valid_eval_config_data, tmp_pat
                 type=TaskOutputRatingType.pass_fail,
             )
         ],
+        evaluation_data_type=EvalDataType.full_trace,
     )
     eval.save_to_file()
 
@@ -1036,27 +1043,21 @@ def test_eval_run_both_new_properties(mock_task, valid_eval_config_data, tmp_pat
     config.save_to_file()
 
     trace_data = '{"messages": [{"role": "assistant", "tool_calls": []}]}'
-    eval_run = EvalRun(
-        parent=config,
-        dataset_id="dataset123",
-        task_run_config_id="config456",
-        input="test input",
-        output="test output",
-        scores={"accuracy": 0.95},
-        tool_call_list=["search_tool", "calculator"],
-        full_trace=trace_data,
-    )
-    eval_run.save_to_file()
 
-    # Verify the properties are saved correctly
-    assert eval_run.tool_call_list == ["search_tool", "calculator"]
-    assert eval_run.full_trace == trace_data
-
-    # Verify persistence by reloading from disk
-    runs = config.runs()
-    assert len(runs) == 1
-    assert runs[0].tool_call_list == ["search_tool", "calculator"]
-    assert runs[0].full_trace == trace_data
+    # This should raise an error because both full_trace and tool_call_list are set
+    with pytest.raises(
+        ValueError, match="full_trace runs should not set tool_call_list"
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            tool_call_list=["search_tool", "calculator"],
+            full_trace=trace_data,
+        )
 
 
 def test_eval_run_new_properties_default_none(
@@ -1122,6 +1123,7 @@ def test_eval_run_empty_tool_call_list(mock_task, valid_eval_config_data, tmp_pa
                 type=TaskOutputRatingType.pass_fail,
             )
         ],
+        evaluation_data_type=EvalDataType.tool_call_list,
     )
     eval.save_to_file()
 
@@ -1167,6 +1169,7 @@ def test_eval_run_empty_full_trace(mock_task, valid_eval_config_data, tmp_path):
                 type=TaskOutputRatingType.pass_fail,
             )
         ],
+        evaluation_data_type=EvalDataType.full_trace,
     )
     eval.save_to_file()
 
@@ -1342,6 +1345,7 @@ def test_eval_run_eval_config_eval_data_type_validation(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
+        full_trace='{"messages": [{"role": "user", "content": "test"}]}',
     )
 
     # Test with tool_call_list - should work
@@ -1374,4 +1378,465 @@ def test_eval_run_eval_config_eval_data_type_validation(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
+        tool_call_list=["search_tool", "calculator"],
     )
+
+
+def test_validate_output_fields_final_answer_valid_cases(
+    mock_task, valid_eval_config_data
+):
+    """Test validate_output_fields with final_answer evaluation data type - valid cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.final_answer,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    # Valid case: no full_trace or tool_call_list
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+    )
+    assert run.full_trace is None
+    assert run.tool_call_list is None
+
+    # Valid case: explicitly set to None
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        full_trace=None,
+        tool_call_list=None,
+    )
+    assert run.full_trace is None
+    assert run.tool_call_list is None
+
+
+def test_validate_output_fields_final_answer_invalid_cases(
+    mock_task, valid_eval_config_data
+):
+    """Test validate_output_fields with final_answer evaluation data type - invalid cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.final_answer,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    # Invalid case: full_trace is set
+    with pytest.raises(
+        ValueError,
+        match="final_answer runs should not set full_trace or tool_call_list",
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            full_trace='{"messages": []}',
+        )
+
+    # Invalid case: tool_call_list is set
+    with pytest.raises(
+        ValueError,
+        match="final_answer runs should not set full_trace or tool_call_list",
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            tool_call_list=["tool1", "tool2"],
+        )
+
+    # Invalid case: both full_trace and tool_call_list are set
+    with pytest.raises(
+        ValueError,
+        match="final_answer runs should not set full_trace or tool_call_list",
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            full_trace='{"messages": []}',
+            tool_call_list=["tool1", "tool2"],
+        )
+
+
+def test_validate_output_fields_full_trace_valid_cases(
+    mock_task, valid_eval_config_data
+):
+    """Test validate_output_fields with full_trace evaluation data type - valid cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.full_trace,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    # Valid case: full_trace is set
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        full_trace='{"messages": [{"role": "user", "content": "test"}]}',
+    )
+    assert run.full_trace == '{"messages": [{"role": "user", "content": "test"}]}'
+
+    # Invalid case: full_trace is set and tool_call_list is also set (not allowed)
+    with pytest.raises(
+        ValueError, match="full_trace runs should not set tool_call_list"
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            full_trace='{"messages": [{"role": "assistant", "tool_calls": []}]}',
+            tool_call_list=["tool1", "tool2"],
+        )
+
+
+def test_validate_output_fields_full_trace_invalid_cases(
+    mock_task, valid_eval_config_data
+):
+    """Test validate_output_fields with full_trace evaluation data type - invalid cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.full_trace,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    # Invalid case: full_trace is None
+    with pytest.raises(ValueError, match="full_trace runs should include full_trace"):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+        )
+
+    # Invalid case: full_trace is explicitly None
+    with pytest.raises(ValueError, match="full_trace runs should include full_trace"):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            full_trace=None,
+        )
+
+
+def test_validate_output_fields_tool_call_list_valid_cases(
+    mock_task, valid_eval_config_data
+):
+    """Test validate_output_fields with tool_call_list evaluation data type - valid cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.tool_call_list,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    # Valid case: tool_call_list is set
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        tool_call_list=["search_tool", "calculator"],
+    )
+    assert run.tool_call_list == ["search_tool", "calculator"]
+
+    # Invalid case: tool_call_list is set and full_trace is also set (not allowed)
+    with pytest.raises(
+        ValueError, match="tool_call_list runs should not set full_trace"
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            tool_call_list=["search_tool"],
+            full_trace='{"messages": [{"role": "assistant", "tool_calls": []}]}',
+        )
+
+    # Valid case: empty tool_call_list is still valid (not None)
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        tool_call_list=[],
+    )
+    assert run.tool_call_list == []
+
+
+def test_validate_output_fields_tool_call_list_invalid_cases(
+    mock_task, valid_eval_config_data
+):
+    """Test validate_output_fields with tool_call_list evaluation data type - invalid cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=EvalDataType.tool_call_list,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    # Invalid case: tool_call_list is None
+    with pytest.raises(
+        ValueError, match="tool_call_list runs should include a tool_call_list"
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+        )
+
+    # Invalid case: tool_call_list is explicitly None
+    with pytest.raises(
+        ValueError, match="tool_call_list runs should include a tool_call_list"
+    ):
+        EvalRun(
+            parent=config,
+            dataset_id="dataset123",
+            task_run_config_id="config456",
+            input="test input",
+            output="test output",
+            scores={"accuracy": 0.95},
+            tool_call_list=None,
+        )
+
+
+def test_validate_output_fields_no_parent_eval(valid_eval_config_data):
+    """Test validate_output_fields when there is no parent eval (should still validate mutual exclusivity)"""
+    # Create a config without a parent eval
+    config = EvalConfig(**valid_eval_config_data)
+
+    # This should work - no parent eval means validation passes
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        full_trace='{"messages": []}',
+        tool_call_list=["tool1"],
+    )
+    assert run.full_trace == '{"messages": []}'
+    assert run.tool_call_list == ["tool1"]
+
+
+def test_validate_output_fields_no_parent_eval_config(valid_eval_config_data):
+    """Test validate_output_fields when there is no parent eval config (should pass)"""
+    # Create a run without a parent
+    run = EvalRun(
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        full_trace='{"messages": []}',
+        tool_call_list=["tool1"],
+    )
+    assert run.full_trace == '{"messages": []}'
+    assert run.tool_call_list == ["tool1"]
+
+
+@pytest.mark.parametrize(
+    "evaluation_data_type,full_trace,tool_call_list,should_raise,expected_error",
+    [
+        # final_answer cases
+        (EvalDataType.final_answer, None, None, False, None),
+        (
+            EvalDataType.final_answer,
+            '{"messages": []}',
+            None,
+            True,
+            "final_answer runs should not set full_trace or tool_call_list",
+        ),
+        (
+            EvalDataType.final_answer,
+            None,
+            ["tool1"],
+            True,
+            "final_answer runs should not set full_trace or tool_call_list",
+        ),
+        (
+            EvalDataType.final_answer,
+            '{"messages": []}',
+            ["tool1"],
+            True,
+            "final_answer runs should not set full_trace or tool_call_list",
+        ),
+        # full_trace cases
+        (EvalDataType.full_trace, '{"messages": []}', None, False, None),
+        (
+            EvalDataType.full_trace,
+            '{"messages": []}',
+            ["tool1"],
+            True,
+            "full_trace runs should not set tool_call_list",
+        ),
+        (
+            EvalDataType.full_trace,
+            None,
+            None,
+            True,
+            "full_trace runs should include full_trace",
+        ),
+        (
+            EvalDataType.full_trace,
+            None,
+            ["tool1"],
+            True,
+            "full_trace runs should include full_trace",
+        ),
+        # tool_call_list cases
+        (EvalDataType.tool_call_list, None, ["tool1"], False, None),
+        (
+            EvalDataType.tool_call_list,
+            '{"messages": []}',
+            ["tool1"],
+            True,
+            "tool_call_list runs should not set full_trace",
+        ),
+        (EvalDataType.tool_call_list, None, [], False, None),
+        (
+            EvalDataType.tool_call_list,
+            None,
+            None,
+            True,
+            "tool_call_list runs should include a tool_call_list",
+        ),
+    ],
+)
+def test_validate_output_fields_parametrized(
+    mock_task,
+    valid_eval_config_data,
+    evaluation_data_type,
+    full_trace,
+    tool_call_list,
+    should_raise,
+    expected_error,
+):
+    """Test validate_output_fields with parametrized test cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=evaluation_data_type,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    run_data = {
+        "parent": config,
+        "dataset_id": "dataset123",
+        "task_run_config_id": "config456",
+        "input": "test input",
+        "output": "test output",
+        "scores": {"accuracy": 0.95},
+    }
+
+    if full_trace is not None:
+        run_data["full_trace"] = full_trace
+    if tool_call_list is not None:
+        run_data["tool_call_list"] = tool_call_list
+
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            EvalRun(**run_data)
+    else:
+        run = EvalRun(**run_data)
+        assert run.full_trace == full_trace
+        assert run.tool_call_list == tool_call_list

@@ -9,7 +9,6 @@ from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
-    BasePrompt,
     DataSource,
     DataSourceType,
     Priority,
@@ -18,13 +17,19 @@ from kiln_ai.datamodel import (
     Task,
     TaskOutput,
     TaskOutputRating,
+    TaskOutputRatingType,
     TaskRequirement,
     TaskRun,
+)
+from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.datamodel_enums import (
+    StructuredOutputMode,
 )
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
@@ -73,7 +78,7 @@ def mock_task(tmp_path):
                 description="desc1",
                 instruction="inst1",
                 priority=Priority.p1,
-                type="five_star",
+                type=TaskOutputRatingType.five_star,
             ),
         ],
         parent=project,
@@ -90,9 +95,13 @@ def mock_eval(mock_task):
         description="Test Description",
         template=EvalTemplateId.bias,
         output_scores=[
-            EvalOutputScore(name="score1", description="desc1", type="five_star"),
             EvalOutputScore(
-                name="overall_rating", description="desc2", type="five_star"
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+            EvalOutputScore(
+                name="overall_rating",
+                instruction="desc2",
+                type=TaskOutputRatingType.five_star,
             ),
         ],
         eval_set_filter_id="tag::eval_set",
@@ -113,11 +122,6 @@ def mock_eval_config(mock_eval):
         parent=mock_eval,
         model_name="gpt-4",
         model_provider="openai",
-        prompt=BasePrompt(
-            name="test",
-            prompt="base prompt",
-            chain_of_thought_instructions="cot prompt",
-        ),
     )
     eval_config.save_to_file()
     return eval_config
@@ -132,9 +136,9 @@ def mock_run_config(mock_task):
         description="Test Description",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
-            structured_output_mode="json_schema",
+            structured_output_mode=StructuredOutputMode.json_schema,
         ),
     )
     run_config.save_to_file()
@@ -189,12 +193,12 @@ def valid_evaluator_request():
         description="Test Description",
         template=None,
         output_scores=[
-            EvalOutputScore(name="score1", description="desc1", type="five_star"),
+            EvalOutputScore(name="score1", type=TaskOutputRatingType.five_star),
         ],
         eval_set_filter_id="tag::eval_set",
         eval_configs_filter_id="tag::golden",
         template_properties={"test_property": "test_value", "numeric_property": 42},
-        evaluation_data_type="final_answer",
+        evaluation_data_type=EvalDataType.final_answer,
     )
 
 
@@ -206,7 +210,6 @@ def valid_eval_config_request():
         properties={"eval_steps": ["step1", "step2"]},
         model_name="gpt-4",
         provider=ModelProviderName.openai,
-        prompt_id="simple_chain_of_thought_prompt_builder",
     )
 
 
@@ -547,9 +550,15 @@ async def test_task_run_config_from_id(
 def mock_eval_for_score_summary():
     eval = Mock(spec=Eval)
     eval.output_scores = [
-        EvalOutputScore(name="accuracy", description="Test accuracy", type="pass_fail"),
         EvalOutputScore(
-            name="relevance", description="Test relevance", type="pass_fail"
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+        EvalOutputScore(
+            name="relevance",
+            instruction="Test relevance",
+            type=TaskOutputRatingType.pass_fail,
         ),
     ]
     eval.eval_set_filter_id = "tag::eval_set"
@@ -560,7 +569,7 @@ def mock_eval_for_score_summary():
 def mock_eval_config_for_score_summary():
     config = Mock(spec=EvalConfig)
 
-    scores: Tuple[str, str, Dict[str, float]] = [
+    scores: List[Tuple[str, str, Dict[str, float]]] = [
         # Run 1 - normal
         ("run1", "dataset_id_1", {"accuracy": 0.8, "relevance": 0.9}),
         ("run1", "dataset_id_2", {"accuracy": 0.6, "relevance": 0.7}),
@@ -843,11 +852,6 @@ async def test_get_eval_config_compare_summary(
                 parent=mock_eval,
                 model_name="gpt-4",
                 model_provider="openai",
-                prompt=BasePrompt(
-                    name="test",
-                    prompt="base prompt",
-                    chain_of_thought_instructions="cot prompt",
-                ),
             )
             eval_config.save_to_file()
             eval_configs_by_id[test_case.eval_config_id] = eval_config
@@ -860,7 +864,7 @@ async def test_get_eval_config_compare_summary(
         if test_case.score1_overall_rating is not None:
             ratings[score1_requirement_id] = RequirementRating(
                 value=test_case.score1_overall_rating,
-                type="five_star",
+                type=TaskOutputRatingType.five_star,
             )
 
         task_run = TaskRun(
@@ -1302,7 +1306,9 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
             rating=TaskOutputRating(
                 value=4.0,  # Has overall rating
                 requirement_ratings={
-                    "req_id": RequirementRating(value=3.0, type="five_star")
+                    "req_id": RequirementRating(
+                        value=3.0, type=TaskOutputRatingType.five_star
+                    )
                 },  # Has requirement rating
             ),
         ),
@@ -1491,10 +1497,12 @@ def test_human_score_from_task_run(
     # Set up requirement ratings
     requirement_ratings = {}
     if has_requirement_rating:
-        requirement_ratings["req_id"] = RequirementRating(value=3.0, type="five_star")
+        requirement_ratings["req_id"] = RequirementRating(
+            value=3.0, type=TaskOutputRatingType.five_star
+        )
     if has_named_rating:
         requirement_ratings["named::Named Score"] = RequirementRating(
-            value=4.0, type="five_star"
+            value=4.0, type=TaskOutputRatingType.five_star
         )
     rating.requirement_ratings = requirement_ratings
 
@@ -1505,10 +1513,12 @@ def test_human_score_from_task_run(
     )
 
     # Create the score object
-    score = EvalOutputScore(name=score_name, description="Test score", type="five_star")
+    score = EvalOutputScore(
+        name=score_name, instruction="Test score", type=TaskOutputRatingType.five_star
+    )
 
     # Create the score key to requirement ID mapping
-    score_key_to_task_requirement_id = {"score1": "req_id"}
+    score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {"score1": "req_id"}
 
     # Call the function
     from app.desktop.studio_server.eval_api import human_score_from_task_run

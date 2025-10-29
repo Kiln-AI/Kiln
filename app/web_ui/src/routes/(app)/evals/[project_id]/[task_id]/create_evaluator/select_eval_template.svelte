@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { is_empty } from "$lib/utils/input_validators"
   import type { EvalTemplateResult } from "./eval_template"
   import type { Task, EvalTemplateId } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -379,10 +380,11 @@
   let tool_call_eval_error: KilnError | null = null
   let submitting_tool_call_eval = false
 
-  function create_tool_call_eval() {
+  async function create_tool_call_eval() {
     try {
       submitting_tool_call_eval = true
       tool_call_eval_error = null
+
       if (!selected_tool) {
         tool_call_eval_error = createKilnError({
           message: "Please select a tool for this eval.",
@@ -390,6 +392,27 @@
         })
         return
       }
+
+      if (is_empty(tool_call_eval_name)) {
+        tool_call_eval_error = createKilnError({
+          message: "Please enter a name for this eval.",
+          status: 400,
+        })
+        return
+      }
+
+      if (is_empty(should_call_tool_guidelines)) {
+        tool_call_eval_error = createKilnError({
+          message:
+            "Please enter guidelines for when the tool should be called.",
+          status: 400,
+        })
+        return
+      }
+
+      const selected_tool_function_name =
+        await fetch_tool_function_name(selected_tool)
+
       tool_call_eval_create_complete = true
       const eval_tag = generate_issue_eval_tag(tool_call_eval_name)
 
@@ -422,36 +445,18 @@
     }
   }
 
-  let selected_tool_function_name: string = ""
-
-  async function update_selected_tool_function_name() {
-    if (!selected_tool) {
-      return ""
-    }
-    if (!project_id || !task_id) {
-      return selected_tool
-    }
-
+  async function fetch_tool_function_name(tool_id: string): Promise<string> {
     try {
-      const tool_function_name = await tool_id_to_function_name(
-        selected_tool,
-        project_id,
-        task_id,
+      return await tool_id_to_function_name(tool_id, project_id, task_id)
+    } catch (error) {
+      console.error(
+        `Error fetching tool function name for tool ${selected_tool}: ${error}`,
+        error,
       )
-
-      if (!tool_function_name) {
-        return selected_tool
-      }
-
-      selected_tool_function_name = tool_function_name
-    } catch {
-      selected_tool_function_name = selected_tool
+      throw new Error(
+        "Failed to fetch tool function name for the selected tool. Please refresh and try again.",
+      )
     }
-  }
-
-  // Reactive statement to populate cache when selected_tool changes
-  $: if (selected_tool && project_id && task_id) {
-    update_selected_tool_function_name()
   }
 </script>
 

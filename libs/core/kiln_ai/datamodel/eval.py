@@ -132,6 +132,35 @@ class EvalRun(KilnParentedModel):
         return self.parent  # type: ignore
 
     @model_validator(mode="after")
+    def validate_output_fields(self) -> Self:
+        parent_eval_config = self.parent_eval_config()
+        parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        if not parent_eval:
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+        if evaluation_data_type == EvalDataType.final_answer:
+            if self.full_trace is not None or self.tool_call_list is not None:
+                raise ValueError(
+                    "final_answer runs should not set full_trace or tool_call_list"
+                )
+        elif evaluation_data_type == EvalDataType.full_trace:
+            if self.full_trace is None:
+                raise ValueError("full_trace runs should include full_trace")
+
+            if self.tool_call_list is not None:
+                raise ValueError("full_trace runs should not set tool_call_list")
+        elif evaluation_data_type == EvalDataType.tool_call_list:
+            if self.tool_call_list is None:
+                raise ValueError("tool_call_list runs should include a tool_call_list")
+
+            if self.full_trace is not None:
+                raise ValueError("tool_call_list runs should not set full_trace")
+        else:
+            raise_exhaustive_enum_error(evaluation_data_type)
+        return self
+
+    @model_validator(mode="after")
     def validate_eval_run_types(self) -> Self:
         if self.eval_config_eval and self.task_run_config_id is not None:
             raise ValueError(
@@ -351,8 +380,14 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                     "pass_example is optional for issue template, but if provided must be a string"
                 )
         if self.template == EvalTemplateId.tool_call:
-            if "tool" not in self.template_properties or not isinstance(
-                self.template_properties["tool"], str
+            if self.evaluation_data_type != EvalDataType.tool_call_list:
+                raise ValueError(
+                    "tool_call template should have evaluation_data_type set to tool_call_list"
+                )
+            if (
+                "tool" not in self.template_properties
+                or not isinstance(self.template_properties["tool"], str)
+                or not self.template_properties["tool"].strip()
             ):
                 raise ValueError("tool is required for tool call template")
             if "tool_function_name" not in self.template_properties or not isinstance(
@@ -366,6 +401,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 or not isinstance(
                     self.template_properties["should_call_tool_guidelines"], str
                 )
+                or not self.template_properties["should_call_tool_guidelines"].strip()
             ):
                 raise ValueError(
                     "should_call_tool_guidelines is required for tool call template"

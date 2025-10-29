@@ -100,7 +100,7 @@ export function get_eval_steps(
     }
 
     const steps: string[] = [
-      `Does the list of tools the model called contain the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
+      `Look at the full conversation history for the task run, does the model call the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
     ]
 
     const should_call_tool_guidelines =
@@ -130,7 +130,7 @@ export function get_eval_steps(
 - Calling when it shouldn't have been used at all
 - Misinterpreting the input and calling inappropriately (e.g., using a math tool when user says "add people to guest list")
 
-**Tool Call Missed**: The model should have called the tool but did not. The input was in the tool's domain but phrased indirectly/ambiguously, causing the model to miss the opportunity.
+**Tool Call Missed**: The model should have called the tool but did not. The input was in the tool's domain but phrased indirectly/ambiguously, causing the model to miss the opportunity or call the wrong tool.
 
 **Tool Correctly Not Called**: The model correctly did not call the tool. The input was out-of-domain, a meta-question, or otherwise inappropriate for tool usage.
 

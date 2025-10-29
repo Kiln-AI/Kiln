@@ -122,12 +122,28 @@ The model produced the following output for the task:
     def generate_full_trace_run_description(
         self, eval_input: str, eval_output: str
     ) -> str:
+        # TODO [SF]: Write code to convert the full trace to a more human-readable format (eval_output should be conversation_history)
+        # Example full trace:
+        # [system] You are a helpful assistant that can answer questions and help with tasks.
+        # [user] What is 5+5?
+        # [assistant_reasoning] I plan to compute the sum using the functions.add tool with a=5 and b=5.
+        # [assistant_requested_tool_call] tool name: {"a": 5, "b": 5}
+        # [tool_result] 10 (content, could be text or JSON)
+        # [assistant_final_answer] The sum of 5 and 5 is 10
+
+        # "This is the full trace of the task run including the final output produced"
+
         return f"""The model was given the following input for the task: 
 <eval_data>
 {eval_input}
 </eval_data>
 
-This is the full trace of the task run including the final output produced:
+This is the list of tools available to the model:
+<eval_data>
+{available_tools}
+</eval_data>
+
+This is the full conversation history for the task run including the final output produced:
 <eval_data>
 {eval_output}
 </eval_data>
@@ -150,8 +166,7 @@ This is the list of tools the model called:
     @staticmethod
     def tool_call_list_from_trace(trace: list[ChatCompletionMessageParam]) -> str:
         tool_names = EvalUtils.called_tool_names_from_trace(trace)
-
-        return "[" + ", ".join(tool_names) + "]" if tool_names else "[]"
+        return json.dumps(tool_names, ensure_ascii=False, indent=2)
 
     async def run_eval(
         self, task_run: TaskRun
@@ -199,7 +214,7 @@ This is the list of tools the model called:
         if self.eval.evaluation_data_type == EvalDataType.full_trace:
             run_description = self.generate_full_trace_run_description(
                 task_run.input,
-                json.dumps(task_run.trace, ensure_ascii=False, pretty=2),
+                json.dumps(task_run.trace, ensure_ascii=False, indent=2),
             )
         elif self.eval.evaluation_data_type == EvalDataType.tool_call_list:
             run_description = self.generate_tool_call_list_run_description(
