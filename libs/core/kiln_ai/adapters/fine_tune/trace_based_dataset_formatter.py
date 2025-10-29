@@ -386,6 +386,11 @@ class TraceBasedDatasetFormatter:
                     function_name = call_name_by_id.get(
                         tool_call_id or "", current_function_name
                     )
+                    if not function_name:
+                        raise ValueError(
+                            f"Could not find function name for tool_call_id: {tool_call_id}. "
+                            "Ensure tool messages have matching assistant tool calls in the trace."
+                        )
 
                     # Buffer the function response part instead of immediately adding to contents
                     tool_response_parts.append(
