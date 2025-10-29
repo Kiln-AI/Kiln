@@ -230,11 +230,11 @@ class TraceBasedDatasetFormatter:
         contents: list[Dict[str, Any]] = []
         # keep track of the function name by tool call id
         call_name_by_id: dict[str, str] = {}
+
         """        
         Store consecutive tool responses
         OpenAI format expects tool responses to be in separate tool role messages
         #Vertex expects all tool responses from a single assistant message to be in the same list.
-
 
         OpenAI:
                 {
@@ -309,7 +309,6 @@ class TraceBasedDatasetFormatter:
                     ],
                 },
         """
-
         tool_response_parts: list[dict[str, Any]] = []
 
         def flush_tool_responses() -> None:
