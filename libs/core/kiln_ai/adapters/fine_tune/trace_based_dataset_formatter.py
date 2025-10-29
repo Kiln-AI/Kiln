@@ -234,15 +234,19 @@ class TraceBasedDatasetFormatter:
         system_instruction = system_msg.get("content", "")
 
         contents: list[Dict[str, Any]] = []
+        # keep track of the function name by tool call id
+        call_name_by_id: dict[str, str] = {}
         for message in trace[1:]:
             role = message["role"]
             current_function_name = None
 
             match role:
-                case "system" | "user":
+                case "system":
+                    continue  # system messages are not included in the contents
+                case "user":
                     contents.append(
                         {
-                            "role": role,
+                            "role": "user",
                             "parts": [{"text": message.get("content", None)}],
                         }
                     )
@@ -258,6 +262,10 @@ class TraceBasedDatasetFormatter:
                                 arguments_str, "tool call arguments"
                             )
                             current_function_name = tool_call["function"]["name"]
+                            call_id = tool_call.get("id")
+                            if isinstance(call_id, str) and current_function_name:
+                                call_name_by_id[call_id] = current_function_name
+
                             parts.append(
                                 {
                                     "functionCall": {
@@ -284,13 +292,20 @@ class TraceBasedDatasetFormatter:
                         raise ValueError(
                             f"Tool message content must be a string, got {type(content)}"
                         )
+                    # Get the matching function name
+                    tool_call_id = message.get("tool_call_id")
+                    # Look up function name by tool call id, default to current_function_name if not found
+                    function_name = call_name_by_id.get(
+                        tool_call_id or "", current_function_name
+                    )
+
                     contents.append(
                         {
                             "role": "user",
                             "parts": [
                                 {
                                     "functionResponse": {
-                                        "name": current_function_name,
+                                        "name": function_name,
                                         "response": {
                                             "content": content,  # hardcode the content using 'content' key, Vertex expects 'response' to be a dict
                                         },
