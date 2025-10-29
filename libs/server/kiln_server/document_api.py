@@ -347,6 +347,9 @@ class CreateEmbeddingConfigRequest(BaseModel):
         return self
 
 
+# the publicly exposed properties of each vector store config type happen to be the same right now
+# but we keep them separate to make it easier to add new properties in the future as they
+# can drift independently
 class LanceDBConfigFTSPropertiesPublic(BaseModel):
     similarity_top_k: int = Field(
         description="The number of results to return from the vector store.",
@@ -354,6 +357,12 @@ class LanceDBConfigFTSPropertiesPublic(BaseModel):
 
 
 class LanceDBConfigVectorPropertiesPublic(BaseModel):
+    similarity_top_k: int = Field(
+        description="The number of results to return from the vector store.",
+    )
+
+
+class LanceDBConfigHybridPropertiesPublic(BaseModel):
     similarity_top_k: int = Field(
         description="The number of results to return from the vector store.",
     )
@@ -372,7 +381,9 @@ class CreateVectorStoreConfigRequest(BaseModel):
         description="The type of vector store to use",
     )
     properties: (
-        LanceDBConfigFTSPropertiesPublic | LanceDBConfigVectorPropertiesPublic
+        LanceDBConfigFTSPropertiesPublic
+        | LanceDBConfigVectorPropertiesPublic
+        | LanceDBConfigHybridPropertiesPublic
     ) = Field(
         description="The properties of the vector store config, specific to the selected store_type."
     )

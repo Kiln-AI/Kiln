@@ -2486,7 +2486,7 @@ export interface components {
              * Properties
              * @description The properties of the vector store config, specific to the selected store_type.
              */
-            properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"];
+            properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -3814,6 +3814,14 @@ export interface components {
             doc_id_key: string;
             /** Nprobes */
             nprobes: number;
+        };
+        /** LanceDBConfigHybridPropertiesPublic */
+        LanceDBConfigHybridPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
         };
         /** LanceDBConfigVectorProperties */
         LanceDBConfigVectorProperties: {
