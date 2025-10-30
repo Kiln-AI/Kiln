@@ -32,7 +32,7 @@ from kiln_ai.utils.formatting import snake_case
 from kiln_ai.utils.mime_type import guess_extension
 
 
-def generate_id() -> str:
+def generate_model_id() -> str:
     return str(uuid.uuid4().int)[:12]
 
 
@@ -40,7 +40,7 @@ def generate_id() -> str:
 # Should be unique per item, at least inside the context of a parent/child relationship.
 # Use integers to make it easier to type for a search function.
 # Allow none, even though we generate it, because we clear it in the REST API if the object is ephemeral (not persisted to disk)
-ID_FIELD = Field(default_factory=generate_id)
+ID_FIELD = Field(default_factory=generate_model_id)
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
