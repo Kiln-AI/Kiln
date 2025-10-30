@@ -26,6 +26,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 
 from conftest import MockFileFactoryMimeType
@@ -1109,6 +1110,99 @@ async def test_create_vector_store_config_success(client, mock_project):
     assert result["properties"]["vector_column_name"] == "vector"
     assert result["properties"]["text_key"] == "text"
     assert result["properties"]["doc_id_key"] == "doc_id"
+
+
+async def test_create_reranker_config_success(client, mock_project):
+    project = mock_project
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.reranker.RerankerConfig.save_to_file") as mock_save,
+        patch(
+            "kiln_server.document_api.built_in_reranker_models_from_provider"
+        ) as mock_built_in_reranker_models_from_provider,
+    ):
+        mock_built_in_reranker_models_from_provider.return_value = MagicMock()
+        mock_built_in_reranker_models_from_provider.return_value.model_name = (
+            "rerank-xyz"
+        )
+        mock_project_from_id.return_value = project
+        mock_save.return_value = None
+
+        request_data = {
+            "name": "Test Reranker",
+            "description": "Test reranker description",
+            "top_n": 5,
+            "model_provider_name": ModelProviderName.together_ai,
+            "model_name": "rerank-xyz",
+            "properties": {"type": "cohere_compatible"},
+        }
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_reranker_config", json=request_data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["name"] == "Test Reranker"
+    assert result["description"] == "Test reranker description"
+    assert result["top_n"] == 5
+    assert result["model_provider_name"] == ModelProviderName.together_ai
+    assert result["model_name"] == "rerank-xyz"
+    assert result["properties"]["type"] == "cohere_compatible"
+
+
+async def test_create_reranker_config_model_not_found(client, mock_project):
+    project = mock_project
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        request_data = {
+            "name": "Bad Reranker",
+            "description": "Should fail",
+            "top_n": 5,
+            "model_provider_name": ModelProviderName.together_ai,
+            "model_name": "does-not-exist",
+            "properties": {"type": "cohere_compatible"},
+        }
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_reranker_config", json=request_data
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Model does-not-exist not found" in response.json()["message"]
+
+
+async def test_get_reranker_configs_success(client, mock_project):
+    reranker_config = RerankerConfig(
+        name="my-reranker",
+        description="desc",
+        top_n=3,
+        model_provider_name=ModelProviderName.together_ai,
+        model_name="rerank-xyz",
+        properties={"type": RerankerType.COHERE_COMPATIBLE},
+    )
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_instance = MagicMock()
+        mock_project_instance.reranker_configs = MagicMock(
+            return_value=[reranker_config]
+        )
+        mock_project_from_id.return_value = mock_project_instance
+
+        response = client.get(f"/api/projects/{mock_project.id}/reranker_configs")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 1
+    assert result[0]["name"] == "my-reranker"
+    assert result[0]["properties"]["type"] == "cohere_compatible"
+    assert result[0]["description"] == "desc"
+    assert result[0]["top_n"] == 3
+    assert result[0]["model_provider_name"] == ModelProviderName.together_ai
+    assert result[0]["model_name"] == "rerank-xyz"
 
 
 @pytest.mark.asyncio
