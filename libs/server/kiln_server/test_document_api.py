@@ -3605,6 +3605,100 @@ async def test_build_rag_workflow_runner_success_with_progress(
         mock_runner_class.assert_called_once()
 
 
+async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
+    mock_project,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Ensure extractor concurrency is 1 when provider is ollama."""
+    # Create an extractor config that uses the ollama provider
+    extractor_config_ollama = ExtractorConfig(
+        parent=mock_project,
+        name="Ollama Extractor",
+        description="Extractor using ollama",
+        output_format=OutputFormat.TEXT,
+        passthrough_mimetypes=[OutputFormat.TEXT],
+        extractor_type=ExtractorType.LITELLM,
+        model_provider_name=ModelProviderName.ollama,
+        model_name="llama3",
+        properties={
+            "prompt_document": "prompt",
+            "prompt_video": "prompt",
+            "prompt_audio": "prompt",
+            "prompt_image": "prompt",
+        },
+    )
+    extractor_config_ollama.save_to_file()
+
+    # Create a rag config referencing the ollama extractor
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="RAG with Ollama",
+        description="Test RAG with ollama extractor",
+        tool_name="test_search_tool",
+        tool_description="A test search tool",
+        extractor_config_id=extractor_config_ollama.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+        patch(
+            "kiln_ai.datamodel.extraction.ExtractorConfig.from_id_and_parent_path"
+        ) as mock_extractor_from_id,
+        patch(
+            "kiln_ai.datamodel.chunk.ChunkerConfig.from_id_and_parent_path"
+        ) as mock_chunker_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+        patch(
+            "kiln_server.document_api.RagExtractionStepRunner.__init__",
+            autospec=True,
+        ) as mock_extract_runner_init,
+        patch("kiln_server.document_api.RagWorkflowRunner") as mock_runner_class,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_config",
+            return_value=RagProgress(
+                total_document_count=0,
+                total_document_completed_count=0,
+                total_document_extracted_count=0,
+                total_document_chunked_count=0,
+                total_document_embedded_count=0,
+            ),
+        ),
+    ):
+        mock_rag_from_id.return_value = rag_config
+        mock_extractor_from_id.return_value = extractor_config_ollama
+        mock_chunker_from_id.return_value = mock_chunker_config
+        mock_embedding_from_id.return_value = mock_embedding_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config
+
+        # Ensure __init__ behaves like a normal constructor
+        mock_extract_runner_init.return_value = None
+
+        mock_runner = MagicMock()
+        mock_runner_class.return_value = mock_runner
+
+        result = await build_rag_workflow_runner(mock_project, str(rag_config.id))
+
+        assert result == mock_runner
+        # Validate that the extraction step is constructed with concurrency=1
+        assert mock_extract_runner_init.call_count == 1
+        # __init__ is autospecced; args: (self, project, extractor_config, ...)
+        _, _args, kwargs = mock_extract_runner_init.mock_calls[0]
+        assert kwargs.get("concurrency") == 1
+
+
 def test_patch_document_success_name_only(client, mock_project, mock_document):
     """Test PATCH document endpoint with name only"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
