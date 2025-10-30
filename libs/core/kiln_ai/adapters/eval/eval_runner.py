@@ -209,11 +209,6 @@ class EvalRunner:
                 ):
                     trace = json.dumps(result_task_run.trace, indent=2)
 
-                # Ensure any in-memory updates to the parent eval (e.g., evaluation_data_type)
-                # are persisted before saving the EvalRun, so subsequent loads validate correctly.
-                if parent_eval is not None:
-                    parent_eval.save_to_file()
-
             # Save the job result
             eval_run = EvalRun(
                 parent=job.eval_config,

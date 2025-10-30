@@ -647,6 +647,8 @@ async def test_run_job_with_full_trace_evaluation_data_type(
     """Test EvalRunner with full_trace evaluation_data_type"""
     # Set the eval config to use full_trace evaluation data type
     mock_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+    # Persist the change so validation on reload sees full_trace
+    mock_eval_config.parent.save_to_file()
 
     # Create a task run to evaluate
     task_run = TaskRun(
