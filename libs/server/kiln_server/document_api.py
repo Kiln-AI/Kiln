@@ -350,21 +350,15 @@ class CreateRerankerConfigRequest(BaseModel):
     model_name: str = Field(
         description="The name of the model to use for the reranker config.",
     )
-    properties: dict[str, str] = Field(
+    properties: CohereCompatibleProperties = Field(
         description="The properties of the reranker config.",
-        default_factory=dict,
+        default=CohereCompatibleProperties(
+            type=RerankerType.COHERE_COMPATIBLE,
+        ),
     )
 
     @model_validator(mode="after")
     def validate_properties(self):
-        type_value = self.properties.get("type")
-        if type_value is None:
-            raise ValueError("properties.type is required for reranker config")
-        try:
-            RerankerType(type_value)
-        except ValueError:
-            raise ValueError(f"Invalid reranker type: {type_value}")
-
         # check the reranker exists
         model = built_in_reranker_models_from_provider(
             provider_name=self.model_provider_name,

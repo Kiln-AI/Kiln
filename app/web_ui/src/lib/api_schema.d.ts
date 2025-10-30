@@ -989,6 +989,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/providers/reranker_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Reranker Models */
+        get: operations["get_providers_reranker_models_api_providers_reranker_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_reranker_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Reranker Models */
+        get: operations["get_available_reranker_models_api_available_reranker_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider/ollama/connect": {
         parameters: {
             query?: never;
@@ -2516,12 +2550,12 @@ export interface components {
              */
             model_name: string;
             /**
-             * Properties
              * @description The properties of the reranker config.
+             * @default {
+             *       "type": "cohere_compatible"
+             *     }
              */
-            properties?: {
-                [key: string]: string;
-            };
+            properties: components["schemas"]["CohereCompatibleProperties"];
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -4185,6 +4219,13 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
         };
+        /** ProviderRerankerModels */
+        ProviderRerankerModels: {
+            /** Models */
+            models: {
+                [key: string]: components["schemas"]["ProviderModel"];
+            };
+        };
         /** RagConfig */
         RagConfig: {
             /**
@@ -4484,6 +4525,22 @@ export interface components {
             properties: components["schemas"]["CohereCompatibleProperties"];
             /** Model Type */
             readonly model_type: string;
+        };
+        /** RerankerModelDetails */
+        RerankerModelDetails: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** RerankerProvider */
+        RerankerProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["RerankerModelDetails"][];
         };
         /** RunConfigEvalResult */
         RunConfigEvalResult: {
@@ -7384,6 +7441,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingProvider"][];
+                };
+            };
+        };
+    };
+    get_providers_reranker_models_api_providers_reranker_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRerankerModels"];
+                };
+            };
+        };
+    };
+    get_available_reranker_models_api_available_reranker_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerProvider"][];
                 };
             };
         };

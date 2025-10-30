@@ -64,6 +64,11 @@ export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
 export type VectorStoreConfig = components["schemas"]["VectorStoreConfig"]
 export type VectorStoreType = components["schemas"]["VectorStoreType"]
+export type RerankerConfig = components["schemas"]["RerankerConfig"]
+export type RerankerType =
+  components["schemas"]["RerankerConfig"]["properties"]["type"]
+export type RerankerProvider = components["schemas"]["RerankerProvider"]
+export type RerankerModelDetails = components["schemas"]["RerankerModelDetails"]
 export type LogMessage = components["schemas"]["LogMessage"]
 export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
