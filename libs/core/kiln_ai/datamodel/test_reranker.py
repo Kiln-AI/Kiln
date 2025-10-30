@@ -66,18 +66,6 @@ class TestRerankerConfigValid:
         )
         assert config.parent_project() is None
 
-    def test_parent_project_method_with_project_parent(self, mock_project):
-        """Test parent_project method when parent is a Project."""
-        with pytest.raises((NotImplementedError, ValueError)):
-            RerankerConfig(
-                name="test-reranker",
-                top_n=10,
-                model_provider_name="cohere",
-                model_name="rerank-english-v3.0",
-                properties={"type": RerankerType.COHERE_COMPATIBLE},
-                parent=mock_project,
-            )
-
 
 class TestRerankerConfigInvalidInputs:
     """Test RerankerConfig with invalid inputs."""

@@ -24,6 +24,12 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models,
     default_structured_output_mode_for_model_provider,
 )
+from kiln_ai.adapters.reranker_list import (
+    KilnRerankerModel,
+    KilnRerankerModelProvider,
+    RerankerModelName,
+    built_in_rerankers,
+)
 from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.provider_api import (
@@ -3274,3 +3280,113 @@ def test_available_embedding_models_endpoint_includes_ollama(client):
     assert isinstance(data, list) and len(data) == 1
     assert data[0]["provider_id"] == "ollama"
     assert any(m["id"] == "embeddinggemma" for m in data[0]["models"])
+
+
+def test_get_providers_reranker_models(client):
+    response = client.get("/api/providers/reranker_models")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "models" in data
+
+    # Check if all built-in reranker models are present in the response
+    for model in built_in_rerankers:
+        assert model.name in data["models"]
+        assert data["models"][model.name]["id"] == model.name
+        assert data["models"][model.name]["name"] == model.friendly_name
+
+    # Check if the number of models in the response matches the number of built-in reranker models
+    assert len(data["models"]) == len(built_in_rerankers)
+
+    if RerankerModelName.llama_rank in data["models"]:
+        assert (
+            data["models"][RerankerModelName.llama_rank]["id"]
+            == RerankerModelName.llama_rank
+        )
+        assert data["models"][RerankerModelName.llama_rank]["name"] == "LlamaRank"
+
+
+async def test_get_available_reranker_models(app, client):
+    # Mock Config.shared()
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    # Mock provider_warnings
+    mock_provider_warnings = {
+        ModelProviderName.together_ai: MagicMock(required_config_keys=["key1"]),
+        ModelProviderName.openai: MagicMock(required_config_keys=["key2"]),
+    }
+
+    # Mock built_in_rerankers
+    mock_built_in_rerankers = [
+        KilnRerankerModel(
+            name="reranker1",
+            friendly_name="Reranker 1",
+            family="family1",
+            providers=[
+                KilnRerankerModelProvider(
+                    name=ModelProviderName.together_ai,
+                    model_id="together_reranker1",
+                )
+            ],
+        ),
+        KilnRerankerModel(
+            name="reranker2",
+            friendly_name="Reranker 2",
+            family="family2",
+            providers=[
+                KilnRerankerModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="openai_reranker1",
+                ),
+                KilnRerankerModelProvider(
+                    name=ModelProviderName.together_ai,
+                    model_id="together_reranker2",
+                ),
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_rerankers",
+            mock_built_in_rerankers,
+        ),
+    ):
+        response = client.get("/api/available_reranker_models")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "provider_id": "together_ai",
+            "provider_name": "Together AI",
+            "models": [
+                {
+                    "id": "reranker1",
+                    "name": "Reranker 1",
+                },
+                {
+                    "id": "reranker2",
+                    "name": "Reranker 2",
+                },
+            ],
+        },
+        {
+            "provider_id": "openai",
+            "provider_name": "OpenAI",
+            "models": [
+                {
+                    "id": "reranker2",
+                    "name": "Reranker 2",
+                }
+            ],
+        },
+    ]
