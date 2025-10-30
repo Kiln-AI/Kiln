@@ -7,11 +7,10 @@ from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
-from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
+from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +182,7 @@ class EvalRunner:
                 raise ValueError("Not able to create evaluator from eval config")
 
             task_output: str | None = None
-            trace: list[ChatCompletionMessageParam] | None = None
+            trace: str | None = None
             scores: EvalScores | None = None
             intermediate_outputs: Dict[str, str] | None = None
             task_run_usage: Usage | None = None
@@ -201,9 +200,19 @@ class EvalRunner:
                 ) = await evaluator.run_task_and_eval(job.item.input)
                 task_output = result_task_run.output.output
                 task_run_usage = result_task_run.usage
-                trace = result_task_run.trace
 
-            trace_str = json.dumps(trace, indent=2) if trace else None
+                parent_eval = job.eval_config.parent_eval()
+                if (
+                    parent_eval
+                    and parent_eval.evaluation_data_type == EvalDataType.full_trace
+                    and result_task_run.trace
+                ):
+                    trace = json.dumps(result_task_run.trace, indent=2)
+
+                # Ensure any in-memory updates to the parent eval (e.g., evaluation_data_type)
+                # are persisted before saving the EvalRun, so subsequent loads validate correctly.
+                if parent_eval is not None:
+                    parent_eval.save_to_file()
 
             # Save the job result
             eval_run = EvalRun(
@@ -217,7 +226,7 @@ class EvalRunner:
                 input=job.item.input,
                 output=task_output,
                 intermediate_outputs=intermediate_outputs,
-                trace=trace_str,
+                trace=trace,
                 task_run_usage=task_run_usage,
             )
             eval_run.save_to_file()

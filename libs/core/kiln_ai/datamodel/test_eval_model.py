@@ -893,6 +893,7 @@ def test_eval_template_properties_tool_call_template_validation(
             Eval(
                 name="Test Eval",
                 template=EvalTemplateId.tool_call,
+                evaluation_data_type=EvalDataType.full_trace,
                 eval_set_filter_id="tag::tag1",
                 eval_configs_filter_id="tag::tag2",
                 output_scores=[
@@ -907,6 +908,7 @@ def test_eval_template_properties_tool_call_template_validation(
         eval = Eval(
             name="Test Eval",
             template=EvalTemplateId.tool_call,
+            evaluation_data_type=EvalDataType.full_trace,
             eval_set_filter_id="tag::tag1",
             eval_configs_filter_id="tag::tag2",
             output_scores=[
@@ -1274,7 +1276,7 @@ def test_validate_output_fields_full_trace_invalid_cases(
     )
     config = EvalConfig(parent=eval, **valid_eval_config_data)
 
-    # Invalid case: full_trace is None
+    # Invalid case: trace is omitted
     with pytest.raises(
         ValueError, match="full_trace task run eval runs should include trace"
     ):
@@ -1287,7 +1289,7 @@ def test_validate_output_fields_full_trace_invalid_cases(
             scores={"accuracy": 0.95},
         )
 
-    # Invalid case: full_trace is explicitly None
+    # Invalid case: trace is explicitly None
     with pytest.raises(
         ValueError, match="full_trace task run eval runs should include trace"
     ):

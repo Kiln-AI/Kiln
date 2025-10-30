@@ -22,6 +22,7 @@ from kiln_ai.datamodel.eval import (
     EvalScores,
 )
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 @pytest.fixture
@@ -489,7 +490,7 @@ async def test_run_job_success_task_run_eval(
     mock_scores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             return (
                 TaskRun(
                     input="test input",
@@ -549,7 +550,7 @@ async def test_run_job_success_eval_config_eval(
     mock_scores: EvalScores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             raise ValueError("Attempted to run task and eval for a config eval")
 
         async def run_eval(
@@ -626,7 +627,7 @@ async def test_run_job_evaluator_error(
     )
 
     class ErrorEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             raise ValueError("Evaluation failed")
 
     with patch(
@@ -666,7 +667,7 @@ async def test_run_job_with_full_trace_evaluation_data_type(
 
     # Mock the evaluator
     mock_scores = {"accuracy": 0.95}
-    mock_trace = [
+    mock_trace: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "test input"},
         {"role": "assistant", "content": "test response"},
     ]
@@ -734,13 +735,13 @@ async def test_run_job_with_final_answer_evaluation_data_type(
 
     # Mock the evaluator
     mock_scores = {"accuracy": 0.95}
-    mock_trace = [
+    mock_trace: list[ChatCompletionMessageParam] = [
         {"role": "user", "content": "test"},
         {"role": "assistant", "content": "response"},
     ]
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             result_task_run = TaskRun(
                 input="test input",
                 input_source=data_source,
@@ -798,7 +799,7 @@ async def test_run_job_with_none_trace(
     mock_scores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             result_task_run = TaskRun(
                 input="test input",
                 input_source=data_source,
@@ -818,10 +819,7 @@ async def test_run_job_with_none_trace(
     ):
         success = await mock_eval_runner.run_job(job)
 
-    assert success is True
-
-    # Verify eval run was saved with None full_trace
+    # For full_trace evals, None trace should fail and not save a run
+    assert success is False
     eval_runs = mock_eval_config.runs()
-    assert len(eval_runs) == 1
-    saved_run = eval_runs[0]
-    assert saved_run.full_trace is None
+    assert len(eval_runs) == 0
