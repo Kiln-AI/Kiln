@@ -1,16 +1,12 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { ChunkerType, RagConfigWithSubConfigs } from "$lib/types"
+  import type { RagConfigWithSubConfigs } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import {
-    chunker_type_format,
-    extractor_output_format,
-    formatDate,
-  } from "$lib/utils/formatters"
+  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import {
     embedding_model_name,
     load_available_embedding_models,
@@ -30,6 +26,12 @@
   import posthog from "posthog-js"
   import { uncache_available_tools } from "$lib/stores"
   import { goto } from "$app/navigation"
+  import {
+    fixedWindowChunkerProperties,
+    semanticChunkerProperties,
+  } from "$lib/utils/properties_cast"
+  import FixedWindowChunkerPropertyList from "./fixed_window_chunker_property_list.svelte"
+  import SemanticChunkerPropertyList from "./semantic_chunker_property_list.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -54,12 +56,11 @@
   }> = []
 
   onMount(async () => {
-    // need to load available models to get the model store populated
-    await load_available_models()
-    await load_available_embedding_models()
-
-    await get_rag_config()
-    await load_available_models()
+    await Promise.all([
+      load_available_models(),
+      load_available_embedding_models(),
+      get_rag_config(),
+    ])
   })
 
   async function get_rag_config() {
@@ -131,22 +132,6 @@
     )
   }
 
-  function tooltip_for_chunker_type(chunker_type: ChunkerType): string {
-    const friendly_chunker_type = chunker_type_format(chunker_type)
-    switch (chunker_type) {
-      case "fixed_window":
-        return `The ${friendly_chunker_type} chunking algorithm splits the text into fixed-size chunks of a specified number of words, while respecting sentence boundaries.`
-      case "semantic":
-        return `The ${friendly_chunker_type} chunking algorithm splits the text into semantically related chunks using semantic similarity to group sentences together.`
-      default: {
-        // trigger a type error if there is a new chunker type, but don't handle it
-        // in the switch
-        const exhaustiveCheck: never = chunker_type
-        return exhaustiveCheck
-      }
-    }
-  }
-
   async function performSearch() {
     if (!searchQuery.trim() || !rag_config) {
       return
@@ -213,6 +198,15 @@
     rag_config?.extractor_config?.model_name,
     rag_config?.extractor_config?.model_provider_name,
   )
+
+  $: fixed_window_properties =
+    rag_config?.chunker_config.chunker_type === "fixed_window"
+      ? fixedWindowChunkerProperties(rag_config.chunker_config)
+      : null
+  $: semantic_properties =
+    rag_config?.chunker_config.chunker_type === "semantic"
+      ? semanticChunkerProperties(rag_config.chunker_config)
+      : null
 </script>
 
 <div class="max-w-[1400px]">
@@ -476,63 +470,21 @@
               ]}
             />
 
-            <PropertyList
-              title="Chunker"
-              properties={[
-                {
-                  name: "Strategy",
-                  value:
-                    chunker_type_format(
-                      rag_config.chunker_config.chunker_type,
-                    ) || "N/A",
-                  tooltip: tooltip_for_chunker_type(
-                    rag_config.chunker_config.chunker_type,
-                  ),
-                },
-                ...(rag_config.chunker_config.chunker_type === "fixed_window"
-                  ? [
-                      {
-                        name: "Chunk Size",
-                        value: rag_config.chunker_config.properties?.chunk_size
-                          ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
-                          : "N/A",
-                        tooltip:
-                          "The approximate number of words to include in each chunk",
-                      },
-                      {
-                        name: "Overlap",
-                        value: rag_config.chunker_config.properties
-                          ?.chunk_overlap
-                          ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
-                          : "N/A",
-                        tooltip:
-                          "The approximate number of words to overlap between chunks",
-                      },
-                    ]
-                  : []),
-                ...(rag_config.chunker_config.chunker_type === "semantic"
-                  ? [
-                      {
-                        name: "Buffer Size",
-                        value: rag_config.chunker_config.properties?.buffer_size
-                          ? `${String(rag_config.chunker_config.properties.buffer_size)}`
-                          : "N/A",
-                        tooltip:
-                          "The number of sentences to group together when evaluating semantic similarity.",
-                      },
-                      {
-                        name: "Breakpoint Percentile",
-                        value: rag_config.chunker_config.properties
-                          ?.breakpoint_percentile_threshold
-                          ? `${String(rag_config.chunker_config.properties.breakpoint_percentile_threshold)}`
-                          : "N/A",
-                        tooltip:
-                          "The percentile of cosine dissimilarity that must be exceeded between a group of sentences and the next to create a breakpoint.",
-                      },
-                    ]
-                  : []),
-              ]}
-            />
+            {#if semantic_properties}
+              <SemanticChunkerPropertyList
+                {project_id}
+                buffer_size={semantic_properties.buffer_size}
+                breakpoint_percentile_threshold={semantic_properties.breakpoint_percentile_threshold}
+                embedding_config_id={semantic_properties.embedding_config_id}
+              />
+            {/if}
+
+            {#if fixed_window_properties}
+              <FixedWindowChunkerPropertyList
+                chunk_size={fixed_window_properties.chunk_size}
+                chunk_overlap={fixed_window_properties.chunk_overlap}
+              />
+            {/if}
 
             <PropertyList
               title="Embedding Model"
