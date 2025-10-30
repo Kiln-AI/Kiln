@@ -353,7 +353,6 @@ class DatasetFormatter:
 
                 # Create example if trace is available and not empty
                 if task_run.trace is not None and len(task_run.trace) > 0:
-                    # Call build_training_chat_from_trace
                     formatter = TraceBasedDatasetFormatter(
                         system_message=self.system_message
                     )
