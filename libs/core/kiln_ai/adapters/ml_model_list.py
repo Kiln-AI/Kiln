@@ -4271,7 +4271,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.qwen,
         name=ModelName.qwen_3_vl_30b,
-        friendly_name="Qwen 3 VL Thinking 30B (Vision-Language)",
+        friendly_name="Qwen 3 VL Thinking 30B / 3B Active (Vision-Language)",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.ollama,
