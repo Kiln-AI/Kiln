@@ -1,4 +1,3 @@
-import json
 import math
 from typing import Dict, List, Tuple
 
@@ -15,7 +14,6 @@ from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
 from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 # all the tokens we score for, and their float scores.
 TOKEN_TO_SCORE_MAP: Dict[str, float] = {
@@ -120,53 +118,35 @@ The model produced the following output for the task:
 """
 
     def generate_full_trace_run_description(
-        self, eval_input: str, eval_output: str
+        self, eval_input: str, available_tools: str | None, conversation_history: str
     ) -> str:
-        # TODO [SF]: Write code to convert the full trace to a more human-readable format (eval_output should be conversation_history)
-        # Example full trace:
-        # [system] You are a helpful assistant that can answer questions and help with tasks.
-        # [user] What is 5+5?
-        # [assistant_reasoning] I plan to compute the sum using the functions.add tool with a=5 and b=5.
-        # [assistant_requested_tool_call] tool name: {"a": 5, "b": 5}
-        # [tool_result] 10 (content, could be text or JSON)
-        # [assistant_final_answer] The sum of 5 and 5 is 10
-
-        # "This is the full trace of the task run including the final output produced"
-
-        return f"""The model was given the following input for the task: 
+        description = ""
+        description += f"""The model was given the following input for the task: 
 <eval_data>
 {eval_input}
 </eval_data>
+"""
 
+        if available_tools is not None:
+            if available_tools != "":
+                description += f"""
 This is the list of tools available to the model:
 <eval_data>
 {available_tools}
 </eval_data>
-
-This is the full conversation history for the task run including the final output produced:
-<eval_data>
-{eval_output}
-</eval_data>
+"""
+            else:
+                description += """
+There were no tools available to the model.
 """
 
-    def generate_tool_call_list_run_description(
-        self, eval_input: str, eval_output: str
-    ) -> str:
-        return f"""The model was given the following input for the task: 
+        description += f"""
+This is the full conversation history for the task run:
 <eval_data>
-{eval_input}
-</eval_data>
-
-This is the list of tools the model called:
-<eval_data>
-{eval_output}
+{conversation_history}
 </eval_data>
 """
-
-    @staticmethod
-    def tool_call_list_from_trace(trace: list[ChatCompletionMessageParam]) -> str:
-        tool_names = EvalUtils.called_tool_names_from_trace(trace)
-        return json.dumps(tool_names, ensure_ascii=False, indent=2)
+        return description
 
     async def run_eval(
         self, task_run: TaskRun
@@ -212,13 +192,17 @@ This is the list of tools the model called:
         )
 
         if self.eval.evaluation_data_type == EvalDataType.full_trace:
+            if task_run.trace is None:
+                raise ValueError("Task run trace is required for full trace evaluation")
+
+            # TODO: do we need to store available tools in the EvalRun too?
+            available_tools = await EvalUtils.formatted_available_tools_from_task_run(
+                task_run
+            )
             run_description = self.generate_full_trace_run_description(
                 task_run.input,
-                json.dumps(task_run.trace, ensure_ascii=False, indent=2),
-            )
-        elif self.eval.evaluation_data_type == EvalDataType.tool_call_list:
-            run_description = self.generate_tool_call_list_run_description(
-                task_run.input, GEval.tool_call_list_from_trace(task_run.trace or [])
+                available_tools,
+                EvalUtils.trace_to_formatted_conversation_history(task_run.trace),
             )
         else:  # EvalDataType.final_answer
             run_description = self.generate_final_answer_run_description(

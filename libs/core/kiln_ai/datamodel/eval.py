@@ -114,10 +114,6 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The JSON formatted full trace of the task run that produced the output.",
     )
-    tool_call_list: list[str] | None = Field(
-        default=None,
-        description="The list of tool calls made by the model.",
-    )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
     )
@@ -140,22 +136,11 @@ class EvalRun(KilnParentedModel):
 
         evaluation_data_type = parent_eval.evaluation_data_type
         if evaluation_data_type == EvalDataType.final_answer:
-            if self.full_trace is not None or self.tool_call_list is not None:
-                raise ValueError(
-                    "final_answer runs should not set full_trace or tool_call_list"
-                )
+            if self.full_trace is not None:
+                raise ValueError("final_answer runs should not set full_trace")
         elif evaluation_data_type == EvalDataType.full_trace:
             if self.full_trace is None:
                 raise ValueError("full_trace runs should include full_trace")
-
-            if self.tool_call_list is not None:
-                raise ValueError("full_trace runs should not set tool_call_list")
-        elif evaluation_data_type == EvalDataType.tool_call_list:
-            if self.tool_call_list is None:
-                raise ValueError("tool_call_list runs should include a tool_call_list")
-
-            if self.full_trace is not None:
-                raise ValueError("tool_call_list runs should not set full_trace")
         else:
             raise_exhaustive_enum_error(evaluation_data_type)
         return self
@@ -297,7 +282,6 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 class EvalDataType(str, Enum):
     final_answer = "final_answer"
     full_trace = "full_trace"
-    tool_call_list = "tool_call_list"
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
@@ -380,9 +364,9 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                     "pass_example is optional for issue template, but if provided must be a string"
                 )
         if self.template == EvalTemplateId.tool_call:
-            if self.evaluation_data_type != EvalDataType.tool_call_list:
+            if self.evaluation_data_type != EvalDataType.full_trace:
                 raise ValueError(
-                    "tool_call template should have evaluation_data_type set to tool_call_list"
+                    "tool_call template should have evaluation_data_type set to full_trace"
                 )
             if (
                 "tool" not in self.template_properties

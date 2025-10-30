@@ -7,7 +7,7 @@ from kiln_ai.adapters.eval.eval_utils import EvalUtils
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
-from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
+from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
@@ -204,9 +204,17 @@ class EvalRunner:
                 task_run_usage = result_task_run.usage
                 trace = result_task_run.trace
 
-            full_trace, tool_call_list = EvalUtils.additional_eval_data(
-                job.eval_config, trace
-            )
+            full_trace = None
+            parent_eval = job.eval_config.parent_eval()
+            if (
+                parent_eval
+                and parent_eval.evaluation_data_type == EvalDataType.full_trace
+            ):
+                if trace is None:
+                    raise ValueError(
+                        "Task run trace is required for full trace evaluation"
+                    )
+                full_trace = EvalUtils.trace_to_formatted_conversation_history(trace)
 
             # Save the job result
             eval_run = EvalRun(
@@ -221,7 +229,6 @@ class EvalRunner:
                 output=task_output,
                 intermediate_outputs=intermediate_outputs,
                 full_trace=full_trace,
-                tool_call_list=tool_call_list,
                 task_run_usage=task_run_usage,
             )
             eval_run.save_to_file()

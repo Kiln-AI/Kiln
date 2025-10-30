@@ -113,8 +113,7 @@
               template_properties,
               evaluation_data_type: (evaluation_data_type || "final_answer") as
                 | "final_answer"
-                | "full_trace"
-                | "tool_call_list",
+                | "full_trace",
             },
           },
         )

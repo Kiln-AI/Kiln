@@ -81,7 +81,7 @@
         id: "tool_call_preview",
         name: "Tool Call Eval",
         description:
-          "Evaluate your model's ability to decide if a tool should be called — and when it shouldn't.",
+          "Evaluate your model's ability to call a tool when needed — and avoid doing so when unnecessary.",
         recommended: recommended_tool_call_eval,
       },
       {
@@ -436,7 +436,7 @@
           should_not_call_tool_guidelines: should_not_call_tool_guidelines,
           should_call_tool_guidelines: should_call_tool_guidelines,
         },
-        evaluation_data_type: "tool_call_list",
+        evaluation_data_type: "full_trace",
       })
     } catch (e) {
       tool_call_eval_error = createKilnError(e)
