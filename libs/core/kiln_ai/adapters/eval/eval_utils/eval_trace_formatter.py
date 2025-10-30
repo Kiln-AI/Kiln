@@ -1,14 +1,14 @@
 import json
+import logging
 from dataclasses import dataclass
 
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 from openai.types.chat import ChatCompletionMessageToolCallParam
 
-from kiln_ai.datamodel import TaskRun
-from kiln_ai.tools.tool_registry import tool_from_id
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+logger = logging.getLogger(__name__)
 
 
-class EvalUtils:
+class EvalTraceFormatter:
     @dataclass
     class MessageDetails:
         role: str
@@ -26,33 +26,55 @@ class EvalUtils:
             if index > 0:
                 conversation_history += "\n\n"
 
-            message_details = EvalUtils.message_details_from_message(message)
+            message_details = EvalTraceFormatter.message_details_from_message(message)
 
-            if message_details.role == "tool":
-                origin_tool_call_name = EvalUtils.origin_tool_call_name_from_message(
-                    message, trace
+            if message_details.role == "tool" and message_details.content:
+                origin_tool_call_name = (
+                    EvalTraceFormatter.origin_tool_call_name_from_message(
+                        message, trace
+                    )
                 )
-                conversation_history += f"{message_details.role} - {origin_tool_call_name}: {message_details.content}"
+                if origin_tool_call_name:
+                    conversation_history += EvalTraceFormatter.format_message(
+                        message_details.role,
+                        origin_tool_call_name,
+                        message_details.content,
+                    )
             else:
                 if message_details.reasoning_content:
-                    conversation_history += f"{message_details.role} - reasoning: {message_details.reasoning_content}"
+                    role_label = f"{message_details.role} reasoning"
+                    tag = f"{message_details.role}_reasoning_message"
+                    conversation_history += EvalTraceFormatter.format_message(
+                        role_label, tag, message_details.reasoning_content
+                    )
                 if message_details.tool_calls:
-                    conversation_history += f"{message_details.role} - requested tool calls: {message_details.tool_calls}"
+                    role_label = f"{message_details.role} requested tool calls"
+                    tag = f"{message_details.role}_requested_tool_calls"
+                    conversation_history += EvalTraceFormatter.format_message(
+                        role_label, tag, message_details.tool_calls
+                    )
                 if message_details.content:
-                    conversation_history += (
-                        f"{message_details.role}: {message_details.content}"
+                    tag = f"{message_details.role}_message"
+                    conversation_history += EvalTraceFormatter.format_message(
+                        message_details.role, tag, message_details.content
                     )
         return conversation_history
+
+    @staticmethod
+    def format_message(role_label: str, tag: str, content: str) -> str:
+        return f"{role_label}:\n<{tag}>\n{content}\n</{tag}>"
 
     @staticmethod
     def message_details_from_message(
         message: ChatCompletionMessageParam,
     ) -> MessageDetails:
-        return EvalUtils.MessageDetails(
-            role=EvalUtils.role_from_message(message),
-            reasoning_content=EvalUtils.reasoning_content_from_message(message),
-            tool_calls=EvalUtils.formatted_tool_calls_from_message(message),
-            content=EvalUtils.content_from_message(message),
+        return EvalTraceFormatter.MessageDetails(
+            role=EvalTraceFormatter.role_from_message(message),
+            reasoning_content=EvalTraceFormatter.reasoning_content_from_message(
+                message
+            ),
+            tool_calls=EvalTraceFormatter.formatted_tool_calls_from_message(message),
+            content=EvalTraceFormatter.content_from_message(message),
         )
 
     @staticmethod
@@ -105,7 +127,7 @@ class EvalUtils:
     def formatted_tool_calls_from_message(
         message: ChatCompletionMessageParam,
     ) -> str | None:
-        tool_calls = EvalUtils.tool_calls_from_message(message)
+        tool_calls = EvalTraceFormatter.tool_calls_from_message(message)
         if tool_calls is None:
             return None
 
@@ -115,50 +137,25 @@ class EvalUtils:
             tool_name = tool_call_function["name"]
             tool_call_arguments = tool_call_function["arguments"]
             tool_calls_description += (
-                f"\n- Tool Name: {tool_name}\n- Arguments: {tool_call_arguments}"
+                f"- Tool Name: {tool_name}\n- Arguments: {tool_call_arguments}"
             )
         return tool_calls_description
 
     @staticmethod
     def origin_tool_call_name_from_message(
-        tool_message: ChatCompletionMessageParam,
+        message: ChatCompletionMessageParam,
         trace: list[ChatCompletionMessageParam],
     ) -> str | None:
-        tool_call_id = tool_message.get("tool_call_id")
+        tool_call_id = message.get("tool_call_id")
         if not tool_call_id:
             return None
-        for message in trace:
-            tool_calls = EvalUtils.tool_calls_from_message(message)
+        for msg in trace:
+            tool_calls = EvalTraceFormatter.tool_calls_from_message(msg)
             if tool_calls:
                 for tool_call in tool_calls:
                     if tool_call["id"] == tool_call_id:
                         return tool_call["function"]["name"]
+        logger.error(
+            f"Origin tool call name not found for tool_call_id: {tool_call_id}"
+        )
         return None
-
-    @staticmethod
-    async def formatted_available_tools_from_task_run(task_run: TaskRun) -> str | None:
-        if (
-            not task_run.parent_task()
-            or not task_run.output.source
-            or not task_run.output.source.run_config
-            or not task_run.output.source.run_config.tools_config
-        ):
-            return None
-
-        available_tools = task_run.output.source.run_config.tools_config.tools
-        if not available_tools:
-            return ""
-
-        available_tools_description = ""
-
-        for tool in available_tools:
-            tool_object = tool_from_id(tool, task_run.parent_task())
-            try:
-                tool_definition = await tool_object.toolcall_definition()
-                tool_name = tool_definition["function"]["name"]
-                tool_description = tool_definition["function"]["description"]
-                available_tools_description += f"\n- Tool Name: {tool_name}\n- Tool Description: {tool_description}"
-            except Exception:
-                continue
-
-        return available_tools_description

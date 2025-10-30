@@ -1,2 +1,2 @@
-class TestEvalUtils:
-    """Test cases for EvalUtils class"""
+class TestEvalTraceFormatter:
+    """Test cases for EvalTraceFormatter class"""

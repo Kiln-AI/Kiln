@@ -110,7 +110,7 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
     )
-    full_trace: str | None = Field(
+    trace: str | None = Field(
         default=None,
         description="The JSON formatted full trace of the task run that produced the output.",
     )
@@ -135,14 +135,15 @@ class EvalRun(KilnParentedModel):
             return self
 
         evaluation_data_type = parent_eval.evaluation_data_type
-        if evaluation_data_type == EvalDataType.final_answer:
-            if self.full_trace is not None:
-                raise ValueError("final_answer runs should not set full_trace")
-        elif evaluation_data_type == EvalDataType.full_trace:
-            if self.full_trace is None:
-                raise ValueError("full_trace runs should include full_trace")
-        else:
-            raise_exhaustive_enum_error(evaluation_data_type)
+        if evaluation_data_type == EvalDataType.final_answer and self.trace is not None:
+            raise ValueError("final_answer runs should not set trace")
+        elif (
+            not self.eval_config_eval
+            and evaluation_data_type == EvalDataType.full_trace
+            and self.trace is None
+        ):
+            raise ValueError("full_trace task run eval runs should include trace")
+
         return self
 
     @model_validator(mode="after")

@@ -1,13 +1,13 @@
+import json
 import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.eval_utils import EvalUtils
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
-from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
+from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
@@ -192,7 +192,6 @@ class EvalRunner:
                 scores, intermediate_outputs = await evaluator.run_eval(job.item)
                 task_output = job.item.output.output
                 task_run_usage = job.item.usage
-                trace = job.item.trace
             else:
                 # Task run eval, we invoke the task again to get a fresh output
                 (
@@ -204,17 +203,7 @@ class EvalRunner:
                 task_run_usage = result_task_run.usage
                 trace = result_task_run.trace
 
-            full_trace = None
-            parent_eval = job.eval_config.parent_eval()
-            if (
-                parent_eval
-                and parent_eval.evaluation_data_type == EvalDataType.full_trace
-            ):
-                if trace is None:
-                    raise ValueError(
-                        "Task run trace is required for full trace evaluation"
-                    )
-                full_trace = EvalUtils.trace_to_formatted_conversation_history(trace)
+            trace_str = json.dumps(trace, indent=2) if trace else None
 
             # Save the job result
             eval_run = EvalRun(
@@ -228,7 +217,7 @@ class EvalRunner:
                 input=job.item.input,
                 output=task_output,
                 intermediate_outputs=intermediate_outputs,
-                full_trace=full_trace,
+                trace=trace_str,
                 task_run_usage=task_run_usage,
             )
             eval_run.save_to_file()

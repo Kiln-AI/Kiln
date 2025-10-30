@@ -884,8 +884,8 @@ def test_eval_template_properties_non_validated_templates(
         ),
     ],
 )
-def test_eval_run_full_trace_property(mock_task, valid_eval_config_data, tmp_path):
-    """Test EvalRun with full_trace property"""
+def test_eval_run_trace_property(mock_task, valid_eval_config_data, tmp_path):
+    """Test EvalRun with trace property"""
     task_path = tmp_path / "task.kiln"
     mock_task.path = task_path
     mock_task.save_to_file()
@@ -916,18 +916,18 @@ def test_eval_run_full_trace_property(mock_task, valid_eval_config_data, tmp_pat
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        full_trace=trace_data,
+        trace=trace_data,
     )
     eval_run.save_to_file()
 
     # Verify the properties are saved correctly
-    assert eval_run.full_trace == trace_data
-    assert isinstance(eval_run.full_trace, str)
+    assert eval_run.trace == trace_data
+    assert isinstance(eval_run.trace, str)
 
     # Verify persistence by reloading from disk
     runs = config.runs()
     assert len(runs) == 1
-    assert runs[0].full_trace == trace_data
+    assert runs[0].trace == trace_data
 
 
 def test_eval_run_new_properties_default_none(
@@ -966,12 +966,12 @@ def test_eval_run_new_properties_default_none(
     eval_run.save_to_file()
 
     # Verify the properties default to None
-    assert eval_run.full_trace is None
+    assert eval_run.trace is None
 
     # Verify persistence by reloading from disk
     runs = config.runs()
     assert len(runs) == 1
-    assert runs[0].full_trace is None
+    assert runs[0].trace is None
 
 
 def test_eval_data_type_enum_values():
@@ -1103,7 +1103,7 @@ def test_eval_run_eval_config_eval_data_type_validation(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        full_trace='{"messages": [{"role": "user", "content": "test"}]}',
+        trace='{"messages": [{"role": "user", "content": "test"}]}',
     )
 
 
@@ -1135,7 +1135,7 @@ def test_validate_output_fields_final_answer_valid_cases(
         output="test output",
         scores={"accuracy": 0.95},
     )
-    assert run.full_trace is None
+    assert run.trace is None
 
     # Valid case: explicitly set to None
     run = EvalRun(
@@ -1145,9 +1145,9 @@ def test_validate_output_fields_final_answer_valid_cases(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        full_trace=None,
+        trace=None,
     )
-    assert run.full_trace is None
+    assert run.trace is None
 
 
 def test_validate_output_fields_final_answer_invalid_cases(
@@ -1172,7 +1172,7 @@ def test_validate_output_fields_final_answer_invalid_cases(
     # Invalid case: full_trace is set
     with pytest.raises(
         ValueError,
-        match="final_answer runs should not set full_trace",
+        match="final_answer runs should not set trace",
     ):
         EvalRun(
             parent=config,
@@ -1181,7 +1181,7 @@ def test_validate_output_fields_final_answer_invalid_cases(
             input="test input",
             output="test output",
             scores={"accuracy": 0.95},
-            full_trace='{"messages": []}',
+            trace='{"messages": []}',
         )
 
 
@@ -1212,9 +1212,9 @@ def test_validate_output_fields_full_trace_valid_cases(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        full_trace='{"messages": [{"role": "user", "content": "test"}]}',
+        trace='{"messages": [{"role": "user", "content": "test"}]}',
     )
-    assert run.full_trace == '{"messages": [{"role": "user", "content": "test"}]}'
+    assert run.trace == '{"messages": [{"role": "user", "content": "test"}]}'
 
 
 def test_validate_output_fields_full_trace_invalid_cases(
@@ -1237,7 +1237,9 @@ def test_validate_output_fields_full_trace_invalid_cases(
     config = EvalConfig(parent=eval, **valid_eval_config_data)
 
     # Invalid case: full_trace is None
-    with pytest.raises(ValueError, match="full_trace runs should include full_trace"):
+    with pytest.raises(
+        ValueError, match="full_trace task run eval runs should include trace"
+    ):
         EvalRun(
             parent=config,
             dataset_id="dataset123",
@@ -1248,7 +1250,9 @@ def test_validate_output_fields_full_trace_invalid_cases(
         )
 
     # Invalid case: full_trace is explicitly None
-    with pytest.raises(ValueError, match="full_trace runs should include full_trace"):
+    with pytest.raises(
+        ValueError, match="full_trace task run eval runs should include trace"
+    ):
         EvalRun(
             parent=config,
             dataset_id="dataset123",
@@ -1256,7 +1260,7 @@ def test_validate_output_fields_full_trace_invalid_cases(
             input="test input",
             output="test output",
             scores={"accuracy": 0.95},
-            full_trace=None,
+            trace=None,
         )
 
 
@@ -1273,9 +1277,9 @@ def test_validate_output_fields_no_parent_eval(valid_eval_config_data):
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        full_trace='{"messages": []}',
+        trace='{"messages": []}',
     )
-    assert run.full_trace == '{"messages": []}'
+    assert run.trace == '{"messages": []}'
 
 
 def test_validate_output_fields_no_parent_eval_config():
@@ -1287,13 +1291,13 @@ def test_validate_output_fields_no_parent_eval_config():
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        full_trace='{"messages": []}',
+        trace='{"messages": []}',
     )
-    assert run.full_trace == '{"messages": []}'
+    assert run.trace == '{"messages": []}'
 
 
 @pytest.mark.parametrize(
-    "evaluation_data_type,full_trace,should_raise,expected_error",
+    "evaluation_data_type,trace,should_raise,expected_error",
     [
         # final_answer cases
         (EvalDataType.final_answer, None, None, False, None),
@@ -1301,13 +1305,13 @@ def test_validate_output_fields_no_parent_eval_config():
             EvalDataType.final_answer,
             '{"messages": []}',
             True,
-            "final_answer runs should not set full_trace",
+            "final_answer runs should not set trace",
         ),
         (
             EvalDataType.final_answer,
             '{"messages": []}',
             True,
-            "final_answer runs should not set full_trace",
+            "final_answer runs should not set trace",
         ),
         # full_trace cases
         (EvalDataType.full_trace, '{"messages": []}', None, False, None),
@@ -1315,7 +1319,7 @@ def test_validate_output_fields_no_parent_eval_config():
             EvalDataType.full_trace,
             None,
             True,
-            "full_trace runs should include full_trace",
+            "full_trace task run eval runs should include trace",
         ),
     ],
 )
@@ -1323,7 +1327,7 @@ def test_validate_output_fields_parametrized(
     mock_task,
     valid_eval_config_data,
     evaluation_data_type,
-    full_trace,
+    trace,
     should_raise,
     expected_error,
 ):
@@ -1352,12 +1356,12 @@ def test_validate_output_fields_parametrized(
         "scores": {"accuracy": 0.95},
     }
 
-    if full_trace is not None:
-        run_data["full_trace"] = full_trace
+    if trace is not None:
+        run_data["trace"] = trace
 
     if should_raise:
         with pytest.raises(ValueError, match=expected_error):
             EvalRun(**run_data)
     else:
         run = EvalRun(**run_data)
-        assert run.full_trace == full_trace
+        assert run.trace == trace

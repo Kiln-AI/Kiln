@@ -5,7 +5,8 @@ from litellm.types.utils import ChatCompletionTokenLogprob
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.eval_utils import EvalUtils
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
+from kiln_ai.adapters.eval.eval_utils.eval_utils import EvalUtils
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
@@ -201,7 +202,9 @@ This is the full conversation history for the task run:
             run_description = self.generate_full_trace_run_description(
                 task_run.input,
                 available_tools,
-                EvalUtils.trace_to_formatted_conversation_history(task_run.trace),
+                EvalTraceFormatter.trace_to_formatted_conversation_history(
+                    task_run.trace
+                ),
             )
         else:  # EvalDataType.final_answer
             run_description = self.generate_final_answer_run_description(

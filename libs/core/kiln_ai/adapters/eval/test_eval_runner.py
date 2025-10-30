@@ -672,7 +672,7 @@ async def test_run_job_with_full_trace_evaluation_data_type(
     ]
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             result_task_run = TaskRun(
                 input="test input",
                 input_source=data_source,
@@ -694,16 +694,16 @@ async def test_run_job_with_full_trace_evaluation_data_type(
 
     assert success is True
 
-    # Verify eval run was saved with full_trace
+    # Verify eval run was saved with trace
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 1
     saved_run = eval_runs[0]
-    assert saved_run.full_trace is not None
-    assert isinstance(saved_run.full_trace, str)
+    assert saved_run.trace is not None
+    assert isinstance(saved_run.trace, str)
     # Verify the trace was JSON serialized
     import json
 
-    parsed_trace = json.loads(saved_run.full_trace)
+    parsed_trace = json.loads(saved_run.trace)
     assert parsed_trace == mock_trace
 
 
@@ -762,11 +762,11 @@ async def test_run_job_with_final_answer_evaluation_data_type(
 
     assert success is True
 
-    # Verify eval run was saved without full_trace
+    # Verify eval run was saved without trace
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 1
     saved_run = eval_runs[0]
-    assert saved_run.full_trace is None
+    assert saved_run.trace is None
 
 
 @pytest.mark.asyncio
