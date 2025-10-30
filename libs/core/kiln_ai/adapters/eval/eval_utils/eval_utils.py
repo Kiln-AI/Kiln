@@ -1,3 +1,4 @@
+import json
 import logging
 
 from kiln_ai.datamodel import TaskRun
@@ -36,11 +37,26 @@ class EvalUtils:
             tool_object = tool_from_id(tool, task_run.parent_task())
             try:
                 tool_definition = await tool_object.toolcall_definition()
+
                 tool_name = tool_definition["function"]["name"]
+                tool_name_part = f"<tool_name>\n{tool_name}</tool_name>"
+
                 tool_description = tool_definition["function"]["description"]
+                tool_desc_part = (
+                    f"<tool_description>\n{tool_description}</tool_description>"
+                )
+
+                tool_parameters = tool_definition["function"]["parameters"]
+                tool_parameters_str = json.dumps(tool_parameters, indent=2)
+                tool_params_part = (
+                    f"<tool_parameters>\n{tool_parameters_str}</tool_parameters>"
+                )
+
                 if index > 0:
                     available_tools_str += "\n\n"
-                available_tools_str += f"<tool>\n<tool_name>\n{tool_name}</tool_name>\n<tool_description>\n{tool_description}\n</tool_description>\n</tool>"
+
+                available_tools_str += f"<tool>\n{tool_name_part}\n{tool_desc_part}\n{tool_params_part}\n</tool>"
+
             except Exception as e:
                 logger.error(
                     f"Failed to get tool definition for tool: {tool}. Error: {e}",

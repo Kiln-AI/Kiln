@@ -23,10 +23,11 @@ class EvalTraceFormatter:
         """Convert a trace of chat completion messages to a formatted conversation history string."""
         conversation_history = ""
         for index, message in enumerate(trace):
-            if index > 0:
-                conversation_history += "\n\n"
-
             message_details = EvalTraceFormatter.message_details_from_message(message)
+
+            role_label = None
+            tag = None
+            content = None
 
             if message_details.role == "tool" and message_details.content:
                 origin_tool_call_name = (
@@ -34,30 +35,33 @@ class EvalTraceFormatter:
                         message, trace
                     )
                 )
+
                 if origin_tool_call_name:
-                    conversation_history += EvalTraceFormatter.format_message(
-                        message_details.role,
-                        origin_tool_call_name,
-                        message_details.content,
-                    )
+                    role_label = message_details.role
+                    tag = f"{message_details.role}_tool_message"
+                    content = message_details.content
+
             else:
                 if message_details.reasoning_content:
                     role_label = f"{message_details.role} reasoning"
                     tag = f"{message_details.role}_reasoning_message"
-                    conversation_history += EvalTraceFormatter.format_message(
-                        role_label, tag, message_details.reasoning_content
-                    )
+                    content = message_details.reasoning_content
+
                 if message_details.tool_calls:
                     role_label = f"{message_details.role} requested tool calls"
                     tag = f"{message_details.role}_requested_tool_calls"
-                    conversation_history += EvalTraceFormatter.format_message(
-                        role_label, tag, message_details.tool_calls
-                    )
+                    content = message_details.tool_calls
+
                 if message_details.content:
+                    role_label = message_details.role
                     tag = f"{message_details.role}_message"
-                    conversation_history += EvalTraceFormatter.format_message(
-                        message_details.role, tag, message_details.content
-                    )
+                    content = message_details.content
+
+            if role_label and tag and content:
+                if index > 0:
+                    conversation_history += "\n\n"
+                conversation_history += f"{role_label}:\n<{tag}>\n{content}\n</{tag}>"
+
         return conversation_history
 
     @staticmethod

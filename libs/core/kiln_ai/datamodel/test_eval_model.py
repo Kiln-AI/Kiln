@@ -884,6 +884,44 @@ def test_eval_template_properties_non_validated_templates(
         ),
     ],
 )
+def test_eval_template_properties_tool_call_template_validation(
+    template_properties, should_raise, expected_error
+):
+    """Test tool call template validation with various property combinations"""
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            Eval(
+                name="Test Eval",
+                template=EvalTemplateId.tool_call,
+                eval_set_filter_id="tag::tag1",
+                eval_configs_filter_id="tag::tag2",
+                output_scores=[
+                    EvalOutputScore(
+                        name="score",
+                        type=TaskOutputRatingType.pass_fail,
+                    )
+                ],
+                template_properties=template_properties,
+            )
+    else:
+        eval = Eval(
+            name="Test Eval",
+            template=EvalTemplateId.tool_call,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="score",
+                    type=TaskOutputRatingType.pass_fail,
+                )
+            ],
+            template_properties=template_properties,
+        )
+        assert eval.template == EvalTemplateId.tool_call
+        for key, value in template_properties.items():
+            assert eval.template_properties[key] == value
+
+
 def test_eval_run_trace_property(mock_task, valid_eval_config_data, tmp_path):
     """Test EvalRun with trace property"""
     task_path = tmp_path / "task.kiln"
@@ -1300,13 +1338,7 @@ def test_validate_output_fields_no_parent_eval_config():
     "evaluation_data_type,trace,should_raise,expected_error",
     [
         # final_answer cases
-        (EvalDataType.final_answer, None, None, False, None),
-        (
-            EvalDataType.final_answer,
-            '{"messages": []}',
-            True,
-            "final_answer runs should not set trace",
-        ),
+        (EvalDataType.final_answer, None, False, None),
         (
             EvalDataType.final_answer,
             '{"messages": []}',
@@ -1314,7 +1346,7 @@ def test_validate_output_fields_no_parent_eval_config():
             "final_answer runs should not set trace",
         ),
         # full_trace cases
-        (EvalDataType.full_trace, '{"messages": []}', None, False, None),
+        (EvalDataType.full_trace, '{"messages": []}', False, None),
         (
             EvalDataType.full_trace,
             None,
