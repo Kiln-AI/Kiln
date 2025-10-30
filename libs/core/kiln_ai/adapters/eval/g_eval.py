@@ -195,7 +195,6 @@ This is the full conversation history for the task run:
             if task_run.trace is None:
                 raise ValueError("Task run trace is required for full trace evaluation")
 
-            # TODO: do we need to store available tools in the EvalRun too?
             available_tools = await EvalUtils.formatted_available_tools_from_task_run(
                 task_run
             )

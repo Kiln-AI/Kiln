@@ -34,7 +34,6 @@ class EvalUtils:
                 )
                 conversation_history += f"{message_details.role} - {origin_tool_call_name}: {message_details.content}"
             else:
-                # TODO: reasoning content doesn't seem to be working as expected
                 if message_details.reasoning_content:
                     conversation_history += f"{message_details.role} - reasoning: {message_details.reasoning_content}"
                 if message_details.tool_calls:
