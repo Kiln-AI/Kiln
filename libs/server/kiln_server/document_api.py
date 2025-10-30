@@ -575,6 +575,14 @@ async def build_rag_workflow_runner(
         project, rag_config
     )
 
+    # refactor this to use better global rate limiting / throttling
+    # we currently only throttle within a single job, but here we parallelize jobs
+    # which causes too many concurrent subjobs to run (e.g. PDF split up into pages, each page is extracted in parallel)
+    # ollama and local providers get easily stuck depending on hardward
+    extractor_concurrency = 5
+    if extractor_config.model_provider_name == ModelProviderName.ollama:
+        extractor_concurrency = 1
+
     runner = RagWorkflowRunner(
         project,
         RagWorkflowRunnerConfiguration(
@@ -586,7 +594,7 @@ async def build_rag_workflow_runner(
                 RagExtractionStepRunner(
                     project,
                     extractor_config,
-                    concurrency=5,
+                    concurrency=extractor_concurrency,
                     rag_config=rag_config,
                     filesystem_cache=TemporaryFilesystemCache.shared(),
                 ),
