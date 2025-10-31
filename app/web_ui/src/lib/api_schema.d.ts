@@ -3149,10 +3149,10 @@ export interface components {
                 [key: string]: string;
             } | null;
             /**
-             * Trace
-             * @description The JSON formatted full trace of the task run that produced the output.
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output.
              */
-            trace?: string | null;
+            task_run_trace?: string | null;
             /**
              * Scores
              * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).

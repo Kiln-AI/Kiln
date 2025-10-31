@@ -701,12 +701,12 @@ async def test_run_job_with_full_trace_evaluation_data_type(
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 1
     saved_run = eval_runs[0]
-    assert saved_run.trace is not None
-    assert isinstance(saved_run.trace, str)
+    assert saved_run.task_run_trace is not None
+    assert isinstance(saved_run.task_run_trace, str)
     # Verify the trace was JSON serialized
     import json
 
-    parsed_trace = json.loads(saved_run.trace)
+    parsed_trace = json.loads(saved_run.task_run_trace)
     assert parsed_trace == mock_trace
 
 
@@ -769,7 +769,7 @@ async def test_run_job_with_final_answer_evaluation_data_type(
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 1
     saved_run = eval_runs[0]
-    assert saved_run.trace is None
+    assert saved_run.task_run_trace is None
 
 
 @pytest.mark.asyncio

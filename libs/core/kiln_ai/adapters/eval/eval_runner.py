@@ -221,7 +221,7 @@ class EvalRunner:
                 input=job.item.input,
                 output=task_output,
                 intermediate_outputs=intermediate_outputs,
-                trace=trace,
+                task_run_trace=trace,
                 task_run_usage=task_run_usage,
             )
             eval_run.save_to_file()

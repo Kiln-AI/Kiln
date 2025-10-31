@@ -311,6 +311,76 @@ def test_generate_final_answer_run_description(
     assert "output=" not in description  # Would appear if object __repr__ was used
 
 
+def test_generate_full_trace_run_description(test_eval_config, test_run_config):
+    """Test that generate_full_trace_run_description correctly formats the description with all components."""
+    # Create G-Eval instance
+    g_eval = GEval(test_eval_config, test_run_config)
+
+    eval_input = "Tell me a joke about chickens"
+    conversation_history = (
+        "User: Tell me a joke\nAssistant: Why did the chicken cross the road?"
+    )
+
+    # Test case 1: With available tools (non-empty string)
+    available_tools = "tool1: description1\ntool2: description2"
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, available_tools, conversation_history
+    )
+
+    expected = f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+This is the list of tools available to the model:
+<eval_data>
+{available_tools}
+</eval_data>
+
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+    assert description == expected
+
+    # Test case 2: With available tools as empty string
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, "", conversation_history
+    )
+
+    expected = f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+There were no tools available to the model.
+
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+    assert description == expected
+
+    # Test case 3: With available_tools as None
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, None, conversation_history
+    )
+
+    expected = f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+    assert description == expected
+
+
 def test_metric_offsets_and_search_ranges(
     test_eval_config, test_run_config, test_task_run
 ):

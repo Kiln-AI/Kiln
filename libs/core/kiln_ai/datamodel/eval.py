@@ -110,9 +110,9 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
     )
-    trace: str | None = Field(
+    task_run_trace: str | None = Field(
         default=None,
-        description="The JSON formatted full trace of the task run that produced the output.",
+        description="The JSON formatted trace of the task run that produced the output.",
     )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
@@ -135,12 +135,15 @@ class EvalRun(KilnParentedModel):
             return self
 
         evaluation_data_type = parent_eval.evaluation_data_type
-        if evaluation_data_type == EvalDataType.final_answer and self.trace is not None:
+        if (
+            evaluation_data_type == EvalDataType.final_answer
+            and self.task_run_trace is not None
+        ):
             raise ValueError("final_answer runs should not set trace")
         elif (
             not self.eval_config_eval
             and evaluation_data_type == EvalDataType.full_trace
-            and self.trace is None
+            and self.task_run_trace is None
         ):
             raise ValueError("full_trace task run eval runs should include trace")
 

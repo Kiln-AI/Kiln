@@ -924,6 +924,72 @@ def test_eval_template_properties_tool_call_template_validation(
             assert eval.template_properties[key] == value
 
 
+def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():
+    """Test that tool_call template requires evaluation_data_type to be full_trace"""
+    valid_template_properties: dict[str, str | int | bool | float] = {
+        "tool": "search_tool",
+        "tool_function_name": "search",
+        "should_call_tool_guidelines": "Call the tool when user asks for search",
+    }
+
+    # Valid case: tool_call template with full_trace
+    eval = Eval(
+        name="Test Eval",
+        template=EvalTemplateId.tool_call,
+        evaluation_data_type=EvalDataType.full_trace,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        template_properties=valid_template_properties,
+    )
+    assert eval.template == EvalTemplateId.tool_call
+    assert eval.evaluation_data_type == EvalDataType.full_trace
+
+    # Invalid case: tool_call template with final_answer (default)
+    with pytest.raises(
+        ValueError,
+        match="tool_call template should have evaluation_data_type set to full_trace",
+    ):
+        Eval(
+            name="Test Eval",
+            template=EvalTemplateId.tool_call,
+            evaluation_data_type=EvalDataType.final_answer,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="score",
+                    type=TaskOutputRatingType.pass_fail,
+                )
+            ],
+            template_properties=valid_template_properties,
+        )
+
+    # Invalid case: tool_call template with evaluation_data_type omitted (defaults to final_answer)
+    with pytest.raises(
+        ValueError,
+        match="tool_call template should have evaluation_data_type set to full_trace",
+    ):
+        Eval(
+            name="Test Eval",
+            template=EvalTemplateId.tool_call,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(
+                    name="score",
+                    type=TaskOutputRatingType.pass_fail,
+                )
+            ],
+            template_properties=valid_template_properties,
+        )
+
+
 def test_eval_run_trace_property(mock_task, valid_eval_config_data, tmp_path):
     """Test EvalRun with trace property"""
     task_path = tmp_path / "task.kiln"
@@ -956,18 +1022,18 @@ def test_eval_run_trace_property(mock_task, valid_eval_config_data, tmp_path):
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        trace=trace_data,
+        task_run_trace=trace_data,
     )
     eval_run.save_to_file()
 
     # Verify the properties are saved correctly
-    assert eval_run.trace == trace_data
-    assert isinstance(eval_run.trace, str)
+    assert eval_run.task_run_trace == trace_data
+    assert isinstance(eval_run.task_run_trace, str)
 
     # Verify persistence by reloading from disk
     runs = config.runs()
     assert len(runs) == 1
-    assert runs[0].trace == trace_data
+    assert runs[0].task_run_trace == trace_data
 
 
 def test_eval_run_new_properties_default_none(
@@ -1006,12 +1072,12 @@ def test_eval_run_new_properties_default_none(
     eval_run.save_to_file()
 
     # Verify the properties default to None
-    assert eval_run.trace is None
+    assert eval_run.task_run_trace is None
 
     # Verify persistence by reloading from disk
     runs = config.runs()
     assert len(runs) == 1
-    assert runs[0].trace is None
+    assert runs[0].task_run_trace is None
 
 
 def test_eval_data_type_enum_values():
@@ -1143,7 +1209,7 @@ def test_eval_run_eval_config_eval_data_type_validation(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        trace='{"messages": [{"role": "user", "content": "test"}]}',
+        task_run_trace='{"messages": [{"role": "user", "content": "test"}]}',
     )
 
 
@@ -1175,7 +1241,7 @@ def test_validate_output_fields_final_answer_valid_cases(
         output="test output",
         scores={"accuracy": 0.95},
     )
-    assert run.trace is None
+    assert run.task_run_trace is None
 
     # Valid case: explicitly set to None
     run = EvalRun(
@@ -1185,9 +1251,9 @@ def test_validate_output_fields_final_answer_valid_cases(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        trace=None,
+        task_run_trace=None,
     )
-    assert run.trace is None
+    assert run.task_run_trace is None
 
 
 def test_validate_output_fields_final_answer_invalid_cases(
@@ -1221,7 +1287,7 @@ def test_validate_output_fields_final_answer_invalid_cases(
             input="test input",
             output="test output",
             scores={"accuracy": 0.95},
-            trace='{"messages": []}',
+            task_run_trace='{"messages": []}',
         )
 
 
@@ -1252,9 +1318,9 @@ def test_validate_output_fields_full_trace_valid_cases(
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        trace='{"messages": [{"role": "user", "content": "test"}]}',
+        task_run_trace='{"messages": [{"role": "user", "content": "test"}]}',
     )
-    assert run.trace == '{"messages": [{"role": "user", "content": "test"}]}'
+    assert run.task_run_trace == '{"messages": [{"role": "user", "content": "test"}]}'
 
 
 def test_validate_output_fields_full_trace_invalid_cases(
@@ -1300,7 +1366,7 @@ def test_validate_output_fields_full_trace_invalid_cases(
             input="test input",
             output="test output",
             scores={"accuracy": 0.95},
-            trace=None,
+            task_run_trace=None,
         )
 
 
@@ -1317,9 +1383,9 @@ def test_validate_output_fields_no_parent_eval(valid_eval_config_data):
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        trace='{"messages": []}',
+        task_run_trace='{"messages": []}',
     )
-    assert run.trace == '{"messages": []}'
+    assert run.task_run_trace == '{"messages": []}'
 
 
 def test_validate_output_fields_no_parent_eval_config():
@@ -1331,9 +1397,9 @@ def test_validate_output_fields_no_parent_eval_config():
         input="test input",
         output="test output",
         scores={"accuracy": 0.95},
-        trace='{"messages": []}',
+        task_run_trace='{"messages": []}',
     )
-    assert run.trace == '{"messages": []}'
+    assert run.task_run_trace == '{"messages": []}'
 
 
 @pytest.mark.parametrize(
@@ -1391,11 +1457,11 @@ def test_validate_output_fields_parametrized(
     }
 
     if trace is not None:
-        run_data["trace"] = trace
+        run_data["task_run_trace"] = trace
 
     if should_raise:
         with pytest.raises(ValueError, match=expected_error):
             EvalRun(**run_data)
     else:
         run = EvalRun(**run_data)
-        assert run.trace == trace
+        assert run.task_run_trace == trace
