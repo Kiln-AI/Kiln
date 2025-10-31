@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -9,7 +8,12 @@ from kiln_ai.adapters.extractors.base_extractor import (
     ExtractionInput,
     ExtractionOutput,
 )
-from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, OutputFormat
+from kiln_ai.datamodel.extraction import (
+    ExtractorConfig,
+    ExtractorType,
+    LitellmExtractorConfigProperties,
+    OutputFormat,
+)
 
 
 class MockBaseExtractor(BaseExtractor):
@@ -27,6 +31,7 @@ class MockBaseExtractor(BaseExtractor):
 @pytest.fixture
 def mock_litellm_properties():
     return {
+        "extractor_type": ExtractorType.LITELLM,
         "prompt_document": "mock prompt for document",
         "prompt_image": "mock prompt for image",
         "prompt_video": "mock prompt for video",
@@ -49,7 +54,7 @@ def mock_extractor(mock_litellm_properties):
 
 
 def mock_extractor_with_passthroughs(
-    properties: dict[str, Any],
+    properties: LitellmExtractorConfigProperties,
     mimetypes: list[OutputFormat],
     output_format: OutputFormat,
 ):

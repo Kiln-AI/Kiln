@@ -42,6 +42,7 @@ def mock_litellm_extractor():
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": PROMPTS_FOR_KIND["document"],
                 "prompt_image": PROMPTS_FOR_KIND["image"],
                 "prompt_video": PROMPTS_FOR_KIND["video"],
@@ -161,6 +162,7 @@ def test_build_completion_kwargs_with_all_options(mock_file_factory):
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "prompt for documents",
                 "prompt_image": "prompt for images",
                 "prompt_video": "prompt for videos",
@@ -207,6 +209,7 @@ def test_build_completion_kwargs_with_partial_options(mock_file_factory):
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "prompt for documents",
                 "prompt_image": "prompt for images",
                 "prompt_video": "prompt for videos",
@@ -250,6 +253,7 @@ def test_build_completion_kwargs_with_empty_options(mock_file_factory):
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "prompt for documents",
                 "prompt_image": "prompt for images",
                 "prompt_video": "prompt for videos",
@@ -288,6 +292,7 @@ def test_build_completion_kwargs_messages_structure(mock_file_factory):
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "prompt for documents",
                 "prompt_image": "prompt for images",
                 "prompt_video": "prompt for videos",
@@ -482,6 +487,7 @@ def test_litellm_model_slug_with_different_provider_names(mock_litellm_core_conf
                 model_name=model_name,
                 model_provider_name=provider_name,
                 properties={
+                    "extractor_type": ExtractorType.LITELLM,
                     "prompt_document": "test prompt",
                     "prompt_image": "test prompt",
                     "prompt_video": "test prompt",
@@ -520,6 +526,7 @@ def paid_litellm_extractor(model_name: str, provider_name: str):
             model_provider_name=provider_name,
             model_name=model_name,
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "Transcribe the document.",
                 "prompt_image": "Describe the image in detail.",
                 "prompt_video": "Transcribe the video and any shapes or objects in the video.",
@@ -926,6 +933,7 @@ def mock_litellm_extractor_with_cache(tmp_path):
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": PROMPTS_FOR_KIND["document"],
                 "prompt_image": PROMPTS_FOR_KIND["image"],
                 "prompt_video": PROMPTS_FOR_KIND["video"],
@@ -952,6 +960,7 @@ def mock_litellm_extractor_without_cache():
             model_name="gpt_4o",
             model_provider_name="openai",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": PROMPTS_FOR_KIND["document"],
                 "prompt_image": PROMPTS_FOR_KIND["image"],
                 "prompt_video": PROMPTS_FOR_KIND["video"],
@@ -1000,6 +1009,7 @@ def test_cache_key_for_page_requires_extractor_id():
         model_name="gpt_4o",
         model_provider_name="openai",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": PROMPTS_FOR_KIND["document"],
             "prompt_image": PROMPTS_FOR_KIND["image"],
             "prompt_video": PROMPTS_FOR_KIND["video"],

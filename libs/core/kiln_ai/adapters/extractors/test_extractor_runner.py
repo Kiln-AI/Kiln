@@ -41,6 +41,7 @@ def mock_extractor_config(mock_project):
         model_name="gemini-2.0-flash",
         parent=mock_project,
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "Extract the text from the document",
             "prompt_image": "Extract the text from the image",
             "prompt_video": "Extract the text from the video",
@@ -159,6 +160,7 @@ def test_collect_jobs_multiple_extractor_configs(
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "Extract the text from the document",
             "prompt_image": "Extract the text from the image",
             "prompt_video": "Extract the text from the video",

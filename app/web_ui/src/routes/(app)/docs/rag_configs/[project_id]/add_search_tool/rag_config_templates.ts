@@ -326,7 +326,7 @@ async function create_default_extractor_config(
         model_name: model,
         output_format,
         properties: {
-          model_name: model,
+          extractor_type: "litellm",
           prompt_document: default_extractor_document_prompts(output_format),
           prompt_image: default_extractor_image_prompts(output_format),
           prompt_video: default_extractor_video_prompts(output_format),

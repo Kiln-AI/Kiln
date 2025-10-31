@@ -97,6 +97,7 @@ def real_extractor_config(mock_project):
         extractor_type=ExtractorType.LITELLM,
         output_format=OutputFormat.MARKDOWN,
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "Transcribe the document.",
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
