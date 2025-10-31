@@ -1,7 +1,6 @@
-from typing import TypedDict
-
 import pytest
 from pydantic import BaseModel
+from typing_extensions import TypedDict
 
 from kiln_ai.utils.validation import (
     NonEmptyString,
