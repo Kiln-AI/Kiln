@@ -132,6 +132,8 @@
             embedding_config_id: selected_embedding_config_id,
             buffer_size,
             breakpoint_percentile_threshold,
+            include_metadata: false,
+            include_prev_next_rel: false,
           },
         }
       default: {

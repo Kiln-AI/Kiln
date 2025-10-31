@@ -106,9 +106,7 @@ class TestSemanticChunker:
 
     def test_init_missing_embedding_config_id(self, semantic_chunker_factory):
         """Test that missing embedding_config_id raises ValueError."""
-        with pytest.raises(
-            ValueError, match="embedding_config_id is required for semantic chunker"
-        ):
+        with pytest.raises(ValueError, match="embedding_config_id"):
             ChunkerConfig(
                 name="test",
                 chunker_type=ChunkerType.SEMANTIC,
@@ -229,11 +227,12 @@ class TestSemanticChunker:
 
     def test_chunker_config_properties(self, semantic_chunker_config):
         """Test that chunker config properties are correctly accessed."""
-        assert semantic_chunker_config.embedding_config_id() == "emb-123"
-        assert semantic_chunker_config.buffer_size() == 2
-        assert semantic_chunker_config.breakpoint_percentile_threshold() == 90
-        assert semantic_chunker_config.include_metadata() is True
-        assert semantic_chunker_config.include_prev_next_rel() is True
+        properties = semantic_chunker_config.semantic_properties
+        assert properties["embedding_config_id"] == "emb-123"
+        assert properties["buffer_size"] == 2
+        assert properties["breakpoint_percentile_threshold"] == 90
+        assert properties["include_metadata"] is True
+        assert properties["include_prev_next_rel"] is True
 
 
 @pytest.mark.paid

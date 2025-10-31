@@ -35,6 +35,10 @@
   import TemplatePropertyOverview from "./template_property_overview.svelte"
   import type { RagConfigWithSubConfigs } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import {
+    fixedWindowChunkerProperties,
+    semanticChunkerProperties,
+  } from "$lib/utils/properties_cast"
 
   const dispatch = createEventDispatcher<{
     success: { rag_config_id: string }
@@ -46,10 +50,8 @@
   let customize_template_mode = false
 
   let error: KilnError | null = null
-  const DEFAULT_TOOL_NAME = "search_docs"
-  const DEFAULT_TOOL_DESCRIPTION = "Search documents for knowledge."
-  let tool_name: string = DEFAULT_TOOL_NAME
-  let tool_description: string = DEFAULT_TOOL_DESCRIPTION
+  let tool_name: string
+  let tool_description: string
   let name: string | null = null
   let description: string = ""
   let selected_tags: string[] = []
@@ -284,6 +286,14 @@
       loading = true
       error = null
 
+      if (!tool_name || !tool_name.trim()) {
+        throw new Error("Please provide a search tool name.")
+      }
+
+      if (!tool_description || !tool_description.trim()) {
+        throw new Error("Please provide a search tool description.")
+      }
+
       // Validate that all required configs are selected
       if (
         !selected_extractor_config_id ||
@@ -350,38 +360,53 @@
       let chunker_overlap: unknown = undefined
       let embedding_model: string | undefined = undefined
       let vector_store_type: string | undefined = undefined
+      let breakpoint_percentile_threshold: unknown = undefined
+      let buffer_size: unknown = undefined
       try {
         extractor_model = extractor_configs.find(
           (config) => config.id === selected_extractor_config_id,
         )?.model_name
-        chunker_type = chunker_configs.find(
-          (config) => config.id === selected_chunker_config_id,
-        )?.chunker_type
-        chunker_size = chunker_configs.find(
-          (config) => config.id === selected_chunker_config_id,
-        )?.properties.chunk_size
-        chunker_overlap = chunker_configs.find(
-          (config) => config.id === selected_chunker_config_id,
-        )?.properties.chunk_overlap
         embedding_model = embedding_configs.find(
           (config) => config.id === selected_embedding_config_id,
         )?.model_name
         vector_store_type = vector_store_configs.find(
           (config) => config.id === selected_vector_store_config_id,
         )?.store_type
+
+        const chunker_config = chunker_configs.find(
+          (config) => config.id === selected_chunker_config_id,
+        )
+        chunker_type = chunker_config?.chunker_type
+
+        if (chunker_type === "fixed_window" && chunker_config) {
+          const fixed_window_properties =
+            fixedWindowChunkerProperties(chunker_config)
+          chunker_size = fixed_window_properties.chunk_size
+          chunker_overlap = fixed_window_properties.chunk_overlap
+        } else if (chunker_type === "semantic" && chunker_config) {
+          const semantic_properties = semanticChunkerProperties(chunker_config)
+          breakpoint_percentile_threshold =
+            semantic_properties.breakpoint_percentile_threshold
+          buffer_size = semantic_properties.buffer_size
+        }
       } catch (e) {
         console.error(e)
       }
       posthog.capture("create_custom_rag_config", {
         tag_filter: selected_tags.length > 0,
-        custom_name: tool_name !== DEFAULT_TOOL_NAME,
-        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
         extractor_model: extractor_model,
         chunker_type: chunker_type,
         chunker_size: chunker_size,
         chunker_overlap: chunker_overlap,
+        chunker_breakpoint_percentile_threshold:
+          breakpoint_percentile_threshold,
+        chunker_buffer_size: buffer_size,
         embedding_model: embedding_model,
         vector_store_type: vector_store_type,
+        // tool_name and tool_description have no defaults, requiring user input
+        // but we keep these for backwards compatibility of the event (we had a default before)
+        custom_name: true,
+        custom_description: true,
       })
 
       uncache_available_tools(project_id)
@@ -451,6 +476,14 @@
     try {
       loading = true
 
+      if (!tool_name || !tool_name.trim()) {
+        throw new Error("Please provide a search tool name.")
+      }
+
+      if (!tool_description || !tool_description.trim()) {
+        throw new Error("Please provide a search tool description.")
+      }
+
       // Fetch or build the sub configs
       const {
         extractor_config_id,
@@ -500,8 +533,10 @@
       posthog.capture("create_rag_config_from_template", {
         template_name: template.name,
         tag_filter: selected_tags.length > 0,
-        custom_name: tool_name !== DEFAULT_TOOL_NAME,
-        custom_description: tool_description !== DEFAULT_TOOL_DESCRIPTION,
+        // tool_name and tool_description have no defaults, requiring user input
+        // but we keep these for backwards compatibility of the event (we had a default before)
+        custom_name: true,
+        custom_description: true,
       })
 
       uncache_available_tools(project_id)
@@ -546,6 +581,7 @@
       id="tool_name"
       bind:value={tool_name}
       validator={tool_name_validator}
+      placeholder="e.g. knowledge_base_search, customer_support_search"
     />
     <FormElement
       label="Search Tool Description"
@@ -555,6 +591,7 @@
       id="tool_description"
       max_length={128}
       bind:value={tool_description}
+      placeholder="e.g. Search the ACME Inc. knowledge base for information about the product."
     />
 
     <!-- Tag Selection -->

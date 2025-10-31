@@ -9,6 +9,7 @@
   import type {
     EmbeddingModelDetails,
     EmbeddingModelName,
+    EmbeddingProperties,
     EmbeddingProvider,
     ModelProviderName,
   } from "$lib/types"
@@ -84,17 +85,21 @@
     }
   }
 
+  function get_properties(
+    selectedModel: EmbeddingOptionValue,
+  ): Record<never, never> | EmbeddingProperties {
+    if (customDimensions && selectedModel.supports_custom_dimensions) {
+      return { dimensions: customDimensions }
+    }
+    return {}
+  }
+
   async function create_embedding_config() {
     try {
       loading = true
 
       if (!selectedModel) {
         throw new Error("Please select an embedding model")
-      }
-
-      const properties: Record<string, string | number | boolean> = {}
-      if (customDimensions && selectedModel.supports_custom_dimensions) {
-        properties.dimensions = customDimensions
       }
 
       const { error: create_embedding_error, data } = await client.POST(
@@ -111,7 +116,7 @@
             model_provider_name:
               selectedModel.model_provider_name as ModelProviderName,
             model_name: selectedModel.model_name as EmbeddingModelName,
-            properties,
+            properties: get_properties(selectedModel),
           },
         },
       )

@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, List, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt
+from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
@@ -8,6 +9,10 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 if TYPE_CHECKING:
     from kiln_ai.datamodel.chunk import ChunkedDocument
     from kiln_ai.datamodel.project import Project
+
+
+class EmbeddingProperties(TypedDict, total=False):
+    dimensions: PositiveInt
 
 
 class EmbeddingConfig(KilnParentedModel):
@@ -24,7 +29,7 @@ class EmbeddingConfig(KilnParentedModel):
     model_name: str = Field(
         description="The model to use to generate embeddings.",
     )
-    properties: dict[str, str | int | float | bool] = Field(
+    properties: EmbeddingProperties = Field(
         description="Properties to be used to execute the embedding config.",
     )
 
@@ -33,17 +38,6 @@ class EmbeddingConfig(KilnParentedModel):
         if self.parent is None or self.parent.__class__.__name__ != "Project":
             return None
         return self.parent  # type: ignore
-
-    @model_validator(mode="after")
-    def validate_properties(self):
-        if "dimensions" in self.properties:
-            if (
-                not isinstance(self.properties["dimensions"], int)
-                or self.properties["dimensions"] <= 0
-            ):
-                raise ValueError("Dimensions must be a positive integer")
-
-        return self
 
 
 class Embedding(BaseModel):

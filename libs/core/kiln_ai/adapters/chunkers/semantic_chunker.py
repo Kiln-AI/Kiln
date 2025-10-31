@@ -18,8 +18,28 @@ from kiln_ai.datamodel.embedding import EmbeddingConfig
 class SemanticChunker(BaseChunker):
     """Semantic chunker that groups semantically related sentences together."""
 
+    def __init__(self, chunker_config: ChunkerConfig):
+        if chunker_config.chunker_type != ChunkerType.SEMANTIC:
+            raise ValueError("Chunker type must be SEMANTIC")
+
+        super().__init__(chunker_config)
+
+        self.embed_model = self._build_embedding_model(chunker_config)
+        self.properties = chunker_config.semantic_properties
+
+        self.semantic_splitter = SemanticSplitterNodeParser(
+            embed_model=self.embed_model,
+            buffer_size=self.properties["buffer_size"],
+            breakpoint_percentile_threshold=self.properties[
+                "breakpoint_percentile_threshold"
+            ],
+            include_metadata=self.properties["include_metadata"],
+            include_prev_next_rel=self.properties["include_prev_next_rel"],
+        )
+
     def _build_embedding_model(self, chunker_config: ChunkerConfig) -> BaseEmbedding:
-        embedding_config_id = chunker_config.embedding_config_id()
+        properties = chunker_config.semantic_properties
+        embedding_config_id = properties["embedding_config_id"]
         if embedding_config_id is None:
             raise ValueError("embedding_config_id must be set for semantic chunker")
 
@@ -35,42 +55,6 @@ class SemanticChunker(BaseChunker):
 
         embedding_adapter = embedding_adapter_from_type(embedding_config)
         return KilnEmbeddingWrapper(embedding_adapter)
-
-    def __init__(self, chunker_config: ChunkerConfig):
-        if chunker_config.chunker_type != ChunkerType.SEMANTIC:
-            raise ValueError("Chunker type must be SEMANTIC")
-
-        super().__init__(chunker_config)
-
-        self.embed_model = self._build_embedding_model(chunker_config)
-
-        buffer_size = chunker_config.buffer_size()
-        if buffer_size is None:
-            raise ValueError("buffer_size must be set for semantic chunker")
-
-        breakpoint_percentile_threshold = (
-            chunker_config.breakpoint_percentile_threshold()
-        )
-        if breakpoint_percentile_threshold is None:
-            raise ValueError(
-                "breakpoint_percentile_threshold must be set for semantic chunker"
-            )
-
-        include_metadata = chunker_config.include_metadata()
-        if include_metadata is None:
-            raise ValueError("include_metadata must be set for semantic chunker")
-
-        include_prev_next_rel = chunker_config.include_prev_next_rel()
-        if include_prev_next_rel is None:
-            raise ValueError("include_prev_next_rel must be set for semantic chunker")
-
-        self.semantic_splitter = SemanticSplitterNodeParser(
-            embed_model=self.embed_model,
-            buffer_size=buffer_size,
-            breakpoint_percentile_threshold=breakpoint_percentile_threshold,
-            include_metadata=include_metadata,
-            include_prev_next_rel=include_prev_next_rel,
-        )
 
     async def _chunk(self, text: str) -> ChunkingResult:
         document = Document(text=text)

@@ -40,7 +40,7 @@
   let default_eval_tag: string | undefined = undefined
   let default_golden_tag: string | undefined = undefined
   let template_properties: Record<string, string | number | boolean> = {}
-  let evaluation_data_type: string | undefined = undefined
+  let use_full_message_trace: boolean = false
   function on_selected_template(template: EvalTemplateResult) {
     // Populate out model from the template
     name = template.name
@@ -50,7 +50,7 @@
     default_eval_tag = template.default_eval_tag
     default_golden_tag = template.default_golden_tag
     template_properties = template.template_properties
-    evaluation_data_type = template.evaluation_data_type
+    use_full_message_trace = template.evaluation_data_type === "full_trace"
   }
 
   // Update default tag when a default tag is set
@@ -111,9 +111,9 @@
               eval_set_filter_id,
               eval_configs_filter_id,
               template_properties,
-              evaluation_data_type: (evaluation_data_type || "final_answer") as
-                | "final_answer"
-                | "full_trace",
+              evaluation_data_type: use_full_message_trace
+                ? "full_trace"
+                : "final_answer",
             },
           },
         )
@@ -199,6 +199,16 @@
           id="description"
           bind:value={description}
         />
+        {#if selected_template === "tool_call" || selected_template === "none"}
+          <FormElement
+            label="Use full message trace for evaluation"
+            inputType="checkbox"
+            id="use_full_message_trace"
+            bind:value={use_full_message_trace}
+            info_description="Evaluate using the full message trace — including system messages, user input, assistant reasoning, and tool calls. Useful for assessing how the model arrived at its output, not just the output itself."
+            disabled={selected_template !== "none"}
+          />
+        {/if}
 
         <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
           <div class="text-xl font-bold" id="requirements_part">

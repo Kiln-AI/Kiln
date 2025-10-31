@@ -177,7 +177,7 @@ class TestEmbeddingConfig:
         assert config.properties == {"dimensions": 1536}
 
         # dimensions is negative
-        with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
+        with pytest.raises(ValueError, match="greater than 0"):
             EmbeddingConfig(
                 name="test-embedding",
                 model_provider_name="openai",
@@ -186,21 +186,12 @@ class TestEmbeddingConfig:
             )
 
         # dimensions is not an integer
-        with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
+        with pytest.raises(ValueError, match="should be a valid integer"):
             EmbeddingConfig(
                 name="test-embedding",
                 model_provider_name="openai",
                 model_name="openai_text_embedding_3_small",
                 properties={"dimensions": 1.5},
-            )
-
-        # dimensions is not a positive integer
-        with pytest.raises(ValueError, match="Dimensions must be a positive integer"):
-            EmbeddingConfig(
-                name="test-embedding",
-                model_provider_name="openai",
-                model_name="openai_text_embedding_3_small",
-                properties={"dimensions": "512"},
             )
 
     def test_dimensions_optional(self):

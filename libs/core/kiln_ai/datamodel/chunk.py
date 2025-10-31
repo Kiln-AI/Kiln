@@ -1,16 +1,20 @@
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Annotated, List, Union
 
 import anyio
 from pydantic import (
+    AfterValidator,
     BaseModel,
     Field,
+    NonNegativeInt,
+    PositiveInt,
     SerializationInfo,
-    ValidationInfo,
+    TypeAdapter,
     field_serializer,
-    field_validator,
+    model_validator,
 )
+from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -28,80 +32,64 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
 
 
+class ChunkerType(str, Enum):
+    FIXED_WINDOW = "fixed_window"
+    SEMANTIC = "semantic"
+
+
+class SemanticChunkerProperties(TypedDict, total=True):
+    embedding_config_id: str
+    buffer_size: PositiveInt
+    breakpoint_percentile_threshold: NonNegativeInt
+    include_metadata: bool
+    include_prev_next_rel: bool
+
+
+class FixedWindowChunkerProperties(TypedDict, total=True):
+    chunk_overlap: NonNegativeInt
+    chunk_size: PositiveInt
+
+
 def validate_fixed_window_chunker_properties(
-    properties: dict[str, str | int | float | bool],
-) -> dict[str, str | int | float | bool]:
+    properties: FixedWindowChunkerProperties,
+) -> FixedWindowChunkerProperties:
     """Validate the properties for the fixed window chunker and set defaults if needed."""
-    chunk_overlap = properties.get("chunk_overlap")
-    if chunk_overlap is None:
-        raise ValueError("Chunk overlap is required.")
-
-    chunk_size = properties.get("chunk_size")
-    if chunk_size is None:
-        raise ValueError("Chunk size is required.")
-
-    if not isinstance(chunk_overlap, int):
-        raise ValueError("Chunk overlap must be an integer.")
-    if chunk_overlap < 0:
-        raise ValueError("Chunk overlap must be greater than or equal to 0.")
-
-    if not isinstance(chunk_size, int):
-        raise ValueError("Chunk size must be an integer.")
-    if chunk_size <= 0:
-        raise ValueError("Chunk size must be greater than 0.")
-
-    if chunk_overlap >= chunk_size:
+    # the typed dict only validates the shape and types, but not the logic, so we validate here
+    if properties["chunk_overlap"] >= properties["chunk_size"]:
         raise ValueError("Chunk overlap must be less than chunk size.")
 
     return properties
 
 
 def validate_semantic_chunker_properties(
-    properties: dict[str, str | int | float | bool],
-) -> dict[str, str | int | float | bool]:
+    properties: SemanticChunkerProperties,
+) -> SemanticChunkerProperties:
     """Validate the properties for the semantic chunker."""
-    embedding_config_id = properties.get("embedding_config_id")
-    if embedding_config_id is None:
-        raise ValueError("embedding_config_id is required for semantic chunker.")
-    if not isinstance(embedding_config_id, str):
-        raise ValueError("embedding_config_id must be a string.")
-
-    buffer_size = properties.get("buffer_size")
-    if buffer_size is None:
-        raise ValueError("buffer_size is required for semantic chunker.")
-    if not isinstance(buffer_size, int):
-        raise ValueError("buffer_size must be an integer.")
+    buffer_size = properties["buffer_size"]
     if buffer_size < 1:
         raise ValueError("buffer_size must be greater than or equal to 1.")
 
-    breakpoint_percentile_threshold = properties.get("breakpoint_percentile_threshold")
-    if breakpoint_percentile_threshold is None:
-        raise ValueError(
-            "breakpoint_percentile_threshold is required for semantic chunker."
-        )
-    if not isinstance(breakpoint_percentile_threshold, int):
-        raise ValueError("breakpoint_percentile_threshold must be an integer.")
+    breakpoint_percentile_threshold = properties["breakpoint_percentile_threshold"]
     if not (0 <= breakpoint_percentile_threshold <= 100):
         raise ValueError("breakpoint_percentile_threshold must be between 0 and 100.")
-
-    include_metadata = properties.get("include_metadata")
-    if include_metadata is None:
-        raise ValueError("include_metadata is required for semantic chunker.")
-    if not isinstance(include_metadata, bool):
-        raise ValueError("include_metadata must be a boolean.")
-
-    include_prev_next_rel = properties.get("include_prev_next_rel")
-    if include_prev_next_rel is None:
-        raise ValueError("include_prev_next_rel is required for semantic chunker.")
-    if not isinstance(include_prev_next_rel, bool):
-        raise ValueError("include_prev_next_rel must be a boolean.")
 
     return properties
 
 
-class ChunkerType(str, Enum):
-    FIXED_WINDOW = "fixed_window"
-    SEMANTIC = "semantic"
+SemanticChunkerPropertiesValidator = Annotated[
+    SemanticChunkerProperties,
+    AfterValidator(lambda v: validate_semantic_chunker_properties(v)),
+]
+
+FixedWindowChunkerPropertiesValidator = Annotated[
+    FixedWindowChunkerProperties,
+    AfterValidator(lambda v: validate_fixed_window_chunker_properties(v)),
+]
+
+ChunkerConfigTypeAdapters = {
+    ChunkerType.SEMANTIC: TypeAdapter(SemanticChunkerProperties),
+    ChunkerType.FIXED_WINDOW: TypeAdapter(FixedWindowChunkerProperties),
+}
 
 
 class ChunkerConfig(KilnParentedModel):
@@ -114,7 +102,9 @@ class ChunkerConfig(KilnParentedModel):
     chunker_type: ChunkerType = Field(
         description="This is used to determine the type of chunker to use.",
     )
-    properties: dict[str, str | int | float | bool] = Field(
+    properties: (
+        SemanticChunkerPropertiesValidator | FixedWindowChunkerPropertiesValidator
+    ) = Field(
         description="Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.",
     )
 
@@ -124,74 +114,46 @@ class ChunkerConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    @field_validator("properties")
-    @classmethod
-    def validate_properties(
-        cls, properties: dict[str, str | int | float | bool], info: ValidationInfo
-    ) -> dict[str, str | int | float | bool]:
-        if info.data.get("chunker_type") == ChunkerType.FIXED_WINDOW:
-            # do not trigger revalidation of properties
-            return validate_fixed_window_chunker_properties(properties)
-        elif info.data.get("chunker_type") == ChunkerType.SEMANTIC:
-            # do not trigger revalidation of properties
-            return validate_semantic_chunker_properties(properties)
-        return properties
-
-    def chunk_size(self) -> int | None:
-        if self.properties.get("chunk_size") is None:
-            return None
-        if not isinstance(self.properties["chunk_size"], int):
-            raise ValueError("Chunk size must be an integer.")
-        return self.properties["chunk_size"]
-
-    def chunk_overlap(self) -> int | None:
-        if self.properties.get("chunk_overlap") is None:
-            return None
-        if not isinstance(self.properties["chunk_overlap"], int):
-            raise ValueError("Chunk overlap must be an integer.")
-        return self.properties["chunk_overlap"]
-
-    def embedding_config_id(self) -> str | None:
-        if self.properties.get("embedding_config_id") is None:
-            return None
-        if not isinstance(self.properties["embedding_config_id"], str):
-            raise ValueError("embedding_config_id must be a string.")
-        return self.properties["embedding_config_id"]
-
-    def buffer_size(self) -> int | None:
-        if self.properties.get("buffer_size") is None:
-            return None
-        if not isinstance(self.properties["buffer_size"], int):
-            raise ValueError("Buffer size must be an integer.")
-        return self.properties["buffer_size"]
-
-    def breakpoint_percentile_threshold(self) -> int | None:
-        if self.properties.get("breakpoint_percentile_threshold") is None:
-            return None
-        if not isinstance(self.properties["breakpoint_percentile_threshold"], int):
-            raise ValueError("Breakpoint percentile threshold must be an integer.")
-        if (
-            self.properties["breakpoint_percentile_threshold"] < 0
-            or self.properties["breakpoint_percentile_threshold"] > 100
-        ):
-            raise ValueError(
-                "Breakpoint percentile threshold must be between 0 and 100."
+    @model_validator(mode="after")
+    def validate_properties_matching_chunker_type(self) -> "ChunkerConfig":
+        # at this point, the properties are already validated by the pydantic validator
+        # but we have no guarantee we have the correct type of properties based on the chunker_type
+        # so we need to check here that the properties are aligned with the chunker_type and we
+        # are not getting fixed_window_properties when the chunker_type is semantic or vice versa
+        try:
+            ChunkerConfigTypeAdapters[self.chunker_type].validate_python(
+                self.properties
             )
-        return int(self.properties["breakpoint_percentile_threshold"])
+        except Exception as e:
+            raise ValueError(
+                f"The properties do not match the chunker type ({self.chunker_type}): {e}"
+            ) from e
+        return self
 
-    def include_metadata(self) -> bool | None:
-        if self.properties.get("include_metadata") is None:
-            return None
-        if not isinstance(self.properties["include_metadata"], bool):
-            raise ValueError("Include metadata must be a boolean.")
-        return self.properties["include_metadata"]
+    # expose the typed properties based on the chunker_type
+    @property
+    def semantic_properties(self) -> SemanticChunkerProperties:
+        if self.chunker_type != ChunkerType.SEMANTIC:
+            raise ValueError(
+                "Semantic properties are only available for semantic chunker."
+            )
+        # TypedDict cannot be checked at runtime, so we need to ignore the type check
+        # or cast (but it is currently banned in our linting rules). Better solution
+        # would be discriminated union, but that requires the discriminator to be part
+        # of the properties (not outside on the parent model).
+        return self.properties  # type: ignore
 
-    def include_prev_next_rel(self) -> bool | None:
-        if self.properties.get("include_prev_next_rel") is None:
-            return None
-        if not isinstance(self.properties["include_prev_next_rel"], bool):
-            raise ValueError("Include prev next rel must be a boolean.")
-        return self.properties["include_prev_next_rel"]
+    @property
+    def fixed_window_properties(self) -> FixedWindowChunkerProperties:
+        if self.chunker_type != ChunkerType.FIXED_WINDOW:
+            raise ValueError(
+                "Fixed window properties are only available for fixed window chunker."
+            )
+        # TypedDict cannot be checked at runtime, so we need to ignore the type check
+        # or cast (but it is currently banned in our linting rules). Better solution
+        # would be discriminated union, but that requires the discriminator to be part
+        # of the properties (not outside on the parent model).
+        return self.properties  # type: ignore
 
 
 class Chunk(BaseModel):

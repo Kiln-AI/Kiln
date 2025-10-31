@@ -142,25 +142,3 @@ def test_embedding_adapter_from_type_with_description(mock_provider_configs):
 
     assert isinstance(adapter, LitellmEmbeddingAdapter)
     assert adapter.embedding_config.description == "Test embedding configuration"
-
-
-def test_embedding_adapter_from_type_with_additional_properties(
-    mock_provider_configs,
-):
-    """Test embedding adapter creation with additional properties."""
-    embedding_config = EmbeddingConfig(
-        name="test-embedding",
-        model_provider_name=ModelProviderName.openai,
-        model_name="text-embedding-3-small",
-        properties={
-            "dimensions": 1536,
-            "batch_size": 100,
-            "max_retries": 3,
-        },
-    )
-
-    adapter = embedding_adapter_from_type(embedding_config)
-
-    assert isinstance(adapter, LitellmEmbeddingAdapter)
-    assert adapter.embedding_config.properties["batch_size"] == 100
-    assert adapter.embedding_config.properties["max_retries"] == 3
