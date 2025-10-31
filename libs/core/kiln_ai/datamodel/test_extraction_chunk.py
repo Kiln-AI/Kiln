@@ -35,15 +35,12 @@ class TestIntegration:
 
     def test_full_workflow(self):
         """Test a complete workflow with all classes."""
-        # Create chunker properties
-        properties = {"chunk_size": 256, "chunk_overlap": 10}
-
         # Create chunker config
         config = ChunkerConfig(
             name="test-chunker",
             description="A test chunker configuration",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=properties,
+            properties={"chunk_size": 256, "chunk_overlap": 10},
         )
 
         # Create a temporary file for the attachment
@@ -67,19 +64,18 @@ class TestIntegration:
             # Verify the complete structure
             assert config.name == "test-chunker"
             assert config.chunker_type == ChunkerType.FIXED_WINDOW
-            assert config.chunk_size() == 256
-            assert config.chunk_overlap() == 10
+            assert config.fixed_window_properties["chunk_size"] == 256
+            assert config.fixed_window_properties["chunk_overlap"] == 10
             assert len(doc.chunks) == 2
             assert doc.chunks[0].content == attachment
             assert doc.chunks[1].content == attachment
 
     def test_serialization(self, mock_project):
         """Test that models can be serialized and deserialized."""
-        properties = {"chunk_size": 512, "chunk_overlap": 20}
         config = ChunkerConfig(
             name="serialization-test",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties=properties,
+            properties={"chunk_size": 512, "chunk_overlap": 20},
             parent=mock_project,
         )
 
@@ -91,8 +87,14 @@ class TestIntegration:
 
         assert config_restored.name == config.name
         assert config_restored.chunker_type == config.chunker_type
-        assert config_restored.chunk_size() == config.chunk_size()
-        assert config_restored.chunk_overlap() == config.chunk_overlap()
+        assert (
+            config_restored.fixed_window_properties["chunk_size"]
+            == config.fixed_window_properties["chunk_size"]
+        )
+        assert (
+            config_restored.fixed_window_properties["chunk_overlap"]
+            == config.fixed_window_properties["chunk_overlap"]
+        )
         assert config_restored.parent_project().id == mock_project.id
 
     def test_enum_serialization(self):
