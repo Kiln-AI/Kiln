@@ -116,6 +116,7 @@
         class="checkbox"
         checked={value ? true : false}
         on:change={handleCheckboxChange}
+        {disabled}
       />
     {/if}
     <label
