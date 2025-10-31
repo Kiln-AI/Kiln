@@ -9,7 +9,6 @@
   import type { ChatStrategy } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
-  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
   import { fine_tune_target_model as model_provider } from "$lib/stores"
   import {
     available_tuning_models,
@@ -29,6 +28,7 @@
   } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
   let finetune_description = ""
   let finetune_name = ""
@@ -37,10 +37,13 @@
   let finetune_custom_system_prompt = ""
   let finetune_custom_thinking_instructions =
     "Think step by step, explaining your reasoning."
-  let system_prompt_method = "simple_prompt_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
+
+  let run_config_component: RunConfigComponent | null = null
+  $: system_prompt_method =
+    run_config_component?.get_prompt_method() || "simple_prompt_builder"
 
   $: provider_id = $model_provider?.includes("/")
     ? $model_provider?.split("/")[0]
@@ -65,12 +68,12 @@
       ? "all"
       : null
 
-  $: step_2_visible = $model_provider && $model_provider !== disabled_header
-  $: step_3_visible =
+  $: step_3_visible = $model_provider && $model_provider !== disabled_header
+  $: step_4_visible =
     $model_provider && $model_provider !== disabled_header && !!selected_dataset
   $: is_download = !!$model_provider?.startsWith("download_")
-  $: step_4_download_visible = step_3_visible && is_download
-  $: submit_visible = !!(step_3_visible && !is_download)
+  $: step_5_download_visible = step_4_visible && is_download
+  $: submit_visible = !!(step_4_visible && !is_download)
 
   onMount(async () => {
     get_available_models()
@@ -502,10 +505,22 @@
             />
           </button>
         </div>
-        {#if step_2_visible}
+        <div>
+          <div class="text-xl font-bold mb-4">
+            Step 2: Configure Fine-Tuning Run Settings
+          </div>
+          <RunConfigComponent
+            bind:this={run_config_component}
+            {project_id}
+            hide_create_kiln_task_tool_button={true}
+            hide_model_selector={true}
+          />
+        </div>
+
+        {#if step_3_visible}
           <div>
             <div class="text-xl font-bold">
-              Step 2: Select Fine-Tuning Dataset
+              Step 3: Select Fine-Tuning Dataset
             </div>
             <div class="font-light">
               Select a dataset to use for this fine-tune.
@@ -519,15 +534,8 @@
           <SelectFinetuneDataset {project_id} {task_id} bind:selected_dataset />
         {/if}
 
-        {#if step_3_visible}
-          <div class="text-xl font-bold">Step 3: Options</div>
-          <PromptTypeSelector
-            bind:prompt_method={system_prompt_method}
-            description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
-            exclude_cot={true}
-            custom_prompt_name="Custom Fine Tuning Prompt"
-          />
+        {#if step_4_visible}
+          <div class="text-xl font-bold">Step 4: Options</div>
           {#if system_prompt_method === "custom"}
             <div class="p-4 border-l-4 border-gray-300">
               <FormElement
@@ -626,9 +634,9 @@
         {/if}
       </FormContainer>
     {/if}
-    {#if step_4_download_visible}
+    {#if step_5_download_visible}
       <div>
-        <div class="text-xl font-bold">Step 4: Download JSONL</div>
+        <div class="text-xl font-bold">Step 5: Download JSONL</div>
         <div class="text-sm">
           Download JSONL files to fine-tune using any infrastructure, such as
           <a
