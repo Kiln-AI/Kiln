@@ -43,6 +43,7 @@
   export let hide_tools_selector: boolean = false
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
+  export let hide_model_selector: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -256,13 +257,15 @@
 </script>
 
 <div class="w-full flex flex-col gap-4">
-  <AvailableModelsDropdown
-    task_id={current_task?.id ?? null}
-    bind:model
-    settings={updated_model_dropdown_settings}
-    bind:error_message={model_dropdown_error_message}
-    bind:this={model_dropdown}
-  />
+  {#if !hide_model_selector}
+    <AvailableModelsDropdown
+      task_id={current_task?.id ?? null}
+      bind:model
+      settings={updated_model_dropdown_settings}
+      bind:error_message={model_dropdown_error_message}
+      bind:this={model_dropdown}
+    />
+  {/if}
   {#if !hide_prompt_selector}
     <PromptTypeSelector
       bind:prompt_method
