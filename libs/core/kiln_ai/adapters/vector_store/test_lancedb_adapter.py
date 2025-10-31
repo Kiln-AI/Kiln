@@ -62,6 +62,7 @@ def hybrid_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
         },
     )
 
@@ -78,6 +79,7 @@ def fts_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_FTS,
         },
     )
 
@@ -95,6 +97,7 @@ def knn_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
         },
     )
 
@@ -618,6 +621,7 @@ def test_query_type_property(
         name="fts_test",
         store_type=VectorStoreType.LANCE_DB_FTS,
         properties={
+            "store_type": VectorStoreType.LANCE_DB_FTS,
             "similarity_top_k": 10,
             "overfetch_factor": 10,
             "vector_column_name": "vector",
@@ -635,6 +639,7 @@ def test_query_type_property(
         name="hybrid_test",
         store_type=VectorStoreType.LANCE_DB_HYBRID,
         properties={
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
             "similarity_top_k": 10,
             "nprobes": 10,
             "overfetch_factor": 10,
@@ -659,6 +664,7 @@ def test_query_type_property(
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
         },
     )
     rag_config = create_rag_config_factory(vector_config, embedding_config)
