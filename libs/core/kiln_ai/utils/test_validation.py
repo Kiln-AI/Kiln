@@ -1,6 +1,11 @@
+from typing import TypedDict
+
 import pytest
+from pydantic import BaseModel
 
 from kiln_ai.utils.validation import (
+    NonEmptyString,
+    string_not_empty,
     tool_name_validator,
     validate_return_dict_prop,
     validate_return_dict_prop_optional,
@@ -522,3 +527,41 @@ class TestToolNameValidator:
         for char in invalid_chars:
             with pytest.raises(ValueError):
                 tool_name_validator(char)
+
+
+class SampleTypedDict(TypedDict, total=True):
+    name: NonEmptyString
+
+
+class SampleModel(BaseModel):
+    name: NonEmptyString
+
+
+class SampleNestedTypedDict(BaseModel):
+    d: SampleTypedDict
+
+
+class TestStringNotEmpty:
+    """Test cases for string_not_empty function."""
+
+    def test_valid_string(self):
+        """Test validation succeeds for valid string."""
+        result = string_not_empty("test")
+        assert result == "test"
+
+    def test_empty_string_raises_error(self):
+        """Test that empty string raises ValueError."""
+        with pytest.raises(ValueError):
+            string_not_empty("")
+
+    def test_valid_pydantic_model(self):
+        with pytest.raises(ValueError):
+            SampleModel(name="")
+
+    def test_valid_nested_typed_dict(self):
+        result = SampleNestedTypedDict(d={"name": "test"})
+        assert result.d == {"name": "test"}
+
+    def test_invalid_nested_typed_dict(self):
+        with pytest.raises(ValueError):
+            SampleNestedTypedDict(d={"name": ""})

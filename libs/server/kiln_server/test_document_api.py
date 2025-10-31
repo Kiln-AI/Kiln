@@ -73,6 +73,7 @@ def mock_extractor_config(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -212,6 +213,7 @@ def extractor_config_setup(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -407,6 +409,7 @@ async def test_create_extractor_config_success(client, mock_project):
             "model_provider_name": "gemini_api",
             "model_name": "gemini-2.0-flash",
             "properties": {
+                "extractor_type": "litellm",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -427,6 +430,7 @@ async def test_create_extractor_config_success(client, mock_project):
     assert result["passthrough_mimetypes"] == ["text/plain"]
     assert result["model_provider_name"] == "gemini_api"
     assert result["model_name"] == "gemini-2.0-flash"
+    assert result["properties"]["extractor_type"] == "litellm"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"
@@ -985,10 +989,17 @@ async def test_create_extractor_config_model_not_found(client, mock_project):
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
-    assert response.status_code == 422, response.text
+    assert response.status_code == 404, response.text
     assert "Model fake_model not found" in response.json()["message"]
 
 
@@ -2048,6 +2059,13 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 

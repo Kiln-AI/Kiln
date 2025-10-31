@@ -1,3 +1,4 @@
+import json
 import re
 import uuid
 
@@ -14,7 +15,6 @@ from kiln_ai.datamodel.extraction import (
     Kind,
     OutputFormat,
     get_kind_from_mime_type,
-    validate_prompt,
 )
 from kiln_ai.datamodel.project import Project
 
@@ -28,6 +28,7 @@ def valid_extractor_config_data():
         "model_provider_name": "gemini_api",
         "model_name": "gemini-2.0-flash",
         "properties": {
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "Transcribe the document.",
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
@@ -42,10 +43,22 @@ def valid_extractor_config(valid_extractor_config_data):
 
 
 def test_extractor_config_kind_coercion(valid_extractor_config):
-    assert valid_extractor_config.prompt_document() == "Transcribe the document."
-    assert valid_extractor_config.prompt_audio() == "Transcribe the audio."
-    assert valid_extractor_config.prompt_video() == "Transcribe the video."
-    assert valid_extractor_config.prompt_image() == "Describe the image."
+    assert (
+        valid_extractor_config.litellm_properties["prompt_document"]
+        == "Transcribe the document."
+    )
+    assert (
+        valid_extractor_config.litellm_properties["prompt_audio"]
+        == "Transcribe the audio."
+    )
+    assert (
+        valid_extractor_config.litellm_properties["prompt_video"]
+        == "Transcribe the video."
+    )
+    assert (
+        valid_extractor_config.litellm_properties["prompt_image"]
+        == "Describe the image."
+    )
 
 
 def test_extractor_config_description_empty(valid_extractor_config_data):
@@ -91,22 +104,27 @@ def test_extractor_config_invalid_json(
     class InvalidClass:
         pass
 
-    with pytest.raises(ValueError, match="validation errors for ExtractorConfig"):
-        valid_extractor_config.properties = {
-            "prompt_document": valid_extractor_config_data["properties"][
-                "prompt_document"
-            ],
-            "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
-            "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
-            "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
-            "invalid_key": InvalidClass(),
-        }
+    valid_extractor_config.properties = {
+        "extractor_type": ExtractorType.LITELLM,
+        "prompt_document": valid_extractor_config_data["properties"]["prompt_document"],
+        "prompt_audio": valid_extractor_config_data["properties"]["prompt_audio"],
+        "prompt_video": valid_extractor_config_data["properties"]["prompt_video"],
+        "prompt_image": valid_extractor_config_data["properties"]["prompt_image"],
+        "invalid_key": InvalidClass(),
+    }
+
+    # check invalid_key is not added to the properties
+    assert "invalid_key" not in valid_extractor_config.properties
 
 
 def test_extractor_config_invalid_prompt(valid_extractor_config):
-    with pytest.raises(ValueError, match="prompt_document must be a string"):
+    class InvalidClass:
+        pass
+
+    with pytest.raises(ValueError, match="Input should be a valid string"):
         valid_extractor_config.properties = {
-            "prompt_document": 123,
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": InvalidClass(),
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
             "prompt_image": "Describe the image.",
@@ -116,6 +134,7 @@ def test_extractor_config_invalid_prompt(valid_extractor_config):
 def test_extractor_config_missing_single_prompt(valid_extractor_config):
     with pytest.raises(ValueError):
         valid_extractor_config.properties = {
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "Transcribe the document.",
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
@@ -163,23 +182,6 @@ def test_invalid_passthrough_mimetypes(
         ExtractorConfig(**config_data)
 
 
-def test_validate_prompt_valid():
-    # should not raise an error
-    validate_prompt("Transcribe the document.", "prompt_document")
-
-
-@pytest.mark.parametrize(
-    "value, expected_error",
-    [
-        (123, "prompt_document must be a string"),
-        ("", "prompt_document cannot be empty"),
-    ],
-)
-def test_validate_prompt_errors(value, expected_error):
-    with pytest.raises(ValueError, match=expected_error):
-        validate_prompt(value, "prompt_document")
-
-
 @pytest.fixture
 def mock_project(tmp_path):
     project_root = tmp_path / str(uuid.uuid4())
@@ -204,6 +206,7 @@ def mock_extractor_config_factory(mock_project):
             model_name="gemini-2.0-flash",
             extractor_type=ExtractorType.LITELLM,
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "Transcribe the document.",
                 "prompt_audio": "Transcribe the audio.",
                 "prompt_video": "Transcribe the video.",
@@ -499,3 +502,54 @@ def test_document_friendly_name(mock_project, mock_attachment_factory):
     document = Document.from_id_and_parent_path(str(document.id), mock_project.path)
     assert document is not None
     assert document.friendly_name == "Test Document Override"
+
+
+class TestBackwardCompatibility:
+    def test_backward_compatibility_with_missing_extractor_type(self, tmp_path):
+        """
+        We added discriminated union and the extractor_type in the properties, but older
+        configs did not have the extractor_type in the properties. This test ensures that
+        we can load these old configs and that the extractor_type is added to the properties.
+        """
+        # we write the config to a file, and then we try to load it from file
+        file_path = tmp_path / "test_extractor.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "310815630212",
+            "created_at": "2025-10-15T01:16:38.380098",
+            "created_by": "leonardmarcq",
+            "name": "Test Extractor Config",
+            "description": None,
+            "extractor_type": ExtractorType.LITELLM,
+            "model_provider_name": "gemini_api",
+            "model_name": "gemini-2.0-flash",
+            "output_format": OutputFormat.MARKDOWN,
+            "passthrough_mimetypes": [OutputFormat.MARKDOWN, OutputFormat.TEXT],
+            "properties": {
+                # missing extractor_type - will be filled in during validation
+                "prompt_document": "Transcribe the document.",
+                "prompt_audio": "Transcribe the audio.",
+                "prompt_video": "Transcribe the video.",
+                "prompt_image": "Describe the image.",
+            },
+            "model_type": "extractor_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = ExtractorConfig.load_from_file(file_path)
+
+        # when loading from file, the extractor_type is added to the properties
+        assert config.extractor_type == ExtractorType.LITELLM
+        assert config.properties["prompt_document"] == "Transcribe the document."
+        assert config.properties["prompt_audio"] == "Transcribe the audio."
+        assert config.properties["prompt_video"] == "Transcribe the video."
+        assert config.properties["prompt_image"] == "Describe the image."
+
+        # this should be added automatically by the loader
+        assert config.properties["extractor_type"] == ExtractorType.LITELLM
+
+        # save the file and check that extractor_type makes it into the properties
+        config.save_to_file()
+        config_restored = ExtractorConfig.load_from_file(file_path)
+        assert config_restored.extractor_type == ExtractorType.LITELLM
+        assert config_restored.properties["extractor_type"] == ExtractorType.LITELLM
