@@ -553,3 +553,38 @@ class TestBackwardCompatibility:
         config_restored = ExtractorConfig.load_from_file(file_path)
         assert config_restored.extractor_type == ExtractorType.LITELLM
         assert config_restored.properties["extractor_type"] == ExtractorType.LITELLM
+
+
+def make_valid_extractor_config() -> ExtractorConfig:
+    return ExtractorConfig(
+        parent=None,
+        name="cfg",
+        is_archived=False,
+        description=None,
+        model_provider_name="openai",
+        model_name="gpt-test",
+        output_format=OutputFormat.MARKDOWN,
+        passthrough_mimetypes=[],
+        extractor_type=ExtractorType.LITELLM,
+        properties={
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": "x",
+            "prompt_image": "x",
+            "prompt_video": "x",
+            "prompt_audio": "x",
+        },
+    )
+
+
+def test_before_validator_returns_non_dict_data_unchanged() -> None:
+    cfg = make_valid_extractor_config()
+    same = ExtractorConfig.model_validate(cfg, context={"loading_from_file": True})
+    assert same is cfg
+
+
+def test_litellm_properties_raises_for_wrong_type() -> None:
+    cfg = make_valid_extractor_config()
+    # Corrupt the properties to an unsupported extractor_type to hit the guard
+    cfg.__dict__["properties"] = {"extractor_type": "not-litellm"}
+    with pytest.raises(ValueError):
+        _ = cfg.litellm_properties

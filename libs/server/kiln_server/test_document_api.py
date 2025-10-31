@@ -31,6 +31,7 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
+    CreateExtractorConfigRequest,
     build_rag_workflow_runner,
     connect_document_api,
     run_rag_workflow_runner_with_status,
@@ -4242,3 +4243,27 @@ async def test_get_embedding_config_success(
     assert result["model_provider_name"] == mock_embedding_config.model_provider_name
     assert result["model_name"] == mock_embedding_config.model_name
     assert result["properties"] == mock_embedding_config.properties
+
+
+def test_get_properties_unsupported_extractor_type_raises() -> None:
+    req = CreateExtractorConfigRequest(
+        name="n",
+        description=None,
+        model_provider_name=ModelProviderName.openai,
+        model_name="gpt_5_mini",
+        output_format=OutputFormat.MARKDOWN,
+        passthrough_mimetypes=[],
+        properties={
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": "x",
+            "prompt_image": "x",
+            "prompt_video": "x",
+            "prompt_audio": "x",
+        },
+    )
+
+    # Corrupt to an unknown extractor_type to hit the default branch
+    req.__dict__["properties"] = {"extractor_type": "bogus"}
+
+    with pytest.raises(Exception):
+        req.get_properties()
