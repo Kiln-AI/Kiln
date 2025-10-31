@@ -35,6 +35,7 @@
   export let model_name: string = ""
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
+  export let mandatory_tools: string[] | null = null
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
@@ -277,6 +278,7 @@
         {project_id}
         task_id={current_task?.id ?? null}
         {hide_create_kiln_task_tool_button}
+        {mandatory_tools}
       />
     {/if}
     <Collapse title="Advanced Options">
@@ -296,6 +298,7 @@
             {project_id}
             task_id={current_task?.id ?? null}
             {hide_create_kiln_task_tool_button}
+            {mandatory_tools}
           />
         {/if}
         <AdvancedRunOptions

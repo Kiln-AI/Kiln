@@ -480,14 +480,24 @@
       }
       if (event.key === "ArrowDown") {
         event.preventDefault()
-        focusedIndex = Math.min(
-          focusedIndex + 1,
-          filteredOptions.flatMap((group) => group.options).length - 1,
-        )
+        const flatOptions = filteredOptions.flatMap((group) => group.options)
+        let nextIndex = focusedIndex + 1
+        while (
+          nextIndex < flatOptions.length &&
+          flatOptions[nextIndex].disabled
+        ) {
+          nextIndex++
+        }
+        focusedIndex = Math.min(nextIndex, flatOptions.length - 1)
         scrollToFocusedIndex()
       } else if (event.key === "ArrowUp") {
         event.preventDefault()
-        focusedIndex = Math.max(focusedIndex - 1, 0)
+        const flatOptions = filteredOptions.flatMap((group) => group.options)
+        let prevIndex = focusedIndex - 1
+        while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
+          prevIndex--
+        }
+        focusedIndex = Math.max(prevIndex, 0)
         scrollToFocusedIndex()
       } else if (event.key === "Enter") {
         selectOption(
@@ -528,14 +538,28 @@
                 clearSearch()
               } else if (event.key === "ArrowDown") {
                 event.preventDefault()
-                focusedIndex = Math.min(
-                  focusedIndex + 1,
-                  filteredOptions.flatMap((group) => group.options).length - 1,
+                const flatOptions = filteredOptions.flatMap(
+                  (group) => group.options,
                 )
+                let nextIndex = focusedIndex + 1
+                while (
+                  nextIndex < flatOptions.length &&
+                  flatOptions[nextIndex].disabled
+                ) {
+                  nextIndex++
+                }
+                focusedIndex = Math.min(nextIndex, flatOptions.length - 1)
                 scrollToFocusedIndex()
               } else if (event.key === "ArrowUp") {
                 event.preventDefault()
-                focusedIndex = Math.max(focusedIndex - 1, 0)
+                const flatOptions = filteredOptions.flatMap(
+                  (group) => group.options,
+                )
+                let prevIndex = focusedIndex - 1
+                while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
+                  prevIndex--
+                }
+                focusedIndex = Math.max(prevIndex, 0)
                 scrollToFocusedIndex()
               } else if (event.key === "Enter") {
                 event.preventDefault()
@@ -630,13 +654,22 @@
                   : selected === item.value}
                 class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
-                  : 'hover:bg-transparent'}"
+                  : 'hover:bg-transparent'} {item.disabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''}"
+                disabled={item.disabled}
                 on:mousedown={(event) => {
+                  if (item.disabled) {
+                    event.preventDefault()
+                    return
+                  }
                   event.stopPropagation()
                   selectOption(item.value)
                 }}
                 on:mouseenter={() => {
-                  focusedIndex = overallIndex
+                  if (!item.disabled) {
+                    focusedIndex = overallIndex
+                  }
                 }}
               >
                 <div class="flex flex-row gap-3 items-center flex-1">
@@ -645,6 +678,7 @@
                       type="checkbox"
                       class="checkbox checkbox-sm no-animation"
                       checked={selected_values.includes(item.value)}
+                      disabled={item.disabled}
                     />
                   {/if}
                   <div class="flex-grow flex flex-col text-left gap-[1px]">
