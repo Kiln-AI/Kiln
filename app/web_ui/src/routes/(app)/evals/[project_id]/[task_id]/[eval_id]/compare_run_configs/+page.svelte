@@ -21,6 +21,8 @@
     current_task_prompts,
     load_available_prompts,
     load_available_models,
+    load_available_tools,
+    available_tools,
     load_task,
     get_task_composite_id,
   } from "$lib/stores"
@@ -42,6 +44,7 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { UiProperty } from "$lib/ui/property_list"
+  import ToolsDisplay from "$lib/ui/tools_display.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -95,6 +98,7 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      load_available_tools(project_id),
       get_task(),
     ])
     // Get the eval first (want it to set the current config id before the other two load)
@@ -605,6 +609,12 @@
                         />
                       {/if}
                     </div>
+                    <ToolsDisplay
+                      tool_ids={task_run_config.run_config_properties
+                        .tools_config?.tools ?? []}
+                      {project_id}
+                      available_tools={$available_tools}
+                    />
                   </td>
                   <td class="text-sm text-center">
                     {#if percent_complete < 1.0}

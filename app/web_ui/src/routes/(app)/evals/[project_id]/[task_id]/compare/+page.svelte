@@ -20,6 +20,8 @@
     load_available_models,
     get_task_composite_id,
     load_task,
+    load_available_tools,
+    available_tools,
   } from "$lib/stores"
   import {
     load_task_run_configs,
@@ -34,6 +36,7 @@
   import { prompt_link } from "$lib/utils/link_builder"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import ToolsDisplay from "$lib/ui/tools_display.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -142,6 +145,7 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      load_available_tools(project_id),
       get_task(),
     ])
     await get_task_run_configs()
@@ -617,6 +621,16 @@
                             no_pad={true}
                           />
                         {/if}
+                      </div>
+                      <div class="mt-1">
+                        <ToolsDisplay
+                          tool_ids={selectedConfig.run_config_properties
+                            .tools_config?.tools ?? []}
+                          {project_id}
+                          available_tools={$available_tools}
+                          text_size="xs"
+                          center_text={true}
+                        />
                       </div>
                     </div>
                   {/if}
