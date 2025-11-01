@@ -9,6 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
 )
+from kiln_ai.datamodel.run_config import RunConfigProperties
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -83,6 +84,10 @@ class Finetune(KilnParentedModel):
     data_strategy: ChatStrategy = Field(
         default=ChatStrategy.single_turn,
         description="The strategy to use for training the model. 'final_only' will only train on the final response. 'final_and_intermediate' will train on the final response and intermediate outputs (chain of thought or reasoning).",
+    )
+    run_config: RunConfigProperties | None = Field(
+        default=None,
+        description="The run configuration for this fine-tune.",
     )
 
     # Workaround to return typed parent without importing Task

@@ -615,6 +615,7 @@ async def test_create_finetune(
         description="Test description",
         validation_split_name="validation",
         data_strategy=data_strategy,
+        run_config=None,
     )
 
 
