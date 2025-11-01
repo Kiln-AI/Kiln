@@ -25,6 +25,8 @@
     DatasetSplit,
     Finetune,
     FineTuneParameter,
+    RunConfigProperties,
+    ModelProviderName,
   } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -45,8 +47,9 @@
   $: system_prompt_method =
     run_config_component?.get_prompt_method() || "simple_prompt_builder"
 
+  let provider_id: ModelProviderName | null = null
   $: provider_id = $model_provider?.includes("/")
-    ? $model_provider?.split("/")[0]
+    ? ($model_provider?.split("/")[0] as ModelProviderName)
     : null
   $: base_model_id = $model_provider?.includes("/")
     ? $model_provider?.split("/").slice(1).join("/")
@@ -233,6 +236,18 @@
       // Filter out empty strings from hyperparameter_values, and parse/validate types
       const hyperparameter_values = build_parsed_hyperparameters()
 
+      // Create a run config object based on the UI
+      // Extract just the model name from the full path (e.g., "accounts/fireworks/models/qwen3-1p7b" -> "qwen3-1p7b")
+      const model_name = base_model_id?.split("/").pop() || base_model_id
+      const run_config_properties: RunConfigProperties | undefined =
+        run_config_component && model_name && provider_id
+          ? {
+              ...run_config_component.run_options_as_run_config_properties(),
+              model_name: model_name,
+              model_provider_name: provider_id,
+            }
+          : undefined
+
       const { data: create_finetune_response, error: post_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/finetunes",
@@ -261,6 +276,7 @@
               validation_split_name: selected_dataset_has_val
                 ? "val"
                 : undefined,
+              run_config_properties: run_config_properties,
             },
           },
         )

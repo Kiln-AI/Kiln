@@ -2411,6 +2411,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -3540,6 +3541,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
