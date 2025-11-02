@@ -1,23 +1,39 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import { model_from_schema_string } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import {
-    typed_json_from_schema_model,
-    type SchemaModelProperty,
-  } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import RunInputFormElement from "$lib/components/run_input_form_element.svelte"
+  import { model_from_schema_string, type JsonSchema } from "$lib/utils/json_schema_editor/json_schema_templates"
 
   let id = "plaintext_input_" + Math.random().toString(36).substring(2, 15)
 
   export let input_schema: string | null | undefined
   export let onInputChange: (() => void) | null = null
   let plaintext_input: string = ""
-  let structured_input_data: Record<string, string> = {}
+  let structured_input_data: Record<string, unknown> = {}
 
   $: void (plaintext_input, structured_input_data, onInputChange?.())
 
   $: structured_input_model = input_schema
     ? model_from_schema_string(input_schema)
     : null
+
+  $: fullSchema = input_schema
+    ? (JSON.parse(input_schema) as JsonSchema)
+    : null
+
+  // Initialize structured_input_data with proper object structure
+  $: if (structured_input_model?.properties && Object.keys(structured_input_data).length === 0) {
+    const initialData: Record<string, unknown> = {}
+    structured_input_model.properties.forEach(property => {
+      if (property.type === "object") {
+        initialData[property.id] = {}
+      } else if (property.type === "array") {
+        initialData[property.id] = []
+      } else {
+        initialData[property.id] = ""
+      }
+    })
+    structured_input_data = initialData
+  }
 
   // These two are mutually exclusive. One returns null if the other is not null.
   export function get_plaintext_input_data(): string | null {
@@ -26,17 +42,16 @@
     }
     return plaintext_input
   }
+
   export function get_structured_input_data(): Record<string, unknown> | null {
     if (!input_schema || !structured_input_model) {
       return null
     }
 
-    // Create a copy of structured_input_data and remove empty string values
-    const cleanedData = Object.fromEntries(
-      Object.entries(structured_input_data).filter((v) => v[1] !== ""),
-    )
+    // Clean up the data by removing empty optional objects and arrays
+    const cleanedData = cleanStructuredData(structured_input_data, structured_input_model)
 
-    return typed_json_from_schema_model(structured_input_model, cleanedData)
+    return cleanedData
   }
 
   export function clear_input() {
@@ -44,48 +59,60 @@
     structured_input_data = {}
   }
 
-  export function describe_type(property: SchemaModelProperty): string {
-    let base_description = ""
-    if (property.type === "string") {
-      base_description = "String"
-    } else if (property.type === "number") {
-      base_description = "Number"
-    } else if (property.type === "integer") {
-      base_description = "Integer"
-    } else if (property.type === "boolean") {
-      base_description = "'true' or 'false'"
-    } else if (property.type === "array") {
-      base_description = "JSON Array"
-    } else if (property.type === "object") {
-      base_description = "JSON Object"
-    } else {
-      base_description = "Unknown type"
-    }
+  function cleanStructuredData(
+    data: Record<string, unknown>,
+    model: { properties: Array<{ id: string; type: string; required: boolean }> }
+  ): Record<string, unknown> {
+    const cleaned: Record<string, unknown> = {}
 
-    if (property.required) {
-      return base_description + " (required)"
-    }
-    return base_description + " (optional)"
+    model.properties.forEach(property => {
+      const value = data[property.id]
+
+      if (value === undefined || value === null) {
+        return // Skip undefined/null values
+      }
+
+      if (property.type === "object" && typeof value === "object") {
+        if (isObjectEmpty(value)) {
+          // Omit empty optional objects
+          return
+        }
+        cleaned[property.id] = value
+      } else if (property.type === "array" && Array.isArray(value)) {
+        if (isArrayEmpty(value)) {
+          // Omit empty optional arrays
+          return
+        }
+        cleaned[property.id] = value
+      } else if (typeof value === "string" && value === "") {
+        if (!property.required) {
+          // Omit empty optional strings
+          return
+        }
+        cleaned[property.id] = value
+      } else {
+        cleaned[property.id] = value
+      }
+    })
+
+    return cleaned
   }
 
-  function get_input_type(property: SchemaModelProperty): "textarea" | "input" {
-    const types = ["string", "array", "object"]
-    if (types.includes(property.type)) {
-      return "textarea"
-    }
-    return "input"
+  function isObjectEmpty(obj: unknown): boolean {
+    if (!obj || typeof obj !== 'object') return true
+    return Object.keys(obj as Record<string, unknown>).length === 0
   }
 
-  function get_info_description(
-    property: SchemaModelProperty,
-  ): string | undefined {
-    if (property.type === "array") {
-      return "A list of items in JSON format. For example: [item_1, item_2]"
+  function isArrayEmpty(arr: unknown[]): boolean {
+    if (!Array.isArray(arr)) return true
+    if (arr.length === 0) return true
+    if (arr.length === 1) {
+      const item = arr[0]
+      if (typeof item === 'object' && item !== null) {
+        return isObjectEmpty(item)
+      }
     }
-    if (property.type === "object") {
-      return 'A JSON object. For example: {"key_1": "value_1", "key_2": "value_2"}'
-    }
-    return undefined
+    return false
   }
 </script>
 
@@ -99,15 +126,13 @@
   />
 {:else if structured_input_model?.properties}
   {#each structured_input_model.properties as property}
-    <FormElement
-      id={id + "_" + property.id}
-      label={property.title}
-      inputType={get_input_type(property)}
-      info_description={get_info_description(property)}
-      info_msg={describe_type(property)}
-      description={property.description}
-      optional={!property.required}
+    <RunInputFormElement
+      property={property}
       bind:value={structured_input_data[property.id]}
+      onInputChange={onInputChange}
+      level={0}
+      path={property.id}
+      fullSchema={fullSchema}
     />
   {/each}
 {:else}

@@ -11,6 +11,9 @@ export type JsonSchemaProperty = {
   description: string
   type: "number" | "string" | "integer" | "boolean" | "array" | "object"
   items?: JsonSchemaProperty | JsonSchema
+  properties?: Record<string, JsonSchemaProperty>
+  required?: string[]
+  additionalProperties?: boolean
 }
 
 // We have our own model type.
