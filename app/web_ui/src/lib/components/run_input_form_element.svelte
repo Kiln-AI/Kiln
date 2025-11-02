@@ -3,7 +3,6 @@
   import FormList from "$lib/utils/form_list.svelte"
   import RunInputFormElement from "./run_input_form_element.svelte"
   import {
-    model_from_schema_string,
     type SchemaModelProperty,
     type JsonSchema,
     type JsonSchemaProperty,
@@ -51,9 +50,17 @@
     } else if (property.type === "boolean") {
       base_description = "'true' or 'false'"
     } else if (property.type === "array") {
-      base_description = "Array of items"
+      if (isGenericArray(property)) {
+        base_description = "Arbitrary JSON Array"
+      } else {
+        base_description = "Array"
+      }
     } else if (property.type === "object") {
-      base_description = "Object with properties"
+      if (isGenericObject(property)) {
+        base_description = "Arbitrary JSON Object"
+      } else {
+        base_description = "Object"
+      }
     } else {
       base_description = "Unknown type"
     }
@@ -67,12 +74,49 @@
   function get_input_type(
     property: SchemaModelProperty,
   ): "textarea" | "input" | "input_number" {
-    if (property.type === "string") {
+    if (isGenericObject(property) || isGenericArray(property)) {
+      return "textarea"
+    } else if (property.type === "string") {
       return "textarea"
     } else if (property.type === "number" || property.type === "integer") {
+      // TODO
       return "input_number"
     }
     return "input"
+  }
+
+  function getDescription(property: SchemaModelProperty): string {
+    if (isGenericObject(property)) {
+      return property.description + " (JSON Object with flexible properties)"
+    } else if (isGenericArray(property)) {
+      return property.description + " (JSON Array with flexible item types)"
+    }
+    return property.description
+  }
+
+  function getHeight(property: SchemaModelProperty): "large" | undefined {
+    if (isGenericObject(property) || isGenericArray(property)) {
+      return "large"
+    }
+    return undefined
+  }
+
+  function handleInput(e: Event) {
+    // TODO
+    const target = e.target as HTMLInputElement | HTMLTextAreaElement
+    if (target) {
+      const newValue = target.value
+      if (isGenericObject(property) || isGenericArray(property)) {
+        try {
+          JSON.parse(newValue)
+          value = newValue
+        } catch {
+          value = newValue
+        }
+      } else {
+        value = newValue
+      }
+    }
   }
 
   function isArrayProperty(prop: SchemaModelProperty): boolean {
@@ -95,52 +139,6 @@
         (jsonSchemaProperty.items as JsonSchemaProperty)
           .additionalProperties === true)
     )
-  }
-
-  function getNestedSchemaForArray(
-    property: SchemaModelProperty,
-  ): SchemaModelProperty[] {
-    if (property.type !== "array") return []
-
-    const jsonSchemaProperty = getNestedSchemaProperty(property)
-    if (jsonSchemaProperty?.items) {
-      if (Array.isArray(jsonSchemaProperty.items)) {
-        // Handle tuple types
-        return jsonSchemaProperty.items.map((item, index) => {
-          const itemProp = item as JsonSchemaProperty
-          return {
-            id: index.toString(),
-            title: itemProp.title || `Item ${index + 1}`,
-            description: itemProp.description || "",
-            type: itemProp.type,
-            required: false,
-          }
-        })
-      } else if ("type" in jsonSchemaProperty.items) {
-        // Handle array with single item type
-        const item = jsonSchemaProperty.items as JsonSchemaProperty
-        return [
-          {
-            id: "item",
-            title: item.title || "Item",
-            description: item.description || "",
-            type: item.type,
-            required: false,
-          },
-        ]
-      }
-    }
-
-    // Fallback - treat as string
-    return [
-      {
-        id: "item",
-        title: "Item",
-        description: "Array item",
-        type: "string",
-        required: false,
-      },
-    ]
   }
 
   function getNestedSchemaProperty(
@@ -225,40 +223,8 @@
     return []
   }
 
-  function isObjectEmpty(obj: Record<string, unknown>): boolean {
-    if (!obj || typeof obj !== "object") return true
-    return Object.keys(obj).length === 0
-  }
-
-  function isArrayEmpty(arr: unknown[]): boolean {
-    if (!Array.isArray(arr)) return true
-    if (arr.length === 0) return true
-    if (arr.length === 1) {
-      const item = arr[0]
-      if (typeof item === "object" && item !== null) {
-        return isObjectEmpty(item as Record<string, unknown>)
-      }
-    }
-    return false
-  }
-
   function getArrayEmptyContent(): unknown {
     return ""
-  }
-
-  function handleGenericInput(e: Event) {
-    const target = e.target as HTMLTextAreaElement
-    if (target) {
-      const newValue = target.value
-      try {
-        // Parse JSON to validate, but store as string
-        JSON.parse(newValue)
-        value = newValue
-      } catch (error) {
-        // Invalid JSON, still store the string value
-        value = newValue
-      }
-    }
   }
 
   // Handle the nested data structure
@@ -276,35 +242,32 @@
   } else if (isArrayProperty(property) && !Array.isArray(value)) {
     value = []
   }
+
+  function getInfoDescription(property: SchemaModelProperty): string {
+    if (isGenericObject(property)) {
+      return "This property is a JSON Object, which allows any arbitrary properties. You must fill in the text area with a valid JSON object."
+    } else if (isObjectProperty(property)) {
+      return "This property is a JSON Object, which requires specific properties (see below)."
+    } else if (isGenericArray(property)) {
+      return "JSON Array (supports any item types)"
+    }
+    return ""
+  }
 </script>
 
-{#if isObjectProperty(property)}
-  {#if isGenericObject(property)}
-    <!-- Generic object - allow JSON input -->
+{#if (isObjectProperty(property) && !isGenericObject(property)) || (isArrayProperty(property) && !isGenericArray(property))}
+  <div>
     <FormElement
       id={id + "_" + property.id}
       label={property.title}
-      inputType="textarea"
-      height="large"
-      description={property.description +
-        " (JSON Object with flexible properties)"}
-      optional={!property.required}
+      inputType="header_only"
+      description={property.description}
+      info_msg={describe_type(property)}
+      info_description={getInfoDescription(property)}
       value=""
-      info_msg="JSON Object (supports any properties)"
-      on:input={handleGenericInput}
     />
-  {:else}
-    <!-- Typed object - render nested fields -->
-    <div class="mb-4">
-      <FormElement
-        id={id + "_" + property.id}
-        label={property.title}
-        inputType="header_only"
-        description={property.description}
-        info_msg={describe_type(property)}
-        value=""
-      />
-      <div class="nested-content border-l-2 border-gray-500 pl-8">
+    <div class="flex flex-col gap-6 py-4 mt-2 ml-4 border-l pl-6">
+      {#if isObjectProperty(property) && !isGenericObject(property)}
         {#each getNestedSchemaForObject(property) as nestedProp}
           <RunInputFormElement
             property={nestedProp}
@@ -315,43 +278,14 @@
             {fullSchema}
           />
         {/each}
-      </div>
-    </div>
-  {/if}
-{:else if isArrayProperty(property)}
-  {#if isGenericArray(property)}
-    <!-- Generic array - allow JSON input -->
-    <FormElement
-      id={id + "_" + property.id}
-      label={property.title}
-      inputType="textarea"
-      height="large"
-      description={property.description +
-        " (JSON Array with flexible item types)"}
-      optional={!property.required}
-      value=""
-      info_msg="JSON Array (supports any item types)"
-      on:input={handleGenericInput}
-    />
-  {:else}
-    <!-- Typed array - render FormList -->
-    <div class="nested-container">
-      <FormElement
-        id={id + "_" + property.id}
-        label={property.title}
-        inputType="header_only"
-        description={property.description}
-        info_msg={describe_type(property)}
-        value=""
-      />
-      <div class="nested-content border-l-2 border-gray-500 pl-8">
+      {:else if isArrayProperty(property) && !isGenericArray(property)}
         <FormList
           bind:content={arrayContent}
           content_label={property.title + " Item"}
           start_with_one={false}
           empty_content={getArrayEmptyContent()}
         >
-          <div slot="default" let:item let:item_index>
+          <div slot="default" let:item_index>
             <textarea
               id={id + "_array_item_" + item_index}
               class="textarea textarea-bordered w-full"
@@ -360,37 +294,20 @@
             />
           </div>
         </FormList>
-      </div>
+      {/if}
     </div>
-  {/if}
-{:else}
-  <div class="simple-property-container">
-    <FormElement
-      id={id + "_" + property.id}
-      label={property.title}
-      inputType={get_input_type(property)}
-      description={property.description}
-      optional={!property.required}
-      bind:value
-      info_msg={describe_type(property)}
-    />
   </div>
+{:else}
+  <FormElement
+    id={id + "_" + property.id}
+    label={property.title}
+    inputType={get_input_type(property)}
+    height={getHeight(property)}
+    description={getDescription(property)}
+    optional={!property.required}
+    value={isGenericObject(property) || isGenericArray(property) ? "" : value}
+    info_msg={describe_type(property)}
+    info_description={getInfoDescription(property)}
+    on:input={handleInput}
+  />
 {/if}
-
-<style>
-  .nested-container {
-    margin-bottom: 1rem;
-  }
-
-  .nested-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    margin-left: 1rem;
-  }
-
-  .simple-property-container {
-    margin-bottom: 0.75rem;
-  }
-</style>
