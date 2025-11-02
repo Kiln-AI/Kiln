@@ -64,6 +64,7 @@
     level={0}
     path="root"
     fullSchema={fullSchema}
+    hideHeaderAndIndent={true}
     bind:this={rootFormElement}
   />
 {:else}

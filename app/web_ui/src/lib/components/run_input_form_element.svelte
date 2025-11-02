@@ -14,6 +14,7 @@
   export let level: number = 0
   export let path: string = ""
   export let fullSchema: JsonSchema | null = null
+  export let hideHeaderAndIndent: boolean = false
 
   let id = "nested_input_" + Math.random().toString(36).substring(2, 15)
 
@@ -260,9 +261,20 @@
   // Export function to build the cleaned value for this property
   export function buildValue(): unknown | undefined {
     // For primitive types
-    if (property.type === "string" || property.type === "number" || property.type === "integer" || property.type === "boolean") {
+    if (
+      property.type === "string" ||
+      property.type === "number" ||
+      property.type === "integer" ||
+      property.type === "boolean"
+    ) {
       if (value === undefined || value === null || value === "") {
-        return property.required ? (property.type === "string" ? "" : (property.type === "boolean" ? false : 0)) : undefined
+        return property.required
+          ? property.type === "string"
+            ? ""
+            : property.type === "boolean"
+              ? false
+              : 0
+          : undefined
       }
       return value
     }
@@ -274,7 +286,11 @@
       }
       try {
         const parsed = typeof value === "string" ? JSON.parse(value) : value
-        return typeof parsed === "object" && parsed !== null && !isObjectEmpty(parsed) ? parsed : undefined
+        return typeof parsed === "object" &&
+          parsed !== null &&
+          !isObjectEmpty(parsed)
+          ? parsed
+          : undefined
       } catch {
         return undefined
       }
@@ -287,7 +303,9 @@
       }
       try {
         const parsed = typeof value === "string" ? JSON.parse(value) : value
-        return Array.isArray(parsed) && !isArrayEmpty(parsed) ? parsed : undefined
+        return Array.isArray(parsed) && !isArrayEmpty(parsed)
+          ? parsed
+          : undefined
       } catch {
         return undefined
       }
@@ -304,7 +322,7 @@
       let hasContent = false
 
       // Get cleaned values from nested properties - recursively clean them
-      nestedProperties.forEach(nestedProp => {
+      nestedProperties.forEach((nestedProp) => {
         const nestedValue = (value as Record<string, unknown>)[nestedProp.id]
         const cleanedNestedValue = cleanNestedValue(nestedProp, nestedValue)
         if (cleanedNestedValue !== undefined) {
@@ -313,7 +331,7 @@
         }
       })
 
-      return hasContent ? cleanedValue : (property.required ? {} : undefined)
+      return hasContent ? cleanedValue : property.required ? {} : undefined
     }
 
     // For structured arrays
@@ -344,28 +362,50 @@
         }
       })
 
-      return hasValidItems ? cleanedArray : (property.required ? [] : undefined)
+      return hasValidItems ? cleanedArray : property.required ? [] : undefined
     }
 
     return undefined
   }
 
-  function cleanNestedValue(nestedProp: SchemaModelProperty, nestedValue: unknown): unknown | undefined {
+  function cleanNestedValue(
+    nestedProp: SchemaModelProperty,
+    nestedValue: unknown,
+  ): unknown | undefined {
     if (nestedValue === undefined || nestedValue === null) {
       return undefined
     }
 
     // Handle primitive types
-    if (nestedProp.type === "string" || nestedProp.type === "number" || nestedProp.type === "integer" || nestedProp.type === "boolean") {
-      if (nestedValue === "" || nestedValue === null || nestedValue === undefined) {
-        return nestedProp.required ? (nestedProp.type === "string" ? "" : (nestedProp.type === "boolean" ? false : 0)) : undefined
+    if (
+      nestedProp.type === "string" ||
+      nestedProp.type === "number" ||
+      nestedProp.type === "integer" ||
+      nestedProp.type === "boolean"
+    ) {
+      if (
+        nestedValue === "" ||
+        nestedValue === null ||
+        nestedValue === undefined
+      ) {
+        return nestedProp.required
+          ? nestedProp.type === "string"
+            ? ""
+            : nestedProp.type === "boolean"
+              ? false
+              : 0
+          : undefined
       }
       return nestedValue
     }
 
     // Handle object types recursively
     if (nestedProp.type === "object") {
-      if (typeof nestedValue === "object" && nestedValue !== null && !Array.isArray(nestedValue)) {
+      if (
+        typeof nestedValue === "object" &&
+        nestedValue !== null &&
+        !Array.isArray(nestedValue)
+      ) {
         if (isObjectEmpty(nestedValue)) {
           return nestedProp.required ? {} : undefined
         }
@@ -380,7 +420,7 @@
         const cleanedNestedValue: Record<string, unknown> = {}
         let hasContent = false
 
-        nestedProperties.forEach(subProp => {
+        nestedProperties.forEach((subProp) => {
           const subValue = (nestedValue as Record<string, unknown>)[subProp.id]
           const cleanedSubValue = cleanNestedValue(subProp, subValue)
           if (cleanedSubValue !== undefined) {
@@ -389,7 +429,11 @@
           }
         })
 
-        return hasContent ? cleanedNestedValue : (nestedProp.required ? {} : undefined)
+        return hasContent
+          ? cleanedNestedValue
+          : nestedProp.required
+            ? {}
+            : undefined
       }
       return nestedProp.required ? {} : undefined
     }
@@ -408,7 +452,11 @@
           if (typeof item === "string" && item.trim() !== "") {
             cleanedArray.push(item)
             hasValidItems = true
-          } else if (typeof item === "object" && item !== null && !isObjectEmpty(item)) {
+          } else if (
+            typeof item === "object" &&
+            item !== null &&
+            !isObjectEmpty(item)
+          ) {
             cleanedArray.push(item)
             hasValidItems = true
           } else if (item !== undefined && item !== null) {
@@ -417,7 +465,11 @@
           }
         })
 
-        return hasValidItems ? cleanedArray : (nestedProp.required ? [] : undefined)
+        return hasValidItems
+          ? cleanedArray
+          : nestedProp.required
+            ? []
+            : undefined
       }
       return nestedProp.required ? [] : undefined
     }
@@ -426,7 +478,7 @@
   }
 
   function isObjectEmpty(obj: unknown): boolean {
-    if (!obj || typeof obj !== 'object') return true
+    if (!obj || typeof obj !== "object") return true
     if (Array.isArray(obj)) return false // it's an array, not an object
     return Object.keys(obj as Record<string, unknown>).length === 0
   }
@@ -436,9 +488,9 @@
     if (arr.length === 0) return true
     if (arr.length === 1) {
       const item = arr[0]
-      if (typeof item === 'object' && item !== null) {
+      if (typeof item === "object" && item !== null) {
         return isObjectEmpty(item)
-      } else if (typeof item === 'string') {
+      } else if (typeof item === "string") {
         return item.trim() === ""
       }
     }
@@ -459,16 +511,22 @@
 
 {#if (isObjectProperty(property) && !isGenericObject(property)) || (isArrayProperty(property) && !isGenericArray(property))}
   <div>
-    <FormElement
-      id={id + "_" + property.id}
-      label={property.title}
-      inputType="header_only"
-      description={property.description}
-      info_msg={describe_type(property)}
-      info_description={getInfoDescription(property)}
-      value=""
-    />
-    <div class="flex flex-col gap-6 py-4 mt-2 ml-4 border-l pl-6">
+    {#if !hideHeaderAndIndent}
+      <FormElement
+        id={id + "_" + property.id}
+        label={property.title}
+        inputType="header_only"
+        description={property.description}
+        info_msg={describe_type(property)}
+        info_description={getInfoDescription(property)}
+        value=""
+      />
+    {/if}
+    <div
+      class="flex flex-col gap-6 {hideHeaderAndIndent
+        ? ''
+        : 'py-4 mt-2 ml-4 border-l pl-6'}"
+    >
       {#if isObjectProperty(property) && !isGenericObject(property)}
         {#each getNestedSchemaForObject(property) as nestedProp}
           <RunInputFormElement
