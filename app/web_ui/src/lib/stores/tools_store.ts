@@ -1,6 +1,7 @@
 import type { ToolSetApiDescription } from "$lib/types"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
+import { client } from "$lib/api_client"
 
 type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
@@ -44,4 +45,30 @@ function get_tool_names_from_ids(
   const tool_map = new Map(all_tools.map((tool) => [tool.id, tool.name]))
 
   return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
+}
+
+// Fetches OpenAI-compatible tool definition's function name for a given tool ID
+export async function tool_id_to_function_name(
+  tool_id: string,
+  project_id: string,
+  task_id: string,
+): Promise<string> {
+  const { data, error } = await client.GET(
+    "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition",
+    {
+      params: {
+        path: {
+          project_id,
+          task_id,
+          tool_id,
+        },
+      },
+    },
+  )
+
+  if (error) {
+    throw error
+  }
+
+  return data.function_name as string
 }

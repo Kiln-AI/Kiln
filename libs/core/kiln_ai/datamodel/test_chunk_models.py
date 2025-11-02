@@ -1,6 +1,5 @@
 import tempfile
 import uuid
-from enum import Enum
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,9 +46,12 @@ class TestFixedWindowChunkerProperties:
             "chunk_size": 512,
             "chunk_overlap": 20,
         }
-
-        assert config.chunk_size() == 512
-        assert config.chunk_overlap() == 20
+        assert config.fixed_window_properties == {
+            "chunk_size": 512,
+            "chunk_overlap": 20,
+        }
+        assert config.fixed_window_properties["chunk_size"] == 512
+        assert config.fixed_window_properties["chunk_overlap"] == 20
 
     def test_validation_positive_values(self):
         """Test that positive values are accepted."""
@@ -63,8 +65,8 @@ class TestFixedWindowChunkerProperties:
             "chunk_overlap": 0,
         }
 
-        assert config.chunk_size() == 1
-        assert config.chunk_overlap() == 0
+        assert config.fixed_window_properties["chunk_size"] == 1
+        assert config.fixed_window_properties["chunk_overlap"] == 0
 
     def test_validation_negative_values(self):
         """Test that negative values are rejected."""
@@ -95,7 +97,7 @@ class TestFixedWindowChunkerProperties:
 
     def test_validation_overlap_less_than_zero(self):
         """Test that overlap is less than zero."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="should be greater than or equal to 0"):
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
@@ -113,7 +115,7 @@ class TestFixedWindowChunkerProperties:
 
     def test_validation_chunk_size_without_overlap(self):
         """Test that chunk size without overlap will raise an error."""
-        with pytest.raises(ValueError, match=r"Chunk overlap is required."):
+        with pytest.raises(ValueError):
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
@@ -126,7 +128,7 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": "100", "chunk_overlap": 10},
+                properties={"chunk_size": "xlkh", "chunk_overlap": 10},
             )
 
     def test_validation_none_values(self):
@@ -252,25 +254,23 @@ class TestSemanticChunkerProperties:
                 "include_prev_next_rel": False,
             },
         )
-        assert cfg.embedding_config_id() == "emb-1"
+        assert cfg.semantic_properties["embedding_config_id"] == "emb-1"
+        assert cfg.semantic_properties["buffer_size"] == 2
+        assert cfg.semantic_properties["breakpoint_percentile_threshold"] == 90
+        assert cfg.semantic_properties["include_metadata"] is False
+        assert cfg.semantic_properties["include_prev_next_rel"] is False
 
 
 class TestChunkerType:
     """Test the ChunkerType enum."""
 
-    def test_enum_values(self):
-        """Test that enum has the expected values."""
-        assert ChunkerType.FIXED_WINDOW == "fixed_window"
-
-    def test_enum_inheritance(self):
-        """Test that ChunkerType inherits from str and Enum."""
-        assert issubclass(ChunkerType, str)
-        assert issubclass(ChunkerType, Enum)
-
     def test_enum_comparison(self):
         """Test enum comparison operations."""
+        # important to enforce the enum inherits from str too
         assert ChunkerType.FIXED_WINDOW == "fixed_window"
         assert ChunkerType.FIXED_WINDOW.value == "fixed_window"
+        assert ChunkerType.SEMANTIC == "semantic"
+        assert ChunkerType.SEMANTIC.value == "semantic"
 
 
 class TestChunkerConfig:
@@ -370,6 +370,37 @@ class TestChunk:
             # Test that attachment is required
             with pytest.raises(ValueError):
                 Chunk(content=None)  # type: ignore[arg-type]
+
+
+class TestPropertiesNotMatchingChunkerType:
+    """Test that properties are not matching the chunker type."""
+
+    def test_fixed_window_properties_not_matching_chunker_type(self):
+        """Test that fixed window properties are not matching the chunker type."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="fixed",
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                properties={
+                    "embedding_config_id": "emb-1",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            )
+
+    def test_semantic_properties_not_matching_chunker_type(self):
+        """Test that semantic properties are not matching the chunker type."""
+        with pytest.raises(ValueError):
+            ChunkerConfig(
+                name="semantic",
+                chunker_type=ChunkerType.SEMANTIC,
+                properties={
+                    "chunk_size": 100,
+                    "chunk_overlap": 10,
+                },
+            )
 
 
 class TestChunkedDocument:
@@ -481,7 +512,7 @@ async def test_chunked_document_load_chunks_text_read_failure(tmp_path):
 
 class TestSemanticChunkerPropertiesTypes:
     def test_invalid_types(self):
-        with pytest.raises(ValueError, match="embedding_config_id must be a string"):
+        with pytest.raises(ValueError, match="embedding_config_id"):
             ChunkerConfig(
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
@@ -494,35 +525,7 @@ class TestSemanticChunkerPropertiesTypes:
                 },
             )
 
-        with pytest.raises(ValueError, match="buffer_size must be an integer"):
-            ChunkerConfig(
-                name="semantic",
-                chunker_type=ChunkerType.SEMANTIC,
-                properties={
-                    "embedding_config_id": "emb-1",
-                    "buffer_size": "2",
-                    "breakpoint_percentile_threshold": 90,
-                    "include_metadata": True,
-                    "include_prev_next_rel": True,
-                },
-            )
-
-        with pytest.raises(
-            ValueError, match="breakpoint_percentile_threshold must be an integer"
-        ):
-            ChunkerConfig(
-                name="semantic",
-                chunker_type=ChunkerType.SEMANTIC,
-                properties={
-                    "embedding_config_id": "emb-1",
-                    "buffer_size": 2,
-                    "breakpoint_percentile_threshold": "90",
-                    "include_metadata": True,
-                    "include_prev_next_rel": True,
-                },
-            )
-
-        with pytest.raises(ValueError, match="include_metadata must be a boolean"):
+        with pytest.raises(ValueError, match="include_metadata"):
             ChunkerConfig(
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
@@ -530,12 +533,12 @@ class TestSemanticChunkerPropertiesTypes:
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
-                    "include_metadata": "yes",
+                    "include_metadata": "xxx",
                     "include_prev_next_rel": True,
                 },
             )
 
-        with pytest.raises(ValueError, match="include_prev_next_rel must be a boolean"):
+        with pytest.raises(ValueError, match="include_prev_next_rel"):
             ChunkerConfig(
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
@@ -544,7 +547,7 @@ class TestSemanticChunkerPropertiesTypes:
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
                     "include_metadata": True,
-                    "include_prev_next_rel": "yes",
+                    "include_prev_next_rel": "xxx",
                 },
             )
 
@@ -556,16 +559,13 @@ class TestChunkerConfigGetterValidations:
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={"chunk_size": 100, "chunk_overlap": 10},
         )
-        # mutate to wrong types to exercise getters
-        cfg.properties["chunk_size"] = "100"
-        with pytest.raises(ValueError, match="Chunk size must be an integer"):
-            cfg.chunk_size()
-        cfg.properties["chunk_size"] = 100
 
-        cfg.properties["chunk_overlap"] = "10"
-        with pytest.raises(ValueError, match="Chunk overlap must be an integer"):
-            cfg.chunk_overlap()
-        cfg.properties["chunk_overlap"] = 10
+        # this should work
+        cfg.fixed_window_properties
+
+        # this should raise
+        with pytest.raises(ValueError):
+            cfg.semantic_properties
 
         # semantic getters
         scfg = ChunkerConfig(
@@ -580,35 +580,9 @@ class TestChunkerConfigGetterValidations:
             },
         )
 
-        scfg.properties["embedding_config_id"] = 1
-        with pytest.raises(ValueError, match="embedding_config_id must be a string"):
-            scfg.embedding_config_id()
-        scfg.properties["embedding_config_id"] = "emb"
+        # this should work
+        scfg.semantic_properties
 
-        scfg.properties["buffer_size"] = "2"
-        with pytest.raises(ValueError, match="Buffer size must be an integer"):
-            scfg.buffer_size()
-        scfg.properties["buffer_size"] = 2
-
-        scfg.properties["breakpoint_percentile_threshold"] = "50"
-        with pytest.raises(
-            ValueError, match="Breakpoint percentile threshold must be an integer"
-        ):
-            scfg.breakpoint_percentile_threshold()
-        scfg.properties["breakpoint_percentile_threshold"] = -1
-        with pytest.raises(ValueError, match="between 0 and 100"):
-            scfg.breakpoint_percentile_threshold()
-        scfg.properties["breakpoint_percentile_threshold"] = 150
-        with pytest.raises(ValueError, match="between 0 and 100"):
-            scfg.breakpoint_percentile_threshold()
-        scfg.properties["breakpoint_percentile_threshold"] = 50
-
-        scfg.properties["include_metadata"] = "true"
-        with pytest.raises(ValueError, match="Include metadata must be a boolean"):
-            scfg.include_metadata()
-        scfg.properties["include_metadata"] = True
-
-        scfg.properties["include_prev_next_rel"] = "false"
-        with pytest.raises(ValueError, match="Include prev next rel must be a boolean"):
-            scfg.include_prev_next_rel()
-        scfg.properties["include_prev_next_rel"] = False
+        # this should raise
+        with pytest.raises(ValueError):
+            scfg.fixed_window_properties

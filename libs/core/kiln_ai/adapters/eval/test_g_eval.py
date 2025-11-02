@@ -18,7 +18,13 @@ from kiln_ai.datamodel import (
     TaskRequirement,
     TaskRun,
 )
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType, EvalOutputScore
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalOutputScore,
+)
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
@@ -273,13 +279,15 @@ def test_token_case():
         assert token.lower() == token
 
 
-def test_generate_run_description(test_eval_config, test_run_config, test_task_run):
-    """Test that generate_run_description correctly uses task_run.output.output (the string) rather than task_run.output (the object)."""
+def test_generate_final_answer_run_description(
+    test_eval_config, test_run_config, test_task_run
+):
+    """Test that generate_final_answer_run_description correctly uses task_run.output.output (the string) rather than task_run.output (the object)."""
     # Create G-Eval instance
     g_eval = GEval(test_eval_config, test_run_config)
 
-    # Call generate_run_description
-    description = g_eval.generate_run_description(
+    # Call generate_final_answer_run_description
+    description = g_eval.generate_final_answer_run_description(
         test_task_run.input, test_task_run.output.output
     )
 
@@ -301,6 +309,76 @@ def test_generate_run_description(test_eval_config, test_run_config, test_task_r
     # The string should not contain 'TaskOutput' or other object indicators
     assert "TaskOutput" not in description
     assert "output=" not in description  # Would appear if object __repr__ was used
+
+
+def test_generate_full_trace_run_description(test_eval_config, test_run_config):
+    """Test that generate_full_trace_run_description correctly formats the description with all components."""
+    # Create G-Eval instance
+    g_eval = GEval(test_eval_config, test_run_config)
+
+    eval_input = "Tell me a joke about chickens"
+    conversation_history = (
+        "User: Tell me a joke\nAssistant: Why did the chicken cross the road?"
+    )
+
+    # Test case 1: With available tools (non-empty string)
+    available_tools = "tool1: description1\ntool2: description2"
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, available_tools, conversation_history
+    )
+
+    expected = f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+This is the list of tools available to the model:
+<eval_data>
+{available_tools}
+</eval_data>
+
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+    assert description == expected
+
+    # Test case 2: With available tools as empty string
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, "", conversation_history
+    )
+
+    expected = f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+There were no tools available to the model.
+
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+    assert description == expected
+
+    # Test case 3: With available_tools as None
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, None, conversation_history
+    )
+
+    expected = f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+    assert description == expected
 
 
 def test_metric_offsets_and_search_ranges(
@@ -610,4 +688,58 @@ async def test_all_built_in_models_llm_as_judge(
         test_run_config,
         model_name,
         provider_name.value,
+    )
+
+
+@pytest.mark.paid
+async def test_run_g_eval_full_trace_evaluation_data_type(
+    test_task, test_run_config, test_task_run, tmp_path
+):
+    """Test G-Eval run_eval with full_trace evaluation data type"""
+    # Create an eval with full_trace evaluation data type
+    eval = Eval(
+        name="Full Trace Eval",
+        parent=test_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="topic_alignment",
+                type=TaskOutputRatingType.five_star,
+            ),
+            EvalOutputScore(
+                name="appropriateness",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        evaluation_data_type=EvalDataType.full_trace,
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(
+        name="Full Trace Config",
+        parent=eval,
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1", "step2"]},
+    )
+    config.save_to_file()
+
+    # Add trace data to the task run
+    test_task_run.trace = [
+        {"role": "user", "content": "Tell me a joke"},
+        {
+            "role": "assistant",
+            "content": "Why did the chicken cross the road? To get to the other side!",
+        },
+    ]
+
+    # Run the evaluation
+    await run_g_eval_test(
+        test_task,
+        config,
+        test_task_run,
+        EvalConfigType.g_eval,
+        test_run_config,
     )

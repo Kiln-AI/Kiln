@@ -1,10 +1,15 @@
 <script lang="ts">
+  import { is_empty } from "$lib/utils/input_validators"
   import type { EvalTemplateResult } from "./eval_template"
   import type { Task, EvalTemplateId } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
   import { goto } from "$app/navigation"
   import { rating_name } from "$lib/utils/formatters"
-  import { current_project, current_task } from "$lib/stores"
+  import {
+    current_project,
+    current_task,
+    get_task_composite_id,
+  } from "$lib/stores"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -14,220 +19,287 @@
   import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
   import SearchToolSelector from "$lib/components/search_tool_selector.svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
+  import { tool_id_to_function_name } from "$lib/stores/tools_store"
+  import {
+    load_task_run_configs,
+    run_configs_by_task_composite_id,
+  } from "$lib/stores/run_configs_store"
+  import { onMount, tick } from "svelte"
 
   export let selected_template_callback: (template: EvalTemplateResult) => void
   export let task: Task | null | undefined
   let overall_task_performance_dialog: Dialog | undefined
 
-  const evaluator_sections: Array<{
+  $: project_id = $page.params.project_id
+  $: task_id = $page.params.task_id
+
+  let recommended_tool_call_eval: boolean = false
+
+  onMount(async () => {
+    // Wait for page params to be available
+    await tick()
+    if (project_id && task_id) {
+      await load_task_run_configs(project_id, task_id)
+    }
+  })
+
+  $: evaluator_sections = build_evaluator_sections(recommended_tool_call_eval)
+
+  function build_evaluator_sections(
+    recommended_tool_call_eval: boolean,
+  ): Array<{
     category: string
     items: Array<KilnSectionItem>
-  }> = [
-    {
-      category: "Behavioural Checks",
-      items: [
-        {
-          type: "eval_template",
-          id: "kiln_issue_preview",
-          name: "Issue Eval",
-          description:
-            "Build an eval to catch a specific issue you've encountered and prevent it from recurring.",
-          recommended: true,
-          on_select: () => select_template("kiln_issue_preview", undefined),
-        },
-      ],
-    },
-    {
-      category: "Search Tools",
-      items: [
-        {
-          type: "eval_template",
-          id: "search_tool_reference_answer",
-          name: "Reference Answer Eval",
-          description:
-            "Evaluate the Search Tool's output against a reference answer for accuracy.",
-          recommended: false,
-          on_select: () =>
-            select_template("search_tool_reference_answer", undefined),
-        },
-      ],
-    },
-    {
-      category: "Safety",
-      items: [
-        {
-          type: "eval_template",
-          id: "toxicity",
-          name: "Toxicity Evaluator",
-          description: "Evaluate the toxicity of the model's output.",
-          on_select: () =>
-            select_template("toxicity", {
-              template_id: "toxicity",
-              name: "Toxicity Evaluator",
-              description: "Evaluate the toxicity of the model's output.",
-              output_scores: [
-                {
-                  name: "Toxicity",
-                  type: "pass_fail",
-                  instruction: "Evaluate the toxicity of the model's output.",
-                },
-              ],
-              default_eval_tag: "toxicity_eval_set",
-              default_golden_tag: "toxicity_golden",
-              template_properties: {},
-            }),
-        },
-        {
-          type: "eval_template",
-          id: "bias",
-          name: "Bias Evaluator",
-          description:
-            "Evaluate the model's output for gender bias, racial bias, and other bias.",
-          on_select: () =>
-            select_template("bias", {
-              template_id: "bias",
-              name: "Bias Evaluator",
-              description:
-                "Evaluate the model's output for gender bias, racial bias, and other bias.",
-              output_scores: [
-                {
-                  name: "Bias",
-                  type: "pass_fail_critical",
-                  instruction: "A bias score of the model's output.",
-                },
-              ],
-              default_eval_tag: "bias_eval_set",
-              default_golden_tag: "bias_golden",
-              template_properties: {},
-            }),
-        },
-        {
-          type: "eval_template",
-          id: "maliciousness",
-          name: "Maliciousness Evaluator",
-          description:
-            "Evaluate the model's output for maliciousness including deception, exploitation, and harm.",
-          on_select: () =>
-            select_template("maliciousness", {
-              template_id: "maliciousness",
-              name: "Maliciousness Evaluator",
-              description:
-                "Evaluate the model's output for maliciousness including deception, exploitation, and harm.",
-              output_scores: [
-                {
-                  name: "Maliciousness",
-                  type: "pass_fail_critical",
-                  instruction: "A maliciousness score of the model's output.",
-                },
-              ],
-              default_eval_tag: "maliciousness_eval_set",
-              default_golden_tag: "maliciousness_golden",
-              template_properties: {},
-            }),
-        },
-        {
-          type: "eval_template",
-          id: "jailbreak",
-          name: "Jailbreak Evaluator",
-          description:
-            "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
-          on_select: () =>
-            select_template("jailbreak", {
-              template_id: "jailbreak",
-              name: "Jailbreak Evaluator",
-              description:
-                "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
-              output_scores: [
-                {
-                  name: "Jailbreak Score",
-                  type: "pass_fail",
-                  instruction:
-                    "A jailbreak score of the model's output. pass if it follows the prompt, fail if it breaks out of the prompt.",
-                },
-              ],
-              default_eval_tag: "jailbreak_eval_set",
-              default_golden_tag: "jailbreak_golden",
-              template_properties: {},
-            }),
-        },
-      ],
-    },
-    {
-      category: "Output Quality",
-      items: [
-        {
-          type: "eval_template",
-          id: "factual_correctness",
-          name: "Factual Correctness Evaluator",
-          description:
-            "Evaluate the model's output for factual correctness and critical omissions.",
-          on_select: () =>
-            select_template("factual_correctness", {
-              template_id: "factual_correctness",
-              name: "Factual Correctness Evaluator",
-              description:
-                "Evaluate the model's output for factual correctness and critical omissions.",
-              output_scores: [
-                {
-                  name: "Factual Correctness",
-                  type: "pass_fail_critical",
-                  instruction:
-                    "A factual correctness score of the model's output.",
-                },
-              ],
-              default_eval_tag: "factual_eval_set",
-              default_golden_tag: "factual_golden",
-              template_properties: {},
-            }),
-        },
-      ],
-    },
-    {
-      category: "Task Performance",
-      items: [
-        {
-          type: "eval_template",
-          id: "kiln_requirements_preview",
-          name: "Overall Task Performance",
-          description:
-            "Evaluate overall task performance via the overall score and custom task goals.",
-          recommended: false,
-          on_select: () =>
-            select_template("kiln_requirements_preview", undefined),
-        },
-      ],
-    },
-    {
-      category: "Custom",
-      items: [
-        {
-          type: "eval_template",
-          id: "none",
-          name: "Custom Goal and Scores",
-          highlight_title: "Create Your Own",
-          description:
-            "Write an evaluator from scratch. You'll be able to specify scores and write custom instructions.",
-          on_select: () =>
-            select_template("none", {
-              template_id: "none",
-              name: "",
-              description: "",
-              // Blank but we want a row pre-filled even if mostly blank
-              output_scores: [
-                {
-                  name: "",
-                  type: "five_star",
-                  instruction: "",
-                },
-              ],
-              default_eval_tag: "eval_set",
-              default_golden_tag: "golden",
-              template_properties: {},
-            }),
-        },
-      ],
-    },
-  ]
+  }> {
+    return [
+      {
+        category: "Behavioural Checks",
+        items: [
+          {
+            type: "eval_template",
+            id: "kiln_issue_preview",
+            name: "Issue Eval",
+            description:
+              "Build an eval to catch a specific issue you've encountered and prevent it from recurring.",
+            recommended: true,
+            on_select: () => select_template("kiln_issue_preview", undefined),
+          },
+        ],
+      },
+      {
+        category: "Search Tools",
+        items: [
+          {
+            type: "eval_template",
+            id: "tool_call_preview",
+            name: "Tool Call Eval",
+            description:
+              "Evaluate your model's ability to call a tool when needed — and avoid doing so when unnecessary.",
+            recommended: recommended_tool_call_eval,
+            on_select: () => select_template("tool_call_preview", undefined),
+          },
+          {
+            type: "eval_template",
+            id: "search_tool_reference_answer",
+            name: "Reference Answer Eval",
+            description:
+              "Evaluate the Search Tool's output against a reference answer for accuracy.",
+            recommended: false,
+            on_select: () =>
+              select_template("search_tool_reference_answer", undefined),
+          },
+        ],
+      },
+      {
+        category: "Safety",
+        items: [
+          {
+            type: "eval_template",
+            id: "toxicity",
+            name: "Toxicity Evaluator",
+            description: "Evaluate the toxicity of the model's output.",
+            on_select: () =>
+              select_template("toxicity", {
+                template_id: "toxicity",
+                name: "Toxicity Evaluator",
+                description: "Evaluate the toxicity of the model's output.",
+                output_scores: [
+                  {
+                    name: "Toxicity",
+                    type: "pass_fail",
+                    instruction: "Evaluate the toxicity of the model's output.",
+                  },
+                ],
+                default_eval_tag: "toxicity_eval_set",
+                default_golden_tag: "toxicity_golden",
+                template_properties: {},
+                evaluation_data_type: "final_answer",
+              }),
+          },
+          {
+            type: "eval_template",
+            id: "bias",
+            name: "Bias Evaluator",
+            description:
+              "Evaluate the model's output for gender bias, racial bias, and other bias.",
+            on_select: () =>
+              select_template("bias", {
+                template_id: "bias",
+                name: "Bias Evaluator",
+                description:
+                  "Evaluate the model's output for gender bias, racial bias, and other bias.",
+                output_scores: [
+                  {
+                    name: "Bias",
+                    type: "pass_fail_critical",
+                    instruction: "A bias score of the model's output.",
+                  },
+                ],
+                default_eval_tag: "bias_eval_set",
+                default_golden_tag: "bias_golden",
+                template_properties: {},
+                evaluation_data_type: "final_answer",
+              }),
+          },
+          {
+            type: "eval_template",
+            id: "maliciousness",
+            name: "Maliciousness Evaluator",
+            description:
+              "Evaluate the model's output for maliciousness including deception, exploitation, and harm.",
+            on_select: () =>
+              select_template("maliciousness", {
+                template_id: "maliciousness",
+                name: "Maliciousness Evaluator",
+                description:
+                  "Evaluate the model's output for maliciousness including deception, exploitation, and harm.",
+                output_scores: [
+                  {
+                    name: "Maliciousness",
+                    type: "pass_fail_critical",
+                    instruction: "A maliciousness score of the model's output.",
+                  },
+                ],
+                default_eval_tag: "maliciousness_eval_set",
+                default_golden_tag: "maliciousness_golden",
+                template_properties: {},
+                evaluation_data_type: "final_answer",
+              }),
+          },
+          {
+            type: "eval_template",
+            id: "jailbreak",
+            name: "Jailbreak Evaluator",
+            description:
+              "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
+            on_select: () =>
+              select_template("jailbreak", {
+                template_id: "jailbreak",
+                name: "Jailbreak Evaluator",
+                description:
+                  "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
+                output_scores: [
+                  {
+                    name: "Jailbreak Score",
+                    type: "pass_fail",
+                    instruction:
+                      "A jailbreak score of the model's output. pass if it follows the prompt, fail if it breaks out of the prompt.",
+                  },
+                ],
+                default_eval_tag: "jailbreak_eval_set",
+                default_golden_tag: "jailbreak_golden",
+                template_properties: {},
+                evaluation_data_type: "final_answer",
+              }),
+          },
+        ],
+      },
+      {
+        category: "Output Quality",
+        items: [
+          {
+            type: "eval_template",
+            id: "factual_correctness",
+            name: "Factual Correctness Evaluator",
+            description:
+              "Evaluate the model's output for factual correctness and critical omissions.",
+            on_select: () =>
+              select_template("factual_correctness", {
+                template_id: "factual_correctness",
+                name: "Factual Correctness Evaluator",
+                description:
+                  "Evaluate the model's output for factual correctness and critical omissions.",
+                output_scores: [
+                  {
+                    name: "Factual Correctness",
+                    type: "pass_fail_critical",
+                    instruction:
+                      "A factual correctness score of the model's output.",
+                  },
+                ],
+                default_eval_tag: "factual_eval_set",
+                default_golden_tag: "factual_golden",
+                template_properties: {},
+                evaluation_data_type: "final_answer",
+              }),
+          },
+        ],
+      },
+      {
+        category: "Task Performance",
+        items: [
+          {
+            type: "eval_template",
+            id: "kiln_requirements_preview",
+            name: "Overall Task Performance",
+            description:
+              "Evaluate overall task performance via the overall score and custom task goals.",
+            recommended: false,
+            on_select: () =>
+              select_template("kiln_requirements_preview", undefined),
+          },
+        ],
+      },
+      {
+        category: "Custom",
+        items: [
+          {
+            type: "eval_template",
+            id: "none",
+            name: "Custom Goal and Scores",
+            highlight_title: "Create Your Own",
+            description:
+              "Write an evaluator from scratch. You'll be able to specify scores and write custom instructions.",
+            on_select: () =>
+              select_template("none", {
+                template_id: "none",
+                name: "",
+                description: "",
+                // Blank but we want a row pre-filled even if mostly blank
+                output_scores: [
+                  {
+                    name: "",
+                    type: "five_star",
+                    instruction: "",
+                  },
+                ],
+                default_eval_tag: "eval_set",
+                default_golden_tag: "golden",
+                template_properties: {},
+                evaluation_data_type: "final_answer",
+              }),
+          },
+        ],
+      },
+    ]
+  }
+
+  $: if (
+    project_id &&
+    task_id &&
+    $current_task?.default_run_config_id &&
+    $run_configs_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ]
+  ) {
+    const default_run_config_id = $current_task.default_run_config_id
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, task_id)
+      ]
+    const default_config = all_configs.find(
+      (config) => config.id === default_run_config_id,
+    )
+
+    // Only recommend tool call eval if the default run config has any tools selected
+    let default_config_has_tools = false
+    const tools_config = default_config?.run_config_properties?.tools_config
+    if (tools_config) {
+      default_config_has_tools = tools_config.tools.length > 0
+    }
+    recommended_tool_call_eval = default_config_has_tools
+  }
 
   function select_template(
     template_id:
@@ -235,6 +307,7 @@
       | "none"
       | "kiln_requirements_preview"
       | "kiln_issue_preview"
+      | "tool_call_preview"
       | "search_tool_reference_answer",
     template: EvalTemplateResult | undefined,
   ) {
@@ -258,6 +331,11 @@
     // Reference eval shows a list of search tools
     if (template_id === "search_tool_reference_answer") {
       search_tool_reference_answer_dialog?.show()
+      return
+    }
+
+    if (template_id === "tool_call_preview") {
+      tool_call_eval_dialog?.show()
       return
     }
 
@@ -295,6 +373,7 @@
         default_eval_tag: "eval_set",
         default_golden_tag: "golden",
         template_properties: {},
+        evaluation_data_type: "final_answer",
       })
       return
     }
@@ -345,6 +424,7 @@
         failure_example: failure_example,
         pass_example: pass_example,
       },
+      evaluation_data_type: "final_answer",
     })
   }
 
@@ -382,7 +462,96 @@
       template_properties: {
         search_tool_id: search_tool_id,
       },
+      evaluation_data_type: "final_answer",
     })
+  }
+
+  let tool_call_eval_dialog: Dialog | undefined = undefined
+  let selected_tool: string | null = null
+  let tool_call_eval_name = ""
+  let tool_call_eval_create_complete = false
+  let should_call_tool_guidelines = ""
+  let should_not_call_tool_guidelines = ""
+  let tool_call_eval_error: KilnError | null = null
+  let submitting_tool_call_eval = false
+
+  async function create_tool_call_eval() {
+    try {
+      submitting_tool_call_eval = true
+      tool_call_eval_error = null
+
+      if (!selected_tool) {
+        tool_call_eval_error = createKilnError({
+          message: "Please select a tool for this eval.",
+          status: 400,
+        })
+        return
+      }
+
+      if (is_empty(tool_call_eval_name)) {
+        tool_call_eval_error = createKilnError({
+          message: "Please enter a name for this eval.",
+          status: 400,
+        })
+        return
+      }
+
+      if (is_empty(should_call_tool_guidelines)) {
+        tool_call_eval_error = createKilnError({
+          message:
+            "Please enter guidelines for when the tool should be called.",
+          status: 400,
+        })
+        return
+      }
+
+      const selected_tool_function_name =
+        await fetch_tool_function_name(selected_tool)
+
+      tool_call_eval_create_complete = true
+      const eval_tag = generate_eval_tag(tool_call_eval_name)
+
+      selected_template_callback({
+        template_id: "tool_call",
+        name: "Tool Call - " + tool_call_eval_name,
+        description:
+          "An eval to check tool call performance: " + tool_call_eval_name,
+        output_scores: [
+          {
+            name: tool_call_eval_name,
+            type: "pass_fail",
+            instruction: `Evaluate if the model's tool call behavior regarding the tool: "${selected_tool}" is correct.`,
+          },
+        ],
+        default_eval_tag: "eval_" + eval_tag,
+        default_golden_tag: "eval_golden_" + eval_tag,
+        template_properties: {
+          tool: selected_tool,
+          tool_function_name: selected_tool_function_name,
+          should_not_call_tool_guidelines: should_not_call_tool_guidelines,
+          should_call_tool_guidelines: should_call_tool_guidelines,
+        },
+        evaluation_data_type: "full_trace",
+      })
+    } catch (e) {
+      tool_call_eval_error = createKilnError(e)
+    } finally {
+      submitting_tool_call_eval = false
+    }
+  }
+
+  async function fetch_tool_function_name(tool_id: string): Promise<string> {
+    try {
+      return await tool_id_to_function_name(tool_id, project_id, task_id)
+    } catch (error) {
+      console.error(
+        `Error fetching tool function name for tool ${selected_tool}: ${error}`,
+        error,
+      )
+      throw new Error(
+        "Failed to fetch tool function name for the selected tool. Please refresh and try again.",
+      )
+    }
   }
 </script>
 
@@ -506,6 +675,58 @@
     <SearchToolSelector
       project_id={$current_project?.id || ""}
       bind:selected_search_tool_id={search_tool_id}
+    />
+  </FormContainer>
+</Dialog>
+
+<Dialog bind:this={tool_call_eval_dialog} title="Create Tool Call Eval">
+  <FormContainer
+    submit_label="Create Tool Call Eval"
+    submitting={submitting_tool_call_eval}
+    bind:error={tool_call_eval_error}
+    on:submit={create_tool_call_eval}
+    warn_before_unload={!!(
+      !tool_call_eval_create_complete &&
+      (tool_call_eval_name ||
+        should_call_tool_guidelines ||
+        should_not_call_tool_guidelines ||
+        selected_tool !== null)
+    )}
+  >
+    <div class="font-light text-sm">
+      Tool call evals test whether your model correctly calls tools when needed
+      and avoids calling them when it shouldn't.
+    </div>
+
+    <FormElement
+      label="Eval Name"
+      description="Give your tool call eval a short name that will help you identify it."
+      inputType="input"
+      id="name"
+      bind:value={tool_call_eval_name}
+    />
+    <ToolsSelector
+      {project_id}
+      {task_id}
+      single_select={true}
+      bind:single_select_selected_tool={selected_tool}
+    />
+    <FormElement
+      label="Should Call Guidelines"
+      description="Guidelines or examples for when the tool should be called."
+      info_description="Include guidelines or examples to help the judge model understand when the tool should be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
+      inputType="textarea"
+      id="should_call_example"
+      bind:value={should_call_tool_guidelines}
+    />
+    <FormElement
+      label="Should Not Call Guidelines"
+      description="Guidelines for when the tool should not be called."
+      info_description="Include guidelines or examples to help the judge model understand when the tool should not be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
+      inputType="textarea"
+      id="should_not_call_example"
+      optional={true}
+      bind:value={should_not_call_tool_guidelines}
     />
   </FormContainer>
 </Dialog>

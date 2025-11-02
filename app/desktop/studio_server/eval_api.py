@@ -13,6 +13,7 @@ from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
@@ -101,6 +102,7 @@ class CreateEvaluatorRequest(BaseModel):
     eval_set_filter_id: DatasetFilterId
     eval_configs_filter_id: DatasetFilterId
     template_properties: dict[str, str | float | int | bool | list[str]]
+    evaluation_data_type: EvalDataType
 
 
 class CreateEvalConfigRequest(BaseModel):
@@ -307,6 +309,7 @@ def connect_evals_api(app: FastAPI):
             eval_set_filter_id=request.eval_set_filter_id,
             eval_configs_filter_id=request.eval_configs_filter_id,
             template_properties=request.template_properties,
+            evaluation_data_type=request.evaluation_data_type,
             parent=task,
         )
         eval.save_to_file()

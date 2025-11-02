@@ -145,6 +145,8 @@
       if (template_id) params.set("template_id", template_id)
       const eval_id = $page.url.searchParams.get("eval_id")
       if (eval_id) params.set("eval_id", eval_id)
+      const tool_id = $page.url.searchParams.get("tool_id")
+      if (tool_id) params.set("tool_id", tool_id)
       const splits_param = $page.url.searchParams.get("splits")
       if (splits_param) params.set("splits", splits_param)
 

@@ -3,6 +3,7 @@ import type { Eval, Task } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+import { available_tools } from "$lib/stores"
 
 /**
  * Data model for the synth data guidance component.
@@ -110,6 +111,8 @@ export class SynthDataGuidanceDataModel {
         this.selected_template.set("issue_eval_template")
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
+      } else if (this.evaluator.template === "tool_call") {
+        this.selected_template.set("tool_call_eval_template")
       }
     } catch (error) {
       this.loading_error.set(createKilnError(error))
@@ -182,6 +185,18 @@ export class SynthDataGuidanceDataModel {
       )
       this.output_guidance.set(
         this.requirements_eval_template(this.evaluator, this.task, "outputs"),
+      )
+    }
+
+    if (template == "tool_call_eval_template" && this.evaluator) {
+      this.topic_guidance.set(
+        this.tool_call_eval_template(this.evaluator, "topics"),
+      )
+      this.input_guidance.set(
+        this.tool_call_eval_template(this.evaluator, "inputs"),
+      )
+      this.output_guidance.set(
+        this.tool_call_eval_template(this.evaluator, "outputs"),
       )
     }
 
@@ -469,6 +484,183 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     return template
   }
 
+  private tool_call_eval_template(
+    tool_call: Eval,
+    task_type: "topics" | "inputs" | "outputs",
+  ): string {
+    const tool = tool_call.template_properties.tool
+    if (!tool) {
+      throw new Error("Tool is required for tool call template")
+    }
+
+    let template =
+      "We are building a dataset for a tool call evaluation. We want to test whether a model correctly calls a tool when it should, and avoids calling it when it shouldn't.\n\n"
+
+    if (task_type == "topics") {
+      template += `When generating topics, create natural domain-specific topics that comprehensively test the tool's usage.
+
+IMPORTANT FOR TOP-LEVEL TOPICS: When generating top-level topics (no parent topic path), aim for a 50/50 balance between:
+- Topics that relate to the "should call tool" guidelines (in-domain queries where the tool should be used)
+- Topics that relate to the "should NOT call tool" guidelines (out-of-domain queries where the tool should not be used)
+
+IMPORTANT FOR SUBTOPICS: When generating subtopics (with a parent topic path), generate subtopics that are naturally relevant to the parent topic. Do not force a 50/50 split - subtopics should follow the domain/intent of their parent topic.
+
+Here are two examples of topics generated from an example task/system prompt, tool description, and guidelines:
+
+## Example 1
+ - Task/System Prompt: "You are a cooking assistant that helps users find and follow recipes."
+ - Tool: "search_recipes" - searches a recipe database for recipes by ingredients, cuisine, or dish name
+ - Should call tool guidelines: "Questions asking for recipes, dish suggestions, or what to cook with specific ingredients"
+ - Should NOT call tool guidelines: "General cooking advice, technique questions, restaurant recommendations, or food history questions"
+ - Generated Topics (showing two levels of depth):
+   - "Recipe Searches by Ingredient" (maps to should call guidelines)
+      - "Recipes with Chicken"
+      - "Vegetarian Recipes"
+      - "Desserts with Chocolate"
+   - "Recipe Searches by Cuisine" (maps to should call guidelines)
+      - "Italian Dishes"
+      - "Asian Cuisine"
+   - "Cooking Techniques" (maps to should NOT call guidelines)
+      - "How to Sauté"
+      - "Knife Skills"
+   - "Restaurant Recommendations" (maps to should NOT call guidelines)
+      - "Best Italian Restaurants"
+      - "Where to Eat Downtown"
+
+## Example 2
+ - Task/System Prompt: "You are a customer support assistant for an e-commerce company."
+ - Tool: "lookup_order" - retrieves order details, tracking info, and status for a specific order ID
+ - Should call tool guidelines: "Questions about specific orders, order status, tracking information, or delivery details when an order ID or number is mentioned or implied"
+ - Should NOT call tool guidelines: "General policy questions, how to place orders, account setup questions, or product information questions"
+ - Generated Topics (showing two levels of depth):
+   - "Order Status Inquiries" (maps to should call guidelines)
+      - "Where is My Order"
+      - "Order Tracking"
+      - "Delivery Delays"
+   - "Order Modifications" (maps to should call guidelines)
+      - "Cancel My Order"
+      - "Change Delivery Address"
+   - "General Policy Questions" (maps to should NOT call guidelines)
+      - "Return Policy"
+      - "Shipping Options"
+   - "Account Questions" (maps to should NOT call guidelines)
+      - "Reset Password"
+      - "Update Payment Method"
+`
+    } else if (task_type == "inputs") {
+      template += `
+
+All generated inputs must be relevant to the provided topic path and subtopics. The topic path defines the context - stay within that context while generating both queries. The topic should provide a hint if your inputs should be triggering the tool or not for this tool evaluation.
+
+When creating the mix of queries:
+- If the topic path suggests in-domain queries (related to "should call" guidelines), stay within that domain but vary the TYPE of question. Some questions should trigger the tool (factual/lookup questions), others should not (opinion/meta questions about the same topic).
+- If the topic path suggests out-of-domain queries (related to "should NOT call" guidelines), all questions should be out-of-domain but varied in nature.
+- NEVER mix domains. For example, if the topic is "Recipes with Chicken", ALL questions should be about chicken. Do NOT ask about other foods. Instead, vary whether questions are factual (should call tool) vs opinion/meta questions (should NOT call tool).
+
+Here are two examples showing how guidelines map to inputs:
+
+## Example 1
+ - Task/System Prompt: "You are a cooking assistant that helps users find and follow recipes."
+ - Tool: "search_recipes" - searches a recipe database for recipes by ingredients, cuisine, or dish name
+ - Should call tool guidelines: "Questions asking for recipes, dish suggestions, or what to cook with specific ingredients"
+ - Should NOT call tool guidelines: "General cooking advice, technique questions, restaurant recommendations, or food history questions"
+ - Topic Path: ["Recipe Searches by Ingredient", "Recipes with Chicken"]
+ - Generated Inputs (all relevant to chicken, mix of should/shouldn't call tool):
+   - "Find recipes with chicken and rice" (relevant to topic, matches should call: recipe request → should call tool)
+   - "What can I make with chicken breast?" (relevant to topic, matches should call: recipe with ingredient → should call tool)
+   - "Show me something with chicken thighs" (relevant to topic, matches should call but ambiguous → should call tool)
+   - "How do I properly butterfly a chicken breast?" (relevant to topic, matches should NOT call: technique question → should NOT call tool)
+   - "What temperature should chicken be cooked to?" (relevant to topic, matches should NOT call: cooking advice → should NOT call tool)
+
+## Example 2
+ - Task/System Prompt: "You are a customer support assistant for an e-commerce company."
+ - Tool: "lookup_order" - retrieves order details, tracking info, and status for a specific order ID
+ - Should call tool guidelines: "Questions about specific orders, order status, tracking information, or delivery details when an order ID or number is mentioned or implied"
+ - Should NOT call tool guidelines: "General policy questions, how to place orders, account setup questions, or product information questions"
+ - Topic Path: ["Order Status Inquiries", "Where is My Order"]
+ - Generated Inputs (all relevant to order location/status, mix of should/shouldn't call tool):
+   - "Where is order #12345?" (relevant to topic, matches should call: specific order → should call tool)
+   - "I placed an order yesterday, where is it?" (relevant to topic, matches should call: implied order lookup → should call tool)
+   - "Can you check on my recent order?" (relevant to topic, matches should call but ambiguous → should call tool)
+   - "What's your policy if my order arrives late?" (relevant to topic, matches should NOT call: policy question → should NOT call tool)
+   - "How long does shipping usually take?" (relevant to topic, matches should NOT call: general info → should NOT call tool)
+`
+    } else if (task_type == "outputs") {
+      // For outputs, we're calling the actual model being evaluated with its original prompt and tools enabled.
+      // The model's behavior is what we're testing. However, we can provide context about what we expect to see.
+
+      return ""
+    }
+
+    template += "\n\n"
+
+    const should_call_tool_guidelines =
+      tool_call.template_properties.should_call_tool_guidelines
+    const should_not_call_tool_guidelines =
+      tool_call.template_properties.should_not_call_tool_guidelines
+
+    // Find tool name and description from available tools
+    const tool_info = this.get_tool_info(tool as string)
+
+    template += `## Tool Information
+Now apply the same approach to the actual tool being evaluated:
+
+The tool being evaluated is:
+<tool_name>
+${tool_info?.name ?? (tool as string)}
+</tool_name>
+<tool_description>
+${tool_info?.description ? `${tool_info.description}` : "None provided"}
+</tool_description>
+`
+
+    if (should_call_tool_guidelines) {
+      template += `
+## When the Tool SHOULD Be Called
+Examples and guidelines for when the tool should be used:
+<should_call_tool_guidelines>
+${should_call_tool_guidelines}
+</should_call_tool_guidelines>
+
+When generating ${task_type}, use these guidelines to create test cases that ARE in the tool's domain and should trigger tool usage.
+`
+    }
+
+    if (should_not_call_tool_guidelines) {
+      template += `
+## When the Tool Should NOT Be Called
+Examples and guidelines for when the tool should not be used:
+<should_not_call_tool_guidelines>
+${should_not_call_tool_guidelines}
+</should_not_call_tool_guidelines>
+
+When generating ${task_type}, use these guidelines to create test cases that are OUT of the tool's domain and should not trigger tool usage.
+`
+    }
+
+    return template
+  }
+
+  private get_tool_info(
+    tool_id: string,
+  ): { name: string; description: string | null } | null {
+    if (!this.project_id) return null
+
+    const project_tools = get(available_tools)[this.project_id]
+
+    if (!project_tools) return null
+
+    // Search through all tool sets to find the tool
+    for (const tool_set of project_tools) {
+      const tool = tool_set.tools.find((t) => t.id === tool_id)
+      if (tool) {
+        return { name: tool.name, description: tool.description }
+      }
+    }
+
+    return null
+  }
+
   private build_select_options(
     templates: StaticTemplates[],
     evaluator: Eval | null,
@@ -490,6 +682,13 @@ When generating model inputs, generate inputs that are likely to trigger the iss
           value: "requirements_eval_template",
           description:
             "Generate data expected to trigger the requirements of a specific eval.",
+        })
+      } else if (evaluator.template === "tool_call") {
+        eval_options.push({
+          label: "Tool Call Eval",
+          value: "tool_call_eval_template",
+          description:
+            "Generate data expected to trigger a specific tool call, for an eval to detect that tool call.",
         })
       }
       if (eval_options.length > 0) {

@@ -5,13 +5,15 @@ from litellm.types.utils import ChatCompletionTokenLogprob
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
+from kiln_ai.adapters.eval.eval_utils.eval_utils import EvalUtils
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutput
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
-from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalScores
+from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
 from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
 
 # all the tokens we score for, and their float scores.
@@ -102,7 +104,9 @@ class GEval(BaseEval):
 
         self.geval_task = GEvalTask(eval_config)
 
-    def generate_run_description(self, eval_input: str, eval_output: str) -> str:
+    def generate_final_answer_run_description(
+        self, eval_input: str, eval_output: str
+    ) -> str:
         return f"""The model was given the following input for the task: 
 <eval_data>
 {eval_input}
@@ -132,6 +136,37 @@ This is the reference answer:
 {reference_answer}
 </eval_data>
 """
+
+    def generate_full_trace_run_description(
+        self, eval_input: str, available_tools: str | None, conversation_history: str
+    ) -> str:
+        description = ""
+        description += f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+"""
+
+        if available_tools is not None:
+            if available_tools != "":
+                description += f"""
+This is the list of tools available to the model:
+<eval_data>
+{available_tools}
+</eval_data>
+"""
+            else:
+                description += """
+There were no tools available to the model.
+"""
+
+        description += f"""
+This is the full conversation history for the task run:
+<eval_data>
+{conversation_history}
+</eval_data>
+"""
+        return description
 
     async def run_eval(
         self, task_run: TaskRun
@@ -176,10 +211,31 @@ This is the reference answer:
             ),
         )
 
-        run_description = self.generate_run_description(
-            task_run.input, task_run.output.output
-        )
-        # If type if ref answer, self.generate_ref_ans_run_description(task_run.input, task_run.output.output, ref_ans)
+        if self.eval.evaluation_data_type == EvalDataType.full_trace:
+            if task_run.trace is None:
+                raise ValueError("Task run trace is required for full trace evaluation")
+
+            available_tools = await EvalUtils.formatted_available_tools_from_task_run(
+                task_run
+            )
+            run_description = self.generate_full_trace_run_description(
+                task_run.input,
+                available_tools,
+                EvalTraceFormatter.trace_to_formatted_conversation_history(
+                    task_run.trace
+                ),
+            )
+
+        # TODO: How to get ref_ans?
+        # elif self.eval.evaluation_data_type == EvalDataType.reference_answer:
+        # run_description = self.generate_ref_ans_run_description(
+        #     task_run.input, task_run.output.output, ref_ans
+        # )
+
+        else:  # EvalDataType.final_answer
+            run_description = self.generate_final_answer_run_description(
+                task_run.input, task_run.output.output
+            )
 
         # We don't need the run, but invoke_returning_run_output() runs validations for us over _run()
         _, run_output = await adapter.invoke_returning_run_output(run_description)

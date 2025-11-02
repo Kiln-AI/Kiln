@@ -26,8 +26,6 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
-  let session_id = Math.floor(Math.random() * 1000000000000).toString()
-
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
   onDestroy(() => {
@@ -60,8 +58,10 @@
     gen_type: "training" | "eval" | null
     template_id: string | null
     eval_id: string | null
+    tool_id: string | null
     splits: Record<string, number>
     root_node: SampleDataNode
+    session_id: string | null
   }
   // Empty to start but will be populated from IndexedDB after task is loaded
   // Note: load the state vars into the guidance_data model and use that, this is just for the initial load/persistence
@@ -69,14 +69,28 @@
     gen_type: null,
     template_id: null,
     eval_id: null,
+    tool_id: null,
     splits: {},
     root_node: { topic: "", samples: [], sub_topics: [] },
+    session_id: null,
   })
   // Reactivity: update state in indexedDB when splits is modified
-  $: saved_state.update((s) => ({
-    ...s,
-    splits: $splits,
-  }))
+  // Only update if we're not in the middle of loading initial state
+  $: if (is_setup && $saved_state.splits !== $splits) {
+    saved_state.update((s) => ({
+      ...s,
+      splits: $splits,
+    }))
+  }
+
+  // Reactivity: update guidance_data splits when saved_state splits change
+  $: if (
+    $saved_state.splits &&
+    Object.keys($saved_state.splits).length > 0 &&
+    $saved_state.splits !== $splits
+  ) {
+    guidance_data.splits.set($saved_state.splits)
+  }
 
   function clear_all_with_confirm() {
     let msg =
@@ -100,7 +114,9 @@
       gen_type: null,
       template_id: null,
       eval_id: null,
+      tool_id: null,
       splits: {},
+      session_id: null,
     }))
   }
 
@@ -145,8 +161,10 @@
         gen_type: null,
         template_id: null,
         eval_id: null,
+        tool_id: null,
         splits: {},
         root_node: { topic: "", samples: [], sub_topics: [] },
+        session_id: null,
       })
       // Wait for the store to be initialized, then set the state
       await initialized
@@ -185,6 +203,9 @@
     // 4. There's no URL state and there is saved state: setup the saved state (with a UI option to clear it)
     // 5. No state, don't setup, and wait for the user to setup via UI
 
+    // Generate a new session ID to use in the case we're starting a new session or if we have a legacy session with no session ID.
+    const new_session_id = Math.floor(Math.random() * 1000000000000).toString()
+
     // The URL params can specify a specific setup for the data gen.
     const reason_param = $page.url.searchParams.get("reason")
     // Map "fine_tune" (user facing string) to "training" (pre-existing internal value)
@@ -194,28 +215,43 @@
       const eval_id: string | null = $page.url.searchParams.get("eval_id")
       const template_id: string | null =
         $page.url.searchParams.get("template_id")
+      const tool_id_param = $page.url.searchParams.get("tool_id")
+      const tool_id: string | null =
+        tool_id_param && tool_id_param.length > 0 ? tool_id_param : null
       const splitsParam = $page.url.searchParams.get("splits")
       const splits = get_splits_from_url_param(splitsParam)
 
       const has_saved_state = $saved_state.gen_type !== null
       if (!has_saved_state) {
         // Case 1: No saved state: setup the URL state
-        setup(gen_type, template_id, eval_id, project_id, task_id, splits)
+        setup(
+          gen_type,
+          template_id,
+          eval_id,
+          tool_id,
+          project_id,
+          task_id,
+          splits,
+          new_session_id,
+        )
         return
       } else {
         if (
           $saved_state.gen_type === gen_type &&
           $saved_state.template_id === template_id &&
-          $saved_state.eval_id === eval_id
+          $saved_state.eval_id === eval_id &&
+          $saved_state.tool_id === tool_id
         ) {
           // Case 2: URL state matches saved state: load the saved state
           setup(
             $saved_state.gen_type,
             $saved_state.template_id,
             $saved_state.eval_id,
+            $saved_state.tool_id,
             project_id,
             task_id,
             $saved_state.splits,
+            $saved_state.session_id ?? new_session_id,
           )
           return
         } else {
@@ -231,11 +267,18 @@
         $saved_state.gen_type,
         $saved_state.template_id,
         $saved_state.eval_id,
+        $saved_state.tool_id,
         project_id,
         task_id,
         $saved_state.splits,
+        $saved_state.session_id ?? new_session_id,
       )
-      clear_existing_state_no_url_dialog?.show()
+      // Only show the dialog if we haven't already continued the session from eval -> synth
+      const session_continued =
+        $page.url.searchParams.get("session_continued") === "true"
+      if (!session_continued) {
+        clear_existing_state_no_url_dialog?.show()
+      }
       return
     }
     // Case 5: No state - wait for the user to setup via UI
@@ -270,9 +313,11 @@
     gen_type: "training" | "eval",
     template_id: string | null,
     eval_id: string | null,
+    tool_id: string | null,
     project_id: string,
     task_id: string,
     splits: Record<string, number>,
+    session_id: string | null,
   ) {
     if (!gen_type || !task) {
       return
@@ -298,7 +343,9 @@
       gen_type,
       template_id,
       eval_id,
+      tool_id,
       splits,
+      session_id,
     }))
 
     posthog.capture("setup_data_gen", {
@@ -560,6 +607,9 @@
     run_config_properties: RunConfigProperties,
   ): Promise<GenerateSampleResponse> {
     try {
+      if (!$saved_state.session_id) {
+        throw new KilnError("Session ID not found")
+      }
       const formatted_input = task?.input_json_schema
         ? JSON.parse(sample.input)
         : sample.input
@@ -580,7 +630,7 @@
               task_id,
             },
             query: {
-              session_id,
+              session_id: $saved_state.session_id,
             },
           },
           body: {
@@ -1082,6 +1132,9 @@
             {project_id}
             current_task={task}
             requires_structured_output={!!task.output_json_schema}
+            mandatory_tools={$saved_state.tool_id
+              ? [$saved_state.tool_id]
+              : null}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema
                 ? true
@@ -1152,9 +1205,11 @@
             class="link">dataset tab</a
           >.
         </div>
-        <div class="font-light text-xs mt-4 text-gray-500">
-          All items are tagged with &quot;synthetic_session_{session_id}&quot;
-        </div>
+        {#if $saved_state.session_id}
+          <div class="font-light text-xs mt-4 text-gray-500">
+            All items are tagged with &quot;synthetic_session_{$saved_state.session_id}&quot;
+          </div>
+        {/if}
         {#if save_all_sub_errors.length > 0}
           <div class="text-error font-light text-sm mt-4">
             {save_all_sub_errors.length} samples failed to save. Running again may
@@ -1232,7 +1287,8 @@
     {
       label: "Keep Current Session",
       action: () => {
-        window.location.href = `/generate/${project_id}/${task_id}/synth`
+        // Redirect to clean URL with session_continued parameter
+        window.location.href = `/generate/${project_id}/${task_id}/synth?session_continued=true`
         return true
       },
     },

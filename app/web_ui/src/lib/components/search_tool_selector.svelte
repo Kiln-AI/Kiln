@@ -3,7 +3,6 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { onMount } from "svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import { load_document_tags } from "$lib/stores/document_tag_store"
 
   export let project_id: string
   export let selected_search_tool_id: string | null = null

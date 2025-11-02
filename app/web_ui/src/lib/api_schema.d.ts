@@ -767,6 +767,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/embedding_configs/{embedding_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Embedding Config */
+        get: operations["get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/create_vector_store_config": {
         parameters: {
             query?: never;
@@ -1967,6 +1984,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tool Definition
+         * @description Get the actual OpenAI tool definition for a specific tool ID.
+         *
+         *     This returns the real function name and parameters that would be used
+         *     in OpenAI function calls, not the display names from ToolSetApiDescription.
+         *
+         *     Args:
+         *         project_id: The project ID
+         *         task_id: The task ID for tools that require task context
+         *         tool_id: The tool ID to get the definition for
+         */
+        get: operations["get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2324,9 +2369,7 @@ export interface components {
              * Properties
              * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
              */
-            properties: {
-                [key: string]: string | number | boolean;
-            };
+            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2367,9 +2410,7 @@ export interface components {
             /** @description The type of the chunker */
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
         };
         /**
          * CreateDatasetSplitRequest
@@ -2400,10 +2441,8 @@ export interface components {
             model_provider_name: components["schemas"]["ModelProviderName"];
             /** @description The name of the embedding model */
             model_name: components["schemas"]["EmbeddingModelName"];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            /** @description Properties to be used to execute the embedding config. */
+            properties?: components["schemas"]["EmbeddingProperties"];
         };
         /** CreateEvalConfigRequest */
         CreateEvalConfigRequest: {
@@ -2435,6 +2474,7 @@ export interface components {
             template_properties: {
                 [key: string]: string | number | boolean | string[];
             };
+            evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -2941,13 +2981,8 @@ export interface components {
              * @description The model to use to generate embeddings.
              */
             model_name: string;
-            /**
-             * Properties
-             * @description Properties to be used to execute the embedding config.
-             */
-            properties: {
-                [key: string]: string | number | boolean;
-            };
+            /** @description Properties to be used to execute the embedding config. */
+            properties: components["schemas"]["EmbeddingProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -2972,6 +3007,11 @@ export interface components {
          * @enum {string}
          */
         EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1";
+        /** EmbeddingProperties */
+        EmbeddingProperties: {
+            /** Dimensions */
+            dimensions?: number;
+        };
         /** EmbeddingProvider */
         EmbeddingProvider: {
             /** Provider Name */
@@ -3070,6 +3110,11 @@ export interface components {
             template_properties: {
                 [key: string]: string | number | boolean | string[];
             };
+            /**
+             * @description The output of the task run to evaluate. Can be final answer, full trace, or tool call list.
+             * @default final_answer
+             */
+            evaluation_data_type: components["schemas"]["EvalDataType"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3164,6 +3209,11 @@ export interface components {
          * @enum {string}
          */
         EvalConfigType: "g_eval" | "llm_as_judge";
+        /**
+         * EvalDataType
+         * @enum {string}
+         */
+        EvalDataType: "final_answer" | "full_trace";
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -3274,6 +3324,11 @@ export interface components {
                 [key: string]: string;
             } | null;
             /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output.
+             */
+            task_run_trace?: string | null;
+            /**
              * Scores
              * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).
              */
@@ -3298,7 +3353,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "search_tool_reference_answer";
+        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "search_tool_reference_answer";
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -3756,6 +3811,13 @@ export interface components {
         FinetuneWithStatus: {
             finetune: components["schemas"]["Finetune"];
             status: components["schemas"]["FineTuneStatus"];
+        };
+        /** FixedWindowChunkerProperties */
+        FixedWindowChunkerProperties: {
+            /** Chunk Overlap */
+            chunk_overlap: number;
+            /** Chunk Size */
+            chunk_size: number;
         };
         /** Function */
         Function: {
@@ -4682,6 +4744,19 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /** SemanticChunkerProperties */
+        SemanticChunkerProperties: {
+            /** Embedding Config Id */
+            embedding_config_id: string;
+            /** Buffer Size */
+            buffer_size: number;
+            /** Breakpoint Percentile Threshold */
+            breakpoint_percentile_threshold: number;
+            /** Include Metadata */
+            include_metadata: boolean;
+            /** Include Prev Next Rel */
+            include_prev_next_rel: boolean;
         };
         /**
          * StructuredOutputMode
@@ -7027,6 +7102,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                embedding_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingConfig"];
                 };
             };
             /** @description Validation Error */
@@ -9605,6 +9712,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchToolApiDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

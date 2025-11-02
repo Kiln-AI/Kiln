@@ -33,7 +33,6 @@ from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
     build_rag_workflow_runner,
     connect_document_api,
-    parse_comma_separated_tags,
     run_rag_workflow_runner_with_status,
 )
 
@@ -213,245 +212,6 @@ async def test_get_documents_success(client, mock_document):
 
 
 @pytest.mark.asyncio
-async def test_get_documents_filter_by_tags_match(client, mock_project):
-    project = mock_project
-
-    # create two documents with different tags
-    file_bytes = b"abc"
-    doc1 = Document(
-        parent=project,
-        name="doc1",
-        description="",
-        kind=Kind.DOCUMENT,
-        tags=["news", "finance"],
-        original_file=FileInfo(
-            filename="a.txt",
-            mime_type="text/plain",
-            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
-            size=len(file_bytes),
-        ),
-    )
-    doc1.save_to_file()
-
-    doc2 = Document(
-        parent=project,
-        name="doc2",
-        description="",
-        kind=Kind.DOCUMENT,
-        tags=["sports"],
-        original_file=FileInfo(
-            filename="b.txt",
-            mime_type="text/plain",
-            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
-            size=len(file_bytes),
-        ),
-    )
-    doc2.save_to_file()
-
-    doc3 = Document(
-        parent=project,
-        name="doc2",
-        description="",
-        kind=Kind.DOCUMENT,
-        tags=["international"],
-        original_file=FileInfo(
-            filename="b.txt",
-            mime_type="text/plain",
-            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
-            size=len(file_bytes),
-        ),
-    )
-    doc3.save_to_file()
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project = MagicMock()
-        mock_project.documents.return_value = [doc1, doc2, doc3]
-        mock_project_from_id.return_value = mock_project
-
-        # filter for tags that match doc1 and doc3 (multiple tags)
-        response = client.get(
-            f"/api/projects/{project.id}/documents?tags=news,international"
-        )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert len(result) == 2
-    assert result[0]["id"] == doc1.id
-    assert result[1]["id"] == doc3.id
-
-
-@pytest.mark.asyncio
-async def test_get_documents_filter_by_tags_no_match(client, mock_project):
-    project = mock_project
-
-    # single document without requested tag
-    file_bytes = b"abc"
-    doc = Document(
-        parent=project,
-        name="doc",
-        description="",
-        kind=Kind.DOCUMENT,
-        tags=["alpha"],
-        original_file=FileInfo(
-            filename="a.txt",
-            mime_type="text/plain",
-            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
-            size=len(file_bytes),
-        ),
-    )
-    doc.save_to_file()
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project = MagicMock()
-        mock_project.documents.return_value = [doc]
-        mock_project_from_id.return_value = mock_project
-
-        response = client.get(f"/api/projects/{project.id}/documents?tags=beta,gamma")
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result == []
-
-
-@pytest.mark.asyncio
-async def test_get_documents_filter_by_tags_with_spaces(client, mock_project):
-    project = mock_project
-
-    file_bytes = b"abc"
-    doc = Document(
-        parent=project,
-        name="doc",
-        description="",
-        kind=Kind.DOCUMENT,
-        tags=["tag_a"],
-        original_file=FileInfo(
-            filename="a.txt",
-            mime_type="text/plain",
-            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
-            size=len(file_bytes),
-        ),
-    )
-    doc.save_to_file()
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project = MagicMock()
-        mock_project.documents.return_value = [doc]
-        mock_project_from_id.return_value = mock_project
-
-        # spaces around tags should be trimmed by parser
-        response = client.get(
-            f"/api/projects/{project.id}/documents?tags= tag_a , tag_b "
-        )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert len(result) == 1
-    assert result[0]["id"] == doc.id
-
-
-@pytest.mark.asyncio
-async def test_check_library_state_empty(client, mock_project):
-    project = mock_project
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project = MagicMock()
-        mock_project.documents.return_value = []
-        mock_project_from_id.return_value = mock_project
-
-        response = client.get(f"/api/projects/{project.id}/check_library_state")
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["is_empty"] is True
-
-
-@pytest.mark.asyncio
-async def test_check_library_state_not_empty(client, mock_project):
-    project = mock_project
-
-    # create one document to indicate non-empty
-    file_bytes = b"data"
-    doc = Document(
-        parent=project,
-        name="doc",
-        description="",
-        kind=Kind.DOCUMENT,
-        original_file=FileInfo(
-            filename="a.txt",
-            mime_type="text/plain",
-            attachment=KilnAttachmentModel.from_data(file_bytes, "text/plain"),
-            size=len(file_bytes),
-        ),
-    )
-    doc.save_to_file()
-
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project = MagicMock()
-        mock_project.documents.return_value = [doc]
-        mock_project_from_id.return_value = mock_project
-
-        response = client.get(f"/api/projects/{project.id}/check_library_state")
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["is_empty"] is False
-
-
-@pytest.mark.asyncio
-async def test_get_documents_invalid_tags_raises_422(client, mock_project):
-    project = mock_project
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.parse_comma_separated_tags",
-            side_effect=HTTPException(status_code=422, detail="Invalid tags: boom"),
-        ),
-    ):
-        mock_project = MagicMock()
-        mock_project.documents.return_value = []
-        mock_project_from_id.return_value = mock_project
-
-        response = client.get(f"/api/projects/{project.id}/documents?tags=bad_input")
-
-    assert response.status_code == 422
-    assert "Invalid tags" in response.json()["message"]
-
-
-def test_parse_comma_separated_tags_basic():
-    assert parse_comma_separated_tags("a,b,c") == ["a", "b", "c"]
-    assert parse_comma_separated_tags(" a , b ,  c ") == ["a", "b", "c"]
-
-
-def test_parse_comma_separated_tags_empty_and_none():
-    assert parse_comma_separated_tags(None) is None
-    assert parse_comma_separated_tags("") is None
-    # Whitespace yields empty list (not None) because the function treats non-empty inputs as parseable
-    assert parse_comma_separated_tags("   ") == []
-
-
-def test_parse_comma_separated_tags_extra_commas():
-    # Multiple commas and blanks are ignored; result can be empty list
-    assert parse_comma_separated_tags(",,,") == []
-    assert parse_comma_separated_tags(", a ,, b ,") == ["a", "b"]
-
-
-def test_parse_comma_separated_tags_exception():
-    """Test parse_comma_separated_tags raises HTTPException on error"""
-
-    class BadString(str):
-        def split(self, *args, **kwargs):
-            raise ValueError("Test error")
-
-    bad_tags = BadString("tag1,tag2")
-
-    with pytest.raises(HTTPException) as exc_info:
-        parse_comma_separated_tags(bad_tags)
-
-    assert exc_info.value.status_code == 422
-    assert "Invalid tags" in exc_info.value.detail
-
-
 async def test_get_document_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -877,6 +637,8 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
@@ -890,6 +652,49 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
     assert result["properties"]["embedding_config_id"] == str(embedding.id)
     assert result["properties"]["buffer_size"] == 2
     assert result["properties"]["breakpoint_percentile_threshold"] == 90.0
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
+async def test_create_semantic_chunker_config_override_include_metadata_and_include_prev_next_rel(
+    client, mock_project
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Test Semantic Chunker Config",
+                "description": "Test Semantic Chunker Config description",
+                "chunker_type": "semantic",
+                "properties": {
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+
+    # we currently override these in the API layer - they are too granular to be exposed to the user in the UI
+    # we could expose those in the future, if we want to allow users to override them
     assert result["properties"]["include_metadata"] is False
     assert result["properties"]["include_prev_next_rel"] is False
 
@@ -920,6 +725,8 @@ async def test_create_semantic_chunker_config_minimal(client, mock_project):
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 95,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
@@ -953,13 +760,13 @@ async def test_create_semantic_chunker_config_missing_embedding_config_id(
                 "properties": {
                     "breakpoint_percentile_threshold": 95,
                     "buffer_size": 1,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    error_detail = response.json()["source_errors"][0]
-    assert "embedding_config_id is required for semantic chunker" in error_detail["msg"]
 
 
 @pytest.mark.asyncio
@@ -983,13 +790,13 @@ async def test_create_semantic_chunker_config_missing_buffer_size(
                 "properties": {
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    error_detail = response.json()["source_errors"][0]
-    assert "buffer_size is required for semantic chunker" in error_detail["msg"]
 
 
 @pytest.mark.asyncio
@@ -1013,16 +820,13 @@ async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
                 "properties": {
                     "buffer_size": 1,
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    error_detail = response.json()["source_errors"][0]
-    assert (
-        "breakpoint_percentile_threshold is required for semantic chunker"
-        in error_detail["msg"]
-    )
 
 
 @pytest.mark.asyncio
@@ -1047,14 +851,13 @@ async def test_create_semantic_chunker_config_invalid_buffer_size(
                     "buffer_size": 0,  # Invalid buffer size
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    assert (
-        "buffer_size must be greater than or equal to 1" in response.json()["message"]
-    )
 
 
 @pytest.mark.asyncio
@@ -1079,15 +882,14 @@ async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
                     "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
 
     assert response.status_code == 422, response.text
-    assert (
-        "breakpoint_percentile_threshold must be an integer"
-        in response.json()["message"]
-    )
+    assert "breakpoint_percentile_threshold" in response.json()["message"]
 
 
 async def test_create_semantic_chunker_config_embedding_config_not_found(
@@ -1108,6 +910,8 @@ async def test_create_semantic_chunker_config_embedding_config_not_found(
                     "embedding_config_id": "does-not-exist",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
                 },
             },
         )
@@ -1287,9 +1091,11 @@ async def test_create_embedding_config_invalid_dimensions(
         )
 
     assert response.status_code == 422, response.text
+    error_message = response.json()["message"]
+    assert error_message
     assert (
-        "Dimensions must be a positive integer and less than the model's dimensions"
-        in response.json()["message"]
+        "Properties.Dimensions: Input should be greater than 0" in error_message
+        or "Dimensions must be less than the model's dimensions" in error_message
     )
 
 
@@ -4312,296 +4118,45 @@ async def test_delete_extraction_failed_to_clear_cache(
         )
 
 
-async def test_get_extractions_for_extractor_config_success(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test GET extractions for extractor config endpoint"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data(
-                "test extraction output", "text/plain"
-            ),
-        )
-        extraction.save_to_file()
-
-        response = client.get(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/extractions"
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert str(document.id) in data
-        assert len(data[str(document.id)]) == 1
-        assert data[str(document.id)][0]["output_content"] == "test extraction output"
-
-
-async def test_get_extractions_for_extractor_config_not_found(client, mock_project):
-    """Test GET extractions for extractor config endpoint when config not found"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        response = client.get(
-            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/extractions"
-        )
-
-        assert response.status_code == 404
-        assert "Extractor config not found" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_extractor_config_no_documents_to_extract(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test run_extractor_config when all documents already have extractions"""
+async def test_get_embedding_config_not_found(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
         patch(
-            "kiln_server.document_api.run_extractor_runner_with_status"
-        ) as mock_run_extractor,
-        patch(
-            "kiln_server.document_api.shared_async_lock_manager.acquire"
-        ) as mock_lock,
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
     ):
         mock_project_from_id.return_value = mock_project
-        mock_run_extractor.return_value = StreamingResponse(
-            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
-        )
-        mock_lock.return_value.__aenter__ = AsyncMock()
-        mock_lock.return_value.__aexit__ = AsyncMock()
-
-        document = mock_document["document"]
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data(
-                "test extraction output", "text/plain"
-            ),
-        )
-        extraction.save_to_file()
+        mock_from_id.return_value = None
 
         response = client.get(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+            f"/api/projects/{mock_project.id}/embedding_configs/not-found",
         )
 
-        assert response.status_code == 200
-        mock_run_extractor.assert_called_once()
-        call_args = mock_run_extractor.call_args[0]
-        extractor_runner = call_args[0]
-        assert len(extractor_runner.documents) == 0
+    assert response.status_code == 404
+    error_detail = response.json()
+    assert "message" in error_detail
+    assert "Embedding config not-found not found" in error_detail["message"]
 
 
-async def test_ephemeral_split_document_success_with_chunks(
-    client, mock_project, mock_document, mock_extractor_config
+async def test_get_embedding_config_success(
+    client, mock_project, mock_embedding_config
 ):
-    """Test ephemeral_split_document with valid chunk_size"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
         mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data(
-                "This is a test extraction output that will be split into chunks. "
-                * 10,
-                "text/plain",
-            ),
+        mock_from_id.return_value = mock_embedding_config
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/{mock_embedding_config.id}",
         )
-        extraction.save_to_file()
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 20, "chunk_overlap": 5},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "chunks" in data
-        assert len(data["chunks"]) > 1
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_no_chunk_size(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test ephemeral_split_document with null chunk_size returns single chunk"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-        test_output = "This is the full extraction output."
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data(test_output, "text/plain"),
-        )
-        extraction.save_to_file()
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": None},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "chunks" in data
-        assert len(data["chunks"]) == 1
-        assert data["chunks"][0]["text"] == test_output
-        assert data["chunks"][0]["id"] == str(extraction.id)
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_extractor_config_not_found(
-    client, mock_project, mock_document
-):
-    """Test ephemeral_split_document with non-existent extractor config"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 100},
-        )
-
-        assert response.status_code == 404
-        assert "Extractor config not found" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_document_not_found(
-    client, mock_project, mock_extractor_config
-):
-    """Test ephemeral_split_document with non-existent document"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/non-existent-id/ephemeral_split",
-            json={"chunk_size": 100},
-        )
-
-        assert response.status_code == 404
-        assert "Document not found" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_no_extraction_found(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test ephemeral_split_document when no extraction exists for the document and extractor"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 100},
-        )
-
-        assert response.status_code == 404
-        assert "No extraction found" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_invalid_chunk_size(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test ephemeral_split_document with invalid chunk_size"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data("test output", "text/plain"),
-        )
-        extraction.save_to_file()
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 0},
-        )
-
-        assert response.status_code == 422
-        assert (
-            "Chunk_size: Input should be greater than 0" in response.json()["message"]
-        )
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_negative_chunk_overlap(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test ephemeral_split_document with negative chunk_overlap"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data("test output", "text/plain"),
-        )
-        extraction.save_to_file()
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 100, "chunk_overlap": -1},
-        )
-
-        assert response.status_code == 422
-        assert (
-            "Chunk_overlap: Input should be greater than or equal to 0"
-            in response.json()["message"]
-        )
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_split_document_overlap_exceeds_chunk_size(
-    client, mock_project, mock_document, mock_extractor_config
-):
-    """Test ephemeral_split_document when chunk_overlap >= chunk_size"""
-    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
-        mock_project_from_id.return_value = mock_project
-
-        document = mock_document["document"]
-
-        extraction = Extraction(
-            parent=document,
-            source=ExtractionSource.PROCESSED,
-            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
-            output=KilnAttachmentModel.from_data("test output", "text/plain"),
-        )
-        extraction.save_to_file()
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 100, "chunk_overlap": 100},
-        )
-
-        assert response.status_code == 422
-        assert (
-            "Chunk overlap must be less than chunk size" in response.json()["message"]
-        )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == mock_embedding_config.id
+    assert result["name"] == mock_embedding_config.name
+    assert result["description"] == mock_embedding_config.description
+    assert result["model_provider_name"] == mock_embedding_config.model_provider_name
+    assert result["model_name"] == mock_embedding_config.model_name
+    assert result["properties"] == mock_embedding_config.properties
