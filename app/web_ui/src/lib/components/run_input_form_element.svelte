@@ -201,6 +201,20 @@
   ): SchemaModelProperty[] {
     if (property.type !== "object") return []
 
+    // Special handling for root element (path="root")
+    if (path === "root" && fullSchema) {
+      const requiredFields = fullSchema.required || []
+      return Object.entries(fullSchema.properties).map(
+        ([id, prop]: [string, JsonSchemaProperty]) => ({
+          id,
+          title: prop.title || id,
+          description: prop.description || "",
+          type: prop.type,
+          required: requiredFields.includes(id),
+        }),
+      )
+    }
+
     const jsonSchemaProperty = getNestedSchemaProperty(property)
     if (
       jsonSchemaProperty?.type === "object" &&
@@ -241,6 +255,194 @@
     value = {}
   } else if (isArrayProperty(property) && !Array.isArray(value)) {
     value = []
+  }
+
+  // Export function to build the cleaned value for this property
+  export function buildValue(): unknown | undefined {
+    // For primitive types
+    if (property.type === "string" || property.type === "number" || property.type === "integer" || property.type === "boolean") {
+      if (value === undefined || value === null || value === "") {
+        return property.required ? (property.type === "string" ? "" : (property.type === "boolean" ? false : 0)) : undefined
+      }
+      return value
+    }
+
+    // For generic objects (flexible JSON)
+    if (isGenericObject(property)) {
+      if (value === undefined || value === null || value === "") {
+        return property.required ? {} : undefined
+      }
+      try {
+        const parsed = typeof value === "string" ? JSON.parse(value) : value
+        return typeof parsed === "object" && parsed !== null && !isObjectEmpty(parsed) ? parsed : undefined
+      } catch {
+        return undefined
+      }
+    }
+
+    // For generic arrays (flexible JSON)
+    if (isGenericArray(property)) {
+      if (value === undefined || value === null || value === "") {
+        return property.required ? [] : undefined
+      }
+      try {
+        const parsed = typeof value === "string" ? JSON.parse(value) : value
+        return Array.isArray(parsed) && !isArrayEmpty(parsed) ? parsed : undefined
+      } catch {
+        return undefined
+      }
+    }
+
+    // For structured objects
+    if (isObjectProperty(property) && !isGenericObject(property)) {
+      if (value === undefined || value === null || typeof value !== "object") {
+        return property.required ? {} : undefined
+      }
+
+      const cleanedValue: Record<string, unknown> = {}
+      const nestedProperties = getNestedSchemaForObject(property)
+      let hasContent = false
+
+      // Get cleaned values from nested properties - recursively clean them
+      nestedProperties.forEach(nestedProp => {
+        const nestedValue = (value as Record<string, unknown>)[nestedProp.id]
+        const cleanedNestedValue = cleanNestedValue(nestedProp, nestedValue)
+        if (cleanedNestedValue !== undefined) {
+          cleanedValue[nestedProp.id] = cleanedNestedValue
+          hasContent = true
+        }
+      })
+
+      return hasContent ? cleanedValue : (property.required ? {} : undefined)
+    }
+
+    // For structured arrays
+    if (isArrayProperty(property) && !isGenericArray(property)) {
+      if (!Array.isArray(value)) {
+        return property.required ? [] : undefined
+      }
+
+      const cleanedArray: unknown[] = []
+      let hasValidItems = false
+
+      value.forEach((item, index) => {
+        // For simple string items in structured arrays
+        if (typeof item === "string") {
+          if (item.trim() !== "") {
+            cleanedArray.push(item)
+            hasValidItems = true
+          }
+        } else if (typeof item === "object" && item !== null) {
+          // For object items in structured arrays - check if they have content
+          if (!isObjectEmpty(item)) {
+            cleanedArray.push(item)
+            hasValidItems = true
+          }
+        } else if (item !== undefined && item !== null) {
+          cleanedArray.push(item)
+          hasValidItems = true
+        }
+      })
+
+      return hasValidItems ? cleanedArray : (property.required ? [] : undefined)
+    }
+
+    return undefined
+  }
+
+  function cleanNestedValue(nestedProp: SchemaModelProperty, nestedValue: unknown): unknown | undefined {
+    if (nestedValue === undefined || nestedValue === null) {
+      return undefined
+    }
+
+    // Handle primitive types
+    if (nestedProp.type === "string" || nestedProp.type === "number" || nestedProp.type === "integer" || nestedProp.type === "boolean") {
+      if (nestedValue === "" || nestedValue === null || nestedValue === undefined) {
+        return nestedProp.required ? (nestedProp.type === "string" ? "" : (nestedProp.type === "boolean" ? false : 0)) : undefined
+      }
+      return nestedValue
+    }
+
+    // Handle object types recursively
+    if (nestedProp.type === "object") {
+      if (typeof nestedValue === "object" && nestedValue !== null && !Array.isArray(nestedValue)) {
+        if (isObjectEmpty(nestedValue)) {
+          return nestedProp.required ? {} : undefined
+        }
+
+        // If it's a generic object, return as-is
+        if (isGenericObject(nestedProp)) {
+          return nestedValue
+        }
+
+        // For structured objects, recursively clean nested properties
+        const nestedProperties = getNestedSchemaForObject(nestedProp)
+        const cleanedNestedValue: Record<string, unknown> = {}
+        let hasContent = false
+
+        nestedProperties.forEach(subProp => {
+          const subValue = (nestedValue as Record<string, unknown>)[subProp.id]
+          const cleanedSubValue = cleanNestedValue(subProp, subValue)
+          if (cleanedSubValue !== undefined) {
+            cleanedNestedValue[subProp.id] = cleanedSubValue
+            hasContent = true
+          }
+        })
+
+        return hasContent ? cleanedNestedValue : (nestedProp.required ? {} : undefined)
+      }
+      return nestedProp.required ? {} : undefined
+    }
+
+    // Handle array types
+    if (nestedProp.type === "array") {
+      if (Array.isArray(nestedValue)) {
+        if (isArrayEmpty(nestedValue)) {
+          return nestedProp.required ? [] : undefined
+        }
+
+        const cleanedArray: unknown[] = []
+        let hasValidItems = false
+
+        nestedValue.forEach((item) => {
+          if (typeof item === "string" && item.trim() !== "") {
+            cleanedArray.push(item)
+            hasValidItems = true
+          } else if (typeof item === "object" && item !== null && !isObjectEmpty(item)) {
+            cleanedArray.push(item)
+            hasValidItems = true
+          } else if (item !== undefined && item !== null) {
+            cleanedArray.push(item)
+            hasValidItems = true
+          }
+        })
+
+        return hasValidItems ? cleanedArray : (nestedProp.required ? [] : undefined)
+      }
+      return nestedProp.required ? [] : undefined
+    }
+
+    return nestedValue
+  }
+
+  function isObjectEmpty(obj: unknown): boolean {
+    if (!obj || typeof obj !== 'object') return true
+    if (Array.isArray(obj)) return false // it's an array, not an object
+    return Object.keys(obj as Record<string, unknown>).length === 0
+  }
+
+  function isArrayEmpty(arr: unknown[]): boolean {
+    if (!Array.isArray(arr)) return true
+    if (arr.length === 0) return true
+    if (arr.length === 1) {
+      const item = arr[0]
+      if (typeof item === 'object' && item !== null) {
+        return isObjectEmpty(item)
+      } else if (typeof item === 'string') {
+        return item.trim() === ""
+      }
+    }
+    return false
   }
 
   function getInfoDescription(property: SchemaModelProperty): string {
