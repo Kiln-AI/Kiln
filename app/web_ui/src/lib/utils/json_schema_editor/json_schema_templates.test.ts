@@ -2,11 +2,13 @@ import {
   string_to_json_key,
   schema_from_model,
   model_from_schema,
-  typed_json_from_schema_model,
 } from "./json_schema_templates"
-import type { SchemaModel, JsonSchema } from "./json_schema_templates"
+import type {
+  JsonSchema,
+  JsonSchemaProperty,
+  SchemaModelProperty,
+} from "./json_schema_templates"
 import { describe, it, expect } from "vitest"
-import { KilnError } from "$lib/utils/error_handlers"
 
 describe("string_to_json_key", () => {
   it("converts spaces to underscores", () => {
@@ -47,8 +49,12 @@ describe("string_to_json_key", () => {
 })
 
 describe("schema_from_model", () => {
-  it("converts a simple SchemaModel to JsonSchema", () => {
-    const model: SchemaModel = {
+  it("converts a simple SchemaModelProperty to JsonSchema", () => {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "user_name",
@@ -88,7 +94,11 @@ describe("schema_from_model", () => {
   })
 
   it("handles empty SchemaModel", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [],
     }
 
@@ -102,7 +112,11 @@ describe("schema_from_model", () => {
   })
 
   it("correctly handles required fields", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "field1",
@@ -133,7 +147,11 @@ describe("schema_from_model", () => {
   })
 
   it("correctly converts property titles to names", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "user_name",
@@ -160,7 +178,11 @@ describe("schema_from_model", () => {
   })
 
   it("preserves property IDs when creating=false, even if titles change", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "original_id",
@@ -194,7 +216,11 @@ describe("schema_from_model", () => {
   })
 
   it("converts nested object properties to schema correctly", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "user",
@@ -242,7 +268,11 @@ describe("schema_from_model", () => {
   })
 
   it("handles multiple levels of nesting when converting to schema", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "company",
@@ -305,7 +335,11 @@ describe("schema_from_model", () => {
   })
 
   it("preserves additionalProperties in nested objects", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "config",
@@ -454,7 +488,7 @@ describe("model_from_schema", () => {
       required: ["user_name"],
     }
 
-    const expected: SchemaModel = {
+    const expected: SchemaModelProperty = {
       properties: [
         {
           id: "user_name",
@@ -517,6 +551,11 @@ describe("model_from_schema", () => {
         },
       ],
       additionalProperties: false,
+      id: "root",
+      title: "root",
+      description: undefined,
+      type: "object",
+      required: true,
     }
 
     expect(model_from_schema(schema)).toEqual(expected)
@@ -530,8 +569,13 @@ describe("model_from_schema", () => {
       required: [],
     }
 
-    const expected: SchemaModel = {
+    const expected: SchemaModelProperty = {
       properties: [],
+      id: "root",
+      title: "root",
+      description: undefined,
+      type: "object",
+      required: true,
       additionalProperties: false,
     }
 
@@ -742,207 +786,6 @@ describe("model_from_schema", () => {
 
     const result = model_from_schema(schema)
     expect(result.properties[0].additionalProperties).toBe(true)
-  })
-})
-
-describe("typed_json_from_schema_model", () => {
-  const testSchema: SchemaModel = {
-    properties: [
-      {
-        id: "name",
-        title: "Name",
-        description: "User's name",
-        type: "string",
-        required: true,
-      },
-      {
-        id: "age",
-        title: "Age",
-        description: "User's age",
-        type: "integer",
-        required: true,
-      },
-      {
-        id: "height",
-        title: "Height",
-        description: "User's height in meters",
-        type: "number",
-        required: false,
-      },
-      {
-        id: "is_active",
-        title: "Is Active",
-        description: "User's active status",
-        type: "boolean",
-        required: false,
-      },
-      {
-        id: "contact_emails",
-        title: "Contact Emails",
-        description: "The user's contact emails",
-        type: "array",
-        required: true,
-      },
-    ],
-  }
-
-  it("correctly parses valid input data", () => {
-    const inputData = {
-      name: "John Doe",
-      age: "30",
-      height: "1.75",
-      is_active: "true",
-      contact_emails: JSON.stringify(["john.doe@example.com"]),
-    }
-
-    const result = typed_json_from_schema_model(testSchema, inputData)
-
-    expect(result).toEqual({
-      name: "John Doe",
-      age: 30,
-      height: 1.75,
-      is_active: true,
-      contact_emails: ["john.doe@example.com"],
-    })
-  })
-
-  it("handles missing optional properties", () => {
-    const inputData = {
-      name: "Jane Doe",
-      age: "25",
-      contact_emails: JSON.stringify(["jane.doe@example.com"]),
-    }
-
-    const result = typed_json_from_schema_model(testSchema, inputData)
-
-    expect(result).toEqual({
-      name: "Jane Doe",
-      age: 25,
-      contact_emails: ["jane.doe@example.com"],
-    })
-  })
-
-  it("throws error for invalid integer", () => {
-    const inputData = {
-      name: "Alice",
-      age: "not a number",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for invalid boolean", () => {
-    const inputData = {
-      name: "Bob",
-      age: "40",
-      is_active: "not a boolean",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for invalid JSON input for array property", () => {
-    const inputData = {
-      name: "Alice",
-      age: "30",
-      contact_emails: "[123", // invalid JSON
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for non-array input for array property", () => {
-    const inputData = {
-      name: "Alice",
-      age: "30",
-      contact_emails: JSON.stringify({ value: 123 }), // valid JSON, but not an array
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for unknown property", () => {
-    const inputData = {
-      name: "Charlie",
-      age: "35",
-      unknown_prop: "some value",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("correctly parses zero values", () => {
-    const inputData = {
-      name: "Zero",
-      age: "0",
-      height: "0",
-      contact_emails: JSON.stringify([]),
-    }
-
-    const result = typed_json_from_schema_model(testSchema, inputData)
-
-    expect(result).toEqual({
-      name: "Zero",
-      age: 0,
-      height: 0,
-      contact_emails: [],
-    })
-  })
-
-  it("throws error for missing required property", () => {
-    const inputData = {
-      name: "Alice",
-      // age is missing, but it's required
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for empty string in required property", () => {
-    const inputData = {
-      name: "Bob",
-      age: "", // Empty string for required integer
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("allows empty string for optional properties", () => {
-    const inputData = {
-      name: "Charlie",
-      age: "30",
-      height: "", // Empty string for number
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error when all required properties are missing", () => {
-    const inputData = {
-      // Both name and age are missing
-      height: "1.75",
-      is_active: "true",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
   })
 })
 
@@ -1187,5 +1030,87 @@ describe("complex round-trip conversion", () => {
     const reconstructedSchema = schema_from_model(model, false)
 
     expect(reconstructedSchema).toEqual(arraySchema)
+  })
+
+  it("preserves an array with items at top level through round-trip conversion", () => {
+    const topLevelArraySchema: JsonSchemaProperty = {
+      title: "Top Level Array",
+      description: "An array at the root level",
+      type: "array",
+      items: {
+        title: "Task",
+        description: "A task object",
+        type: "object",
+        properties: {
+          id: {
+            title: "ID",
+            description: "Task identifier",
+            type: "string",
+          },
+          name: {
+            title: "Name",
+            description: "Task name",
+            type: "string",
+          },
+          completed: {
+            title: "Completed",
+            description: "Whether the task is completed",
+            type: "boolean",
+          },
+        },
+        required: ["id", "name"],
+        additionalProperties: false,
+      },
+    }
+
+    const expectedReconstructed: JsonSchemaProperty = {
+      type: "array",
+      items: {
+        title: "Task",
+        description: "A task object",
+        type: "object",
+        properties: {
+          id: {
+            title: "ID",
+            description: "Task identifier",
+            type: "string",
+          },
+          name: {
+            title: "Name",
+            description: "Task name",
+            type: "string",
+          },
+          completed: {
+            title: "Completed",
+            description: "Whether the task is completed",
+            type: "boolean",
+          },
+        },
+        required: ["id", "name"],
+        additionalProperties: false,
+      },
+    }
+
+    const model = model_from_schema(topLevelArraySchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(expectedReconstructed)
+  })
+
+  it("preserves a basic type at top level through round-trip conversion", () => {
+    const topLevelStringSchema: JsonSchemaProperty = {
+      title: "Simple String",
+      description: "A string value at the root level",
+      type: "string",
+    }
+
+    const expectedReconstructed: JsonSchemaProperty = {
+      type: "string",
+    }
+
+    const model = model_from_schema(topLevelStringSchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(expectedReconstructed)
   })
 })

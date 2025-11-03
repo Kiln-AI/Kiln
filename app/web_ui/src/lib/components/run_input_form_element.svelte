@@ -3,20 +3,19 @@
   import FormList from "$lib/utils/form_list.svelte"
   import RunInputFormElement from "./run_input_form_element.svelte"
   import RunInputFormElementRefCapture from "./run_input_form_element_ref_capture.svelte"
+  import { type SchemaModelProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
   import {
-    type SchemaModelProperty,
-    type JsonSchema,
-    type JsonSchemaProperty,
-  } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import { MissingRequiredPropertyError } from "$lib/utils/missing_required_property_error"
+    MissingRequiredPropertyError,
+    IncompleteObjectError,
+  } from "$lib/utils/missing_required_property_error"
 
   export let property: SchemaModelProperty
   let value: string = ""
   export let onInputChange: (() => void) | null = null
   export let level: number = 0
   export let path: string = ""
-  export let fullSchema: JsonSchema | null = null
   export let hideHeaderAndIndent: boolean = false
+  export let parentOptional: boolean = false
 
   let id = "nested_input_" + Math.random().toString(36).substring(2, 15)
 
@@ -76,7 +75,7 @@
     } else if (isGenericArray(property)) {
       return property.description + " (JSON Array with flexible item types)"
     }
-    return property.description
+    return property.description ?? "No description"
   }
 
   function getHeight(property: SchemaModelProperty): "large" | undefined {
@@ -127,50 +126,6 @@
     return false
   }
 
-  // TODO Kill this
-  function getNestedSchemaProperty(
-    property: SchemaModelProperty,
-  ): JsonSchemaProperty | null {
-    if (!fullSchema) return null
-
-    // If it's a top-level property, get it directly
-    if (fullSchema.properties[property.id]) {
-      return fullSchema.properties[property.id] as JsonSchemaProperty
-    }
-
-    // If it's a nested property, traverse the path to find the parent object
-    if (path) {
-      const pathParts = path.split(".")
-      let currentSchema: JsonSchema | JsonSchemaProperty = fullSchema
-
-      // Traverse to the parent object (excluding the current property)
-      for (let i = 0; i < pathParts.length - 1; i++) {
-        const part = pathParts[i]
-        if (
-          currentSchema.type === "object" &&
-          currentSchema.properties &&
-          currentSchema.properties[part]
-        ) {
-          currentSchema = currentSchema.properties[part]
-        } else {
-          return null
-        }
-      }
-
-      // Get the current property from the parent schema
-      const currentPropertyId = pathParts[pathParts.length - 1]
-      if (
-        currentSchema.type === "object" &&
-        currentSchema.properties &&
-        currentSchema.properties[currentPropertyId]
-      ) {
-        return currentSchema.properties[currentPropertyId] as JsonSchemaProperty
-      }
-    }
-
-    return null
-  }
-
   // JSON schema can just define an arbitrary object, without a strong type.
   // In this case we need to let the user use a text area to enter the JSON object.
   function isGenericObject(property: SchemaModelProperty): boolean {
@@ -179,70 +134,20 @@
     return false
   }
 
-  function getNestedSchemaForObject(
-    property: SchemaModelProperty,
-  ): SchemaModelProperty[] {
-    if (property.type !== "object") return []
-
-    // Special handling for root element (path="root")
-    if (path === "root" && fullSchema) {
-      const requiredFields = fullSchema.required || []
-      return Object.entries(fullSchema.properties).map(
-        ([id, prop]: [string, JsonSchemaProperty]) => ({
-          id,
-          title: prop.title || id,
-          description: prop.description || "",
-          type: prop.type,
-          required: requiredFields.includes(id),
-          additionalProperties: fullSchema.additionalProperties ?? true,
-        }),
-      )
-    }
-
-    const jsonSchemaProperty = getNestedSchemaProperty(property)
-    if (
-      jsonSchemaProperty?.type === "object" &&
-      jsonSchemaProperty.properties &&
-      Object.keys(jsonSchemaProperty.properties).length > 0
-    ) {
-      const requiredFields = jsonSchemaProperty.required || []
-
-      return Object.entries(jsonSchemaProperty.properties).map(
-        ([id, prop]: [string, JsonSchemaProperty]) => ({
-          id,
-          title: prop.title || id,
-          description: prop.description || "",
-          type: prop.type,
-          required: requiredFields.includes(id),
-          additionalProperties: prop.additionalProperties ?? true,
-        }),
-      )
-    }
-
-    return []
-  }
-
   function getArrayEmptyContent(): unknown {
     return ""
   }
 
   // Export function to build the value for this property
   export function buildValue(): unknown | undefined {
-    console.info("buildValue", property.title)
-    console.info("isGenericObject", isGenericObject(property))
-    console.info("isGenericArray", isGenericArray(property))
-    console.info("isArrayProperty", isArrayProperty(property))
-    console.info("isObjectProperty", isObjectProperty(property))
-
     // For structured objects, iterate each nested component and build the value
     if (isObjectProperty(property) && !isGenericObject(property)) {
       const cleanedValue: Record<string, unknown> = {}
-      //const nestedProperties = getNestedSchemaForObject(property)
       let hasContent = false
       let missingRequiredContentError: MissingRequiredPropertyError | null =
         null
 
-      Object.entries(nestedComponents).forEach(([id, nestedComponent]) => {
+      for (const [id, nestedComponent] of Object.entries(nestedComponents)) {
         let nestedValue: unknown | undefined = undefined
         try {
           nestedValue = nestedComponent.buildValue()
@@ -265,7 +170,7 @@
           cleanedValue[id] = nestedValue
           hasContent = true
         }
-      })
+      }
 
       console.info(
         "cleanedValue",
@@ -280,11 +185,25 @@
       if (!property.required && !hasContent) {
         return undefined
       }
-      // Check if we're missing required content, while having some other content: never allowed, all fields must be undefined to trigger "optional"
+      // Check if we're missing required content, while having some other content.
+      // If none are defined that might be okay (a parent is optional), but partial excluding required is always invalid.
       if (missingRequiredContentError && hasContent) {
-        throw missingRequiredContentError
+        const source_path = missingRequiredContentError.source_path
+        let additional_description = ""
+        if (parentOptional || !property.required) {
+          additional_description =
+            "A parent of this property is optional, but you've defined some sub-fields while leaving a required sub-field empty. Etiher make all sub-fields blank or fill in the required sub-field."
+        }
+        throw new IncompleteObjectError(
+          "Missing required property. " +
+            additional_description +
+            " Location: " +
+            source_path,
+          source_path,
+        )
       }
       // Check if we're missing required content and this object isn't optional: always an error
+      // Note, a parent optional object might still catch and recover this.
       if (missingRequiredContentError && property.required) {
         throw missingRequiredContentError
       }
@@ -303,6 +222,7 @@
     if (value === "" && property.required) {
       throw new MissingRequiredPropertyError(
         "Required property not set: " + path,
+        path,
       )
     }
 
@@ -311,6 +231,7 @@
       if (value === "" && property.required) {
         throw new MissingRequiredPropertyError(
           "Required property not set: " + path,
+          path,
         )
       }
       return value
@@ -510,15 +431,15 @@
     }
 
     return nestedValue
-  }*/
+  }
 
   function isObjectEmpty(obj: unknown): boolean {
     if (!obj || typeof obj !== "object") return true
     if (Array.isArray(obj)) return false // it's an array, not an object
     return Object.keys(obj as Record<string, unknown>).length === 0
-  }
+  }*/
 
-  function isArrayEmpty(arr: unknown[]): boolean {
+  /*function isArrayEmpty(arr: unknown[]): boolean {
     if (!Array.isArray(arr)) return true
     if (arr.length === 0) return true
     if (arr.length === 1) {
@@ -530,7 +451,7 @@
       }
     }
     return false
-  }
+  }*/
 
   function getInfoDescription(property: SchemaModelProperty): string {
     if (isGenericObject(property)) {
@@ -563,13 +484,13 @@
         : 'py-4 mt-2 ml-4 border-l pl-6'}"
     >
       {#if isObjectProperty(property) && !isGenericObject(property)}
-        {#each getNestedSchemaForObject(property) as nestedProp}
+        {#each property.properties ?? [] as nestedProp}
           <RunInputFormElementRefCapture
             property={nestedProp}
             {onInputChange}
             level={level + 1}
             path={`${path}.${nestedProp.id}`}
-            {fullSchema}
+            parentOptional={parentOptional || !property.required}
             on:ref={(e) => {
               // Workaround for svelte 4 to capture the ref
               const { inst } = e.detail

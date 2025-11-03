@@ -3,7 +3,6 @@
   import RunInputFormElement from "$lib/components/run_input_form_element.svelte"
   import {
     model_from_schema_string,
-    type JsonSchema,
     type SchemaModelProperty,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
 
@@ -18,21 +17,9 @@
 
   $: void onInputChange?.()
 
+  let structured_input_model: SchemaModelProperty | null = null
   $: structured_input_model = input_schema
     ? model_from_schema_string(input_schema)
-    : null
-
-  $: fullSchema = input_schema ? (JSON.parse(input_schema) as JsonSchema) : null
-
-  // Create a root property that represents the entire schema
-  $: rootProperty = fullSchema
-    ? {
-        id: "root",
-        title: fullSchema.title || "Input Data",
-        description: fullSchema.description || "",
-        type: "object" as const,
-        required: false,
-      }
     : null
 
   // These two are mutually exclusive. One returns null if the other is not null.
@@ -61,13 +48,13 @@
     {id}
     bind:value={plaintext_input}
   />
-{:else if rootProperty}
+{:else if structured_input_model}
+  <pre>{JSON.stringify(structured_input_model, null, 2)}</pre>
   <RunInputFormElement
-    property={rootProperty}
+    property={structured_input_model}
     {onInputChange}
     level={0}
     path="root"
-    {fullSchema}
     hideHeaderAndIndent={true}
     bind:this={rootFormElement}
   />
@@ -75,6 +62,7 @@
   <p>Invalid or unsupported input schema</p>
 {/if}
 
+<!-- TODO -->
 <div>
   <button
     class="btn btn-primary"
