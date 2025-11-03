@@ -46,7 +46,7 @@
         required: true,
       }}
       {onInputChange}
-      hideHeaderAndIndent={true}
+      hideHeaderAndIndent={false}
       level={level + 1}
       path={propterty_id}
       parentOptional={parentOptional || !property.required}
