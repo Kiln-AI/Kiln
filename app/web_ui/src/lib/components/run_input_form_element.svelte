@@ -34,11 +34,7 @@
     } else if (property.type === "boolean") {
       base_description = "Boolean"
     } else if (property.type === "array") {
-      if (isGenericArray(property)) {
-        base_description = "JSON Array"
-      } else {
-        base_description = "Array"
-      }
+      base_description = "Array"
     } else if (property.type === "object") {
       if (isGenericObject(property)) {
         base_description = "JSON Object"
@@ -58,7 +54,7 @@
   function get_input_type(
     property: SchemaModelProperty,
   ): "textarea" | "input" | "input_number" | "fancy_select" {
-    if (isGenericObject(property) || isGenericArray(property)) {
+    if (isGenericObject(property)) {
       return "textarea"
     } else if (property.type === "boolean" || property.enum) {
       return "fancy_select"
@@ -112,17 +108,8 @@
     return undefined
   }
 
-  function getDescription(property: SchemaModelProperty): string {
-    if (isGenericObject(property)) {
-      return property.description + " (JSON Object with flexible properties)"
-    } else if (isGenericArray(property)) {
-      return property.description + " (JSON Array with flexible item types)"
-    }
-    return property.description ?? "No description"
-  }
-
   function getHeight(property: SchemaModelProperty): "large" | undefined {
-    if (isGenericObject(property) || isGenericArray(property)) {
+    if (isGenericObject(property)) {
       return "large"
     }
     return undefined
@@ -133,7 +120,7 @@
     const target = e.target as HTMLInputElement | HTMLTextAreaElement
     if (target) {
       const newValue = target.value
-      if (isGenericObject(property) || isGenericArray(property)) {
+      if (isGenericObject(property)) {
         try {
           JSON.parse(newValue)
           value = newValue
@@ -154,27 +141,13 @@
     return prop.type === "object"
   }
 
-  function isGenericArray(property: SchemaModelProperty): boolean {
-    if (property.type !== "array") return false
-    if (!property.items) return false
-    // TODO work on arrays. Is there no such thing as generic arrays? That would be ideal. Just objects in arrays.
-    if (property.items.type === "object") {
-      // Arrays of object are generic if the sub-object allows arbitrary properties
-      return (property.items.additionalProperties ?? true) === true
-    }
-    // TODO likely wrong
-    if (property.items.type === "array") {
-      return true
-    }
-    return false
-  }
-
   // JSON schema can just define an arbitrary object, without a strong type.
   // In this case we need to let the user use a text area to enter the JSON object.
   function isGenericObject(property: SchemaModelProperty): boolean {
     if (property.type !== "object") return false
-    if (property.additionalProperties === true) return true
-    return false
+
+    // additionalProperties is true by default if ommited, and can be a dictionary with allowed types. Any non-false value is generic.
+    return !!(property.additionalProperties ?? true)
   }
 
   // Export function to build the value for this property
@@ -240,6 +213,23 @@
       return cleanedValue
     }
 
+    // For generic objects (flexible JSON)
+    if (isGenericObject(property)) {
+      try {
+        const parsed = JSON.parse(value)
+        if (typeof parsed !== "object") {
+          throw new Error(
+            "Property must be a JSON object string ('{...}'): " + path,
+          )
+        }
+        return parsed
+      } catch {
+        throw new Error(
+          "Property must be a valid JSON object string ('{...}'): " + path,
+        )
+      }
+    }
+
     // For primitive types using value
 
     // Shared logic for all types using value
@@ -289,74 +279,7 @@
       return num
     }
 
-    // For generic objects (flexible JSON)
-    if (isGenericObject(property)) {
-      try {
-        const parsed = JSON.parse(value)
-        if (typeof parsed !== "object") {
-          throw new Error(
-            "Property must be a JSON object string ('{...}'): " + path,
-          )
-        }
-        return parsed
-      } catch {
-        throw new Error(
-          "Property must be a valid JSON object string ('{...}'): " + path,
-        )
-      }
-    }
-
-    // For generic arrays (flexible JSON)
-    if (isGenericArray(property)) {
-      try {
-        const parsed = JSON.parse(value)
-        if (!Array.isArray(parsed)) {
-          throw new Error(
-            "Property must be a JSON array string ('[...]'): " + path,
-          )
-        }
-        return parsed
-      } catch {
-        throw new Error(
-          "Property must be a valid JSON array string ('[...]'): " + path,
-        )
-      }
-    }
-
-    // For structured arrays
-    if (isArrayProperty(property) && !isGenericArray(property)) {
-      /*if (!Array.isArray(value)) {
-        return property.required ? [] : undefined
-      }
-
-      const cleanedArray: unknown[] = []
-      let hasValidItems = false
-
-      value.forEach((item, index) => {
-        // For simple string items in structured arrays
-        if (typeof item === "string") {
-          if (item.trim() !== "") {
-            cleanedArray.push(item)
-            hasValidItems = true
-          }
-        } else if (typeof item === "object" && item !== null) {
-          // For object items in structured arrays - check if they have content
-          if (!isObjectEmpty(item)) {
-            cleanedArray.push(item)
-            hasValidItems = true
-          }
-        } else if (item !== undefined && item !== null) {
-          cleanedArray.push(item)
-          hasValidItems = true
-        }
-      })
-
-      return hasValidItems ? cleanedArray : property.required ? [] : undefined
-    }*/
-      return undefined
-    }
-
-    return undefined
+    throw new Error("Unknown property type: " + property.type + " at " + path)
   }
 
   /*function cleanNestedValue(
@@ -488,17 +411,17 @@
     return false
   }*/
 
-  function getInfoDescription(property: SchemaModelProperty): string {
+  function getInfoDescription(
+    property: SchemaModelProperty,
+  ): string | undefined {
     if (isGenericObject(property)) {
-      return "This property is a JSON Object, which allows any arbitrary properties. You must fill in the text area with a valid JSON object (e.g. '{...}')."
-    } else if (isGenericArray(property)) {
-      return "JSON Array (supports any item types)"
+      return "This property is a JSON Object, which allows any arbitrary properties. You must fill in the text area with a valid JSON object (e.g. '{\"a\": 1}')."
     }
-    return ""
+    return undefined
   }
 </script>
 
-{#if (isObjectProperty(property) && !isGenericObject(property)) || (isArrayProperty(property) && !isGenericArray(property))}
+{#if (isObjectProperty(property) && !isGenericObject(property)) || isArrayProperty(property)}
   <div>
     {#if !hideHeaderAndIndent}
       <FormElement
@@ -533,7 +456,7 @@
             }}
           />
         {/each}
-      {:else if isArrayProperty(property) && !isGenericArray(property)}
+      {:else if isArrayProperty(property)}
         <RunInputArrayElement
           bind:this={arrayComponent}
           {property}
@@ -551,7 +474,7 @@
     label={property.title}
     inputType={get_input_type(property)}
     height={getHeight(property)}
-    description={getDescription(property)}
+    description={property.description || "No description"}
     optional={!property.required || parentOptional}
     fancy_select_options={get_select_options(property)}
     bind:value
