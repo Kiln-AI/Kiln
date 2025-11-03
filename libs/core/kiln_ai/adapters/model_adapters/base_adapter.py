@@ -23,7 +23,7 @@ from kiln_ai.datamodel import (
     TaskRun,
     Usage,
 )
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
@@ -88,7 +88,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
     async def invoke(
         self,
-        input: Dict | str,
+        input: InputType,
         input_source: DataSource | None = None,
     ) -> TaskRun:
         run_output, _ = await self.invoke_returning_run_output(input, input_source)
@@ -96,14 +96,11 @@ class BaseAdapter(metaclass=ABCMeta):
 
     async def invoke_returning_run_output(
         self,
-        input: Dict | str,
+        input: InputType,
         input_source: DataSource | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input
         if self.input_schema is not None:
-            if not isinstance(input, dict):
-                raise ValueError(f"structured input is not a dict: {input}")
-
             validate_schema_with_value_error(
                 input,
                 self.input_schema,
@@ -193,7 +190,7 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: Dict | str) -> Tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:
@@ -209,7 +206,7 @@ class BaseAdapter(metaclass=ABCMeta):
             include_json_instructions=add_json_instructions
         )
 
-    def build_chat_formatter(self, input: Dict | str) -> ChatFormatter:
+    def build_chat_formatter(self, input: InputType) -> ChatFormatter:
         # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
 
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
@@ -258,15 +255,15 @@ class BaseAdapter(metaclass=ABCMeta):
     # create a run and task output
     def generate_run(
         self,
-        input: Dict | str,
+        input: InputType,
         input_source: DataSource | None,
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
-        # Convert input and output to JSON strings if they are dictionaries
+        # Convert input and output to JSON strings if they aren't strings
         input_str = (
-            json.dumps(input, ensure_ascii=False) if isinstance(input, dict) else input
+            input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
         )
         output_str = (
             json.dumps(run_output.output, ensure_ascii=False)

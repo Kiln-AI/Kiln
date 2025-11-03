@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Annotated, Dict
+from typing import Annotated, Any, Dict
 
 import jsonschema
 import jsonschema.exceptions
@@ -32,11 +32,11 @@ def _check_json_schema(v: str) -> str:
     return v
 
 
-def validate_schema(instance: Dict, schema_str: str) -> None:
-    """Validate a dictionary against a JSON schema.
+def validate_schema(instance: Any, schema_str: str) -> None:
+    """Validate an instance against a JSON schema.
 
     Args:
-        instance: Dictionary to validate
+        instance: Instance to validate
         schema_str: JSON schema string to validate against
 
     Raises:
@@ -48,7 +48,7 @@ def validate_schema(instance: Dict, schema_str: str) -> None:
 
 
 def validate_schema_with_value_error(
-    instance: Dict, schema_str: str, error_prefix: str | None = None
+    instance: Any, schema_str: str, error_prefix: str | None = None
 ) -> None:
     """Validate a dictionary against a JSON schema and raise a ValueError if the schema is invalid.
 
@@ -109,9 +109,6 @@ def validate_schema_dict(v: Dict):
     """
     try:
         jsonschema.Draft202012Validator.check_schema(v)
-        # Top level arrays are valid JSON schemas, but we don't want to allow them here as they often cause issues
-        if "type" not in v or v["type"] != "object" or "properties" not in v:
-            raise ValueError(f"JSON schema must be an object with properties: {v}")
     except jsonschema.exceptions.SchemaError as e:
         raise ValueError(f"Invalid JSON schema: {v} \n{e}")
     except Exception as e:

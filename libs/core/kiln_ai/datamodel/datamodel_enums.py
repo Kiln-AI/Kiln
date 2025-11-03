@@ -1,4 +1,7 @@
 from enum import Enum, IntEnum
+from typing import Dict
+
+type InputType = Dict | list | str
 
 
 class Priority(IntEnum):
