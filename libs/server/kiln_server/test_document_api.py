@@ -91,6 +91,7 @@ def mock_chunker_config(mock_project):
         description="Test chunker description",
         chunker_type=ChunkerType.FIXED_WINDOW,
         properties={
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 100,
             "chunk_overlap": 10,
         },
@@ -589,6 +590,7 @@ async def test_create_chunker_config_success(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -618,6 +620,7 @@ async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "invalid_chunker_type",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -642,6 +645,7 @@ async def test_create_chunker_config_invalid_chunk_size(
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": chunk_size,
                     "chunk_overlap": chunk_overlap,
                 },
@@ -677,6 +681,7 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
                 "description": "Test Semantic Chunker Config description",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -724,6 +729,7 @@ async def test_create_semantic_chunker_config_override_include_metadata_and_incl
                 "description": "Test Semantic Chunker Config description",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -765,6 +771,7 @@ async def test_create_semantic_chunker_config_minimal(client, mock_project):
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 95,
@@ -801,6 +808,7 @@ async def test_create_semantic_chunker_config_missing_embedding_config_id(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "breakpoint_percentile_threshold": 95,
                     "buffer_size": 1,
                     "include_metadata": False,
@@ -831,6 +839,7 @@ async def test_create_semantic_chunker_config_missing_buffer_size(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
                     "include_metadata": False,
@@ -861,6 +870,7 @@ async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 1,
                     "embedding_config_id": "emb-1",
                     "include_metadata": False,
@@ -891,6 +901,7 @@ async def test_create_semantic_chunker_config_invalid_buffer_size(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 0,  # Invalid buffer size
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
@@ -922,6 +933,7 @@ async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
                     "embedding_config_id": "emb-1",
@@ -950,6 +962,7 @@ async def test_create_semantic_chunker_config_embedding_config_not_found(
                 "name": "Bad Semantic Chunker Config",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": "does-not-exist",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -3673,7 +3686,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
     mock_project,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Ensure extractor concurrency is 1 when provider is ollama."""
     # Create an extractor config that uses the ollama provider
@@ -3705,7 +3718,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         extractor_config_id=extractor_config_ollama.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -3745,7 +3758,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         mock_extractor_from_id.return_value = extractor_config_ollama
         mock_chunker_from_id.return_value = mock_chunker_config
         mock_embedding_from_id.return_value = mock_embedding_config
-        mock_vector_store_from_id.return_value = mock_vector_store_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config_fts
 
         # Ensure __init__ behaves like a normal constructor
         mock_extract_runner_init.return_value = None

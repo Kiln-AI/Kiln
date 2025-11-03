@@ -363,6 +363,7 @@ async function create_default_chunker_config(
         name: name || null,
         chunker_type: "fixed_window",
         properties: {
+          chunker_type: "fixed_window",
           chunk_size: chunk_size,
           chunk_overlap: chunk_overlap,
         },
