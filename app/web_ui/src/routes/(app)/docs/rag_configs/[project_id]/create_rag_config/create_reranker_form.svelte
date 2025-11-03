@@ -73,6 +73,7 @@
 
   async function create_reranker_config() {
     try {
+      error = null
       loading = true
 
       if (!selectedReranker) {
@@ -110,6 +111,7 @@
       }
 
       dispatch("success", { reranker_config_id: data.id })
+      error = null
     } catch (err) {
       error = createKilnError(err)
     } finally {

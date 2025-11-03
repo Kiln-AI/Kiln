@@ -79,7 +79,7 @@ from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
 
@@ -448,7 +448,9 @@ class CreateRerankerConfigRequest(BaseModel):
         description="The description of the reranker config",
         default=None,
     )
-    top_n: int = Field(description="Number of results to return from the reranker")
+    top_n: PositiveInt = Field(
+        description="Number of results to return from the reranker"
+    )
     model_provider_name: ModelProviderName = Field(
         description="The name of the model provider to use for the reranker config.",
     )
