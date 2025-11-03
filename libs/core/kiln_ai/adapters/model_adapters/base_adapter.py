@@ -99,12 +99,13 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # validate input
+        # validate input, allowing arrays
         if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
                 self.input_schema,
                 "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                require_object=False,
             )
 
         # Format model input for model call (we save the original input in the task without formatting)

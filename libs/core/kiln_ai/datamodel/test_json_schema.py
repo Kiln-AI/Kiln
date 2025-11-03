@@ -1,3 +1,5 @@
+import json
+
 import jsonschema
 import pytest
 from pydantic import BaseModel
@@ -165,3 +167,24 @@ def test_triangle_schema():
 )
 def test_string_to_json_key(input_str: str, expected: str):
     assert string_to_json_key(input_str) == expected
+
+
+def test_array_schema_validation():
+    array_schema = {
+        "type": "array",
+        "items": {"type": "integer"},
+        "description": "A list of integers",
+    }
+    value = [1, 2, 3]
+    schema_str = json.dumps(array_schema)
+
+    # Arrays not valid by default (some things reply on this, like tools)
+    with pytest.raises(ValueError):
+        validate_schema(value, schema_str)
+
+    # Arrays are valid if we require an object
+    with pytest.raises(ValueError):
+        validate_schema(value, schema_str, require_object=True)
+
+    # Arrays are valid if we require an object
+    validate_schema(value, schema_str, require_object=False)
