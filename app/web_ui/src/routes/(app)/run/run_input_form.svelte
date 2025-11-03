@@ -30,8 +30,16 @@
     return plaintext_input
   }
 
+  export function get_structured_input_data(): unknown | null {
+    if (!input_schema) {
+      return null
+    }
+    return rootFormElement?.buildValue()
+  }
+
   export function clear_input() {
     plaintext_input = ""
+    // TODO doesn't work
     rootFormElement = null
   }
 
