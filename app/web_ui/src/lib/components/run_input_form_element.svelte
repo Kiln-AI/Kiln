@@ -8,6 +8,7 @@
     MissingRequiredPropertyError,
     IncompleteObjectError,
   } from "$lib/utils/missing_required_property_error"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
   export let property: SchemaModelProperty
   let value: string = ""
@@ -32,7 +33,7 @@
     } else if (property.type === "integer") {
       base_description = "Integer"
     } else if (property.type === "boolean") {
-      base_description = "'true' or 'false'"
+      base_description = "Boolean"
     } else if (property.type === "array") {
       if (isGenericArray(property)) {
         base_description = "JSON Array"
@@ -57,16 +58,43 @@
 
   function get_input_type(
     property: SchemaModelProperty,
-  ): "textarea" | "input" | "input_number" {
+  ): "textarea" | "input" | "input_number" | "fancy_select" {
     if (isGenericObject(property) || isGenericArray(property)) {
       return "textarea"
     } else if (property.type === "string") {
       return "textarea"
     } else if (property.type === "number" || property.type === "integer") {
-      // TODO
       return "input_number"
+    } else if (property.type === "boolean") {
+      return "fancy_select"
     }
     return "input"
+  }
+
+  function get_select_options(
+    property: SchemaModelProperty,
+  ): OptionGroup[] | undefined {
+    if (property.type === "boolean") {
+      return [
+        {
+          options: [
+            {
+              label: "True",
+              value: "true",
+            },
+            {
+              label: "False",
+              value: "false",
+            },
+            {
+              label: "Not Set",
+              value: undefined,
+            },
+          ],
+        },
+      ]
+    }
+    return undefined
   }
 
   function getDescription(property: SchemaModelProperty): string {
@@ -199,7 +227,7 @@
     // For primitive types using value
 
     // Shared logic for all types using value
-    if (value === "" && !property.required) {
+    if ((value === "" || value === undefined) && !property.required) {
       // Valid empty value
       return undefined
     }
@@ -515,6 +543,7 @@
     height={getHeight(property)}
     description={getDescription(property)}
     optional={!property.required || parentOptional}
+    fancy_select_options={get_select_options(property)}
     bind:value
     info_msg={describe_type(property)}
     info_description={getInfoDescription(property)}
