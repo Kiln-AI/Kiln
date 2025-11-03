@@ -76,7 +76,7 @@ function build_schema_model_property(
         build_schema_model_property(nestedId, nestedOptions, nestedRequired),
     )
   }
-  if (options.additionalProperties) {
+  if (options.additionalProperties !== undefined) {
     result.additionalProperties = options.additionalProperties
   }
   if (options.enum) {

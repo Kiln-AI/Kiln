@@ -529,7 +529,6 @@ describe("model_from_schema", () => {
             description: "A sibling object",
             type: "object",
             required: false,
-            additionalProperties: true,
             properties: [
               {
                 id: "name",
@@ -762,7 +761,7 @@ describe("model_from_schema", () => {
     expect(streetProp.required).toBe(false)
   })
 
-  it("defaults additionalProperties to true when not specified for nested objects", () => {
+  it("doesn't modify additionalProperties when not specified for nested objects", () => {
     const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
@@ -783,7 +782,7 @@ describe("model_from_schema", () => {
     }
 
     const result = model_from_schema(schema)
-    expect(result.properties![0].additionalProperties).toBe(true)
+    expect(result.properties![0].additionalProperties).toBe(undefined)
   })
 })
 

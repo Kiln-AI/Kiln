@@ -4547,9 +4547,7 @@ export interface components {
             /** Plaintext Input */
             plaintext_input?: string | null;
             /** Structured Input */
-            structured_input?: {
-                [key: string]: unknown;
-            } | null;
+            structured_input?: unknown | null;
             /** Tags */
             tags?: string[] | null;
         };

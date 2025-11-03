@@ -128,7 +128,7 @@
   function isGenericObject(property: SchemaModelProperty): boolean {
     if (property.type !== "object") return false
 
-    // from spec: additionalProperties is true by default if ommited, and can be a dictionary with allowed types.
+    // from spec: additionalProperties is true by default if omitted, and can be a dictionary with allowed types.
 
     // However, we don't want to regress the UI to generic JSON input when we have nice types defined and they didn't explicitly set additionalProperties
     if (
@@ -211,7 +211,7 @@
       // Valid empty value
       return undefined
     }
-    // Ususally "", can be undefined (enums) or null (input type=number wiht non-number string)
+    // Usually "", can be undefined (enums) or null (input type=number with non-number string)
     if (!value && property.required) {
       throw new MissingRequiredPropertyError(
         "Required property not set: " + path,

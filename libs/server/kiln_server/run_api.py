@@ -52,7 +52,7 @@ class RunTaskRequest(BaseModel):
 
     run_config_properties: RunConfigProperties
     plaintext_input: str | None = None
-    structured_input: Dict[str, Any] | None = None
+    structured_input: Any | None = None
     tags: list[str] | None = None
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
