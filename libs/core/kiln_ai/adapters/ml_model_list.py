@@ -926,7 +926,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="openai/gpt-oss-120b",
+                model_id="openai/gpt-oss-120b:exacto",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
@@ -2968,7 +2968,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="deepseek/deepseek-v3.1-terminus",
+                model_id="deepseek/deepseek-v3.1-terminus:exacto",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
             ),
@@ -4648,7 +4648,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="z-ai/glm-4.6",
+                model_id="z-ai/glm-4.6:exacto",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
@@ -4823,7 +4823,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="moonshotai/kimi-k2-0905",
+                model_id="moonshotai/kimi-k2-0905:exacto",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 suggested_for_evals=True,
