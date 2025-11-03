@@ -3,11 +3,8 @@ from typing import Any, Dict, List, Literal
 from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
 from llama_index.vector_stores.lancedb import LanceDBVectorStore
 
-from kiln_ai.datamodel.vector_store import (
-    VectorStoreConfig,
-    VectorStoreType,
-    raise_exhaustive_enum_error,
-)
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.uuid import string_to_uuid
 
 
@@ -32,19 +29,16 @@ def lancedb_construct_from_config(
 ) -> LanceDBVectorStore:
     """Construct a LanceDBVectorStore from a VectorStoreConfig."""
     kwargs: Dict[str, Any] = {**extra_params}
-    if (
-        vector_store_config.lancedb_properties.nprobes is not None
-        and "nprobes" not in kwargs
-    ):
-        kwargs["nprobes"] = vector_store_config.lancedb_properties.nprobes
+    if "nprobes" in vector_store_config.properties and "nprobes" not in kwargs:
+        kwargs["nprobes"] = vector_store_config.properties["nprobes"]
 
     return LanceDBVectorStore(
         mode="create",
         query_type=store_type_to_lancedb_query_type(vector_store_config.store_type),
-        overfetch_factor=vector_store_config.lancedb_properties.overfetch_factor,
-        vector_column_name=vector_store_config.lancedb_properties.vector_column_name,
-        text_key=vector_store_config.lancedb_properties.text_key,
-        doc_id_key=vector_store_config.lancedb_properties.doc_id_key,
+        overfetch_factor=vector_store_config.properties["overfetch_factor"],
+        vector_column_name=vector_store_config.properties["vector_column_name"],
+        text_key=vector_store_config.properties["text_key"],
+        doc_id_key=vector_store_config.properties["doc_id_key"],
         uri=uri,
         **kwargs,
     )

@@ -15,6 +15,7 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.basemodel import generate_model_id, name_validator
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
@@ -688,3 +689,11 @@ def test_chat_strategy_enum():
     assert (
         ChatStrategy.single_turn_r1_thinking == "final_and_intermediate_r1_compatible"
     )
+
+
+def test_generate_model_id():
+    model_id = generate_model_id()
+    assert len(model_id) == 12
+    # check it is a valid name - as we typically use model ids in filenames on FS
+    validator = name_validator(min_length=1, max_length=12)
+    validator(model_id)
