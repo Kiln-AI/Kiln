@@ -2590,10 +2590,11 @@ export interface components {
             description?: string | null;
             /** @description The type of vector store to use */
             store_type: components["schemas"]["VectorStoreType"];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            /**
+             * Properties
+             * @description The properties of the vector store config, specific to the selected store_type.
+             */
+            properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -3876,6 +3877,88 @@ export interface components {
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LanceDBConfigFTSProperties */
+        LanceDBConfigFTSProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            store_type: "lancedb_fts";
+            /** Similarity Top K */
+            similarity_top_k: number;
+            /** Overfetch Factor */
+            overfetch_factor: number;
+            /** Vector Column Name */
+            vector_column_name: string;
+            /** Text Key */
+            text_key: string;
+            /** Doc Id Key */
+            doc_id_key: string;
+        };
+        /** LanceDBConfigFTSPropertiesPublic */
+        LanceDBConfigFTSPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
+        };
+        /** LanceDBConfigHybridProperties */
+        LanceDBConfigHybridProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            store_type: "lancedb_hybrid";
+            /** Similarity Top K */
+            similarity_top_k: number;
+            /** Overfetch Factor */
+            overfetch_factor: number;
+            /** Vector Column Name */
+            vector_column_name: string;
+            /** Text Key */
+            text_key: string;
+            /** Doc Id Key */
+            doc_id_key: string;
+            /** Nprobes */
+            nprobes: number;
+        };
+        /** LanceDBConfigHybridPropertiesPublic */
+        LanceDBConfigHybridPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
+        };
+        /** LanceDBConfigVectorProperties */
+        LanceDBConfigVectorProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            store_type: "lancedb_vector";
+            /** Similarity Top K */
+            similarity_top_k: number;
+            /** Overfetch Factor */
+            overfetch_factor: number;
+            /** Vector Column Name */
+            vector_column_name: string;
+            /** Text Key */
+            text_key: string;
+            /** Doc Id Key */
+            doc_id_key: string;
+            /** Nprobes */
+            nprobes: number;
+        };
+        /** LanceDBConfigVectorPropertiesPublic */
+        LanceDBConfigVectorPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
+        };
         /** LocalServerProperties */
         LocalServerProperties: {
             /** Command */
@@ -5275,9 +5358,7 @@ export interface components {
              * Properties
              * @description The properties of the vector store config, specific to the selected store_type.
              */
-            properties: {
-                [key: string]: string | number | null;
-            };
+            properties: components["schemas"]["LanceDBConfigFTSProperties"] | components["schemas"]["LanceDBConfigVectorProperties"] | components["schemas"]["LanceDBConfigHybridProperties"];
             /** Model Type */
             readonly model_type: string;
         };

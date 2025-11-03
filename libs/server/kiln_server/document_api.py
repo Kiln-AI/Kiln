@@ -66,8 +66,15 @@ from kiln_ai.datamodel.reranker import (
     RerankerConfig,
     RerankerType,
 )
-from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.datamodel.vector_store import (
+    LanceDBConfigFTSProperties,
+    LanceDBConfigHybridProperties,
+    LanceDBConfigVectorProperties,
+    VectorStoreConfig,
+    VectorStoreType,
+)
 from kiln_ai.utils import shared_async_lock_manager
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
@@ -346,6 +353,27 @@ class CreateEmbeddingConfigRequest(BaseModel):
         return self
 
 
+# the publicly exposed properties of each vector store config type happen to be the same right now
+# but we keep them separate to make it easier to add new properties in the future as they
+# can drift independently
+class LanceDBConfigFTSPropertiesPublic(BaseModel):
+    similarity_top_k: int = Field(
+        description="The number of results to return from the vector store.",
+    )
+
+
+class LanceDBConfigVectorPropertiesPublic(BaseModel):
+    similarity_top_k: int = Field(
+        description="The number of results to return from the vector store.",
+    )
+
+
+class LanceDBConfigHybridPropertiesPublic(BaseModel):
+    similarity_top_k: int = Field(
+        description="The number of results to return from the vector store.",
+    )
+
+
 class CreateVectorStoreConfigRequest(BaseModel):
     name: FilenameString | None = Field(
         description="A name for this entity.",
@@ -358,9 +386,57 @@ class CreateVectorStoreConfigRequest(BaseModel):
     store_type: VectorStoreType = Field(
         description="The type of vector store to use",
     )
-    properties: dict[str, str | int | float | bool] = Field(
-        default_factory=dict,
+    properties: (
+        LanceDBConfigFTSPropertiesPublic
+        | LanceDBConfigVectorPropertiesPublic
+        | LanceDBConfigHybridPropertiesPublic
+    ) = Field(
+        description="The properties of the vector store config, specific to the selected store_type."
     )
+
+    def get_properties_for_store_type(
+        self,
+    ) -> (
+        LanceDBConfigFTSProperties
+        | LanceDBConfigVectorProperties
+        | LanceDBConfigHybridProperties
+    ):
+        """
+        Returns the properties for the vector store config, with the right type and set
+        some default values for the fields we do not expose to the UI
+        """
+        match self.store_type:
+            case VectorStoreType.LANCE_DB_FTS:
+                return LanceDBConfigFTSProperties(
+                    store_type=VectorStoreType.LANCE_DB_FTS,
+                    similarity_top_k=self.properties.similarity_top_k,
+                    overfetch_factor=1,
+                    vector_column_name="vector",
+                    text_key="text",
+                    doc_id_key="doc_id",
+                )
+            case VectorStoreType.LANCE_DB_VECTOR:
+                return LanceDBConfigVectorProperties(
+                    store_type=VectorStoreType.LANCE_DB_VECTOR,
+                    similarity_top_k=self.properties.similarity_top_k,
+                    overfetch_factor=1,
+                    vector_column_name="vector",
+                    text_key="text",
+                    doc_id_key="doc_id",
+                    nprobes=20,
+                )
+            case VectorStoreType.LANCE_DB_HYBRID:
+                return LanceDBConfigHybridProperties(
+                    store_type=VectorStoreType.LANCE_DB_HYBRID,
+                    similarity_top_k=self.properties.similarity_top_k,
+                    overfetch_factor=1,
+                    vector_column_name="vector",
+                    text_key="text",
+                    doc_id_key="doc_id",
+                    nprobes=20,
+                )
+            case _:
+                raise_exhaustive_enum_error(self.store_type)
 
 
 class CreateRerankerConfigRequest(BaseModel):
@@ -632,6 +708,14 @@ async def build_rag_workflow_runner(
         project, rag_config
     )
 
+    # refactor this to use better global rate limiting / throttling
+    # we currently only throttle within a single job, but here we parallelize jobs
+    # which causes too many concurrent subjobs to run (e.g. PDF split up into pages, each page is extracted in parallel)
+    # ollama and local providers get easily stuck depending on hardware
+    extractor_concurrency = 5
+    if extractor_config.model_provider_name == ModelProviderName.ollama:
+        extractor_concurrency = 1
+
     runner = RagWorkflowRunner(
         project,
         RagWorkflowRunnerConfiguration(
@@ -643,7 +727,7 @@ async def build_rag_workflow_runner(
                 RagExtractionStepRunner(
                     project,
                     extractor_config,
-                    concurrency=5,
+                    concurrency=extractor_concurrency,
                     rag_config=rag_config,
                     filesystem_cache=TemporaryFilesystemCache.shared(),
                 ),
@@ -1433,20 +1517,12 @@ def connect_document_api(app: FastAPI):
         request: CreateVectorStoreConfigRequest,
     ) -> VectorStoreConfig:
         project = project_from_id(project_id)
-
         vector_store_config = VectorStoreConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
             store_type=request.store_type,
-            properties={
-                "overfetch_factor": 1,
-                "vector_column_name": "vector",
-                "text_key": "text",
-                "doc_id_key": "doc_id",
-                "nprobes": 20,
-                **request.properties,
-            },
+            properties=request.get_properties_for_store_type(),
         )
         vector_store_config.save_to_file()
 

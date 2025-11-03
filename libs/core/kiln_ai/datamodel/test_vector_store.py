@@ -1,12 +1,10 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.vector_store import (
-    LanceDBConfigBaseProperties,
-    VectorStoreConfig,
-    VectorStoreType,
-)
+from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 
 
 @pytest.fixture
@@ -28,6 +26,7 @@ def mock_vector_store_fts_config_properties():
         "vector_column_name": "vector",
         "text_key": "text",
         "doc_id_key": "doc_id",
+        "store_type": VectorStoreType.LANCE_DB_FTS,
     }
 
 
@@ -40,6 +39,20 @@ def mock_vector_store_vector_config_properties():
         "text_key": "text",
         "doc_id_key": "doc_id",
         "nprobes": 1,
+        "store_type": VectorStoreType.LANCE_DB_VECTOR,
+    }
+
+
+@pytest.fixture
+def mock_vector_store_hybrid_config_properties():
+    return {
+        "similarity_top_k": 10,
+        "overfetch_factor": 2,
+        "vector_column_name": "vector",
+        "text_key": "text",
+        "doc_id_key": "doc_id",
+        "nprobes": 1,
+        "store_type": VectorStoreType.LANCE_DB_HYBRID,
     }
 
 
@@ -49,39 +62,6 @@ class TestVectorStoreType:
         assert VectorStoreType.LANCE_DB_FTS == "lancedb_fts"
         assert VectorStoreType.LANCE_DB_HYBRID == "lancedb_hybrid"
         assert VectorStoreType.LANCE_DB_VECTOR == "lancedb_vector"
-
-
-class TestLanceDBConfigBaseProperties:
-    def test_valid_lance_db_config_base_properties(self):
-        """Test creating valid LanceDBConfigBaseProperties."""
-        config = LanceDBConfigBaseProperties(
-            similarity_top_k=10,
-            overfetch_factor=2,
-            vector_column_name="vector",
-            text_key="text",
-            doc_id_key="doc_id",
-            nprobes=1,
-        )
-
-        assert config.similarity_top_k == 10
-        assert config.overfetch_factor == 2
-        assert config.vector_column_name == "vector"
-        assert config.text_key == "text"
-        assert config.doc_id_key == "doc_id"
-        assert config.nprobes == 1
-
-    def test_lance_db_config_base_properties_without_nprobes(self):
-        """Test creating LanceDBConfigBaseProperties without nprobes."""
-        config = LanceDBConfigBaseProperties(
-            similarity_top_k=10,
-            overfetch_factor=2,
-            vector_column_name="vector",
-            text_key="text",
-            doc_id_key="doc_id",
-        )
-
-        assert config.similarity_top_k == 10
-        assert config.nprobes is None
 
 
 class TestVectorStoreConfig:
@@ -136,22 +116,22 @@ class TestVectorStoreConfig:
 
         assert config.name == "test_store"
         assert config.store_type == VectorStoreType.LANCE_DB_VECTOR
-        assert config.properties["similarity_top_k"] == 10
-        assert config.properties["nprobes"] == 1
+        assert config.lancedb_vector_properties["similarity_top_k"] == 10
+        assert config.lancedb_vector_properties["nprobes"] == 1
 
     def test_valid_lance_db_hybrid_store_config(
-        self, mock_vector_store_vector_config_properties
+        self, mock_vector_store_hybrid_config_properties
     ):
         """Test creating valid VectorStoreConfig with LanceDB Hybrid."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_HYBRID,
-            properties=mock_vector_store_vector_config_properties,
+            properties=mock_vector_store_hybrid_config_properties,
         )
 
         assert config.name == "test_store"
         assert config.store_type == VectorStoreType.LANCE_DB_HYBRID
-        assert config.properties["nprobes"] == 1
+        assert config.lancedb_hybrid_properties["nprobes"] == 1
 
     def test_vector_store_config_missing_required_property(
         self, mock_vector_store_fts_config_properties
@@ -160,7 +140,7 @@ class TestVectorStoreConfig:
         mock_vector_store_fts_config_properties.pop("similarity_top_k")
         with pytest.raises(
             ValidationError,
-            match=r".*similarity_top_k is a required property",
+            match=r"1 validation error for VectorStoreConfig\nproperties\.lancedb_fts\.similarity_top_k",
         ):
             VectorStoreConfig(
                 name="test_store",
@@ -175,7 +155,7 @@ class TestVectorStoreConfig:
         mock_vector_store_fts_config_properties["similarity_top_k"] = "not_an_int"
         with pytest.raises(
             ValidationError,
-            match=r".*similarity_top_k must be of type",
+            match=r"1 validation error for VectorStoreConfig\nproperties\.lancedb_fts\.similarity_top_k",
         ):
             VectorStoreConfig(
                 name="test_store",
@@ -201,7 +181,7 @@ class TestVectorStoreConfig:
         mock_vector_store_vector_config_properties.pop("nprobes")
         with pytest.raises(
             ValidationError,
-            match=r".*nprobes is a required property",
+            match=r"1 validation error for VectorStoreConfig\nproperties\.lancedb_vector\.nprobes",
         ):
             VectorStoreConfig(
                 name="test_store",
@@ -209,23 +189,97 @@ class TestVectorStoreConfig:
                 properties=mock_vector_store_vector_config_properties,
             )
 
-    def test_lancedb_properties(self, mock_vector_store_vector_config_properties):
-        """Test lancedb_properties method returns correct LanceDBConfigBaseProperties."""
+    def test_lancedb_vector_properties(
+        self, mock_vector_store_vector_config_properties
+    ):
+        """Test lancedb_vector_properties method returns correct LanceDBConfigVectorProperties."""
         config = VectorStoreConfig(
             name="test_store",
             store_type=VectorStoreType.LANCE_DB_VECTOR,
             properties=mock_vector_store_vector_config_properties,
         )
 
-        props = config.lancedb_properties
+        props = config.lancedb_vector_properties
 
-        assert isinstance(props, LanceDBConfigBaseProperties)
-        assert props.similarity_top_k == 10
-        assert props.overfetch_factor == 2
-        assert props.vector_column_name == "vector"
-        assert props.text_key == "text"
-        assert props.doc_id_key == "doc_id"
-        assert props.nprobes == 1
+        assert props["similarity_top_k"] == 10
+        assert props["overfetch_factor"] == 2
+        assert props["vector_column_name"] == "vector"
+        assert props["text_key"] == "text"
+        assert props["doc_id_key"] == "doc_id"
+        assert props["nprobes"] == 1
+
+    def test_lancedb_hybrid_properties(
+        self, mock_vector_store_hybrid_config_properties
+    ):
+        """Test lancedb_hybrid_properties method returns correct LanceDBConfigHybridProperties."""
+        config = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_HYBRID,
+            properties=mock_vector_store_hybrid_config_properties,
+        )
+
+        props = config.lancedb_hybrid_properties
+
+        assert props["similarity_top_k"] == 10
+        assert props["overfetch_factor"] == 2
+        assert props["vector_column_name"] == "vector"
+        assert props["text_key"] == "text"
+        assert props["doc_id_key"] == "doc_id"
+        assert props["nprobes"] == 1
+
+    def test_lancedb_fts_properties(self, mock_vector_store_fts_config_properties):
+        """Test lancedb_fts_properties method returns correct LanceDBConfigFTSProperties."""
+        config = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties=mock_vector_store_fts_config_properties,
+        )
+
+        props = config.lancedb_fts_properties
+
+        assert props["similarity_top_k"] == 10
+        assert props["overfetch_factor"] == 2
+        assert props["vector_column_name"] == "vector"
+        assert props["text_key"] == "text"
+        assert props["doc_id_key"] == "doc_id"
+        assert "nprobes" not in props
+
+    def test_lancedb_properties_throws_on_mismatching_store_type(
+        self,
+        mock_vector_store_vector_config_properties,
+        mock_vector_store_fts_config_properties,
+        mock_vector_store_hybrid_config_properties,
+    ):
+        """Test lancedb_properties method raises ValueError for mismatching store type."""
+        config1 = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_FTS,
+            properties=mock_vector_store_fts_config_properties,
+        )
+        with pytest.raises(ValueError):
+            config1.lancedb_vector_properties
+        with pytest.raises(ValueError):
+            config1.lancedb_hybrid_properties
+
+        config2 = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_VECTOR,
+            properties=mock_vector_store_vector_config_properties,
+        )
+        with pytest.raises(ValueError):
+            config2.lancedb_fts_properties
+        with pytest.raises(ValueError):
+            config2.lancedb_hybrid_properties
+
+        config3 = VectorStoreConfig(
+            name="test_store",
+            store_type=VectorStoreType.LANCE_DB_HYBRID,
+            properties=mock_vector_store_hybrid_config_properties,
+        )
+        with pytest.raises(ValueError):
+            config3.lancedb_fts_properties
+        with pytest.raises(ValueError):
+            config3.lancedb_vector_properties
 
     def test_vector_store_config_inherits_from_kiln_parented_model(
         self, mock_vector_store_fts_config_properties
@@ -318,3 +372,179 @@ class TestVectorStoreConfig:
         assert config.id in [
             vc.id for vc in mock_project.vector_store_configs(readonly=True)
         ]
+
+
+class TestBackwardCompatibility:
+    def test_backward_compatibility_with_missing_store_type_fts(self, tmp_path):
+        """
+        We added discriminated union and the store_type in the properties, but older
+        configs did not have the store_type in the properties. This test ensures that
+        we can load these old configs and that the store_type is added to the properties.
+        """
+        # we write the config to a file, and then we try to load it from file
+        file_path = tmp_path / "test_store.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "310815630212",
+            "created_at": "2025-10-15T01:16:38.380098",
+            "created_by": "leonardmarcq",
+            "name": "Full-Text Search",
+            "description": None,
+            "store_type": VectorStoreType.LANCE_DB_FTS,
+            "properties": {
+                "overfetch_factor": 1,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+                "similarity_top_k": 10,
+            },
+            "model_type": "vector_store_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = VectorStoreConfig.load_from_file(file_path)
+
+        # when loading from file, the store_type is added to the properties
+        assert config.store_type == VectorStoreType.LANCE_DB_FTS
+        assert config.properties["similarity_top_k"] == 10
+        assert config.properties["overfetch_factor"] == 1
+        assert config.properties["vector_column_name"] == "vector"
+        assert config.properties["text_key"] == "text"
+        assert config.properties["doc_id_key"] == "doc_id"
+
+        # this should be added automatically by the loader
+        assert config.properties["store_type"] == VectorStoreType.LANCE_DB_FTS
+
+        # save the file and check that store_type makes it into the properties
+        config.save_to_file()
+        config_restored = VectorStoreConfig.load_from_file(file_path)
+        assert config_restored.store_type == VectorStoreType.LANCE_DB_FTS
+        assert config_restored.properties["store_type"] == VectorStoreType.LANCE_DB_FTS
+
+    def test_backward_compatibility_with_missing_store_type_vector(self, tmp_path):
+        """
+        We added discriminated union and the store_type in the properties, but older
+        configs did not have the store_type in the properties. This test ensures that
+        we can load these old configs and that the store_type is added to the properties.
+        """
+        # we write the config to a file, and then we try to load it from file
+        file_path = tmp_path / "test_store.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "310815630212",
+            "created_at": "2025-10-15T01:16:38.380098",
+            "created_by": "leonardmarcq",
+            "name": "Vector Search",
+            "description": None,
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
+            "properties": {
+                "overfetch_factor": 1,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+                "similarity_top_k": 10,
+                "nprobes": 20,
+            },
+            "model_type": "vector_store_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = VectorStoreConfig.load_from_file(file_path)
+
+        # when loading from file, the store_type is added to the properties
+        assert config.store_type == VectorStoreType.LANCE_DB_VECTOR
+        assert config.properties["similarity_top_k"] == 10
+        assert config.properties["overfetch_factor"] == 1
+        assert config.properties["vector_column_name"] == "vector"
+        assert config.properties["text_key"] == "text"
+        assert config.properties["doc_id_key"] == "doc_id"
+
+        # this should be added automatically by the loader
+        assert config.properties["store_type"] == VectorStoreType.LANCE_DB_VECTOR
+
+        # save the file and check that store_type makes it into the properties
+        config.save_to_file()
+        config_restored = VectorStoreConfig.load_from_file(file_path)
+        assert config_restored.store_type == VectorStoreType.LANCE_DB_VECTOR
+        assert (
+            config_restored.properties["store_type"] == VectorStoreType.LANCE_DB_VECTOR
+        )
+
+    def test_backward_compatibility_with_missing_store_type_hybrid(self, tmp_path):
+        """
+        We added discriminated union and the store_type in the properties, but older
+        configs did not have the store_type in the properties. This test ensures that
+        we can load these old configs and that the store_type is added to the properties.
+        """
+        # we write the config to a file, and then we try to load it from file
+        file_path = tmp_path / "test_store.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "310815630212",
+            "created_at": "2025-10-15T01:16:38.380098",
+            "created_by": "leonardmarcq",
+            "name": "Hybrid Search - Vector and Full-Text",
+            "description": None,
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
+            "properties": {
+                "overfetch_factor": 1,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+                "similarity_top_k": 10,
+                "nprobes": 20,
+            },
+            "model_type": "vector_store_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = VectorStoreConfig.load_from_file(file_path)
+
+        # when loading from file, the store_type is added to the properties
+        assert config.store_type == VectorStoreType.LANCE_DB_HYBRID
+        assert config.properties["similarity_top_k"] == 10
+        assert config.properties["overfetch_factor"] == 1
+        assert config.properties["vector_column_name"] == "vector"
+        assert config.properties["text_key"] == "text"
+        assert config.properties["doc_id_key"] == "doc_id"
+
+        # this should be added automatically by the loader
+        assert config.properties["store_type"] == VectorStoreType.LANCE_DB_HYBRID
+
+        # save the file and check that store_type makes it into the properties
+        config.save_to_file()
+        config_restored = VectorStoreConfig.load_from_file(file_path)
+        assert config_restored.store_type == VectorStoreType.LANCE_DB_HYBRID
+        assert (
+            config_restored.properties["store_type"] == VectorStoreType.LANCE_DB_HYBRID
+        )
+
+    def test_backward_compatibility_fts_nprobes_extra(self, tmp_path):
+        # should not crash because nprobes is in properties even if it is not required
+        file_path = tmp_path / "test_store.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "310815630212",
+            "created_at": "2025-10-15T01:16:38.380098",
+            "created_by": "leonardmarcq",
+            "name": "FTS Search",
+            "description": None,
+            "store_type": VectorStoreType.LANCE_DB_FTS,
+            "properties": {
+                "overfetch_factor": 1,
+                "vector_column_name": "vector",
+                "text_key": "text",
+                "doc_id_key": "doc_id",
+                "similarity_top_k": 10,
+                "nprobes": 20,
+            },
+            "model_type": "vector_store_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = VectorStoreConfig.load_from_file(file_path)
+
+        # save the file and check that extra properties are not persisted
+        config.save_to_file()
+        config_restored = VectorStoreConfig.load_from_file(file_path)
+        assert "nprobes" not in config_restored.properties
