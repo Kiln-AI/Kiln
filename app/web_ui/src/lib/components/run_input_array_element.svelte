@@ -31,20 +31,41 @@
     }
     return values
   }
+
+  function getItemProperty(item_index: number): SchemaModelProperty {
+    const item_path = path + "[" + item_index + "]"
+    const item_title = property.title + "[" + item_index + "]"
+    if (property.items) {
+      // make a copy, mutating the id and title
+      const item_property: SchemaModelProperty = { ...property.items }
+      item_property.id = item_path
+      item_property.title = item_title
+      // No such thing as an optional array item
+      item_property.required = true
+      return item_property
+    }
+    // No 'items' is allowed by JSON schema. We will fall back to showing our general purpose JSON object option
+    return {
+      id: item_path,
+      title: item_title,
+      type: "object",
+      additionalProperties: true,
+      required: true,
+    }
+  }
 </script>
 
-<FormList content_label={property.title} start_with_one={false} bind:content>
+<FormList
+  content_label={property.title}
+  start_with_one={false}
+  bind:content
+  hide_item_header={true}
+>
   <div slot="default" let:item_index>
     {@const propterty_id = path + "[" + item_index + "]"}
     <!-- No 'items' is allowed by JSON schema. We show our general purpose JSON object option -->
     <RunInputFormElementRefCapture
-      property={property.items || {
-        id: propterty_id,
-        title: property.title,
-        type: "object",
-        additionalProperties: true,
-        required: true,
-      }}
+      property={getItemProperty(item_index)}
       {onInputChange}
       hideHeaderAndIndent={false}
       level={level + 1}

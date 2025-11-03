@@ -1,6 +1,7 @@
 <script lang="ts">
   export let content: unknown[] = []
   export let content_label: string = "Item"
+  export let hide_item_header: boolean = false
   export let start_with_one: boolean = true
   export let empty_content: unknown = {}
   export let frozen: boolean = false
@@ -77,7 +78,7 @@
     {#each content as item, item_index}
       <div id={"list_item_" + item_index + "_" + id}>
         <div class="flex flex-row gap-3 font-medium text-sm pb-2">
-          <div class="grow">
+          <div class="grow {hide_item_header ? 'opacity-0' : ''}">
             {content_label} #{item_index + 1}
           </div>
           <button
