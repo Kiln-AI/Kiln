@@ -93,15 +93,26 @@
       disabled_header,
       "Select a model to fine-tune",
     ])
+
+    // Collect models without tool calling support for a separate section
+    const models_without_tool_support: [string, string][] = []
+
+    // Add models with tool calling support first
     for (const provider of models) {
       for (const model of provider.models) {
-        available_model_select.push([
-          (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id,
+        const model_key =
+          (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id
+        const model_label =
           provider.name +
-            ": " +
-            model.name +
-            (provider.enabled ? "" : " --- Requires API Key in Settings"),
-        ])
+          ": " +
+          model.name +
+          (provider.enabled ? "" : " --- Requires API Key in Settings")
+
+        if (!model.supports_function_calling) {
+          models_without_tool_support.push([model_key, model_label])
+        } else {
+          available_model_select.push([model_key, model_label])
+        }
       }
       // Providers with zero models should still appear and be disabled. Logging in will typically load their models
       if (!provider.enabled && provider.models.length === 0) {
@@ -111,6 +122,17 @@
         ])
       }
     }
+
+    // Add section for models without tool calling support
+    if (models_without_tool_support.length > 0) {
+      available_model_select.push([
+        disabled_header + "_tool_warning",
+        "--- Tool Calling Not Supported ---",
+      ])
+      available_model_select.push(...models_without_tool_support)
+    }
+
+    // Add download options
     available_model_select.push([
       "download_jsonl_msg",
       "Download: OpenAI chat format (JSONL)",

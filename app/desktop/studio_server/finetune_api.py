@@ -62,6 +62,7 @@ class FinetuneProviderModel(BaseModel):
             ChatStrategy.two_message_cot,
         ]
     )
+    supports_function_calling: bool = True
 
 
 class FinetuneProvider(BaseModel):
@@ -245,6 +246,7 @@ def connect_fine_tune_api(app: FastAPI):
                         FinetuneProviderModel(
                             name=model.friendly_name,
                             id=provider.provider_finetune_id,
+                            supports_function_calling=provider.supports_function_calling,
                         )
                     )
 
@@ -567,10 +569,14 @@ async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
             else:
                 name = display_name + " (" + id_tail + ")"
 
+            # Check if the model supports tools via 'supportTools'
+            supports_tools = model.get("supportTools", False)
+
             tuneable_models.append(
                 FinetuneProviderModel(
                     name=name,
                     id=id,
+                    supports_function_calling=supports_tools,
                 )
             )
 
