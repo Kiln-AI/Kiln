@@ -21,7 +21,7 @@ export interface EvalTemplateItem {
     | "kiln_requirements_preview"
     | "kiln_issue_preview"
     | "tool_call_preview"
-    | "search_tool_reference_answer"
+    | "rag_preview"
   name: string
   description: string
   recommended?: boolean

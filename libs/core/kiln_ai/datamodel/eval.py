@@ -36,7 +36,7 @@ class EvalTemplateId(str, Enum):
     maliciousness = "maliciousness"
     factual_correctness = "factual_correctness"
     jailbreak = "jailbreak"
-    search_tool_reference_answer = "search_tool_reference_answer"
+    rag = "rag"
 
 
 class EvalConfigType(str, Enum):
@@ -305,7 +305,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     eval_set_filter_id: DatasetFilterId = Field(
         description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
     )
-    eval_configs_filter_id: DatasetFilterId = Field(
+    eval_configs_filter_id: DatasetFilterId | None = Field(
         description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id."
     )
     output_scores: List[EvalOutputScore] = Field(
@@ -367,14 +367,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             ):
                 raise ValueError(
                     "pass_example is optional for issue template, but if provided must be a string"
-                )
-
-        if self.template == EvalTemplateId.search_tool_reference_answer:
-            if "search_tool_id" not in self.template_properties or not isinstance(
-                self.template_properties["search_tool_id"], str
-            ):
-                raise ValueError(
-                    "search_tool_id is required for search tool reference answer template"
                 )
 
         if self.template == EvalTemplateId.tool_call:

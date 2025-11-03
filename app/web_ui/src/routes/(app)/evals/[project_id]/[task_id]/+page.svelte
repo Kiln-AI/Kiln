@@ -196,11 +196,11 @@
 
           <div class="flex-grow flex flex-col text-sm justify-center">
             <span class="font-medium text-base"
-              >Compare Models, Prompts and Fine-Tunes</span
+              >Compare Models, Prompts, Tools and Fine-Tunes</span
             >
             <span class="text-sm font-light mt-1"
               >Find the best way to run this task by comparing models, prompts
-              and fine-tunes using evals, cost and performance.</span
+              tools, and fine-tunes using evals, cost and performance.</span
             >
             <button
               class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"

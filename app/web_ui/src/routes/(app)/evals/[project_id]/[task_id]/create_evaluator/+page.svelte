@@ -38,7 +38,7 @@
 
   let selected_template: EvalTemplateId | "none" | null = null
   let default_eval_tag: string | undefined = undefined
-  let default_golden_tag: string | undefined = undefined
+  let default_golden_tag: string | null = null
   let template_properties: Record<
     string,
     string | number | boolean | string[]
@@ -83,14 +83,19 @@
     create_evaluator_error = undefined
     create_evaluator_loading = true
     try {
-      if (!eval_dataset || !config_dataset) {
+      if (!eval_dataset) {
         throw new Error("Please select both evaluation and config datasets")
       }
-      // Validate the dataset filters
-      let eval_configs_filter_id =
-        config_dataset === "custom_tag"
-          ? "tag::" + config_dataset_custom_tag
-          : config_dataset
+      let eval_configs_filter_id: string | null = null
+      if (selected_template !== "rag") {
+        if (!config_dataset) {
+          throw new Error("Please select a config dataset")
+        }
+        eval_configs_filter_id =
+          config_dataset === "custom_tag"
+            ? "tag::" + config_dataset_custom_tag
+            : config_dataset
+      }
       let eval_set_filter_id =
         eval_dataset === "custom_tag"
           ? "tag::" + eval_dataset_custom_tag
@@ -315,54 +320,56 @@
           />
         {/if}
 
-        <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-          <div class="text-xl font-bold" id="requirements_part">
-            Part 4: Golden Dataset
+        {#if selected_template !== "rag"}
+          <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
+            <div class="text-xl font-bold" id="requirements_part">
+              Part 4: Golden Dataset
+            </div>
+            <div class="text-xs text-gray-500">
+              Specify which which part of your dataset is used when trying to
+              find the best eval judge. You'll create and rate this data later.
+            </div>
           </div>
-          <div class="text-xs text-gray-500">
-            Specify which which part of your dataset is used when trying to find
-            the best eval judge. You'll create and rate this data later.
-          </div>
-        </div>
-        <FormElement
-          label="Golden Dataset"
-          info_description="You can populate this dataset later. We recommend you have a person rate all of the samples in this dataset, so you can find the judge which best matches human preferences."
-          inputType="fancy_select"
-          id="automatic_validation"
-          fancy_select_options={[
-            {
-              options: [
-                {
-                  label:
-                    "Filter dataset to the '" +
-                    suggested_config_set_tag +
-                    "' tag",
-                  value: "tag::" + suggested_config_set_tag,
-                  badge: "Recommended",
-                  badge_color: "primary",
-                },
-                {
-                  label: "Filter dataset by a custom tag",
-                  value: "custom_tag",
-                },
-                {
-                  label: "Use every dataset item in the evaluation",
-                  value: "all",
-                  badge: "Not Recommended",
-                },
-              ],
-            },
-          ]}
-          bind:value={config_dataset}
-        />
-
-        {#if config_dataset === "custom_tag"}
           <FormElement
-            label="Evaluation Config Dataset Filter Tag"
-            description="Your dataset will be filtered to only include items with this tag."
-            id="custom_tag_eval_set"
-            bind:value={config_dataset_custom_tag}
+            label="Golden Dataset"
+            info_description="You can populate this dataset later. We recommend you have a person rate all of the samples in this dataset, so you can find the judge which best matches human preferences."
+            inputType="fancy_select"
+            id="automatic_validation"
+            fancy_select_options={[
+              {
+                options: [
+                  {
+                    label:
+                      "Filter dataset to the '" +
+                      suggested_config_set_tag +
+                      "' tag",
+                    value: "tag::" + suggested_config_set_tag,
+                    badge: "Recommended",
+                    badge_color: "primary",
+                  },
+                  {
+                    label: "Filter dataset by a custom tag",
+                    value: "custom_tag",
+                  },
+                  {
+                    label: "Use every dataset item in the evaluation",
+                    value: "all",
+                    badge: "Not Recommended",
+                  },
+                ],
+              },
+            ]}
+            bind:value={config_dataset}
           />
+
+          {#if config_dataset === "custom_tag"}
+            <FormElement
+              label="Evaluation Config Dataset Filter Tag"
+              description="Your dataset will be filtered to only include items with this tag."
+              id="custom_tag_eval_set"
+              bind:value={config_dataset_custom_tag}
+            />
+          {/if}
         {/if}
       </FormContainer>
     {/if}

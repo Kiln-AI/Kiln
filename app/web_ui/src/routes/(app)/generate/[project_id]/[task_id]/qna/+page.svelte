@@ -66,24 +66,6 @@
       }
     }
 
-    // Check for individual tag parameters (for reference answer evals)
-    const defaultEvalTag = $page.url.searchParams.get("default_eval_tag")
-    const defaultGoldenTag = $page.url.searchParams.get("default_golden_tag")
-    if (defaultEvalTag && defaultGoldenTag) {
-      // Set splits to 0.8 for eval tag and 0.2 for golden tag
-      const splits = {
-        [defaultEvalTag]: 0.8,
-        [defaultGoldenTag]: 0.2,
-      }
-      qna.setSplits(splits)
-    }
-
-    // Check for search tool ID in URL parameters (for reference answer evals)
-    const searchToolId = $page.url.searchParams.get("search_tool_id")
-    if (searchToolId) {
-      qna.setSearchToolId(searchToolId)
-    }
-
     if (get(qna).documents.length > 0) {
       clear_existing_state_dialog?.show()
     }
@@ -262,7 +244,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Search Tool Evaluator"
+    title=""
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/qna-data-generation"
@@ -306,9 +288,9 @@
         <div class="flex flex-col">
           <div class="text-xs text-gray-500 uppercase font-medium">Goal</div>
           <div class="whitespace-nowrap">
-            Search Tool Evaluator
+            RAG Evaluation
             <InfoTooltip
-              tooltip_text="Generate query-answer pairs from document content"
+              tooltip_text="Generate query-answer pairs from document content."
               no_pad={true}
             />
           </div>
@@ -590,7 +572,6 @@
     on:documents_added={handle_documents_added}
     on:close={() => (current_dialog_type = null)}
     keyboard_submit={current_dialog_type === "select_documents"}
-    search_tool_id={$qna.search_tool_id}
   />
 
   <Extractiondialog

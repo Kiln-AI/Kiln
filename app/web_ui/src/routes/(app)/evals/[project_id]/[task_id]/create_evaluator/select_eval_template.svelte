@@ -17,7 +17,6 @@
   import { generate_eval_tag } from "./eval_utils"
   import KilnSection from "$lib/ui/kiln_section.svelte"
   import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
-  import SearchToolSelector from "$lib/components/search_tool_selector.svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import { tool_id_to_function_name } from "$lib/stores/tools_store"
@@ -68,7 +67,7 @@
         ],
       },
       {
-        category: "Search Tools",
+        category: "Tools",
         items: [
           {
             type: "eval_template",
@@ -81,13 +80,12 @@
           },
           {
             type: "eval_template",
-            id: "search_tool_reference_answer",
-            name: "Reference Answer Eval",
+            id: "rag_preview",
+            name: "RAG Eval",
             description:
-              "Evaluate the Search Tool's output against a reference answer for accuracy.",
+              "Evaluate model accuracy against ground-truth Q&A pairs.",
             recommended: false,
-            on_select: () =>
-              select_template("search_tool_reference_answer", undefined),
+            on_select: () => select_template("rag_preview", undefined),
           },
         ],
       },
@@ -308,7 +306,7 @@
       | "kiln_requirements_preview"
       | "kiln_issue_preview"
       | "tool_call_preview"
-      | "search_tool_reference_answer",
+      | "rag_preview",
     template: EvalTemplateResult | undefined,
   ) {
     // No op
@@ -328,9 +326,8 @@
       return
     }
 
-    // Reference eval shows a list of search tools
-    if (template_id === "search_tool_reference_answer") {
-      search_tool_reference_answer_dialog?.show()
+    if (template_id === "rag_preview") {
+      rag_eval_dialog?.show()
       return
     }
 
@@ -428,40 +425,26 @@
     })
   }
 
-  let search_tool_reference_answer_dialog: Dialog | undefined = undefined
-  let search_tool_id = ""
-  let search_tool_error: KilnError | null = null
+  let rag_eval_dialog: Dialog | undefined = undefined
+  let rag_eval_name = ""
 
-  function search_tool_name(search_tool_id: string): string {
-    return search_tool_id
-  }
-
-  function create_search_tool_reference_answer_eval() {
-    if (!search_tool_id) {
-      search_tool_error = createKilnError("Search tool is required")
-      return
-    }
-    search_tool_error = null
-    const name = search_tool_name(search_tool_id)
-    const eval_tag = generate_eval_tag(name)
+  function create_rag_eval() {
+    const eval_tag = generate_eval_tag(rag_eval_name)
     selected_template_callback({
-      template_id: "search_tool_reference_answer",
-      name: "Reference Answer Eval - " + name,
-      description:
-        "Evaluate the Search Tool's output against a reference answer for accuracy.",
+      template_id: "rag",
+      name: "RAG Eval - " + rag_eval_name,
+      description: "Evaluate model accuracy against ground-truth Q&A pairs.",
       output_scores: [
         {
-          name: "Reference Answer Correctness",
-          type: "pass_fail_critical",
+          name: rag_eval_name,
+          type: "pass_fail",
           instruction:
             "Evaluate if the model's output is accurate as per the reference answer.",
         },
       ],
-      default_eval_tag: "reference_answer_eval_set_" + eval_tag,
-      default_golden_tag: "reference_answer_golden_" + eval_tag,
-      template_properties: {
-        search_tool_id: search_tool_id,
-      },
+      default_eval_tag: "rag_eval_qna_set_" + eval_tag,
+      default_golden_tag: null,
+      template_properties: {},
       evaluation_data_type: "final_answer",
     })
   }
@@ -662,19 +645,24 @@
   </FormContainer>
 </Dialog>
 
-<Dialog
-  bind:this={search_tool_reference_answer_dialog}
-  title="Create Reference Answer Eval"
->
+<Dialog bind:this={rag_eval_dialog} title="Create RAG Eval">
   <FormContainer
-    submit_label="Create Reference Answer Eval"
-    on:submit={create_search_tool_reference_answer_eval}
-    warn_before_unload={!!search_tool_id}
-    error={search_tool_error}
+    submit_label="Create RAG Eval"
+    on:submit={create_rag_eval}
+    warn_before_unload={!!rag_eval_name}
   >
-    <SearchToolSelector
-      project_id={$current_project?.id || ""}
-      bind:selected_search_tool_id={search_tool_id}
+    <FormElement
+      label="Eval Name"
+      description="Give your RAG eval a short name that will help you identify it."
+      inputType="input"
+      id="name"
+      validator={() => {
+        if (is_empty(rag_eval_name)) {
+          return "Please enter a name for this eval."
+        }
+        return null
+      }}
+      bind:value={rag_eval_name}
     />
   </FormContainer>
 </Dialog>

@@ -67,7 +67,6 @@ export type QnASession = {
   }
   documents: QnADocumentNode[]
   splits: Record<string, number>
-  search_tool_id: string | null
 }
 
 type GenerationTarget =
@@ -125,7 +124,6 @@ export type QnaStore = {
   markExtractionComplete(id: string): void
   deleteDocument(id: string): void
   setSplits(splits: Record<string, number>): void
-  setSearchToolId(searchToolId: string | null): void
   removePair(documentId: string, partId: string, qaId: string): void
   removePart(documentId: string, partId: string): void
   setCurrentStep(step: StepNumber): void
@@ -148,7 +146,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     },
     documents: [],
     splits: {},
-    search_tool_id: null,
   })
 
   // Progress and statuses
@@ -200,7 +197,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       },
       documents: [],
       splits: {},
-      search_tool_id: null,
     })
     await initialized
 
@@ -418,10 +414,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
 
   function setSplits(splits: Record<string, number>): void {
     _state.update((s) => ({ ...s, splits }))
-  }
-
-  function setSearchToolId(searchToolId: string | null): void {
-    _state.update((s) => ({ ...s, search_tool_id: searchToolId }))
   }
 
   function removePair(documentId: string, partId: string, qaId: string): void {
@@ -1007,7 +999,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     markExtractionComplete,
     deleteDocument,
     setSplits,
-    setSearchToolId,
     removePair,
     removePart,
     setCurrentStep,

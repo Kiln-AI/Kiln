@@ -113,7 +113,7 @@
       const template_id = $page.url.searchParams.get("template_id")
 
       // For reference answer evals, redirect to QnA page
-      if (template_id === "search_tool_reference_answer") {
+      if (template_id === "rag") {
         const params = new URLSearchParams()
         if (reason) params.set("reason", reason)
         if (template_id) params.set("template_id", template_id)
@@ -121,18 +121,8 @@
         if (eval_id) params.set("eval_id", eval_id)
         const eval_link = $page.url.searchParams.get("eval_link")
         if (eval_link) params.set("eval_link", eval_link)
-
-        // Pass through search tool from the eval
-        const search_tool_id = $page.url.searchParams.get("search_tool_id")
-        if (search_tool_id) params.set("search_tool_id", search_tool_id)
-
-        // Pass through individual tag parameters for reference answer evals
-        const default_eval_tag = $page.url.searchParams.get("default_eval_tag")
-        if (default_eval_tag) params.set("default_eval_tag", default_eval_tag)
-        const default_golden_tag =
-          $page.url.searchParams.get("default_golden_tag")
-        if (default_golden_tag)
-          params.set("default_golden_tag", default_golden_tag)
+        const splits_param = $page.url.searchParams.get("splits")
+        if (splits_param) params.set("splits", splits_param)
 
         const query_string = params.toString()
         const url = `/generate/${$page.params.project_id}/${$page.params.task_id}/qna?${query_string}`

@@ -100,7 +100,7 @@ class CreateEvaluatorRequest(BaseModel):
     template: EvalTemplateId | None
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
-    eval_configs_filter_id: DatasetFilterId
+    eval_configs_filter_id: DatasetFilterId | None
     template_properties: dict[str, str | float | int | bool | list[str]]
     evaluation_data_type: EvalDataType
 
@@ -568,8 +568,10 @@ def connect_evals_api(app: FastAPI):
         dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
-        golden_dataset_runs = runs_in_filter(
-            task, eval.eval_configs_filter_id, readonly=True
+        golden_dataset_runs = (
+            runs_in_filter(task, eval.eval_configs_filter_id, readonly=True)
+            if eval.eval_configs_filter_id
+            else []
         )
 
         # Count how many dataset items have human evals
