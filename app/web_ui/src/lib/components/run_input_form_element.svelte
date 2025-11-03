@@ -128,7 +128,18 @@
   function isGenericObject(property: SchemaModelProperty): boolean {
     if (property.type !== "object") return false
 
-    // additionalProperties is true by default if ommited, and can be a dictionary with allowed types. Any non-false value is generic.
+    // from spec: additionalProperties is true by default if ommited, and can be a dictionary with allowed types.
+
+    // However, we don't want to regress the UI to generic JSON input when we have nice types defined and they didn't explicitly set additionalProperties
+    if (
+      property.additionalProperties === undefined &&
+      property.properties &&
+      property.properties.length > 0
+    ) {
+      return false
+    }
+
+    // Follow the spec for other cases, coalescing to true if not specified
     return !!(property.additionalProperties ?? true)
   }
 
