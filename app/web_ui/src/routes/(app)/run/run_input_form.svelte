@@ -1,7 +1,11 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import RunInputFormElement from "$lib/components/run_input_form_element.svelte"
-  import { model_from_schema_string, type JsonSchema, type SchemaModelProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import {
+    model_from_schema_string,
+    type JsonSchema,
+    type SchemaModelProperty,
+  } from "$lib/utils/json_schema_editor/json_schema_templates"
 
   let id = "plaintext_input_" + Math.random().toString(36).substring(2, 15)
 
@@ -12,26 +16,25 @@
   // Store ref to the root form element
   let rootFormElement: { buildValue(): unknown } | null = null
 
-  $: void (onInputChange?.())
+  $: void onInputChange?.()
 
   $: structured_input_model = input_schema
     ? model_from_schema_string(input_schema)
     : null
 
-  $: fullSchema = input_schema
-    ? (JSON.parse(input_schema) as JsonSchema)
-    : null
+  $: fullSchema = input_schema ? (JSON.parse(input_schema) as JsonSchema) : null
 
   // Create a root property that represents the entire schema
-  $: rootProperty = fullSchema ? {
-    id: "root",
-    title: fullSchema.title || "Input Data",
-    description: fullSchema.description || "",
-    type: "object" as const,
-    required: false
-  } : null
+  $: rootProperty = fullSchema
+    ? {
+        id: "root",
+        title: fullSchema.title || "Input Data",
+        description: fullSchema.description || "",
+        type: "object" as const,
+        required: false,
+      }
+    : null
 
-  
   // These two are mutually exclusive. One returns null if the other is not null.
   export function get_plaintext_input_data(): string | null {
     if (input_schema) {
@@ -40,14 +43,15 @@
     return plaintext_input
   }
 
-  
   export function clear_input() {
     plaintext_input = ""
     rootFormElement = null
   }
 
-  
-  </script>
+  // TODO
+  let builtValue: unknown = "undset"
+  let err: unknown | null = null
+</script>
 
 {#if !input_schema}
   <FormElement
@@ -60,13 +64,34 @@
 {:else if rootProperty}
   <RunInputFormElement
     property={rootProperty}
-    onInputChange={onInputChange}
+    {onInputChange}
     level={0}
     path="root"
-    fullSchema={fullSchema}
+    {fullSchema}
     hideHeaderAndIndent={true}
     bind:this={rootFormElement}
   />
 {:else}
   <p>Invalid or unsupported input schema</p>
 {/if}
+
+<div>
+  <button
+    class="btn btn-primary"
+    on:click={() => {
+      console.info("builtValue", builtValue)
+      try {
+        builtValue = rootFormElement?.buildValue()
+        err = null
+        if (builtValue === undefined) {
+          err = new Error("Built value is undefined")
+        }
+      } catch (error) {
+        err = error
+        builtValue = undefined
+      }
+    }}>Build Value</button
+  >
+  <pre>{JSON.stringify(builtValue, null, 2)}</pre>
+  <div class="text-red-500">{err ? err.toString() : ""}</div>
+</div>

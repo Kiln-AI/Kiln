@@ -2,14 +2,16 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import RunInputFormElement from "./run_input_form_element.svelte"
+  import RunInputFormElementRefCapture from "./run_input_form_element_ref_capture.svelte"
   import {
     type SchemaModelProperty,
     type JsonSchema,
     type JsonSchemaProperty,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { MissingRequiredPropertyError } from "$lib/utils/missing_required_property_error"
 
   export let property: SchemaModelProperty
-  export let value: unknown
+  let value: string = ""
   export let onInputChange: (() => void) | null = null
   export let level: number = 0
   export let path: string = ""
@@ -18,27 +20,9 @@
 
   let id = "nested_input_" + Math.random().toString(36).substring(2, 15)
 
-  // Create reactive values for nested properties
-  let nestedValues: Record<string, unknown> = {}
+  let nestedComponents: Record<string, RunInputFormElement> = {}
+
   let arrayContent: unknown[] = []
-
-  $: {
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      nestedValues = value as Record<string, unknown>
-    } else if (isObjectProperty(property)) {
-      nestedValues = {}
-      value = nestedValues
-    }
-
-    if (Array.isArray(value)) {
-      arrayContent = value
-    } else if (isArrayProperty(property)) {
-      arrayContent = []
-      value = arrayContent
-    }
-
-    onInputChange?.()
-  }
 
   function describe_type(property: SchemaModelProperty): string {
     let base_description = ""
@@ -130,18 +114,20 @@
 
   function isGenericArray(property: SchemaModelProperty): boolean {
     if (property.type !== "array") return false
-
-    const jsonSchemaProperty = getNestedSchemaProperty(property)
-    return (
-      !jsonSchemaProperty?.items ||
-      (typeof jsonSchemaProperty.items === "object" &&
-        "type" in jsonSchemaProperty.items &&
-        jsonSchemaProperty.items.type === "object" &&
-        (jsonSchemaProperty.items as JsonSchemaProperty)
-          .additionalProperties === true)
-    )
+    if (!property.items) return false
+    // TODO work on arrays. Is there no such thing as generic arrays? That would be ideal. Just objects in arrays.
+    if (property.items.type === "object") {
+      // Arrays of object are generic if the sub-object allows arbitrary properties
+      return (property.items.additionalProperties ?? true) === true
+    }
+    // TODO likely wrong
+    if (property.items.type === "array") {
+      return true
+    }
+    return false
   }
 
+  // TODO Kill this
   function getNestedSchemaProperty(
     property: SchemaModelProperty,
   ): JsonSchemaProperty | null {
@@ -185,16 +171,12 @@
     return null
   }
 
+  // JSON schema can just define an arbitrary object, without a strong type.
+  // In this case we need to let the user use a text area to enter the JSON object.
   function isGenericObject(property: SchemaModelProperty): boolean {
     if (property.type !== "object") return false
-
-    const jsonSchemaProperty = getNestedSchemaProperty(property)
-    return (
-      jsonSchemaProperty?.type === "object" &&
-      (jsonSchemaProperty.additionalProperties === true ||
-        !jsonSchemaProperty.properties ||
-        Object.keys(jsonSchemaProperty.properties).length === 0)
-    )
+    if (property.additionalProperties === true) return true
+    return false
   }
 
   function getNestedSchemaForObject(
@@ -212,6 +194,7 @@
           description: prop.description || "",
           type: prop.type,
           required: requiredFields.includes(id),
+          additionalProperties: fullSchema.additionalProperties ?? true,
         }),
       )
     }
@@ -231,6 +214,7 @@
           description: prop.description || "",
           type: prop.type,
           required: requiredFields.includes(id),
+          additionalProperties: prop.additionalProperties ?? true,
         }),
       )
     }
@@ -242,101 +226,150 @@
     return ""
   }
 
-  // Handle the nested data structure
-  $: if (
-    isObjectProperty(property) &&
-    typeof value === "object" &&
-    value !== null
-  ) {
-    // Object is already initialized
-  } else if (
-    isObjectProperty(property) &&
-    (value === undefined || value === null)
-  ) {
-    value = {}
-  } else if (isArrayProperty(property) && !Array.isArray(value)) {
-    value = []
-  }
-
-  // Export function to build the cleaned value for this property
+  // Export function to build the value for this property
   export function buildValue(): unknown | undefined {
-    // For primitive types
-    if (
-      property.type === "string" ||
-      property.type === "number" ||
-      property.type === "integer" ||
-      property.type === "boolean"
-    ) {
-      if (value === undefined || value === null || value === "") {
-        return property.required
-          ? property.type === "string"
-            ? ""
-            : property.type === "boolean"
-              ? false
-              : 0
-          : undefined
+    console.info("buildValue", property.title)
+    console.info("isGenericObject", isGenericObject(property))
+    console.info("isGenericArray", isGenericArray(property))
+    console.info("isArrayProperty", isArrayProperty(property))
+    console.info("isObjectProperty", isObjectProperty(property))
+
+    // For structured objects, iterate each nested component and build the value
+    if (isObjectProperty(property) && !isGenericObject(property)) {
+      const cleanedValue: Record<string, unknown> = {}
+      //const nestedProperties = getNestedSchemaForObject(property)
+      let hasContent = false
+      let missingRequiredContentError: MissingRequiredPropertyError | null =
+        null
+
+      Object.entries(nestedComponents).forEach(([id, nestedComponent]) => {
+        let nestedValue: unknown | undefined = undefined
+        try {
+          nestedValue = nestedComponent.buildValue()
+        } catch (error) {
+          console.info(
+            "error",
+            error,
+            error instanceof MissingRequiredPropertyError,
+          )
+          if (error instanceof MissingRequiredPropertyError) {
+            // This may be valid. If an object above this in the hierarchy is optional.
+            console.info("missing required content error", error)
+            missingRequiredContentError = error
+            nestedValue = undefined
+          } else {
+            throw error
+          }
+        }
+        if (nestedValue !== undefined) {
+          cleanedValue[id] = nestedValue
+          hasContent = true
+        }
+      })
+
+      console.info(
+        "cleanedValue",
+        path,
+        cleanedValue,
+        property.required,
+        hasContent,
+        missingRequiredContentError,
+      )
+
+      // Valid empty value: zero sub properties specified, but this is optional
+      if (!property.required && !hasContent) {
+        return undefined
+      }
+      // Check if we're missing required content, while having some other content: never allowed, all fields must be undefined to trigger "optional"
+      if (missingRequiredContentError && hasContent) {
+        throw missingRequiredContentError
+      }
+      // Check if we're missing required content and this object isn't optional: always an error
+      if (missingRequiredContentError && property.required) {
+        throw missingRequiredContentError
+      }
+
+      return cleanedValue
+    }
+
+    // For primitive types using value
+    console.info("primitive type value", path, value)
+
+    // Shared logic for all types using value
+    if (value === "" && !property.required) {
+      // Valid empty value
+      return undefined
+    }
+    if (value === "" && property.required) {
+      throw new MissingRequiredPropertyError(
+        "Required property not set: " + path,
+      )
+    }
+
+    if (property.type === "string") {
+      // technically "" is a valid string, but let's be strict
+      if (value === "" && property.required) {
+        throw new MissingRequiredPropertyError(
+          "Required property not set: " + path,
+        )
       }
       return value
+    }
+    if (property.type === "boolean") {
+      if (value !== "true" && value !== "false") {
+        throw new Error("Boolean property must be 'true' or 'false': " + path)
+      }
+      return value === "true"
+    }
+    if (property.type === "number" || property.type === "integer") {
+      const num = Number(value)
+      if (isNaN(num)) {
+        throw new Error("Property must be a number: " + path)
+      }
+      if (property.type === "integer" && !Number.isInteger(num)) {
+        throw new Error("Property must be an integer: " + path)
+      }
+      return num
     }
 
     // For generic objects (flexible JSON)
     if (isGenericObject(property)) {
-      if (value === undefined || value === null || value === "") {
-        return property.required ? {} : undefined
-      }
       try {
-        const parsed = typeof value === "string" ? JSON.parse(value) : value
-        return typeof parsed === "object" &&
-          parsed !== null &&
-          !isObjectEmpty(parsed)
-          ? parsed
-          : undefined
+        const parsed = JSON.parse(value)
+        console.info("parsed JSON object", parsed)
+        if (typeof parsed !== "object") {
+          throw new Error(
+            "Property must be a JSON object string ('{...}'): " + path,
+          )
+        }
+        return parsed
       } catch {
-        return undefined
+        throw new Error(
+          "Property must be a valid JSON object string ('{...}'): " + path,
+        )
       }
     }
 
     // For generic arrays (flexible JSON)
     if (isGenericArray(property)) {
-      if (value === undefined || value === null || value === "") {
-        return property.required ? [] : undefined
-      }
       try {
-        const parsed = typeof value === "string" ? JSON.parse(value) : value
-        return Array.isArray(parsed) && !isArrayEmpty(parsed)
-          ? parsed
-          : undefined
-      } catch {
-        return undefined
-      }
-    }
-
-    // For structured objects
-    if (isObjectProperty(property) && !isGenericObject(property)) {
-      if (value === undefined || value === null || typeof value !== "object") {
-        return property.required ? {} : undefined
-      }
-
-      const cleanedValue: Record<string, unknown> = {}
-      const nestedProperties = getNestedSchemaForObject(property)
-      let hasContent = false
-
-      // Get cleaned values from nested properties - recursively clean them
-      nestedProperties.forEach((nestedProp) => {
-        const nestedValue = (value as Record<string, unknown>)[nestedProp.id]
-        const cleanedNestedValue = cleanNestedValue(nestedProp, nestedValue)
-        if (cleanedNestedValue !== undefined) {
-          cleanedValue[nestedProp.id] = cleanedNestedValue
-          hasContent = true
+        const parsed = JSON.parse(value)
+        if (!Array.isArray(parsed)) {
+          throw new Error(
+            "Property must be a JSON array string ('[...]'): " + path,
+          )
         }
-      })
-
-      return hasContent ? cleanedValue : property.required ? {} : undefined
+        return parsed
+      } catch {
+        throw new Error(
+          "Property must be a valid JSON array string ('[...]'): " + path,
+        )
+      }
     }
 
     // For structured arrays
     if (isArrayProperty(property) && !isGenericArray(property)) {
-      if (!Array.isArray(value)) {
+      /*if (!Array.isArray(value)) {
         return property.required ? [] : undefined
       }
 
@@ -363,12 +396,14 @@
       })
 
       return hasValidItems ? cleanedArray : property.required ? [] : undefined
+    }*/
+      return undefined
     }
 
     return undefined
   }
 
-  function cleanNestedValue(
+  /*function cleanNestedValue(
     nestedProp: SchemaModelProperty,
     nestedValue: unknown,
   ): unknown | undefined {
@@ -475,7 +510,7 @@
     }
 
     return nestedValue
-  }
+  }*/
 
   function isObjectEmpty(obj: unknown): boolean {
     if (!obj || typeof obj !== "object") return true
@@ -529,13 +564,19 @@
     >
       {#if isObjectProperty(property) && !isGenericObject(property)}
         {#each getNestedSchemaForObject(property) as nestedProp}
-          <RunInputFormElement
+          <RunInputFormElementRefCapture
             property={nestedProp}
-            bind:value={nestedValues[nestedProp.id]}
             {onInputChange}
             level={level + 1}
             path={`${path}.${nestedProp.id}`}
             {fullSchema}
+            on:ref={(e) => {
+              // Workaround for svelte 4 to capture the ref
+              const { inst } = e.detail
+              if (inst instanceof RunInputFormElement) {
+                nestedComponents[nestedProp.id] = inst
+              }
+            }}
           />
         {/each}
       {:else if isArrayProperty(property) && !isGenericArray(property)}
@@ -565,7 +606,7 @@
     height={getHeight(property)}
     description={getDescription(property)}
     optional={!property.required}
-    value={isGenericObject(property) || isGenericArray(property) ? "" : value}
+    bind:value
     info_msg={describe_type(property)}
     info_description={getInfoDescription(property)}
     on:input={handleInput}
