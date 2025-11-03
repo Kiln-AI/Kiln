@@ -570,7 +570,7 @@ async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
                 name = display_name + " (" + id_tail + ")"
 
             # Check if the model supports tools via 'supportTools'
-            supports_tools = model.get("supportTools", False)
+            supports_tools = model.get("supportsTools", False)
 
             tuneable_models.append(
                 FinetuneProviderModel(

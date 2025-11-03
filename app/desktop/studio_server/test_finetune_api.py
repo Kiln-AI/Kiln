@@ -1246,13 +1246,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
                 "name": "accounts/fireworks/models/model1",
                 "displayName": "Model One",
                 "tunable": True,
-                "supportTools": True,
+                "supportsTools": True,
             },
             {
                 "name": "accounts/fireworks/models/model2",
                 "displayName": "Model Two",
                 "tunable": False,  # This should be skipped
-                "supportTools": False,
+                "supportsTools": False,
             },
         ],
         "nextPageToken": "next-page-token",
@@ -1266,13 +1266,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
                 "name": "accounts/fireworks/models/model3",
                 "displayName": "",  # Empty display name
                 "tunable": True,
-                "supportTools": False,
+                "supportsTools": False,
             },
             {
                 "name": "accounts/fireworks/models/model4",
                 "displayName": "Model Four",
                 "tunable": True,
-                "supportTools": True,
+                "supportsTools": True,
             },
         ]
     }
