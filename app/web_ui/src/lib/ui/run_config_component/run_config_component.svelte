@@ -254,6 +254,10 @@
   export function get_tools(): string[] {
     return tools
   }
+
+  export function clear_tools() {
+    tools = []
+  }
 </script>
 
 <div class="w-full flex flex-col gap-4">
