@@ -79,7 +79,6 @@
   <button
     class="btn btn-primary"
     on:click={() => {
-      console.info("builtValue", builtValue)
       try {
         builtValue = rootFormElement?.buildValue()
         err = null

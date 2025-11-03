@@ -152,14 +152,8 @@
         try {
           nestedValue = nestedComponent.buildValue()
         } catch (error) {
-          console.info(
-            "error",
-            error,
-            error instanceof MissingRequiredPropertyError,
-          )
           if (error instanceof MissingRequiredPropertyError) {
             // This may be valid. If an object above this in the hierarchy is optional.
-            console.info("missing required content error", error)
             missingRequiredContentError = error
             nestedValue = undefined
           } else {
@@ -171,15 +165,6 @@
           hasContent = true
         }
       }
-
-      console.info(
-        "cleanedValue",
-        path,
-        cleanedValue,
-        property.required,
-        hasContent,
-        missingRequiredContentError,
-      )
 
       // Valid empty value: zero sub properties specified, but this is optional
       if (!property.required && !hasContent) {
@@ -212,7 +197,6 @@
     }
 
     // For primitive types using value
-    console.info("primitive type value", path, value)
 
     // Shared logic for all types using value
     if (value === "" && !property.required) {
@@ -257,7 +241,6 @@
     if (isGenericObject(property)) {
       try {
         const parsed = JSON.parse(value)
-        console.info("parsed JSON object", parsed)
         if (typeof parsed !== "object") {
           throw new Error(
             "Property must be a JSON object string ('{...}'): " + path,
