@@ -1,6 +1,5 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import FormList from "$lib/utils/form_list.svelte"
   import RunInputFormElement from "./run_input_form_element.svelte"
   import RunInputFormElementRefCapture from "./run_input_form_element_ref_capture.svelte"
   import { type SchemaModelProperty } from "$lib/utils/json_schema_editor/json_schema_templates"
@@ -9,6 +8,7 @@
     IncompleteObjectError,
   } from "$lib/utils/missing_required_property_error"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import RunInputArrayElement from "./run_input_array_element.svelte"
 
   export let property: SchemaModelProperty
   let value: string = ""
@@ -21,8 +21,7 @@
   let id = "nested_input_" + Math.random().toString(36).substring(2, 15)
 
   let nestedComponents: Record<string, RunInputFormElement> = {}
-
-  let arrayContent: unknown[] = []
+  let arrayComponent: RunInputArrayElement | null = null
 
   function describe_type(property: SchemaModelProperty): string {
     let base_description = ""
@@ -178,13 +177,14 @@
     return false
   }
 
-  function getArrayEmptyContent(): unknown {
-    return ""
-  }
-
   // Export function to build the value for this property
   export function buildValue(): unknown | undefined {
-    // For structured objects, iterate each nested component and build the value
+    // Case: arrays
+    if (arrayComponent) {
+      return arrayComponent.buildArrayValue()
+    }
+
+    // Case: structured objects, iterate each nested component and build the value
     if (isObjectProperty(property) && !isGenericObject(property)) {
       const cleanedValue: Record<string, unknown> = {}
       let hasContent = false
@@ -534,21 +534,14 @@
           />
         {/each}
       {:else if isArrayProperty(property) && !isGenericArray(property)}
-        <FormList
-          bind:content={arrayContent}
-          content_label={property.title + " Item"}
-          start_with_one={false}
-          empty_content={getArrayEmptyContent()}
-        >
-          <div slot="default" let:item_index>
-            <textarea
-              id={id + "_array_item_" + item_index}
-              class="textarea textarea-bordered w-full"
-              placeholder="Enter item value"
-              bind:value={arrayContent[item_index]}
-            />
-          </div>
-        </FormList>
+        <RunInputArrayElement
+          bind:this={arrayComponent}
+          {property}
+          {onInputChange}
+          level={level + 1}
+          {path}
+          parentOptional={parentOptional || !property.required}
+        />
       {/if}
     </div>
   </div>

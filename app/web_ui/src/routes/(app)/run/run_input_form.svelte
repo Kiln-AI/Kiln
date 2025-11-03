@@ -76,9 +76,6 @@
 
 <!-- TODO -->
 <div>
-  <pre>
-    {JSON.stringify(structured_input_model, null, 2)}
-  </pre>
   <button
     class="btn btn-primary"
     on:click={() => {

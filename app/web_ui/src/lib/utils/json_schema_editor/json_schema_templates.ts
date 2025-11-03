@@ -72,6 +72,7 @@ function build_schema_model_property(
   if (options.type === "array" && options.items) {
     // TODO why empty array
     result.items = build_schema_model_property("items", options.items, [])
+    result.items.required = !!required.includes(id)
   }
 
   if (options.type === "object" && options.properties) {

@@ -789,6 +789,7 @@ describe("model_from_schema", () => {
   })
 })
 
+// Our best tests. Converts from JSON schema, to internal model, and back. Catches the widest range of possible issues.
 describe("round-trip conversion tests", () => {
   it("preserves a complex real-world schema through model conversion", () => {
     const complexSchema: JsonSchema = {
@@ -1115,5 +1116,64 @@ describe("round-trip conversion tests", () => {
     const reconstructedSchema = schema_from_model(model, false)
 
     expect(reconstructedSchema).toEqual(enumSchema)
+  })
+
+  it("preserves an object with a required array through round-trip conversion", () => {
+    const objectWithRequiredArraySchema: JsonSchema = {
+      type: "object",
+      properties: {
+        username: {
+          title: "Username",
+          description: "User's username",
+          type: "string",
+        },
+        roles: {
+          title: "Roles",
+          description: "User's assigned roles",
+          type: "array",
+          items: {
+            title: "Role",
+            description: "A role name",
+            type: "string",
+          },
+        },
+        permissions: {
+          title: "Permissions",
+          description: "User's permissions",
+          type: "array",
+          items: {
+            title: "Permission",
+            description: "Permission object",
+            type: "object",
+            properties: {
+              resource: {
+                title: "Resource",
+                description: "Resource name",
+                type: "string",
+              },
+              actions: {
+                title: "Actions",
+                description: "Allowed actions",
+                type: "array",
+                items: {
+                  title: "Action",
+                  description: "An action name",
+                  type: "string",
+                },
+              },
+            },
+            required: ["resource", "actions"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["username", "roles", "permissions"],
+      additionalProperties: false,
+    }
+
+    const model = model_from_schema(objectWithRequiredArraySchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(objectWithRequiredArraySchema)
   })
 })
