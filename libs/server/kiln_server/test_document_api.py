@@ -114,11 +114,11 @@ def mock_embedding_config(mock_project):
 
 
 @pytest.fixture
-def mock_vector_store_config(mock_project, tmp_path):
+def mock_vector_store_config_fts(mock_project, tmp_path):
     vector_store_config = VectorStoreConfig(
         id="kiln:vector_store:lancedb",
         parent=mock_project,
-        name="Test Vector Store",
+        name="Test Vector Store FTS",
         store_type=VectorStoreType.LANCE_DB_FTS,
         properties={
             "similarity_top_k": 10,
@@ -126,6 +126,49 @@ def mock_vector_store_config(mock_project, tmp_path):
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_FTS,
+        },
+    )
+    vector_store_config.save_to_file()
+    return vector_store_config
+
+
+@pytest.fixture
+def mock_vector_store_config_vector(mock_project, tmp_path):
+    vector_store_config = VectorStoreConfig(
+        id="kiln:vector_store:lancedb",
+        parent=mock_project,
+        name="Test Vector Store Vector",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+            "nprobes": 20,
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
+        },
+    )
+    vector_store_config.save_to_file()
+    return vector_store_config
+
+
+@pytest.fixture
+def mock_vector_store_config_hybrid(mock_project, tmp_path):
+    vector_store_config = VectorStoreConfig(
+        id="kiln:vector_store:lancedb",
+        parent=mock_project,
+        name="Test Vector Store Hybrid",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+            "nprobes": 20,
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
         },
     )
     vector_store_config.save_to_file()
@@ -1186,7 +1229,9 @@ async def test_create_vector_store_config_with_hybrid_type(client, mock_project)
 
 
 @pytest.mark.asyncio
-async def test_get_vector_store_configs(client, mock_project, mock_vector_store_config):
+async def test_get_vector_store_configs(
+    client, mock_project, mock_vector_store_config_fts
+):
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
         response = client.get(f"/api/projects/{mock_project.id}/vector_store_configs")
@@ -1194,7 +1239,7 @@ async def test_get_vector_store_configs(client, mock_project, mock_vector_store_
     assert response.status_code == 200, response.text
     result = response.json()
     assert len(result) == 1
-    assert result[0]["name"] == "Test Vector Store"
+    assert result[0]["name"] == "Test Vector Store FTS"
 
 
 @pytest.mark.asyncio
@@ -1204,7 +1249,7 @@ async def test_create_rag_config_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -1220,7 +1265,7 @@ async def test_create_rag_config_success(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
             },
         )
 
@@ -1253,7 +1298,7 @@ async def test_create_rag_config_missing_config(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
     missing_config_type,
 ):
     project = mock_project
@@ -1271,7 +1316,7 @@ async def test_create_rag_config_missing_config(
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
-            "vector_store_config_id": mock_vector_store_config.id,
+            "vector_store_config_id": mock_vector_store_config_fts.id,
         }
 
         # set one of the configs to a fake id - where we expect the error to be thrown
@@ -1293,7 +1338,7 @@ async def test_create_rag_config_with_tags(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with tag filtering"""
     with (
@@ -1310,7 +1355,7 @@ async def test_create_rag_config_with_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": ["python", "ml", "backend"],
             },
         )
@@ -1330,7 +1375,7 @@ async def test_create_rag_config_with_empty_tags(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with empty tags list fails validation"""
     with (
@@ -1347,7 +1392,7 @@ async def test_create_rag_config_with_empty_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": [],  # Empty tags list should fail validation
             },
         )
@@ -1372,7 +1417,7 @@ async def test_create_rag_config_with_invalid_tags(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with invalid tags (empty strings) fails validation"""
     with (
@@ -1389,7 +1434,7 @@ async def test_create_rag_config_with_invalid_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": ["python", "", "ml"],  # Empty string in tags should fail
             },
         )
@@ -1406,7 +1451,7 @@ async def test_create_rag_config_with_null_tags(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with null tags (no filtering)"""
     with (
@@ -1423,7 +1468,7 @@ async def test_create_rag_config_with_null_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": None,
             },
         )
@@ -1440,7 +1485,7 @@ async def test_create_rag_config_tags_omitted(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config without specifying tags field defaults to None"""
     with (
@@ -1457,7 +1502,7 @@ async def test_create_rag_config_tags_omitted(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 # tags field omitted - should default to None
             },
         )
@@ -1624,7 +1669,7 @@ async def test_get_rag_configs_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # create a rag config
     rag_configs = [
@@ -1637,7 +1682,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1648,7 +1693,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1659,7 +1704,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
     ]
 
@@ -1706,7 +1751,7 @@ async def test_get_rag_config_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1717,7 +1762,7 @@ async def test_get_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -1759,7 +1804,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test getting multiple RAG configs with mixed tags (some with tags, some without)"""
     # Create RAG configs with different tag scenarios
@@ -1773,7 +1818,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             tags=["python", "ml"],
         ),
         RagConfig(
@@ -1785,7 +1830,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             tags=None,
         ),
         RagConfig(
@@ -1797,7 +1842,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             tags=["frontend", "api"],
         ),
     ]
@@ -1833,7 +1878,7 @@ async def test_patch_rag_config_only_updates_is_archived(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1844,7 +1889,7 @@ async def test_patch_rag_config_only_updates_is_archived(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
         tags=["a"],
     )
     rag_config.save_to_file()
@@ -1888,7 +1933,7 @@ async def test_run_rag_config_returns_error_when_archived(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1899,7 +1944,7 @@ async def test_run_rag_config_returns_error_when_archived(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
         tags=None,
         is_archived=True,
     )
@@ -1927,7 +1972,7 @@ async def test_update_rag_config_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test successful update of RAG config"""
     # Create a rag config
@@ -1940,7 +1985,7 @@ async def test_update_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -2020,7 +2065,7 @@ async def test_run_rag_config_success(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create a rag config
     rag_config = RagConfig(
@@ -2032,7 +2077,7 @@ async def test_run_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -2107,7 +2152,7 @@ async def test_run_rag_config_missing_configs(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create a rag config with missing configs
     rag_config = RagConfig(
@@ -2119,7 +2164,7 @@ async def test_run_rag_config_missing_configs(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -2155,7 +2200,7 @@ async def test_get_rag_config_progress_specific_configs(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create rag configs
     rag_configs = [
@@ -2168,7 +2213,7 @@ async def test_get_rag_config_progress_specific_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             is_archived=False,
         ),
         RagConfig(
@@ -2180,7 +2225,7 @@ async def test_get_rag_config_progress_specific_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             is_archived=True,  # we should keep archived configs in the progress
         ),
     ]
@@ -2245,7 +2290,7 @@ async def test_get_rag_config_progress_all_configs(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create rag configs
     rag_configs = [
@@ -2258,7 +2303,7 @@ async def test_get_rag_config_progress_all_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -2269,7 +2314,7 @@ async def test_get_rag_config_progress_all_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
     ]
 
@@ -2359,7 +2404,7 @@ async def test_get_rag_config_progress_invalid_config_id(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create a valid rag config
     rag_config = RagConfig(
@@ -2371,7 +2416,7 @@ async def test_get_rag_config_progress_invalid_config_id(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -2666,12 +2711,12 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
 
 
 @pytest.fixture
-def mock_rag_config(
+def mock_rag_config_fts(
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -2682,14 +2727,60 @@ def mock_rag_config(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+    )
+    rag_config.save_to_file()
+    return rag_config
+
+
+@pytest.fixture
+def mock_rag_config_vector(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_vector,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for document retrieval",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_vector.id,
+    )
+    rag_config.save_to_file()
+    return rag_config
+
+
+@pytest.fixture
+def mock_rag_config_hybrid(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_hybrid,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for document retrieval",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_hybrid.id,
     )
     rag_config.save_to_file()
     return rag_config
 
 
 @pytest.mark.asyncio
-async def test_search_rag_config_fts_success(client, mock_project, mock_rag_config):
+async def test_search_rag_config_fts_success(client, mock_project, mock_rag_config_fts):
     """Test successful FTS search in RAG config"""
     search_query = "test search query"
     mock_search_results = [
@@ -2727,7 +2818,7 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": search_query},
         )
 
@@ -2752,18 +2843,9 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
 
 @pytest.mark.asyncio
 async def test_search_rag_config_vector_success(
-    client, mock_project, mock_rag_config, mock_vector_store_config
+    client, mock_project, mock_rag_config_vector, mock_vector_store_config_vector
 ):
     """Test successful vector search in RAG config"""
-    # Update vector store config to use vector search
-    mock_vector_store_config.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-    mock_vector_store_config.save_to_file()
-
     search_query = "test search query"
     mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
     mock_search_results = [
@@ -2806,7 +2888,7 @@ async def test_search_rag_config_vector_success(
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_vector.id}/search",
             json={"query": search_query},
         )
 
@@ -2829,18 +2911,9 @@ async def test_search_rag_config_vector_success(
 
 @pytest.mark.asyncio
 async def test_search_rag_config_hybrid_success(
-    client, mock_project, mock_rag_config, mock_vector_store_config
+    client, mock_project, mock_rag_config_hybrid, mock_vector_store_config_hybrid
 ):
     """Test successful hybrid search in RAG config"""
-    # Update vector store config to use hybrid search
-    mock_vector_store_config.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_HYBRID
-    mock_vector_store_config.save_to_file()
-
     search_query = "test search query"
     mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
     mock_search_results = [
@@ -2883,7 +2956,7 @@ async def test_search_rag_config_hybrid_success(
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_hybrid.id}/search",
             json={"query": search_query},
         )
 
@@ -2920,16 +2993,16 @@ async def test_search_rag_config_not_found(client, mock_project):
 
 
 @pytest.mark.asyncio
-async def test_search_rag_config_archived(client, mock_project, mock_rag_config):
+async def test_search_rag_config_archived(client, mock_project, mock_rag_config_fts):
     """Test search with archived RAG config"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
 
-        mock_rag_config.is_archived = True
-        mock_rag_config.save_to_file()
+        mock_rag_config_fts.is_archived = True
+        mock_rag_config_fts.save_to_file()
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": "test query"},
         )
 
@@ -2939,7 +3012,7 @@ async def test_search_rag_config_archived(client, mock_project, mock_rag_config)
 
 @pytest.mark.asyncio
 async def test_search_rag_config_vector_store_not_found(
-    client, mock_project, mock_rag_config
+    client, mock_project, mock_rag_config_fts
 ):
     """Test search when vector store config is missing"""
     with (
@@ -2952,7 +3025,7 @@ async def test_search_rag_config_vector_store_not_found(
         mock_vector_store_from_id.return_value = None  # Simulate missing config
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": "test query"},
         )
 
@@ -2962,7 +3035,7 @@ async def test_search_rag_config_vector_store_not_found(
 
 @pytest.mark.asyncio
 async def test_search_rag_config_embedding_config_not_found(
-    client, mock_project, mock_rag_config
+    client, mock_project, mock_rag_config_fts
 ):
     """Test search when embedding config is missing"""
     with (
@@ -2975,7 +3048,7 @@ async def test_search_rag_config_embedding_config_not_found(
         mock_embedding_from_id.return_value = None  # Simulate missing config
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": "test query"},
         )
 
@@ -2985,18 +3058,9 @@ async def test_search_rag_config_embedding_config_not_found(
 
 @pytest.mark.asyncio
 async def test_search_rag_config_embedding_generation_failure(
-    client, mock_project, mock_rag_config, mock_vector_store_config
+    client, mock_project, mock_rag_config_vector, mock_vector_store_config_vector
 ):
     """Test search when embedding generation fails"""
-    # Update vector store config to use vector search
-    mock_vector_store_config.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-    mock_vector_store_config.save_to_file()
-
     search_query = "test search query"
 
     with (
@@ -3022,7 +3086,7 @@ async def test_search_rag_config_embedding_generation_failure(
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_vector.id}/search",
             json={"query": search_query},
         )
 
@@ -3034,7 +3098,7 @@ async def test_search_rag_config_embedding_generation_failure(
 
 @pytest.mark.asyncio
 async def test_search_rag_config_vector_store_search_failure(
-    client, mock_project, mock_rag_config
+    client, mock_project, mock_rag_config_fts
 ):
     """Test search when vector store search fails"""
     search_query = "test search query"
@@ -3053,7 +3117,7 @@ async def test_search_rag_config_vector_store_search_failure(
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": search_query},
         )
 
@@ -3062,7 +3126,7 @@ async def test_search_rag_config_vector_store_search_failure(
 
 
 @pytest.mark.asyncio
-async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config):
+async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config_fts):
     """Test search with empty query"""
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -3078,7 +3142,7 @@ async def test_search_rag_config_empty_query(client, mock_project, mock_rag_conf
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": ""},
         )
 
@@ -3090,7 +3154,7 @@ async def test_search_rag_config_empty_query(client, mock_project, mock_rag_conf
 
 
 @pytest.mark.asyncio
-async def test_search_rag_config_no_results(client, mock_project, mock_rag_config):
+async def test_search_rag_config_no_results(client, mock_project, mock_rag_config_fts):
     """Test search that returns no results (should return empty list, not error)"""
     search_query = "nonexistent query that should return no results"
 
@@ -3108,7 +3172,7 @@ async def test_search_rag_config_no_results(client, mock_project, mock_rag_confi
         mock_vector_store_adapter.return_value = mock_adapter
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": search_query},
         )
 
@@ -3122,14 +3186,14 @@ async def test_search_rag_config_no_results(client, mock_project, mock_rag_confi
 
 @pytest.mark.asyncio
 async def test_search_rag_config_invalid_request_body(
-    client, mock_project, mock_rag_config
+    client, mock_project, mock_rag_config_fts
 ):
     """Test search with invalid request body"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"invalid_field": "test"},
         )
 
@@ -3472,7 +3536,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
     missing_sub_config_type,
     error_message,
 ):
@@ -3487,7 +3551,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -3526,7 +3590,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         mock_vector_store_from_id.return_value = (
             None
             if missing_sub_config_type == "vector_store_config"
-            else mock_vector_store_config
+            else mock_vector_store_config_fts
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -3542,7 +3606,7 @@ async def test_build_rag_workflow_runner_success_with_progress(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test build_rag_workflow_runner success path including progress computation"""
     # Create a rag config
@@ -3555,7 +3619,7 @@ async def test_build_rag_workflow_runner_success_with_progress(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -3592,7 +3656,7 @@ async def test_build_rag_workflow_runner_success_with_progress(
         mock_extractor_from_id.return_value = mock_extractor_config
         mock_chunker_from_id.return_value = mock_chunker_config
         mock_embedding_from_id.return_value = mock_embedding_config
-        mock_vector_store_from_id.return_value = mock_vector_store_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config_fts
         mock_compute_progress.return_value = mock_progress
 
         mock_runner = MagicMock()
@@ -3603,6 +3667,100 @@ async def test_build_rag_workflow_runner_success_with_progress(
         assert result == mock_runner
         mock_compute_progress.assert_called_once_with(mock_project, rag_config)
         mock_runner_class.assert_called_once()
+
+
+async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
+    mock_project,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config,
+):
+    """Ensure extractor concurrency is 1 when provider is ollama."""
+    # Create an extractor config that uses the ollama provider
+    extractor_config_ollama = ExtractorConfig(
+        parent=mock_project,
+        name="Ollama Extractor",
+        description="Extractor using ollama",
+        output_format=OutputFormat.TEXT,
+        passthrough_mimetypes=[OutputFormat.TEXT],
+        extractor_type=ExtractorType.LITELLM,
+        model_provider_name=ModelProviderName.ollama,
+        model_name="llama3",
+        properties={
+            "prompt_document": "prompt",
+            "prompt_video": "prompt",
+            "prompt_audio": "prompt",
+            "prompt_image": "prompt",
+        },
+    )
+    extractor_config_ollama.save_to_file()
+
+    # Create a rag config referencing the ollama extractor
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="RAG with Ollama",
+        description="Test RAG with ollama extractor",
+        tool_name="test_search_tool",
+        tool_description="A test search tool",
+        extractor_config_id=extractor_config_ollama.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+        patch(
+            "kiln_ai.datamodel.extraction.ExtractorConfig.from_id_and_parent_path"
+        ) as mock_extractor_from_id,
+        patch(
+            "kiln_ai.datamodel.chunk.ChunkerConfig.from_id_and_parent_path"
+        ) as mock_chunker_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+        patch(
+            "kiln_server.document_api.RagExtractionStepRunner.__init__",
+            autospec=True,
+        ) as mock_extract_runner_init,
+        patch("kiln_server.document_api.RagWorkflowRunner") as mock_runner_class,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_config",
+            return_value=RagProgress(
+                total_document_count=0,
+                total_document_completed_count=0,
+                total_document_extracted_count=0,
+                total_document_chunked_count=0,
+                total_document_embedded_count=0,
+            ),
+        ),
+    ):
+        mock_rag_from_id.return_value = rag_config
+        mock_extractor_from_id.return_value = extractor_config_ollama
+        mock_chunker_from_id.return_value = mock_chunker_config
+        mock_embedding_from_id.return_value = mock_embedding_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config
+
+        # Ensure __init__ behaves like a normal constructor
+        mock_extract_runner_init.return_value = None
+
+        mock_runner = MagicMock()
+        mock_runner_class.return_value = mock_runner
+
+        result = await build_rag_workflow_runner(mock_project, str(rag_config.id))
+
+        assert result == mock_runner
+        # Validate that the extraction step is constructed with concurrency=1
+        assert mock_extract_runner_init.call_count == 1
+        # __init__ is autospecced; args: (self, project, extractor_config, ...)
+        _, _args, kwargs = mock_extract_runner_init.mock_calls[0]
+        assert kwargs.get("concurrency") == 1
 
 
 def test_patch_document_success_name_only(client, mock_project, mock_document):

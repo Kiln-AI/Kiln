@@ -597,7 +597,7 @@
       if (post_error) {
         throw post_error
       }
-      if (response.status !== 200 || !data.id) {
+      if (response.status !== 200) {
         throw new KilnError("Failed to save sample")
       }
       posthog.capture("save_synthetic_data", {

@@ -61,6 +61,7 @@ def lancedb_fts_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_FTS,
         },
     )
     # Set an ID for the config since build_lancedb_vector_store requires it
@@ -81,6 +82,7 @@ def lancedb_knn_vector_store_config():
             "text_key": "text",
             "doc_id_key": "doc_id",
             "nprobes": 10,
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
         },
     )
     # Set an ID for the config since build_lancedb_vector_store requires it
@@ -101,6 +103,7 @@ def lancedb_hybrid_vector_store_config():
             "text_key": "text",
             "doc_id_key": "doc_id",
             "nprobes": 10,
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
         },
     )
     # Set an ID for the config since build_lancedb_vector_store requires it
