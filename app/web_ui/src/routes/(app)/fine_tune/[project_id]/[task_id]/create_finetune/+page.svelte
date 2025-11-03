@@ -55,6 +55,30 @@
     ? $model_provider?.split("/").slice(1).join("/")
     : null
 
+  $: selected_model = $available_tuning_models
+    ?.flatMap((provider) =>
+      provider.models.map((model) => ({
+        provider,
+        model,
+      })),
+    )
+    .find(
+      ({ provider, model }) =>
+        provider.id === provider_id && model.id === base_model_id,
+    )
+
+  $: if (
+    selected_model &&
+    !selected_model.model.supports_function_calling &&
+    run_config_component
+  ) {
+    // Clear tools if the model doesn't support function calling
+    run_config_component.clear_tools()
+  }
+
+  $: hide_tools_selector =
+    selected_model && !selected_model.model.supports_function_calling
+
   let available_model_select: [string, string][] = []
 
   let selected_dataset: DatasetSplit | null = null
@@ -552,6 +576,7 @@
             {project_id}
             hide_create_kiln_task_tool_button={true}
             hide_model_selector={true}
+            {hide_tools_selector}
           />
         </div>
 
