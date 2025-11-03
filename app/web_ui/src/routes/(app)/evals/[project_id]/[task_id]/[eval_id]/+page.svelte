@@ -265,6 +265,7 @@
     }
   }
 
+  // TODO: Should we show all the steps but just without circles and greyed out?
   function update_eval_progress(
     progress: EvalProgress | null,
     evaluator: Eval | null,
