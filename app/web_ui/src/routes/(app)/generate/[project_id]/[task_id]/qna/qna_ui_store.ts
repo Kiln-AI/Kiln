@@ -99,6 +99,7 @@ export type QnaStore = {
   generationErrors: Readable<KilnError[]>
   currentStep: Readable<StepNumber>
   maxStep: Readable<StepNumber>
+  autoStep: Readable<StepNumber>
   pendingSaveCount: Readable<number>
   saveAllStatus: Readable<{
     running: boolean
@@ -981,6 +982,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     generationErrors: _generateErrors,
     currentStep,
     maxStep,
+    autoStep,
     pendingSaveCount,
     saveAllStatus,
     targetType,

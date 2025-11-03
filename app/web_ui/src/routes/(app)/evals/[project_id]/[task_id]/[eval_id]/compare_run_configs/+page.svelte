@@ -237,8 +237,12 @@
   $: watch_selected_eval_config(current_eval_config_id)
   function watch_selected_eval_config(selected_id: string | null) {
     if (selected_id === "__create_new_judge__") {
-      // if it's the "add_config" special value, navigate to the create eval config page
-      goto(`/evals/${project_id}/${task_id}/${eval_id}/create_eval_config`)
+      // if it's the "create new judge" special value, navigate to the create eval config page
+      const params = new URLSearchParams()
+      params.set("next_page", "compare_run_configs")
+      goto(
+        `/evals/${project_id}/${task_id}/${eval_id}/create_eval_config?${params.toString()}`,
+      )
       return
     }
     // If the selected id is not null, then get the score summary

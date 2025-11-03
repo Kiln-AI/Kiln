@@ -7,7 +7,7 @@
 
 <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
   <Intro
-    title="Q&A Generation"
+    title="Generate Q&A Data"
     description_paragraphs={[]}
     action_buttons={[
       {
@@ -18,7 +18,7 @@
     ]}
   >
     <div slot="description">
-      Select documents from your library to generate Q&A pairs. Questions and
+      Select documents from your library to generate Q&A data. Queries and
       answers will be extracted from the document content to create eval data. <a
         href="https://docs.kiln.tech/docs/qna-data-generation"
         target="_blank"

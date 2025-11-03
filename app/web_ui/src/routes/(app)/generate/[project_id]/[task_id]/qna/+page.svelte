@@ -38,6 +38,7 @@
   let qna: QnaStore
   $: qnaCurrentStep = qna?.currentStep
   $: qnaMaxStep = qna?.maxStep
+  $: qnaAutoStep = qna?.autoStep
   $: qnaPendingSaveCount = qna?.pendingSaveCount
   $: qnaSaveAllStatus = qna?.saveAllStatus
   $: qnaExtractorId = qna?.extractorId
@@ -78,14 +79,15 @@
   let save_all_dialog: Dialog | null = null
   let rechunk_warning_dialog: Dialog | null = null
 
-  function clear_all_state() {
-    // TODO: This doesn't do what we want exactly, we want to keep search tool and splits if they're coming from a reference answer eval and had something on this page already
+  function clear_state_and_go_to_intro() {
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
+    window.location.href = `/generate/${project_id}/${task_id}`
+    return true
   }
 
-  function clear_state_and_go_to_intro() {
-    clear_all_state()
-    qna.setCurrentStep(1) // Go back to step 1 (document selector)
+  function clear_state_and_reload() {
+    qna.clearAll(DEFAULT_QNA_GUIDANCE)
+    window.location.reload()
     return true
   }
 
@@ -170,7 +172,7 @@
     event: CustomEvent<{
       pairs_per_part: number
       guidance: string
-      use_full_documents: boolean
+      split_documents_into_chunks: boolean
       chunk_size_tokens: number | null
       chunk_overlap_tokens: number | null
       runConfigProperties: RunConfigProperties
@@ -184,7 +186,7 @@
       await qna.generate({
         pairsPerPart: event.detail.pairs_per_part,
         guidance: event.detail.guidance,
-        useFullDocuments: event.detail.use_full_documents,
+        useFullDocuments: !event.detail.split_documents_into_chunks,
         chunkSizeTokens: event.detail.chunk_size_tokens,
         chunkOverlapTokens: event.detail.chunk_overlap_tokens,
         runConfigProperties: event.detail.runConfigProperties,
@@ -244,7 +246,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title=""
+    title="Synthetic Data Generation"
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/qna-data-generation"
@@ -257,7 +259,7 @@
               "Are you sure you want to clear all Q&A generation state? This cannot be undone.",
             )
           ) {
-            clear_all_state()
+            clear_state_and_go_to_intro()
           }
         },
       },
@@ -369,6 +371,7 @@
           <div class="flex justify-center">
             <ul class="steps">
               {#each step_numbers as step}
+                {@const isDisabled = $qnaAutoStep && step > $qnaAutoStep}
                 <li
                   class="step {$qnaCurrentStep && $qnaCurrentStep >= step
                     ? 'step-primary'
@@ -378,7 +381,10 @@
                     class="px-4 text-sm md:min-w-[155px] {$qnaCurrentStep &&
                     $qnaCurrentStep == step
                       ? 'font-medium cursor-default'
-                      : 'text-gray-500 hover:underline hover:text-gray-700'}"
+                      : isDisabled
+                        ? 'text-gray-400'
+                        : 'text-gray-500 hover:underline hover:text-gray-700'}"
+                    disabled={isDisabled}
                     on:click={() => qna.setCurrentStep(step)}
                     aria-label={`Go to step ${step} - ${step_names[step]}`}
                   >
@@ -588,7 +594,7 @@
     {project_id}
     pairs_per_part={$qnaPairsPerPart}
     guidance={$qnaGuidance}
-    use_full_documents={$qnaUseFullDocuments}
+    split_documents_into_chunks={!$qnaUseFullDocuments}
     chunk_size_tokens={$qnaChunkSizeTokens}
     chunk_overlap_tokens={$qnaChunkOverlapTokens}
     target_description={$qnaTargetDescription || "all documents"}
@@ -760,7 +766,7 @@
   action_buttons={[
     {
       label: "New Session",
-      action: clear_state_and_go_to_intro,
+      action: clear_state_and_reload,
     },
     {
       label: "Continue Session",
