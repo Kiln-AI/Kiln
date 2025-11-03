@@ -227,6 +227,13 @@
       return value === "true"
     }
     if (property.type === "number" || property.type === "integer") {
+      // Form treats invalid numbers in form as null, so we handle here
+      if (value === "" || value === null || value === undefined) {
+        throw new MissingRequiredPropertyError(
+          "Required property not set: " + path,
+          path,
+        )
+      }
       const num = Number(value)
       if (isNaN(num)) {
         throw new Error("Property must be a number: " + path)
