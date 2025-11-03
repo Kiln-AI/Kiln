@@ -3692,7 +3692,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
     mock_project,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Ensure extractor concurrency is 1 when provider is ollama."""
     # Create an extractor config that uses the ollama provider
@@ -3706,6 +3706,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         model_provider_name=ModelProviderName.ollama,
         model_name="llama3",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "prompt",
             "prompt_video": "prompt",
             "prompt_audio": "prompt",
@@ -3724,7 +3725,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         extractor_config_id=extractor_config_ollama.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -3764,7 +3765,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         mock_extractor_from_id.return_value = extractor_config_ollama
         mock_chunker_from_id.return_value = mock_chunker_config
         mock_embedding_from_id.return_value = mock_embedding_config
-        mock_vector_store_from_id.return_value = mock_vector_store_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config_fts
 
         # Ensure __init__ behaves like a normal constructor
         mock_extract_runner_init.return_value = None
