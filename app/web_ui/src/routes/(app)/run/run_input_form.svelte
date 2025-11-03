@@ -45,10 +45,6 @@
     // resets the form to its initial state
     formKey += 1
   }
-
-  // TODO
-  let builtValue: unknown = "undset"
-  let err: unknown | null = null
 </script>
 
 {#if !input_schema}
@@ -73,24 +69,3 @@
 {:else}
   <p>Invalid or unsupported input schema</p>
 {/if}
-
-<!-- TODO -->
-<div>
-  <button
-    class="btn btn-primary"
-    on:click={() => {
-      try {
-        builtValue = rootFormElement?.buildValue()
-        err = null
-        if (builtValue === undefined) {
-          err = new Error("Built value is undefined")
-        }
-      } catch (error) {
-        err = error
-        builtValue = undefined
-      }
-    }}>Build Value</button
-  >
-  <pre>{JSON.stringify(builtValue, null, 2)}</pre>
-  <div class="text-red-500">{err ? err.toString() : ""}</div>
-</div>
