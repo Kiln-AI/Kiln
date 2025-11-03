@@ -35,13 +35,13 @@
       base_description = "'true' or 'false'"
     } else if (property.type === "array") {
       if (isGenericArray(property)) {
-        base_description = "Arbitrary JSON Array"
+        base_description = "JSON Array"
       } else {
         base_description = "Array"
       }
     } else if (property.type === "object") {
       if (isGenericObject(property)) {
-        base_description = "Arbitrary JSON Object"
+        base_description = "JSON Object"
       } else {
         base_description = "Object"
       }
@@ -455,9 +455,7 @@
 
   function getInfoDescription(property: SchemaModelProperty): string {
     if (isGenericObject(property)) {
-      return "This property is a JSON Object, which allows any arbitrary properties. You must fill in the text area with a valid JSON object."
-    } else if (isObjectProperty(property)) {
-      return "This property is a JSON Object, which requires specific properties (see below)."
+      return "This property is a JSON Object, which allows any arbitrary properties. You must fill in the text area with a valid JSON object (e.g. '{...}')."
     } else if (isGenericArray(property)) {
       return "JSON Array (supports any item types)"
     }
@@ -526,7 +524,7 @@
     inputType={get_input_type(property)}
     height={getHeight(property)}
     description={getDescription(property)}
-    optional={!property.required}
+    optional={!property.required || parentOptional}
     bind:value
     info_msg={describe_type(property)}
     info_description={getInfoDescription(property)}

@@ -49,7 +49,6 @@
     bind:value={plaintext_input}
   />
 {:else if structured_input_model}
-  <pre>{JSON.stringify(structured_input_model, null, 2)}</pre>
   <RunInputFormElement
     property={structured_input_model}
     {onInputChange}
