@@ -789,7 +789,7 @@ describe("model_from_schema", () => {
   })
 })
 
-describe("complex round-trip conversion", () => {
+describe("round-trip conversion tests", () => {
   it("preserves a complex real-world schema through model conversion", () => {
     const complexSchema: JsonSchema = {
       type: "object",
@@ -1063,38 +1063,10 @@ describe("complex round-trip conversion", () => {
       },
     }
 
-    const expectedReconstructed: JsonSchemaProperty = {
-      type: "array",
-      items: {
-        title: "Task",
-        description: "A task object",
-        type: "object",
-        properties: {
-          id: {
-            title: "ID",
-            description: "Task identifier",
-            type: "string",
-          },
-          name: {
-            title: "Name",
-            description: "Task name",
-            type: "string",
-          },
-          completed: {
-            title: "Completed",
-            description: "Whether the task is completed",
-            type: "boolean",
-          },
-        },
-        required: ["id", "name"],
-        additionalProperties: false,
-      },
-    }
-
     const model = model_from_schema(topLevelArraySchema)
     const reconstructedSchema = schema_from_model(model, false)
 
-    expect(reconstructedSchema).toEqual(expectedReconstructed)
+    expect(reconstructedSchema).toEqual(topLevelArraySchema)
   })
 
   it("preserves a basic type at top level through round-trip conversion", () => {
@@ -1104,13 +1076,44 @@ describe("complex round-trip conversion", () => {
       type: "string",
     }
 
-    const expectedReconstructed: JsonSchemaProperty = {
-      type: "string",
-    }
-
     const model = model_from_schema(topLevelStringSchema)
     const reconstructedSchema = schema_from_model(model, false)
 
-    expect(reconstructedSchema).toEqual(expectedReconstructed)
+    expect(reconstructedSchema).toEqual(topLevelStringSchema)
+  })
+
+  it("preserves enum properties through round-trip conversion", () => {
+    const enumSchema: JsonSchemaProperty = {
+      title: "User Preferences",
+      description: "Configuration with enum values",
+      type: "object",
+      properties: {
+        theme: {
+          title: "Theme",
+          description: "Color theme preference",
+          type: "string",
+          enum: ["light", "dark", "auto"],
+        },
+        size: {
+          title: "Size",
+          description: "UI size preference",
+          type: "string",
+          enum: ["small", "medium", "large"],
+        },
+        notifications: {
+          title: "Notifications",
+          description: "Notification level",
+          type: "integer",
+          enum: [0, 1, 2, 3],
+        },
+      },
+      required: ["theme"],
+      additionalProperties: false,
+    }
+
+    const model = model_from_schema(enumSchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(enumSchema)
   })
 })

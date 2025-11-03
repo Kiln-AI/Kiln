@@ -61,12 +61,12 @@
   ): "textarea" | "input" | "input_number" | "fancy_select" {
     if (isGenericObject(property) || isGenericArray(property)) {
       return "textarea"
+    } else if (property.type === "boolean" || property.enum) {
+      return "fancy_select"
     } else if (property.type === "string") {
       return "textarea"
     } else if (property.type === "number" || property.type === "integer") {
       return "input_number"
-    } else if (property.type === "boolean") {
-      return "fancy_select"
     }
     return "input"
   }
@@ -86,6 +86,22 @@
               label: "False",
               value: "false",
             },
+            {
+              label: "Not Set",
+              value: undefined,
+            },
+          ],
+        },
+      ]
+    }
+    if (property.enum) {
+      return [
+        {
+          options: [
+            ...property.enum.map((value) => ({
+              label: (value ?? "null").toString(),
+              value: value,
+            })),
             {
               label: "Not Set",
               value: undefined,
@@ -231,7 +247,8 @@
       // Valid empty value
       return undefined
     }
-    if (value === "" && property.required) {
+    // Ususally "", can be undefined (enums) or null (input type=number wiht non-number string)
+    if (!value && property.required) {
       throw new MissingRequiredPropertyError(
         "Required property not set: " + path,
         path,

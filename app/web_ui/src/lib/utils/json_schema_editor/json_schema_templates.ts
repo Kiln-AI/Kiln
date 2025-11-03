@@ -1,5 +1,13 @@
 import { KilnError } from "../error_handlers"
 
+type JSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JSONValue[]
+  | { [key: string]: JSONValue }
+
 // Definition of a JSON schema: https://json-schema.org/
 // Only supporting "object" type at top level for now
 // TODO: why have this? root is just another property
@@ -19,6 +27,7 @@ export type JsonSchemaProperty = {
   properties?: Record<string, JsonSchemaProperty> // only set for objects
   required?: string[] // only set for objects
   additionalProperties?: boolean // only set for objects
+  enum?: JSONValue[] // only set for enums
 }
 
 // We have our own model type for using in Svelte.
@@ -32,6 +41,7 @@ export type SchemaModelProperty = {
   items?: SchemaModelProperty // only set for arrays
   properties?: Array<SchemaModelProperty> // only set for objects
   additionalProperties?: boolean // only set for objects
+  enum?: JSONValue[] // only set for enums
 }
 
 /*export type SchemaModel = {
@@ -75,6 +85,9 @@ function build_schema_model_property(
     // json schema spec defaults to true if not specified
     result.additionalProperties = options.additionalProperties ?? true
   }
+  if (options.enum) {
+    result.enum = options.enum
+  }
   return result
 }
 
@@ -98,6 +111,13 @@ export function schema_from_model(
     type: m.type,
   }
 
+  if (m.title && m.title !== "root") {
+    result.title = m.title
+  }
+  if (m.description) {
+    result.description = m.description
+  }
+
   if (m.type === "object" && m.properties) {
     const properties: Record<string, JsonSchemaProperty> = {}
     const required: string[] = []
@@ -115,6 +135,10 @@ export function schema_from_model(
   }
   if (m.type === "array" && m.items) {
     result.items = build_json_schema_property(m.items, creating)
+  }
+
+  if (m.enum) {
+    result.enum = m.enum
   }
 
   return result
@@ -173,6 +197,10 @@ function build_json_schema_property(
 
   if (prop.type === "object") {
     result.additionalProperties = prop.additionalProperties
+  }
+
+  if (prop.enum) {
+    result.enum = prop.enum
   }
 
   return result
