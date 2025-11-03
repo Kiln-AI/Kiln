@@ -76,9 +76,8 @@ function build_schema_model_property(
         build_schema_model_property(nestedId, nestedOptions, nestedRequired),
     )
   }
-  if (options.type === "object") {
-    // json schema spec defaults to true if not specified
-    result.additionalProperties = options.additionalProperties ?? true
+  if (options.additionalProperties) {
+    result.additionalProperties = options.additionalProperties
   }
   if (options.enum) {
     result.enum = options.enum
@@ -217,8 +216,10 @@ export const empty_schema: JsonSchemaProperty = schema_from_model(
   true,
 )
 
-export function example_schema_model(): SchemaModelProperty {
+export function example_schema_model(): SchemaModelTypedObject {
   return {
+    type: "object",
+    required: true,
     properties: [
       // @ts-expect-error we're not using the id, because we want it to be generated from the title
       {
