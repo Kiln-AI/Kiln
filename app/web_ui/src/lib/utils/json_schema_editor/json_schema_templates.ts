@@ -9,16 +9,6 @@ type JSONValue =
   | { [key: string]: JSONValue }
 
 // Definition of a JSON schema: https://json-schema.org/
-// Only supporting "object" type at top level for now
-// TODO: why have this? root is just another property
-export type JsonSchema = {
-  type: "object"
-  properties: Record<string, JsonSchemaProperty>
-  required: string[]
-  additionalProperties?: boolean
-}
-
-// Definition of a JSON schema: https://json-schema.org/
 export type JsonSchemaProperty = {
   title?: string
   description?: string
@@ -28,6 +18,12 @@ export type JsonSchemaProperty = {
   required?: string[] // only set for objects
   additionalProperties?: boolean // only set for objects
   enum?: JSONValue[] // only set for enums
+}
+
+// A stricter type, for when we only want to deal with typed objects.
+export type SchemaModelTypedObject = SchemaModelProperty & {
+  type: "object"
+  properties: Record<string, SchemaModelProperty>
 }
 
 // We have our own model type for using in Svelte.
@@ -43,11 +39,6 @@ export type SchemaModelProperty = {
   additionalProperties?: boolean // only set for objects
   enum?: JSONValue[] // only set for enums
 }
-
-/*export type SchemaModel = {
-  properties: SchemaModelProperty[]
-  additionalProperties?: boolean
-}*/
 
 export function model_from_schema(s: JsonSchemaProperty): SchemaModelProperty {
   let schema = build_schema_model_property("root", s, s.required ?? [])

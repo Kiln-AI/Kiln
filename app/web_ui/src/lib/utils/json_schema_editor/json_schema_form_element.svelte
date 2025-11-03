@@ -1,7 +1,7 @@
 <script lang="ts">
   import FormElement from "../form_element.svelte"
   import {
-    type SchemaModel,
+    type SchemaModelTypedObject,
     schema_from_model,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -14,7 +14,7 @@
   // raw_schema is the string for the raw editor
   // raw is a flag to indicate which model is active
   export let raw = false
-  export let schema_model: SchemaModel
+  export let schema_model: SchemaModelTypedObject
   export let raw_schema: string = ""
 
   // Accessor for the schema string. Not reactive because it's quite complex mapping two nested VMs to string and back.

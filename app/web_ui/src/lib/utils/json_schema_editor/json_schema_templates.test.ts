@@ -4,7 +4,6 @@ import {
   model_from_schema,
 } from "./json_schema_templates"
 import type {
-  JsonSchema,
   JsonSchemaProperty,
   SchemaModelProperty,
 } from "./json_schema_templates"
@@ -73,7 +72,7 @@ describe("schema_from_model", () => {
       ],
     }
 
-    const expected: JsonSchema = {
+    const expected: JsonSchemaProperty = {
       type: "object",
       properties: {
         user_name: {
@@ -102,7 +101,7 @@ describe("schema_from_model", () => {
       properties: [],
     }
 
-    const expected: JsonSchema = {
+    const expected: JsonSchemaProperty = {
       type: "object",
       properties: {},
       required: [],
@@ -171,7 +170,7 @@ describe("schema_from_model", () => {
     }
 
     const result = schema_from_model(model, true)
-    expect(Object.keys(result.properties)).toEqual([
+    expect(Object.keys(result.properties!)).toEqual([
       "user_name",
       "email_address",
     ])
@@ -204,14 +203,14 @@ describe("schema_from_model", () => {
     const result = schema_from_model(model, false)
 
     // Check that the property keys match the original IDs, not the new titles
-    expect(Object.keys(result.properties)).toEqual([
+    expect(Object.keys(result.properties!)).toEqual([
       "original_id",
       "another_id",
     ])
 
     // Verify the titles were updated while IDs were preserved
-    expect(result.properties["original_id"].title).toBe("Changed Title")
-    expect(result.properties["another_id"].title).toBe("Another Changed Title")
+    expect(result.properties!["original_id"].title).toBe("Changed Title")
+    expect(result.properties!["another_id"].title).toBe("Another Changed Title")
     expect(result.required).toEqual(["original_id"])
   })
 
@@ -251,19 +250,19 @@ describe("schema_from_model", () => {
 
     const result = schema_from_model(model, false)
 
-    expect(result.properties["user"]).toBeDefined()
-    expect(result.properties["user"].type).toBe("object")
-    expect(result.properties["user"].properties).toBeDefined()
-    expect(result.properties["user"].additionalProperties).toBe(false)
+    expect(result.properties!["user"]).toBeDefined()
+    expect(result.properties!["user"].type).toBe("object")
+    expect(result.properties!["user"].properties).toBeDefined()
+    expect(result.properties!["user"].additionalProperties).toBe(false)
 
-    const userProps = result.properties["user"].properties!
+    const userProps = result.properties!["user"].properties!
     expect(Object.keys(userProps)).toEqual(["name", "age"])
     expect(userProps["name"].title).toBe("Name")
     expect(userProps["name"].type).toBe("string")
     expect(userProps["age"].title).toBe("Age")
     expect(userProps["age"].type).toBe("integer")
 
-    expect(result.properties["user"].required).toEqual(["name"])
+    expect(result.properties!["user"].required).toEqual(["name"])
     expect(result.required).toEqual(["user"])
   })
 
@@ -318,10 +317,10 @@ describe("schema_from_model", () => {
 
     const result = schema_from_model(model, false)
 
-    expect(result.properties["company"]).toBeDefined()
-    expect(result.properties["company"].type).toBe("object")
+    expect(result.properties!["company"]).toBeDefined()
+    expect(result.properties!["company"].type).toBe("object")
 
-    const companyProps = result.properties["company"].properties!
+    const companyProps = result.properties!["company"].properties!
     expect(companyProps["address"]).toBeDefined()
     expect(companyProps["address"].type).toBe("object")
 
@@ -331,7 +330,7 @@ describe("schema_from_model", () => {
     expect(addressProps["street"].title).toBe("Street")
 
     expect(companyProps["address"].required).toEqual(["city"])
-    expect(result.properties["company"].required).toEqual(["name", "address"])
+    expect(result.properties!["company"].required).toEqual(["name", "address"])
   })
 
   it("preserves additionalProperties in nested objects", () => {
@@ -375,14 +374,14 @@ describe("schema_from_model", () => {
     const result = schema_from_model(model, false)
 
     expect(result.additionalProperties).toBe(false)
-    expect(result.properties["config"].additionalProperties).toBe(true)
+    expect(result.properties!["config"].additionalProperties).toBe(true)
     expect(
-      result.properties["config"].properties!["nested"].additionalProperties,
+      result.properties!["config"].properties!["nested"].additionalProperties,
     ).toBe(false)
   })
 
   it("round-trip conversion preserves nested structure", () => {
-    const originalSchema: JsonSchema = {
+    const originalSchema: JsonSchemaProperty = {
       type: "object",
       properties: {
         person: {
@@ -432,7 +431,7 @@ describe("schema_from_model", () => {
 
 describe("model_from_schema", () => {
   it("converts a simple JsonSchema to SchemaModel", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       additionalProperties: false,
       properties: {
@@ -562,7 +561,7 @@ describe("model_from_schema", () => {
   })
 
   it("handles empty JsonSchema", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       additionalProperties: false,
       properties: {},
@@ -583,7 +582,7 @@ describe("model_from_schema", () => {
   })
 
   it("correctly handles required fields", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         field1: {
@@ -612,15 +611,14 @@ describe("model_from_schema", () => {
 
     const result = model_from_schema(schema)
     expect(
-      result.properties.filter((p) => p.required).map((p) => p.title),
+      result.properties!.filter((p) => p.required).map((p) => p.title),
     ).toEqual(["Field1", "Field3"])
   })
 
   it("uses property name as title when title is not provided", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
-        // @ts-expect-error -- title is missing to test this case
         user_name: {
           type: "string",
           description: "The user's name",
@@ -630,11 +628,11 @@ describe("model_from_schema", () => {
     }
 
     const result = model_from_schema(schema)
-    expect(result.properties[0].title).toBe("user_name")
+    expect(result.properties![0].title).toBe("user_name")
   })
 
   it("handles array types", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         ingredients: {
@@ -652,11 +650,11 @@ describe("model_from_schema", () => {
     }
 
     const result = model_from_schema(schema)
-    expect(result.properties[0].type).toBe("array")
+    expect(result.properties![0].type).toBe("array")
   })
 
   it("converts nested object properties correctly", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         user: {
@@ -685,19 +683,19 @@ describe("model_from_schema", () => {
     const result = model_from_schema(schema)
 
     expect(result.properties).toHaveLength(1)
-    expect(result.properties[0].id).toBe("user")
-    expect(result.properties[0].type).toBe("object")
-    expect(result.properties[0].required).toBe(true)
-    expect(result.properties[0].properties).toHaveLength(2)
-    expect(result.properties[0].additionalProperties).toBe(false)
+    expect(result.properties![0].id).toBe("user")
+    expect(result.properties![0].type).toBe("object")
+    expect(result.properties![0].required).toBe(true)
+    expect(result.properties![0].properties).toHaveLength(2)
+    expect(result.properties![0].additionalProperties).toBe(false)
 
-    const nameProperty = result.properties[0].properties![0]
+    const nameProperty = result.properties![0].properties![0]
     expect(nameProperty.id).toBe("name")
     expect(nameProperty.title).toBe("Name")
     expect(nameProperty.type).toBe("string")
     expect(nameProperty.required).toBe(true)
 
-    const ageProperty = result.properties[0].properties![1]
+    const ageProperty = result.properties![0].properties![1]
     expect(ageProperty.id).toBe("age")
     expect(ageProperty.title).toBe("Age")
     expect(ageProperty.type).toBe("integer")
@@ -705,7 +703,7 @@ describe("model_from_schema", () => {
   })
 
   it("handles multiple levels of nesting", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         company: {
@@ -746,7 +744,7 @@ describe("model_from_schema", () => {
     const result = model_from_schema(schema)
 
     expect(result.properties).toHaveLength(1)
-    const companyProp = result.properties[0]
+    const companyProp = result.properties![0]
     expect(companyProp.type).toBe("object")
     expect(companyProp.properties).toHaveLength(2)
 
@@ -765,7 +763,7 @@ describe("model_from_schema", () => {
   })
 
   it("defaults additionalProperties to true when not specified for nested objects", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         config: {
@@ -785,14 +783,14 @@ describe("model_from_schema", () => {
     }
 
     const result = model_from_schema(schema)
-    expect(result.properties[0].additionalProperties).toBe(true)
+    expect(result.properties![0].additionalProperties).toBe(true)
   })
 })
 
 // Our best tests. Converts from JSON schema, to internal model, and back. Catches the widest range of possible issues.
 describe("round-trip conversion tests", () => {
   it("preserves a complex real-world schema through model conversion", () => {
-    const complexSchema: JsonSchema = {
+    const complexSchema: JsonSchemaProperty = {
       type: "object",
       properties: {
         userId: {
@@ -926,7 +924,7 @@ describe("round-trip conversion tests", () => {
   })
 
   it("preserves array items specifications through round-trip conversion", () => {
-    const arraySchema: JsonSchema = {
+    const arraySchema: JsonSchemaProperty = {
       type: "object",
       properties: {
         simpleStringArray: {
@@ -1119,7 +1117,7 @@ describe("round-trip conversion tests", () => {
   })
 
   it("preserves an object with a required array through round-trip conversion", () => {
-    const objectWithRequiredArraySchema: JsonSchema = {
+    const objectWithRequiredArraySchema: JsonSchemaProperty = {
       type: "object",
       properties: {
         username: {
