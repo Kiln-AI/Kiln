@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Protocol
+from typing import Protocol
 
 from kiln_ai.adapters.ml_model_list import ModelFormatterID
 from kiln_ai.datamodel.datamodel_enums import InputType

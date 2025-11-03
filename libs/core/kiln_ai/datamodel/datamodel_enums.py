@@ -1,7 +1,7 @@
 from enum import Enum, IntEnum
-from typing import Dict
+from typing import Dict, TypeAlias
 
-type InputType = Dict | list | str
+InputType: TypeAlias = Dict | list | str
 
 
 class Priority(IntEnum):
