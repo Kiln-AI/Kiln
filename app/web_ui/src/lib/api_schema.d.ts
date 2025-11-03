@@ -3599,6 +3599,11 @@ export interface components {
             id: string;
             /** Data Strategies Supported */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
+            /**
+             * Supports Function Calling
+             * @default true
+             */
+            supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus

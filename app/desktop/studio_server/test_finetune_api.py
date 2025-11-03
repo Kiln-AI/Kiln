@@ -219,8 +219,16 @@ def mock_built_in_models():
             family="family1",
             friendly_name="Model 1",
             providers=[
-                KilnModelProvider(name="groq", provider_finetune_id="ft_model1"),
-                KilnModelProvider(name="openai", provider_finetune_id="ft_model1_p2"),
+                KilnModelProvider(
+                    name="groq",
+                    provider_finetune_id="ft_model1",
+                    supports_function_calling=True,
+                ),
+                KilnModelProvider(
+                    name="openai",
+                    provider_finetune_id="ft_model1_p2",
+                    supports_function_calling=True,
+                ),
             ],
         ),
         KilnModel(
@@ -228,7 +236,11 @@ def mock_built_in_models():
             family="family2",
             friendly_name="Model 2",
             providers=[
-                KilnModelProvider(name="groq", provider_finetune_id="ft_model2"),
+                KilnModelProvider(
+                    name="groq",
+                    provider_finetune_id="ft_model2",
+                    supports_function_calling=False,
+                ),
                 KilnModelProvider(
                     name="openai",
                     provider_finetune_id=None,  # This one should be skipped
@@ -278,7 +290,11 @@ async def test_get_finetune_providers(
     ) as mock_fetch:
         # Set up mock return value with one model
         mock_fetch.return_value = [
-            FinetuneProviderModel(name="Fireworks Model", id="fireworks/model-1")
+            FinetuneProviderModel(
+                name="Fireworks Model",
+                id="fireworks/model-1",
+                supports_function_calling=True,
+            )
         ]
 
         response = client.get("/api/finetune_providers")
@@ -297,8 +313,10 @@ async def test_get_finetune_providers(
         assert len(provider1["models"]) == 2
         assert provider1["models"][0]["name"] == "Model 1"
         assert provider1["models"][0]["id"] == "ft_model1"
+        assert provider1["models"][0]["supports_function_calling"] is True
         assert provider1["models"][1]["name"] == "Model 2"
         assert provider1["models"][1]["id"] == "ft_model2"
+        assert provider1["models"][1]["supports_function_calling"] is False
 
         # Check provider2 (openai)
         provider2 = next(p for p in providers if p["id"] == "openai")
@@ -316,6 +334,7 @@ async def test_get_finetune_providers(
         assert len(fireworks_provider["models"]) == 1
         assert fireworks_provider["models"][0]["name"] == "Fireworks Model"
         assert fireworks_provider["models"][0]["id"] == "fireworks/model-1"
+        assert fireworks_provider["models"][0]["supports_function_calling"] is True
 
 
 @pytest.fixture
@@ -1227,11 +1246,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
                 "name": "accounts/fireworks/models/model1",
                 "displayName": "Model One",
                 "tunable": True,
+                "supportTools": True,
             },
             {
                 "name": "accounts/fireworks/models/model2",
                 "displayName": "Model Two",
                 "tunable": False,  # This should be skipped
+                "supportTools": False,
             },
         ],
         "nextPageToken": "next-page-token",
@@ -1245,11 +1266,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
                 "name": "accounts/fireworks/models/model3",
                 "displayName": "",  # Empty display name
                 "tunable": True,
+                "supportTools": False,
             },
             {
                 "name": "accounts/fireworks/models/model4",
                 "displayName": "Model Four",
                 "tunable": True,
+                "supportTools": True,
             },
         ]
     }
@@ -1287,6 +1310,7 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
     # Check model details
     assert result[0].name == "Model One (model1)"
     assert result[0].id == "accounts/fireworks/models/model1"
+    assert result[0].supports_function_calling is True
 
     # Check that model2 (non-tunable) is not included
     assert all(model.id != "accounts/fireworks/models/model2" for model in result)
@@ -1297,6 +1321,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
         model for model in result if model.id == "accounts/fireworks/models/model3"
     )
     assert model3.name == "model3"
+    assert model3.supports_function_calling is False
+
+    # Check model4 has tool support
+    model4 = next(
+        model for model in result if model.id == "accounts/fireworks/models/model4"
+    )
+    assert model4.supports_function_calling is True
 
 
 @pytest.mark.asyncio
