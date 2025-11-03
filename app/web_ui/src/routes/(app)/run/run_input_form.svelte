@@ -15,6 +15,9 @@
   // Store ref to the root form element
   let rootFormElement: { buildValue(): unknown } | null = null
 
+  // Key to force component remount when needed
+  let formKey = 0
+
   $: void onInputChange?.()
 
   let structured_input_model: SchemaModelProperty | null = null
@@ -39,8 +42,8 @@
 
   export function clear_input() {
     plaintext_input = ""
-    // TODO doesn't work
-    rootFormElement = null
+    // resets the form to its initial state
+    formKey += 1
   }
 
   // TODO
@@ -57,14 +60,16 @@
     bind:value={plaintext_input}
   />
 {:else if structured_input_model}
-  <RunInputFormElement
-    property={structured_input_model}
-    {onInputChange}
-    level={0}
-    path="root"
-    hideHeaderAndIndent={true}
-    bind:this={rootFormElement}
-  />
+  {#key formKey}
+    <RunInputFormElement
+      property={structured_input_model}
+      {onInputChange}
+      level={0}
+      path="root"
+      hideHeaderAndIndent={true}
+      bind:this={rootFormElement}
+    />
+  {/key}
 {:else}
   <p>Invalid or unsupported input schema</p>
 {/if}
