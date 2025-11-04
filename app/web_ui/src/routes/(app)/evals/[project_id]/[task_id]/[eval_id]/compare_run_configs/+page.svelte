@@ -42,7 +42,6 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import ArrowRightUpIcon from "$lib/ui/icons/arrow_right_up_icon.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { ActionButton } from "../../../../../types"
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
