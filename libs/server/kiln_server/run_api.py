@@ -13,6 +13,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.datamodel_enums import StructuredInputType
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
@@ -52,7 +53,7 @@ class RunTaskRequest(BaseModel):
 
     run_config_properties: RunConfigProperties
     plaintext_input: str | None = None
-    structured_input: Any | None = None
+    structured_input: StructuredInputType | None = None
     tags: list[str] | None = None
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
