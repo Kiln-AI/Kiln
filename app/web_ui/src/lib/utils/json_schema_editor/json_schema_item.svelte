@@ -155,7 +155,6 @@
 
 {#if object_model}
   <div class="ml-4 pl-4 border-l">
-    <div class="font-medium text-sm pt-1">Object Properties</div>
     <JsonSchemaObject bind:schema_model={object_model} />
   </div>
 {/if}
