@@ -26,13 +26,21 @@ export type SchemaModelTypedObject = SchemaModelProperty & {
   properties: Record<string, SchemaModelProperty>
 }
 
+export type SchemaModelType =
+  | "number"
+  | "string"
+  | "integer"
+  | "boolean"
+  | "array"
+  | "object"
+
 // We have our own model type for using in Svelte.
 // Actual JSON schema is too hard to work with in Svelte. It uses dicts, so order would keep moving around as keys change.
 export type SchemaModelProperty = {
   id: string
   title: string
   description?: string
-  type: "number" | "string" | "integer" | "boolean" | "array" | "object"
+  type: SchemaModelType
   required: boolean
   items?: SchemaModelProperty // only set for arrays
   properties?: Array<SchemaModelProperty> // only set for objects

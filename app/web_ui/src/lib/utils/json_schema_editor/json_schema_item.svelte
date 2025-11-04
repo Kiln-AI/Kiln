@@ -3,6 +3,7 @@
   import {
     type SchemaModelProperty,
     type SchemaModelTypedObject,
+    type SchemaModelType,
   } from "./json_schema_templates"
   import { createEventDispatcher } from "svelte"
   import JsonSchemaObject from "./json_schema_object.svelte"
@@ -17,16 +18,13 @@
     type: "string",
     required: true,
   }
-  let type_option:
-    | "string"
-    | "number"
-    | "integer"
-    | "boolean"
-    | "array"
-    | "object"
-    | "enum" = "string"
 
+  // Enum is UI only type, not in JSON schema as .type
+  type TypeOption = SchemaModelType | "enum"
+  let type_option: TypeOption = "string"
   let enum_text: string = ""
+  let enum_options: string[] = []
+  let array_type: TypeOption = "string"
 
   let object_model: SchemaModelTypedObject | undefined = undefined
   $: object_model =
@@ -34,34 +32,22 @@
       ? (model as SchemaModelTypedObject)
       : undefined
 
-  // We have some types in the drop down we don't actually support.
-  // When selected, we want to show the raw JSON Schema modal to give users a choice.
-  // TODO reduce this list
-  const unsupported_types = ["array", "other"]
+  // "custom" shows dialog before taking effect
   function selected_type(e: Event) {
     const target = e.target as HTMLSelectElement
     const value = target.value
 
-    if (unsupported_types.includes(value)) {
+    if (value === "custom") {
       // Block actually changing the type, keep the old value which should be valid
       const prior_value = model.type
       target.value = prior_value
 
-      // Show the dialog so the user can choose
+      // Show the dialog so the user can select custom
       dispatch("show-raw-json-schema")
     }
   }
 
-  function type_changed(
-    new_type:
-      | "string"
-      | "number"
-      | "integer"
-      | "boolean"
-      | "array"
-      | "object"
-      | "enum",
-  ) {
+  function type_changed(new_type: TypeOption) {
     // Setup properties for object type (or clear if not supported)
     if (new_type === "object") {
       model.properties = model.properties ?? []
@@ -71,8 +57,9 @@
 
     // Setup enum for enum type
     // enums are special var on string type, not their own type
+    enum_options = []
     if (new_type === "enum") {
-      model.enum = model.enum ?? []
+      model.enum = []
       model.type = "string"
     } else {
       model.enum = undefined
@@ -90,17 +77,71 @@
       return
     }
 
-    if (!model.enum?.includes(trimmed_text)) {
-      model.enum?.push(trimmed_text)
+    if (!enum_options.includes(trimmed_text)) {
+      enum_options.push(trimmed_text)
     }
     enum_text = ""
+
+    // Trigger reactivity
+    enum_options = enum_options
     model = model
   }
 
   function remove_enum_value(value: unknown) {
-    model.enum = model.enum?.filter((v) => v !== value)
+    enum_options = enum_options.filter((v) => v !== value)
     model = model
   }
+
+  function update_enum(
+    type_option: TypeOption,
+    array_type: TypeOption,
+    enum_options: string[],
+  ) {
+    // Update the enum: different places based on item type
+    if (type_option === "enum") {
+      model.enum = enum_options
+      model.type = "string"
+    } else {
+      model.enum = undefined
+    }
+
+    if (type_option === "array" && array_type === "enum") {
+      // @ts-expect-error knowingly skipping id/title/required
+      model.items = {
+        type: "string",
+        enum: enum_options,
+      }
+    }
+
+    model = model
+
+    if (
+      type_option === "enum" ||
+      (type_option === "array" && array_type === "enum")
+    ) {
+      setTimeout(() => {
+        document.getElementById("property_" + id + "_enum")?.focus()
+      }, 1)
+    }
+  }
+  $: update_enum(type_option, array_type, enum_options)
+
+  // Update the moodel for array type
+  function update_array_type(model_type: TypeOption, array_type: TypeOption) {
+    if (model_type === "array") {
+      // Enum handled above, special case with more values
+      if (array_type !== "enum") {
+        // @ts-expect-error knowingly skipping id/title/required
+        model.items = {
+          type: array_type,
+        }
+      }
+    } else {
+      model.items = undefined
+    }
+    model = model
+  }
+  $: update_array_type(type_option, array_type)
 </script>
 
 <div class="flex flex-row gap-3">
@@ -127,10 +168,30 @@
       ["array", "Array"],
       ["object", "Object"],
       ["enum", "Enum"],
-      ["other", "More..."],
+      ["custom", "Custom Schema"],
     ]}
     light_label={true}
   />
+  {#if model.type === "array"}
+    <FormElement
+      id={"property_" + id + "_array_type"}
+      label="Array Items"
+      inputType="select"
+      bind:value={array_type}
+      select_options={[
+        ["string", "String"],
+        ["number", "Number"],
+        ["integer", "Integer"],
+        ["boolean", "Boolean"],
+        // TODO
+        // ["array", "Array"],
+        // TODO
+        // ["object", "Object"],
+        ["enum", "Enum"],
+      ]}
+      light_label={true}
+    />
+  {/if}
   <FormElement
     id={"property_" + id + "_required"}
     label="Required"
@@ -159,7 +220,7 @@
   </div>
 {/if}
 
-{#if type_option === "enum"}
+{#if type_option === "enum" || (type_option === "array" && array_type === "enum")}
   <div class="flex flex-row gap-3">
     <div class="w-64">
       <FormElement
@@ -182,7 +243,10 @@
       <div
         class="flex flex-row flex-wrap grow gap-1 place-content-center items-center"
       >
-        {#each model.enum ?? [] as value}
+        {#if enum_options.length == 0}
+          <div class="text-sm text-error">No values added</div>
+        {/if}
+        {#each enum_options as value}
           <button
             class="badge badge-outline"
             on:click={() => remove_enum_value(value)}

@@ -49,6 +49,11 @@
       }
     }
 
+    // Nested array items
+    if (schema_model.items) {
+      validate_schema(schema_model.items, [...path, "array_type"])
+    }
+
     if (schema_model.enum) {
       if (schema_model.type !== "string") {
         throw new Error(`Enum must be on a string type: ${path.join(".")}`)
