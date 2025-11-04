@@ -32,6 +32,7 @@ def list_json_schema_for_task(task: Task) -> str:
             "answer": answer_schema,
         },
         "required": ["query", "answer"],
+        "additionalProperties": False,
     }
 
     list_schema = {
@@ -45,6 +46,7 @@ def list_json_schema_for_task(task: Task) -> str:
             "generated_qna_pairs": list_schema,
         },
         "required": ["generated_qna_pairs"],
+        "additionalProperties": False,
     }
 
     return json.dumps(top_level_schema, ensure_ascii=False)

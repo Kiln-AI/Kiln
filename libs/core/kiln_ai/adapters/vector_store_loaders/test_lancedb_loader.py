@@ -145,6 +145,7 @@ def vector_store_config_factory(mock_project):
                         "vector_column_name": "vector",
                         "text_key": "text",
                         "doc_id_key": "doc_id",
+                        "store_type": VectorStoreType.LANCE_DB_FTS,
                     },
                 )
                 vector_store_config.save_to_file()
@@ -161,6 +162,7 @@ def vector_store_config_factory(mock_project):
                         "text_key": "text",
                         "doc_id_key": "doc_id",
                         "nprobes": 10,
+                        "store_type": VectorStoreType.LANCE_DB_VECTOR,
                     },
                 )
                 vector_store_config.save_to_file()
@@ -177,6 +179,7 @@ def vector_store_config_factory(mock_project):
                         "vector_column_name": "vector",
                         "text_key": "text",
                         "doc_id_key": "doc_id",
+                        "store_type": VectorStoreType.LANCE_DB_HYBRID,
                     },
                 )
                 vector_store_config.save_to_file()

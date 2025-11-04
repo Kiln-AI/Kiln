@@ -10,7 +10,8 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     wrap_task_with_guidance,
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
-from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -214,6 +215,7 @@ The topic path for this sample is:
         adapter = adapter_for_task(
             task,
             run_config_properties=sample.run_config_properties,
+            base_adapter_config=AdapterConfig(allow_saving=False),
         )
 
         properties: dict[str, str | int | float] = {
@@ -240,6 +242,10 @@ The topic path for this sample is:
         if sample.tags:
             tags.extend(sample.tags)
         run.tags = tags
+
+        # we do not save the TaskRun to disk, so the ID is null, but we need
+        # an ID in the frontend to identify the sample before / after saving it
+        run.id = generate_model_id()
 
         return run
 

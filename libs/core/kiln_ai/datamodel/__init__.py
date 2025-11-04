@@ -20,6 +20,7 @@ from kiln_ai.datamodel import (
     rag,
     strict_mode,
 )
+from kiln_ai.datamodel.basemodel import generate_model_id
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     Priority,
@@ -76,6 +77,7 @@ __all__ = [
     "embedding",
     "eval",
     "extraction",
+    "generate_model_id",
     "prompt_generator_values",
     "rag",
     "strict_mode",
