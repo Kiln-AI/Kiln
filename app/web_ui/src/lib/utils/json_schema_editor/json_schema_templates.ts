@@ -74,7 +74,6 @@ function build_schema_model_property(
       options.items,
       options.items.required ?? [],
     )
-    result.items.required = !!required.includes(id)
   }
 
   if (options.type === "object" && options.properties) {

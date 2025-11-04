@@ -178,13 +178,13 @@ def test_array_schema_validation():
     value = [1, 2, 3]
     schema_str = json.dumps(array_schema)
 
-    # Arrays not valid by default (some things reply on this, like tools)
+    # Arrays not valid by default, must be object (some things reply on this, like tools)
     with pytest.raises(ValueError):
         validate_schema(value, schema_str)
 
-    # Arrays are valid if we require an object
+    # Arrays are not valid if we require an object
     with pytest.raises(ValueError):
         validate_schema(value, schema_str, require_object=True)
 
-    # Arrays are valid if we require an object
+    # Arrays are valid if we don't require an object
     validate_schema(value, schema_str, require_object=False)
