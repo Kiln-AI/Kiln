@@ -10,11 +10,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest is for arm64 build, macos-13 is for x86_64
         include:
           - os: windows-latest
           - os: macos-latest # arm64 macOS
-          - os: macos-13 # x86_64 macOS
+          - os: macos-15-intel # x86_64 macOS
           - os: ubuntu-22.04 # x86_64 linux, oldest available GH runner. Older libc for maximal compatibility
           - os: ubuntu-22.04-arm # arm linux build
 
