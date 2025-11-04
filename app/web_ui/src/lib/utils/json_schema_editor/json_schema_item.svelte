@@ -25,6 +25,7 @@
   let enum_text: string = ""
   let enum_options: string[] = []
   let array_type: TypeOption = "string"
+  let array_object_model: SchemaModelTypedObject | undefined = undefined
 
   let object_model: SchemaModelTypedObject | undefined = undefined
   $: object_model =
@@ -131,9 +132,20 @@
     if (model_type === "array") {
       // Enum handled above, special case with more values
       if (array_type !== "enum") {
-        // @ts-expect-error knowingly skipping id/title/required
-        model.items = {
-          type: array_type,
+        if (array_type === "object") {
+          array_object_model = {
+            id: "",
+            title: "",
+            required: true,
+            type: "object",
+            properties: [],
+          }
+          model.items = array_object_model
+        } else {
+          // @ts-expect-error knowingly skipping id/title/required
+          model.items = {
+            type: array_type,
+          }
         }
       }
     } else {
@@ -183,10 +195,7 @@
         ["number", "Number"],
         ["integer", "Integer"],
         ["boolean", "Boolean"],
-        // TODO
-        // ["array", "Array"],
-        // TODO
-        // ["object", "Object"],
+        ["object", "Object"],
         ["enum", "Enum"],
       ]}
       light_label={true}
@@ -217,6 +226,13 @@
 {#if object_model}
   <div class="ml-4 pl-4 border-l">
     <JsonSchemaObject bind:schema_model={object_model} />
+  </div>
+{/if}
+
+{#if array_object_model && type_option === "array" && array_type === "object"}
+  <div class="ml-4 pl-4 border-l">
+    <div class="text-sm text-gray-500">Array Object Schema</div>
+    <JsonSchemaObject bind:schema_model={array_object_model} />
   </div>
 {/if}
 

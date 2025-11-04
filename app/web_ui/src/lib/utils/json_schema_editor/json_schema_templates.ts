@@ -20,12 +20,6 @@ export type JsonSchemaProperty = {
   enum?: JSONValue[] // only set for enums
 }
 
-// A stricter type, for when we only want to deal with typed objects.
-export type SchemaModelTypedObject = SchemaModelProperty & {
-  type: "object"
-  properties: Record<string, SchemaModelProperty>
-}
-
 export type SchemaModelType =
   | "number"
   | "string"
@@ -46,6 +40,12 @@ export type SchemaModelProperty = {
   properties?: Array<SchemaModelProperty> // only set for objects
   additionalProperties?: boolean // only set for objects
   enum?: JSONValue[] // only set for enums
+}
+
+// A stricter type, for when we only want to deal with typed objects.
+export type SchemaModelTypedObject = SchemaModelProperty & {
+  type: "object"
+  properties: Array<SchemaModelProperty>
 }
 
 export function model_from_schema(s: JsonSchemaProperty): SchemaModelProperty {
