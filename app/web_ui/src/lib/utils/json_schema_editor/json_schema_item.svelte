@@ -5,7 +5,7 @@
     type SchemaModelTypedObject,
     type SchemaModelType,
   } from "./json_schema_templates"
-  import { createEventDispatcher } from "svelte"
+  import { createEventDispatcher, tick } from "svelte"
   import JsonSchemaObject from "./json_schema_object.svelte"
 
   const dispatch = createEventDispatcher()
@@ -116,13 +116,14 @@
 
     model = model
 
+    // Focus on the enum input after the DOM has been updated
     if (
       type_option === "enum" ||
       (type_option === "array" && array_type === "enum")
     ) {
-      setTimeout(() => {
-        document.getElementById("property_" + id + "_enum")?.focus()
-      }, 1)
+      tick().then(() => {
+        document.getElementById("property_" + id + "_enum_input")?.focus()
+      })
     }
   }
   $: update_enum(type_option, array_type, enum_options)
@@ -237,41 +238,41 @@
 {/if}
 
 {#if type_option === "enum" || (type_option === "array" && array_type === "enum")}
-  <div class="flex flex-row gap-3">
-    <div class="w-64">
-      <FormElement
-        id={"property_" + id + "_enum"}
-        label="Enum Values"
-        inputType="input"
-        optional={true}
-        info_msg=" "
-        placeholder="Enter a value"
-        bind:value={enum_text}
-        light_label={true}
-      />
+  <div>
+    <div class="text-xs text-gray-500 font-medium mb-1">Enum Values</div>
+    <div class="flex flex-row flex-wrap grow gap-1 mb-2">
+      {#if enum_options.length == 0}
+        <div class="text-sm text-error">No values added</div>
+      {/if}
+      {#each enum_options as value}
+        <button
+          class="badge badge-outline"
+          on:click={() => remove_enum_value(value)}
+        >
+          {value}
+          <span class="pl-2">&times;</span>
+        </button>
+      {/each}
     </div>
-    <div class="mt-5 flex flex-row gap-6 grow">
+    <div class="flex flex-row gap-2">
+      <input
+        id={"property_" + id + "_enum_input"}
+        type="text"
+        class="input input-bordered w-64"
+        bind:value={enum_text}
+        placeholder="Enter a value"
+        on:keydown={(e) => {
+          if (e.key === "Enter") {
+            add_enum_value()
+            e.preventDefault()
+          }
+        }}
+      />
       <button
         class="btn btn-primary"
         on:click={add_enum_value}
         disabled={enum_text.trim() === ""}>Add</button
       >
-      <div
-        class="flex flex-row flex-wrap grow gap-1 place-content-center items-center"
-      >
-        {#if enum_options.length == 0}
-          <div class="text-sm text-error">No values added</div>
-        {/if}
-        {#each enum_options as value}
-          <button
-            class="badge badge-outline"
-            on:click={() => remove_enum_value(value)}
-          >
-            {value}
-            <span class="pl-2">&times;</span>
-          </button>
-        {/each}
-      </div>
     </div>
   </div>
 {/if}
