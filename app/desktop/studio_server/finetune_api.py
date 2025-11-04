@@ -37,6 +37,7 @@ from kiln_ai.datamodel.dataset_filters import (
 )
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
+    DatasetToolInfo,
     Train60Test20Val20SplitDefinition,
     Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
@@ -90,6 +91,8 @@ class FinetuneDatasetInfo(BaseModel):
     existing_datasets: list[DatasetSplit]
     existing_finetunes: list[Finetune]
     finetune_tags: list[FinetuneDatasetTagInfo]
+    # tool info for each dataset split
+    tool_info_by_name: dict[str, DatasetToolInfo]
 
 
 class DatasetSplitType(Enum):
@@ -314,6 +317,11 @@ def connect_fine_tune_api(app: FastAPI):
                             reasoning_and_high_quality_count.get(tag, 0) + 1
                         )
 
+        # compute tool info for each dataset split
+        tool_info_by_name = {}
+        for dataset in existing_datasets:
+            tool_info_by_name[dataset.name] = dataset.tool_info()
+
         return FinetuneDatasetInfo(
             existing_datasets=existing_datasets,
             existing_finetunes=existing_finetunes,
@@ -329,6 +337,7 @@ def connect_fine_tune_api(app: FastAPI):
                 )
                 for tag, count in finetune_tag_counts.items()
             ],
+            tool_info_by_name=tool_info_by_name,
         )
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")

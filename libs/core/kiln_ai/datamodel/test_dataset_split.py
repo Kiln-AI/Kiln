@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import pytest
 from pydantic import ValidationError
 
@@ -347,3 +349,102 @@ def test_tag_dataset_filter(sample_task_runs):
 
     assert num_tagged == 6
     assert num_untagged == 4
+
+
+def test_get_runs(sample_task, sample_task_runs):
+    dataset = DatasetSplit.from_task(
+        "Test Dataset", sample_task, Train80Test20SplitDefinition
+    )
+
+    runs = dataset._get_runs()
+
+    assert len(runs) == len(sample_task_runs)
+    run_ids = {run.id for run in runs}
+    expected_ids = {run.id for run in sample_task_runs}
+    assert run_ids == expected_ids
+
+
+@pytest.fixture
+def mock_run_with_tools():
+    """Factory fixture to create mock TaskRun objects with specified tools."""
+
+    def _create_mock_run(tools):
+        run = Mock()
+        if tools is None:
+            run.output.source.run_config.tools_config = None
+        elif isinstance(tools, list) and len(tools) == 0:
+            run.output.source.run_config.tools_config.tools = []
+        else:
+            run.output.source.run_config.tools_config.tools = tools
+        return run
+
+    return _create_mock_run
+
+
+@pytest.mark.parametrize(
+    "tools_list, expected_mismatch, expected_tools",
+    [
+        (
+            [
+                ["kiln_tool::add_numbers", "kiln_tool::subtract_numbers"],
+                ["kiln_tool::add_numbers", "kiln_tool::subtract_numbers"],
+            ],
+            False,
+            ["kiln_tool::add_numbers", "kiln_tool::subtract_numbers"],
+        ),
+        (
+            [
+                ["kiln_tool::subtract_numbers", "kiln_tool::add_numbers"],
+                ["kiln_tool::add_numbers", "kiln_tool::subtract_numbers"],
+            ],
+            False,
+            ["kiln_tool::add_numbers", "kiln_tool::subtract_numbers"],
+        ),
+        (
+            [["kiln_tool::add_numbers"], ["kiln_tool::multiply_numbers"]],
+            True,
+            [],
+        ),
+        # both runs have no tools
+        ([None, None], False, []),
+        # one run has tools, the other has none
+        ([["kiln_tool::add_numbers"], None], True, []),
+        ([], False, []),
+        ([["kiln_tool::add_numbers"]], False, ["kiln_tool::add_numbers"]),
+        ([None], False, []),
+        # both runs have empty tools
+        ([[], None], False, []),
+    ],
+    ids=[
+        "matching_tools",
+        "same_tools_different_order",
+        "mismatched_tools",
+        "no_tools_multiple_runs",
+        "mixed_tools_and_no_tools",
+        "empty_runs_list",
+        "single_run_with_tools",
+        "single_run_without_tools",
+        "two_runs_without_tools",
+    ],
+)
+def test_compute_tool_info(
+    mock_run_with_tools, tools_list, expected_mismatch, expected_tools
+):
+    runs = [mock_run_with_tools(tools) for tools in tools_list]
+    tool_info = DatasetSplit.compute_tool_info(runs)
+    assert tool_info.has_tool_mismatch is expected_mismatch
+    assert tool_info.tools == expected_tools
+
+
+def test_compute_tool_info_treats_missing_config_as_empty_tools(mock_run_with_tools):
+    run_with_tools = mock_run_with_tools(["kiln_tool::add_numbers"])
+    run_no_source = Mock()
+    run_no_source.output.source = None
+    run_no_config = Mock()
+    run_no_config.output.source.run_config = None
+
+    tool_info = DatasetSplit.compute_tool_info(
+        [run_no_source, run_with_tools, run_no_config]
+    )
+    assert tool_info.has_tool_mismatch is True
+    assert tool_info.tools == []

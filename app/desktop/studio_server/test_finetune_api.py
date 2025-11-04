@@ -1632,6 +1632,19 @@ def test_finetune_dataset_info(client, mock_task_from_id_disk_backed, test_task)
     assert tag2["high_quality_count"] == 0
     assert tag2["reasoning_and_high_quality_count"] == 0
 
+    # Verify tool_info_by_name
+    assert "tool_info_by_name" in data
+    tool_info_by_name = data["tool_info_by_name"]
+    assert isinstance(tool_info_by_name, dict)
+    assert len(tool_info_by_name) == 2
+    assert "Split 1" in tool_info_by_name
+    assert "Split 2" in tool_info_by_name
+    for dataset_name, tool_info in tool_info_by_name.items():
+        assert "has_tool_mismatch" in tool_info
+        assert "tools" in tool_info
+        assert isinstance(tool_info["has_tool_mismatch"], bool)
+        assert isinstance(tool_info["tools"], list)
+
     # Verify task_from_id was called correctly
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
@@ -1655,6 +1668,10 @@ def test_finetune_dataset_info_no_tags(
 
     # Verify no fine_tune tags
     assert len(data["finetune_tags"]) == 0
+
+    # Verify tool_info_by_name still present
+    assert "tool_info_by_name" in data
+    assert len(data["tool_info_by_name"]) == 2
 
 
 def test_finetune_dataset_info_no_datasets_or_finetunes(
@@ -1685,5 +1702,9 @@ def test_finetune_dataset_info_no_datasets_or_finetunes(
     assert len(data["existing_datasets"]) == 0
     assert len(data["existing_finetunes"]) == 0
     assert len(data["finetune_tags"]) == 0
+
+    # Verify empty tool_info_by_name
+    assert "tool_info_by_name" in data
+    assert len(data["tool_info_by_name"]) == 0
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")

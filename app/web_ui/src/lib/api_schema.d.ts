@@ -2722,6 +2722,22 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DatasetToolInfo
+         * @description Information about tools used across task runs in a dataset split.
+         */
+        DatasetToolInfo: {
+            /**
+             * Has Tool Mismatch
+             * @description Whether the tools from each run match across all runs in the dataset split.
+             */
+            has_tool_mismatch: boolean;
+            /**
+             * Tools
+             * @description Common tool IDs shared by every run; empty when tools are mismatched or no tools exist.
+             */
+            tools?: string[];
+        };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
             /** Message */
@@ -3557,6 +3573,10 @@ export interface components {
             existing_finetunes: components["schemas"]["Finetune"][];
             /** Finetune Tags */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+            /** Tool Info By Name */
+            tool_info_by_name: {
+                [key: string]: components["schemas"]["DatasetToolInfo"];
+            };
         };
         /**
          * FinetuneDatasetTagInfo
