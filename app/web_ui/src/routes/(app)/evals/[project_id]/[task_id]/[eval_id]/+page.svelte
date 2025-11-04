@@ -286,7 +286,9 @@
     current_step = 2
     current_step_id = "eval_data"
     required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
-    required_more_golden_data = progress.golden_dataset_size < MIN_DATASET_SIZE
+    required_more_golden_data =
+      evaluator?.template !== "rag" &&
+      progress.golden_dataset_size < MIN_DATASET_SIZE
     if (required_more_eval_data || required_more_golden_data) {
       return
     }
@@ -379,7 +381,11 @@
     }
 
     const params = new URLSearchParams()
-    params.set("reason", "eval")
+    if (evaluator.template === "rag") {
+      params.set("reason", "qna")
+    } else {
+      params.set("reason", "eval")
+    }
     if (evaluator.template) {
       params.set("template_id", evaluator.template)
     }
@@ -518,8 +524,12 @@
                       <div>
                         <div class="mb-1">
                           {#if eval_progress && !required_more_eval_data && !required_more_golden_data}
-                            You have {eval_progress?.dataset_size} eval items and
-                            {eval_progress?.golden_dataset_size} golden items.
+                            {#if evaluator?.template === "rag"}
+                              You have {eval_progress?.dataset_size} eval items.
+                            {:else}
+                              You have {eval_progress?.dataset_size} eval items and
+                              {eval_progress?.golden_dataset_size} golden items.
+                            {/if}
                           {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0}
                             Create data for this eval.
                           {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}

@@ -121,7 +121,8 @@
               template_properties,
               evaluation_data_type: (evaluation_data_type || "final_answer") as
                 | "final_answer"
-                | "full_trace",
+                | "full_trace"
+                | "reference_answer",
             },
           },
         )

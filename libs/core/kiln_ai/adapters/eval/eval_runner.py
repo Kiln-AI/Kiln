@@ -197,7 +197,7 @@ class EvalRunner:
                     result_task_run,
                     scores,
                     intermediate_outputs,
-                ) = await evaluator.run_task_and_eval(job.item.input)
+                ) = await evaluator.run_task_and_eval(job.item)
                 task_output = result_task_run.output.output
                 task_run_usage = result_task_run.usage
 

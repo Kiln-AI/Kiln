@@ -85,6 +85,14 @@
     return true
   }
 
+  function handle_new_session() {
+    if ($page.url.searchParams.get("template_id") !== null) {
+      return clear_state_and_reload()
+    } else {
+      return clear_state_and_go_to_intro()
+    }
+  }
+
   function clear_state_and_reload() {
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
     window.location.reload()
@@ -435,9 +443,7 @@
                   on:click={open_generate_qna_dialog}
                   disabled={$qna && !$qna.extraction_complete}
                 >
-                  {total_qa_pairs > 0
-                    ? "Regenerate Q&A Pairs"
-                    : "Generate Q&A Pairs"}
+                  Generate Q&A Pairs
                 </button>
                 {#if total_qa_pairs > 0}
                   <button
@@ -448,7 +454,7 @@
                   </button>
                 {/if}
                 {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
-                  <div class="mt-3">
+                  <div class="mt-3 flex flex-col items-center">
                     <Warning
                       warning_message="{$qnaGenerationErrors.length} error{$qnaGenerationErrors.length >
                       1
@@ -495,7 +501,7 @@
                   <button class="btn btn-sm btn-disabled">Save All</button>
                 {/if}
                 {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
-                  <div class="mt-3">
+                  <div class="mt-3 flex flex-col items-center">
                     <Warning
                       warning_message="{$qnaGenerationErrors.length} error{$qnaGenerationErrors.length >
                       1
@@ -529,26 +535,24 @@
     {:else}
       <div class="rounded-lg border">
         <table class="table table-fixed">
-          {#if total_qa_pairs > 1}
-            <thead>
-              <tr>
-                <th style="width: calc(50% - 70px)"
-                  >Query <InfoTooltip
-                    tooltip_text="The query to ask about the document content."
-                    position="bottom"
-                  /></th
-                >
-                <th style="width: calc(50% - 110px)"
-                  >Answer <InfoTooltip
-                    tooltip_text="The answer to the query based on the document content."
-                    position="bottom"
-                  /></th
-                >
-                <th style="width: 140px">Status</th>
-                <th style="width: 40px"></th>
-              </tr>
-            </thead>
-          {/if}
+          <thead class={total_qa_pairs === 0 ? "hidden-header" : ""}>
+            <tr>
+              <th style="width: calc(50% - 70px)"
+                >Query <InfoTooltip
+                  tooltip_text="The query to ask about the document content."
+                  position="bottom"
+                /></th
+              >
+              <th style="width: calc(50% - 110px)"
+                >Answer <InfoTooltip
+                  tooltip_text="The answer to the query based on the document content."
+                  position="bottom"
+                /></th
+              >
+              <th style="width: 140px">Status</th>
+              <th style="width: 40px"></th>
+            </tr>
+          </thead>
           <tbody>
             {#if $qna}
               {#each $qna.documents as document}
@@ -637,7 +641,10 @@
       </div>
       {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
         <div class="text-error font-light text-sm mt-4">
-          {$qnaGenerationErrors.length} part(s) failed to generate
+          {$qnaGenerationErrors.length} document{$qnaGenerationErrors.length > 1
+            ? "s"
+            : ""} or chunk{$qnaGenerationErrors.length > 1 ? "s" : ""} failed to
+          generate
           <button
             class="link"
             on:click={() =>
@@ -664,7 +671,7 @@
 
 <Dialog
   title="Save Q&A Pairs to Dataset"
-  subtitle="All the unsaved Q&A pairs will be saved to the dataset."
+  sub_subtitle="All the unsaved Q&A pairs will be saved to the dataset."
   bind:this={save_all_dialog}
 >
   {#if $qnaSaveAllStatus}
@@ -749,12 +756,18 @@
         <div>
           <div class="font-medium text-sm">Status</div>
           <div class="font-light">
-            {$qnaPendingSaveCount || 0} items pending
+            {$qnaPendingSaveCount || 0} item{$qnaPendingSaveCount > 1
+              ? "s"
+              : ""} pending
             {#if already_saved_count > 0}
               / {already_saved_count} already saved
             {/if}
           </div>
         </div>
+        <Warning
+          warning_color="warning"
+          warning_message="Please review all Q&A pairs carefully before saving to ensure their accuracy."
+        />
       </FormContainer>
     {/if}
   {/if}
@@ -766,7 +779,7 @@
   action_buttons={[
     {
       label: "New Session",
-      action: clear_state_and_reload,
+      action: handle_new_session,
     },
     {
       label: "Continue Session",
@@ -780,8 +793,9 @@
 >
   <div class="flex flex-col gap-2">
     <div class="font-light flex flex-col gap-2">
-      <p>A Q&A generation session is already in progress.</p>
+      <p>A synthetic data generation session is already in progress.</p>
     </div>
+    <div class="flex flex-row gap-2"></div>
   </div></Dialog
 >
 
@@ -790,7 +804,7 @@
 {/if}
 
 <Dialog
-  title="Regenerate Q&A Pairs?"
+  title="Generate Q&A Pairs"
   bind:this={rechunk_warning_dialog}
   action_buttons={[
     {
@@ -801,7 +815,7 @@
       },
     },
     {
-      label: "Regenerate",
+      label: "Continue",
       action: () => {
         proceed_with_regeneration()
         return true
@@ -811,18 +825,37 @@
   ]}
 >
   <div class="flex flex-col gap-3">
-    <p class="font-light">
-      Regenerating Q&A pairs will re-chunk all documents into parts based on
-      your chunking settings. This will replace existing document parts and
-      their Q&A pairs.
-    </p>
     <div class="mt-2">
       <Warning
+        large_icon={true}
         warning_icon="exclaim"
         warning_color="warning"
-        warning_message="All existing Q&A pairs will be lost. Consider generating Q&A for
-        specific documents or parts instead."
+        warning_message="If you proceed, all existing Q&A pairs will be lost and any document chunks will be replaced. Consider generating Q&A for
+        specific documents or chunks instead."
       />
     </div>
   </div>
 </Dialog>
+
+<style>
+  .hidden-header {
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+  .hidden-header th {
+    height: 0;
+    padding: 0;
+    border: 0;
+    font-size: 0;
+    line-height: 0;
+    visibility: hidden !important;
+    height: 0 !important;
+  }
+  .hidden-header th *,
+  .hidden-header th * * {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+  }
+</style>

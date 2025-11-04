@@ -287,6 +287,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 class EvalDataType(str, Enum):
     final_answer = "final_answer"
     full_trace = "full_trace"
+    reference_answer = "reference_answer"
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):

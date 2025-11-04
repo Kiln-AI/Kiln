@@ -445,7 +445,7 @@
       default_eval_tag: "rag_eval_qna_set_" + eval_tag,
       default_golden_tag: null,
       template_properties: {},
-      evaluation_data_type: "final_answer",
+      evaluation_data_type: "reference_answer",
     })
   }
 

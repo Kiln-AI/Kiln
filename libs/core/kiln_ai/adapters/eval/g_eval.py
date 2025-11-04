@@ -169,7 +169,7 @@ This is the full conversation history for the task run:
         return description
 
     async def run_eval(
-        self, task_run: TaskRun
+        self, task_run: TaskRun, eval_job_item: TaskRun | None = None
     ) -> tuple[EvalScores, Dict[str, str] | None]:
         """
         Run this eval on the given task run.
@@ -226,11 +226,14 @@ This is the full conversation history for the task run:
                 ),
             )
 
-        # TODO: How to get ref_ans?
-        # elif self.eval.evaluation_data_type == EvalDataType.reference_answer:
-        # run_description = self.generate_ref_ans_run_description(
-        #     task_run.input, task_run.output.output, ref_ans
-        # )
+        elif self.eval.evaluation_data_type == EvalDataType.reference_answer:
+            if eval_job_item is None:
+                raise ValueError(
+                    "Eval job item is required for reference answer evaluation"
+                )
+            run_description = self.generate_ref_ans_run_description(
+                task_run.input, task_run.output.output, eval_job_item.output.output
+            )
 
         else:  # EvalDataType.final_answer
             run_description = self.generate_final_answer_run_description(

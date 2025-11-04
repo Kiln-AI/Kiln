@@ -121,17 +121,17 @@
         <li>
           <button
             on:click|stopPropagation={() =>
-              dispatch("generate_for_document", { document_id: document.id })}
+              dispatch("delete_document", { document_id: document.id })}
           >
-            Generate Q&A for Document
+            Remove Document
           </button>
         </li>
         <li>
           <button
             on:click|stopPropagation={() =>
-              dispatch("delete_document", { document_id: document.id })}
+              dispatch("generate_for_document", { document_id: document.id })}
           >
-            Remove Document
+            Generate Q&A Pairs
           </button>
         </li>
       </ul>
@@ -185,7 +185,7 @@
                       part_id: part.id,
                     })}
                 >
-                  Generate Q&A for Part
+                  Generate Q&A Pairs for Chunk
                 </button>
               </li>
             </ul>
@@ -239,7 +239,7 @@
                   on:click|stopPropagation={() =>
                     delete_qa_pair(part.id, qa.id)}
                 >
-                  Remove Q&A Pair
+                  Delete Q&A Pair
                 </button>
               </li>
               {#if qa.saved_id}

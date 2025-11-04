@@ -41,6 +41,9 @@
   let library_state_loading = false
 
   function get_fancy_select_options_tags(tags: string[]): OptionGroup[] {
+    if (tags.length === 0) {
+      return []
+    }
     return [
       {
         label: "Document Tags",
@@ -130,7 +133,7 @@
   width="normal"
 >
   <FormContainer
-    submit_visible={true}
+    submit_visible={!library_state_loading && !library_state?.is_empty}
     submit_label="Select Documents"
     on:submit={async (_) => {
       await fetch_documents_by_tag()
@@ -145,14 +148,13 @@
         <div class="loading loading-spinner loading-lg my-12"></div>
       </div>
     {:else if library_state?.is_empty}
-      <div class="text-xs text-gray-500 text-start">
-        <p>Looks like you don't have any documents yet.</p>
-        <p>
+      <div class="flex flex-row gap-3">
+        <div class="text-xs text-gray-500 text-start">
+          <span>Looks like you don't have any documents yet.</span>
           <a href={`/docs/library/${project_id}`} class="link">
             Create documents
-          </a>
-          to get started.
-        </p>
+          </a> to get started.
+        </div>
       </div>
     {:else}
       <FormElement

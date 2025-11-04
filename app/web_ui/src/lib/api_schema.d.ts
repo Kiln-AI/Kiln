@@ -3285,7 +3285,7 @@ export interface components {
      * EvalDataType
      * @enum {string}
      */
-    EvalDataType: "final_answer" | "full_trace"
+    EvalDataType: "final_answer" | "full_trace" | "reference_answer"
     /**
      * EvalOutputScore
      * @description A definition of a score that an evaluator will produce.
