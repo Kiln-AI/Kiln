@@ -13,7 +13,6 @@
 
   async function add_property() {
     schema_model.properties.push({
-      // TODO should be empty?
       id: "",
       title: "",
       description: "",
