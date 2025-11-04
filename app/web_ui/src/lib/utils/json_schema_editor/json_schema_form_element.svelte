@@ -117,23 +117,22 @@
 
 <Dialog
   bind:this={raw_json_schema_dialog}
-  title="Not Supported by the Visual Editor"
+  title="Switch to Custom JSON Schema?"
   action_buttons={[
     { label: "Cancel", isCancel: true },
-    { label: "Switch to Raw JSON Schema", action: switch_to_raw_schema },
+    { label: "Custom JSON Schema", action: switch_to_raw_schema },
   ]}
 >
-  <h4 class="mt-4">Switch to Raw JSON Schema?</h4>
-
   <div class="text-sm font-light text-gray-500">
+    Manually creating a
     <a href="https://json-schema.org/learn" target="_blank" class="link"
-      >Raw JSON Schema</a
-    > will give you more control over the structure of your data, including arrays,
-    nested objects, enums and more.
+      >JSON Schema</a
+    > will give you more control over the structure of your data, including validation
+    rules.
   </div>
   <h4 class="mt-4">Advanced Users Only</h4>
   <div class="text-sm font-light text-gray-500 mt-1">
-    Raw JSON Schema provides advanced functionality, but requires technical
+    JSON Schema provides advanced functionality, but requires technical
     expertise. Invalid schemas will cause task failures.
   </div>
 </Dialog>
