@@ -1,6 +1,7 @@
 <script lang="ts">
   import FormElement from "../form_element.svelte"
   import {
+    type SchemaModelProperty,
     type SchemaModelTypedObject,
     schema_from_model,
   } from "$lib/utils/json_schema_editor/json_schema_templates"
@@ -18,11 +19,49 @@
   export let raw_schema: string = ""
 
   // Accessor for the schema string. Not reactive because it's quite complex mapping two nested VMs to string and back.
-  export function get_schema_string(): string {
+  export function get_schema_string(name: string): string {
     if (raw) {
       return raw_schema
     } else {
+      validate_schema(schema_model, [name])
       return JSON.stringify(schema_from_model(schema_model, true))
+    }
+  }
+
+  function validate_schema(schema_model: SchemaModelProperty, path: string[]) {
+    // Validate against some rules we have for our UI builder
+    // to generate reasonable models (no enums with no values, no objects with no properties, etc)
+
+    if (schema_model.type === "object") {
+      if (!schema_model.properties || schema_model.properties.length === 0) {
+        throw new Error(
+          `Object schema must have at least one property: ${path.join(".")}`,
+        )
+      }
+      if (schema_model.properties) {
+        for (let i = 0; i < schema_model.properties.length; i++) {
+          const property = schema_model.properties[i]
+          const location_name = property.title
+            ? property.title.toLowerCase().replace(/ /g, "_")
+            : `property_${i}`
+          validate_schema(property, [...path, location_name])
+        }
+      }
+    }
+
+    if (schema_model.enum) {
+      if (schema_model.type !== "string") {
+        throw new Error(`Enum must be on a string type: ${path.join(".")}`)
+      }
+      if (!Array.isArray(schema_model.enum)) {
+        throw new Error(`Enum must be an array: ${path.join(".")}`)
+      }
+      if (schema_model.enum.length < 2) {
+        throw new Error(`Enum must have at least two values: ${path.join(".")}`)
+      }
+      if (schema_model.enum.some((value) => typeof value !== "string")) {
+        throw new Error(`Enum values must be strings: ${path.join(".")}`)
+      }
     }
   }
 

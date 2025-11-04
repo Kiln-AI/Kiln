@@ -43,11 +43,11 @@
 
   let schema_form_element: JsonSchemaFormElement | null = null
 
-  export function get_schema_string(): string | null {
+  export function get_schema_string(name: string): string | null {
     if (plaintext) {
       return null
     }
-    return schema_form_element?.get_schema_string() || null
+    return schema_form_element?.get_schema_string(name) || null
   }
 </script>
 
