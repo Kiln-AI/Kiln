@@ -30,6 +30,9 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.env import temporary_env
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.lock import AsyncLockManager
+
+table_lock_manager = AsyncLockManager()
 
 logger = logging.getLogger(__name__)
 
@@ -273,13 +276,18 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
     async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
         try:
-            query_result = await self.lancedb_vector_store.aquery(
-                LlamaIndexVectorStoreQuery(
-                    **self.build_kwargs_for_query(query),
-                ),
-                query_type=self.query_type,
-            )
-            return self.format_query_result(query_result)
+            if self.lancedb_vector_store.table is None:
+                raise ValueError("Table is not initialized")
+
+            # llama_index implementation create the FTS index on query if it does not exist
+            async with table_lock_manager.acquire(self.lancedb_vector_store.table.name):
+                query_result = await self.lancedb_vector_store.aquery(
+                    LlamaIndexVectorStoreQuery(
+                        **self.build_kwargs_for_query(query),
+                    ),
+                    query_type=self.query_type,
+                )
+                return self.format_query_result(query_result)
         except TableNotFoundError as e:
             logger.info("Vector store search returned no results: %s", e)
             return []
