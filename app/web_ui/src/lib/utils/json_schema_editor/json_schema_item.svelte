@@ -29,7 +29,9 @@
 
   let object_model: SchemaModelTypedObject | undefined = undefined
   $: object_model =
-    model.type === "object" && model.properties
+    model.type === "object" &&
+    model.properties &&
+    model.additionalProperties === false
       ? (model as SchemaModelTypedObject)
       : undefined
 
@@ -52,8 +54,10 @@
     // Setup properties for object type (or clear if not supported)
     if (new_type === "object") {
       model.properties = model.properties ?? []
+      model.additionalProperties = false
     } else {
       model.properties = undefined
+      model.additionalProperties = undefined
     }
 
     // Setup enum for enum type
@@ -140,6 +144,7 @@
             required: true,
             type: "object",
             properties: [],
+            additionalProperties: false,
           }
           model.items = array_object_model
         } else {

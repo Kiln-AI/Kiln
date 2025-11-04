@@ -46,6 +46,8 @@ export type SchemaModelProperty = {
 export type SchemaModelTypedObject = SchemaModelProperty & {
   type: "object"
   properties: Array<SchemaModelProperty>
+  // Some providers including OpenAI require additionalProperties to be false, so we enforce it here.
+  additionalProperties: false
 }
 
 export function model_from_schema(s: JsonSchemaProperty): SchemaModelProperty {
@@ -225,11 +227,14 @@ export const empty_schema: JsonSchemaProperty = schema_from_model(
 
 export function example_schema_model(): SchemaModelTypedObject {
   return {
+    id: "",
+    title: "",
     type: "object",
     required: true,
+    additionalProperties: false,
     properties: [
-      // @ts-expect-error we're not using the id, because we want it to be generated from the title
       {
+        id: "",
         title: "Example Property",
         description: "Replace this with your own property",
         type: "string",

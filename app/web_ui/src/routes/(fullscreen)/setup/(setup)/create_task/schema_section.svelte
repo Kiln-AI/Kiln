@@ -29,7 +29,11 @@
     if (new_schema_string) {
       const model = model_from_schema(JSON.parse(new_schema_string))
       // Check it's a valid object with properties (aka SchemaModelTypedObject) -- we only support typed objects for now
-      if (model.type === "object" && model.properties) {
+      if (
+        model.type === "object" &&
+        model.properties &&
+        model.additionalProperties === false
+      ) {
         return model as SchemaModelTypedObject
       } else {
         throw new Error(
