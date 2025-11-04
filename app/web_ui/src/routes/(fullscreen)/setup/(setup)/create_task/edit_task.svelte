@@ -458,6 +458,7 @@
         <SchemaSection
           bind:this={outputSchemaSection}
           bind:schema_string={task.output_json_schema}
+          warn_about_required={true}
         />
       {/if}
     </div>

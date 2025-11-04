@@ -6,6 +6,7 @@
   const dispatch = createEventDispatcher()
 
   export let schema_model: SchemaModelTypedObject
+  export let warn_about_required: boolean = false
 
   let id = Math.random().toString(36)
 
@@ -90,6 +91,7 @@
 
         <JsonSchemaItem
           bind:model={schema_model.properties[index]}
+          {warn_about_required}
           on:show-raw-json-schema={() => {
             dispatch("show-raw-json-schema")
           }}

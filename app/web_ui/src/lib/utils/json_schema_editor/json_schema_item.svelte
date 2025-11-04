@@ -10,6 +10,8 @@
 
   const dispatch = createEventDispatcher()
 
+  export let warn_about_required: boolean = false
+
   let id = Math.random().toString(36)
   export let model: SchemaModelProperty = {
     id: "",
@@ -210,11 +212,21 @@
   <FormElement
     id={"property_" + id + "_required"}
     label="Required"
-    inputType="select"
+    inputType="fancy_select"
     bind:value={model.required}
-    select_options={[
-      [true, "True"],
-      [false, "False"],
+    fancy_select_options={[
+      {
+        options: [
+          { label: "Required", value: true },
+          {
+            label: "Optional",
+            value: false,
+            description: warn_about_required
+              ? "Not supported by some providers, including OpenAI"
+              : undefined,
+          },
+        ],
+      },
     ]}
     light_label={true}
   />
@@ -231,14 +243,17 @@
 
 {#if object_model}
   <div class="ml-4 pl-4 border-l">
-    <JsonSchemaObject bind:schema_model={object_model} />
+    <JsonSchemaObject bind:schema_model={object_model} {warn_about_required} />
   </div>
 {/if}
 
 {#if array_object_model && type_option === "array" && array_type === "object"}
   <div class="ml-4 pl-4 border-l">
     <div class="text-sm text-gray-500">Array Object Schema</div>
-    <JsonSchemaObject bind:schema_model={array_object_model} />
+    <JsonSchemaObject
+      bind:schema_model={array_object_model}
+      {warn_about_required}
+    />
   </div>
 {/if}
 

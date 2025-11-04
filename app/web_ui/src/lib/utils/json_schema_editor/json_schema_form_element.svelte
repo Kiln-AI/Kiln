@@ -17,6 +17,7 @@
   export let raw = false
   export let schema_model: SchemaModelTypedObject
   export let raw_schema: string = ""
+  export let warn_about_required: boolean = false
 
   // Accessor for the schema string. Not reactive because it's quite complex mapping two nested VMs to string and back.
   export function get_schema_string(name: string): string {
@@ -101,6 +102,7 @@
 {#if !raw}
   <JsonSchemaObject
     {schema_model}
+    {warn_about_required}
     on:show-raw-json-schema={show_raw_json_schema_dialog}
   />
 {:else}

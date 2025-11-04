@@ -7,6 +7,7 @@
   } from "$lib/utils/json_schema_editor/json_schema_templates"
 
   let id = Math.random().toString(36)
+  export let warn_about_required: boolean = false
 
   // Not the best svelte bindings here.
   // We're reactive for setting the schema_string, which allows the caller to set a well known schema (like the demo/example)
@@ -87,6 +88,7 @@
       {schema_model}
       bind:raw_schema={raw_schema_string}
       bind:raw
+      {warn_about_required}
     />
   {/if}
 </div>
