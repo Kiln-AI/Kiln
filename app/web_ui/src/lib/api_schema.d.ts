@@ -4398,7 +4398,7 @@ export interface components {
             vector_store_config_id: string | null;
             /**
              * Reranker Config Id
-             * @description The ID of the reranker config used to rerank the search results.
+             * @description The ID of the reranker config used to rerank the documents. If None, no reranking will be performed.
              */
             reranker_config_id?: string | null;
             /**
