@@ -285,7 +285,11 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
 
             # llama_index implementation create the FTS index on query if it does not exist
             async with table_lock_manager.acquire(self.lancedb_vector_store.table.name):
-                query_result = await self.lancedb_vector_store.aquery(
+                # llama_index lazy creates the FTS index on query if it does not exist - but there is a bug
+                # and it never actually knows if it is created so it creates it every time, which when run at high
+                # concurrency causes a Too Many Open Files error
+                self.lancedb_vector_store._fts_index = "dummy_fts_index"
+                query_result = self.lancedb_vector_store.query(
                     LlamaIndexVectorStoreQuery(
                         **self.build_kwargs_for_query(query),
                     ),
