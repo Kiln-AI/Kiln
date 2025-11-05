@@ -47,6 +47,8 @@ async def vector_store_adapter_for_config(
                     rag_config,
                     vector_store_config,
                 )
+
+                await adapter.create_fts_index()
             case _:
                 raise_exhaustive_enum_error(vector_store_config.store_type)
 
