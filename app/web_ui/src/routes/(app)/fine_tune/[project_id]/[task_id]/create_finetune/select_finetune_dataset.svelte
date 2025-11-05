@@ -14,45 +14,82 @@
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
   import { sets_equal } from "$lib/utils/collections"
+  import ExistingDatasetButton from "./existing_dataset_button.svelte"
 
   let finetune_dataset_info: FinetuneDatasetInfo | null = null
   let loading = true
   let error: KilnError | null = null
+  let valid_datasets: DatasetSplit[] = []
+  let invalid_datasets: DatasetSplit[] = []
 
   export let project_id: string
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
   export let required_tools: string[] = []
 
-  $: disabled_datasets = compute_disabled_datasets(
-    required_tools,
-    finetune_dataset_info,
-  )
+  function is_dataset_valid(
+    dataset: DatasetSplit,
+    required_tool_set: Set<string>,
+    info: FinetuneDatasetInfo,
+  ): boolean {
+    const tool_info = info.tool_info_by_name[dataset.name]
+    if (!tool_info) return true
+
+    const dataset_tool_set = new Set(tool_info.tools || [])
+    return (
+      !tool_info.has_tool_mismatch &&
+      sets_equal(required_tool_set, dataset_tool_set)
+    )
+  }
+
+  function has_associated_finetunes(
+    dataset: DatasetSplit,
+    info: FinetuneDatasetInfo,
+  ): boolean {
+    if (!dataset.id) return false
+
+    return info.existing_finetunes.some(
+      (finetune) => finetune.dataset_split_id === dataset.id,
+    )
+  }
 
   function compute_disabled_datasets(
     required_tools: string[],
     info: FinetuneDatasetInfo | null,
-  ): Set<string> {
-    if (!info || !required_tools?.length) return new Set()
+  ): { valid_datasets: DatasetSplit[]; invalid_datasets: DatasetSplit[] } {
+    if (!info) {
+      return { valid_datasets: [], invalid_datasets: [] }
+    }
 
-    const disabled_ids: string[] = []
+    const required_tool_set = new Set(required_tools)
+    const valid_datasets: DatasetSplit[] = []
+    const invalid_datasets: DatasetSplit[] = []
 
     for (const dataset of info.existing_datasets) {
-      if (!dataset.id) continue
+      const has_finetunes = has_associated_finetunes(dataset, info)
+      const tools_match =
+        !required_tools?.length ||
+        is_dataset_valid(dataset, required_tool_set, info)
 
-      const tool_info = info.tool_info_by_name[dataset.name]
-      if (!tool_info) continue
+      // dataset without finetune is never shown
+      if (!has_finetunes) {
+        continue
+      }
 
-      if (
-        tool_info.has_tool_mismatch ||
-        !sets_equal(new Set(required_tools), new Set(tool_info.tools || []))
-      ) {
-        disabled_ids.push(dataset.id)
+      if (tools_match) {
+        valid_datasets.push(dataset)
+      } else {
+        invalid_datasets.push(dataset)
       }
     }
 
-    return new Set(disabled_ids)
+    return { valid_datasets, invalid_datasets }
   }
+
+  $: ({ valid_datasets, invalid_datasets } = compute_disabled_datasets(
+    required_tools,
+    finetune_dataset_info,
+  ))
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
@@ -249,6 +286,16 @@
     goto(link)
   }
 
+  function finetune_names_from_dataset(dataset: DatasetSplit) {
+    if (!dataset.id || !finetune_dataset_info) {
+      return []
+    }
+
+    return finetune_dataset_info.existing_finetunes
+      .filter((finetune) => finetune.dataset_split_id === dataset.id)
+      .map((finetune) => finetune.name)
+  }
+
   let new_dataset_filter_count: number | undefined = undefined
   $: if (selected_dataset_tag_data) {
     if (filter_to_reasoning_data && filter_to_highly_rated_data) {
@@ -277,12 +324,15 @@
 
   // If the selected dataset is disabled, clear it
   // This handels the case where a dataset is selected, user goes back to select more tools and the dataset is no longer valid
-  $: if (
-    selected_dataset &&
-    selected_dataset.id &&
-    disabled_datasets.has(selected_dataset.id)
-  ) {
-    selected_dataset = null
+  $: {
+    const selected_dataset_id = selected_dataset?.id
+
+    if (
+      selected_dataset_id &&
+      invalid_datasets.some((dataset) => dataset.id === selected_dataset_id)
+    ) {
+      selected_dataset = null
+    }
   }
 </script>
 
@@ -460,38 +510,34 @@
       this fine-tune.
     </div>
     <div class="flex flex-col gap-4 text-sm max-w-[600px]">
-      {#each finetune_dataset_info.existing_datasets as dataset}
-        {@const is_disabled = dataset.id && disabled_datasets.has(dataset.id)}
-        {@const finetunes = finetune_dataset_info.existing_finetunes.filter(
-          (f) =>
-            f.dataset_split_id === dataset.id && dataset.id && !is_disabled,
-        )}
-        {#if finetunes.length > 0}
-          <button
-            class="card card-bordered border-base-300 bg-base-200 shadow-md w-full px-4 py-3 indicator grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 overflow-hidden text-left"
-            on:click={() => {
-              selected_dataset = dataset
-              existing_dataset_dialog?.close()
-            }}
-          >
-            <div class="text-xs text-gray-500">Dataset Name</div>
-            <div class="text-medium">{dataset.name}</div>
-            <div class="text-xs text-gray-500">Created</div>
-            <div>{formatDate(dataset.created_at)}</div>
-
-            <div class="text-xs text-gray-500">Dataset Size</div>
-            <div>
-              {Object.keys(dataset.split_contents)
-                .map((split_type) => {
-                  return `${dataset.split_contents[split_type].length} in '${split_type}'`
-                })
-                .join(", ")}
-            </div>
-            <div class="text-xs text-gray-500">Tunes Using Dataset</div>
-            <div>{finetunes.map((f) => f.name).join(", ")}</div>
-          </button>
-        {/if}
+      {#each valid_datasets as dataset}
+        {@const finetune_names = finetune_names_from_dataset(dataset)}
+        <ExistingDatasetButton
+          {dataset}
+          finetuneNames={finetune_names}
+          on:select={({ detail }) => {
+            selected_dataset = detail
+            existing_dataset_dialog?.close()
+          }}
+        />
       {/each}
     </div>
+    {#if invalid_datasets.length > 0}
+      <div class="flex flex-col gap-4 text-sm max-w-[600px] mt-4">
+        <Warning
+          warning_message="These datasets cannot be used because they use different tools. Tool-based fine-tuning requires all runs in a dataset to use the exact same tools as your current selection."
+          warning_icon="exclaim"
+          warning_color="primary"
+        />
+        {#each invalid_datasets as dataset}
+          {@const finetune_names = finetune_names_from_dataset(dataset)}
+          <ExistingDatasetButton
+            {dataset}
+            finetuneNames={finetune_names}
+            disabled={true}
+          />
+        {/each}
+      </div>
+    {/if}
   {/if}
 </Dialog>
