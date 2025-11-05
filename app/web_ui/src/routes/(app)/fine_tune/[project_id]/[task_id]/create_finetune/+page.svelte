@@ -79,6 +79,8 @@
   $: hide_tools_selector =
     selected_model && !selected_model.model.supports_function_calling
 
+  let selected_tools: string[] = []
+
   let available_model_select: [string, string][] = []
 
   let selected_dataset: DatasetSplit | null = null
@@ -573,6 +575,7 @@
           </div>
           <RunConfigComponent
             bind:this={run_config_component}
+            bind:tools={selected_tools}
             {project_id}
             hide_create_kiln_task_tool_button={true}
             hide_model_selector={true}
@@ -594,7 +597,12 @@
               />
             </div>
           </div>
-          <SelectFinetuneDataset {project_id} {task_id} bind:selected_dataset />
+          <SelectFinetuneDataset
+            {project_id}
+            {task_id}
+            required_tools={selected_tools}
+            bind:selected_dataset
+          />
         {/if}
 
         {#if step_4_visible}

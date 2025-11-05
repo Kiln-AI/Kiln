@@ -13,6 +13,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
+  import { sets_equal } from "$lib/utils/collections"
 
   let finetune_dataset_info: FinetuneDatasetInfo | null = null
   let loading = true
@@ -21,6 +22,37 @@
   export let project_id: string
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
+  export let required_tools: string[] = []
+
+  $: disabled_datasets = compute_disabled_datasets(
+    required_tools,
+    finetune_dataset_info,
+  )
+
+  function compute_disabled_datasets(
+    required_tools: string[],
+    info: FinetuneDatasetInfo | null,
+  ): Set<string> {
+    if (!info || !required_tools?.length) return new Set()
+
+    const disabled_ids: string[] = []
+
+    for (const dataset of info.existing_datasets) {
+      if (!dataset.id) continue
+
+      const tool_info = info.tool_info_by_name[dataset.name]
+      if (!tool_info) continue
+
+      if (
+        tool_info.has_tool_mismatch ||
+        !sets_equal(new Set(required_tools), new Set(tool_info.tools || []))
+      ) {
+        disabled_ids.push(dataset.id)
+      }
+    }
+
+    return new Set(disabled_ids)
+  }
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
@@ -242,6 +274,16 @@
       return `The dataset will have ${count} samples.`
     }
   }
+
+  // If the selected dataset is disabled, clear it
+  // This handels the case where a dataset is selected, user goes back to select more tools and the dataset is no longer valid
+  $: if (
+    selected_dataset &&
+    selected_dataset.id &&
+    disabled_datasets.has(selected_dataset.id)
+  ) {
+    selected_dataset = null
+  }
 </script>
 
 {#if loading}
@@ -419,10 +461,12 @@
     </div>
     <div class="flex flex-col gap-4 text-sm max-w-[600px]">
       {#each finetune_dataset_info.existing_datasets as dataset}
+        {@const is_disabled = dataset.id && disabled_datasets.has(dataset.id)}
         {@const finetunes = finetune_dataset_info.existing_finetunes.filter(
-          (f) => f.dataset_split_id === dataset.id,
+          (f) =>
+            f.dataset_split_id === dataset.id && dataset.id && !is_disabled,
         )}
-        {#if finetunes.length > 0 && dataset.id}
+        {#if finetunes.length > 0}
           <button
             class="card card-bordered border-base-300 bg-base-200 shadow-md w-full px-4 py-3 indicator grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 overflow-hidden text-left"
             on:click={() => {
