@@ -3,10 +3,16 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from kiln_ai.adapters.rerankers.base_reranker import (
+    RerankDocument,
+    RerankResponse,
+    RerankResult,
+)
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.rag_tools import ChunkContext, RagTool, format_search_results
@@ -144,6 +150,7 @@ class TestRagTool:
         config.tool_description = "A test search tool for RAG"
         config.vector_store_config_id = "vector_store_456"
         config.embedding_config_id = "embedding_789"
+        config.reranker_config_id = None
         return config
 
     @pytest.fixture
@@ -776,6 +783,7 @@ class TestRagToolNameAndDescription:
         config.tool_description = "An advanced search tool that retrieves relevant documents from the knowledge base using semantic similarity"
         config.vector_store_config_id = "vector_store_789"
         config.embedding_config_id = "embedding_101"
+        config.reranker_config_id = None
         return config
 
     @pytest.fixture
@@ -897,6 +905,7 @@ class TestRagToolNameAndDescription:
         config.tool_description = "一个用于搜索文档的高级工具 🚀"
         config.vector_store_config_id = "vector_store_789"
         config.embedding_config_id = "embedding_101"
+        config.reranker_config_id = None
         config.parent_project.return_value = mock_project_for_tool_fields
 
         with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
@@ -922,6 +931,7 @@ class TestRagToolNameAndDescription:
         config.tool_description = multiline_description
         config.vector_store_config_id = "vector_store_789"
         config.embedding_config_id = "embedding_101"
+        config.reranker_config_id = None
         config.parent_project.return_value = mock_project_for_tool_fields
 
         with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
@@ -929,3 +939,484 @@ class TestRagToolNameAndDescription:
 
             tool = RagTool("tool_multiline", config)
             assert tool._description == multiline_description
+
+
+class TestRagToolReranking:
+    """Test RagTool reranking functionality."""
+
+    @pytest.fixture
+    def mock_rag_config_with_reranker(self):
+        """Create a mock RAG config with reranker."""
+        config = Mock(spec=RagConfig)
+        config.id = "rag_config_rerank"
+        config.tool_name = "Search with Reranking"
+        config.tool_description = "A search tool with reranking"
+        config.vector_store_config_id = "vector_store_123"
+        config.embedding_config_id = "embedding_123"
+        config.reranker_config_id = "reranker_123"
+        return config
+
+    @pytest.fixture
+    def mock_rag_config_without_reranker(self):
+        """Create a mock RAG config without reranker."""
+        config = Mock(spec=RagConfig)
+        config.id = "rag_config_no_rerank"
+        config.tool_name = "Search without Reranking"
+        config.tool_description = "A search tool without reranking"
+        config.vector_store_config_id = "vector_store_123"
+        config.embedding_config_id = "embedding_123"
+        config.reranker_config_id = None
+        return config
+
+    @pytest.fixture
+    def mock_project(self):
+        """Create a mock project."""
+        project = Mock(spec=Project)
+        project.id = "project_rerank"
+        project.path = "/test/rerank/path"
+        return project
+
+    @pytest.fixture
+    def mock_reranker_config(self):
+        """Create a mock reranker config."""
+        config = Mock(spec=RerankerConfig)
+        config.id = "reranker_123"
+        return config
+
+    def test_rag_tool_init_with_reranker_config(
+        self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
+    ):
+        """Test RagTool initialization with a reranker config."""
+        mock_rag_config_with_reranker.parent_project.return_value = mock_project
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.RerankerConfig"
+            ) as mock_reranker_config_class,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_reranker_config_class.from_id_and_parent_path.return_value = (
+                mock_reranker_config
+            )
+
+            tool = RagTool("tool_rerank", mock_rag_config_with_reranker)
+
+            assert tool._reranker_config == mock_reranker_config
+            mock_reranker_config_class.from_id_and_parent_path.assert_called_once_with(
+                "reranker_123", "/test/rerank/path"
+            )
+
+    def test_rag_tool_init_without_reranker_config(
+        self, mock_rag_config_without_reranker, mock_project
+    ):
+        """Test RagTool initialization without a reranker config."""
+        mock_rag_config_without_reranker.parent_project.return_value = mock_project
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_no_rerank", mock_rag_config_without_reranker)
+
+            assert tool._reranker_config is None
+            assert tool._reranker_adapter is None
+
+    def test_rag_tool_init_reranker_config_not_found(
+        self, mock_rag_config_with_reranker, mock_project
+    ):
+        """Test RagTool initialization when reranker config is not found."""
+        mock_rag_config_with_reranker.parent_project.return_value = mock_project
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.RerankerConfig"
+            ) as mock_reranker_config_class,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_reranker_config_class.from_id_and_parent_path.return_value = None
+
+            with pytest.raises(
+                ValueError, match="Reranker config not found: reranker_123"
+            ):
+                RagTool("tool_rerank", mock_rag_config_with_reranker)
+
+    def test_rag_tool_reranker_property_with_config(
+        self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
+    ):
+        """Test RagTool reranker property when reranker config exists."""
+        mock_rag_config_with_reranker.parent_project.return_value = mock_project
+        mock_reranker_adapter = Mock()
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.RerankerConfig"
+            ) as mock_reranker_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.reranker_adapter_from_config"
+            ) as mock_adapter_factory,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_reranker_config_class.from_id_and_parent_path.return_value = (
+                mock_reranker_config
+            )
+            mock_adapter_factory.return_value = mock_reranker_adapter
+
+            tool = RagTool("tool_rerank", mock_rag_config_with_reranker)
+
+            reranker = tool.reranker
+            assert reranker == mock_reranker_adapter
+
+            # Test that it's cached
+            reranker2 = tool.reranker
+            assert reranker2 == mock_reranker_adapter
+
+            # Verify factory was called only once
+            mock_adapter_factory.assert_called_once_with(
+                reranker_config=mock_reranker_config
+            )
+
+    def test_rag_tool_reranker_property_without_config(
+        self, mock_rag_config_without_reranker, mock_project
+    ):
+        """Test RagTool reranker property when no reranker config exists."""
+        mock_rag_config_without_reranker.parent_project.return_value = mock_project
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_no_rerank", mock_rag_config_without_reranker)
+
+            reranker = tool.reranker
+            assert reranker is None
+
+    async def test_rag_tool_rerank_method_no_reranker(
+        self, mock_rag_config_without_reranker, mock_project
+    ):
+        """Test that rerank method returns search results unchanged when no reranker."""
+        mock_rag_config_without_reranker.parent_project.return_value = mock_project
+
+        search_results = [
+            SearchResult(
+                document_id="doc1",
+                chunk_idx=0,
+                chunk_text="First result",
+                similarity=0.9,
+            ),
+            SearchResult(
+                document_id="doc2",
+                chunk_idx=1,
+                chunk_text="Second result",
+                similarity=0.8,
+            ),
+        ]
+
+        with patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class:
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+
+            tool = RagTool("tool_no_rerank", mock_rag_config_without_reranker)
+
+            result = await tool.rerank(search_results, "test query")
+            assert result == search_results
+
+    async def test_rag_tool_rerank_method_with_reranker(
+        self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
+    ):
+        """Test that rerank method properly reranks results."""
+        mock_rag_config_with_reranker.parent_project.return_value = mock_project
+
+        search_results = [
+            SearchResult(
+                document_id="doc1",
+                chunk_idx=0,
+                chunk_text="First result",
+                similarity=0.9,
+            ),
+            SearchResult(
+                document_id="doc2",
+                chunk_idx=1,
+                chunk_text="Second result",
+                similarity=0.8,
+            ),
+            SearchResult(
+                document_id="doc3",
+                chunk_idx=2,
+                chunk_text="Third result",
+                similarity=0.7,
+            ),
+        ]
+
+        # Mock reranker response (reordered: doc2, doc3, doc1)
+        rerank_response = RerankResponse(
+            results=[
+                RerankResult(
+                    index=1,
+                    document=RerankDocument(id="doc2::1", text="Second result"),
+                    relevance_score=0.95,
+                ),
+                RerankResult(
+                    index=2,
+                    document=RerankDocument(id="doc3::2", text="Third result"),
+                    relevance_score=0.85,
+                ),
+                RerankResult(
+                    index=0,
+                    document=RerankDocument(id="doc1::0", text="First result"),
+                    relevance_score=0.75,
+                ),
+            ]
+        )
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.RerankerConfig"
+            ) as mock_reranker_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.reranker_adapter_from_config"
+            ) as mock_adapter_factory,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_reranker_config_class.from_id_and_parent_path.return_value = (
+                mock_reranker_config
+            )
+
+            mock_reranker_adapter = AsyncMock()
+            mock_reranker_adapter.rerank.return_value = rerank_response
+            mock_adapter_factory.return_value = mock_reranker_adapter
+
+            tool = RagTool("tool_rerank", mock_rag_config_with_reranker)
+
+            result = await tool.rerank(search_results, "test query")
+
+            # Verify reranker was called with correct arguments
+            mock_reranker_adapter.rerank.assert_called_once()
+            call_args = mock_reranker_adapter.rerank.call_args
+            assert call_args.kwargs["query"] == "test query"
+
+            # Verify documents were converted correctly
+            documents = call_args.kwargs["documents"]
+            assert len(documents) == 3
+            assert documents[0].id == "doc1::0"
+            assert documents[0].text == "First result"
+            assert documents[1].id == "doc2::1"
+            assert documents[2].id == "doc3::2"
+
+            # Verify results are reordered with new scores
+            assert len(result) == 3
+            assert result[0].document_id == "doc2"
+            assert result[0].chunk_idx == 1
+            assert result[0].chunk_text == "Second result"
+            assert result[0].similarity == 0.95
+
+            assert result[1].document_id == "doc3"
+            assert result[1].chunk_idx == 2
+            assert result[1].similarity == 0.85
+
+            assert result[2].document_id == "doc1"
+            assert result[2].chunk_idx == 0
+            assert result[2].similarity == 0.75
+
+    async def test_rag_tool_run_with_reranking(
+        self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
+    ):
+        """Test RagTool.run() with reranking enabled."""
+        mock_rag_config_with_reranker.parent_project.return_value = mock_project
+
+        # Initial search results
+        search_results = [
+            SearchResult(
+                document_id="doc1",
+                chunk_idx=0,
+                chunk_text="Result one",
+                similarity=0.8,
+            ),
+            SearchResult(
+                document_id="doc2",
+                chunk_idx=1,
+                chunk_text="Result two",
+                similarity=0.9,
+            ),
+        ]
+
+        # Reranked results (order reversed)
+        rerank_response = RerankResponse(
+            results=[
+                RerankResult(
+                    index=1,
+                    document=RerankDocument(id="doc2::1", text="Result two"),
+                    relevance_score=0.98,
+                ),
+                RerankResult(
+                    index=0,
+                    document=RerankDocument(id="doc1::0", text="Result one"),
+                    relevance_score=0.65,
+                ),
+            ]
+        )
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.RerankerConfig"
+            ) as mock_reranker_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.reranker_adapter_from_config"
+            ) as mock_reranker_adapter_factory,
+            patch("kiln_ai.tools.rag_tools.EmbeddingConfig") as mock_embed_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
+            ) as mock_embed_adapter_factory,
+            patch(
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
+            ) as mock_vs_adapter_factory,
+        ):
+            # Setup mocks
+            mock_vector_store_config = Mock()
+            mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+            mock_vs_config_class.from_id_and_parent_path.return_value = (
+                mock_vector_store_config
+            )
+
+            mock_reranker_config_class.from_id_and_parent_path.return_value = (
+                mock_reranker_config
+            )
+
+            mock_reranker_adapter = AsyncMock()
+            mock_reranker_adapter.rerank.return_value = rerank_response
+            mock_reranker_adapter_factory.return_value = mock_reranker_adapter
+
+            mock_embedding_config = Mock()
+            mock_embed_config_class.from_id_and_parent_path.return_value = (
+                mock_embedding_config
+            )
+
+            mock_embedding_adapter = AsyncMock()
+            mock_embedding_result = Mock()
+            mock_embedding_result.embeddings = [Mock(vector=[0.1, 0.2, 0.3])]
+            mock_embedding_adapter.generate_embeddings.return_value = (
+                mock_embedding_result
+            )
+            mock_embed_adapter_factory.return_value = mock_embedding_adapter
+
+            mock_vector_store_adapter = AsyncMock()
+            mock_vector_store_adapter.search.return_value = search_results
+            mock_vs_adapter_factory.return_value = mock_vector_store_adapter
+
+            tool = RagTool("tool_rerank", mock_rag_config_with_reranker)
+
+            # Run the tool
+            result = await tool.run(context=None, query="rerank query")
+
+            # Verify reranker was called
+            mock_reranker_adapter.rerank.assert_called_once()
+
+            # Verify results are in reranked order
+            expected_result = (
+                "[document_id: doc2, chunk_idx: 1]\nResult two\n\n"
+                "\n=========\n"
+                "[document_id: doc1, chunk_idx: 0]\nResult one\n\n"
+            )
+            assert result.output == expected_result
+
+    async def test_rag_tool_run_without_reranking(
+        self, mock_rag_config_without_reranker, mock_project
+    ):
+        """Test RagTool.run() without reranking uses original search order."""
+        mock_rag_config_without_reranker.parent_project.return_value = mock_project
+
+        search_results = [
+            SearchResult(
+                document_id="doc1",
+                chunk_idx=0,
+                chunk_text="Result one",
+                similarity=0.9,
+            ),
+            SearchResult(
+                document_id="doc2",
+                chunk_idx=1,
+                chunk_text="Result two",
+                similarity=0.8,
+            ),
+        ]
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch("kiln_ai.tools.rag_tools.EmbeddingConfig") as mock_embed_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
+            ) as mock_embed_adapter_factory,
+            patch(
+                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
+                new_callable=AsyncMock,
+            ) as mock_vs_adapter_factory,
+        ):
+            mock_vector_store_config = Mock()
+            mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
+            mock_vs_config_class.from_id_and_parent_path.return_value = (
+                mock_vector_store_config
+            )
+
+            mock_embedding_config = Mock()
+            mock_embed_config_class.from_id_and_parent_path.return_value = (
+                mock_embedding_config
+            )
+
+            mock_embedding_adapter = AsyncMock()
+            mock_embedding_result = Mock()
+            mock_embedding_result.embeddings = [Mock(vector=[0.1, 0.2, 0.3])]
+            mock_embedding_adapter.generate_embeddings.return_value = (
+                mock_embedding_result
+            )
+            mock_embed_adapter_factory.return_value = mock_embedding_adapter
+
+            mock_vector_store_adapter = AsyncMock()
+            mock_vector_store_adapter.search.return_value = search_results
+            mock_vs_adapter_factory.return_value = mock_vector_store_adapter
+
+            tool = RagTool("tool_no_rerank", mock_rag_config_without_reranker)
+
+            # Run the tool
+            result = await tool.run(context=None, query="no rerank query")
+
+            # Verify results are in original order
+            expected_result = (
+                "[document_id: doc1, chunk_idx: 0]\nResult one\n\n"
+                "\n=========\n"
+                "[document_id: doc2, chunk_idx: 1]\nResult two\n\n"
+            )
+            assert result.output == expected_result
+
+    async def test_rag_tool_rerank_empty_results(
+        self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
+    ):
+        """Test rerank with empty search results."""
+        mock_rag_config_with_reranker.parent_project.return_value = mock_project
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.RerankerConfig"
+            ) as mock_reranker_config_class,
+            patch(
+                "kiln_ai.tools.rag_tools.reranker_adapter_from_config"
+            ) as mock_adapter_factory,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_reranker_config_class.from_id_and_parent_path.return_value = (
+                mock_reranker_config
+            )
+
+            mock_reranker_adapter = AsyncMock()
+            mock_reranker_adapter.rerank.return_value = RerankResponse(results=[])
+            mock_adapter_factory.return_value = mock_reranker_adapter
+
+            tool = RagTool("tool_rerank", mock_rag_config_with_reranker)
+
+            result = await tool.rerank([], "test query")
+
+            # Should call reranker even with empty list
+            mock_reranker_adapter.rerank.assert_called_once()
+            assert result == []

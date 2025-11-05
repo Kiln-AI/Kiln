@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
+from kiln_ai.adapters.rerankers.base_reranker import BaseReranker
+from kiln_ai.adapters.rerankers.reranker_registry import reranker_adapter_from_config
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
     SearchResult,
@@ -16,6 +18,7 @@ from kiln_ai.adapters.vector_store.vector_store_registry import (
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.tools.base_tool import (
@@ -25,6 +28,10 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.rag_utils import (
+    convert_search_results_to_rerank_input,
+    split_global_chunk_id,
+)
 
 
 class ChunkContext(BaseModel):
@@ -85,6 +92,20 @@ class RagTool(KilnToolInterface):
         self._vector_store_config = vector_store_config
         self._vector_store_adapter: BaseVectorStoreAdapter | None = None
 
+        self._reranker_adapter: BaseReranker | None = None
+
+        if self._rag_config.reranker_config_id is not None:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(self._rag_config.reranker_config_id), self.project.path
+            )
+            if reranker_config is None:
+                raise ValueError(
+                    f"Reranker config not found: {self._rag_config.reranker_config_id}"
+                )
+            self._reranker_config = reranker_config
+        else:
+            self._reranker_config = None
+
     @cached_property
     def project(self) -> Project:
         project = self._rag_config.parent_project()
@@ -115,6 +136,16 @@ class RagTool(KilnToolInterface):
             )
         return self._vector_store_adapter
 
+    @cached_property
+    def reranker(self) -> BaseReranker | None:
+        if self._reranker_config is None:
+            return None
+        if self._reranker_adapter is None:
+            self._reranker_adapter = reranker_adapter_from_config(
+                reranker_config=self._reranker_config,
+            )
+        return self._reranker_adapter
+
     async def id(self) -> ToolId:
         return self._id
 
@@ -134,6 +165,31 @@ class RagTool(KilnToolInterface):
                 "parameters": self._parameters_schema,
             },
         }
+
+    async def rerank(
+        self, search_results: List[SearchResult], query: str
+    ) -> List[SearchResult]:
+        if self.reranker is None:
+            return search_results
+
+        reranked_results = await self.reranker.rerank(
+            query=query,
+            documents=convert_search_results_to_rerank_input(search_results),
+        )
+
+        reranked_search_results = []
+        for result in reranked_results.results:
+            document_id, chunk_idx = split_global_chunk_id(result.document.id)
+            reranked_search_results.append(
+                SearchResult(
+                    document_id=document_id,
+                    chunk_idx=chunk_idx,
+                    chunk_text=result.document.text,
+                    similarity=result.relevance_score,
+                )
+            )
+
+        return reranked_search_results
 
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
@@ -166,6 +222,11 @@ class RagTool(KilnToolInterface):
             store_query.query_embedding = query_embedding_result.embeddings[0].vector
 
         search_results = await vector_store_adapter.search(store_query)
-        search_results_as_text = format_search_results(search_results)
+
+        if self.reranker is not None:
+            reranked_search_results = await self.rerank(search_results, query)
+            search_results_as_text = format_search_results(reranked_search_results)
+        else:
+            search_results_as_text = format_search_results(search_results)
 
         return ToolCallResult(output=search_results_as_text)
