@@ -373,13 +373,6 @@
         throw new Error("Please select a search index configuration.")
       }
 
-      if (
-        !selected_reranker_config_id ||
-        selected_reranker_config_id === "create_new"
-      ) {
-        throw new Error("Please select a reranker configuration.")
-      }
-
       const { data: create_rag_config_res, error: create_error } =
         await client.POST(
           "/api/projects/{project_id}/rag_configs/create_rag_config",
@@ -398,7 +391,11 @@
               chunker_config_id: selected_chunker_config_id,
               embedding_config_id: selected_embedding_config_id,
               vector_store_config_id: selected_vector_store_config_id,
-              reranker_config_id: selected_reranker_config_id,
+              reranker_config_id:
+                selected_reranker_config_id &&
+                selected_reranker_config_id !== "create_new"
+                  ? selected_reranker_config_id
+                  : null,
               tags: selected_tags.length > 0 ? selected_tags : null,
             },
           },
@@ -755,7 +752,8 @@
             fancy_select_options={reranker_options}
             bind:value={selected_reranker_config_id}
             inputType="fancy_select"
-            empty_label="None"
+            empty_label="No Reranker"
+            optional={true}
           />
         </div>
       </div>

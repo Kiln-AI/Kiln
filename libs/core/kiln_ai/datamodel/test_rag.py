@@ -31,21 +31,6 @@ def sample_rag_config_data():
     }
 
 
-@pytest.fixture
-def sample_rag_config_with_reranker(mock_project):
-    return {
-        "name": "Test RAG Config",
-        "description": "A test RAG config for testing purposes",
-        "tool_name": "test_search_tool",
-        "tool_description": "A test search tool for document retrieval",
-        "extractor_config_id": "extractor123",
-        "chunker_config_id": "chunker456",
-        "embedding_config_id": "embedding789",
-        "vector_store_config_id": "vector_store123",
-        "reranker_config_id": "reranker123",
-    }
-
-
 def test_rag_config_valid_creation(sample_rag_config_data):
     """Test creating a RagConfig with all required fields."""
     rag_config = RagConfig(**sample_rag_config_data)
