@@ -55,6 +55,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
     ExtractorType,
     FileInfo,
+    LitellmExtractorConfigProperties,
     OutputFormat,
     get_kind_from_mime_type,
 )
@@ -489,8 +490,8 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The mimetypes to pass through to the extractor",
         default_factory=list,
     )
-    properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
-        default_factory=dict,
+    properties: LitellmExtractorConfigProperties = Field(
+        description="The properties of the extractor config, specific to the selected extractor_type.",
     )
 
     @model_validator(mode="after")
@@ -507,8 +508,9 @@ class CreateExtractorConfigRequest(BaseModel):
         )
 
         if model is None:
-            raise ValueError(
-                f"Model {self.model_name} not found in {self.model_provider_name}"
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {self.model_name} not found in {self.model_provider_name}",
             )
 
         if not model.supports_doc_extraction:
@@ -517,6 +519,19 @@ class CreateExtractorConfigRequest(BaseModel):
             )
 
         return self
+
+    def get_properties(self) -> LitellmExtractorConfigProperties:
+        match self.properties["extractor_type"]:
+            case ExtractorType.LITELLM:
+                return LitellmExtractorConfigProperties(
+                    extractor_type=ExtractorType.LITELLM,
+                    prompt_document=self.properties["prompt_document"],
+                    prompt_image=self.properties["prompt_image"],
+                    prompt_video=self.properties["prompt_video"],
+                    prompt_audio=self.properties["prompt_audio"],
+                )
+            case _:
+                raise_exhaustive_enum_error(self.properties["extractor_type"])
 
 
 class PatchDocumentRequest(BaseModel):
@@ -969,6 +984,8 @@ def connect_document_api(app: FastAPI):
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
 
+        properties = request.get_properties()
+
         extractor_config = ExtractorConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -977,8 +994,8 @@ def connect_document_api(app: FastAPI):
             model_name=request.model_name,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=ExtractorType.LITELLM,
-            properties=request.properties,
+            extractor_type=properties["extractor_type"],
+            properties=properties,
         )
         extractor_config.save_to_file()
 
