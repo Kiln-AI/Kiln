@@ -41,6 +41,8 @@ export type EvalProgress = components["schemas"]["EvalProgress"]
 export type RatingOption = components["schemas"]["RatingOption"]
 export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
 export type FinetuneDatasetInfo = components["schemas"]["FinetuneDatasetInfo"]
+export type FinetuneDatasetTagInfo =
+  components["schemas"]["FinetuneDatasetTagInfo"]
 export type StructuredOutputMode = components["schemas"]["StructuredOutputMode"]
 export type KilnDocument = components["schemas"]["Document"]
 export type KilnDocumentKind = components["schemas"]["Kind"]

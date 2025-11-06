@@ -1354,6 +1354,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetune Dataset Tags */
+        get: operations["finetune_dataset_tags_api_projects__project_id__tasks__task_id__finetune_dataset_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/download_dataset_jsonl": {
         parameters: {
             query?: never;
@@ -8231,6 +8248,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FinetuneDatasetInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finetune_dataset_tags_api_projects__project_id__tasks__task_id__finetune_dataset_tags_get: {
+        parameters: {
+            query?: {
+                tool_names?: string[] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinetuneDatasetTagInfo"][];
                 };
             };
             /** @description Validation Error */

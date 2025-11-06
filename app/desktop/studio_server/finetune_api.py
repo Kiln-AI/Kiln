@@ -1,9 +1,9 @@
 import logging
 from enum import Enum
-from typing import Dict
+from typing import Annotated, Dict
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
@@ -176,6 +176,68 @@ def finetune_from_id(project_id: str, task_id: str, finetune_id: str) -> Finetun
     return finetune
 
 
+def compute_finetune_tag_info(
+    task: Task, tool_filter: list[str] | None = None
+) -> list[FinetuneDatasetTagInfo]:
+    """
+    Compute finetune tag counts with quality filters, optionally filtering by tools.
+
+    Args:
+        task: The task to analyze
+        tool_filter: Optional list of tool IDs to filter by. Only runs with exactly these tools will be included.
+
+    Returns:
+        List of FinetuneDatasetTagInfo with counts for each fine_tune tag
+    """
+    finetune_tag_counts: Dict[str, int] = {}
+    reasoning_count: Dict[str, int] = {}
+    high_quality_count: Dict[str, int] = {}
+    reasoning_and_high_quality_count: Dict[str, int] = {}
+
+    required_tools_set = set(tool_filter) if tool_filter else None
+
+    for sample in task.runs(readonly=True):
+        # filter by tools if provided
+        if required_tools_set is not None:
+            run_tools_set: set[str] = set()
+            if (
+                sample.output.source
+                and sample.output.source.run_config
+                and sample.output.source.run_config.tools_config
+            ):
+                run_tools_set = set(sample.output.source.run_config.tools_config.tools)
+
+            if run_tools_set != required_tools_set:
+                continue
+
+        for tag in sample.tags:
+            if tag.startswith("fine_tune"):
+                finetune_tag_counts[tag] = finetune_tag_counts.get(tag, 0) + 1
+                is_reasoning = ThinkingModelDatasetFilter(sample)
+                is_high_quality = HighRatingDatasetFilter(sample)
+                if is_reasoning:
+                    reasoning_count[tag] = reasoning_count.get(tag, 0) + 1
+                if is_high_quality:
+                    high_quality_count[tag] = high_quality_count.get(tag, 0) + 1
+                if is_reasoning and is_high_quality:
+                    reasoning_and_high_quality_count[tag] = (
+                        reasoning_and_high_quality_count.get(tag, 0) + 1
+                    )
+
+    return [
+        FinetuneDatasetTagInfo(
+            tag=tag,
+            count=count,
+            reasoning_count=reasoning_count.get(tag, 0),
+            high_quality_count=high_quality_count.get(tag, 0),
+            reasoning_and_high_quality_count=reasoning_and_high_quality_count.get(
+                tag, 0
+            ),
+        )
+        for tag, count in finetune_tag_counts.items()
+    ]
+
+
 def connect_fine_tune_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
     async def dataset_splits(project_id: str, task_id: str) -> list[DatasetSplit]:
@@ -298,24 +360,7 @@ def connect_fine_tune_api(app: FastAPI):
         existing_datasets = task.dataset_splits()
         existing_finetunes = task.finetunes()
 
-        finetune_tag_counts: Dict[str, int] = {}
-        reasoning_count: Dict[str, int] = {}
-        high_quality_count: Dict[str, int] = {}
-        reasoning_and_high_quality_count: Dict[str, int] = {}
-        for sample in task.runs(readonly=True):
-            for tag in sample.tags:
-                if tag.startswith("fine_tune"):
-                    finetune_tag_counts[tag] = finetune_tag_counts.get(tag, 0) + 1
-                    is_reasoning = ThinkingModelDatasetFilter(sample)
-                    is_high_quality = HighRatingDatasetFilter(sample)
-                    if is_reasoning:
-                        reasoning_count[tag] = reasoning_count.get(tag, 0) + 1
-                    if is_high_quality:
-                        high_quality_count[tag] = high_quality_count.get(tag, 0) + 1
-                    if is_reasoning and is_high_quality:
-                        reasoning_and_high_quality_count[tag] = (
-                            reasoning_and_high_quality_count.get(tag, 0) + 1
-                        )
+        finetune_tags = compute_finetune_tag_info(task)
 
         # compute tool info for each dataset split
         tool_info_by_name = {}
@@ -325,20 +370,18 @@ def connect_fine_tune_api(app: FastAPI):
         return FinetuneDatasetInfo(
             existing_datasets=existing_datasets,
             existing_finetunes=existing_finetunes,
-            finetune_tags=[
-                FinetuneDatasetTagInfo(
-                    tag=tag,
-                    count=count,
-                    reasoning_count=reasoning_count.get(tag, 0),
-                    high_quality_count=high_quality_count.get(tag, 0),
-                    reasoning_and_high_quality_count=reasoning_and_high_quality_count.get(
-                        tag, 0
-                    ),
-                )
-                for tag, count in finetune_tag_counts.items()
-            ],
+            finetune_tags=finetune_tags,
             tool_info_by_name=tool_info_by_name,
         )
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags")
+    async def finetune_dataset_tags(
+        project_id: str,
+        task_id: str,
+        tool_names: Annotated[list[str] | None, Query()] = None,
+    ) -> list[FinetuneDatasetTagInfo]:
+        task = task_from_id(project_id, task_id)
+        return compute_finetune_tag_info(task, tool_filter=tool_names)
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
     async def create_dataset_split(

@@ -35,6 +35,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
 from pydantic import BaseModel
 
 from app.desktop.studio_server.finetune_api import (
@@ -42,6 +43,7 @@ from app.desktop.studio_server.finetune_api import (
     CreateFinetuneRequest,
     DatasetSplitType,
     FinetuneProviderModel,
+    compute_finetune_tag_info,
     connect_fine_tune_api,
     data_strategies_from_finetune_id,
     fetch_fireworks_finetune_models,
@@ -1708,3 +1710,169 @@ def test_finetune_dataset_info_no_datasets_or_finetunes(
     assert len(data["tool_info_by_name"]) == 0
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
+
+
+@pytest.fixture
+def task_with_tools(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="This is a test instruction",
+        description="This is a test task",
+        parent=project,
+    )
+    task.save_to_file()
+
+    runs = [
+        TaskRun(
+            id="run_with_tool_a",
+            name="Run with tool A",
+            parent=task,
+            tags=["fine_tune_tools"],
+            input="Test input with tool A",
+            input_source={"type": "human", "properties": {"created_by": "user1"}},
+            output=TaskOutput(
+                output="Test output A",
+                source={
+                    "type": "synthetic",
+                    "properties": {
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                    "run_config": RunConfigProperties(
+                        model_name="gpt-4",
+                        model_provider_name="openai",
+                        prompt_id="simple_prompt_builder",
+                        structured_output_mode="default",
+                        tools_config=ToolsRunConfig(
+                            tools=["mcp::remote::server_a::tool_a"]
+                        ),
+                    ),
+                },
+            ),
+        ),
+        TaskRun(
+            id="run_with_tool_a_b",
+            name="Run with tool A and B",
+            parent=task,
+            tags=["fine_tune_tools"],
+            input="Test input with tool A and B",
+            input_source={"type": "human", "properties": {"created_by": "user2"}},
+            output=TaskOutput(
+                output="Test output AB",
+                source={
+                    "type": "synthetic",
+                    "properties": {
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                    "run_config": RunConfigProperties(
+                        model_name="gpt-4",
+                        model_provider_name="openai",
+                        prompt_id="simple_prompt_builder",
+                        structured_output_mode="default",
+                        tools_config=ToolsRunConfig(
+                            tools=[
+                                "mcp::remote::server_a::tool_a",
+                                "mcp::remote::server_b::tool_b",
+                            ]
+                        ),
+                    ),
+                },
+            ),
+        ),
+        TaskRun(
+            id="run_no_tools",
+            name="Run without tools",
+            parent=task,
+            tags=["fine_tune_tools"],
+            input="Test input no tools",
+            input_source={"type": "human", "properties": {"created_by": "user3"}},
+            output=TaskOutput(
+                output="Test output no tools",
+                source={
+                    "type": "synthetic",
+                    "properties": {
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                },
+            ),
+        ),
+    ]
+    for run in runs:
+        run.save_to_file()
+
+    return task
+
+
+@pytest.mark.parametrize(
+    "tool_filter, expected_count",
+    [
+        (None, 3),
+        (["mcp::remote::server_a::tool_a"], 1),
+        (["mcp::remote::server_a::tool_a", "mcp::remote::server_b::tool_b"], 1),
+        (["mcp::remote::server_x::tool_x"], 0),
+    ],
+)
+def test_compute_finetune_tag_info(task_with_tools, tool_filter, expected_count):
+    result = compute_finetune_tag_info(task_with_tools, tool_filter=tool_filter)
+
+    if expected_count == 0:
+        assert len(result) == 0
+    else:
+        assert len(result) == 1
+        assert result[0].tag == "fine_tune_tools"
+        assert result[0].count == expected_count
+
+
+def test_finetune_dataset_tags_api(client, mock_task_from_id_disk_backed):
+    with patch(
+        "app.desktop.studio_server.finetune_api.compute_finetune_tag_info"
+    ) as mock_compute:
+        mock_compute.return_value = []
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/finetune_dataset_tags"
+        )
+
+        assert response.status_code == 200
+        tags = response.json()
+        assert isinstance(tags, list)
+
+        mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
+        mock_compute.assert_called_once_with(
+            mock_task_from_id_disk_backed.return_value, tool_filter=None
+        )
+
+
+def test_finetune_dataset_tags_api_with_tool_filter(
+    client, mock_task_from_id_disk_backed
+):
+    with patch(
+        "app.desktop.studio_server.finetune_api.compute_finetune_tag_info"
+    ) as mock_compute:
+        mock_compute.return_value = []
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/finetune_dataset_tags",
+            params={"tool_names": ["tool1", "tool2"]},
+        )
+
+        assert response.status_code == 200
+        tags = response.json()
+        assert isinstance(tags, list)
+
+        mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
+        mock_compute.assert_called_once_with(
+            mock_task_from_id_disk_backed.return_value, tool_filter=["tool1", "tool2"]
+        )

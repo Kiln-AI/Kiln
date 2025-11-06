@@ -2,14 +2,17 @@
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type { FinetuneDatasetInfo } from "$lib/types"
+  import type {
+    DatasetSplit,
+    FinetuneDatasetInfo,
+    FinetuneDatasetTagInfo,
+  } from "$lib/types"
   import OptionList from "$lib/ui/option_list.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { goto } from "$app/navigation"
-  import type { DatasetSplit } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
@@ -17,6 +20,7 @@
   import ExistingDatasetButton from "./existing_dataset_button.svelte"
 
   let finetune_dataset_info: FinetuneDatasetInfo | null = null
+  let filtered_tags: FinetuneDatasetTagInfo[] = []
   let loading = true
   let error: KilnError | null = null
   let valid_datasets: DatasetSplit[] = []
@@ -127,6 +131,7 @@
         throw new Error("Invalid response from server")
       }
       finetune_dataset_info = finetune_dataset_info_response
+      filtered_tags = finetune_dataset_info_response.finetune_tags
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError("Could not load fine-tune dataset info.", null)
@@ -138,21 +143,53 @@
     }
   }
 
+  async function load_filtered_tags() {
+    try {
+      if (!project_id || !task_id) {
+        return
+      }
+
+      const { data: filtered_tags_response, error: get_error } =
+        await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags",
+          {
+            params: {
+              path: {
+                project_id,
+                task_id,
+              },
+              query: {
+                tool_names: required_tools.length > 0 ? required_tools : null,
+              },
+            },
+          },
+        )
+      if (get_error) {
+        throw get_error
+      }
+      if (filtered_tags_response) {
+        filtered_tags = filtered_tags_response
+      }
+    } catch (e) {
+      console.error("Error loading filtered tags:", e)
+    }
+  }
+
   $: tag_select_options = [
     {
       label: "Dataset Tags",
       options:
-        finetune_dataset_info?.finetune_tags?.map((tag) => ({
+        filtered_tags?.map((tag) => ({
           label: tag.tag,
           value: tag.tag,
-          description: `The tag '${tag.tag}' has ${tag.count} samples.`,
+          description: `The tag '${tag.tag}' has ${tag.count} samples${required_tools.length > 0 ? " matching the selected tools" : ""}.`,
         })) || [],
     },
   ]
 
   $: show_existing_dataset_option =
     finetune_dataset_info?.existing_finetunes.length
-  $: show_new_dataset_option = finetune_dataset_info?.finetune_tags.length
+  $: show_new_dataset_option = !!finetune_dataset_info
   $: can_select_dataset =
     show_existing_dataset_option || show_new_dataset_option
   $: top_options = [
@@ -188,10 +225,11 @@
       : []),
   ]
 
-  function select_top_option(option: string) {
+  async function select_top_option(option: string) {
     if (option === "new_dataset") {
-      if (finetune_dataset_info?.finetune_tags.length === 1) {
-        dataset_tag = finetune_dataset_info?.finetune_tags[0].tag
+      await load_filtered_tags()
+      if (filtered_tags.length === 1) {
+        dataset_tag = filtered_tags[0].tag
       }
       create_dataset_dialog?.show()
     } else if (option === "add") {
@@ -207,7 +245,7 @@
 
   let new_dataset_split = "train_val"
   let dataset_tag: string | null = null
-  $: selected_dataset_tag_data = finetune_dataset_info?.finetune_tags.find(
+  $: selected_dataset_tag_data = filtered_tags.find(
     (t) => t.tag === dataset_tag,
   )
   let create_dataset_split_error: KilnError | null = null
