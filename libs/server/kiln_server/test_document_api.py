@@ -3255,8 +3255,13 @@ async def test_search_rag_config_no_results(client, mock_project, mock_rag_confi
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.document_api.tool_from_id") as mock_tool_from_id,
     ):
         mock_project_from_id.return_value = mock_project
+
+        mock_rag_tool = AsyncMock(spec=RagTool)
+        mock_rag_tool.search.return_value = []
+        mock_tool_from_id.return_value = mock_rag_tool
 
         response = client.post(
             f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
