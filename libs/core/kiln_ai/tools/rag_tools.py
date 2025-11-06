@@ -191,12 +191,7 @@ class RagTool(KilnToolInterface):
 
         return reranked_search_results
 
-    async def run(
-        self, context: ToolCallContext | None = None, **kwargs
-    ) -> ToolCallResult:
-        kwargs = RagParams(**kwargs)
-        query = kwargs["query"]
-
+    async def search(self, query: str) -> List[SearchResult]:
         _, embedding_adapter = self.embedding
 
         vector_store_adapter = await self.vector_store()
@@ -225,8 +220,17 @@ class RagTool(KilnToolInterface):
 
         if self.reranker is not None:
             reranked_search_results = await self.rerank(search_results, query)
-            search_results_as_text = format_search_results(reranked_search_results)
-        else:
-            search_results_as_text = format_search_results(search_results)
+            return reranked_search_results
 
-        return ToolCallResult(output=search_results_as_text)
+        return search_results
+
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
+        kwargs = RagParams(**kwargs)
+        query = kwargs["query"]
+
+        search_results = await self.search(query)
+        return ToolCallResult(
+            output=format_search_results(search_results),
+        )

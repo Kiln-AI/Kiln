@@ -370,8 +370,10 @@ class TestRagTool:
             }
             assert definition == expected_definition
 
-    async def test_rag_tool_run_vector_store_type(self, mock_rag_config, mock_project):
-        """Test RagTool.run() with LANCE_DB_VECTOR store type (embedding needed)."""
+    async def test_rag_tool_search_vector_store_type(
+        self, mock_rag_config, mock_project
+    ):
+        """Test RagTool.search() with LANCE_DB_VECTOR store type (embedding needed)."""
         mock_rag_config.parent_project.return_value = mock_project
 
         # Mock search results
@@ -427,16 +429,11 @@ class TestRagTool:
 
             tool = RagTool("tool_123", mock_rag_config)
 
-            # Run the tool
-            result = await tool.run(context=None, query="test query")
+            # Search with the tool
+            result = await tool.search("test query")
 
-            # Verify the result format
-            expected_result = (
-                "[document_id: doc1, chunk_idx: 0]\nTest content 1\n\n"
-                "\n=========\n"
-                "[document_id: doc2, chunk_idx: 1]\nTest content 2\n\n"
-            )
-            assert result.output == expected_result
+            # Verify search results are returned
+            assert result == search_results
 
             # Verify embedding generation was called
             mock_embedding_adapter.generate_embeddings.assert_called_once_with(
@@ -454,8 +451,10 @@ class TestRagTool:
                 0.4,
             ]  # Embedding provided for VECTOR type
 
-    async def test_rag_tool_run_hybrid_store_type(self, mock_rag_config, mock_project):
-        """Test RagTool.run() with LANCE_DB_HYBRID store type (embedding needed)."""
+    async def test_rag_tool_search_hybrid_store_type(
+        self, mock_rag_config, mock_project
+    ):
+        """Test RagTool.search() with LANCE_DB_HYBRID store type (embedding needed)."""
         mock_rag_config.parent_project.return_value = mock_project
 
         # Mock embedding result
@@ -507,8 +506,11 @@ class TestRagTool:
 
             tool = RagTool("tool_123", mock_rag_config)
 
-            # Run the tool
-            result = await tool.run(context=None, query="hybrid query")
+            # Search with the tool
+            result = await tool.search("hybrid query")
+
+            # Verify search results are returned
+            assert result == search_results
 
             # Verify embedding generation was called
             mock_embedding_adapter.generate_embeddings.assert_called_once_with(
@@ -521,14 +523,8 @@ class TestRagTool:
             assert search_query.query_string == "hybrid query"
             assert search_query.query_embedding == [0.1, 0.2, 0.3, 0.4]
 
-            # Verify result
-            expected_result = (
-                "[document_id: doc1, chunk_idx: 0]\nHybrid search result\n\n"
-            )
-            assert result.output == expected_result
-
-    async def test_rag_tool_run_fts_store_type(self, mock_rag_config, mock_project):
-        """Test RagTool.run() with LANCE_DB_FTS store type (no embedding needed)."""
+    async def test_rag_tool_search_fts_store_type(self, mock_rag_config, mock_project):
+        """Test RagTool.search() with LANCE_DB_FTS store type (no embedding needed)."""
         mock_rag_config.parent_project.return_value = mock_project
 
         # Mock search results
@@ -573,14 +569,11 @@ class TestRagTool:
 
             tool = RagTool("tool_123", mock_rag_config)
 
-            # Run the tool
-            result = await tool.run(context=None, query="fts query")
+            # Search with the tool
+            result = await tool.search("fts query")
 
-            # Verify the result format
-            expected_result = (
-                "[document_id: doc_fts, chunk_idx: 2]\nFTS search result\n\n"
-            )
-            assert result.output == expected_result
+            # Verify search results are returned
+            assert result == search_results
 
             # Verify embedding generation was NOT called for FTS
             mock_embedding_adapter.generate_embeddings.assert_not_called()
@@ -591,10 +584,10 @@ class TestRagTool:
             assert search_query.query_string == "fts query"
             assert search_query.query_embedding is None  # No embedding for FTS type
 
-    async def test_rag_tool_run_no_embeddings_generated(
+    async def test_rag_tool_search_no_embeddings_generated(
         self, mock_rag_config, mock_project
     ):
-        """Test RagTool.run() when no embeddings are generated."""
+        """Test RagTool.search() when no embeddings are generated."""
         mock_rag_config.parent_project.return_value = mock_project
 
         # Mock empty embedding result
@@ -635,9 +628,9 @@ class TestRagTool:
 
             tool = RagTool("tool_123", mock_rag_config)
 
-            # Run the tool and expect an error
+            # Search and expect an error
             with pytest.raises(ValueError, match="No embeddings generated"):
-                await tool.run(context=None, query="query with no embeddings")
+                await tool.search("query with no embeddings")
 
     async def test_rag_tool_run_empty_search_results(
         self, mock_rag_config, mock_project
@@ -647,38 +640,10 @@ class TestRagTool:
 
         with (
             patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
-            patch("kiln_ai.tools.rag_tools.EmbeddingConfig") as mock_embed_config_class,
-            patch(
-                "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
-            ) as mock_adapter_factory,
-            patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
-                new_callable=AsyncMock,
-            ) as mock_vs_adapter_factory,
+            patch.object(RagTool, "search", new_callable=AsyncMock) as mock_search,
         ):
-            # Setup mocks
-            mock_vector_store_config = Mock()
-            mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-            mock_vs_config_class.from_id_and_parent_path.return_value = (
-                mock_vector_store_config
-            )
-
-            mock_embedding_config = Mock()
-            mock_embed_config_class.from_id_and_parent_path.return_value = (
-                mock_embedding_config
-            )
-
-            mock_embedding_adapter = AsyncMock()
-            mock_embedding_result = Mock()
-            mock_embedding_result.embeddings = [Mock(vector=[0.1, 0.2, 0.3, 0.4])]
-            mock_embedding_adapter.generate_embeddings.return_value = (
-                mock_embedding_result
-            )
-            mock_adapter_factory.return_value = mock_embedding_adapter
-
-            mock_vector_store_adapter = AsyncMock()
-            mock_vector_store_adapter.search.return_value = []  # Empty results
-            mock_vs_adapter_factory.return_value = mock_vector_store_adapter
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_search.return_value = []  # Empty results
 
             tool = RagTool("tool_123", mock_rag_config)
 
@@ -687,6 +652,7 @@ class TestRagTool:
 
             # Should return empty string for no results
             assert result.output == ""
+            mock_search.assert_called_once_with("query with no results")
 
     async def test_rag_tool_run_with_context_is_accepted(
         self, mock_rag_config, mock_project
@@ -706,38 +672,10 @@ class TestRagTool:
 
         with (
             patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
-            patch("kiln_ai.tools.rag_tools.EmbeddingConfig") as mock_embed_config_class,
-            patch(
-                "kiln_ai.tools.rag_tools.embedding_adapter_from_type"
-            ) as mock_adapter_factory,
-            patch(
-                "kiln_ai.tools.rag_tools.vector_store_adapter_for_config",
-                new_callable=AsyncMock,
-            ) as mock_vs_adapter_factory,
+            patch.object(RagTool, "search", new_callable=AsyncMock) as mock_search,
         ):
-            # VECTOR type → embedding path taken
-            mock_vector_store_config = Mock()
-            mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-            mock_vs_config_class.from_id_and_parent_path.return_value = (
-                mock_vector_store_config
-            )
-
-            mock_embedding_config = Mock()
-            mock_embed_config_class.from_id_and_parent_path.return_value = (
-                mock_embedding_config
-            )
-
-            mock_embedding_adapter = AsyncMock()
-            mock_embedding_result = Mock()
-            mock_embedding_result.embeddings = [Mock(vector=[1.0])]
-            mock_embedding_adapter.generate_embeddings.return_value = (
-                mock_embedding_result
-            )
-            mock_adapter_factory.return_value = mock_embedding_adapter
-
-            mock_vector_store_adapter = AsyncMock()
-            mock_vector_store_adapter.search.return_value = search_results
-            mock_vs_adapter_factory.return_value = mock_vector_store_adapter
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_search.return_value = search_results
 
             tool = RagTool("tool_ctx", mock_rag_config)
 
@@ -750,15 +688,12 @@ class TestRagTool:
             )
 
             # Normal behavior still occurs
-            mock_embedding_adapter.generate_embeddings.assert_called_once_with(
-                ["with context"]
-            )
-            mock_vector_store_adapter.search.assert_called_once()
+            mock_search.assert_called_once_with("with context")
 
     async def test_rag_tool_run_missing_query_raises(
         self, mock_rag_config, mock_project
     ):
-        """Ensure RagTool.run enforces the 'if not query' guard."""
+        """Ensure RagTool.run enforces the query parameter."""
         mock_rag_config.parent_project.return_value = mock_project
 
         with (
@@ -769,6 +704,49 @@ class TestRagTool:
 
             with pytest.raises(KeyError, match="query"):
                 await tool.run(context=None)
+
+    async def test_rag_tool_run_calls_search_and_formats(
+        self, mock_rag_config, mock_project
+    ):
+        """Test RagTool.run() calls search and formats results correctly."""
+        mock_rag_config.parent_project.return_value = mock_project
+
+        search_results = [
+            SearchResult(
+                document_id="doc1",
+                chunk_idx=0,
+                chunk_text="First result",
+                similarity=0.95,
+            ),
+            SearchResult(
+                document_id="doc2",
+                chunk_idx=1,
+                chunk_text="Second result",
+                similarity=0.85,
+            ),
+        ]
+
+        with (
+            patch("kiln_ai.tools.rag_tools.VectorStoreConfig") as mock_vs_config_class,
+            patch.object(RagTool, "search", new_callable=AsyncMock) as mock_search,
+        ):
+            mock_vs_config_class.from_id_and_parent_path.return_value = Mock()
+            mock_search.return_value = search_results
+
+            tool = RagTool("tool_123", mock_rag_config)
+
+            result = await tool.run(context=None, query="test query")
+
+            # Verify search was called with the query
+            mock_search.assert_called_once_with("test query")
+
+            # Verify results are formatted correctly
+            expected_result = (
+                "[document_id: doc1, chunk_idx: 0]\nFirst result\n\n"
+                "\n=========\n"
+                "[document_id: doc2, chunk_idx: 1]\nSecond result\n\n"
+            )
+            assert result.output == expected_result
 
 
 class TestRagToolNameAndDescription:
@@ -1218,10 +1196,10 @@ class TestRagToolReranking:
             assert result[2].chunk_idx == 0
             assert result[2].similarity == 0.75
 
-    async def test_rag_tool_run_with_reranking(
+    async def test_rag_tool_search_with_reranking(
         self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
     ):
-        """Test RagTool.run() with reranking enabled."""
+        """Test RagTool.search() with reranking enabled."""
         mock_rag_config_with_reranker.parent_project.return_value = mock_project
 
         # Initial search results
@@ -1307,24 +1285,25 @@ class TestRagToolReranking:
 
             tool = RagTool("tool_rerank", mock_rag_config_with_reranker)
 
-            # Run the tool
-            result = await tool.run(context=None, query="rerank query")
+            # Search with the tool
+            result = await tool.search("rerank query")
 
             # Verify reranker was called
             mock_reranker_adapter.rerank.assert_called_once()
 
             # Verify results are in reranked order
-            expected_result = (
-                "[document_id: doc2, chunk_idx: 1]\nResult two\n\n"
-                "\n=========\n"
-                "[document_id: doc1, chunk_idx: 0]\nResult one\n\n"
-            )
-            assert result.output == expected_result
+            assert len(result) == 2
+            assert result[0].document_id == "doc2"
+            assert result[0].chunk_idx == 1
+            assert result[0].similarity == 0.98
+            assert result[1].document_id == "doc1"
+            assert result[1].chunk_idx == 0
+            assert result[1].similarity == 0.65
 
-    async def test_rag_tool_run_without_reranking(
+    async def test_rag_tool_search_without_reranking(
         self, mock_rag_config_without_reranker, mock_project
     ):
-        """Test RagTool.run() without reranking uses original search order."""
+        """Test RagTool.search() without reranking uses original search order."""
         mock_rag_config_without_reranker.parent_project.return_value = mock_project
 
         search_results = [
@@ -1378,16 +1357,11 @@ class TestRagToolReranking:
 
             tool = RagTool("tool_no_rerank", mock_rag_config_without_reranker)
 
-            # Run the tool
-            result = await tool.run(context=None, query="no rerank query")
+            # Search with the tool
+            result = await tool.search("no rerank query")
 
             # Verify results are in original order
-            expected_result = (
-                "[document_id: doc1, chunk_idx: 0]\nResult one\n\n"
-                "\n=========\n"
-                "[document_id: doc2, chunk_idx: 1]\nResult two\n\n"
-            )
-            assert result.output == expected_result
+            assert result == search_results
 
     async def test_rag_tool_rerank_empty_results(
         self, mock_rag_config_with_reranker, mock_project, mock_reranker_config
