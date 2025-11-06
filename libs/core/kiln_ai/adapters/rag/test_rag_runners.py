@@ -475,10 +475,10 @@ class TestExecuteEmbeddingJob:
         )
         mock_embedding_adapter = MagicMock(spec=BaseEmbeddingAdapter)
 
-        with pytest.raises(
-            ValueError, match="Failed to load chunks for chunked document: 123"
-        ):
-            await execute_embedding_job(job, mock_embedding_adapter)
+        # we should not raise because no chunks may be the legitimate result of the previous step
+        # e.g. an empty document; a document whose content was intentionally excluded by the extraction prompt
+        result = await execute_embedding_job(job, mock_embedding_adapter)
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_execute_embedding_job_no_embedding_result_raises_error(
