@@ -1,7 +1,7 @@
 import re
 from typing import Annotated, Any, TypeVar, Union
 
-from pydantic import BeforeValidator
+from pydantic import AfterValidator, BeforeValidator
 
 T = TypeVar("T")
 
@@ -88,3 +88,12 @@ def tool_name_validator(name: str) -> str:
 
 
 ToolNameString = Annotated[str, BeforeValidator(tool_name_validator)]
+
+
+def string_not_empty(s: str) -> str:
+    if s == "":
+        raise ValueError("String cannot be empty.")
+    return s
+
+
+NonEmptyString = Annotated[str, AfterValidator(string_not_empty)]
