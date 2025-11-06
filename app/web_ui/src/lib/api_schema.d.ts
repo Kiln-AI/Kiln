@@ -2473,12 +2473,8 @@ export interface components {
              * @description The mimetypes to pass through to the extractor
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean | {
-                    [key: string]: string;
-                } | null;
-            };
+            /** @description The properties of the extractor config, specific to the selected extractor_type. */
+            properties: components["schemas"]["LitellmExtractorConfigProperties"];
         };
         /**
          * CreateFinetuneRequest
@@ -3494,11 +3490,7 @@ export interface components {
              * Properties
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
-            properties?: {
-                [key: string]: string | number | boolean | {
-                    [key: string]: string;
-                } | null;
-            };
+            properties: components["schemas"]["LitellmExtractorConfigProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -4014,6 +4006,22 @@ export interface components {
              * @description The number of results to return from the vector store.
              */
             similarity_top_k: number;
+        };
+        /** LitellmExtractorConfigProperties */
+        LitellmExtractorConfigProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            extractor_type: "litellm";
+            /** Prompt Document */
+            prompt_document: string;
+            /** Prompt Image */
+            prompt_image: string;
+            /** Prompt Video */
+            prompt_video: string;
+            /** Prompt Audio */
+            prompt_audio: string;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
