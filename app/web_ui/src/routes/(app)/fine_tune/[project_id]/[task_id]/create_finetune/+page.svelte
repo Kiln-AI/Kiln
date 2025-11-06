@@ -31,6 +31,7 @@
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 
   let finetune_description = ""
   let finetune_name = ""
@@ -81,7 +82,7 @@
 
   let selected_tools: string[] = []
 
-  let available_model_select: [string, string][] = []
+  let available_model_select: OptionGroup[] = []
 
   let selected_dataset: DatasetSplit | null = null
   $: selecting_thinking_dataset =
@@ -115,78 +116,103 @@
       return
     }
     available_model_select = []
-    available_model_select.push([
-      disabled_header,
-      "Select a model to fine-tune",
-    ])
 
-    // Collect models without tool calling support for a separate section
-    const models_without_tool_support: [string, string][] = []
+    const models_with_tools: Option[] = []
+    const models_without_tools: Option[] = []
+    const disabled_providers: Option[] = []
 
-    // Add models with tool calling support first
     for (const provider of models) {
       for (const model of provider.models) {
         const model_key =
           (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id
-        const model_label =
-          provider.name +
-          ": " +
-          model.name +
-          (provider.enabled ? "" : " --- Requires API Key in Settings")
+        const model_label = provider.name + ": " + model.name
 
-        if (!model.supports_function_calling) {
-          models_without_tool_support.push([model_key, model_label])
+        const option: Option = {
+          value: model_key,
+          label: model_label,
+        }
+
+        if (!provider.enabled) {
+          // if the provider is disabled, add a badge
+          option.badge = "Requires API Key"
+          option.badge_color = "primary"
+          option.disabled = true
+          disabled_providers.push(option)
+        } else if (!model.supports_function_calling) {
+          models_without_tools.push(option)
         } else {
-          available_model_select.push([model_key, model_label])
+          models_with_tools.push(option)
         }
       }
-      // Providers with zero models should still appear and be disabled. Logging in will typically load their models
+
       if (!provider.enabled && provider.models.length === 0) {
-        available_model_select.push([
-          "disabled_" + provider.id,
-          provider.name + " --- Requires API Key in Settings",
-        ])
+        disabled_providers.push({
+          value: "disabled_" + provider.id,
+          label: provider.name,
+          badge: "Requires API Key",
+          badge_color: "primary",
+          disabled: true,
+        })
       }
     }
 
-    // Add section for models without tool calling support
-    if (models_without_tool_support.length > 0) {
-      available_model_select.push([
-        disabled_header + "_tool_warning",
-        "--- Tool Calling Not Supported ---",
-      ])
-      available_model_select.push(...models_without_tool_support)
+    if (models_with_tools.length > 0) {
+      available_model_select.push({
+        label: "Models with Tool Calling Support",
+        options: models_with_tools,
+      })
     }
 
-    // Add download options
-    available_model_select.push([
-      "download_jsonl_msg",
-      "Download: OpenAI chat format (JSONL)",
-    ])
-    available_model_select.push([
-      "download_jsonl_json_schema_msg",
-      "Download: OpenAI chat format with JSON response (JSONL)",
-    ])
-    available_model_select.push([
-      "download_jsonl_toolcall",
-      "Download: OpenAI chat format with tool call response (JSONL)",
-    ])
-    available_model_select.push([
-      "download_huggingface_chat_template",
-      "Download: HuggingFace chat template (JSONL)",
-    ])
-    available_model_select.push([
-      "download_huggingface_chat_template_toolcall",
-      "Download: HuggingFace chat template with tool calls (JSONL)",
-    ])
-    available_model_select.push([
-      "download_vertex_gemini",
-      "Download: Google Vertex-AI Gemini format (JSONL)",
-    ])
+    if (models_without_tools.length > 0) {
+      available_model_select.push({
+        label: "Models without Tool Calling Support",
+        options: models_without_tools,
+      })
+    }
+
+    if (disabled_providers.length > 0) {
+      available_model_select.push({
+        label: "Requires API Key Configuration",
+        options: disabled_providers,
+      })
+    }
+
+    available_model_select.push({
+      label: "Download Dataset",
+      options: [
+        {
+          value: "download_jsonl_msg",
+          label: "OpenAI chat format (JSONL)",
+        },
+        {
+          value: "download_jsonl_json_schema_msg",
+          label: "OpenAI chat format with JSON response (JSONL)",
+        },
+        {
+          value: "download_jsonl_toolcall",
+          label: "OpenAI chat format with tool call response (JSONL)",
+        },
+        {
+          value: "download_huggingface_chat_template",
+          label: "HuggingFace chat template (JSONL)",
+        },
+        {
+          value: "download_huggingface_chat_template_toolcall",
+          label: "HuggingFace chat template with tool calls (JSONL)",
+        },
+        {
+          value: "download_vertex_gemini",
+          label: "Google Vertex-AI Gemini format (JSONL)",
+        },
+      ],
+    })
 
     // Check if the model provider is in the available model select
     // If not, reset to disabled header. The list can change over time.
-    if (!available_model_select.find((m) => m[0] === $model_provider)) {
+    const all_values = available_model_select.flatMap((g) =>
+      g.options.map((o) => o.value),
+    )
+    if (!all_values.includes($model_provider)) {
       $model_provider = disabled_header
     }
   }
@@ -552,9 +578,9 @@
             label="Model & Provider"
             description="Select which model to fine-tune. Alternatively, download a JSONL file to fine-tune using any infrastructure."
             info_description="Connect providers in settings for 1-click fine-tuning. Alternatively, download a JSONL file to fine-tune using any infrastructure, like Unsloth or Axolotl."
-            inputType="select"
+            inputType="fancy_select"
             id="provider"
-            select_options={available_model_select}
+            fancy_select_options={available_model_select}
             bind:value={$model_provider}
           />
           <button

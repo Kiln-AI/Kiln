@@ -89,6 +89,13 @@
 
   // Select a prompt
   function selectOption(option: unknown) {
+    // Check if this option is disabled
+    const flatOptions = options.flatMap((group) => group.options)
+    const optionObj = flatOptions.find((item) => item.value === option)
+    if (optionObj?.disabled) {
+      return
+    }
+
     if (multi_select) {
       // Deselect if already selected, select if not
       if (selected_values.includes(option)) {
@@ -628,12 +635,17 @@
                 aria-selected={multi_select
                   ? selected_values.includes(item.value)
                   : selected === item.value}
+                aria-disabled={item.disabled || false}
                 class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
-                  : 'hover:bg-transparent'}"
+                  : 'hover:bg-transparent'} {item.disabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''}"
                 on:mousedown={(event) => {
                   event.stopPropagation()
-                  selectOption(item.value)
+                  if (!item.disabled) {
+                    selectOption(item.value)
+                  }
                 }}
                 on:mouseenter={() => {
                   focusedIndex = overallIndex
