@@ -241,6 +241,7 @@ class RagConfigWithSubConfigs(BaseModel):
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
     vector_store_config: VectorStoreConfig
+    reranker_config: RerankerConfig | None
     tags: list[str] | None
 
 
@@ -270,6 +271,10 @@ class CreateRagConfigRequest(BaseModel):
     )
     vector_store_config_id: ID_TYPE = Field(
         description="The vector store config to use for the RAG workflow.",
+    )
+    reranker_config_id: ID_TYPE | None = Field(
+        description="The reranker config to use for the RAG workflow.",
+        default=None,
     )
     tags: list[str] | None = Field(
         description="List of document tags to filter by. If None, all documents in the project are used.",
@@ -1594,6 +1599,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Vector store config {request.vector_store_config_id} not found",
             )
 
+        reranker_config = None
+        has_reranker = request.reranker_config_id is not None
+        if has_reranker:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(request.reranker_config_id), project.path
+            )
+            if not reranker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reranker config {request.reranker_config_id} not found",
+                )
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1604,6 +1621,7 @@ def connect_document_api(app: FastAPI):
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
             vector_store_config_id=vector_store_config.id,
+            reranker_config_id=reranker_config.id if reranker_config else None,
             tags=request.tags,
         )
         rag_config.save_to_file()
@@ -1654,6 +1672,18 @@ def connect_document_api(app: FastAPI):
                     detail=f"Vector store config {rag_config.vector_store_config_id} not found",
                 )
 
+            reranker_config = None
+            has_reranker = rag_config.reranker_config_id is not None
+            if has_reranker:
+                reranker_config = RerankerConfig.from_id_and_parent_path(
+                    str(rag_config.reranker_config_id), project.path
+                )
+                if not reranker_config:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                    )
+
             rag_configs.append(
                 RagConfigWithSubConfigs(
                     id=rag_config.id,
@@ -1669,6 +1699,7 @@ def connect_document_api(app: FastAPI):
                     chunker_config=chunker_config,
                     embedding_config=embedding_config,
                     vector_store_config=vector_store_config,
+                    reranker_config=reranker_config,
                 )
             )
 
@@ -1717,6 +1748,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Vector store config {rag_config.vector_store_config_id} not found",
             )
 
+        reranker_config = None
+        has_reranker = rag_config.reranker_config_id is not None
+        if has_reranker:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(rag_config.reranker_config_id), project.path
+            )
+            if not reranker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                )
+
         return RagConfigWithSubConfigs(
             id=rag_config.id,
             name=rag_config.name,
@@ -1730,6 +1773,7 @@ def connect_document_api(app: FastAPI):
             chunker_config=chunker_config,
             embedding_config=embedding_config,
             vector_store_config=vector_store_config,
+            reranker_config=reranker_config,
             tags=rag_config.tags,
         )
 

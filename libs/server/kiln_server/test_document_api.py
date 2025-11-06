@@ -177,6 +177,21 @@ def mock_vector_store_config_hybrid(mock_project, tmp_path):
 
 
 @pytest.fixture
+def mock_reranker_config(mock_project):
+    reranker_config = RerankerConfig(
+        parent=mock_project,
+        name="Test Reranker",
+        description="Test reranker description",
+        top_n=5,
+        model_provider_name=ModelProviderName.together_ai,
+        model_name="llama_rank",
+        properties={"type": RerankerType.COHERE_COMPATIBLE},
+    )
+    reranker_config.save_to_file()
+    return reranker_config
+
+
+@pytest.fixture
 def mock_document(mock_project):
     project = mock_project
 
@@ -1360,6 +1375,7 @@ async def test_create_rag_config_success(
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
                 "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": None,
             },
         )
 
@@ -1889,6 +1905,180 @@ async def test_get_rag_config_not_found(client, mock_project):
 
     assert response.status_code == 404, response.text
     assert "RAG config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_create_rag_config_with_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config with Reranker",
+                "description": "Test RAG Config with reranker description",
+                "tool_name": "test_rerank_tool",
+                "tool_description": "A test search tool with reranking",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": mock_reranker_config.id,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test RAG Config with Reranker"
+    assert result["description"] == "Test RAG Config with reranker description"
+    assert result["tool_name"] == "test_rerank_tool"
+    assert result["tool_description"] == "A test search tool with reranking"
+    assert result["extractor_config_id"] is not None
+    assert result["chunker_config_id"] is not None
+    assert result["embedding_config_id"] is not None
+    assert result["vector_store_config_id"] is not None
+    assert result["reranker_config_id"] == mock_reranker_config.id
+
+
+@pytest.mark.asyncio
+async def test_create_rag_config_with_invalid_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config with Invalid Reranker",
+                "description": "Test RAG Config description",
+                "tool_name": "test_search_tool",
+                "tool_description": "A test search tool for invalid reranker testing",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": "fake_reranker_id",
+            },
+        )
+
+    assert response.status_code == 404
+    assert "fake_reranker_id not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_get_rag_config_with_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config with Reranker",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for getting config with reranker",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+        reranker_config_id=mock_reranker_config.id,
+    )
+    rag_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}"
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] == rag_config.id
+    assert result["name"] == rag_config.name
+    assert result["description"] == rag_config.description
+    assert result["extractor_config"]["id"] == rag_config.extractor_config_id
+    assert result["chunker_config"]["id"] == rag_config.chunker_config_id
+    assert result["embedding_config"]["id"] == rag_config.embedding_config_id
+    assert result["vector_store_config"]["id"] == rag_config.vector_store_config_id
+    assert result["reranker_config"] is not None
+    assert result["reranker_config"]["id"] == mock_reranker_config.id
+    assert result["reranker_config"]["name"] == mock_reranker_config.name
+    assert result["reranker_config"]["top_n"] == mock_reranker_config.top_n
+
+
+@pytest.mark.asyncio
+async def test_get_rag_configs_with_and_without_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+):
+    rag_configs = [
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config with Reranker",
+            description="Has reranker",
+            tool_name="test_search_tool_1",
+            tool_description="First test search tool",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
+            reranker_config_id=mock_reranker_config.id,
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config without Reranker",
+            description="No reranker",
+            tool_name="test_search_tool_2",
+            tool_description="Second test search tool",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
+            reranker_config_id=None,
+        ),
+    ]
+
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 2
+
+    result_by_name = {r["name"]: r for r in result}
+
+    with_reranker = result_by_name["Test RAG Config with Reranker"]
+    assert with_reranker["reranker_config"] is not None
+    assert with_reranker["reranker_config"]["id"] == mock_reranker_config.id
+
+    without_reranker = result_by_name["Test RAG Config without Reranker"]
+    assert without_reranker["reranker_config"] is None
 
 
 @pytest.mark.asyncio
