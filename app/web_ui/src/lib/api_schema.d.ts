@@ -2531,6 +2531,11 @@ export interface components {
              */
             vector_store_config_id: string | null;
             /**
+             * Reranker Config Id
+             * @description The reranker config to use for the RAG workflow.
+             */
+            reranker_config_id?: string | null;
+            /**
              * Tags
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
@@ -4392,6 +4397,11 @@ export interface components {
              */
             vector_store_config_id: string | null;
             /**
+             * Reranker Config Id
+             * @description The ID of the reranker config used to rerank the search results.
+             */
+            reranker_config_id?: string | null;
+            /**
              * Tags
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
@@ -4424,6 +4434,7 @@ export interface components {
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
             vector_store_config: components["schemas"]["VectorStoreConfig"];
+            reranker_config: components["schemas"]["RerankerConfig"] | null;
             /** Tags */
             tags: string[] | null;
         };

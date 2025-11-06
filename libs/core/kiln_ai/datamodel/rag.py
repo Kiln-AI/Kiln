@@ -49,6 +49,11 @@ class RagConfig(KilnParentedModel):
         description="The ID of the vector store config used to store the documents.",
     )
 
+    reranker_config_id: ID_TYPE | None = Field(
+        default=None,
+        description="The ID of the reranker config used to rerank the search results.",
+    )
+
     tags: list[str] | None = Field(
         default=None,
         description="List of document tags to filter by. If None, all documents in the project are used.",
