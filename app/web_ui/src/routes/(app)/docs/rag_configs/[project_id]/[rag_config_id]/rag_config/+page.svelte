@@ -537,6 +537,33 @@
                 },
               ]}
             />
+            {#if rag_config.reranker_config}
+              <PropertyList
+                title="Reranker"
+                properties={[
+                  {
+                    name: "Model Provider",
+                    value:
+                      rag_config.reranker_config.model_provider_name || "N/A",
+                  },
+                  {
+                    name: "Model",
+                    value: rag_config.reranker_config.model_name || "N/A",
+                  },
+                  {
+                    name: "Top K",
+                    value: String(rag_config.reranker_config.top_n || 5),
+                  },
+                ]}
+              />
+            {:else}
+              <div>
+                <div class="text-xl font-bold mb-1">Reranker</div>
+                <div class="flex flex-row flex-wrap gap-2 text-sm items-center">
+                  No reranker configured.
+                </div>
+              </div>
+            {/if}
             <div>
               <div class="text-xl font-bold mb-1">Documents</div>
               <div class="flex flex-row flex-wrap gap-2 text-sm items-center">

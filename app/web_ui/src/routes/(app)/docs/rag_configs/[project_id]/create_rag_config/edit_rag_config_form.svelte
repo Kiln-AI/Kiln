@@ -12,6 +12,7 @@
     ChunkerConfig,
     EmbeddingConfig,
     VectorStoreConfig,
+    RerankerConfig,
   } from "$lib/types"
   import { load_available_embedding_models } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -30,6 +31,7 @@
     build_chunker_options,
     build_embedding_options,
     build_extractor_options,
+    build_reranker_options,
     build_vector_store_options,
   } from "./options_groups"
   import TemplatePropertyOverview from "./template_property_overview.svelte"
@@ -39,6 +41,7 @@
     fixedWindowChunkerProperties,
     semanticChunkerProperties,
   } from "$lib/utils/properties_cast"
+  import CreateRerankerDialog from "./create_reranker_dialog.svelte"
 
   const dispatch = createEventDispatcher<{
     success: { rag_config_id: string }
@@ -60,29 +63,34 @@
   let show_create_chunker_dialog: Dialog | null = null
   let show_create_embedding_dialog: Dialog | null = null
   let show_create_vector_store_dialog: Dialog | null = null
+  let show_create_reranker_dialog: Dialog | null = null
 
   // Selected configs
   let selected_extractor_config_id: string | null = null
   let selected_chunker_config_id: string | null = null
   let selected_embedding_config_id: string | null = null
   let selected_vector_store_config_id: string | null = null
+  let selected_reranker_config_id: string | null = null
 
   // Data for dropdowns
   let extractor_configs: ExtractorConfig[] = []
   let chunker_configs: ChunkerConfig[] = []
   let embedding_configs: EmbeddingConfig[] = []
   let vector_store_configs: VectorStoreConfig[] = []
+  let reranker_configs: RerankerConfig[] = []
 
   let loading: boolean = false
   let loading_extractor_configs = false
   let loading_chunker_configs = false
   let loading_embedding_configs = false
   let loading_vector_store_configs = false
+  let loading_reranker_configs = false
   $: loading_subconfig_options =
     loading_extractor_configs ||
     loading_chunker_configs ||
     loading_embedding_configs ||
-    loading_vector_store_configs
+    loading_vector_store_configs ||
+    loading_reranker_configs
 
   // track which modal is currently open to disable the keyboard submit for other forms
   // otherwise keyboard shortcut will submit all the existing forms
@@ -91,10 +99,16 @@
     | "chunker"
     | "embedding"
     | "vector_store"
+    | "reranker"
     | null = null
 
   function handle_modal_open(
-    modal_type: "extractor" | "chunker" | "embedding" | "vector_store",
+    modal_type:
+      | "extractor"
+      | "chunker"
+      | "embedding"
+      | "vector_store"
+      | "reranker",
   ) {
     modal_opened = modal_type
   }
@@ -108,6 +122,7 @@
   $: chunker_options = build_chunker_options(chunker_configs)
   $: embedding_options = build_embedding_options(embedding_configs)
   $: vector_store_options = build_vector_store_options(vector_store_configs)
+  $: reranker_options = build_reranker_options(reranker_configs)
 
   // show the create extractor dialog when the user clicks the create new extractor button
   $: if (selected_extractor_config_id === "create_new") {
@@ -141,6 +156,13 @@
     show_create_vector_store_dialog?.close()
   }
 
+  $: if (selected_reranker_config_id === "create_new") {
+    show_create_reranker_dialog?.show()
+    handle_modal_open("reranker")
+  } else {
+    show_create_reranker_dialog?.close()
+  }
+
   function fill_out_form_from_rag_config(rag_config: RagConfigWithSubConfigs) {
     name = rag_config.name
     description = rag_config.description || ""
@@ -150,6 +172,7 @@
     selected_chunker_config_id = rag_config.chunker_config.id || null
     selected_embedding_config_id = rag_config.embedding_config.id || null
     selected_vector_store_config_id = rag_config.vector_store_config.id || null
+    selected_reranker_config_id = rag_config.reranker_config?.id || null
     selected_tags = rag_config.tags || []
   }
 
@@ -167,6 +190,7 @@
       loadChunkerConfigs(),
       loadEmbeddingConfigs(),
       loadVectorStoreConfigs(),
+      loadRerankerConfigs(),
     ])
 
     if (initial_rag_config) {
@@ -278,6 +302,32 @@
     }
   }
 
+  async function loadRerankerConfigs() {
+    try {
+      loading_reranker_configs = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/reranker_configs",
+        {
+          params: {
+            path: {
+              project_id,
+            },
+          },
+        },
+      )
+
+      if (fetch_error) {
+        throw fetch_error
+      }
+
+      reranker_configs = data || []
+    } catch (e) {
+      error = createKilnError(e)
+    } finally {
+      loading_reranker_configs = false
+    }
+  }
+
   /**
    * Save the rag config from the full form
    */
@@ -323,6 +373,13 @@
         throw new Error("Please select a search index configuration.")
       }
 
+      if (
+        !selected_reranker_config_id ||
+        selected_reranker_config_id === "create_new"
+      ) {
+        throw new Error("Please select a reranker configuration.")
+      }
+
       const { data: create_rag_config_res, error: create_error } =
         await client.POST(
           "/api/projects/{project_id}/rag_configs/create_rag_config",
@@ -341,6 +398,7 @@
               chunker_config_id: selected_chunker_config_id,
               embedding_config_id: selected_embedding_config_id,
               vector_store_config_id: selected_vector_store_config_id,
+              reranker_config_id: selected_reranker_config_id,
               tags: selected_tags.length > 0 ? selected_tags : null,
             },
           },
@@ -362,6 +420,8 @@
       let vector_store_type: string | undefined = undefined
       let breakpoint_percentile_threshold: unknown = undefined
       let buffer_size: unknown = undefined
+      let reranker_model: string | undefined = undefined
+      let reranker_top_n: number | undefined = undefined
       try {
         extractor_model = extractor_configs.find(
           (config) => config.id === selected_extractor_config_id,
@@ -372,6 +432,11 @@
         vector_store_type = vector_store_configs.find(
           (config) => config.id === selected_vector_store_config_id,
         )?.store_type
+        const reranker_config = reranker_configs.find(
+          (config) => config.id === selected_reranker_config_id,
+        )
+        reranker_model = reranker_config?.model_name
+        reranker_top_n = reranker_config?.top_n
 
         const chunker_config = chunker_configs.find(
           (config) => config.id === selected_chunker_config_id,
@@ -403,6 +468,9 @@
         chunker_buffer_size: buffer_size,
         embedding_model: embedding_model,
         vector_store_type: vector_store_type,
+        has_reranker: !!reranker_model,
+        reranker_model: reranker_model,
+        reranker_top_n: reranker_top_n,
         // tool_name and tool_description have no defaults, requiring user input
         // but we keep these for backwards compatibility of the event (we had a default before)
         custom_name: true,
@@ -449,6 +517,7 @@
         loadChunkerConfigs(),
         loadEmbeddingConfigs(),
         loadVectorStoreConfigs(),
+        loadRerankerConfigs(),
       ])
       // Update the UI with the new configs
       selected_extractor_config_id = extractor_config_id
@@ -675,6 +744,20 @@
             inputType="fancy_select"
           />
         </div>
+
+        <!-- Reranker Selection -->
+        <div class="flex flex-col gap-2">
+          <FormElement
+            id="reranker_select"
+            label="Reranker"
+            description="Rerank the search results after retrieval and keep only the top results."
+            info_description="Reranker models are a type of AI model that can improve the quality of the search results."
+            fancy_select_options={reranker_options}
+            bind:value={selected_reranker_config_id}
+            inputType="fancy_select"
+            empty_label="None"
+          />
+        </div>
       </div>
 
       <!-- Advanced -->
@@ -761,5 +844,21 @@
       selected_vector_store_config_id = null
     }
     show_create_vector_store_dialog?.close()
+  }}
+/>
+
+<CreateRerankerDialog
+  bind:dialog={show_create_reranker_dialog}
+  keyboard_submit={modal_opened === "reranker"}
+  on:success={async (e) => {
+    await loadRerankerConfigs()
+    selected_reranker_config_id = e.detail.reranker_config_id
+  }}
+  on:close={() => {
+    handle_modal_close()
+    if (selected_reranker_config_id === "create_new") {
+      selected_reranker_config_id = null
+    }
+    show_create_reranker_dialog?.close()
   }}
 />
