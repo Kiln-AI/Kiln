@@ -367,6 +367,11 @@ def connect_fine_tune_api(app: FastAPI):
         for dataset in existing_datasets:
             tool_info_by_name[dataset.name] = dataset.tool_info()
 
+        # compute tool info for each dataset split
+        tool_info_by_name = {}
+        for dataset in existing_datasets:
+            tool_info_by_name[dataset.name] = dataset.tool_info()
+
         return FinetuneDatasetInfo(
             existing_datasets=existing_datasets,
             existing_finetunes=existing_finetunes,
