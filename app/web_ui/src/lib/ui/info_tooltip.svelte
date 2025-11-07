@@ -97,6 +97,6 @@
   role="tooltip"
 >
   {#each tooltip_text.split("\n") as line}
-    <p>{line}</p>
+    <p class="font-normal">{line}</p>
   {/each}
 </div>

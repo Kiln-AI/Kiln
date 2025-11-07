@@ -223,7 +223,7 @@
             <EvalIcon />
           </div>
 
-          Evals</a
+          Specs</a
         >
       </li>
 
