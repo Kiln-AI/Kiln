@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import litellm
 import pytest
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.adapters.reranker_list import KilnRerankerModelProvider
 from kiln_ai.adapters.rerankers.base_reranker import RerankDocument, RerankResponse
 from kiln_ai.adapters.rerankers.litellm_reranker_adapter import LitellmRerankerAdapter
@@ -11,6 +12,14 @@ from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 
 class TestLitellmRerankerAdapterInitialization:
     """Test cases for LitellmRerankerAdapter initialization."""
+
+    def litellm_provider_config(self):
+        """Create a test LiteLLM provider config."""
+        return LiteLlmCoreConfig(
+            base_url="https://api.litellm.com",
+            default_headers={"Authorization": "Bearer test-token"},
+            additional_body_options={"temperature": "0.5"},
+        )
 
     def test_init_with_valid_config(self):
         """Test initialization with valid reranker config."""
@@ -29,7 +38,9 @@ class TestLitellmRerankerAdapterInitialization:
                 name=ModelProviderName.together_ai, model_id="Salesforce/Llama-Rank-V1"
             )
 
-            adapter = LitellmRerankerAdapter(config)
+            adapter = LitellmRerankerAdapter(
+                config, litellm_provider_config=self.litellm_provider_config()
+            )
             assert adapter.reranker_config == config
 
     def test_init_with_invalid_model(self):
@@ -47,7 +58,9 @@ class TestLitellmRerankerAdapterInitialization:
         ) as mock_provider:
             mock_provider.return_value = None
 
-            adapter = LitellmRerankerAdapter(config)
+            adapter = LitellmRerankerAdapter(
+                config, litellm_provider_config=self.litellm_provider_config()
+            )
             # The error should be raised when accessing the model_provider property
             with pytest.raises(
                 ValueError, match="Reranker model invalid_model not found"
@@ -57,6 +70,14 @@ class TestLitellmRerankerAdapterInitialization:
 
 class TestLitellmRerankerAdapterProperties:
     """Test cases for LitellmRerankerAdapter properties."""
+
+    def litellm_provider_config(self):
+        """Create a test LiteLLM provider config."""
+        return LiteLlmCoreConfig(
+            base_url="https://api.litellm.com",
+            default_headers={"Authorization": "Bearer test-token"},
+            additional_body_options={"temperature": "0.5"},
+        )
 
     @pytest.fixture
     def adapter(self):
@@ -76,7 +97,9 @@ class TestLitellmRerankerAdapterProperties:
                 name=ModelProviderName.together_ai, model_id="Salesforce/Llama-Rank-V1"
             )
 
-            return LitellmRerankerAdapter(config)
+            return LitellmRerankerAdapter(
+                config, litellm_provider_config=self.litellm_provider_config()
+            )
 
     def test_model_provider_property(self, adapter):
         """Test model_provider property returns correct provider."""
@@ -122,6 +145,14 @@ class TestLitellmRerankerAdapterProperties:
 class TestLitellmRerankerAdapterRerank:
     """Test cases for LitellmRerankerAdapter rerank method."""
 
+    def litellm_provider_config(self):
+        """Create a test LiteLLM provider config."""
+        return LiteLlmCoreConfig(
+            base_url="https://api.litellm.com",
+            default_headers={"Authorization": "Bearer test-token"},
+            additional_body_options={"temperature": "0.5"},
+        )
+
     @pytest.fixture
     def adapter(self):
         """Create a test adapter with mocked dependencies."""
@@ -140,7 +171,9 @@ class TestLitellmRerankerAdapterRerank:
                 name=ModelProviderName.together_ai, model_id="Salesforce/Llama-Rank-V1"
             )
 
-            return LitellmRerankerAdapter(config)
+            return LitellmRerankerAdapter(
+                config, litellm_provider_config=self.litellm_provider_config()
+            )
 
     @pytest.fixture
     def sample_documents(self):
@@ -180,7 +213,7 @@ class TestLitellmRerankerAdapterRerank:
             assert result.results[0].document == sample_documents[1]
 
             mock_arerank.assert_called_once_with(
-                model=adapter.litellm_model_slug,
+                model="together_ai/Salesforce/Llama-Rank-V1",
                 query="test query",
                 documents=[
                     "First document about cats",
@@ -188,6 +221,9 @@ class TestLitellmRerankerAdapterRerank:
                     "Third document about birds",
                 ],
                 top_n=3,
+                base_url="https://api.litellm.com",
+                default_headers={"Authorization": "Bearer test-token"},
+                temperature="0.5",
             )
 
     async def test_rerank_with_invalid_response_type(self, adapter, sample_documents):
@@ -222,6 +258,14 @@ class TestLitellmRerankerAdapterRerank:
 class TestLitellmRerankerAdapterConvertToRerankResponse:
     """Test cases for convert_to_rerank_response method."""
 
+    def litellm_provider_config(self):
+        """Create a test LiteLLM provider config."""
+        return LiteLlmCoreConfig(
+            base_url="https://api.litellm.com",
+            default_headers={"Authorization": "Bearer test-token"},
+            additional_body_options={"temperature": "0.5"},
+        )
+
     @pytest.fixture
     def adapter(self):
         """Create a test adapter with mocked dependencies."""
@@ -240,7 +284,9 @@ class TestLitellmRerankerAdapterConvertToRerankResponse:
                 name=ModelProviderName.together_ai, model_id="Salesforce/Llama-Rank-V1"
             )
 
-            return LitellmRerankerAdapter(config)
+            return LitellmRerankerAdapter(
+                config, litellm_provider_config=self.litellm_provider_config()
+            )
 
     @pytest.fixture
     def sample_documents(self):
@@ -296,6 +342,14 @@ class TestLitellmRerankerAdapterConvertToRerankResponse:
 class TestLitellmRerankerAdapterIntegration:
     """Integration test cases for LitellmRerankerAdapter."""
 
+    def litellm_provider_config(self):
+        """Create a test LiteLLM provider config."""
+        return LiteLlmCoreConfig(
+            base_url="https://api.litellm.com",
+            default_headers={"Authorization": "Bearer test-token"},
+            additional_body_options={"temperature": "0.5"},
+        )
+
     async def test_full_rerank_workflow(self):
         """Test the complete rerank workflow with mocked external dependencies."""
         config = RerankerConfig(
@@ -342,7 +396,9 @@ class TestLitellmRerankerAdapterIntegration:
             mock_arerank.return_value = mock_litellm_response
 
             # Test the workflow
-            adapter = LitellmRerankerAdapter(config)
+            adapter = LitellmRerankerAdapter(
+                config, litellm_provider_config=self.litellm_provider_config()
+            )
             result = await adapter.rerank("artificial intelligence", documents)
 
             # Verify results
@@ -366,4 +422,7 @@ class TestLitellmRerankerAdapterIntegration:
                     "Document about cooking recipes",
                 ],
                 top_n=2,
+                base_url="https://api.litellm.com",
+                default_headers={"Authorization": "Bearer test-token"},
+                temperature="0.5",
             )
