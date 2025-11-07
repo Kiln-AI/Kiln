@@ -190,9 +190,13 @@
   $: show_existing_dataset_option =
     finetune_dataset_info?.existing_finetunes.length
   $: show_new_dataset_option = !!finetune_dataset_info
-  $: can_select_dataset =
-    show_existing_dataset_option || show_new_dataset_option
   $: top_options = [
+    {
+      id: "add",
+      name: "Add Fine-Tuning Data",
+      description:
+        "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
+    },
     ...(show_existing_dataset_option
       ? [
           {
@@ -210,16 +214,6 @@
             name: "Create a New Fine-Tuning Dataset",
             description:
               "Create a new fine-tuning dataset by selecting a subset of your data.",
-          },
-        ]
-      : []),
-    ...(!can_select_dataset
-      ? [
-          {
-            id: "add",
-            name: "Add Fine-Tuning Data",
-            description:
-              "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
           },
         ]
       : []),
@@ -431,14 +425,6 @@
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
-      {#if can_select_dataset}
-        <div class="pt-4 font-light">
-          or
-          <button class="link font-normal" on:click={show_add_data}
-            >add additional fine-tuning data</button
-          > before you start.
-        </div>
-      {/if}
     {/if}
   </div>
 {/if}
