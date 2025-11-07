@@ -184,6 +184,7 @@ class ModelName(str, Enum):
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
+    kimi_k2_thinking = "kimi_k2_thinking"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_6 = "glm_4_6"
     glm_4_5v = "glm_4_5v"
@@ -196,6 +197,7 @@ class ModelName(str, Enum):
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
+    minimax_m2 = "minimax_m2"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     stepfun_step3 = "stepfun_step3"
@@ -4860,6 +4862,34 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Kimi K2 Thinking
+    # Not hosted on Groq, Silliconflow-cn, or Together AI yet
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_thinking,
+        friendly_name="Kimi K2 Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2-thinking",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+                reasoning_optional_for_structured_output=True,
+                supports_data_gen=True,
+                suggested_for_evals=True,
+            ),
+        ],
+    ),
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_dev_72b,
@@ -4990,6 +5020,25 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Minimax M2
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m2,
+        friendly_name="Minimax M2",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,  # test_structured_input_cot_prompt_builder is flakey
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
             ),
         ],
     ),
