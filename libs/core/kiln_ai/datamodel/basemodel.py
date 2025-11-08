@@ -293,7 +293,7 @@ class KilnBaseModel(BaseModel):
         self._readonly = True
 
     def _ensure_not_readonly(self, attr_name: str) -> None:
-        """Check if model is readonly and raise exception if mutation is attempted."""
+        """Check if model is readonly and raise exception if it is"""
         if self._readonly:
             attr_msg = f" '{attr_name}'" if attr_name else ""
             raise ReadOnlyMutationError(
@@ -308,13 +308,12 @@ class KilnBaseModel(BaseModel):
         readonly_safe_attrs = {"parent", "path"}
         if (
             not name.startswith("_")
-            and hasattr(self, "_readonly")
             and self._readonly
             and name not in readonly_safe_attrs
         ):
             self._ensure_not_readonly(name)
 
-        # Normal case: proceed with attribute setting
+        # proceed with attribute setting
         super().__setattr__(name, value)
 
     def mutable_copy(self) -> Self:
