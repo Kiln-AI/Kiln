@@ -11,7 +11,7 @@
   export let parentOptional: boolean = false
   let content: unknown[] = []
 
-  let arrayComponents: RunInputFormElement[] = []
+  let arrayComponents = new Map<unknown, RunInputFormElement>()
 
   export function buildArrayValue(): unknown[] | undefined {
     if (content.length === 0) {
@@ -23,10 +23,13 @@
     }
 
     const values: unknown[] = []
-    for (const [_, arrayComponent] of arrayComponents.entries()) {
-      const arrayValue = arrayComponent.buildValue()
-      if (arrayValue !== undefined) {
-        values.push(arrayValue)
+    for (const item of content) {
+      const arrayComponent = arrayComponents.get(item)
+      if (arrayComponent) {
+        const arrayValue = arrayComponent.buildValue()
+        if (arrayValue !== undefined) {
+          values.push(arrayValue)
+        }
       }
     }
     return values
@@ -56,12 +59,13 @@
 </script>
 
 <FormList
+  generate_uuid_content={true}
   content_label={property.title}
   start_with_one={false}
   bind:content
   hide_item_header={true}
 >
-  <div slot="default" let:item_index>
+  <div slot="default" let:item let:item_index>
     <!-- No 'items' is allowed by JSON schema. We show our general purpose JSON object option -->
     <RunInputFormElementRefCapture
       property={getItemProperty(item_index)}
@@ -73,7 +77,7 @@
       on:ref={(e) => {
         const { inst } = e.detail
         if (inst instanceof RunInputFormElement) {
-          arrayComponents[item_index] = inst
+          arrayComponents.set(item, inst)
         }
       }}
     />

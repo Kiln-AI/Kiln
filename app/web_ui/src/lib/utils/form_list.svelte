@@ -4,6 +4,8 @@
   export let hide_item_header: boolean = false
   export let start_with_one: boolean = true
   export let empty_content: unknown = {}
+  // Some uses of this component let svelte objects manage content. They just want a unique ID for the list.
+  export let generate_uuid_content: boolean = false
   export let frozen: boolean = false
   export let empty_description: string | null = null
 
@@ -27,6 +29,7 @@
     }
 
     if (
+      generate_uuid_content ||
       isItemUnedited ||
       confirm(
         "Are you sure you want to remove " +
@@ -51,7 +54,11 @@
   }
 
   async function add_item(focus: boolean = true) {
-    content.push(structuredClone(empty_content))
+    if (generate_uuid_content) {
+      content.push(Math.random().toString(36))
+    } else {
+      content.push(structuredClone(empty_content))
+    }
     // Trigger reactivity
     content = content
     if (focus) {
@@ -75,7 +82,7 @@
 
 {#if content.length > 0}
   <div class="flex flex-col gap-8" {id}>
-    {#each content as item, item_index}
+    {#each content as item, item_index (item)}
       <div id={"list_item_" + item_index + "_" + id}>
         <div class="flex flex-row gap-3 font-medium text-sm pb-2">
           <div class="grow {hide_item_header ? 'opacity-0' : ''}">
