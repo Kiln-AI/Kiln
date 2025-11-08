@@ -1,5 +1,5 @@
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import litellm
 import pytest
@@ -1099,7 +1099,7 @@ async def test_array_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", return_value=mock_response),
+        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         array_input = [1, 2, 3, 4, 5]
@@ -1169,7 +1169,7 @@ async def test_dict_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", return_value=mock_response),
+        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         dict_input = {"x": 10, "y": 20}
