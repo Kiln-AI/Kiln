@@ -4653,7 +4653,6 @@ built_in_models: List[KilnModel] = [
                 model_id="z-ai/glm-4.6:exacto",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -4874,7 +4873,6 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/kimi-k2-thinking",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
                 supports_data_gen=True,
                 suggested_for_evals=True,
             ),
@@ -4884,7 +4882,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
-                reasoning_optional_for_structured_output=True,
                 supports_data_gen=True,
                 suggested_for_evals=True,
             ),
@@ -5034,7 +5031,6 @@ built_in_models: List[KilnModel] = [
                 model_id="minimax/minimax-m2",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,  # test_structured_input_cot_prompt_builder is flakey
                 supports_data_gen=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
@@ -5046,7 +5042,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
-                reasoning_optional_for_structured_output=True,  # test_structured_input_cot_prompt_builder is flakey
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
