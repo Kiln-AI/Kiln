@@ -62,14 +62,13 @@
   hide_item_header={true}
 >
   <div slot="default" let:item_index>
-    {@const propterty_id = path + "[" + item_index + "]"}
     <!-- No 'items' is allowed by JSON schema. We show our general purpose JSON object option -->
     <RunInputFormElementRefCapture
       property={getItemProperty(item_index)}
       {onInputChange}
       hideHeaderAndIndent={false}
       level={level + 1}
-      path={propterty_id}
+      path={path + "[" + item_index + "]"}
       parentOptional={parentOptional || !property.required}
       on:ref={(e) => {
         const { inst } = e.detail
