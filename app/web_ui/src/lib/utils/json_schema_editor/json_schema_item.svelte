@@ -23,11 +23,48 @@
 
   // Enum is UI only type, not in JSON schema as .type
   type TypeOption = SchemaModelType | "enum"
-  let type_option: TypeOption = "string"
+
+  // Initialize UI state from the incoming model to prevent overwriting existing data
+  let type_option: TypeOption =
+    model.enum && model.enum.length > 0 ? "enum" : model.type
   let enum_text: string = ""
-  let enum_options: string[] = []
-  let array_type: TypeOption = "string"
-  let array_object_model: SchemaModelTypedObject | undefined = undefined
+
+  // Initialize array-specific state from model.items if present
+  let array_type: TypeOption =
+    model.type === "array" && model.items
+      ? model.items.enum
+        ? "enum"
+        : model.items.type
+      : "string" // default for if they select "array"
+
+  // If the model is an array of objects, this defines the schema for the objects in the array
+  let array_object_model: SchemaModelTypedObject =
+    model.type === "array" &&
+    model.items?.type === "object" &&
+    model.items.properties &&
+    model.items.additionalProperties === false
+      ? (model.items as SchemaModelTypedObject)
+      : {
+          id: "",
+          title: "",
+          required: true,
+          type: "object",
+          properties: [],
+          additionalProperties: false,
+        } // Default empty object model with no properties
+
+  // enum_options is used for both direct enums and array-of-enum items
+  // Initialize from the appropriate source based on the model type
+  let enum_options: string[] =
+    model.enum && model.enum.length > 0
+      ? model.enum
+          .map((value) => value?.toString() ?? undefined)
+          .filter((value) => value !== undefined)
+      : model.type === "array" && model.items?.enum
+        ? model.items.enum
+            .map((value) => value?.toString() ?? undefined)
+            .filter((value) => value !== undefined)
+        : []
 
   let object_model: SchemaModelTypedObject | undefined = undefined
   $: object_model =
@@ -64,9 +101,8 @@
 
     // Setup enum for enum type
     // enums are special var on string type, not their own type
-    enum_options = []
     if (new_type === "enum") {
-      model.enum = []
+      model.enum = enum_options
       model.type = "string"
     } else {
       model.enum = undefined
@@ -140,14 +176,6 @@
       // Enum handled above, special case with more values
       if (array_type !== "enum") {
         if (array_type === "object") {
-          array_object_model = {
-            id: "",
-            title: "",
-            required: true,
-            type: "object",
-            properties: [],
-            additionalProperties: false,
-          }
           model.items = array_object_model
         } else {
           // @ts-expect-error knowingly skipping id/title/required
@@ -247,7 +275,7 @@
   </div>
 {/if}
 
-{#if array_object_model && type_option === "array" && array_type === "object"}
+{#if type_option === "array" && array_type === "object"}
   <div class="ml-4 pl-4 border-l">
     <div class="text-sm text-gray-500">Array Object Schema</div>
     <JsonSchemaObject
