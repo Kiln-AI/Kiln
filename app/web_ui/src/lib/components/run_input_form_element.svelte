@@ -223,7 +223,12 @@
     if (isGenericObject(property)) {
       try {
         const parsed = JSON.parse(value)
-        if (typeof parsed !== "object") {
+        // js.... typeof null and [] is "object"!?
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          Array.isArray(parsed)
+        ) {
           throw new Error(
             "Property must be a JSON object string ('{...}'): " + path,
           )
