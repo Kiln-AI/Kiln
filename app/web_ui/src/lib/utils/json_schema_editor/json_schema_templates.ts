@@ -71,11 +71,7 @@ function build_schema_model_property(
   }
 
   if (options.type === "array" && options.items) {
-    result.items = build_schema_model_property(
-      "items",
-      options.items,
-      options.items.required ?? [],
-    )
+    result.items = build_schema_model_property("items", options.items, [])
   }
 
   if (options.type === "object" && options.properties) {
