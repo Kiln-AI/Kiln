@@ -190,7 +190,7 @@
         let additional_description = ""
         if (parentOptional || !property.required) {
           additional_description =
-            "A parent of this property is optional, but you've defined some sub-fields while leaving a required sub-field empty. Etiher make all sub-fields blank or fill in the required sub-field."
+            "A parent of this property is optional, but you've defined some sub-fields while leaving a required sub-field empty. Either make all sub-fields blank or fill in the required sub-field."
         }
         throw new IncompleteObjectError(
           "Missing required property. " +
