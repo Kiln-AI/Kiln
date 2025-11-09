@@ -11,14 +11,13 @@
   export let input_schema: string | null | undefined
   export let onInputChange: (() => void) | null = null
   let plaintext_input: string = ""
+  $: void (plaintext_input, onInputChange?.())
 
   // Store ref to the root form element
   let rootFormElement: { buildValue(): unknown } | null = null
 
   // Key to force component remount when needed
   let formKey = 0
-
-  $: void onInputChange?.()
 
   let structured_input_model: SchemaModelProperty | null = null
   $: structured_input_model = input_schema

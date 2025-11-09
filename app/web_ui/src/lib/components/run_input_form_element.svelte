@@ -18,6 +18,9 @@
   export let hideHeaderAndIndent: boolean = false
   export let parentOptional: boolean = false
 
+  // Trigger onInputChange when value changes
+  $: void (value, onInputChange?.())
+
   let id = "nested_input_" + Math.random().toString(36).substring(2, 15)
 
   let nestedComponents: Record<string, RunInputFormElement> = {}
