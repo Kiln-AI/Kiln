@@ -210,7 +210,10 @@
     }
 
     // Shared logic for all types using value
-    if (!value && !property.required) {
+    if (
+      (value === "" || value === undefined || value === null) &&
+      !property.required
+    ) {
       // Valid empty value
       return undefined
     }
