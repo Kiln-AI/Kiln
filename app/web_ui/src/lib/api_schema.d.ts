@@ -4557,7 +4557,7 @@ export interface components {
             /** Structured Input */
             structured_input?: {
                 [key: string]: unknown;
-            } | null;
+            } | unknown[] | null;
             /** Tags */
             tags?: string[] | null;
         };
