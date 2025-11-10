@@ -5,13 +5,9 @@ import {
   type Readable,
   get,
 } from "svelte/store"
-import { client, base_url } from "$lib/api_client"
+import { client } from "$lib/api_client"
 import { indexedDBStore } from "$lib/stores/index_db_store"
-import type {
-  KilnDocument,
-  ModelProviderName,
-  RunConfigProperties,
-} from "$lib/types"
+import type { KilnDocument, RunConfigProperties } from "$lib/types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 export type StepNumber = 1 | 2 | 3 | 4
@@ -100,6 +96,7 @@ export type QnaStore = {
   currentStep: Readable<StepNumber>
   maxStep: Readable<StepNumber>
   autoStep: Readable<StepNumber>
+  selectedTags: Readable<string[]>
   pendingSaveCount: Readable<number>
   saveAllStatus: Readable<{
     running: boolean
@@ -169,6 +166,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   const _generateErrors = writable<KilnError[]>([])
 
   // Generation config
+  const selectedTags = writable<string[]>([])
   const extractorId = writable<string | null>(null)
   const pairsPerPart = writable<number>(5)
   const guidance = writable<string>("")
@@ -204,6 +202,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     const initialValue = get(store)
     if (initialValue) {
       _state.set(initialValue)
+      selectedTags.set(initialValue.selected_tags)
       extractorId.set(initialValue.extractor_id)
       pairsPerPart.set(initialValue.generation_config.pairs_per_part)
       guidance.set(initialValue.generation_config.guidance)
@@ -270,6 +269,11 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
             chunk_overlap_tokens: value,
           },
         }))
+      }),
+    )
+    configUnsubscribes.push(
+      selectedTags.subscribe((value) => {
+        _state.update((s) => ({ ...s, selected_tags: value }))
       }),
     )
   }
@@ -377,6 +381,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       }
     })
     manualStep.set(null)
+    selectedTags.set(tags)
   }
 
   function setExtractor(extractorConfigId: string): void {
@@ -983,6 +988,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     currentStep,
     maxStep,
     autoStep,
+    selectedTags,
     pendingSaveCount,
     saveAllStatus,
     targetType,

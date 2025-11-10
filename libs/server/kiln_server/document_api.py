@@ -56,6 +56,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
     ExtractorType,
     FileInfo,
+    LitellmExtractorConfigProperties,
     OutputFormat,
     get_kind_from_mime_type,
 )
@@ -487,8 +488,8 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The mimetypes to pass through to the extractor",
         default_factory=list,
     )
-    properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
-        default_factory=dict,
+    properties: LitellmExtractorConfigProperties = Field(
+        description="The properties of the extractor config, specific to the selected extractor_type.",
     )
 
     @model_validator(mode="after")
@@ -505,8 +506,9 @@ class CreateExtractorConfigRequest(BaseModel):
         )
 
         if model is None:
-            raise ValueError(
-                f"Model {self.model_name} not found in {self.model_provider_name}"
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {self.model_name} not found in {self.model_provider_name}",
             )
 
         if not model.supports_doc_extraction:
@@ -515,6 +517,19 @@ class CreateExtractorConfigRequest(BaseModel):
             )
 
         return self
+
+    def get_properties(self) -> LitellmExtractorConfigProperties:
+        match self.properties["extractor_type"]:
+            case ExtractorType.LITELLM:
+                return LitellmExtractorConfigProperties(
+                    extractor_type=ExtractorType.LITELLM,
+                    prompt_document=self.properties["prompt_document"],
+                    prompt_image=self.properties["prompt_image"],
+                    prompt_video=self.properties["prompt_video"],
+                    prompt_audio=self.properties["prompt_audio"],
+                )
+            case _:
+                raise_exhaustive_enum_error(self.properties["extractor_type"])
 
 
 class PatchDocumentRequest(BaseModel):
@@ -741,6 +756,33 @@ async def build_rag_workflow_runner(
     )
 
     return runner
+
+
+def get_documents_filtered(
+    project: Project,
+    exclude_extracted_by_extractor_config_id: str | None = None,
+    target_tags: list[str] | None = None,
+) -> list[Document]:
+    documents: list[Document] = []
+    for document in project.documents(readonly=True):
+        # no tags target every document
+        is_target_document = not target_tags or any(
+            tag in (document.tags or []) for tag in target_tags
+        )
+        if not is_target_document:
+            continue
+
+        if exclude_extracted_by_extractor_config_id:
+            is_document_already_extracted = any(
+                extraction.extractor_config_id
+                == exclude_extracted_by_extractor_config_id
+                for extraction in document.extractions(readonly=True)
+            )
+            if is_document_already_extracted:
+                continue
+
+        documents.append(document)
+    return documents
 
 
 def connect_document_api(app: FastAPI):
@@ -1021,6 +1063,8 @@ def connect_document_api(app: FastAPI):
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
 
+        properties = request.get_properties()
+
         extractor_config = ExtractorConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1029,8 +1073,8 @@ def connect_document_api(app: FastAPI):
             model_name=request.model_name,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=ExtractorType.LITELLM,
-            properties=request.properties,
+            extractor_type=properties["extractor_type"],
+            properties=properties,
         )
         extractor_config.save_to_file()
 
@@ -1066,7 +1110,11 @@ def connect_document_api(app: FastAPI):
     async def run_extractor_config(
         project_id: str,
         extractor_config_id: str,
+        tags: str | None = None,
     ) -> StreamingResponse:
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
         async with shared_async_lock_manager.acquire(
@@ -1088,15 +1136,11 @@ def connect_document_api(app: FastAPI):
                     detail="Extractor config is archived. You must unarchive it to use it.",
                 )
 
-            # filter out documents that have extractions for this extractor config
-            documents = [
-                document
-                for document in project.documents(readonly=True)
-                if not any(
-                    extraction.extractor_config_id == extractor_config_id
-                    for extraction in document.extractions(readonly=True)
-                )
-            ]
+            documents = get_documents_filtered(
+                project,
+                exclude_extracted_by_extractor_config_id=extractor_config_id,
+                target_tags=target_tags,
+            )
 
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],

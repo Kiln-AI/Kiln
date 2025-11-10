@@ -31,8 +31,10 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
+    CreateExtractorConfigRequest,
     build_rag_workflow_runner,
     connect_document_api,
+    get_documents_filtered,
     run_rag_workflow_runner_with_status,
 )
 
@@ -73,6 +75,7 @@ def mock_extractor_config(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -212,6 +215,7 @@ def extractor_config_setup(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -407,6 +411,7 @@ async def test_create_extractor_config_success(client, mock_project):
             "model_provider_name": "gemini_api",
             "model_name": "gemini-2.0-flash",
             "properties": {
+                "extractor_type": "litellm",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -427,6 +432,7 @@ async def test_create_extractor_config_success(client, mock_project):
     assert result["passthrough_mimetypes"] == ["text/plain"]
     assert result["model_provider_name"] == "gemini_api"
     assert result["model_name"] == "gemini-2.0-flash"
+    assert result["properties"]["extractor_type"] == "litellm"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"
@@ -985,10 +991,17 @@ async def test_create_extractor_config_model_not_found(client, mock_project):
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
-    assert response.status_code == 422, response.text
+    assert response.status_code == 404, response.text
     assert "Model fake_model not found" in response.json()["message"]
 
 
@@ -2048,6 +2061,13 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
@@ -3687,6 +3707,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         model_provider_name=ModelProviderName.ollama,
         model_name="llama3",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "prompt",
             "prompt_video": "prompt",
             "prompt_audio": "prompt",
@@ -4364,6 +4385,93 @@ async def test_run_extractor_config_no_documents_to_extract(
         assert len(extractor_runner.documents) == 0
 
 
+async def test_run_extractor_config_no_tags(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config with no tags parameter"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=None,
+        )
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 1
+        assert extractor_runner.documents[0].id == document.id
+
+
+async def test_run_extractor_config_with_tags(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config with tags filtering"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config",
+            params={"tags": "python,ml,backend"},
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=["python", "ml", "backend"],
+        )
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 1
+        assert extractor_runner.documents[0].id == document.id
+
+
 async def test_ephemeral_split_document_success_with_chunks(
     client, mock_project, mock_document, mock_extractor_config
 ):
@@ -4613,3 +4721,171 @@ async def test_get_embedding_config_success(
     assert result["model_provider_name"] == mock_embedding_config.model_provider_name
     assert result["model_name"] == mock_embedding_config.model_name
     assert result["properties"] == mock_embedding_config.properties
+
+
+def test_get_properties_unsupported_extractor_type_raises() -> None:
+    req = CreateExtractorConfigRequest(
+        name="n",
+        description=None,
+        model_provider_name=ModelProviderName.openai,
+        model_name="gpt_5_mini",
+        output_format=OutputFormat.MARKDOWN,
+        passthrough_mimetypes=[],
+        properties={
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": "x",
+            "prompt_image": "x",
+            "prompt_video": "x",
+            "prompt_audio": "x",
+        },
+    )
+
+    # Corrupt to an unknown extractor_type to hit the default branch
+    req.__dict__["properties"] = {"extractor_type": "bogus"}
+
+    with pytest.raises(Exception):
+        req.get_properties()
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_no_filters(mock_project, mock_document):
+    """Test get_documents_filtered with no filters (should return all documents)"""
+    project = mock_project
+    document = mock_document["document"]
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    result = get_documents_filtered(project)
+
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_tag_filtering(mock_project, mock_document):
+    """Test get_documents_filtered with tag filtering"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python", "ml"]
+    document.save_to_file()
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    # Test with matching tags
+    result = get_documents_filtered(project, target_tags=["python"])
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Test with non-matching tags
+    result = get_documents_filtered(project, target_tags=["javascript"])
+    assert len(result) == 0
+
+    # Test with multiple tags where one matches
+    result = get_documents_filtered(project, target_tags=["python", "javascript"])
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_exclude_extracted(
+    mock_project, mock_document, mock_extractor_config
+):
+    """Test get_documents_filtered with exclude_extracted_by_extractor_config_id"""
+    project = mock_project
+    document = mock_document["document"]
+
+    # Document has no extraction, so should be included
+    result = get_documents_filtered(
+        project, exclude_extracted_by_extractor_config_id=mock_extractor_config.id
+    )
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Add extraction to document
+    extraction = Extraction(
+        parent=document,
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+        output=KilnAttachmentModel.from_data("test output", "text/plain"),
+    )
+    extraction.save_to_file()
+
+    # Document now has extraction, so should be excluded
+    result = get_documents_filtered(
+        project, exclude_extracted_by_extractor_config_id=mock_extractor_config.id
+    )
+    assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_both_filters(
+    mock_project, mock_document, mock_extractor_config
+):
+    """Test get_documents_filtered with both tag filtering and exclude_extracted"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python", "ml"]
+    document.save_to_file()
+
+    # Test with matching tags and no extraction (should be included)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["python"],
+    )
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Add extraction to document
+    extraction = Extraction(
+        parent=document,
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+        output=KilnAttachmentModel.from_data("test output", "text/plain"),
+    )
+    extraction.save_to_file()
+
+    # Test with matching tags but has extraction (should be excluded)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["python"],
+    )
+    assert len(result) == 0
+
+    # Test with non-matching tags and no extraction (should be excluded)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["javascript"],
+    )
+    assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_document_no_tags(
+    mock_project, mock_document
+):
+    """Test get_documents_filtered with document that has no tags"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = []
+    document.save_to_file()
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    # Document has no tags, so should not match any tag filter
+    result = get_documents_filtered(project, target_tags=["python"])
+    assert len(result) == 0
+
+    # But should be included when no tag filter is applied
+    result = get_documents_filtered(project)
+    assert len(result) == 1
+    assert result[0].id == document.id
+    assert result[0].id == document.id

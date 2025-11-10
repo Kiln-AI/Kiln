@@ -53,6 +53,7 @@
   $: qnaTotalCount = qna?.totalCount
   $: qnaGenerationErrors = qna?.generationErrors
   $: qnaStatus = qna?.status
+  $: qnaSelectedTags = qna?.selectedTags
 
   onMount(async () => {
     qna = createQnaStore(project_id, task_id)
@@ -585,6 +586,7 @@
   />
 
   <Extractiondialog
+    target_tags={$qnaSelectedTags || []}
     keyboard_submit={current_dialog_type === "extraction"}
     bind:dialog={show_extraction_dialog}
     selected_extractor_id={$qnaExtractorId}
