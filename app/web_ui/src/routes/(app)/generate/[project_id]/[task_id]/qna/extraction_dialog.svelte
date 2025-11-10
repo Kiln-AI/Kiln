@@ -15,6 +15,7 @@
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
   export let selected_extractor_id: string | null = null
+  export let target_tags: string[] = []
 
   let extractor_configs: ExtractorConfig[] = []
   let extractor_config_error: KilnError | null = null
@@ -126,7 +127,13 @@
         throw new Error("Please select an extractor")
       }
 
-      const url = `${base_url}/api/projects/${project_id}/${"extractor_configs"}/${selected_extractor_id}/run_extractor_config`
+      const url = new URL(
+        `${base_url}/api/projects/${project_id}/${"extractor_configs"}/${selected_extractor_id}/run_extractor_config`,
+      )
+
+      if (target_tags.length > 0) {
+        url.searchParams.set("tags", target_tags.join(","))
+      }
       // ensure only one live stream - we do not block the user while extraction is running, but we don't want the user to somehow
       // trigger parallel conflicting extraction runs
       es?.close()
