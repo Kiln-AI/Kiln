@@ -73,18 +73,37 @@
             type: "eval_template",
             id: "tool_call_preview",
             name: "Appropriate Tool Use",
-            description: "Evaluate your model's ability to appropriately invoke a tool.",
+            description:
+              "Evaluate your model's ability to appropriately invoke a tool.",
             recommended: recommended_tool_call_eval,
             on_select: () => select_template("tool_call_preview", undefined),
           },
           {
             type: "eval_template",
-            id: "rag_preview",
-            name: "RAG Eval",
+            id: "rag",
+            name: "Reference Answer Accuracy Eval",
             description:
               "Evaluate model accuracy against ground-truth Q&A pairs.",
             recommended: false,
-            on_select: () => select_template("rag_preview", undefined),
+            on_select: () =>
+              select_template("rag", {
+                template_id: "rag",
+                name: "Reference Answer Accuracy",
+                description:
+                  "Evaluate model accuracy against ground-truth Q&A pairs.", // TODO: Update this
+                output_scores: [
+                  {
+                    name: "Reference Answer Accuracy",
+                    type: "pass_fail",
+                    instruction:
+                      "Evaluate if the model's output is accurate as per the reference answer.",
+                  },
+                ],
+                default_eval_tag: "qna_set_" + generate_eval_tag(""),
+                default_golden_tag: null,
+                template_properties: {},
+                evaluation_data_type: "reference_answer",
+              }),
           },
         ],
       },
@@ -325,11 +344,6 @@
       return
     }
 
-    if (template_id === "rag_preview") {
-      rag_eval_dialog?.show()
-      return
-    }
-
     if (template_id === "tool_call_preview") {
       tool_call_eval_dialog?.show()
       return
@@ -421,30 +435,6 @@
         pass_example: pass_example,
       },
       evaluation_data_type: "final_answer",
-    })
-  }
-
-  let rag_eval_dialog: Dialog | undefined = undefined
-  let rag_eval_name = ""
-
-  function create_rag_eval() {
-    const eval_tag = generate_eval_tag(rag_eval_name)
-    selected_template_callback({
-      template_id: "rag",
-      name: "RAG Eval - " + rag_eval_name,
-      description: "Evaluate model accuracy against ground-truth Q&A pairs.",
-      output_scores: [
-        {
-          name: rag_eval_name,
-          type: "pass_fail",
-          instruction:
-            "Evaluate if the model's output is accurate as per the reference answer.",
-        },
-      ],
-      default_eval_tag: "rag_eval_qna_set_" + eval_tag,
-      default_golden_tag: null,
-      template_properties: {},
-      evaluation_data_type: "reference_answer",
     })
   }
 
@@ -644,37 +634,11 @@
   </FormContainer>
 </Dialog>
 
-<<<<<<< HEAD
-<Dialog bind:this={rag_eval_dialog} title="Create RAG Eval">
-  <FormContainer
-    submit_label="Create RAG Eval"
-    on:submit={create_rag_eval}
-    warn_before_unload={!!rag_eval_name}
-  >
-    <FormElement
-      label="Eval Name"
-      description="Give your RAG eval a short name that will help you identify it."
-      inputType="input"
-      id="name"
-      validator={() => {
-        if (is_empty(rag_eval_name)) {
-          return "Please enter a name for this eval."
-        }
-        return null
-      }}
-      bind:value={rag_eval_name}
-    />
-  </FormContainer>
-</Dialog>
-
-<Dialog bind:this={tool_call_eval_dialog} title="Create Tool Call Eval">
-=======
 <Dialog
   bind:this={tool_call_eval_dialog}
   title="Create Appropriate Tool Use Eval"
   sub_subtitle="Appropriate Tool Use evals test whether your model appropriately invokes the selected tool."
 >
->>>>>>> sfierro/full_trace_evals
   <FormContainer
     submit_label="Create Appropriate Tool Use Eval"
     submitting={submitting_tool_call_eval}

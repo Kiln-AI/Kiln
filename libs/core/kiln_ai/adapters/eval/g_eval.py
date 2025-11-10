@@ -47,12 +47,16 @@ class GEvalTask(Task, parent_of={}):
             system_instruction += f"\nThe task the model was given is as follows:\n<eval_data>\n<task_description>{task_description}</task_description>\n</eval_data>\n"
 
         # Build the COT eval instructions
-        cot_instructions = "First, think step by step about the model's performance following these evaluation steps:\n\n"
         steps = eval_config.properties.get("eval_steps", [])
         if not isinstance(steps, list):
             raise ValueError("eval_steps must be a list.")
-        for i, step in enumerate(steps):
-            cot_instructions += f"{i + 1}) {step}\n"
+        if len(steps) == 1:
+            cot_instructions = "First, think step by step about the model's performance following this evaluation step:\n\n"
+            cot_instructions += f"{steps[0]}\n"
+        else:
+            cot_instructions = "First, think step by step about the model's performance following these evaluation steps:\n\n"
+            for i, step in enumerate(steps):
+                cot_instructions += f"{i + 1}) {step}\n"
 
         eval = eval_config.parent_eval()
         if not eval:
