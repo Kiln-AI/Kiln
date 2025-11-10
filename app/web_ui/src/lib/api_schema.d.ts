@@ -6729,7 +6729,9 @@ export interface operations {
     };
     run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tags?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;

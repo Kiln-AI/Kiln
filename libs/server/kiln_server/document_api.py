@@ -758,6 +758,33 @@ async def build_rag_workflow_runner(
     return runner
 
 
+def get_documents_filtered(
+    project: Project,
+    exclude_extracted_by_extractor_config_id: str | None = None,
+    target_tags: list[str] | None = None,
+) -> list[Document]:
+    documents: list[Document] = []
+    for document in project.documents(readonly=True):
+        # no tags target every document
+        is_target_document = not target_tags or any(
+            tag in (document.tags or []) for tag in target_tags
+        )
+        if not is_target_document:
+            continue
+
+        if exclude_extracted_by_extractor_config_id:
+            is_document_already_extracted = any(
+                extraction.extractor_config_id
+                == exclude_extracted_by_extractor_config_id
+                for extraction in document.extractions(readonly=True)
+            )
+            if is_document_already_extracted:
+                continue
+
+        documents.append(document)
+    return documents
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents/bulk")
     async def create_documents_bulk(
@@ -1083,7 +1110,11 @@ def connect_document_api(app: FastAPI):
     async def run_extractor_config(
         project_id: str,
         extractor_config_id: str,
+        tags: str | None = None,
     ) -> StreamingResponse:
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
         async with shared_async_lock_manager.acquire(
@@ -1105,15 +1136,11 @@ def connect_document_api(app: FastAPI):
                     detail="Extractor config is archived. You must unarchive it to use it.",
                 )
 
-            # filter out documents that have extractions for this extractor config
-            documents = [
-                document
-                for document in project.documents(readonly=True)
-                if not any(
-                    extraction.extractor_config_id == extractor_config_id
-                    for extraction in document.extractions(readonly=True)
-                )
-            ]
+            documents = get_documents_filtered(
+                project,
+                exclude_extracted_by_extractor_config_id=extractor_config_id,
+                target_tags=target_tags,
+            )
 
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
