@@ -93,6 +93,7 @@ def mock_chunker_config(mock_project):
         description="Test chunker description",
         chunker_type=ChunkerType.FIXED_WINDOW,
         properties={
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 100,
             "chunk_overlap": 10,
         },
@@ -594,6 +595,7 @@ async def test_create_chunker_config_success(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -623,6 +625,7 @@ async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "invalid_chunker_type",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -647,6 +650,7 @@ async def test_create_chunker_config_invalid_chunk_size(
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": chunk_size,
                     "chunk_overlap": chunk_overlap,
                 },
@@ -682,6 +686,7 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
                 "description": "Test Semantic Chunker Config description",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -729,6 +734,7 @@ async def test_create_semantic_chunker_config_override_include_metadata_and_incl
                 "description": "Test Semantic Chunker Config description",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -770,6 +776,7 @@ async def test_create_semantic_chunker_config_minimal(client, mock_project):
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 95,
@@ -806,6 +813,7 @@ async def test_create_semantic_chunker_config_missing_embedding_config_id(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "breakpoint_percentile_threshold": 95,
                     "buffer_size": 1,
                     "include_metadata": False,
@@ -836,6 +844,7 @@ async def test_create_semantic_chunker_config_missing_buffer_size(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
                     "include_metadata": False,
@@ -866,6 +875,7 @@ async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 1,
                     "embedding_config_id": "emb-1",
                     "include_metadata": False,
@@ -896,6 +906,7 @@ async def test_create_semantic_chunker_config_invalid_buffer_size(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 0,  # Invalid buffer size
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
@@ -927,6 +938,7 @@ async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
                     "embedding_config_id": "emb-1",
@@ -955,6 +967,7 @@ async def test_create_semantic_chunker_config_embedding_config_not_found(
                 "name": "Bad Semantic Chunker Config",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": "does-not-exist",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
