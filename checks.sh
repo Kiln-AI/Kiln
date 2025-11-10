@@ -26,6 +26,7 @@ done
 
 # work from the root of the repo
 cd "$(dirname "$0")"
+echo $PWD
 
 headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
