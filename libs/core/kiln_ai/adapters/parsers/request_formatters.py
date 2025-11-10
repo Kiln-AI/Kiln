@@ -1,12 +1,13 @@
 import json
-from typing import Dict, Protocol
+from typing import Protocol
 
 from kiln_ai.adapters.ml_model_list import ModelFormatterID
+from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 class RequestFormatter(Protocol):
-    def format_input(self, original_input: Dict | str) -> Dict | str:
+    def format_input(self, original_input: InputType) -> InputType:
         """
         Method for formatting the input to a model.
         """
@@ -14,7 +15,7 @@ class RequestFormatter(Protocol):
 
 
 class Qwen3StyleNoThinkFormatter:
-    def format_input(self, original_input: Dict | str) -> Dict | str:
+    def format_input(self, original_input: InputType) -> InputType:
         """
         Format the input to a model for Qwen3 /no_think instruction
         """

@@ -9,6 +9,10 @@
 
   export let project_id: string
   export let task_id: string | null = null
+  export let label: string = "Tools & Search"
+  export let description: string | undefined = undefined
+  export let info_description: string | undefined =
+    "Select the tools available to the model. The model may or may not choose to use them."
   export let tools: string[] = []
   export let mandatory_tools: string[] | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
@@ -158,9 +162,10 @@
   {#if single_select}
     <FormElement
       id="tools"
-      label="Tools & Search"
+      {label}
+      {description}
       inputType="fancy_select"
-      info_description="Select the tools available to the model. The model may or may not choose to use them."
+      {info_description}
       bind:value={single_select_selected_tool}
       fancy_select_options={get_tool_options($available_tools[project_id])}
       empty_state_message={$available_tools[project_id] === undefined

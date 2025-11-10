@@ -1,4 +1,4 @@
-import type { EvalOutputScore, EvalTemplateId } from "$lib/types"
+import type { EvalOutputScore, EvalTemplateId, EvalDataType } from "$lib/types"
 
 export type EvalTemplateResult = {
   // Server IDs are EvalTemplateId. We have a custom "none" value for the UI.
@@ -9,5 +9,5 @@ export type EvalTemplateResult = {
   default_eval_tag: string
   default_golden_tag: string | null
   template_properties: Record<string, string | number | boolean | string[]>
-  evaluation_data_type: string
+  evaluation_data_type: EvalDataType
 }

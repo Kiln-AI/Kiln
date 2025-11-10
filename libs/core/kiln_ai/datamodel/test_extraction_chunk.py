@@ -40,7 +40,11 @@ class TestIntegration:
             name="test-chunker",
             description="A test chunker configuration",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 256, "chunk_overlap": 10},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 256,
+                "chunk_overlap": 10,
+            },
         )
 
         # Create a temporary file for the attachment
@@ -75,7 +79,11 @@ class TestIntegration:
         config = ChunkerConfig(
             name="serialization-test",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 512, "chunk_overlap": 20},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 512,
+                "chunk_overlap": 20,
+            },
             parent=mock_project,
         )
 
@@ -102,7 +110,11 @@ class TestIntegration:
         config = ChunkerConfig(
             name="enum-test",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 512, "chunk_overlap": 20},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 512,
+                "chunk_overlap": 20,
+            },
         )
 
         config_dict = config.model_dump()
@@ -118,7 +130,11 @@ class TestIntegration:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 512, "chunk_overlap": 20},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 512,
+                "chunk_overlap": 20,
+            },
             parent=mock_project,
         )
         config.save_to_file()

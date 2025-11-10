@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -5,7 +6,11 @@ import pytest
 from pypdf import PdfReader
 
 from conftest import MockFileFactoryMimeType
-from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
+from kiln_ai.utils.pdf_utils import (
+    _convert_pdf_to_images_sync,
+    convert_pdf_to_images,
+    split_pdf_into_pages,
+)
 
 
 async def test_split_pdf_into_pages_success(mock_file_factory):
@@ -84,3 +89,45 @@ async def test_convert_pdf_to_images(mock_file_factory):
         assert len(images) == 2
         assert all(image.exists() for image in images)
         assert all(image.suffix == ".png" for image in images)
+
+
+async def run_convert_pdf_concurrently(mock_file_factory, concurrency: int):
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # launch multiple tasks to convert the PDF to images concurrently
+        tasks = [
+            convert_pdf_to_images(test_file, Path(temp_dir)) for _ in range(concurrency)
+        ]
+        results = await asyncio.gather(*tasks)
+        assert len(results) == concurrency
+        assert all(len(result) == 2 for result in results)
+        assert all(all(image.exists() for image in result) for result in results)
+        assert all(
+            all(image.suffix == ".png" for image in result) for result in results
+        )
+
+
+async def test_convert_pdf_to_images_concurrent_access_1(mock_file_factory):
+    """Test running convert_pdf_to_images concurrently from multiple tasks."""
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=1)
+
+
+async def test_convert_pdf_to_images_concurrent_access_3(mock_file_factory):
+    """Test running convert_pdf_to_images concurrently from multiple tasks."""
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=3)
+
+
+def test__convert_pdf_to_images_sync(mock_file_factory):
+    """Test that the sync converter creates PNGs for each page."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        images = _convert_pdf_to_images_sync(test_file, Path(temp_dir))
+        assert len(images) == 2
+        assert all(image.exists() for image in images)
+        assert all(image.suffix == ".png" for image in images)
+
+
+@pytest.mark.paid  # not paid, but very slow
+async def test_convert_pdf_to_images_concurrent_access_100(mock_file_factory):
+    """Test running convert_pdf_to_images concurrently from multiple tasks."""
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=100)

@@ -787,7 +787,7 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "search_tool",
                 "tool_function_name": "search",
-                "should_call_tool_guidelines": "Call the tool when user asks for search",
+                "appropriate_tool_use_guidelines": "Call the tool when user asks for search",
             },
             False,
             None,
@@ -796,8 +796,8 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "calculator",
                 "tool_function_name": "calculate",
-                "should_call_tool_guidelines": "Call the tool for math calculations",
-                "should_not_call_tool_guidelines": "Don't call the tool for simple math",
+                "appropriate_tool_use_guidelines": "Call the tool for math calculations",
+                "inappropriate_tool_use_guidelines": "Don't call the tool for simple math",
             },
             False,
             None,
@@ -806,7 +806,7 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "weather_api",
                 "tool_function_name": "get_weather",
-                "should_call_tool_guidelines": "Call the tool when user asks about weather",
+                "appropriate_tool_use_guidelines": "Call the tool when user asks about weather",
             },
             False,
             None,
@@ -815,8 +815,8 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "database_query",
                 "tool_function_name": "query_db",
-                "should_call_tool_guidelines": "Call for data retrieval requests",
-                "should_not_call_tool_guidelines": "Don't call for personal questions",
+                "appropriate_tool_use_guidelines": "Call for data retrieval requests",
+                "inappropriate_tool_use_guidelines": "Don't call for personal questions",
             },
             False,
             None,
@@ -825,8 +825,8 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "",
                 "tool_function_name": "",
-                "should_call_tool_guidelines": "",
-                "should_not_call_tool_guidelines": "",
+                "appropriate_tool_use_guidelines": "",
+                "inappropriate_tool_use_guidelines": "",
             },
             True,
             "tool is required for tool call template",
@@ -850,7 +850,7 @@ def test_eval_template_properties_non_validated_templates(
         (
             {"tool": "search_tool", "tool_function_name": "search"},
             True,
-            "should_call_tool_guidelines is required for tool call template",
+            "appropriate_tool_use_guidelines is required for tool call template",
         ),
         # Invalid cases - wrong types
         (
@@ -867,20 +867,20 @@ def test_eval_template_properties_non_validated_templates(
             {
                 "tool": "search_tool",
                 "tool_function_name": "search",
-                "should_call_tool_guidelines": 123,
+                "appropriate_tool_use_guidelines": 123,
             },
             True,
-            "should_call_tool_guidelines is required for tool call template",
+            "appropriate_tool_use_guidelines is required for tool call template",
         ),
         (
             {
                 "tool": "search_tool",
                 "tool_function_name": "search",
-                "should_call_tool_guidelines": "Call for data retrieval requests",
-                "should_not_call_tool_guidelines": 789,
+                "appropriate_tool_use_guidelines": "Call for data retrieval requests",
+                "inappropriate_tool_use_guidelines": 789,
             },
             True,
-            "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string",
+            "inappropriate_tool_use_guidelines is optional for tool call template, but if provided must be a string",
         ),
     ],
 )
@@ -929,7 +929,7 @@ def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():
     valid_template_properties: dict[str, str | int | bool | float] = {
         "tool": "search_tool",
         "tool_function_name": "search",
-        "should_call_tool_guidelines": "Call the tool when user asks for search",
+        "appropriate_tool_use_guidelines": "Call the tool when user asks for search",
     }
 
     # Valid case: tool_call template with full_trace

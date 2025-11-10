@@ -159,6 +159,18 @@ class SearchToolApiDescription(BaseModel):
     description: str | None
 
 
+class ToolDefinitionResponse(BaseModel):
+    """
+    Response model for tool definition endpoint.
+    Provides the OpenAI-compatible tool definition along with extracted fields.
+    """
+
+    tool_id: str
+    function_name: str
+    description: str
+    parameters: Dict[str, Any]
+
+
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
     project = project_from_id(project_id)
     tool_server = ExternalToolServer.from_id_and_parent_path(
@@ -673,7 +685,7 @@ def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition")
     async def get_tool_definition(
         project_id: str, task_id: str, tool_id: str
-    ) -> dict[str, Any]:
+    ) -> ToolDefinitionResponse:
         """
         Get the actual OpenAI tool definition for a specific tool ID.
 
@@ -694,13 +706,12 @@ def connect_tool_servers_api(app: FastAPI):
 
             # Get the actual toolcall definition
             definition = await tool.toolcall_definition()
-            return {
-                "tool_id": tool_id,
-                "definition": definition,
-                "function_name": definition["function"]["name"],
-                "description": definition["function"]["description"],
-                "parameters": definition["function"]["parameters"],
-            }
+            return ToolDefinitionResponse(
+                tool_id=tool_id,
+                function_name=definition["function"]["name"],
+                description=definition["function"]["description"],
+                parameters=definition["function"]["parameters"],
+            )
 
         except Exception as e:
             raise HTTPException(

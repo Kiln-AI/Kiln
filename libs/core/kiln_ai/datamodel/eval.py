@@ -322,7 +322,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     evaluation_data_type: EvalDataType = Field(
         default=EvalDataType.final_answer,
-        description="The output of the task run to evaluate. Can be final answer, full trace, or tool call list.",
+        description="The output of the task run to evaluate. Can be final answer or full trace.",
     )
 
     # Workaround to return typed parent without importing Task
@@ -388,22 +388,24 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                     "tool_function_name is required for tool call template"
                 )
             if (
-                "should_call_tool_guidelines" not in self.template_properties
+                "appropriate_tool_use_guidelines" not in self.template_properties
                 or not isinstance(
-                    self.template_properties["should_call_tool_guidelines"], str
+                    self.template_properties["appropriate_tool_use_guidelines"], str
                 )
-                or not self.template_properties["should_call_tool_guidelines"].strip()
+                or not self.template_properties[
+                    "appropriate_tool_use_guidelines"
+                ].strip()
             ):
                 raise ValueError(
-                    "should_call_tool_guidelines is required for tool call template"
+                    "appropriate_tool_use_guidelines is required for tool call template"
                 )
             if (
-                "should_not_call_tool_guidelines" in self.template_properties
+                "inappropriate_tool_use_guidelines" in self.template_properties
                 and not isinstance(
-                    self.template_properties["should_not_call_tool_guidelines"], str
+                    self.template_properties["inappropriate_tool_use_guidelines"], str
                 )
             ):
                 raise ValueError(
-                    "should_not_call_tool_guidelines is optional for tool call template, but if provided must be a string"
+                    "inappropriate_tool_use_guidelines is optional for tool call template, but if provided must be a string"
                 )
         return self

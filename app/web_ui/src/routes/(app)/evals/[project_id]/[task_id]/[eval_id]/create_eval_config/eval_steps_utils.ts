@@ -102,31 +102,23 @@ export function get_eval_steps(
     const tool_function_name = evaluator.template_properties.tool_function_name
     if (!tool_function_name) {
       throw new Error(
-        "Tool function name is required for tool call eval template",
+        "Tool function name is required for Appropriate Tool Use template",
       )
     }
 
     const steps: string[] = [
-      `Look at the full conversation history for the task run, does the model call the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
+      `Look at the full <conversation_history> for the task run, does the model call the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
     ]
 
-    const should_call_tool_guidelines =
-      evaluator.template_properties.should_call_tool_guidelines
-    if (!should_call_tool_guidelines) {
-      throw new Error(
-        "Should call tool guidelines are required for tool call eval template",
-      )
-    }
     steps.push(
-      `Does the model input indicate that the tool should have been called, according to the following guidelines: \n<should_call_tool_guidelines>\n${should_call_tool_guidelines}\n</should_call_tool_guidelines>`,
+      `Utilizing information from:
+      
+       (a) <appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation
+       (b) the user's initial query <user_input>
+       (c) model task description <task_description>
+       
+       Should the tool ${tool_function_name} have been called and called with the right arguments/parameters?`,
     )
-    const should_not_call_tool_guidelines =
-      evaluator.template_properties.should_not_call_tool_guidelines
-    if (should_not_call_tool_guidelines) {
-      steps.push(
-        `Does the model input indicate that the tool should not have been called, according to the following guidelines: \n<should_not_call_tool_guidelines>\n${should_not_call_tool_guidelines}\n</should_not_call_tool_guidelines>`,
-      )
-    }
     steps.push(
       `Considering the above steps, classify the tool usage into one of these categories:
 

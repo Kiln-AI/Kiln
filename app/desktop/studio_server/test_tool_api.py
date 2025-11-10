@@ -4386,6 +4386,7 @@ async def test_get_tool_definition_success(client, test_project):
         # Mock the tool and its toolcall_definition method
         mock_tool = AsyncMock()
         mock_tool.toolcall_definition.return_value = {
+            "type": "function",
             "function": {
                 "name": "test_tool_function",
                 "description": "Test tool function description",
@@ -4396,7 +4397,7 @@ async def test_get_tool_definition_success(client, test_project):
                     },
                     "required": ["input"],
                 },
-            }
+            },
         }
         mock_tool_from_id.return_value = mock_tool
 
@@ -4411,7 +4412,6 @@ async def test_get_tool_definition_success(client, test_project):
         assert result["function_name"] == "test_tool_function"
         assert result["description"] == "Test tool function description"
         assert "parameters" in result
-        assert result["definition"]["function"]["name"] == "test_tool_function"
 
         # Verify the tool was instantiated correctly
         mock_tool_from_id.assert_called_once_with(tool_id, task)
