@@ -1350,7 +1350,7 @@ requires-dist = [
     { name = "lancedb", specifier = ">=0.24.2" },
     { name = "litellm", specifier = ">=1.79.3" },
     { name = "llama-index", specifier = ">=0.13.3" },
-    { name = "llama-index-vector-stores-lancedb", specifier = ">=0.3.3" },
+    { name = "llama-index-vector-stores-lancedb", specifier = ">=0.4.2" },
     { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
     { name = "pillow", specifier = ">=11.1.0" },
@@ -1757,7 +1757,7 @@ wheels = [
 
 [[package]]
 name = "llama-index-vector-stores-lancedb"
-version = "0.4.1"
+version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lancedb" },
@@ -1765,9 +1765,9 @@ dependencies = [
     { name = "pylance" },
     { name = "tantivy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/a4/a91c02d1692ac8b59b47de8848d4b74caed76b09cd44dcb5d17b60649cd2/llama_index_vector_stores_lancedb-0.4.1.tar.gz", hash = "sha256:c6f324ce1dc0ce18ac92e744c0119c1865cd76fde22c3b960327c2dbe4726fcd", size = 7867, upload-time = "2025-09-08T20:42:52.602Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/a8/2d18c6d407e231c2f5deebb17813c004b05c7558f74d5df0c9f758f542fb/llama_index_vector_stores_lancedb-0.4.2.tar.gz", hash = "sha256:f52654670ec769093cab98376983b32dfc5ab28c3c2c2726140513cf817977e9", size = 7887, upload-time = "2025-11-06T03:15:04.056Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b4/b4/b3eb54bd7cbc34e3ddeb3213876c2818fc183139cff3ffdae8856645add3/llama_index_vector_stores_lancedb-0.4.1-py3-none-any.whl", hash = "sha256:da7a6f732ec8a334b16c2255d918ced2e27935c5a89764a4bac3bf554d648f79", size = 7910, upload-time = "2025-09-08T20:42:51.562Z" },
+    { url = "https://files.pythonhosted.org/packages/49/1e/020fadfa4925688ebcd29443dcd68372a9fac2d925ad357b876f9bfedd92/llama_index_vector_stores_lancedb-0.4.2-py3-none-any.whl", hash = "sha256:ae7b71e8d1e11dcf5f31dd36dc023d1f24dfc09f8dd1c3ff4dab807eff282857", size = 7929, upload-time = "2025-11-06T03:15:02.951Z" },
 ]
 
 [[package]]
