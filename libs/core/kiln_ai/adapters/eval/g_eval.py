@@ -44,7 +44,7 @@ class GEvalTask(Task, parent_of={}):
         # Optionally add a short task description
         task_description = eval_config.properties.get("task_description", None)
         if task_description:
-            system_instruction += f"\nThe task the model was given is as follows:\n<eval_data>\n{task_description}\n</eval_data>\n"
+            system_instruction += f"\nThe task the model was given is as follows:\n<eval_data>\n<task_description>{task_description}</task_description>\n</eval_data>\n"
 
         # Build the COT eval instructions
         cot_instructions = "First, think step by step about the model's performance following these evaluation steps:\n\n"
@@ -119,12 +119,39 @@ The model produced the following output for the task:
 """
 
     def generate_full_trace_run_description(
-        self, eval_input: str, available_tools: str | None, conversation_history: str
+        self,
+        eval_input: str,
+        available_tools: str | None,
+        conversation_history: str,
     ) -> str:
         description = ""
-        description += f"""The model was given the following input for the task: 
+        description += f"""The model was given the following <user_input> for the <task_description>: 
 <eval_data>
-{eval_input}
+<user_input>{eval_input}</user_input>
+</eval_data>
+"""
+        should_call_tool_guidelines = str(
+            self.eval.template_properties.get("should_call_tool_guidelines") or ""
+        )
+        description += """The model was given the following <should_call_tool_guidelines> guidelines:"""
+        description += f""" 
+<eval_data>
+<should_call_tool_guidelines>
+{should_call_tool_guidelines}
+</should_call_tool_guidelines>
+</eval_data>
+"""
+        should_not_call_tool_guidelines = str(
+            self.eval.template_properties.get("should_not_call_tool_guidelines") or ""
+        )
+        # Only include if it has content since it is optional
+        if should_not_call_tool_guidelines:
+            description += """The model was given the following <should_not_call_tool_guidelines> guidelines:"""
+            description += f""" 
+<eval_data>
+<should_not_call_tool_guidelines>
+{should_not_call_tool_guidelines}
+</should_not_call_tool_guidelines>
 </eval_data>
 """
 
@@ -133,7 +160,7 @@ The model produced the following output for the task:
                 description += f"""
 This is the list of tools available to the model:
 <eval_data>
-{available_tools}
+<available_tools>{available_tools}</available_tools>
 </eval_data>
 """
             else:
@@ -144,7 +171,7 @@ There were no tools available to the model.
         description += f"""
 This is the full conversation history for the task run:
 <eval_data>
-{conversation_history}
+<conversation_history>{conversation_history}</conversation_history>
 </eval_data>
 """
         return description

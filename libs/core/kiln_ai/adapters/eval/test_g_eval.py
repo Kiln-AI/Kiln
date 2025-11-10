@@ -323,23 +323,33 @@ def test_generate_full_trace_run_description(test_eval_config, test_run_config):
 
     # Test case 1: With available tools (non-empty string)
     available_tools = "tool1: description1\ntool2: description2"
+    should_call_tool_guidelines = "Call the tool when user asks for help"
+    g_eval.eval.template_properties["should_call_tool_guidelines"] = (
+        should_call_tool_guidelines
+    )
     description = g_eval.generate_full_trace_run_description(
         eval_input, available_tools, conversation_history
     )
 
-    expected = f"""The model was given the following input for the task: 
+    expected = f"""The model was given the following <user_input> for the <task_description>: 
 <eval_data>
-{eval_input}
+<user_input>{eval_input}</user_input>
+</eval_data>
+The model was given the following <should_call_tool_guidelines> guidelines: 
+<eval_data>
+<should_call_tool_guidelines>
+{should_call_tool_guidelines}
+</should_call_tool_guidelines>
 </eval_data>
 
 This is the list of tools available to the model:
 <eval_data>
-{available_tools}
+<available_tools>{available_tools}</available_tools>
 </eval_data>
 
 This is the full conversation history for the task run:
 <eval_data>
-{conversation_history}
+<conversation_history>{conversation_history}</conversation_history>
 </eval_data>
 """
     assert description == expected
@@ -349,16 +359,22 @@ This is the full conversation history for the task run:
         eval_input, "", conversation_history
     )
 
-    expected = f"""The model was given the following input for the task: 
+    expected = f"""The model was given the following <user_input> for the <task_description>: 
 <eval_data>
-{eval_input}
+<user_input>{eval_input}</user_input>
+</eval_data>
+The model was given the following <should_call_tool_guidelines> guidelines: 
+<eval_data>
+<should_call_tool_guidelines>
+{should_call_tool_guidelines}
+</should_call_tool_guidelines>
 </eval_data>
 
 There were no tools available to the model.
 
 This is the full conversation history for the task run:
 <eval_data>
-{conversation_history}
+<conversation_history>{conversation_history}</conversation_history>
 </eval_data>
 """
     assert description == expected
@@ -368,14 +384,58 @@ This is the full conversation history for the task run:
         eval_input, None, conversation_history
     )
 
-    expected = f"""The model was given the following input for the task: 
+    expected = f"""The model was given the following <user_input> for the <task_description>: 
 <eval_data>
-{eval_input}
+<user_input>{eval_input}</user_input>
+</eval_data>
+The model was given the following <should_call_tool_guidelines> guidelines: 
+<eval_data>
+<should_call_tool_guidelines>
+{should_call_tool_guidelines}
+</should_call_tool_guidelines>
 </eval_data>
 
 This is the full conversation history for the task run:
 <eval_data>
-{conversation_history}
+<conversation_history>{conversation_history}</conversation_history>
+</eval_data>
+"""
+    assert description == expected
+
+    # Test case 4: With should_not_call_tool_guidelines
+    should_not_call_tool_guidelines = "Don't call the tool for simple questions"
+    g_eval.eval.template_properties["should_not_call_tool_guidelines"] = (
+        should_not_call_tool_guidelines
+    )
+    description = g_eval.generate_full_trace_run_description(
+        eval_input, available_tools, conversation_history
+    )
+
+    expected = f"""The model was given the following <user_input> for the <task_description>: 
+<eval_data>
+<user_input>{eval_input}</user_input>
+</eval_data>
+The model was given the following <should_call_tool_guidelines> guidelines: 
+<eval_data>
+<should_call_tool_guidelines>
+{should_call_tool_guidelines}
+</should_call_tool_guidelines>
+</eval_data>
+The model was given the following <should_not_call_tool_guidelines> guidelines: 
+<eval_data>
+<should_not_call_tool_guidelines>
+{should_not_call_tool_guidelines}
+</should_not_call_tool_guidelines>
+</eval_data>
+
+This is the list of tools available to the model:
+<eval_data>
+<available_tools>{available_tools}</available_tools>
+</eval_data>
+
+This is the full conversation history for the task run:
+<eval_data>
+<conversation_history>{conversation_history}</conversation_history>
 </eval_data>
 """
     assert description == expected
@@ -602,7 +662,7 @@ def test_g_eval_system_instruction():
     assert g_eval_task.instruction == (
         "Your job to evaluate a model's performance on a task. Blocks will be marked with <eval_data> tags.\n\n"
         "The task the model was given is as follows:\n<eval_data>\n"
-        "Test task description\n"
+        "<task_description>Test task description</task_description>\n"
         "</eval_data>\n"
     )
 

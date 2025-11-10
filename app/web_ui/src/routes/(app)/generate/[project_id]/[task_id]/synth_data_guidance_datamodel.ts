@@ -499,11 +499,13 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     if (task_type == "topics") {
       template += `When generating topics, create natural domain-specific topics that comprehensively test the tool's usage.
 
+
+
 IMPORTANT FOR TOP-LEVEL TOPICS: When generating top-level topics (no parent topic path), aim for a 50/50 balance between:
 - Topics that relate to the "should call tool" guidelines (in-domain queries where the tool should be used)
-- Topics that relate to the "should NOT call tool" guidelines (out-of-domain queries where the tool should not be used)
+- Topics that relate to scenarios where the tool should not be called. It is important that a breadth of scenarios are built. Optionally user's may help you here by providing some "should NOT call tool" guidelines 
 
-IMPORTANT FOR SUBTOPICS: When generating subtopics (with a parent topic path), generate subtopics that are naturally relevant to the parent topic. Do not force a 50/50 split - subtopics should follow the domain/intent of their parent topic.
+IMPORTANT FOR SUBTOPICS: When generating subtopics (with a parent topic path), generate subtopics that are naturally relevant to the parent topic.
 
 Here are two examples of topics generated from an example task/system prompt, tool description, and guidelines:
 
@@ -511,7 +513,6 @@ Here are two examples of topics generated from an example task/system prompt, to
  - Task/System Prompt: "You are a cooking assistant that helps users find and follow recipes."
  - Tool: "search_recipes" - searches a recipe database for recipes by ingredients, cuisine, or dish name
  - Should call tool guidelines: "Questions asking for recipes, dish suggestions, or what to cook with specific ingredients"
- - Should NOT call tool guidelines: "General cooking advice, technique questions, restaurant recommendations, or food history questions"
  - Generated Topics (showing two levels of depth):
    - "Recipe Searches by Ingredient" (maps to should call guidelines)
       - "Recipes with Chicken"
@@ -520,10 +521,10 @@ Here are two examples of topics generated from an example task/system prompt, to
    - "Recipe Searches by Cuisine" (maps to should call guidelines)
       - "Italian Dishes"
       - "Asian Cuisine"
-   - "Cooking Techniques" (maps to should NOT call guidelines)
+   - "Cooking Techniques" (example of a topic that should not trigger tool call)
       - "How to Sauté"
       - "Knife Skills"
-   - "Restaurant Recommendations" (maps to should NOT call guidelines)
+   - "Restaurant Recommendations" (example of a topic that should not trigger tool call)
       - "Best Italian Restaurants"
       - "Where to Eat Downtown"
 
@@ -540,10 +541,10 @@ Here are two examples of topics generated from an example task/system prompt, to
    - "Order Modifications" (maps to should call guidelines)
       - "Cancel My Order"
       - "Change Delivery Address"
-   - "General Policy Questions" (maps to should NOT call guidelines)
+   - "General Policy Questions" (example of a topic that should not trigger tool call, and also maps to should NOT call guidelines)
       - "Return Policy"
       - "Shipping Options"
-   - "Account Questions" (maps to should NOT call guidelines)
+   - "Account Questions" (example of a topic that should not trigger tool call, and also maps to should NOT call guidelines)
       - "Reset Password"
       - "Update Payment Method"
 `
@@ -554,8 +555,7 @@ All generated inputs must be relevant to the provided topic path and subtopics. 
 
 When creating the mix of queries:
 - If the topic path suggests in-domain queries (related to "should call" guidelines), stay within that domain but vary the TYPE of question. Some questions should trigger the tool (factual/lookup questions), others should not (opinion/meta questions about the same topic).
-- If the topic path suggests out-of-domain queries (related to "should NOT call" guidelines), all questions should be out-of-domain but varied in nature.
-- NEVER mix domains. For example, if the topic is "Recipes with Chicken", ALL questions should be about chicken. Do NOT ask about other foods. Instead, vary whether questions are factual (should call tool) vs opinion/meta questions (should NOT call tool).
+- If the topic path suggests out-of-domain queries, all questions should be out-of-domain but varied in nature.
 
 Here are two examples showing how guidelines map to inputs:
 
@@ -563,14 +563,11 @@ Here are two examples showing how guidelines map to inputs:
  - Task/System Prompt: "You are a cooking assistant that helps users find and follow recipes."
  - Tool: "search_recipes" - searches a recipe database for recipes by ingredients, cuisine, or dish name
  - Should call tool guidelines: "Questions asking for recipes, dish suggestions, or what to cook with specific ingredients"
- - Should NOT call tool guidelines: "General cooking advice, technique questions, restaurant recommendations, or food history questions"
  - Topic Path: ["Recipe Searches by Ingredient", "Recipes with Chicken"]
- - Generated Inputs (all relevant to chicken, mix of should/shouldn't call tool):
-   - "Find recipes with chicken and rice" (relevant to topic, matches should call: recipe request → should call tool)
-   - "What can I make with chicken breast?" (relevant to topic, matches should call: recipe with ingredient → should call tool)
-   - "Show me something with chicken thighs" (relevant to topic, matches should call but ambiguous → should call tool)
-   - "How do I properly butterfly a chicken breast?" (relevant to topic, matches should NOT call: technique question → should NOT call tool)
-   - "What temperature should chicken be cooked to?" (relevant to topic, matches should NOT call: cooking advice → should NOT call tool)
+ - Generated Inputs (all relevant to chicken and ingredients):
+   - "Find recipes with chicken and rice" (relevant to topic)
+   - "What can I make with carrots and onions?" (relevant to topic)
+   - "Show me something with chicken thighs" (relevant to topic)
 
 ## Example 2
  - Task/System Prompt: "You are a customer support assistant for an e-commerce company."
@@ -582,13 +579,8 @@ Here are two examples showing how guidelines map to inputs:
    - "Where is order #12345?" (relevant to topic, matches should call: specific order → should call tool)
    - "I placed an order yesterday, where is it?" (relevant to topic, matches should call: implied order lookup → should call tool)
    - "Can you check on my recent order?" (relevant to topic, matches should call but ambiguous → should call tool)
-   - "What's your policy if my order arrives late?" (relevant to topic, matches should NOT call: policy question → should NOT call tool)
-   - "How long does shipping usually take?" (relevant to topic, matches should NOT call: general info → should NOT call tool)
 `
     } else if (task_type == "outputs") {
-      // For outputs, we're calling the actual model being evaluated with its original prompt and tools enabled.
-      // The model's behavior is what we're testing. However, we can provide context about what we expect to see.
-
       return ""
     }
 
