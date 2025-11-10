@@ -25,7 +25,6 @@ dependencies = [
     "google-genai>=1.21.1",
     "jsonschema>=4.23.0",
     "lancedb>=0.24.2",
-    "litellm>=1.72.6",
     "openai>=1.53.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",
@@ -41,6 +40,7 @@ dependencies = [
     "anyio>=4.10.0",
     "pypdfium2>=4.30.0",
     "pillow>=11.1.0",
+    "litellm>=1.79.3",
 ]
 
 [dependency-groups]

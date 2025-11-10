@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import litellm
 import pytest
-from litellm.types.utils import ChoiceLogprobs
+from litellm.types.utils import ChoiceLogprobs, ModelResponse
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -628,7 +628,7 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     # Create a mock response
-    response = Mock(spec=litellm.types.utils.ModelResponse)
+    response = Mock(spec=ModelResponse)
     response.get.return_value = litellm_usage
     response._hidden_params = {"response_cost": cost}
 
@@ -1173,7 +1173,7 @@ async def test_array_input_converted_to_json(tmp_path, config):
     config.run_config_properties.model_provider_name = "openai"
     adapter = LiteLlmAdapter(config=config, kiln_task=task)
 
-    mock_response = litellm.ModelResponse(
+    mock_response = ModelResponse(
         model="gpt-4o-mini",
         choices=[
             {
@@ -1243,7 +1243,7 @@ async def test_dict_input_converted_to_json(tmp_path, config):
     config.run_config_properties.model_provider_name = "openai"
     adapter = LiteLlmAdapter(config=config, kiln_task=task)
 
-    mock_response = litellm.ModelResponse(
+    mock_response = ModelResponse(
         model="gpt-4o-mini",
         choices=[
             {
