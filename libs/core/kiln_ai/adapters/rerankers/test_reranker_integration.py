@@ -1,13 +1,16 @@
+from typing import List, Tuple
+
 import pytest
-from kiln_ai.adapters.reranker_list import built_in_rerankers
+from kiln_ai.adapters.reranker_list import RerankerModelName, built_in_rerankers
 from kiln_ai.adapters.rerankers.base_reranker import BaseReranker, RerankDocument
 from kiln_ai.adapters.rerankers.reranker_registry import reranker_adapter_from_config
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 
 
 async def run_reranker_integration_test(
     adapter: BaseReranker,
-):
+) -> None:
     result = await adapter.rerank(
         "san francisco",
         [
@@ -45,7 +48,9 @@ async def run_reranker_integration_test(
         assert hit.relevance_score is not None
 
 
-def get_all_reranker_model_combinations():
+def get_all_reranker_model_combinations() -> List[
+    Tuple[ModelProviderName, RerankerModelName]
+]:
     reranker_model_combinations = []
     for reranker in built_in_rerankers:
         for provider in reranker.providers:

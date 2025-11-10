@@ -70,7 +70,7 @@ built_in_rerankers: List[KilnRerankerModel] = [
         providers=[
             KilnRerankerModelProvider(
                 name=ModelProviderName.vertex,
-                model_id="vertex_ai/semantic-ranker-default-004",
+                model_id="semantic-ranker-default-004",
             ),
         ],
     ),
