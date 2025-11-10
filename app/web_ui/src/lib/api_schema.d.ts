@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Ping */
+        /**
+         * Ping
+         * @description Ping the server 🏓
+         */
         get: operations["ping_ping_get"];
         put?: never;
         post?: never;
