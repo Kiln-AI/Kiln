@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional
 
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
@@ -31,7 +31,7 @@ class ChatFormatter(ABC):
     def __init__(
         self,
         system_message: str,
-        user_input: str | Dict,
+        user_input: InputType,
         thinking_instructions: str | None = None,
     ) -> None:
         self.system_message = system_message
@@ -83,7 +83,7 @@ class TwoMessageCotLegacyFormatter(ChatFormatter):
     def __init__(
         self,
         system_message: str,
-        user_input: str | Dict,
+        user_input: InputType,
         thinking_instructions: str | None,
     ) -> None:
         super().__init__(system_message, user_input, thinking_instructions)
@@ -127,7 +127,7 @@ class TwoMessageCotFormatter(ChatFormatter):
     def __init__(
         self,
         system_message: str,
-        user_input: str | Dict,
+        user_input: InputType,
         thinking_instructions: str | None,
     ) -> None:
         super().__init__(system_message, user_input, thinking_instructions)
@@ -201,7 +201,7 @@ class SingleTurnR1ThinkingFormatter(ChatFormatter):
 def get_chat_formatter(
     strategy: ChatStrategy,
     system_message: str,
-    user_input: str | Dict,
+    user_input: InputType,
     thinking_instructions: str | None = None,
 ) -> ChatFormatter:
     match strategy:
@@ -221,7 +221,7 @@ def get_chat_formatter(
             raise_exhaustive_enum_error(strategy)
 
 
-def format_user_message(input: Dict | str) -> str:
+def format_user_message(input: InputType) -> str:
     """Build a user message from the input.
 
     Args:
@@ -230,7 +230,7 @@ def format_user_message(input: Dict | str) -> str:
     Returns:
         str: The formatted user message.
     """
-    if isinstance(input, dict):
+    if not isinstance(input, str):
         return json.dumps(input, ensure_ascii=False)
 
     return input

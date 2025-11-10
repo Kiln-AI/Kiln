@@ -65,10 +65,6 @@
         return
       }
 
-      const properties: Record<string, string | number | boolean> = {
-        similarity_top_k,
-      }
-
       const { error: create_error, data } = await client.POST(
         "/api/projects/{project_id}/create_vector_store_config",
         {
@@ -81,7 +77,9 @@
             name: name || null,
             description: description || null,
             store_type: selectedStoreType,
-            properties,
+            properties: {
+              similarity_top_k,
+            },
           },
         },
       )

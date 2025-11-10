@@ -2,7 +2,7 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, TypedDict
+from typing import List, Literal, Optional, Set, TypedDict
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.schema import BaseNode, TextNode
@@ -26,12 +26,10 @@ from kiln_ai.adapters.vector_store.lancedb_helpers import (
     store_type_to_lancedb_query_type,
 )
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import (
-    VectorStoreConfig,
-    raise_exhaustive_enum_error,
-)
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.env import temporary_env
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +48,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         lancedb_vector_store: LanceDBVectorStore | None = None,
     ):
         super().__init__(rag_config, vector_store_config)
-        self.config_properties = self.vector_store_config.lancedb_properties
-
-        kwargs: Dict[str, Any] = {}
-        if vector_store_config.lancedb_properties.nprobes is not None:
-            kwargs["nprobes"] = vector_store_config.lancedb_properties.nprobes
 
         # allow overriding the vector store with a custom one, useful for user loading into an arbitrary
         # deployment
@@ -249,8 +242,9 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
     def build_kwargs_for_query(
         self, query: VectorStoreQuery
     ) -> LanceDBAdapterQueryKwargs:
+        similarity_top_k = self.vector_store_config.properties.get("similarity_top_k")
         kwargs: LanceDBAdapterQueryKwargs = {
-            "similarity_top_k": self.config_properties.similarity_top_k,
+            "similarity_top_k": similarity_top_k,
             "query_str": None,
             "query_embedding": None,
         }

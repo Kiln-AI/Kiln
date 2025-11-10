@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Ping */
+        /**
+         * Ping
+         * @description Ping the server 🏓
+         */
         get: operations["ping_ping_get"];
         put?: never;
         post?: never;
@@ -2311,7 +2314,7 @@ export interface components {
             /** @description The type of the chunker */
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
-            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
         };
         /**
          * CreateDatasetSplitRequest
@@ -2403,12 +2406,8 @@ export interface components {
              * @description The mimetypes to pass through to the extractor
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean | {
-                    [key: string]: string;
-                } | null;
-            };
+            /** @description The properties of the extractor config, specific to the selected extractor_type. */
+            properties: components["schemas"]["LitellmExtractorConfigProperties"];
         };
         /**
          * CreateFinetuneRequest
@@ -2511,10 +2510,11 @@ export interface components {
             description?: string | null;
             /** @description The type of vector store to use */
             store_type: components["schemas"]["VectorStoreType"];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean;
-            };
+            /**
+             * Properties
+             * @description The properties of the vector store config, specific to the selected store_type.
+             */
+            properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -3373,11 +3373,7 @@ export interface components {
              * Properties
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
-            properties?: {
-                [key: string]: string | number | boolean | {
-                    [key: string]: string;
-                } | null;
-            };
+            properties: components["schemas"]["LitellmExtractorConfigProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3650,10 +3646,33 @@ export interface components {
         };
         /** FixedWindowChunkerProperties */
         FixedWindowChunkerProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            chunker_type: "fixed_window";
             /** Chunk Overlap */
             chunk_overlap: number;
             /** Chunk Size */
             chunk_size: number;
+        };
+        /** FixedWindowChunkerPropertiesPublic */
+        FixedWindowChunkerPropertiesPublic: {
+            /**
+             * @description The type of the chunker (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            chunker_type: "fixed_window";
+            /**
+             * Chunk Size
+             * @description The chunk size to use for the chunker.
+             */
+            chunk_size: number;
+            /**
+             * Chunk Overlap
+             * @description The chunk overlap to use for the chunker.
+             */
+            chunk_overlap: number;
         };
         /** Function */
         Function: {
@@ -3812,6 +3831,104 @@ export interface components {
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
+        /** LanceDBConfigFTSProperties */
+        LanceDBConfigFTSProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            store_type: "lancedb_fts";
+            /** Similarity Top K */
+            similarity_top_k: number;
+            /** Overfetch Factor */
+            overfetch_factor: number;
+            /** Vector Column Name */
+            vector_column_name: string;
+            /** Text Key */
+            text_key: string;
+            /** Doc Id Key */
+            doc_id_key: string;
+        };
+        /** LanceDBConfigFTSPropertiesPublic */
+        LanceDBConfigFTSPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
+        };
+        /** LanceDBConfigHybridProperties */
+        LanceDBConfigHybridProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            store_type: "lancedb_hybrid";
+            /** Similarity Top K */
+            similarity_top_k: number;
+            /** Overfetch Factor */
+            overfetch_factor: number;
+            /** Vector Column Name */
+            vector_column_name: string;
+            /** Text Key */
+            text_key: string;
+            /** Doc Id Key */
+            doc_id_key: string;
+            /** Nprobes */
+            nprobes: number;
+        };
+        /** LanceDBConfigHybridPropertiesPublic */
+        LanceDBConfigHybridPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
+        };
+        /** LanceDBConfigVectorProperties */
+        LanceDBConfigVectorProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            store_type: "lancedb_vector";
+            /** Similarity Top K */
+            similarity_top_k: number;
+            /** Overfetch Factor */
+            overfetch_factor: number;
+            /** Vector Column Name */
+            vector_column_name: string;
+            /** Text Key */
+            text_key: string;
+            /** Doc Id Key */
+            doc_id_key: string;
+            /** Nprobes */
+            nprobes: number;
+        };
+        /** LanceDBConfigVectorPropertiesPublic */
+        LanceDBConfigVectorPropertiesPublic: {
+            /**
+             * Similarity Top K
+             * @description The number of results to return from the vector store.
+             */
+            similarity_top_k: number;
+        };
+        /** LitellmExtractorConfigProperties */
+        LitellmExtractorConfigProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            extractor_type: "litellm";
+            /** Prompt Document */
+            prompt_document: string;
+            /** Prompt Image */
+            prompt_image: string;
+            /** Prompt Video */
+            prompt_video: string;
+            /** Prompt Audio */
+            prompt_audio: string;
+        };
         /** LocalServerProperties */
         LocalServerProperties: {
             /** Command */
@@ -4510,7 +4627,7 @@ export interface components {
             /** Structured Input */
             structured_input?: {
                 [key: string]: unknown;
-            } | null;
+            } | unknown[] | null;
             /** Tags */
             tags?: string[] | null;
         };
@@ -4555,6 +4672,11 @@ export interface components {
         };
         /** SemanticChunkerProperties */
         SemanticChunkerProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            chunker_type: "semantic";
             /** Embedding Config Id */
             embedding_config_id: string;
             /** Buffer Size */
@@ -4565,6 +4687,29 @@ export interface components {
             include_metadata: boolean;
             /** Include Prev Next Rel */
             include_prev_next_rel: boolean;
+        };
+        /** SemanticChunkerPropertiesPublic */
+        SemanticChunkerPropertiesPublic: {
+            /**
+             * @description The type of the chunker (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            chunker_type: "semantic";
+            /**
+             * Embedding Config Id
+             * @description The embedding config to use for the RAG workflow.
+             */
+            embedding_config_id: string;
+            /**
+             * Buffer Size
+             * @description The buffer size to use for the chunker.
+             */
+            buffer_size: number;
+            /**
+             * Breakpoint Percentile Threshold
+             * @description The breakpoint percentile threshold to use for the chunker.
+             */
+            breakpoint_percentile_threshold: number;
         };
         /**
          * StructuredOutputMode
@@ -5137,9 +5282,7 @@ export interface components {
              * Properties
              * @description The properties of the vector store config, specific to the selected store_type.
              */
-            properties: {
-                [key: string]: string | number | null;
-            };
+            properties: components["schemas"]["LanceDBConfigFTSProperties"] | components["schemas"]["LanceDBConfigVectorProperties"] | components["schemas"]["LanceDBConfigHybridProperties"];
             /** Model Type */
             readonly model_type: string;
         };
