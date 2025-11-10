@@ -1,7 +1,11 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import SelectEvalTemplate from "./select_eval_template.svelte"
-  import type { EvalOutputScore, EvalTemplateId } from "$lib/types"
+  import type {
+    EvalOutputScore,
+    EvalTemplateId,
+    EvalDataType,
+  } from "$lib/types"
   import { type EvalTemplateResult } from "./eval_template"
   import FormContainer from "$lib/utils/form_container.svelte"
   import type { Task } from "$lib/types"
@@ -40,7 +44,7 @@
   let default_eval_tag: string | undefined = undefined
   let default_golden_tag: string | undefined = undefined
   let template_properties: Record<string, string | number | boolean> = {}
-  let evaluation_data_type: string | undefined = undefined
+  let evaluation_data_type: EvalDataType | undefined = undefined
   function on_selected_template(template: EvalTemplateResult) {
     // Populate out model from the template
     name = template.name
@@ -111,9 +115,7 @@
               eval_set_filter_id,
               eval_configs_filter_id,
               template_properties,
-              evaluation_data_type: (evaluation_data_type || "final_answer") as
-                | "final_answer"
-                | "full_trace",
+              evaluation_data_type: evaluation_data_type || "final_answer",
             },
           },
         )

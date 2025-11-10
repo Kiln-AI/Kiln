@@ -2947,7 +2947,7 @@ export interface components {
                 [key: string]: string | number | boolean;
             };
             /**
-             * @description The output of the task run to evaluate. Can be final answer, full trace, or tool call list.
+             * @description The output of the task run to evaluate. Can be final answer or full trace.
              * @default final_answer
              */
             evaluation_data_type: components["schemas"]["EvalDataType"];
@@ -5154,6 +5154,23 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /**
+         * ToolDefinitionResponse
+         * @description Response model for tool definition endpoint.
+         *     Provides the OpenAI-compatible tool definition along with extracted fields.
+         */
+        ToolDefinitionResponse: {
+            /** Tool Id */
+            tool_id: string;
+            /** Function Name */
+            function_name: string;
+            /** Description */
+            description: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ToolServerType
@@ -9515,9 +9532,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ToolDefinitionResponse"];
                 };
             };
             /** @description Validation Error */

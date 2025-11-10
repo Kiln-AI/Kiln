@@ -95,7 +95,7 @@ export function get_eval_steps(
     const tool_function_name = evaluator.template_properties.tool_function_name
     if (!tool_function_name) {
       throw new Error(
-        "Tool function name is required for tool call eval template",
+        "Tool function name is required for Appropriate Tool Use template",
       )
     }
 
@@ -106,7 +106,7 @@ export function get_eval_steps(
     steps.push(
       `Utilizing information from:
       
-       (a) <should_call_tool_guidelines>, and optionally <should_not_call_tool_guidelines> if specified earlier in the conversation
+       (a) <appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation
        (b) the user's initial query <user_input>
        (c) model task description <task_description>
        

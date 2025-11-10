@@ -309,6 +309,42 @@
     }
   }
 
+  function getFlatOptions() {
+    return filteredOptions.flatMap((group) => group.options)
+  }
+
+  function findNextEnabledOptionIndex(
+    currentIndex: number,
+    flatOptions: Array<{ disabled?: boolean }>,
+  ): number {
+    const originalIndex = currentIndex
+    let nextIndex = currentIndex + 1
+    while (nextIndex < flatOptions.length && flatOptions[nextIndex].disabled) {
+      nextIndex++
+    }
+    // If we couldn't find a next enabled option, stay at the original index
+    if (nextIndex >= flatOptions.length) {
+      return originalIndex
+    }
+    return nextIndex
+  }
+
+  function findPreviousEnabledOptionIndex(
+    currentIndex: number,
+    flatOptions: Array<{ disabled?: boolean }>,
+  ): number {
+    const originalIndex = currentIndex
+    let prevIndex = currentIndex - 1
+    while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
+      prevIndex--
+    }
+    // If we couldn't find a previous enabled option, stay at the original index
+    if (prevIndex < 0) {
+      return originalIndex
+    }
+    return prevIndex
+  }
+
   // Handle clear search
   function clearSearch() {
     searchText = ""
@@ -480,29 +516,19 @@
       }
       if (event.key === "ArrowDown") {
         event.preventDefault()
-        const flatOptions = filteredOptions.flatMap((group) => group.options)
-        let nextIndex = focusedIndex + 1
-        while (
-          nextIndex < flatOptions.length &&
-          flatOptions[nextIndex].disabled
-        ) {
-          nextIndex++
-        }
-        focusedIndex = Math.min(nextIndex, flatOptions.length - 1)
+        const flatOptions = getFlatOptions()
+        focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
         scrollToFocusedIndex()
       } else if (event.key === "ArrowUp") {
         event.preventDefault()
-        const flatOptions = filteredOptions.flatMap((group) => group.options)
-        let prevIndex = focusedIndex - 1
-        while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
-          prevIndex--
-        }
-        focusedIndex = Math.max(prevIndex, 0)
+        const flatOptions = getFlatOptions()
+        focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
         scrollToFocusedIndex()
       } else if (event.key === "Enter") {
-        selectOption(
-          filteredOptions.flatMap((group) => group.options)[focusedIndex].value,
-        )
+        const flatOptions = getFlatOptions()
+        if (flatOptions[focusedIndex]) {
+          selectOption(flatOptions[focusedIndex].value)
+        }
       }
     }}
   >
@@ -538,36 +564,25 @@
                 clearSearch()
               } else if (event.key === "ArrowDown") {
                 event.preventDefault()
-                const flatOptions = filteredOptions.flatMap(
-                  (group) => group.options,
+                const flatOptions = getFlatOptions()
+                focusedIndex = findNextEnabledOptionIndex(
+                  focusedIndex,
+                  flatOptions,
                 )
-                let nextIndex = focusedIndex + 1
-                while (
-                  nextIndex < flatOptions.length &&
-                  flatOptions[nextIndex].disabled
-                ) {
-                  nextIndex++
-                }
-                focusedIndex = Math.min(nextIndex, flatOptions.length - 1)
                 scrollToFocusedIndex()
               } else if (event.key === "ArrowUp") {
                 event.preventDefault()
-                const flatOptions = filteredOptions.flatMap(
-                  (group) => group.options,
+                const flatOptions = getFlatOptions()
+                focusedIndex = findPreviousEnabledOptionIndex(
+                  focusedIndex,
+                  flatOptions,
                 )
-                let prevIndex = focusedIndex - 1
-                while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
-                  prevIndex--
-                }
-                focusedIndex = Math.max(prevIndex, 0)
                 scrollToFocusedIndex()
               } else if (event.key === "Enter") {
                 event.preventDefault()
-                const flatFiltered = filteredOptions.flatMap(
-                  (group) => group.options,
-                )
-                if (flatFiltered[focusedIndex]) {
-                  selectOption(flatFiltered[focusedIndex].value)
+                const flatOptions = getFlatOptions()
+                if (flatOptions[focusedIndex]) {
+                  selectOption(flatOptions[focusedIndex].value)
                 }
               }
             }}

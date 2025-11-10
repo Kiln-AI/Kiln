@@ -34,8 +34,8 @@ class EvalUtils:
         available_tools_str = ""
 
         for index, tool in enumerate(available_tools):
-            tool_object = tool_from_id(tool, task_run.parent_task())
             try:
+                tool_object = tool_from_id(tool, task_run.parent_task())
                 tool_definition = await tool_object.toolcall_definition()
 
                 tool_name = tool_definition["function"]["name"]

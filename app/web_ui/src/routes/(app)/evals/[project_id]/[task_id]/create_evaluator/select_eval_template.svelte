@@ -79,9 +79,9 @@
       },
       {
         id: "tool_call_preview",
-        name: "Tool Call Eval",
+        name: "Appropriate Tool Use",
         description:
-          "Evaluate your model's ability to call a tool when needed — and avoid doing so when unnecessary.",
+          "Evaluate your model's ability to appropriately invoke a tool.",
         recommended: recommended_tool_call_eval,
       },
       {
@@ -375,8 +375,8 @@
   let selected_tool: string | null = null
   let tool_call_eval_name = ""
   let tool_call_eval_create_complete = false
-  let should_call_tool_guidelines = ""
-  let should_not_call_tool_guidelines = ""
+  let appropriate_tool_use_guidelines = ""
+  let inappropriate_tool_use_guidelines = ""
   let tool_call_eval_error: KilnError | null = null
   let submitting_tool_call_eval = false
 
@@ -401,7 +401,7 @@
         return
       }
 
-      if (is_empty(should_call_tool_guidelines)) {
+      if (is_empty(appropriate_tool_use_guidelines)) {
         tool_call_eval_error = createKilnError({
           message:
             "Please enter guidelines for when the tool should be called.",
@@ -433,8 +433,8 @@
         template_properties: {
           tool: selected_tool,
           tool_function_name: selected_tool_function_name,
-          should_not_call_tool_guidelines: should_not_call_tool_guidelines,
-          should_call_tool_guidelines: should_call_tool_guidelines,
+          inappropriate_tool_use_guidelines: inappropriate_tool_use_guidelines,
+          appropriate_tool_use_guidelines: appropriate_tool_use_guidelines,
         },
         evaluation_data_type: "full_trace",
       })
@@ -550,7 +550,12 @@
   </div>
 </Dialog>
 
-<Dialog bind:this={issue_eval_dialog} title="Create Issue Eval">
+<Dialog
+  bind:this={issue_eval_dialog}
+  title="Create Issue Eval"
+  sub_subtitle="Issue evals ensure your bug fixes work as expected and alert you if the
+      same issues resurface."
+>
   <FormContainer
     submit_label="Create Issue Eval"
     on:submit={create_issue_eval}
@@ -559,11 +564,6 @@
       (issue_eval_name || issue_eval_prompt || failure_example || pass_example)
     )}
   >
-    <div class="font-light text-sm">
-      Issue evals ensure your bug fixes work as expected and alert you if the
-      same issues resurface.
-    </div>
-
     <FormElement
       label="Issue Name"
       description="Give your issue eval a short name that will help you identify it."
@@ -600,28 +600,27 @@
   </FormContainer>
 </Dialog>
 
-<Dialog bind:this={tool_call_eval_dialog} title="Create Tool Call Eval">
+<Dialog
+  bind:this={tool_call_eval_dialog}
+  title="Create Appropriate Tool Use Eval"
+  sub_subtitle="Appropriate Tool Use evals test whether your model appropriately invokes the selected tool."
+>
   <FormContainer
-    submit_label="Create Tool Call Eval"
+    submit_label="Create Appropriate Tool Use Eval"
     submitting={submitting_tool_call_eval}
     bind:error={tool_call_eval_error}
     on:submit={create_tool_call_eval}
     warn_before_unload={!!(
       !tool_call_eval_create_complete &&
       (tool_call_eval_name ||
-        should_call_tool_guidelines ||
-        should_not_call_tool_guidelines ||
+        appropriate_tool_use_guidelines ||
+        inappropriate_tool_use_guidelines ||
         selected_tool !== null)
     )}
   >
-    <div class="font-light text-sm">
-      Tool call evals test whether your model correctly calls tools when needed
-      and avoids calling them when it shouldn't.
-    </div>
-
     <FormElement
       label="Eval Name"
-      description="Give your tool call eval a short name that will help you identify it."
+      description="Give your Appropriate Tool Use eval a short name that will help you identify it."
       inputType="input"
       id="name"
       bind:value={tool_call_eval_name}
@@ -629,25 +628,28 @@
     <ToolsSelector
       {project_id}
       {task_id}
+      label="Tool to Evaluate"
+      description="Select the tool you want to evaluate for appropriate use."
+      info_description={undefined}
       single_select={true}
       bind:single_select_selected_tool={selected_tool}
     />
     <FormElement
-      label="Should Call Guidelines"
-      description="Guidelines or examples for when the tool should be called."
-      info_description="Include guidelines or examples to help the judge model understand when the tool should be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
+      label="Appropriate Tool Use Guidelines"
+      description="Guidelines or examples of when the tool should be used."
+      info_description="Include guidelines or examples to help the judge model understand when the tool should be used. The format is flexible (plain text). You can include a description or multiple examples if needed."
       inputType="textarea"
       id="should_call_example"
-      bind:value={should_call_tool_guidelines}
+      bind:value={appropriate_tool_use_guidelines}
     />
     <FormElement
-      label="Should Not Call Guidelines"
-      description="Guidelines for when the tool should not be called."
-      info_description="Include guidelines or examples to help the judge model understand when the tool should not be called. The format is flexible (plain text). You can include a description or multiple examples if needed."
+      label="Inappropriate Tool Use Guidelines"
+      description="Guidelines or examples of when the tool should not be used."
+      info_description="Include guidelines or examples to help the judge model understand when the tool should not be used. The format is flexible (plain text). You can include a description or multiple examples if needed."
       inputType="textarea"
       id="should_not_call_example"
       optional={true}
-      bind:value={should_not_call_tool_guidelines}
+      bind:value={inappropriate_tool_use_guidelines}
     />
   </FormContainer>
 </Dialog>

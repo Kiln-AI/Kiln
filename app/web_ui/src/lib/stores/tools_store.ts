@@ -70,5 +70,5 @@ export async function tool_id_to_function_name(
     throw error
   }
 
-  return data.function_name as string
+  return data.function_name
 }

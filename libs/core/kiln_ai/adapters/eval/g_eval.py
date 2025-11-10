@@ -130,28 +130,28 @@ The model produced the following output for the task:
 <user_input>{eval_input}</user_input>
 </eval_data>
 """
-        should_call_tool_guidelines = str(
-            self.eval.template_properties.get("should_call_tool_guidelines") or ""
+        appropriate_tool_use_guidelines = str(
+            self.eval.template_properties.get("appropriate_tool_use_guidelines") or ""
         )
-        description += """The model was given the following <should_call_tool_guidelines> guidelines:"""
+        description += """The model was given the following <appropriate_tool_use_guidelines> guidelines:"""
         description += f""" 
 <eval_data>
-<should_call_tool_guidelines>
-{should_call_tool_guidelines}
-</should_call_tool_guidelines>
+<appropriate_tool_use_guidelines>
+{appropriate_tool_use_guidelines}
+</appropriate_tool_use_guidelines>
 </eval_data>
 """
-        should_not_call_tool_guidelines = str(
-            self.eval.template_properties.get("should_not_call_tool_guidelines") or ""
+        inappropriate_tool_use_guidelines = str(
+            self.eval.template_properties.get("inappropriate_tool_use_guidelines") or ""
         )
         # Only include if it has content since it is optional
-        if should_not_call_tool_guidelines:
-            description += """The model was given the following <should_not_call_tool_guidelines> guidelines:"""
+        if inappropriate_tool_use_guidelines:
+            description += """The model was given the following <inappropriate_tool_use_guidelines> guidelines:"""
             description += f""" 
 <eval_data>
-<should_not_call_tool_guidelines>
-{should_not_call_tool_guidelines}
-</should_not_call_tool_guidelines>
+<inappropriate_tool_use_guidelines>
+{inappropriate_tool_use_guidelines}
+</inappropriate_tool_use_guidelines>
 </eval_data>
 """
 

@@ -323,9 +323,9 @@ def test_generate_full_trace_run_description(test_eval_config, test_run_config):
 
     # Test case 1: With available tools (non-empty string)
     available_tools = "tool1: description1\ntool2: description2"
-    should_call_tool_guidelines = "Call the tool when user asks for help"
-    g_eval.eval.template_properties["should_call_tool_guidelines"] = (
-        should_call_tool_guidelines
+    appropriate_tool_use_guidelines = "Call the tool when user asks for help"
+    g_eval.eval.template_properties["appropriate_tool_use_guidelines"] = (
+        appropriate_tool_use_guidelines
     )
     description = g_eval.generate_full_trace_run_description(
         eval_input, available_tools, conversation_history
@@ -335,11 +335,11 @@ def test_generate_full_trace_run_description(test_eval_config, test_run_config):
 <eval_data>
 <user_input>{eval_input}</user_input>
 </eval_data>
-The model was given the following <should_call_tool_guidelines> guidelines: 
+The model was given the following <appropriate_tool_use_guidelines> guidelines: 
 <eval_data>
-<should_call_tool_guidelines>
-{should_call_tool_guidelines}
-</should_call_tool_guidelines>
+<appropriate_tool_use_guidelines>
+{appropriate_tool_use_guidelines}
+</appropriate_tool_use_guidelines>
 </eval_data>
 
 This is the list of tools available to the model:
@@ -363,11 +363,11 @@ This is the full conversation history for the task run:
 <eval_data>
 <user_input>{eval_input}</user_input>
 </eval_data>
-The model was given the following <should_call_tool_guidelines> guidelines: 
+The model was given the following <appropriate_tool_use_guidelines> guidelines: 
 <eval_data>
-<should_call_tool_guidelines>
-{should_call_tool_guidelines}
-</should_call_tool_guidelines>
+<appropriate_tool_use_guidelines>
+{appropriate_tool_use_guidelines}
+</appropriate_tool_use_guidelines>
 </eval_data>
 
 There were no tools available to the model.
@@ -388,11 +388,11 @@ This is the full conversation history for the task run:
 <eval_data>
 <user_input>{eval_input}</user_input>
 </eval_data>
-The model was given the following <should_call_tool_guidelines> guidelines: 
+The model was given the following <appropriate_tool_use_guidelines> guidelines: 
 <eval_data>
-<should_call_tool_guidelines>
-{should_call_tool_guidelines}
-</should_call_tool_guidelines>
+<appropriate_tool_use_guidelines>
+{appropriate_tool_use_guidelines}
+</appropriate_tool_use_guidelines>
 </eval_data>
 
 This is the full conversation history for the task run:
@@ -402,10 +402,10 @@ This is the full conversation history for the task run:
 """
     assert description == expected
 
-    # Test case 4: With should_not_call_tool_guidelines
-    should_not_call_tool_guidelines = "Don't call the tool for simple questions"
-    g_eval.eval.template_properties["should_not_call_tool_guidelines"] = (
-        should_not_call_tool_guidelines
+    # Test case 4: With inappropriate_tool_use_guidelines
+    inappropriate_tool_use_guidelines = "Don't call the tool for simple questions"
+    g_eval.eval.template_properties["inappropriate_tool_use_guidelines"] = (
+        inappropriate_tool_use_guidelines
     )
     description = g_eval.generate_full_trace_run_description(
         eval_input, available_tools, conversation_history
@@ -415,17 +415,17 @@ This is the full conversation history for the task run:
 <eval_data>
 <user_input>{eval_input}</user_input>
 </eval_data>
-The model was given the following <should_call_tool_guidelines> guidelines: 
+The model was given the following <appropriate_tool_use_guidelines> guidelines: 
 <eval_data>
-<should_call_tool_guidelines>
-{should_call_tool_guidelines}
-</should_call_tool_guidelines>
+<appropriate_tool_use_guidelines>
+{appropriate_tool_use_guidelines}
+</appropriate_tool_use_guidelines>
 </eval_data>
-The model was given the following <should_not_call_tool_guidelines> guidelines: 
+The model was given the following <inappropriate_tool_use_guidelines> guidelines: 
 <eval_data>
-<should_not_call_tool_guidelines>
-{should_not_call_tool_guidelines}
-</should_not_call_tool_guidelines>
+<inappropriate_tool_use_guidelines>
+{inappropriate_tool_use_guidelines}
+</inappropriate_tool_use_guidelines>
 </eval_data>
 
 This is the list of tools available to the model:
