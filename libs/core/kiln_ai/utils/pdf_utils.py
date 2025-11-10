@@ -12,10 +12,8 @@ from typing import AsyncGenerator
 import pypdfium2
 from pypdf import PdfReader, PdfWriter
 
-# some of these operations are expensive, so we should offload them to threads or processes
-# but we cannot spawn an infinite number of threads or processes, so we should use a pool
-# of threads or processes that are reused
-convert_to_image_semaphore = asyncio.Semaphore(1)
+# some of these operations are blocking, so we should run them outside of the event loop
+pdf_conversion_executor = ProcessPoolExecutor(max_workers=1)
 
 
 @asynccontextmanager
@@ -65,13 +63,11 @@ def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
 
 
 async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
-    async with convert_to_image_semaphore:
-        loop = asyncio.get_running_loop()
-        with ProcessPoolExecutor(max_workers=1) as executor:
-            result = await loop.run_in_executor(
-                executor,
-                _convert_pdf_to_images_sync,
-                pdf_path,
-                output_dir,
-            )
-            return result
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        pdf_conversion_executor,
+        _convert_pdf_to_images_sync,
+        pdf_path,
+        output_dir,
+    )
+    return result
