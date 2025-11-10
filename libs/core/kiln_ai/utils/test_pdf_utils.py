@@ -103,22 +103,16 @@ async def run_convert_pdf_concurrently(mock_file_factory, concurrency: int):
         )
 
 
-# we cannot parametrize this test because it would break the semaphore (as each parameterized test
-# runs on a different event loop)
 async def test_convert_pdf_to_images_concurrent_access_1(mock_file_factory):
     """Test running convert_pdf_to_images concurrently from multiple tasks."""
     await run_convert_pdf_concurrently(mock_file_factory, concurrency=1)
 
 
-# we cannot parametrize this test because it would break the semaphore (as each parameterized test
-# runs on a different event loop)
 async def test_convert_pdf_to_images_concurrent_access_3(mock_file_factory):
     """Test running convert_pdf_to_images concurrently from multiple tasks."""
     await run_convert_pdf_concurrently(mock_file_factory, concurrency=3)
 
 
-# we cannot parametrize this test because it would break the semaphore (as each parameterized test
-# runs on a different event loop)
 @pytest.mark.paid  # not paid, but very slow
 async def test_convert_pdf_to_images_concurrent_access_100(mock_file_factory):
     """Test running convert_pdf_to_images concurrently from multiple tasks."""
