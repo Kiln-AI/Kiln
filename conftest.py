@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import uuid
@@ -10,12 +11,31 @@ import litellm
 import pytest
 from dotenv import load_dotenv
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+from kiln_ai.utils import pdf_utils
 from kiln_ai.utils.config import Config
 
 
 @pytest.fixture(autouse=True)
 def _clear_httpx_clients() -> None:
     litellm.in_memory_llm_clients_cache.flush_cache()
+
+
+@pytest.fixture(autouse=True)
+def reset_pdf_semaphores():
+    """Reset convert_to_image_semaphore for each test to avoid event loop binding issues with parallel tests
+    This fixture runs before each test and creates fresh semaphore that will
+    be bound to the test's event loop when first used.
+    """
+    # store original values
+    original_convert = pdf_utils.convert_to_image_semaphore
+
+    # create new semaphore that will be bound to the test's event loop
+    pdf_utils.convert_to_image_semaphore = asyncio.Semaphore(1)
+
+    yield
+
+    # restore original value (even though it will be reset next test anyway)
+    pdf_utils.convert_to_image_semaphore = original_convert
 
 
 @pytest.fixture(autouse=True)

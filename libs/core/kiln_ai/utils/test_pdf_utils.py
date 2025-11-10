@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -84,3 +85,41 @@ async def test_convert_pdf_to_images(mock_file_factory):
         assert len(images) == 2
         assert all(image.exists() for image in images)
         assert all(image.suffix == ".png" for image in images)
+
+
+async def run_convert_pdf_concurrently(mock_file_factory, concurrency: int):
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # launch multiple tasks to convert the PDF to images concurrently
+        tasks = [
+            convert_pdf_to_images(test_file, Path(temp_dir)) for _ in range(concurrency)
+        ]
+        results = await asyncio.gather(*tasks)
+        assert len(results) == concurrency
+        assert all(len(result) == 2 for result in results)
+        assert all(all(image.exists() for image in result) for result in results)
+        assert all(
+            all(image.suffix == ".png" for image in result) for result in results
+        )
+
+
+# we cannot parametrize this test because it would break the semaphore (as each parameterized test
+# runs on a different event loop)
+async def test_convert_pdf_to_images_concurrent_access_1(mock_file_factory):
+    """Test running convert_pdf_to_images concurrently from multiple tasks."""
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=1)
+
+
+# we cannot parametrize this test because it would break the semaphore (as each parameterized test
+# runs on a different event loop)
+async def test_convert_pdf_to_images_concurrent_access_3(mock_file_factory):
+    """Test running convert_pdf_to_images concurrently from multiple tasks."""
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=3)
+
+
+# we cannot parametrize this test because it would break the semaphore (as each parameterized test
+# runs on a different event loop)
+@pytest.mark.paid  # not paid, but very slow
+async def test_convert_pdf_to_images_concurrent_access_100(mock_file_factory):
+    """Test running convert_pdf_to_images concurrently from multiple tasks."""
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=100)
