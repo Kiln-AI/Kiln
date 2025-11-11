@@ -1,9 +1,9 @@
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import litellm
 import pytest
-from litellm.types.utils import ChoiceLogprobs
+from litellm.types.utils import ChoiceLogprobs, ModelResponse
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -628,7 +628,7 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     # Create a mock response
-    response = Mock(spec=litellm.types.utils.ModelResponse)
+    response = Mock(spec=ModelResponse)
     response.get.return_value = litellm_usage
     response._hidden_params = {"response_cost": cost}
 
@@ -1144,3 +1144,140 @@ async def test_build_completion_kwargs_temp_top_p_not_exclusive(config, mock_tas
 
         assert kwargs["temperature"] == 0.7
         assert kwargs["top_p"] == 0.9
+
+
+@pytest.mark.asyncio
+async def test_array_input_converted_to_json(tmp_path, config):
+    """Test that array inputs are converted to JSON and passed to the model"""
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
+    array_schema = {
+        "type": "array",
+        "items": {"type": "integer"},
+        "description": "A list of integers",
+    }
+
+    task = Task(
+        name="Array Test Task",
+        instruction="Process the array of numbers",
+        parent=project,
+        input_json_schema=json.dumps(array_schema),
+    )
+    task.save_to_file()
+
+    config.run_config_properties.model_name = "gpt-4o-mini"
+    config.run_config_properties.model_provider_name = "openai"
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "Processed the array successfully",
+                }
+            }
+        ],
+    )
+
+    mock_config_obj = Mock()
+    mock_config_obj.open_ai_api_key = "mock_api_key"
+    mock_config_obj.user_id = "test_user"
+
+    with (
+        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
+    ):
+        array_input = [1, 2, 3, 4, 5]
+        run = await adapter.invoke(array_input)
+
+        assert run.output.output == "Processed the array successfully"
+        assert run.trace is not None
+        assert len(run.trace) >= 2
+
+        user_message = None
+        for message in run.trace:
+            if message["role"] == "user":
+                user_message = message
+                break
+
+        assert user_message is not None
+        content = user_message.get("content")
+        assert content is not None
+        assert isinstance(content, str)
+        parsed_content = json.loads(content)
+        assert parsed_content == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.asyncio
+async def test_dict_input_converted_to_json(tmp_path, config):
+    """Test that dict inputs are converted to JSON and passed to the model"""
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
+    dict_schema = {
+        "type": "object",
+        "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+        },
+        "required": ["x", "y"],
+    }
+
+    task = Task(
+        name="Dict Test Task",
+        instruction="Process the coordinates",
+        parent=project,
+        input_json_schema=json.dumps(dict_schema),
+    )
+    task.save_to_file()
+
+    config.run_config_properties.model_name = "gpt-4o-mini"
+    config.run_config_properties.model_provider_name = "openai"
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": "Processed the coordinates successfully",
+                }
+            }
+        ],
+    )
+
+    mock_config_obj = Mock()
+    mock_config_obj.open_ai_api_key = "mock_api_key"
+    mock_config_obj.user_id = "test_user"
+
+    with (
+        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
+    ):
+        dict_input = {"x": 10, "y": 20}
+        run = await adapter.invoke(dict_input)
+
+        assert run.output.output == "Processed the coordinates successfully"
+        assert run.trace is not None
+        assert len(run.trace) >= 2
+
+        user_message = None
+        for message in run.trace:
+            if message["role"] == "user":
+                user_message = message
+                break
+
+        assert user_message is not None
+        content = user_message.get("content")
+        assert content is not None
+        assert isinstance(content, str)
+        parsed_content = json.loads(content)
+        assert parsed_content == {"x": 10, "y": 20}

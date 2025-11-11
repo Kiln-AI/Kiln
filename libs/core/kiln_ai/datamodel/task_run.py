@@ -169,6 +169,7 @@ class TaskRun(KilnParentedModel):
                 input_parsed,
                 task.input_json_schema,
                 "Input does not match task input schema.",
+                require_object=False,
             )
 
         self._last_validated_input = self.input
