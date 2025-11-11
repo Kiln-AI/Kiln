@@ -40,7 +40,7 @@ class TraceBasedDatasetFormatter:
             case DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL:
                 return self.generate_openai_json_schema_message(trace, tool_definitions)
             case DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL:
-                return self.generate_openai_toolcall_message(trace)
+                return self.generate_openai_toolcall_message(trace, tool_definitions)
             case DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL:
                 return self.generate_huggingface_chat_template(trace)
             case DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL:
@@ -182,6 +182,7 @@ class TraceBasedDatasetFormatter:
     def generate_openai_toolcall_message(
         self,
         trace: list[ChatCompletionMessageParam],
+        tools: list[ToolCallDefinition] | None = None,
     ) -> Dict[str, Any]:
         """Generate toolcall message from trace"""
 
@@ -211,7 +212,12 @@ class TraceBasedDatasetFormatter:
             },
         )
 
-        return {"messages": messages}
+        result: Dict[str, Any] = {"messages": messages}
+
+        if tools:
+            result["tools"] = tools
+
+        return result
 
     def generate_huggingface_chat_template(
         self,

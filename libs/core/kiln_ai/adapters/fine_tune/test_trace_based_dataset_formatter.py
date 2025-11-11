@@ -409,7 +409,15 @@ class TestTraceBasedDatasetFormatter:
     async def test_OPENAI_CHAT_TOOLCALL_JSONL_with_tools(self):
         """Test generate openai chat message response with tool call with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = create_mock_task_run(trace_with_tools(jsonOutput=True))
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+        task = create_mock_task_run(
+            trace_with_tools(jsonOutput=True), tool_ids=tool_ids
+        )
 
         result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL
@@ -487,7 +495,8 @@ class TestTraceBasedDatasetFormatter:
                         }
                     ],
                 },
-            ]
+            ],
+            "tools": expected_math_tool_definitions(),
         }
 
     # HUGGINGFACE_CHAT_TEMPLATE_JSONL
