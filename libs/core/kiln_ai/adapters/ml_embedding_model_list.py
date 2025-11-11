@@ -6,6 +6,22 @@ from pydantic import BaseModel, Field
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
 
+# temporary workaround until LiteLLM supports OpenRouter embeddings natively
+def transform_slug_for_litellm(provider: ModelProviderName, slug: str) -> str:
+    """
+    Converts an OpenRouter model slug to an OpenAI compatible slug.
+
+    OpenRouter models are prefixed with openrouter/, but LiteLLM does not yet support embeddings
+    via OpenRouter.
+
+    However, the OpenRouter API is OpenAI compatible, so we can use it as a custom OpenAI provider
+    by prefixing the model ID with openai/.
+    """
+    if provider == ModelProviderName.openrouter:
+        return slug.replace("openrouter/", "openai/")
+    return slug
+
+
 class KilnEmbeddingModelFamily(str, Enum):
     """
     Enumeration of supported embedding model families.
@@ -26,6 +42,7 @@ class KilnEmbeddingModelFamily(str, Enum):
     where_is_ai = "where_is_ai"
     mixedbread = "mixedbread"
     netease = "netease"
+    mistral = "mistral"
 
 
 class EmbeddingModelName(str, Enum):
@@ -56,6 +73,9 @@ class EmbeddingModelName(str, Enum):
     where_is_ai_uae_large_v1 = "where_is_ai_uae_large_v1"
     mixedbread_ai_mxbai_embed_large_v1 = "mixedbread_ai_mxbai_embed_large_v1"
     netease_youdao_bce_embedding_base_v1 = "netease_youdao_bce_embedding_base_v1"
+    openai_text_embedding_ada_002 = "openai_text_embedding_ada_002"
+    mistral_embed_text_2312 = "mistral_embed_text_2312"
+    mistral_codestral_embed_2505 = "mistral_codestral_embed_2505"
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -113,6 +133,14 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 supports_custom_dimensions=True,
                 suggested_for_chunk_embedding=True,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/text-embedding-3-large",
+                n_dimensions=3072,
+                max_input_tokens=8192,
+                # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # OpenAI Text Embedding 3 Small
@@ -128,6 +156,36 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=8192,
                 supports_custom_dimensions=True,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/text-embedding-3-small",
+                n_dimensions=1536,
+                max_input_tokens=8192,
+                # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # OpenAI Text Embedding ada-002
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.openai,
+        name=EmbeddingModelName.openai_text_embedding_ada_002,
+        friendly_name="Text Embedding Ada 002",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openai,
+                model_id="text-embedding-ada-002",
+                n_dimensions=1536,
+                max_input_tokens=8192,
+                supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/text-embedding-ada-002",
+                n_dimensions=1536,
+                max_input_tokens=8192,
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # Gemini Embedding 001
@@ -142,6 +200,15 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=3072,
                 max_input_tokens=2048,
                 supports_custom_dimensions=True,
+                suggested_for_chunk_embedding=True,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-embedding-001",
+                n_dimensions=3072,
+                max_input_tokens=2048,
+                # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
                 suggested_for_chunk_embedding=True,
             ),
         ],
@@ -231,7 +298,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 n_dimensions=4096,
                 max_input_tokens=32_000,
                 # the model itself does support custom dimensions, but not working
-                supports_custom_dimensions=True,
+                supports_custom_dimensions=False,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -241,6 +308,14 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # the model itself does support custom dimensions, but not working
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
+                supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-embedding-8b",
+                n_dimensions=4096,
+                max_input_tokens=32_000,
+                # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
             ),
         ],
@@ -271,6 +346,14 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-embedding-4b",
+                n_dimensions=2560,
+                max_input_tokens=32_000,
+                # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # Qwen3 Embedding 0.6B
@@ -297,6 +380,14 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # the model itself does support custom dimensions, but not working
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
+                supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3-embedding-0.6b",
+                n_dimensions=1024,
+                max_input_tokens=32_000,
+                # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
             ),
         ],
@@ -469,6 +560,38 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 model_id="netease-youdao/bce-embedding-base_v1",
                 n_dimensions=768,
                 max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Mistral Embed Text 2312
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.mistral,
+        name=EmbeddingModelName.mistral_embed_text_2312,
+        friendly_name="Mistral Embed Text 2312",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-embed-2312",
+                n_dimensions=1024,
+                max_input_tokens=8192,
+                # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Mistral Codestral Embed 2505
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.mistral,
+        name=EmbeddingModelName.mistral_codestral_embed_2505,
+        friendly_name="Mistral Codestral Embed 2505",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/codestral-embed-2505",
+                n_dimensions=1536,
+                max_input_tokens=8192,
+                # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
             ),
         ],

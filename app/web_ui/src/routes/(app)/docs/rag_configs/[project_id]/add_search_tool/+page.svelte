@@ -45,8 +45,8 @@
   let missing_provider: RequiredProvider | null = null
   $: missing_provider_string = missing_provider
     ? {
-        Openai: "OpenAI",
-        Gemini: "Google Gemini",
+        OpenaiOrOpenRouter: "OpenAI or OpenRouter",
+        GeminiOrOpenRouter: "Google Gemini or OpenRouter",
         Ollama: "Ollama",
       }[missing_provider]
     : null
@@ -79,10 +79,11 @@
     // Check if the user has the required API keys
     missing_provider = null
     if (
-      suggestion.required_provider === "Openai" &&
-      !settings["open_ai_api_key"]
+      suggestion.required_provider === "OpenaiOrOpenRouter" &&
+      !settings["open_ai_api_key"] &&
+      !settings["open_router_api_key"]
     ) {
-      missing_provider = "Openai"
+      missing_provider = "OpenaiOrOpenRouter"
       requires_api_keys_dialog?.show()
       posthog.capture("missing_api_keys_for_search_tool", {
         template_id,
@@ -90,10 +91,11 @@
       return
     }
     if (
-      suggestion.required_provider === "Gemini" &&
-      !settings["gemini_api_key"]
+      suggestion.required_provider === "GeminiOrOpenRouter" &&
+      !settings["gemini_api_key"] &&
+      !settings["open_router_api_key"]
     ) {
-      missing_provider = "Gemini"
+      missing_provider = "GeminiOrOpenRouter"
       requires_api_keys_dialog?.show()
       posthog.capture("missing_api_keys_for_search_tool", {
         template_id,
@@ -135,10 +137,12 @@
 
   function redirect_to_connect_provider(): boolean {
     let selected_providers = []
-    if (missing_provider === "Openai") {
+    if (missing_provider === "OpenaiOrOpenRouter") {
       selected_providers.push("openai")
-    } else if (missing_provider === "Gemini") {
+      selected_providers.push("openrouter")
+    } else if (missing_provider === "GeminiOrOpenRouter") {
       selected_providers.push("gemini_api")
+      selected_providers.push("openrouter")
     } else if (missing_provider === "Ollama") {
       selected_providers.push("ollama")
     }
@@ -223,10 +227,12 @@
 >
   <div>
     <p class="mb-6">
-      {#if missing_provider === "Openai"}
-        This search configuration requires an OpenAI API key.
-      {:else if missing_provider === "Gemini"}
-        This search configuration requires a Google Gemini API key.
+      {#if missing_provider === "OpenaiOrOpenRouter"}
+        This search configuration requires an OpenAI API key or OpenRouter API
+        key.
+      {:else if missing_provider === "GeminiOrOpenRouter"}
+        This search configuration requires a Google Gemini API key or OpenRouter
+        API key.
       {/if}
     </p>
     {#if settings && settings["open_router_api_key"]}
