@@ -30,11 +30,12 @@ async def vector_store_adapter_for_config(
         raise ValueError("Rag config ID is required")
 
     cache_key = f"{rag_config.id}::{vector_store_config_id}"
-    cached = _adapter_cache.get(cache_key)
-    if cached is not None:
-        return cached
 
     async with _creation_locks.acquire(cache_key):
+        cached = _adapter_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         match vector_store_config.store_type:
             case (
                 VectorStoreType.LANCE_DB_FTS
