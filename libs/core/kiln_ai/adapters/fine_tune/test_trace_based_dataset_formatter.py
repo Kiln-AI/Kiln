@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -8,15 +8,35 @@ from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
     TraceBasedDatasetFormatter,
 )
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
-def create_mock_task_run(trace: list[ChatCompletionMessageParam]) -> Mock:
+def create_mock_task_run(
+    trace: list[ChatCompletionMessageParam], tool_ids: list[str] | None = None
+) -> Mock:
     """Helper to create a mock TaskRun with proper structure"""
     task = Mock(spec=TaskRun)
     task.trace = trace
     output_mock = Mock()
-    output_mock.source = None
+
+    if tool_ids:
+        run_config = RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            tools_config=ToolsRunConfig(tools=tool_ids),
+        )
+        output_mock.source = Mock()
+        output_mock.source.run_config = run_config
+
+        parent_task_mock = AsyncMock()
+        task.parent_task = Mock(return_value=parent_task_mock)
+    else:
+        output_mock.source = None
+
     task.output = output_mock
     return task
 
@@ -29,6 +49,96 @@ def trace_without_tools(jsonOutput: bool = False) -> list[ChatCompletionMessageP
         {
             "role": "assistant",
             "content": '{"answer": 4}' if jsonOutput else "The answer is 4.",
+        },
+    ]
+
+
+def expected_math_tool_definitions():
+    """Return expected tool definitions for math tools (add, subtract, multiply, divide)"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "add",
+                "description": "Add two numbers together and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number to add",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to add",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "subtract",
+                "description": "Subtract the second number from the first number and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number (minuend)",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to subtract (subtrahend)",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "multiply",
+                "description": "Multiply two numbers together and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number to multiply",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to multiply",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "divide",
+                "description": "Divide the first number by the second number and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The dividend (number to be divided)",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The divisor (number to divide by)",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
         },
     ]
 
@@ -216,13 +326,20 @@ class TestTraceBasedDatasetFormatter:
     async def test_OPENAI_CHAT_JSONL_with_tools(self):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = create_mock_task_run(trace_with_tools())
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
 
         result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSONL
         )
         assert result == {
             "messages": correct_openai_chat_messages(),
+            "tools": expected_math_tool_definitions(),
         }
 
     # OPENAI_CHAT_JSON_SCHEMA_JSONL

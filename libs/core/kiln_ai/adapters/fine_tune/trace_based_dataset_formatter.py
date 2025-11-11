@@ -150,9 +150,6 @@ class TraceBasedDatasetFormatter:
         if tools:
             result["tools"] = tools
 
-        # print("result", result)
-        # raise Exception("stop here")
-
         return result
 
     def generate_openai_json_schema_message(

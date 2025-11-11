@@ -129,8 +129,8 @@ async def tool_definitions_from_ids(
             tool = tool_from_id(tool_id, task)
             tool_def = await tool.toolcall_definition()
             tool_definitions.append(tool_def)
-        except Exception:
-            print(f"Failed to get tool definition for tool ID: {tool_id}")
-            # stop here
-            raise
+        except Exception as e:
+            raise ValueError(
+                f"Failed to get tool definition for tool ID: {tool_id}. Original error: {e}"
+            )
     return tool_definitions
