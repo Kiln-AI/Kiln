@@ -307,7 +307,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
-        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id."
+        default=None,
+        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -351,6 +352,15 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     @model_validator(mode="after")
     def validate_template_properties(self) -> Self:
+        # eval_configs_filter_id is required for all templates except "rag"
+        if (
+            self.template is not EvalTemplateId.rag
+            and self.eval_configs_filter_id is None
+        ):
+            raise ValueError(
+                "eval_configs_filter_id is required for all templates except 'rag'"
+            )
+
         # Check for properties that are required for the issue template
         if self.template == EvalTemplateId.issue:
             if "issue_prompt" not in self.template_properties or not isinstance(

@@ -990,6 +990,114 @@ def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():
         )
 
 
+@pytest.mark.parametrize(
+    "template,eval_configs_filter_id,should_raise,expected_error",
+    [
+        # RAG template can have None
+        (EvalTemplateId.rag, None, False, None),
+        (EvalTemplateId.rag, "tag::tag2", False, None),
+        # Other templates require eval_configs_filter_id
+        (
+            EvalTemplateId.issue,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.tool_call,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.kiln_requirements,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.toxicity,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.bias,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.maliciousness,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.factual_correctness,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        (
+            EvalTemplateId.jailbreak,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        # None template also requires eval_configs_filter_id
+        (
+            None,
+            None,
+            True,
+            "eval_configs_filter_id is required for all templates except 'rag'",
+        ),
+        # Valid cases with eval_configs_filter_id provided
+        (EvalTemplateId.issue, "tag::tag2", False, None),
+        (EvalTemplateId.tool_call, "tag::tag2", False, None),
+        (None, "tag::tag2", False, None),
+    ],
+)
+def test_eval_configs_filter_id_validation(
+    template, eval_configs_filter_id, should_raise, expected_error
+):
+    """Test that eval_configs_filter_id is required for all templates except 'rag'"""
+    template_properties = {}
+    if template == EvalTemplateId.issue:
+        template_properties = {"issue_prompt": "Test issue prompt"}
+    elif template == EvalTemplateId.tool_call:
+        template_properties = {
+            "tool": "search_tool",
+            "tool_function_name": "search",
+            "appropriate_tool_use_guidelines": "Call the tool when user asks for search",
+        }
+
+    eval_kwargs = {
+        "name": "Test Eval",
+        "template": template,
+        "eval_set_filter_id": "tag::tag1",
+        "eval_configs_filter_id": eval_configs_filter_id,
+        "output_scores": [
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        "template_properties": template_properties,
+    }
+
+    if template == EvalTemplateId.tool_call:
+        eval_kwargs["evaluation_data_type"] = EvalDataType.full_trace
+
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            Eval(**eval_kwargs)
+    else:
+        eval = Eval(**eval_kwargs)
+        assert eval.template == template
+        assert eval.eval_configs_filter_id == eval_configs_filter_id
+
+
 def test_eval_run_trace_property(mock_task, valid_eval_config_data, tmp_path):
     """Test EvalRun with trace property"""
     task_path = tmp_path / "task.kiln"
