@@ -198,14 +198,17 @@ const providerOrOpenRouter = (
   settings: Record<string, unknown>,
   provider: ModelProviderName,
 ): ModelProviderName => {
-  if (provider === "openai" && settings["open_ai_api_key"]) {
-    return "openai"
+  switch (provider) {
+    case "openai":
+      return settings["open_ai_api_key"] ? "openai" : "openrouter"
+    case "gemini_api":
+      return settings["gemini_api_key"] ? "gemini_api" : "openrouter"
+    default:
+      // implement support for other providers here if you need them
+      throw new Error(
+        `Unsupported provider in providerOrOpenRouter: ${provider}`,
+      )
   }
-  if (provider === "gemini_api" && settings["gemini_api_key"]) {
-    return "gemini_api"
-  }
-
-  return "openrouter"
 }
 
 export async function build_rag_config_sub_configs(
