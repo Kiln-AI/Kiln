@@ -111,6 +111,7 @@
       } catch (error) {
         eventSource.close()
         eval_run_error = createKilnError(error)
+        console.error(eval_run_error)
         eval_state = "complete_with_errors"
         on_run_complete()
       }

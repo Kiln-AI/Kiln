@@ -84,8 +84,10 @@
       }
       // Can only set schemas when creating a new task
       if (creating) {
-        body.input_json_schema = inputSchemaSection.get_schema_string()
-        body.output_json_schema = outputSchemaSection.get_schema_string()
+        body.input_json_schema =
+          inputSchemaSection.get_schema_string("input_schema")
+        body.output_json_schema =
+          outputSchemaSection.get_schema_string("output_schema")
       }
       const project_id = target_project_id
       if (!project_id) {
@@ -170,8 +172,8 @@
       !!task.instruction ||
       !!task.thinking_instruction ||
       has_edited_requirements ||
-      !!inputSchemaSection.get_schema_string() ||
-      !!outputSchemaSection.get_schema_string()
+      !!inputSchemaSection.get_schema_string("input_schema") ||
+      !!outputSchemaSection.get_schema_string("output_schema")
     )
   }
 
@@ -456,6 +458,7 @@
         <SchemaSection
           bind:this={outputSchemaSection}
           bind:schema_string={task.output_json_schema}
+          warn_about_required={true}
         />
       {/if}
     </div>
