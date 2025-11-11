@@ -25,6 +25,7 @@
   import type { TaskOutputRatingType } from "$lib/types"
   import posthog from "posthog-js"
   import type { UiProperty } from "$lib/ui/property_list"
+  import Intro from "$lib/ui/intro.svelte"
 
   let score_legend_dialog: Dialog | null = null
 
@@ -721,18 +722,20 @@
         </div>
       </div>
     {:else}
-      <div class="max-w-[280px] mx-auto flex flex-col gap-2 mt-[20vh]">
-        <div class="font-medium">Create a Judge to Get Started</div>
-        <div class="font-light text-sm">
-          A judge specifies how an eval is run (algorithm, model, instructions,
-          etc).
-        </div>
-        <a
-          class="btn btn-primary mt-2"
-          href={`/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`}
-        >
-          Add Judge
-        </a>
+      <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
+        <Intro
+          title="Create a Judge to Get Started"
+          description_paragraphs={[
+            "A judge specifies how an eval is run (algorithm, model, instructions, etc).",
+          ]}
+          action_buttons={[
+            {
+              label: "Add Judge",
+              href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`,
+              is_primary: true,
+            },
+          ]}
+        />
       </div>
     {/if}
   {/if}
