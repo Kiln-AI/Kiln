@@ -1,3 +1,4 @@
+import json
 import tempfile
 import uuid
 from pathlib import Path
@@ -40,13 +41,19 @@ class TestFixedWindowChunkerProperties:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 512, "chunk_overlap": 20},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 512,
+                "chunk_overlap": 20,
+            },
         )
         assert config.properties == {
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 512,
             "chunk_overlap": 20,
         }
         assert config.fixed_window_properties == {
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 512,
             "chunk_overlap": 20,
         }
@@ -58,15 +65,22 @@ class TestFixedWindowChunkerProperties:
         config = ChunkerConfig(
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 1, "chunk_overlap": 0},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 1,
+                "chunk_overlap": 0,
+            },
         )
         assert config.properties == {
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 1,
             "chunk_overlap": 0,
         }
-
         assert config.fixed_window_properties["chunk_size"] == 1
         assert config.fixed_window_properties["chunk_overlap"] == 0
+        assert (
+            config.fixed_window_properties["chunker_type"] == ChunkerType.FIXED_WINDOW
+        )
 
     def test_validation_negative_values(self):
         """Test that negative values are rejected."""
@@ -74,7 +88,11 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": -1, "chunk_overlap": -1},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": -1,
+                    "chunk_overlap": -1,
+                },
             )
 
     def test_validation_zero_chunk_size(self):
@@ -83,7 +101,11 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": 0, "chunk_overlap": 0},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": 0,
+                    "chunk_overlap": 0,
+                },
             )
 
     def test_validation_overlap_greater_than_chunk_size(self):
@@ -92,7 +114,11 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": 100, "chunk_overlap": 101},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": 100,
+                    "chunk_overlap": 101,
+                },
             )
 
     def test_validation_overlap_less_than_zero(self):
@@ -101,7 +127,11 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": 100, "chunk_overlap": -1},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": 100,
+                    "chunk_overlap": -1,
+                },
             )
 
     def test_validation_overlap_without_chunk_size(self):
@@ -110,7 +140,10 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_overlap": 10},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_overlap": 10,
+                },
             )
 
     def test_validation_chunk_size_without_overlap(self):
@@ -119,7 +152,10 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": 100},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": 100,
+                },
             )
 
     def test_validation_wrong_type(self):
@@ -128,7 +164,11 @@ class TestFixedWindowChunkerProperties:
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": "xlkh", "chunk_overlap": 10},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": "xlkh",
+                    "chunk_overlap": 10,
+                },
             )
 
     def test_validation_none_values(self):
@@ -152,6 +192,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
                     "include_metadata": True,
@@ -165,6 +206,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "breakpoint_percentile_threshold": 90,
                     "include_metadata": True,
@@ -178,6 +220,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "include_metadata": True,
@@ -191,6 +234,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -204,6 +248,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -218,6 +263,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 0,
                     "breakpoint_percentile_threshold": 90,
@@ -233,6 +279,7 @@ class TestSemanticChunkerProperties:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 150,
@@ -247,6 +294,7 @@ class TestSemanticChunkerProperties:
             name="semantic",
             chunker_type=ChunkerType.SEMANTIC,
             properties={
+                "chunker_type": ChunkerType.SEMANTIC,
                 "embedding_config_id": "emb-1",
                 "buffer_size": 2,
                 "breakpoint_percentile_threshold": 90,
@@ -282,6 +330,7 @@ class TestChunkerConfig:
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
                 "chunk_size": 100,
                 "chunk_overlap": 10,
             },
@@ -293,6 +342,7 @@ class TestChunkerConfig:
             description="A test chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
                 "chunk_size": 100,
                 "chunk_overlap": 10,
             },
@@ -306,6 +356,7 @@ class TestChunkerConfig:
             name="valid-name_123",
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
                 "chunk_size": 100,
                 "chunk_overlap": 10,
             },
@@ -334,6 +385,7 @@ class TestChunkerConfig:
             name="test-chunker",
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
                 "chunk_size": 100,
                 "chunk_overlap": 10,
             },
@@ -382,12 +434,13 @@ class TestPropertiesNotMatchingChunkerType:
                 name="fixed",
                 chunker_type=ChunkerType.FIXED_WINDOW,
                 properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
                     "include_metadata": True,
                     "include_prev_next_rel": True,
-                },
+                },  # type: ignore[arg-type]
             )
 
     def test_semantic_properties_not_matching_chunker_type(self):
@@ -397,9 +450,10 @@ class TestPropertiesNotMatchingChunkerType:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "chunk_size": 100,
                     "chunk_overlap": 10,
-                },
+                },  # type: ignore[arg-type]
             )
 
 
@@ -517,6 +571,7 @@ class TestSemanticChunkerPropertiesTypes:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": 123,
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -530,6 +585,7 @@ class TestSemanticChunkerPropertiesTypes:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -543,6 +599,7 @@ class TestSemanticChunkerPropertiesTypes:
                 name="semantic",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "embedding_config_id": "emb-1",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -557,7 +614,11 @@ class TestChunkerConfigGetterValidations:
         cfg = ChunkerConfig(
             name="fixed",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 100, "chunk_overlap": 10},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 100,
+                "chunk_overlap": 10,
+            },
         )
 
         # this should work
@@ -572,6 +633,7 @@ class TestChunkerConfigGetterValidations:
             name="semantic",
             chunker_type=ChunkerType.SEMANTIC,
             properties={
+                "chunker_type": ChunkerType.SEMANTIC,
                 "embedding_config_id": "emb",
                 "buffer_size": 2,
                 "breakpoint_percentile_threshold": 50,
@@ -586,3 +648,161 @@ class TestChunkerConfigGetterValidations:
         # this should raise
         with pytest.raises(ValueError):
             scfg.fixed_window_properties
+
+
+class TestLoadChunkerConfigFromFile:
+    def test_load_chunker_config_from_file_fixed_window(self, tmp_path):
+        file_path = tmp_path / "test_chunker.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "158603030528",
+            "created_at": "2025-10-29T13:19:53.872744",
+            "created_by": "leonardmarcq",
+            "name": "Imperial Ocean",
+            "description": None,
+            "chunker_type": "fixed_window",
+            "properties": {
+                "chunker_type": "fixed_window",
+                "chunk_overlap": 0,
+                "chunk_size": 512,
+            },
+            "model_type": "chunker_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = ChunkerConfig.load_from_file(file_path)
+
+        # when loading from file, the chunker_type is added to the properties
+        assert config.chunker_type == ChunkerType.FIXED_WINDOW
+        assert config.properties["chunker_type"] == ChunkerType.FIXED_WINDOW
+        assert config.properties["chunk_size"] == 512
+        assert config.properties["chunk_overlap"] == 0
+
+    def test_load_chunker_config_from_file_semantic(self, tmp_path):
+        file_path = tmp_path / "test_chunker.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "191237851929",
+            "created_at": "2025-10-15T18:29:28.023477",
+            "created_by": "leonardmarcq",
+            "name": "Noble Griffin",
+            "description": None,
+            "chunker_type": "semantic",
+            "properties": {
+                "chunker_type": "semantic",
+                "embedding_config_id": "915466272848",
+                "buffer_size": 300,
+                "breakpoint_percentile_threshold": 95,
+                "include_metadata": False,
+                "include_prev_next_rel": False,
+            },
+            "model_type": "chunker_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = ChunkerConfig.load_from_file(file_path)
+
+        # when loading from file, the store_type is added to the properties
+        assert config.chunker_type == ChunkerType.SEMANTIC
+        assert config.properties["chunker_type"] == ChunkerType.SEMANTIC
+        assert config.properties["embedding_config_id"] == "915466272848"
+        assert config.properties["buffer_size"] == 300
+        assert config.properties["breakpoint_percentile_threshold"] == 95
+        assert config.properties["include_metadata"] is False
+        assert config.properties["include_prev_next_rel"] is False
+
+        # save the file and check that store_type makes it into the properties
+        config.save_to_file()
+        config_restored = ChunkerConfig.load_from_file(file_path)
+        assert config_restored.chunker_type == ChunkerType.SEMANTIC
+        assert config_restored.properties["chunker_type"] == ChunkerType.SEMANTIC
+
+
+class TestBackwardCompatibility:
+    def test_backward_compatibility_with_missing_chunker_type(self, tmp_path):
+        """
+        We added discriminated union and the chunker_type in the properties, but older
+        configs did not have the chunker_type in the properties. This test ensures that
+        we can load these old configs and that the chunker_type is added to the properties.
+        """
+        # we write the config to a file, and then we try to load it from file
+        file_path = tmp_path / "test_chunker.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "158603030528",
+            "created_at": "2025-10-29T13:19:53.872744",
+            "created_by": "leonardmarcq",
+            "name": "Imperial Ocean",
+            "description": None,
+            "chunker_type": "fixed_window",
+            "properties": {
+                # missing chunker_type
+                "chunk_overlap": 0,
+                "chunk_size": 512,
+            },
+            "model_type": "chunker_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = ChunkerConfig.load_from_file(file_path)
+
+        # when loading from file, the chunker_type is added to the properties
+        assert config.chunker_type == ChunkerType.FIXED_WINDOW
+
+        # should be added automatically by the loader
+        assert config.properties["chunker_type"] == ChunkerType.FIXED_WINDOW
+        assert config.properties["chunk_size"] == 512
+        assert config.properties["chunk_overlap"] == 0
+
+        # save the file and check that chunker_type makes it into the properties
+        config.save_to_file()
+        config_restored = ChunkerConfig.load_from_file(file_path)
+        assert config_restored.chunker_type == ChunkerType.FIXED_WINDOW
+        assert config_restored.properties["chunker_type"] == ChunkerType.FIXED_WINDOW
+
+    def test_backward_compatibility_with_missing_chunker_type_semantic(self, tmp_path):
+        """
+        We added discriminated union and the chunker_type in the properties, but older
+        configs did not have the chunker_type in the properties. This test ensures that
+        we can load these old configs and that the chunker_type is added to the properties.
+        """
+        # we write the config to a file, and then we try to load it from file
+        file_path = tmp_path / "test_chunker.kiln"
+        config_serialized = {
+            "v": 1,
+            "id": "191237851929",
+            "created_at": "2025-10-15T18:29:28.023477",
+            "created_by": "leonardmarcq",
+            "name": "Noble Griffin",
+            "description": None,
+            "chunker_type": "semantic",
+            "properties": {
+                # missing chunker_type
+                "embedding_config_id": "915466272848",
+                "buffer_size": 300,
+                "breakpoint_percentile_threshold": 95,
+                "include_metadata": False,
+                "include_prev_next_rel": False,
+            },
+            "model_type": "chunker_config",
+        }
+        with open(file_path, "w") as f:
+            json.dump(config_serialized, f, ensure_ascii=False, indent=4)
+        config = ChunkerConfig.load_from_file(file_path)
+
+        # when loading from file, the store_type is added to the properties
+        assert config.chunker_type == ChunkerType.SEMANTIC
+
+        # should be added automatically by the loader
+        assert config.properties["chunker_type"] == ChunkerType.SEMANTIC
+        assert config.properties["embedding_config_id"] == "915466272848"
+        assert config.properties["buffer_size"] == 300
+        assert config.properties["breakpoint_percentile_threshold"] == 95
+        assert config.properties["include_metadata"] is False
+        assert config.properties["include_prev_next_rel"] is False
+
+        # save the file and check that store_type makes it into the properties
+        config.save_to_file()
+        config_restored = ChunkerConfig.load_from_file(file_path)
+        assert config_restored.chunker_type == ChunkerType.SEMANTIC
+        assert config_restored.properties["chunker_type"] == ChunkerType.SEMANTIC

@@ -167,6 +167,7 @@
         bind:value
         on:input={run_validator}
         autocomplete="off"
+        data-op-ignore="true"
         {disabled}
       />
     {:else if inputType === "input"}
