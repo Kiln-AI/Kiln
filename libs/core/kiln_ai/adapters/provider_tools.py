@@ -154,6 +154,49 @@ def parse_custom_model_id(
     return ModelProviderName(provider_name), model_name
 
 
+def resolve_openai_compatible_model_id(model_id: str) -> tuple[str, str]:
+    """Infer the OpenAI compatible provider name and canonical model id.
+
+    Args:
+        model_id: The model identifier provided by the user or persisted run config.
+
+    Returns:
+        A tuple of (provider_name, canonical_model_id).
+
+    Raises:
+        ValueError: If the provider name cannot be inferred or the model id is invalid.
+    """
+
+    if "::" in model_id:
+        provider_name, canonical_model_id = model_id.split("::", 1)
+        if not provider_name or not canonical_model_id:
+            raise ValueError(f"Invalid openai compatible model ID: {model_id}")
+        return provider_name, canonical_model_id
+
+    provider_settings = Config.shared().openai_compatible_providers or []
+    provider_names = [p.get("name") for p in provider_settings if p.get("name")]
+
+    matching_provider = None
+    if "/" in model_id and provider_names:
+        sorted_candidates = sorted(provider_names, key=len, reverse=True)
+        for candidate in sorted_candidates:
+            prefix = f"{candidate}/"
+            if model_id.startswith(prefix):
+                matching_provider = candidate
+                canonical_model_id = model_id[len(prefix) :]
+                if not canonical_model_id:
+                    raise ValueError(
+                        f"Invalid openai compatible model ID: {model_id}"
+                    )
+                return matching_provider, canonical_model_id
+
+    if len(provider_names) == 1:
+        matching_provider = provider_names[0]
+        return matching_provider, model_id
+
+    raise ValueError(f"Invalid openai compatible model ID: {model_id}")
+
+
 def kiln_model_provider_from(
     name: str, provider_name: str | None = None
 ) -> KilnModelProvider:

@@ -659,20 +659,89 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
     assert config.base_url == "https://api.nokey.com"
 
 
-def test_lite_llm_config_invalid_id():
+def test_lite_llm_config_invalid_id(mock_shared_config):
     """Test handling of invalid model ID format"""
+    mock_shared_config.return_value.openai_compatible_providers = [
+        {
+            "name": "first",
+            "base_url": "https://api.first.com",
+            "api_key": "key",
+        },
+        {
+            "name": "second",
+            "base_url": "https://api.second.com",
+            "api_key": "key",
+        },
+    ]
+
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
             RunConfigProperties(
                 model_name="invalid-id-format",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
-                structured_output_mode="json_schema",
+                structured_output_mode=StructuredOutputMode.json_schema,
             )
         )
+
     assert (
         str(exc_info.value) == "Invalid openai compatible model ID: invalid-id-format"
     )
+
+
+def test_lite_llm_config_single_provider_infers_name(mock_shared_config):
+    """Fallback to the only configured provider when model id has no prefix."""
+    mock_shared_config.return_value.openai_compatible_providers = [
+        {
+            "name": "solo_provider",
+            "base_url": "https://api.solo-provider.test/v1",
+            "api_key": "solo-provider-key",
+        }
+    ]
+
+    config_result = litellm_core_provider_config(
+        RunConfigProperties(
+            model_name="model-without-prefix",
+            model_provider_name=ModelProviderName.openai_compatible,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        )
+    )
+
+    assert config_result.base_url == "https://api.solo-provider.test/v1"
+    assert config_result.additional_body_options == {
+        "api_key": "solo-provider-key"
+    }
+    assert config_result.run_config_properties.model_name == "model-without-prefix"
+
+
+def test_lite_llm_config_prefix_match_infers_name(mock_shared_config):
+    """Infer provider when model id uses provider/model naming."""
+    mock_shared_config.return_value.openai_compatible_providers = [
+        {
+            "name": "prefixed",
+            "base_url": "https://api.prefixed-provider.test/v1",
+            "api_key": "prefixed-key",
+        },
+        {
+            "name": "another",
+            "base_url": "https://api.another-provider.test/v1",
+            "api_key": "another-key",
+        },
+    ]
+
+    config_result = litellm_core_provider_config(
+        RunConfigProperties(
+            model_name="prefixed/model-with-prefix",
+            model_provider_name=ModelProviderName.openai_compatible,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        )
+    )
+
+    assert config_result.base_url == "https://api.prefixed-provider.test/v1"
+    assert config_result.additional_body_options == {"api_key": "prefixed-key"}
+    assert config_result.run_config_properties.model_name == "model-with-prefix"
 
 
 def test_lite_llm_config_no_providers(mock_shared_config):
