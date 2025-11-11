@@ -13,6 +13,8 @@ from kiln_ai.utils.lock import AsyncLockManager
 logger = logging.getLogger(__name__)
 
 
+# we cache the adapters because LanceDB requires state to persist between queries
+# or it does some heavy ops, like recreating the FTS index once after instantiation
 _adapter_cache: Dict[str, BaseVectorStoreAdapter] = {}
 _creation_locks = AsyncLockManager()
 
