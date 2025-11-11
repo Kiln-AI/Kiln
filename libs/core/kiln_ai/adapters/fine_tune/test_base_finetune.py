@@ -10,7 +10,12 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 )
 from kiln_ai.datamodel import DatasetSplit, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import (
+    ChatStrategy,
+    ModelProviderName,
+    StructuredOutputMode,
+)
+from kiln_ai.datamodel.run_config import RunConfigProperties
 
 
 class MockFinetune(BaseFinetuneAdapter):
@@ -178,6 +183,7 @@ async def test_create_and_start_success(mock_dataset):
     assert datamodel.path.exists()
     assert datamodel.data_strategy == ChatStrategy.single_turn
     assert datamodel.thinking_instructions is None
+    assert datamodel.run_config is None
 
 
 async def test_create_and_start_with_all_params(mock_dataset):
@@ -208,6 +214,34 @@ async def test_create_and_start_with_all_params(mock_dataset):
     # load the datamodel from the file, confirm it's saved
     loaded_datamodel = FinetuneModel.load_from_file(datamodel.path)
     assert loaded_datamodel.model_dump_json() == datamodel.model_dump_json()
+
+
+async def test_create_and_start_with_run_config(mock_dataset):
+    run_config = RunConfigProperties(
+        model_name="gpt-4o-mini-2024-07-18",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
+    )
+
+    _, datamodel = await MockFinetune.create_and_start(
+        dataset=mock_dataset,
+        provider_id="openai",
+        provider_base_model_id="gpt-4o-mini-2024-07-18",
+        train_split_name="train",
+        parameters={"epochs": 10},
+        system_message="Test system message",
+        data_strategy=ChatStrategy.single_turn,
+        thinking_instructions=None,
+        run_config=run_config,
+    )
+
+    assert datamodel.run_config == run_config
+
+    loaded_datamodel = FinetuneModel.load_from_file(datamodel.path)
+    assert loaded_datamodel.run_config == run_config
 
 
 async def test_create_and_start_invalid_parameters(mock_dataset):

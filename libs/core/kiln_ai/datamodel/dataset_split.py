@@ -14,9 +14,24 @@ from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
 )
+from kiln_ai.datamodel.task_run import TaskRun
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
+
+
+class DatasetToolInfo(BaseModel):
+    """
+    Information about tools used across task runs in a dataset split.
+    """
+
+    has_tool_mismatch: bool = Field(
+        description="Whether the tools from each run match across all runs in the dataset split."
+    )
+    tools: list[str] = Field(
+        default_factory=list,
+        description="Common tool IDs shared by every run; empty when tools are mismatched or no tools exist.",
+    )
 
 
 class DatasetSplitDefinition(BaseModel):
@@ -174,3 +189,76 @@ class DatasetSplit(KilnParentedModel):
             all_ids_in_splits.update(ids)
         missing = all_ids_in_splits - all_ids
         return len(missing)
+
+    def _get_runs(self) -> list[TaskRun]:
+        """
+        Get all task runs referenced in this dataset split.
+
+        Returns:
+            list[TaskRun]: list of task runs in this dataset split
+        """
+        parent = self.parent_task()
+        if parent is None:
+            return []
+
+        runs = []
+        all_run_ids = set()
+        for run_ids in self.split_contents.values():
+            all_run_ids.update(run_ids)
+
+        # Find all runs by their IDs
+        for task_run in parent.runs(readonly=True):
+            if task_run.id in all_run_ids:
+                runs.append(task_run)
+
+        return runs
+
+    @staticmethod
+    def compute_tool_info(runs: list[TaskRun]) -> DatasetToolInfo:
+        """
+        Compute tool info from a list of task runs.
+
+        Args:
+            runs: list of task runs to analyze
+
+        Returns:
+            DatasetToolInfo: information about tools used across the task runs
+        """
+
+        has_tool_mismatch = False
+        tools: set[str] | None = None
+
+        for run in runs:
+            # Extract tools from run config, treating missing source/run_config/tools_config as empty tools
+            run_tools: set[str] = set()
+            source = run.output.source
+            if source is not None and source.run_config is not None:
+                tools_config = source.run_config.tools_config
+                if tools_config is not None:
+                    run_tools = set(tools_config.tools)
+
+            # First run establishes the expected tool set (including empty)
+            if tools is None:
+                tools = run_tools
+            elif run_tools != tools:
+                # Mismatch found
+                has_tool_mismatch = True
+                tools = set()
+                break
+
+        # If no valid runs were processed, return empty tools
+        if tools is None:
+            tools = set()
+
+        return DatasetToolInfo(has_tool_mismatch=has_tool_mismatch, tools=sorted(tools))
+
+    def tool_info(self) -> DatasetToolInfo:
+        """
+        Helper method to compute tool info for the dataset split. Iterate through all runs in the dataset split and check the tools used in each run config.
+
+        Returns:
+            DatasetToolInfo: information about tools used across task runs in this dataset split
+        """
+        runs = self._get_runs()
+        tool_info = self.compute_tool_info(runs)
+        return tool_info

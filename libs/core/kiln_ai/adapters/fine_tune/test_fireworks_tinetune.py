@@ -250,7 +250,7 @@ async def test_generate_and_upload_jsonl_success(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock responses for the three API calls
     create_response = MagicMock(spec=httpx.Response)

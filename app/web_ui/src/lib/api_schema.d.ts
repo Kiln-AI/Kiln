@@ -1354,6 +1354,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finetune Dataset Tags */
+        get: operations["finetune_dataset_tags_api_projects__project_id__tasks__task_id__finetune_dataset_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/download_dataset_jsonl": {
         parameters: {
             query?: never;
@@ -2411,6 +2428,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -2721,6 +2739,22 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DatasetToolInfo
+         * @description Information about tools used across task runs in a dataset split.
+         */
+        DatasetToolInfo: {
+            /**
+             * Has Tool Mismatch
+             * @description Whether the tools from each run match across all runs in the dataset split.
+             */
+            has_tool_mismatch: boolean;
+            /**
+             * Tools
+             * @description Common tool IDs shared by every run; empty when tools are mismatched or no tools exist.
+             */
+            tools?: string[];
+        };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
             /** Message */
@@ -3540,6 +3574,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -3554,6 +3590,10 @@ export interface components {
             existing_finetunes: components["schemas"]["Finetune"][];
             /** Finetune Tags */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+            /** Tool Info By Name */
+            tool_info_by_name: {
+                [key: string]: components["schemas"]["DatasetToolInfo"];
+            };
         };
         /**
          * FinetuneDatasetTagInfo
@@ -3596,6 +3636,11 @@ export interface components {
             id: string;
             /** Data Strategies Supported */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
+            /**
+             * Supports Function Calling
+             * @default true
+             */
+            supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus
@@ -8203,6 +8248,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FinetuneDatasetInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finetune_dataset_tags_api_projects__project_id__tasks__task_id__finetune_dataset_tags_get: {
+        parameters: {
+            query?: {
+                tool_names?: string[] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinetuneDatasetTagInfo"][];
                 };
             };
             /** @description Validation Error */

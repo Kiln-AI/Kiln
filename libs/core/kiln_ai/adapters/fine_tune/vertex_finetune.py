@@ -162,7 +162,9 @@ class VertexFinetune(BaseFinetuneAdapter):
         formatter = DatasetFormatter(
             dataset, self.datamodel.system_message, self.datamodel.thinking_instructions
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         project, location = self.get_vertex_provider_location()
         storage_client = storage.Client(project=project)

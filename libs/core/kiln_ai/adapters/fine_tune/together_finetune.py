@@ -249,7 +249,9 @@ class TogetherFinetune(BaseFinetuneAdapter):
             system_message=self.datamodel.system_message,
             thinking_instructions=self.datamodel.thinking_instructions,
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         try:
             together_file = self.client.files.upload(

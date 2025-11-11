@@ -1,9 +1,9 @@
 import logging
 from enum import Enum
-from typing import Dict
+from typing import Annotated, Dict
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
@@ -37,11 +37,13 @@ from kiln_ai.datamodel.dataset_filters import (
 )
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
+    DatasetToolInfo,
     Train60Test20Val20SplitDefinition,
     Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
@@ -61,6 +63,7 @@ class FinetuneProviderModel(BaseModel):
             ChatStrategy.two_message_cot,
         ]
     )
+    supports_function_calling: bool = True
 
 
 class FinetuneProvider(BaseModel):
@@ -88,6 +91,8 @@ class FinetuneDatasetInfo(BaseModel):
     existing_datasets: list[DatasetSplit]
     existing_finetunes: list[Finetune]
     finetune_tags: list[FinetuneDatasetTagInfo]
+    # tool info for each dataset split
+    tool_info_by_name: dict[str, DatasetToolInfo]
 
 
 class DatasetSplitType(Enum):
@@ -133,6 +138,7 @@ class CreateFinetuneRequest(BaseModel):
     custom_system_message: str | None = None
     custom_thinking_instructions: str | None = None
     data_strategy: ChatStrategy
+    run_config_properties: RunConfigProperties | None = None
 
     @model_validator(mode="after")
     def validate_data_strategy(self):
@@ -168,6 +174,68 @@ def finetune_from_id(project_id: str, task_id: str, finetune_id: str) -> Finetun
             detail=f"Finetune with ID '{finetune_id}' not found",
         )
     return finetune
+
+
+def compute_finetune_tag_info(
+    task: Task, tool_filter: list[str] | None = None
+) -> list[FinetuneDatasetTagInfo]:
+    """
+    Compute finetune tag counts with quality filters, optionally filtering by tools.
+
+    Args:
+        task: The task to analyze
+        tool_filter: Optional list of tool IDs to filter by. Only runs with exactly these tools will be included.
+
+    Returns:
+        List of FinetuneDatasetTagInfo with counts for each fine_tune tag
+    """
+    finetune_tag_counts: Dict[str, int] = {}
+    reasoning_count: Dict[str, int] = {}
+    high_quality_count: Dict[str, int] = {}
+    reasoning_and_high_quality_count: Dict[str, int] = {}
+
+    required_tools_set = set(tool_filter) if tool_filter else None
+
+    for sample in task.runs(readonly=True):
+        # filter by tools if provided
+        if required_tools_set is not None:
+            run_tools_set: set[str] = set()
+            if (
+                sample.output.source
+                and sample.output.source.run_config
+                and sample.output.source.run_config.tools_config
+            ):
+                run_tools_set = set(sample.output.source.run_config.tools_config.tools)
+
+            if run_tools_set != required_tools_set:
+                continue
+
+        for tag in sample.tags:
+            if tag.startswith("fine_tune"):
+                finetune_tag_counts[tag] = finetune_tag_counts.get(tag, 0) + 1
+                is_reasoning = ThinkingModelDatasetFilter(sample)
+                is_high_quality = HighRatingDatasetFilter(sample)
+                if is_reasoning:
+                    reasoning_count[tag] = reasoning_count.get(tag, 0) + 1
+                if is_high_quality:
+                    high_quality_count[tag] = high_quality_count.get(tag, 0) + 1
+                if is_reasoning and is_high_quality:
+                    reasoning_and_high_quality_count[tag] = (
+                        reasoning_and_high_quality_count.get(tag, 0) + 1
+                    )
+
+    return [
+        FinetuneDatasetTagInfo(
+            tag=tag,
+            count=count,
+            reasoning_count=reasoning_count.get(tag, 0),
+            high_quality_count=high_quality_count.get(tag, 0),
+            reasoning_and_high_quality_count=reasoning_and_high_quality_count.get(
+                tag, 0
+            ),
+        )
+        for tag, count in finetune_tag_counts.items()
+    ]
 
 
 def connect_fine_tune_api(app: FastAPI):
@@ -243,6 +311,7 @@ def connect_fine_tune_api(app: FastAPI):
                         FinetuneProviderModel(
                             name=model.friendly_name,
                             id=provider.provider_finetune_id,
+                            supports_function_calling=provider.supports_function_calling,
                         )
                     )
 
@@ -291,41 +360,33 @@ def connect_fine_tune_api(app: FastAPI):
         existing_datasets = task.dataset_splits()
         existing_finetunes = task.finetunes()
 
-        finetune_tag_counts: Dict[str, int] = {}
-        reasoning_count: Dict[str, int] = {}
-        high_quality_count: Dict[str, int] = {}
-        reasoning_and_high_quality_count: Dict[str, int] = {}
-        for sample in task.runs(readonly=True):
-            for tag in sample.tags:
-                if tag.startswith("fine_tune"):
-                    finetune_tag_counts[tag] = finetune_tag_counts.get(tag, 0) + 1
-                    is_reasoning = ThinkingModelDatasetFilter(sample)
-                    is_high_quality = HighRatingDatasetFilter(sample)
-                    if is_reasoning:
-                        reasoning_count[tag] = reasoning_count.get(tag, 0) + 1
-                    if is_high_quality:
-                        high_quality_count[tag] = high_quality_count.get(tag, 0) + 1
-                    if is_reasoning and is_high_quality:
-                        reasoning_and_high_quality_count[tag] = (
-                            reasoning_and_high_quality_count.get(tag, 0) + 1
-                        )
+        finetune_tags = compute_finetune_tag_info(task)
+
+        # compute tool info for each dataset split
+        tool_info_by_name = {}
+        for dataset in existing_datasets:
+            tool_info_by_name[dataset.name] = dataset.tool_info()
+
+        # compute tool info for each dataset split
+        tool_info_by_name = {}
+        for dataset in existing_datasets:
+            tool_info_by_name[dataset.name] = dataset.tool_info()
 
         return FinetuneDatasetInfo(
             existing_datasets=existing_datasets,
             existing_finetunes=existing_finetunes,
-            finetune_tags=[
-                FinetuneDatasetTagInfo(
-                    tag=tag,
-                    count=count,
-                    reasoning_count=reasoning_count.get(tag, 0),
-                    high_quality_count=high_quality_count.get(tag, 0),
-                    reasoning_and_high_quality_count=reasoning_and_high_quality_count.get(
-                        tag, 0
-                    ),
-                )
-                for tag, count in finetune_tag_counts.items()
-            ],
+            finetune_tags=finetune_tags,
+            tool_info_by_name=tool_info_by_name,
         )
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags")
+    async def finetune_dataset_tags(
+        project_id: str,
+        task_id: str,
+        tool_names: Annotated[list[str] | None, Query()] = None,
+    ) -> list[FinetuneDatasetTagInfo]:
+        task = task_from_id(project_id, task_id)
+        return compute_finetune_tag_info(task, tool_filter=tool_names)
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
     async def create_dataset_split(
@@ -392,6 +453,7 @@ def connect_fine_tune_api(app: FastAPI):
             description=request.description,
             validation_split_name=request.validation_split_name,
             data_strategy=request.data_strategy,
+            run_config=request.run_config_properties,
         )
 
         return finetune_model
@@ -447,7 +509,7 @@ def connect_fine_tune_api(app: FastAPI):
             system_message=system_message,
             thinking_instructions=thinking_instructions,
         )
-        path = dataset_formatter.dump_to_file(
+        path = await dataset_formatter.dump_to_file(
             split_name,
             format_type_typed,
             data_strategy_typed,
@@ -564,10 +626,14 @@ async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
             else:
                 name = display_name + " (" + id_tail + ")"
 
+            # Check if the model supports tools via 'supportTools'
+            supports_tools = model.get("supportsTools", False)
+
             tuneable_models.append(
                 FinetuneProviderModel(
                     name=name,
                     id=id,
+                    supports_function_calling=supports_tools,
                 )
             )
 

@@ -299,7 +299,7 @@ class DatasetFormatter:
             raise ValueError("Dataset has no parent task")
         self.task = task
 
-    def dump_to_file(
+    async def dump_to_file(
         self,
         split_name: str,
         format_type: DatasetFormat,
@@ -356,7 +356,7 @@ class DatasetFormatter:
                     formatter = TraceBasedDatasetFormatter(
                         system_message=self.system_message
                     )
-                    example = formatter.build_training_chat_from_trace(
+                    example = await formatter.build_training_chat_from_trace(
                         task_run=task_run,
                         data_format=format_type,
                     )

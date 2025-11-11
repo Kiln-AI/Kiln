@@ -28,6 +28,7 @@
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
+  import { arrays_equal } from "$lib/utils/collections"
 
   // Props
   export let project_id: string
@@ -43,10 +44,11 @@
   export let hide_tools_selector: boolean = false
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
+  export let hide_model_selector: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
-  let tools: string[] = []
+  export let tools: string[] = []
   let requires_tool_support: boolean = false
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
@@ -157,11 +159,6 @@
     }
   }
 
-  // Helper function to compare tools arrays efficiently
-  function arrays_equal(a: string[], b: string[]): boolean {
-    return a.length === b.length && a.every((val, index) => val === b[index])
-  }
-
   // Helper function to convert run options to server run_config_properties format
   export function run_options_as_run_config_properties(): RunConfigProperties {
     return {
@@ -251,18 +248,24 @@
   }
 
   export function get_tools(): string[] {
-    return tools
+    return [...tools]
+  }
+
+  export function clear_tools() {
+    tools = []
   }
 </script>
 
 <div class="w-full flex flex-col gap-4">
-  <AvailableModelsDropdown
-    task_id={current_task?.id ?? null}
-    bind:model
-    settings={updated_model_dropdown_settings}
-    bind:error_message={model_dropdown_error_message}
-    bind:this={model_dropdown}
-  />
+  {#if !hide_model_selector}
+    <AvailableModelsDropdown
+      task_id={current_task?.id ?? null}
+      bind:model
+      settings={updated_model_dropdown_settings}
+      bind:error_message={model_dropdown_error_message}
+      bind:this={model_dropdown}
+    />
+  {/if}
   {#if !hide_prompt_selector}
     <PromptTypeSelector
       bind:prompt_method

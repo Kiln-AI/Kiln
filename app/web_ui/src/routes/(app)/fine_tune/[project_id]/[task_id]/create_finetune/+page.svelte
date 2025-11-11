@@ -9,7 +9,6 @@
   import type { ChatStrategy } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
-  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
   import { fine_tune_target_model as model_provider } from "$lib/stores"
   import {
     available_tuning_models,
@@ -26,9 +25,13 @@
     DatasetSplit,
     Finetune,
     FineTuneParameter,
+    RunConfigProperties,
+    ModelProviderName,
   } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 
   let finetune_description = ""
   let finetune_name = ""
@@ -37,19 +40,49 @@
   let finetune_custom_system_prompt = ""
   let finetune_custom_thinking_instructions =
     "Think step by step, explaining your reasoning."
-  let system_prompt_method = "simple_prompt_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
+  let run_config_component: RunConfigComponent | null = null
+  $: system_prompt_method =
+    run_config_component?.get_prompt_method() || "simple_prompt_builder"
+
+  let provider_id: ModelProviderName | null = null
   $: provider_id = $model_provider?.includes("/")
-    ? $model_provider?.split("/")[0]
+    ? ($model_provider?.split("/")[0] as ModelProviderName)
     : null
   $: base_model_id = $model_provider?.includes("/")
     ? $model_provider?.split("/").slice(1).join("/")
     : null
 
-  let available_model_select: [string, string][] = []
+  $: selected_model = $available_tuning_models
+    ?.flatMap((provider) =>
+      provider.models.map((model) => ({
+        provider,
+        model,
+      })),
+    )
+    .find(
+      ({ provider, model }) =>
+        provider.id === provider_id && model.id === base_model_id,
+    )
+
+  $: if (
+    selected_model &&
+    !selected_model.model.supports_function_calling &&
+    run_config_component
+  ) {
+    // Clear tools if the model doesn't support function calling
+    run_config_component.clear_tools()
+  }
+
+  $: hide_tools_selector =
+    selected_model && !selected_model.model.supports_function_calling
+
+  let selected_tools: string[] = []
+
+  let available_model_select: OptionGroup[] = []
 
   let selected_dataset: DatasetSplit | null = null
   $: selecting_thinking_dataset =
@@ -65,12 +98,12 @@
       ? "all"
       : null
 
-  $: step_2_visible = $model_provider && $model_provider !== disabled_header
-  $: step_3_visible =
+  $: step_3_visible = $model_provider && $model_provider !== disabled_header
+  $: step_4_visible =
     $model_provider && $model_provider !== disabled_header && !!selected_dataset
   $: is_download = !!$model_provider?.startsWith("download_")
-  $: step_4_download_visible = step_3_visible && is_download
-  $: submit_visible = !!(step_3_visible && !is_download)
+  $: step_5_download_visible = step_4_visible && is_download
+  $: submit_visible = !!(step_4_visible && !is_download)
 
   onMount(async () => {
     get_available_models()
@@ -83,56 +116,103 @@
       return
     }
     available_model_select = []
-    available_model_select.push([
-      disabled_header,
-      "Select a model to fine-tune",
-    ])
+
+    const models_with_tools: Option[] = []
+    const models_without_tools: Option[] = []
+    const disabled_providers: Option[] = []
+
     for (const provider of models) {
       for (const model of provider.models) {
-        available_model_select.push([
-          (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id,
-          provider.name +
-            ": " +
-            model.name +
-            (provider.enabled ? "" : " --- Requires API Key in Settings"),
-        ])
+        const model_key =
+          (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id
+        const model_label = provider.name + ": " + model.name
+
+        const option: Option = {
+          value: model_key,
+          label: model_label,
+        }
+
+        if (!provider.enabled) {
+          // if the provider is disabled, add a badge
+          option.badge = "Requires API Key"
+          option.badge_color = "primary"
+          option.disabled = true
+          disabled_providers.push(option)
+        } else if (!model.supports_function_calling) {
+          models_without_tools.push(option)
+        } else {
+          models_with_tools.push(option)
+        }
       }
-      // Providers with zero models should still appear and be disabled. Logging in will typically load their models
+
       if (!provider.enabled && provider.models.length === 0) {
-        available_model_select.push([
-          "disabled_" + provider.id,
-          provider.name + " --- Requires API Key in Settings",
-        ])
+        disabled_providers.push({
+          value: "disabled_" + provider.id,
+          label: provider.name,
+          badge: "Requires API Key",
+          badge_color: "primary",
+          disabled: true,
+        })
       }
     }
-    available_model_select.push([
-      "download_jsonl_msg",
-      "Download: OpenAI chat format (JSONL)",
-    ])
-    available_model_select.push([
-      "download_jsonl_json_schema_msg",
-      "Download: OpenAI chat format with JSON response (JSONL)",
-    ])
-    available_model_select.push([
-      "download_jsonl_toolcall",
-      "Download: OpenAI chat format with tool call response (JSONL)",
-    ])
-    available_model_select.push([
-      "download_huggingface_chat_template",
-      "Download: HuggingFace chat template (JSONL)",
-    ])
-    available_model_select.push([
-      "download_huggingface_chat_template_toolcall",
-      "Download: HuggingFace chat template with tool calls (JSONL)",
-    ])
-    available_model_select.push([
-      "download_vertex_gemini",
-      "Download: Google Vertex-AI Gemini format (JSONL)",
-    ])
+
+    if (models_with_tools.length > 0) {
+      available_model_select.push({
+        label: "Models with Tool Calling Support",
+        options: models_with_tools,
+      })
+    }
+
+    if (models_without_tools.length > 0) {
+      available_model_select.push({
+        label: "Models without Tool Calling Support",
+        options: models_without_tools,
+      })
+    }
+
+    if (disabled_providers.length > 0) {
+      available_model_select.push({
+        label: "Requires API Key Configuration",
+        options: disabled_providers,
+      })
+    }
+
+    available_model_select.push({
+      label: "Download Dataset",
+      options: [
+        {
+          value: "download_jsonl_msg",
+          label: "OpenAI chat format (JSONL)",
+        },
+        {
+          value: "download_jsonl_json_schema_msg",
+          label: "OpenAI chat format with JSON response (JSONL)",
+        },
+        {
+          value: "download_jsonl_toolcall",
+          label: "OpenAI chat format with tool call response (JSONL)",
+        },
+        {
+          value: "download_huggingface_chat_template",
+          label: "HuggingFace chat template (JSONL)",
+        },
+        {
+          value: "download_huggingface_chat_template_toolcall",
+          label: "HuggingFace chat template with tool calls (JSONL)",
+        },
+        {
+          value: "download_vertex_gemini",
+          label: "Google Vertex-AI Gemini format (JSONL)",
+        },
+      ],
+    })
 
     // Check if the model provider is in the available model select
     // If not, reset to disabled header. The list can change over time.
-    if (!available_model_select.find((m) => m[0] === $model_provider)) {
+    const all_values = available_model_select.flatMap((g) =>
+      g.options.map((o) => o.value),
+    )
+    if (!all_values.includes($model_provider)) {
       $model_provider = disabled_header
     }
   }
@@ -230,6 +310,18 @@
       // Filter out empty strings from hyperparameter_values, and parse/validate types
       const hyperparameter_values = build_parsed_hyperparameters()
 
+      // Create a run config object based on the UI
+      // Extract just the model name from the full path (e.g., "accounts/fireworks/models/qwen3-1p7b" -> "qwen3-1p7b")
+      const model_name = base_model_id?.split("/").pop() || base_model_id
+      const run_config_properties: RunConfigProperties | undefined =
+        run_config_component && model_name && provider_id
+          ? {
+              ...run_config_component.run_options_as_run_config_properties(),
+              model_name: model_name,
+              model_provider_name: provider_id,
+            }
+          : undefined
+
       const { data: create_finetune_response, error: post_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/finetunes",
@@ -258,6 +350,7 @@
               validation_split_name: selected_dataset_has_val
                 ? "val"
                 : undefined,
+              run_config_properties: run_config_properties,
             },
           },
         )
@@ -485,9 +578,9 @@
             label="Model & Provider"
             description="Select which model to fine-tune. Alternatively, download a JSONL file to fine-tune using any infrastructure."
             info_description="Connect providers in settings for 1-click fine-tuning. Alternatively, download a JSONL file to fine-tune using any infrastructure, like Unsloth or Axolotl."
-            inputType="select"
+            inputType="fancy_select"
             id="provider"
-            select_options={available_model_select}
+            fancy_select_options={available_model_select}
             bind:value={$model_provider}
           />
           <button
@@ -502,10 +595,24 @@
             />
           </button>
         </div>
-        {#if step_2_visible}
+        <div>
+          <div class="text-xl font-bold mb-4">
+            Step 2: Configure Fine-Tuning Run Settings
+          </div>
+          <RunConfigComponent
+            bind:this={run_config_component}
+            bind:tools={selected_tools}
+            {project_id}
+            hide_create_kiln_task_tool_button={true}
+            hide_model_selector={true}
+            {hide_tools_selector}
+          />
+        </div>
+
+        {#if step_3_visible}
           <div>
             <div class="text-xl font-bold">
-              Step 2: Select Fine-Tuning Dataset
+              Step 3: Select Fine-Tuning Dataset
             </div>
             <div class="font-light">
               Select a dataset to use for this fine-tune.
@@ -516,18 +623,16 @@
               />
             </div>
           </div>
-          <SelectFinetuneDataset {project_id} {task_id} bind:selected_dataset />
+          <SelectFinetuneDataset
+            {project_id}
+            {task_id}
+            required_tools={selected_tools}
+            bind:selected_dataset
+          />
         {/if}
 
-        {#if step_3_visible}
-          <div class="text-xl font-bold">Step 3: Options</div>
-          <PromptTypeSelector
-            bind:prompt_method={system_prompt_method}
-            description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
-            exclude_cot={true}
-            custom_prompt_name="Custom Fine Tuning Prompt"
-          />
+        {#if step_4_visible}
+          <div class="text-xl font-bold">Step 4: Options</div>
           {#if system_prompt_method === "custom"}
             <div class="p-4 border-l-4 border-gray-300">
               <FormElement
@@ -626,9 +731,9 @@
         {/if}
       </FormContainer>
     {/if}
-    {#if step_4_download_visible}
+    {#if step_5_download_visible}
       <div>
-        <div class="text-xl font-bold">Step 4: Download JSONL</div>
+        <div class="text-xl font-bold">Step 5: Download JSONL</div>
         <div class="text-sm">
           Download JSONL files to fine-tune using any infrastructure, such as
           <a

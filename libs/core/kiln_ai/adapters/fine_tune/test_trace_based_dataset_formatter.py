@@ -1,5 +1,5 @@
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -8,7 +8,37 @@ from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
     TraceBasedDatasetFormatter,
 )
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+
+
+def create_mock_task_run(
+    trace: list[ChatCompletionMessageParam], tool_ids: list[str] | None = None
+) -> Mock:
+    """Helper to create a mock TaskRun with proper structure"""
+    task = Mock(spec=TaskRun)
+    task.trace = trace
+    output_mock = Mock()
+
+    if tool_ids:
+        run_config = RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            tools_config=ToolsRunConfig(tools=tool_ids),
+        )
+        output_mock.source = Mock()
+        output_mock.source.run_config = run_config
+
+        parent_task_mock = AsyncMock()
+        task.parent_task = Mock(return_value=parent_task_mock)
+    else:
+        output_mock.source = None
+
+    task.output = output_mock
+    return task
 
 
 def trace_without_tools(jsonOutput: bool = False) -> list[ChatCompletionMessageParam]:
@@ -19,6 +49,96 @@ def trace_without_tools(jsonOutput: bool = False) -> list[ChatCompletionMessageP
         {
             "role": "assistant",
             "content": '{"answer": 4}' if jsonOutput else "The answer is 4.",
+        },
+    ]
+
+
+def expected_math_tool_definitions():
+    """Return expected tool definitions for math tools (add, subtract, multiply, divide)"""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "add",
+                "description": "Add two numbers together and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number to add",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to add",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "subtract",
+                "description": "Subtract the second number from the first number and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number (minuend)",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to subtract (subtrahend)",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "multiply",
+                "description": "Multiply two numbers together and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number to multiply",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to multiply",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "divide",
+                "description": "Divide the first number by the second number and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The dividend (number to be divided)",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The divisor (number to divide by)",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
         },
     ]
 
@@ -160,39 +280,36 @@ class TestTraceBasedDatasetFormatter:
         formatter = TraceBasedDatasetFormatter(system_message="Test system message")
         assert formatter.system_message == "Test system message"
 
-    def test_missing_trace(self):
+    async def test_missing_trace(self):
         """Test error when trace is missing"""
         formatter = TraceBasedDatasetFormatter(system_message="Test")
         task_run = Mock(spec=TaskRun)
         task_run.trace = None
 
         with pytest.raises(ValueError, match="Trace is required"):
-            formatter.build_training_chat_from_trace(
+            await formatter.build_training_chat_from_trace(
                 task_run, DatasetFormat.OPENAI_CHAT_JSONL
             )
 
-    def test_unsupported_format(self):
+    async def test_unsupported_format(self):
         """Test error with unsupported format"""
         formatter = TraceBasedDatasetFormatter(system_message="Test")
-
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
         with pytest.raises(ValueError, match="Unsupported data format"):
-            formatter.build_training_chat_from_trace(
+            await formatter.build_training_chat_from_trace(
                 task,
                 "invalid",  # type: ignore
             )
 
     # OPENAI_CHAT_JSONL
 
-    def test_OPENAI_CHAT_JSONL_without_tools(self):
+    async def test_OPENAI_CHAT_JSONL_without_tools(self):
         """Test generate openai chat message response"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSONL
         )
         assert result == {
@@ -206,43 +323,48 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_OPENAI_CHAT_JSONL_with_tools(self):
+    async def test_OPENAI_CHAT_JSONL_with_tools(self):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools()
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSONL
         )
         assert result == {
             "messages": correct_openai_chat_messages(),
+            "tools": expected_math_tool_definitions(),
         }
 
     # OPENAI_CHAT_JSON_SCHEMA_JSONL
 
-    def test_OPENAI_CHAT_JSON_SCHEMA_JSONL_without_tools(self):
+    async def test_OPENAI_CHAT_JSON_SCHEMA_JSONL_without_tools(self):
         """
         Test generate openai chat message response with json schema
         This mode checks if the answer (last assistant message) is a valid JSON structured output,
         then construct the dataset by going through generate_openai_chat_message_list
         """
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
         # Should throw error if the output is not a json
         with pytest.raises(
             ValueError,
             match="Last message is not a JSON Dictionary \\(structured data\\), and this format expects structured_data",
         ):
-            formatter.build_training_chat_from_trace(
+            await formatter.build_training_chat_from_trace(
                 task, DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
             )
 
         # Should construct the dataset by going through generate_openai_chat_message_list
         task.trace = trace_without_tools(jsonOutput=True)
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
         )
         assert result == {
@@ -255,13 +377,12 @@ class TestTraceBasedDatasetFormatter:
 
     # OPENAI_CHAT_TOOLCALL_JSONL
 
-    def test_OPENAI_CHAT_TOOLCALL_JSONL_without_tools(self):
+    async def test_OPENAI_CHAT_TOOLCALL_JSONL_without_tools(self):
         """Test generate openai chat message response with tool call"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL
         )
         assert result == {
@@ -285,13 +406,20 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_OPENAI_CHAT_TOOLCALL_JSONL_with_tools(self):
+    async def test_OPENAI_CHAT_TOOLCALL_JSONL_with_tools(self):
         """Test generate openai chat message response with tool call with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools(jsonOutput=True)
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+        task = create_mock_task_run(
+            trace_with_tools(jsonOutput=True), tool_ids=tool_ids
+        )
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL
         )
         assert result == {
@@ -367,18 +495,18 @@ class TestTraceBasedDatasetFormatter:
                         }
                     ],
                 },
-            ]
+            ],
+            "tools": expected_math_tool_definitions(),
         }
 
     # HUGGINGFACE_CHAT_TEMPLATE_JSONL
 
-    def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_without_tools(self):
+    async def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_without_tools(self):
         """Test generate openai chat message response"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL
         )
         assert result == {
@@ -392,13 +520,12 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_with_tools(self):
+    async def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_with_tools(self):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools()
+        task = create_mock_task_run(trace_with_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL
         )
         assert result == {
@@ -407,16 +534,15 @@ class TestTraceBasedDatasetFormatter:
 
     # HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
 
-    def test_HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL_without_tools(self):
+    async def test_HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL_without_tools(self):
         """
         Test generate huggingface chat template message response with tool call
         This format is similar to OPENAI_CHAT_TOOLCALL_JSONL, but with a 9 char UUID
         """
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
         )
 
@@ -440,13 +566,12 @@ class TestTraceBasedDatasetFormatter:
 
     # VERTEX_GEMINI
 
-    def test_VERTEX_GEMINI_without_tools(self):
+    async def test_VERTEX_GEMINI_without_tools(self):
         """Test generate vertex gemini message without tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.VERTEX_GEMINI
         )
         assert result == {
@@ -466,13 +591,18 @@ class TestTraceBasedDatasetFormatter:
             ],
         }
 
-    def test_VERTEX_GEMINI_with_tools(self):
+    async def test_VERTEX_GEMINI_with_tools(self):
         """Test generate vertex gemini message with multiple tool calls"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools()
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.VERTEX_GEMINI
         )
 
@@ -547,4 +677,177 @@ class TestTraceBasedDatasetFormatter:
                     ],
                 },
             ],
+            "tools": [
+                {
+                    "functionDeclarations": [
+                        {
+                            "name": "add",
+                            "description": "Add two numbers together and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The first number to add",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The second number to add",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                        {
+                            "name": "subtract",
+                            "description": "Subtract the second number from the first number and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The first number (minuend)",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The second number to subtract (subtrahend)",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                        {
+                            "name": "multiply",
+                            "description": "Multiply two numbers together and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The first number to multiply",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The second number to multiply",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                        {
+                            "name": "divide",
+                            "description": "Divide the first number by the second number and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The dividend (number to be divided)",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The divisor (number to divide by)",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                    ],
+                }
+            ],
         }
+
+    async def test_VERTEX_GEMINI_with_tool_declarations(self):
+        """Test generate vertex gemini message with tool declarations"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+        ]
+        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
+
+        result = await formatter.build_training_chat_from_trace(
+            task, DatasetFormat.VERTEX_GEMINI
+        )
+
+        assert "tools" in result
+        assert len(result["tools"]) == 1
+        assert "functionDeclarations" in result["tools"][0]
+        declarations = result["tools"][0]["functionDeclarations"]
+        assert len(declarations) == 2
+
+        add_tool = declarations[0]
+        assert add_tool["name"] == "add"
+        assert add_tool["parameters"]["type"] == "OBJECT"
+        assert add_tool["parameters"]["properties"]["a"]["type"] == "NUMBER"
+        assert add_tool["parameters"]["properties"]["b"]["type"] == "NUMBER"
+
+        subtract_tool = declarations[1]
+        assert subtract_tool["name"] == "subtract"
+        assert subtract_tool["parameters"]["type"] == "OBJECT"
+
+    def test_convert_schema_to_vertex_types(self):
+        """Test schema conversion from OpenAI (lowercase) to Vertex (uppercase) types"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test")
+
+        openai_schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Person name"},
+                "age": {"type": "integer", "description": "Person age"},
+                "score": {"type": "number"},
+                "active": {"type": "boolean"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "metadata": {
+                    "type": "object",
+                    "properties": {"key": {"type": "string"}},
+                },
+            },
+        }
+
+        vertex_schema = formatter._convert_schema_to_vertex_types(openai_schema)
+
+        assert vertex_schema["type"] == "OBJECT"
+        assert vertex_schema["properties"]["name"]["type"] == "STRING"
+        assert vertex_schema["properties"]["age"]["type"] == "INTEGER"
+        assert vertex_schema["properties"]["score"]["type"] == "NUMBER"
+        assert vertex_schema["properties"]["active"]["type"] == "BOOLEAN"
+        assert vertex_schema["properties"]["tags"]["type"] == "ARRAY"
+        assert vertex_schema["properties"]["tags"]["items"]["type"] == "STRING"
+        assert vertex_schema["properties"]["metadata"]["type"] == "OBJECT"
+        assert (
+            vertex_schema["properties"]["metadata"]["properties"]["key"]["type"]
+            == "STRING"
+        )
+
+    def test_convert_schema_preserves_non_type_fields(self):
+        """Test that schema conversion preserves all non-type fields"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test")
+
+        openai_schema = {
+            "type": "object",
+            "properties": {
+                "product": {
+                    "type": "string",
+                    "description": "Product name",
+                    "enum": ["Pixel 8 Pro 128GB", "Pixel 8 Pro 256GB"],
+                }
+            },
+            "required": ["product"],
+        }
+
+        vertex_schema = formatter._convert_schema_to_vertex_types(openai_schema)
+
+        expected_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "product": {
+                    "type": "STRING",
+                    "description": "Product name",
+                    "enum": ["Pixel 8 Pro 128GB", "Pixel 8 Pro 256GB"],
+                }
+            },
+            "required": ["product"],
+        }
+
+        assert vertex_schema == expected_schema
