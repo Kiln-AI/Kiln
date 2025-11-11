@@ -58,7 +58,7 @@
 
   function select_eval(evaluator: Eval) {
     const eval_set_filter_id = evaluator.eval_set_filter_id
-    const eval_configs_filter_id = evaluator.eval_configs_filter_id
+    const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
     const splits: Record<string, number> = {}
     if (
       eval_set_filter_id.startsWith("tag::") &&
@@ -99,7 +99,6 @@
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {
-      // TODO: This is passing 80/20 splits but we should be passing the eval tag only?
       goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
     } else {
       goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)

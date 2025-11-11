@@ -3090,7 +3090,7 @@ export interface components {
              * Eval Configs Filter Id
              * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
              */
-            eval_configs_filter_id: string | null;
+            eval_configs_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.

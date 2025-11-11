@@ -567,7 +567,7 @@
                         {/if}
                       </div>
                       <div>
-                        {#if link_from_filter_id(evaluator.eval_configs_filter_id)}
+                        {#if evaluator.eval_configs_filter_id && link_from_filter_id(evaluator.eval_configs_filter_id)}
                           <button
                             class="btn btn-sm {current_step_id ==
                             'human_ratings'
