@@ -90,7 +90,7 @@
                 template_id: "rag",
                 name: "Reference Answer Accuracy",
                 description:
-                  "Evaluate model accuracy against ground-truth Q&A pairs.", // TODO: Update this
+                  "Evaluate how well your task retrieves and answers queries using a Q&A dataset built from your documents.",
                 output_scores: [
                   {
                     name: "Reference Answer Accuracy",

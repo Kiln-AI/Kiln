@@ -22,6 +22,7 @@
     id="split_documents_into_chunks_checkbox"
     inputType="checkbox"
     label="Split documents into smaller chunks"
+    description="Useful for very long documents"
     info_description="For very long documents such as books, manuals, or transcripts, splitting into smaller chunks helps create more focused content."
     bind:value={split_documents_into_chunks}
   />

@@ -3,10 +3,10 @@
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
   import type { RunConfigProperties } from "$lib/types"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import ChunkingConfigForm from "./chunking_config_form.svelte"
+  import QnAGuidance from "./qna_guidance.svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
   type GenerateQnAPairsEvent = {
@@ -23,6 +23,7 @@
   export let keyboard_submit: boolean = false
   export let pairs_per_part: number = 5
   export let guidance: string = ""
+  export let selected_template: string = "custom"
   export let target_description: string = "all documents"
   export let generation_target_type: "all" | "document" | "part" = "all"
 
@@ -101,22 +102,7 @@
       <IncrementUi bind:value={pairs_per_part} />
     </div>
     <div class="flex flex-col gap-6">
-      {#if show_chunking_options}
-        <ChunkingConfigForm
-          bind:split_documents_into_chunks
-          bind:chunk_size_tokens
-          bind:chunk_overlap_tokens
-        />
-      {/if}
-
-      <FormElement
-        id="guidance_textarea"
-        inputType="textarea"
-        label="Guidance"
-        description="Instructions for the AI on how to generate query-answer pairs"
-        bind:value={guidance}
-        height="medium"
-      />
+      <QnAGuidance bind:guidance bind:selected_template />
 
       <RunConfigComponent
         bind:this={run_config_component}
@@ -125,9 +111,22 @@
         hide_prompt_selector={true}
         hide_tools_selector={true}
         model_dropdown_settings={{
+          requires_structured_output: true,
           requires_data_gen: true,
+          requires_uncensored_data_gen: false,
+          suggested_mode: "data_gen",
         }}
-      />
+      >
+        <div slot="advanced">
+          {#if show_chunking_options}
+            <ChunkingConfigForm
+              bind:split_documents_into_chunks
+              bind:chunk_size_tokens
+              bind:chunk_overlap_tokens
+            />
+          {/if}
+        </div>
+      </RunConfigComponent>
     </div>
   </FormContainer>
 </Dialog>

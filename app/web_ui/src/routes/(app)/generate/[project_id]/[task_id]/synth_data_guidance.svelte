@@ -25,7 +25,7 @@
 
   function clear_guidance() {
     guidance_data.set_guidance_for_type(guidance_type, null, "custom")
-    return true
+    return false
   }
 
   function show_guidance_dialog() {

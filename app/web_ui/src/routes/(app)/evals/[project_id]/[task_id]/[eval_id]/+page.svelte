@@ -251,8 +251,8 @@
     if (evaluator?.template === "rag") {
       return {
         1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
-        2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
-        3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
+        2: "Each eval needs a Q&A dataset to help find the best way of running your task by comparing outputs against reference answers. We'll help you create it with synthetic data!",
+        3: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, tools, or fine-tunes.",
       }
     } else {
       return {
@@ -530,6 +530,8 @@
                               You have {eval_progress?.dataset_size} eval items and
                               {eval_progress?.golden_dataset_size} golden items.
                             {/if}
+                          {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0 && evaluator.template === "rag"}
+                            Create a query & answer dataset for this eval.
                           {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0}
                             Create data for this eval.
                           {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}

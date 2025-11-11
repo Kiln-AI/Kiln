@@ -54,6 +54,7 @@ export type QnASession = {
   selected_tags: string[]
   extractor_id: string | null
   extraction_complete: boolean
+  template: "custom" | "query_answer_generation"
   generation_config: {
     pairs_per_part: number
     guidance: string
@@ -110,6 +111,7 @@ export type QnaStore = {
   extractorId: Writable<string | null>
   pairsPerPart: Writable<number>
   guidance: Writable<string>
+  template: Writable<"custom" | "query_answer_generation">
   useFullDocuments: Writable<boolean>
   chunkSizeTokens: Writable<number | null>
   chunkOverlapTokens: Writable<number | null>
@@ -135,6 +137,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     selected_tags: [],
     extractor_id: null,
     extraction_complete: false,
+    template: "custom",
     generation_config: {
       pairs_per_part: 5,
       guidance: "",
@@ -170,6 +173,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
   const extractorId = writable<string | null>(null)
   const pairsPerPart = writable<number>(5)
   const guidance = writable<string>("")
+  const template = writable<"custom" | "query_answer_generation">("custom")
   const useFullDocuments = writable<boolean>(true)
   const chunkSizeTokens = writable<number | null>(null)
   const chunkOverlapTokens = writable<number | null>(null)
@@ -187,6 +191,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       selected_tags: [],
       extractor_id: null,
       extraction_complete: false,
+      template: "query_answer_generation",
       generation_config: {
         pairs_per_part: 5,
         guidance: defaultGuidance,
@@ -206,6 +211,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       extractorId.set(initialValue.extractor_id)
       pairsPerPart.set(initialValue.generation_config.pairs_per_part)
       guidance.set(initialValue.generation_config.guidance)
+      template.set(initialValue.template)
       useFullDocuments.set(initialValue.generation_config.use_full_documents)
       chunkSizeTokens.set(initialValue.generation_config.chunk_size_tokens)
       chunkOverlapTokens.set(
@@ -236,6 +242,11 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           ...s,
           generation_config: { ...s.generation_config, guidance: value },
         }))
+      }),
+    )
+    configUnsubscribes.push(
+      template.subscribe((value) => {
+        _state.update((s) => ({ ...s, template: value }))
       }),
     )
     configUnsubscribes.push(
@@ -473,6 +484,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       selected_tags: [],
       extractor_id: null,
       extraction_complete: false,
+      template: "query_answer_generation",
       generation_config: {
         pairs_per_part: 5,
         guidance: defaultGuidance,
@@ -996,6 +1008,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     extractorId,
     pairsPerPart,
     guidance,
+    template,
     useFullDocuments,
     chunkSizeTokens,
     chunkOverlapTokens,

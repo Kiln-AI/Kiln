@@ -129,7 +129,7 @@
 <Dialog
   bind:this={dialog}
   title="Select Documents"
-  subtitle="Choose documents for Q&A generation."
+  sub_subtitle="These documents will be used to generate query & answer pairs for your eval."
   width="normal"
 >
   <FormContainer

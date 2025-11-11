@@ -44,6 +44,36 @@
   $: qnaExtractorId = qna?.extractorId
   $: qnaPairsPerPart = qna?.pairsPerPart
   $: qnaGuidance = qna?.guidance
+  $: qnaTemplate = qna?.template
+
+  let localGuidance: string = $qnaGuidance || ""
+  let localTemplate: "custom" | "query_answer_generation" =
+    $qnaTemplate || "query_answer_generation"
+  let lastStoreGuidance: string = $qnaGuidance || ""
+  let lastStoreTemplate: "custom" | "query_answer_generation" =
+    $qnaTemplate || "query_answer_generation"
+
+  $: {
+    if ($qnaGuidance !== lastStoreGuidance) {
+      localGuidance = $qnaGuidance || ""
+      lastStoreGuidance = $qnaGuidance || ""
+    }
+    if ($qnaTemplate !== lastStoreTemplate) {
+      localTemplate = $qnaTemplate || "query_answer_generation"
+      lastStoreTemplate = $qnaTemplate || "query_answer_generation"
+    }
+  }
+
+  $: {
+    if (localGuidance !== lastStoreGuidance && qna) {
+      qna.guidance.set(localGuidance)
+      lastStoreGuidance = localGuidance
+    }
+    if (localTemplate !== lastStoreTemplate && qna) {
+      qna.template.set(localTemplate)
+      lastStoreTemplate = localTemplate
+    }
+  }
   $: qnaUseFullDocuments = qna?.useFullDocuments
   $: qnaChunkSizeTokens = qna?.chunkSizeTokens
   $: qnaChunkOverlapTokens = qna?.chunkOverlapTokens
@@ -299,9 +329,9 @@
         <div class="flex flex-col">
           <div class="text-xs text-gray-500 uppercase font-medium">Goal</div>
           <div class="whitespace-nowrap">
-            RAG Evaluation
+            Evaluation
             <InfoTooltip
-              tooltip_text="Generate query-answer pairs from document content."
+              tooltip_text="The goal of the data generation task. This impacts the type of data that will be generated."
               no_pad={true}
             />
           </div>
@@ -319,9 +349,9 @@
             Template
           </div>
           <div class="whitespace-nowrap">
-            Q&A
+            {$qnaTemplate || "query_answer_generation"}
             <InfoTooltip
-              tooltip_text="Q&A generation template for extracting query-answer pairs from documents"
+              tooltip_text="A prompt template used to generate data. You can edit the template when generating query-answer pairs."
               no_pad={true}
             />
           </div>
@@ -412,13 +442,27 @@
             </div>
             <div class="mt-1 2xl:mt-2">
               {#if $qnaCurrentStep == 1}
-                <button
-                  class="btn btn-sm btn-primary"
-                  on:click={open_select_documents_dialog}
-                  disabled={$qnaMaxStep && $qnaMaxStep > 1}
-                >
-                  Select Documents
-                </button>
+                <div class="flex justify-center">
+                  {#if $qnaSelectedTags?.length > 0}
+                    <Warning
+                      warning_message={`Document Tag${$qnaSelectedTags?.length > 1 ? "s" : ""}: ${[
+                        ...($qnaSelectedTags || []),
+                      ]
+                        .sort()
+                        .join(", ")}`}
+                      warning_icon="check"
+                      warning_color="success"
+                      tight
+                    />
+                  {:else}
+                    <Warning
+                      warning_message="All Documents in Library"
+                      warning_icon="check"
+                      warning_color="success"
+                      tight
+                    />
+                  {/if}
+                </div>
               {:else if $qnaCurrentStep == 2}
                 <button
                   class="btn btn-sm btn-primary"
@@ -599,7 +643,8 @@
     bind:dialog={show_generate_qna_dialog}
     {project_id}
     pairs_per_part={$qnaPairsPerPart}
-    guidance={$qnaGuidance}
+    bind:guidance={localGuidance}
+    bind:selected_template={localTemplate}
     split_documents_into_chunks={!$qnaUseFullDocuments}
     chunk_size_tokens={$qnaChunkSizeTokens}
     chunk_overlap_tokens={$qnaChunkOverlapTokens}

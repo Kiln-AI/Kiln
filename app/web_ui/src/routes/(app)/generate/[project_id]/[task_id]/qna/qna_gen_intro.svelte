@@ -18,9 +18,9 @@
     ]}
   >
     <div slot="description">
-      Select documents from your library to generate Q&A data. Queries and
-      answers will be extracted from the document content to create eval data. <a
-        href="https://docs.kiln.tech/docs/qna-data-generation"
+      Build an eval dataset containing queries and correct answers from your
+      document library. <a
+        href="https://docs.kiln.tech/docs/evaluations/evaluate-rag-accuracy-q-and-a-evals"
         target="_blank"
         rel="noopener noreferrer"
         class="link">Guide</a

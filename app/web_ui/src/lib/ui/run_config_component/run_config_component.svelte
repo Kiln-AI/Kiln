@@ -288,10 +288,11 @@
         bind:structured_output_mode
         has_structured_output={requires_structured_output}
       />
+      <slot name="advanced" />
     </Collapse>
   {:else}
     <Collapse title="Advanced Options">
-      <div class="flex flex-col gap-0">
+      <div class="flex flex-col gap-4">
         {#if !hide_tools_selector}
           <ToolsSelector
             bind:tools
@@ -307,6 +308,7 @@
           bind:structured_output_mode
           has_structured_output={requires_structured_output}
         />
+        <slot name="advanced" />
       </div>
     </Collapse>
   {/if}
