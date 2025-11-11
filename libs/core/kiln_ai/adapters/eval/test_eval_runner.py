@@ -16,11 +16,13 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
+    EvalDataType,
     EvalOutputScore,
     EvalRun,
     EvalScores,
 )
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 @pytest.fixture
@@ -488,7 +490,7 @@ async def test_run_job_success_task_run_eval(
     mock_scores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             return (
                 TaskRun(
                     input="test input",
@@ -548,7 +550,7 @@ async def test_run_job_success_eval_config_eval(
     mock_scores: EvalScores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             raise ValueError("Attempted to run task and eval for a config eval")
 
         async def run_eval(
@@ -625,7 +627,7 @@ async def test_run_job_evaluator_error(
     )
 
     class ErrorEvaluator(BaseEval):
-        async def run_task_and_eval(self, input_text):
+        async def run_task_and_eval(self, input):
             raise ValueError("Evaluation failed")
 
     with patch(
@@ -636,3 +638,190 @@ async def test_run_job_evaluator_error(
 
     assert success is False
     assert len(mock_eval_config.runs()) == 0
+
+
+@pytest.mark.asyncio
+async def test_run_job_with_full_trace_evaluation_data_type(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    """Test EvalRunner with full_trace evaluation_data_type"""
+    # Set the eval config to use full_trace evaluation data type
+    mock_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+    # Persist the change so validation on reload sees full_trace
+    mock_eval_config.parent.save_to_file()
+
+    # Create a task run to evaluate
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    # Create eval job
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    # Mock the evaluator
+    mock_scores = {"accuracy": 0.95}
+    mock_trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "test input"},
+        {"role": "assistant", "content": "test response"},
+    ]
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, input):
+            result_task_run = TaskRun(
+                input="test input",
+                input_source=data_source,
+                output=TaskOutput(output="evaluated output"),
+                intermediate_outputs={"intermediate_output": "intermediate output"},
+                trace=mock_trace,
+            )
+            return (
+                result_task_run,
+                mock_scores,
+                {"intermediate_output": "intermediate output"},
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        return_value=lambda *args: MockEvaluator(*args),
+    ):
+        success = await mock_eval_runner.run_job(job)
+
+    assert success is True
+
+    # Verify eval run was saved with trace
+    eval_runs = mock_eval_config.runs()
+    assert len(eval_runs) == 1
+    saved_run = eval_runs[0]
+    assert saved_run.task_run_trace is not None
+    assert isinstance(saved_run.task_run_trace, str)
+    # Verify the trace was JSON serialized
+    import json
+
+    parsed_trace = json.loads(saved_run.task_run_trace)
+    assert parsed_trace == mock_trace
+
+
+@pytest.mark.asyncio
+async def test_run_job_with_final_answer_evaluation_data_type(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    """Test EvalRunner with final_answer evaluation_data_type (default)"""
+    # Set the eval config to use final_answer evaluation data type (default)
+    mock_eval_config.parent.evaluation_data_type = EvalDataType.final_answer
+
+    # Create a task run to evaluate
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    # Create eval job
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    # Mock the evaluator
+    mock_scores = {"accuracy": 0.95}
+    mock_trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "test"},
+        {"role": "assistant", "content": "response"},
+    ]
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, input):
+            result_task_run = TaskRun(
+                input="test input",
+                input_source=data_source,
+                output=TaskOutput(output="evaluated output"),
+                intermediate_outputs={"intermediate_output": "intermediate output"},
+                trace=mock_trace,
+            )
+            return (
+                result_task_run,
+                mock_scores,
+                {"intermediate_output": "intermediate output"},
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        return_value=lambda *args: MockEvaluator(*args),
+    ):
+        success = await mock_eval_runner.run_job(job)
+
+    assert success is True
+
+    # Verify eval run was saved without trace
+    eval_runs = mock_eval_config.runs()
+    assert len(eval_runs) == 1
+    saved_run = eval_runs[0]
+    assert saved_run.task_run_trace is None
+
+
+@pytest.mark.asyncio
+async def test_run_job_with_none_trace(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    """Test EvalRunner with None trace"""
+    # Set the eval config to use full_trace evaluation data type
+    mock_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+
+    # Create a task run to evaluate
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    # Create eval job
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    # Mock the evaluator
+    mock_scores = {"accuracy": 0.95}
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, input):
+            result_task_run = TaskRun(
+                input="test input",
+                input_source=data_source,
+                output=TaskOutput(output="evaluated output"),
+                intermediate_outputs={"intermediate_output": "intermediate output"},
+                trace=None,  # None trace
+            )
+            return (
+                result_task_run,
+                mock_scores,
+                {"intermediate_output": "intermediate output"},
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        return_value=lambda *args: MockEvaluator(*args),
+    ):
+        success = await mock_eval_runner.run_job(job)
+
+    # For full_trace evals, None trace should fail and not save a run
+    assert success is False
+    eval_runs = mock_eval_config.runs()
+    assert len(eval_runs) == 0

@@ -2,7 +2,7 @@ import type { EvalTemplateId, Task, Eval } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
-  "kiln_requirements" | "kiln_issue"
+  "kiln_requirements" | "kiln_issue" | "tool_call"
 >
 
 const eval_steps_static_templates: Record<StaticEvalTemplates, string[]> = {
@@ -87,6 +87,46 @@ export function get_eval_steps(
     }
     steps.push(
       "Considering the above, does the model's output contain the issue described? It should pass if it does not contain the issue, and fail if it does contain the issue.",
+    )
+    return steps
+  }
+
+  if (template === "tool_call") {
+    const tool_function_name = evaluator.template_properties.tool_function_name
+    if (!tool_function_name) {
+      throw new Error(
+        "Tool function name is required for Appropriate Tool Use template",
+      )
+    }
+
+    const steps: string[] = [
+      `Look at the full <conversation_history> for the task run, does the model call the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
+    ]
+
+    steps.push(
+      `Utilizing information from:
+      
+       (a) <appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation
+       (b) the user's initial query <user_input>
+       (c) model task description <task_description>
+       
+       Should the tool ${tool_function_name} have been called and called with the right arguments/parameters?`,
+    )
+    steps.push(
+      `Considering the above steps, classify the tool usage into one of these categories:
+
+**Tool Called Correctly**: The model called the tool with correct parameters at the appropriate time. The user request clearly required the tool, and the model responded appropriately.
+
+**Tool Called Incorrectly**: The model called the tool but shouldn't have, OR called it with wrong/incomplete parameters. This includes:
+- Calling with incorrect or malformed parameters
+- Calling when it shouldn't have been used at all
+- Misinterpreting the input and calling inappropriately (e.g., using a math tool when user says "add people to guest list")
+
+**Tool Call Missed**: The model should have called the tool but did not. The input was in the tool's domain but phrased indirectly/ambiguously, causing the model to miss the opportunity or call the wrong tool.
+
+**Tool Correctly Not Called**: The model correctly did not call the tool. The input was out-of-domain, a meta-question, or otherwise inappropriate for tool usage.
+
+Based on this classification, the eval should PASS if the model's behavior matches what it should have done (called correctly, or correctly not called), and FAIL if it doesn't match (called incorrectly, or missed the call).`,
     )
     return steps
   }

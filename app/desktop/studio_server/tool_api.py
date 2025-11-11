@@ -21,6 +21,7 @@ from kiln_ai.datamodel.tool_id import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
@@ -156,6 +157,18 @@ class SearchToolApiDescription(BaseModel):
     tool_name: str
     name: str
     description: str | None
+
+
+class ToolDefinitionResponse(BaseModel):
+    """
+    Response model for tool definition endpoint.
+    Provides the OpenAI-compatible tool definition along with extracted fields.
+    """
+
+    tool_id: str
+    function_name: str
+    description: str
+    parameters: Dict[str, Any]
 
 
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
@@ -668,3 +681,40 @@ def connect_tool_servers_api(app: FastAPI):
             for rag_config in project.rag_configs(readonly=True)
             if not rag_config.is_archived
         ]
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition")
+    async def get_tool_definition(
+        project_id: str, task_id: str, tool_id: str
+    ) -> ToolDefinitionResponse:
+        """
+        Get the actual OpenAI tool definition for a specific tool ID.
+
+        This returns the real function name and parameters that would be used
+        in OpenAI function calls, not the display names from ToolSetApiDescription.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID for tools that require task context
+            tool_id: The tool ID to get the definition for
+        """
+
+        task = task_from_id(project_id, task_id)
+
+        try:
+            # Instantiate the tool from its ID
+            tool = tool_from_id(tool_id, task)
+
+            # Get the actual toolcall definition
+            definition = await tool.toolcall_definition()
+            return ToolDefinitionResponse(
+                tool_id=tool_id,
+                function_name=definition["function"]["name"],
+                description=definition["function"]["description"],
+                parameters=definition["function"]["parameters"],
+            )
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tool not found or could not be instantiated: {tool_id}. Error: {e!s}",
+            )
