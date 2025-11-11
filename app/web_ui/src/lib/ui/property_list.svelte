@@ -75,17 +75,11 @@
           <button
             class="badge badge-outline"
             on:click={() => {
-              if (property.onClick) {
-                property.onClick()
-              } else if (property.link) {
+              if (property.link) {
                 goto(property.link)
               }
             }}
           >
-            {property.value}
-          </button>
-        {:else if property.onClick}
-          <button class="link" on:click={() => property.onClick?.()}>
             {property.value}
           </button>
         {:else if property.link}
