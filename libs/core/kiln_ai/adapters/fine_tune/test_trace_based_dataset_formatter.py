@@ -11,6 +11,16 @@ from kiln_ai.datamodel import TaskRun
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
+def create_mock_task_run(trace: list[ChatCompletionMessageParam]) -> Mock:
+    """Helper to create a mock TaskRun with proper structure"""
+    task = Mock(spec=TaskRun)
+    task.trace = trace
+    output_mock = Mock()
+    output_mock.source = None
+    task.output = output_mock
+    return task
+
+
 def trace_without_tools(jsonOutput: bool = False) -> list[ChatCompletionMessageParam]:
     """Simple trace: system, user, assistant"""
     return [
@@ -160,39 +170,36 @@ class TestTraceBasedDatasetFormatter:
         formatter = TraceBasedDatasetFormatter(system_message="Test system message")
         assert formatter.system_message == "Test system message"
 
-    def test_missing_trace(self):
+    async def test_missing_trace(self):
         """Test error when trace is missing"""
         formatter = TraceBasedDatasetFormatter(system_message="Test")
         task_run = Mock(spec=TaskRun)
         task_run.trace = None
 
         with pytest.raises(ValueError, match="Trace is required"):
-            formatter.build_training_chat_from_trace(
+            await formatter.build_training_chat_from_trace(
                 task_run, DatasetFormat.OPENAI_CHAT_JSONL
             )
 
-    def test_unsupported_format(self):
+    async def test_unsupported_format(self):
         """Test error with unsupported format"""
         formatter = TraceBasedDatasetFormatter(system_message="Test")
-
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
         with pytest.raises(ValueError, match="Unsupported data format"):
-            formatter.build_training_chat_from_trace(
+            await formatter.build_training_chat_from_trace(
                 task,
                 "invalid",  # type: ignore
             )
 
     # OPENAI_CHAT_JSONL
 
-    def test_OPENAI_CHAT_JSONL_without_tools(self):
+    async def test_OPENAI_CHAT_JSONL_without_tools(self):
         """Test generate openai chat message response"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSONL
         )
         assert result == {
@@ -206,13 +213,12 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_OPENAI_CHAT_JSONL_with_tools(self):
+    async def test_OPENAI_CHAT_JSONL_with_tools(self):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools()
+        task = create_mock_task_run(trace_with_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSONL
         )
         assert result == {
@@ -221,28 +227,27 @@ class TestTraceBasedDatasetFormatter:
 
     # OPENAI_CHAT_JSON_SCHEMA_JSONL
 
-    def test_OPENAI_CHAT_JSON_SCHEMA_JSONL_without_tools(self):
+    async def test_OPENAI_CHAT_JSON_SCHEMA_JSONL_without_tools(self):
         """
         Test generate openai chat message response with json schema
         This mode checks if the answer (last assistant message) is a valid JSON structured output,
         then construct the dataset by going through generate_openai_chat_message_list
         """
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
         # Should throw error if the output is not a json
         with pytest.raises(
             ValueError,
             match="Last message is not a JSON Dictionary \\(structured data\\), and this format expects structured_data",
         ):
-            formatter.build_training_chat_from_trace(
+            await formatter.build_training_chat_from_trace(
                 task, DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
             )
 
         # Should construct the dataset by going through generate_openai_chat_message_list
         task.trace = trace_without_tools(jsonOutput=True)
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
         )
         assert result == {
@@ -255,13 +260,12 @@ class TestTraceBasedDatasetFormatter:
 
     # OPENAI_CHAT_TOOLCALL_JSONL
 
-    def test_OPENAI_CHAT_TOOLCALL_JSONL_without_tools(self):
+    async def test_OPENAI_CHAT_TOOLCALL_JSONL_without_tools(self):
         """Test generate openai chat message response with tool call"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL
         )
         assert result == {
@@ -285,13 +289,12 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_OPENAI_CHAT_TOOLCALL_JSONL_with_tools(self):
+    async def test_OPENAI_CHAT_TOOLCALL_JSONL_with_tools(self):
         """Test generate openai chat message response with tool call with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools(jsonOutput=True)
+        task = create_mock_task_run(trace_with_tools(jsonOutput=True))
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL
         )
         assert result == {
@@ -372,13 +375,12 @@ class TestTraceBasedDatasetFormatter:
 
     # HUGGINGFACE_CHAT_TEMPLATE_JSONL
 
-    def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_without_tools(self):
+    async def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_without_tools(self):
         """Test generate openai chat message response"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL
         )
         assert result == {
@@ -392,13 +394,12 @@ class TestTraceBasedDatasetFormatter:
             ]
         }
 
-    def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_with_tools(self):
+    async def test_HUGGINGFACE_CHAT_TEMPLATE_JSONL_with_tools(self):
         """Test generate openai chat message response with tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools()
+        task = create_mock_task_run(trace_with_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL
         )
         assert result == {
@@ -407,16 +408,15 @@ class TestTraceBasedDatasetFormatter:
 
     # HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
 
-    def test_HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL_without_tools(self):
+    async def test_HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL_without_tools(self):
         """
         Test generate huggingface chat template message response with tool call
         This format is similar to OPENAI_CHAT_TOOLCALL_JSONL, but with a 9 char UUID
         """
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL
         )
 
@@ -440,13 +440,12 @@ class TestTraceBasedDatasetFormatter:
 
     # VERTEX_GEMINI
 
-    def test_VERTEX_GEMINI_without_tools(self):
+    async def test_VERTEX_GEMINI_without_tools(self):
         """Test generate vertex gemini message without tools"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_without_tools()
+        task = create_mock_task_run(trace_without_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.VERTEX_GEMINI
         )
         assert result == {
@@ -466,13 +465,12 @@ class TestTraceBasedDatasetFormatter:
             ],
         }
 
-    def test_VERTEX_GEMINI_with_tools(self):
+    async def test_VERTEX_GEMINI_with_tools(self):
         """Test generate vertex gemini message with multiple tool calls"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = Mock(spec=TaskRun)
-        task.trace = trace_with_tools()
+        task = create_mock_task_run(trace_with_tools())
 
-        result = formatter.build_training_chat_from_trace(
+        result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.VERTEX_GEMINI
         )
 

@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.tools.base_tool import ToolCallDefinition
+from kiln_ai.tools.tool_registry import tool_definitions_from_ids
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -16,7 +18,7 @@ class TraceBasedDatasetFormatter:
     ):
         self.system_message = system_message
 
-    def build_training_chat_from_trace(
+    async def build_training_chat_from_trace(
         self,
         task_run: TaskRun,
         data_format: DatasetFormat,
@@ -26,12 +28,17 @@ class TraceBasedDatasetFormatter:
         if not trace:
             raise ValueError("Trace is required")
 
+        # Get the tool definitions from the task run config
+        tool_definitions = await self._get_tool_definitions_from_config(task_run)
+
         # Generate training message based on data format
         match data_format:
             case DatasetFormat.OPENAI_CHAT_JSONL:
-                return self.generate_openai_chat_message_response(trace)
+                return self.generate_openai_chat_message_response(
+                    trace, tool_definitions
+                )
             case DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL:
-                return self.generate_openai_json_schema_message(trace)
+                return self.generate_openai_json_schema_message(trace, tool_definitions)
             case DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL:
                 return self.generate_openai_toolcall_message(trace)
             case DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_JSONL:
@@ -44,6 +51,29 @@ class TraceBasedDatasetFormatter:
                 raise ValueError(f"Unsupported data format: {data_format}")
 
     # Helpers
+
+    async def _get_tool_definitions_from_config(
+        self,
+        task_run: TaskRun,
+    ) -> list[ToolCallDefinition] | None:
+        """Extract tool definitions from task run config"""
+        if not task_run.output.source:
+            return None
+
+        run_config = task_run.output.source.run_config
+        if not run_config:
+            return None
+
+        tools_config = run_config.tools_config
+        if not tools_config or not tools_config.tools:
+            return None
+
+        task = task_run.parent_task()
+        if task is None:
+            return None
+
+        tool_definitions = await tool_definitions_from_ids(tools_config.tools, task)
+        return tool_definitions
 
     def _validate_json_dictionary(self, s: str, property_name: str) -> dict[str, Any]:
         """Validate if a string is valid JSON dictionary, raises ValueError if not"""
@@ -111,14 +141,24 @@ class TraceBasedDatasetFormatter:
     def generate_openai_chat_message_response(
         self,
         trace: list[ChatCompletionMessageParam],
+        tools: list[ToolCallDefinition] | None = None,
     ) -> Dict[str, Any]:
         """Generate openai chat message list from trace"""
         messages = self.generate_openai_chat_message_list(trace)
-        return {"messages": messages}
+        result: Dict[str, Any] = {"messages": messages}
+
+        if tools:
+            result["tools"] = tools
+
+        # print("result", result)
+        # raise Exception("stop here")
+
+        return result
 
     def generate_openai_json_schema_message(
         self,
         trace: list[ChatCompletionMessageParam],
+        tools: list[ToolCallDefinition] | None = None,
     ) -> Dict[str, Any]:
         """
         Generate json schema message from trace.
@@ -140,7 +180,7 @@ class TraceBasedDatasetFormatter:
             ) from e
 
         # The response is valid structured output. Put this into OpenAI format.
-        return self.generate_openai_chat_message_response(trace)
+        return self.generate_openai_chat_message_response(trace, tools)
 
     def generate_openai_toolcall_message(
         self,

@@ -3,7 +3,7 @@ import logging
 import re
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -903,6 +903,7 @@ async def test_should_call_trace_based_dataset_formatter(mock_dataset):
     with patch.object(
         TraceBasedDatasetFormatter,
         "build_training_chat_from_trace",
+        new_callable=AsyncMock,
         return_value={"messages": [{"role": "user", "content": "test"}]},
     ) as mock_trace_formatter:
         await formatter.dump_to_file(

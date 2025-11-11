@@ -10,7 +10,7 @@ from kiln_ai.datamodel.tool_id import (
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
 )
-from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -115,3 +115,22 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
         return RagTool(tool_id, rag_config)
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")
+
+
+async def tool_definitions_from_ids(
+    tool_ids: list[str], task: Task | None = None
+) -> list[ToolCallDefinition]:
+    """
+    Get OpenAI-compatible tool definitions from a list of tool IDs.
+    """
+    tool_definitions = []
+    for tool_id in tool_ids:
+        try:
+            tool = tool_from_id(tool_id, task)
+            tool_def = await tool.toolcall_definition()
+            tool_definitions.append(tool_def)
+        except Exception:
+            print(f"Failed to get tool definition for tool ID: {tool_id}")
+            # stop here
+            raise
+    return tool_definitions
