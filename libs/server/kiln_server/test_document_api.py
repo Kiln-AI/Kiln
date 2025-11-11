@@ -31,6 +31,7 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
+    CreateExtractorConfigRequest,
     build_rag_workflow_runner,
     connect_document_api,
     run_rag_workflow_runner_with_status,
@@ -73,6 +74,7 @@ def mock_extractor_config(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -91,6 +93,7 @@ def mock_chunker_config(mock_project):
         description="Test chunker description",
         chunker_type=ChunkerType.FIXED_WINDOW,
         properties={
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 100,
             "chunk_overlap": 10,
         },
@@ -212,6 +215,7 @@ def extractor_config_setup(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -407,6 +411,7 @@ async def test_create_extractor_config_success(client, mock_project):
             "model_provider_name": "gemini_api",
             "model_name": "gemini-2.0-flash",
             "properties": {
+                "extractor_type": "litellm",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -427,6 +432,7 @@ async def test_create_extractor_config_success(client, mock_project):
     assert result["passthrough_mimetypes"] == ["text/plain"]
     assert result["model_provider_name"] == "gemini_api"
     assert result["model_name"] == "gemini-2.0-flash"
+    assert result["properties"]["extractor_type"] == "litellm"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"
@@ -589,6 +595,7 @@ async def test_create_chunker_config_success(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -618,6 +625,7 @@ async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "invalid_chunker_type",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -642,6 +650,7 @@ async def test_create_chunker_config_invalid_chunk_size(
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": chunk_size,
                     "chunk_overlap": chunk_overlap,
                 },
@@ -677,6 +686,7 @@ async def test_create_semantic_chunker_config_success(client, mock_project):
                 "description": "Test Semantic Chunker Config description",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -724,6 +734,7 @@ async def test_create_semantic_chunker_config_override_include_metadata_and_incl
                 "description": "Test Semantic Chunker Config description",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -765,6 +776,7 @@ async def test_create_semantic_chunker_config_minimal(client, mock_project):
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": str(embedding.id),
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 95,
@@ -801,6 +813,7 @@ async def test_create_semantic_chunker_config_missing_embedding_config_id(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "breakpoint_percentile_threshold": 95,
                     "buffer_size": 1,
                     "include_metadata": False,
@@ -831,6 +844,7 @@ async def test_create_semantic_chunker_config_missing_buffer_size(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
                     "include_metadata": False,
@@ -861,6 +875,7 @@ async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 1,
                     "embedding_config_id": "emb-1",
                     "include_metadata": False,
@@ -891,6 +906,7 @@ async def test_create_semantic_chunker_config_invalid_buffer_size(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 0,  # Invalid buffer size
                     "breakpoint_percentile_threshold": 95,
                     "embedding_config_id": "emb-1",
@@ -922,6 +938,7 @@ async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
             json={
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "buffer_size": 1,
                     "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
                     "embedding_config_id": "emb-1",
@@ -950,6 +967,7 @@ async def test_create_semantic_chunker_config_embedding_config_not_found(
                 "name": "Bad Semantic Chunker Config",
                 "chunker_type": "semantic",
                 "properties": {
+                    "chunker_type": "semantic",
                     "embedding_config_id": "does-not-exist",
                     "buffer_size": 2,
                     "breakpoint_percentile_threshold": 90,
@@ -985,10 +1003,17 @@ async def test_create_extractor_config_model_not_found(client, mock_project):
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
-    assert response.status_code == 422, response.text
+    assert response.status_code == 404, response.text
     assert "Model fake_model not found" in response.json()["message"]
 
 
@@ -2048,6 +2073,13 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
@@ -3687,6 +3719,7 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         model_provider_name=ModelProviderName.ollama,
         model_name="llama3",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "prompt",
             "prompt_video": "prompt",
             "prompt_audio": "prompt",
@@ -4318,3 +4351,27 @@ async def test_get_embedding_config_success(
     assert result["model_provider_name"] == mock_embedding_config.model_provider_name
     assert result["model_name"] == mock_embedding_config.model_name
     assert result["properties"] == mock_embedding_config.properties
+
+
+def test_get_properties_unsupported_extractor_type_raises() -> None:
+    req = CreateExtractorConfigRequest(
+        name="n",
+        description=None,
+        model_provider_name=ModelProviderName.openai,
+        model_name="gpt_5_mini",
+        output_format=OutputFormat.MARKDOWN,
+        passthrough_mimetypes=[],
+        properties={
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": "x",
+            "prompt_image": "x",
+            "prompt_video": "x",
+            "prompt_audio": "x",
+        },
+    )
+
+    # Corrupt to an unknown extractor_type to hit the default branch
+    req.__dict__["properties"] = {"extractor_type": "bogus"}
+
+    with pytest.raises(Exception):
+        req.get_properties()

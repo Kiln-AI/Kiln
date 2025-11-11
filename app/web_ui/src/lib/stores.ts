@@ -1,5 +1,6 @@
 import { writable, get } from "svelte/store"
 import { dev } from "$app/environment"
+import type { ModelProviderName } from "$lib/types"
 import type {
   Project,
   Task,
@@ -451,14 +452,46 @@ export function vector_store_name(store_type: VectorStoreType | null): string {
   }
 }
 
+// Friendly names for model providers.
+// Prefer the ones from the server if available, but can fall back to these
+const provider_name_map: Record<ModelProviderName, string> = {
+  openai: "OpenAI",
+  groq: "Groq",
+  amazon_bedrock: "Amazon Bedrock",
+  ollama: "Ollama",
+  openrouter: "OpenRouter",
+  fireworks_ai: "Fireworks AI",
+  kiln_fine_tune: "Kiln Fine Tune",
+  kiln_custom_registry: "Custom Registry",
+  openai_compatible: "OpenAI Compatible",
+  anthropic: "Anthropic",
+  gemini_api: "Gemini API",
+  azure_openai: "Azure OpenAI",
+  huggingface: "Hugging Face",
+  vertex: "Google Vertex AI",
+  together_ai: "Together AI",
+  siliconflow_cn: "SiliconFlow CN",
+  cerebras: "Cerebras",
+  docker_model_runner: "Docker Model Runner",
+}
+
 export function provider_name_from_id(provider_id: string): string {
   if (!provider_id) {
     return "Unknown"
   }
+  // Prefer the provider name from the available models list
   const provider = get(available_models).find(
     (provider) => provider.provider_id === provider_id,
   )
-  return provider?.provider_name || provider_id
+  if (provider?.provider_name) {
+    return provider?.provider_name
+  }
+  // Fallback to the provider name map
+  if (provider_id in provider_name_map) {
+    return provider_name_map[provider_id as ModelProviderName]
+  }
+  // Fallback to the provider ID
+  return provider_id
 }
 
 export function prompt_name_from_id(

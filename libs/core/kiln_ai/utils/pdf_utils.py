@@ -4,12 +4,16 @@ Utilities for working with PDF files.
 
 import asyncio
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
 import pypdfium2
 from pypdf import PdfReader, PdfWriter
+
+# some of these operations are blocking, so we should run them outside of the event loop
+pdf_conversion_executor = ProcessPoolExecutor(max_workers=1)
 
 
 @asynccontextmanager
@@ -39,7 +43,7 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
         yield page_paths
 
 
-async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
     image_paths = []
 
     # note: doing this in a thread causes a segfault - but this is slow and blocking
@@ -47,7 +51,6 @@ async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
     pdf = pypdfium2.PdfDocument(pdf_path)
     try:
         for idx, page in enumerate(pdf):
-            await asyncio.sleep(0)
             # scale=2 is legible for ~A4 pages (research papers, etc.) - lower than this is blurry
             bitmap = page.render(scale=2).to_pil()
             target_path = output_dir / f"img-{pdf_path.name}-{idx}.png"
@@ -57,3 +60,14 @@ async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
         return image_paths
     finally:
         pdf.close()
+
+
+async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        pdf_conversion_executor,
+        _convert_pdf_to_images_sync,
+        pdf_path,
+        output_dir,
+    )
+    return result
