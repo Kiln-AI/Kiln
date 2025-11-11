@@ -175,6 +175,10 @@
     }
   }
 
+  $: if (finetune_dataset_info && required_tools) {
+    load_filtered_tags()
+  }
+
   $: tag_select_options = [
     {
       label: "Dataset Tags",
@@ -190,6 +194,8 @@
   $: show_existing_dataset_option =
     finetune_dataset_info?.existing_finetunes.length
   $: show_new_dataset_option = !!finetune_dataset_info
+  $: new_dataset_disabled = filtered_tags.length === 0
+  $: existing_dataset_disabled = valid_datasets.length === 0
   $: top_options = [
     {
       id: "add",
@@ -204,6 +210,7 @@
             name: "Reuse Dataset from an Existing Fine-Tune",
             description:
               "When comparing multiple base models, it's best to use exactly the same fine-tuning dataset.",
+            disabled: existing_dataset_disabled,
           },
         ]
       : []),
@@ -214,6 +221,7 @@
             name: "Create a New Fine-Tuning Dataset",
             description:
               "Create a new fine-tuning dataset by selecting a subset of your data.",
+            disabled: new_dataset_disabled,
           },
         ]
       : []),
@@ -221,7 +229,6 @@
 
   async function select_top_option(option: string) {
     if (option === "new_dataset") {
-      await load_filtered_tags()
       if (filtered_tags.length === 1) {
         dataset_tag = filtered_tags[0].tag
       }
@@ -425,6 +432,15 @@
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
+      {#if new_dataset_disabled || (existing_dataset_disabled && show_existing_dataset_option)}
+        <div class="mt-4 max-w-[500px]">
+          <Warning
+            warning_message="No existing Fine-Tune datasets or Dataset Filter Tag that match your selected tools. Tool-based fine-tuning requires all runs in a dataset to use the exact same tools as your current selection. Consider adding data or adjusting your tool selection."
+            warning_icon="exclaim"
+            warning_color="primary"
+          />
+        </div>
+      {/if}
     {/if}
   </div>
 {/if}
@@ -546,22 +562,5 @@
         />
       {/each}
     </div>
-    {#if invalid_datasets.length > 0}
-      <div class="flex flex-col gap-4 text-sm max-w-[600px] mt-4">
-        <Warning
-          warning_message="These datasets cannot be used because they use different tools. Tool-based fine-tuning requires all runs in a dataset to use the exact same tools as your current selection."
-          warning_icon="exclaim"
-          warning_color="primary"
-        />
-        {#each invalid_datasets as dataset}
-          {@const finetune_names = finetune_names_from_dataset(dataset)}
-          <ExistingDatasetButton
-            {dataset}
-            finetuneNames={finetune_names}
-            disabled={true}
-          />
-        {/each}
-      </div>
-    {/if}
   {/if}
 </Dialog>
