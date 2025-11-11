@@ -33,10 +33,6 @@ async def vector_store_adapter_for_config(
         return cached
 
     async with _creation_locks.acquire(cache_key):
-        cached_again = _adapter_cache.get(cache_key)
-        if cached_again is not None:
-            return cached_again
-
         match vector_store_config.store_type:
             case (
                 VectorStoreType.LANCE_DB_FTS
@@ -47,8 +43,6 @@ async def vector_store_adapter_for_config(
                     rag_config,
                     vector_store_config,
                 )
-
-                await adapter.create_fts_index()
             case _:
                 raise_exhaustive_enum_error(vector_store_config.store_type)
 

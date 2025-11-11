@@ -26,7 +26,7 @@ from kiln_ai.adapters.vector_store.lancedb_helpers import (
     store_type_to_lancedb_query_type,
 )
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.env import temporary_env
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -274,22 +274,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 raise_exhaustive_enum_error(self.query_type)
         return kwargs
 
-    async def create_fts_index(self) -> None:
-        if (
-            self.vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS
-            or self.vector_store_config.store_type == VectorStoreType.LANCE_DB_HYBRID
-        ):
-            if self.lancedb_vector_store.table is None:
-                raise ValueError("Table is not initialized")
-
-            self.lancedb_vector_store.table.create_fts_index(
-                self.vector_store_config.properties["text_key"], replace=True
-            )
-        else:
-            raise ValueError(
-                "create_fts_index is only supported for FTS and Hybrid search"
-            )
-
     async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
         try:
             if self.lancedb_vector_store.table is None:
@@ -300,7 +284,6 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 # llama_index lazy creates the FTS index on query if it does not exist - but there is a bug
                 # and it never actually knows if it is created so it creates it every time, which when run at high
                 # concurrency causes a Too Many Open Files error
-                self.lancedb_vector_store._fts_index = "dummy_fts_index"
                 query_result = self.lancedb_vector_store.query(
                     LlamaIndexVectorStoreQuery(
                         **self.build_kwargs_for_query(query),
