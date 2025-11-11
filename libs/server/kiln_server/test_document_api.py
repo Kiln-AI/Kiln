@@ -4740,7 +4740,7 @@ async def test_ephemeral_split_document_success_with_chunks(
             extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
             output=KilnAttachmentModel.from_data(
                 "This is a test extraction output that will be split into chunks. "
-                * 10,
+                * 50,
                 "text/plain",
             ),
         )
@@ -4748,7 +4748,10 @@ async def test_ephemeral_split_document_success_with_chunks(
 
         response = client.post(
             f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
-            json={"chunk_size": 20, "chunk_overlap": 5},
+            json={
+                "chunk_size": 20,
+                "chunk_overlap": 5,
+            },
         )
 
         assert response.status_code == 200

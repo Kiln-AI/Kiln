@@ -2025,6 +2025,7 @@ def connect_document_api(app: FastAPI):
             name="ephemeral-fixed-window",
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
                 "chunk_size": request.chunk_size,
                 "chunk_overlap": request.chunk_overlap or 0,
             },
