@@ -33,6 +33,7 @@ def make_app(lifespan=None):
 
     @app.get("/ping")
     def ping():
+        """Ping the server 🏓"""
         return "pong"
 
     connect_project_api(app)

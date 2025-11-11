@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Ping */
+        /**
+         * Ping
+         * @description Ping the server 🏓
+         */
         get: operations["ping_ping_get"];
         put?: never;
         post?: never;
@@ -2382,7 +2385,7 @@ export interface components {
             /** @description The type of the chunker */
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
-            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
         };
         /**
          * CreateDatasetSplitRequest
@@ -3763,10 +3766,33 @@ export interface components {
         };
         /** FixedWindowChunkerProperties */
         FixedWindowChunkerProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            chunker_type: "fixed_window";
             /** Chunk Overlap */
             chunk_overlap: number;
             /** Chunk Size */
             chunk_size: number;
+        };
+        /** FixedWindowChunkerPropertiesPublic */
+        FixedWindowChunkerPropertiesPublic: {
+            /**
+             * @description The type of the chunker (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            chunker_type: "fixed_window";
+            /**
+             * Chunk Size
+             * @description The chunk size to use for the chunker.
+             */
+            chunk_size: number;
+            /**
+             * Chunk Overlap
+             * @description The chunk overlap to use for the chunker.
+             */
+            chunk_overlap: number;
         };
         /** Function */
         Function: {
@@ -4721,7 +4747,7 @@ export interface components {
             /** Structured Input */
             structured_input?: {
                 [key: string]: unknown;
-            } | null;
+            } | unknown[] | null;
             /** Tags */
             tags?: string[] | null;
         };
@@ -4794,6 +4820,11 @@ export interface components {
         };
         /** SemanticChunkerProperties */
         SemanticChunkerProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            chunker_type: "semantic";
             /** Embedding Config Id */
             embedding_config_id: string;
             /** Buffer Size */
@@ -4804,6 +4835,29 @@ export interface components {
             include_metadata: boolean;
             /** Include Prev Next Rel */
             include_prev_next_rel: boolean;
+        };
+        /** SemanticChunkerPropertiesPublic */
+        SemanticChunkerPropertiesPublic: {
+            /**
+             * @description The type of the chunker (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            chunker_type: "semantic";
+            /**
+             * Embedding Config Id
+             * @description The embedding config to use for the RAG workflow.
+             */
+            embedding_config_id: string;
+            /**
+             * Buffer Size
+             * @description The buffer size to use for the chunker.
+             */
+            buffer_size: number;
+            /**
+             * Breakpoint Percentile Threshold
+             * @description The breakpoint percentile threshold to use for the chunker.
+             */
+            breakpoint_percentile_threshold: number;
         };
         /**
          * StructuredOutputMode
