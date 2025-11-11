@@ -10,11 +10,11 @@ from pydantic import (
     NonNegativeInt,
     PositiveInt,
     SerializationInfo,
-    TypeAdapter,
+    ValidationInfo,
     field_serializer,
     model_validator,
 )
-from typing_extensions import TypedDict
+from typing_extensions import Literal, TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -38,6 +38,7 @@ class ChunkerType(str, Enum):
 
 
 class SemanticChunkerProperties(TypedDict, total=True):
+    chunker_type: Literal[ChunkerType.SEMANTIC]
     embedding_config_id: str
     buffer_size: PositiveInt
     breakpoint_percentile_threshold: NonNegativeInt
@@ -46,6 +47,7 @@ class SemanticChunkerProperties(TypedDict, total=True):
 
 
 class FixedWindowChunkerProperties(TypedDict, total=True):
+    chunker_type: Literal[ChunkerType.FIXED_WINDOW]
     chunk_overlap: NonNegativeInt
     chunk_size: PositiveInt
 
@@ -86,11 +88,6 @@ FixedWindowChunkerPropertiesValidator = Annotated[
     AfterValidator(lambda v: validate_fixed_window_chunker_properties(v)),
 ]
 
-ChunkerConfigTypeAdapters = {
-    ChunkerType.SEMANTIC: TypeAdapter(SemanticChunkerProperties),
-    ChunkerType.FIXED_WINDOW: TypeAdapter(FixedWindowChunkerProperties),
-}
-
 
 class ChunkerConfig(KilnParentedModel):
     name: FilenameString = Field(
@@ -106,6 +103,7 @@ class ChunkerConfig(KilnParentedModel):
         SemanticChunkerPropertiesValidator | FixedWindowChunkerPropertiesValidator
     ) = Field(
         description="Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.",
+        discriminator="chunker_type",
     )
 
     # Workaround to return typed parent without importing Project
@@ -114,26 +112,40 @@ class ChunkerConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
+    @model_validator(mode="before")
+    def upgrade_missing_discriminator_properties(
+        cls, data: dict, info: ValidationInfo
+    ) -> dict:
+        if not info.context or not info.context.get("loading_from_file", False):
+            # Not loading from file, so no need to upgrade
+            return data
+
+        if not isinstance(data, dict):
+            return data
+
+        # backward compatibility:
+        # - we originally did not have the chunker_type in the properties, so we need to add it here
+        # - we started wanted to have chunker_type in the properties to use pydantic's discriminated union feature
+        properties = data.get("properties", {})
+        if "chunker_type" not in properties:
+            # the chunker_type on the parent model is always there, we just need to add it to the properties
+            properties["chunker_type"] = data["chunker_type"]
+            data["properties"] = properties
+        return data
+
     @model_validator(mode="after")
-    def validate_properties_matching_chunker_type(self) -> "ChunkerConfig":
-        # at this point, the properties are already validated by the pydantic validator
-        # but we have no guarantee we have the correct type of properties based on the chunker_type
-        # so we need to check here that the properties are aligned with the chunker_type and we
-        # are not getting fixed_window_properties when the chunker_type is semantic or vice versa
-        try:
-            ChunkerConfigTypeAdapters[self.chunker_type].validate_python(
-                self.properties
-            )
-        except Exception as e:
+    def ensure_chunker_type_matches_properties(self):
+        # sanity check to ensure the chunker_type matches the properties chunker_type
+        if self.chunker_type != self.properties["chunker_type"]:
             raise ValueError(
-                f"The properties do not match the chunker type ({self.chunker_type}): {e}"
-            ) from e
+                f"Chunker type mismatch: {self.chunker_type} != {self.properties['chunker_type']}. This is a bug, please report it."
+            )
         return self
 
     # expose the typed properties based on the chunker_type
     @property
     def semantic_properties(self) -> SemanticChunkerProperties:
-        if self.chunker_type != ChunkerType.SEMANTIC:
+        if self.properties["chunker_type"] != ChunkerType.SEMANTIC:
             raise ValueError(
                 "Semantic properties are only available for semantic chunker."
             )
@@ -141,11 +153,11 @@ class ChunkerConfig(KilnParentedModel):
         # or cast (but it is currently banned in our linting rules). Better solution
         # would be discriminated union, but that requires the discriminator to be part
         # of the properties (not outside on the parent model).
-        return self.properties  # type: ignore
+        return self.properties
 
     @property
     def fixed_window_properties(self) -> FixedWindowChunkerProperties:
-        if self.chunker_type != ChunkerType.FIXED_WINDOW:
+        if self.properties["chunker_type"] != ChunkerType.FIXED_WINDOW:
             raise ValueError(
                 "Fixed window properties are only available for fixed window chunker."
             )
@@ -153,7 +165,7 @@ class ChunkerConfig(KilnParentedModel):
         # or cast (but it is currently banned in our linting rules). Better solution
         # would be discriminated union, but that requires the discriminator to be part
         # of the properties (not outside on the parent model).
-        return self.properties  # type: ignore
+        return self.properties
 
 
 class Chunk(BaseModel):

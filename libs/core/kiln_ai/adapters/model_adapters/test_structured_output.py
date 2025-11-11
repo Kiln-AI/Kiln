@@ -13,6 +13,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput,
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
+from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
@@ -40,7 +41,7 @@ async def test_structured_output_ollama(tmp_path, model_name):
 
 
 class MockAdapter(BaseAdapter):
-    def __init__(self, kiln_task: datamodel.Task, response: Dict | str | None):
+    def __init__(self, kiln_task: datamodel.Task, response: InputType | None):
         super().__init__(
             task=kiln_task,
             run_config=RunConfigProperties(

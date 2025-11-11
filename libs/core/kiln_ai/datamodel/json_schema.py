@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Annotated, Dict
+from typing import Annotated, Any, Dict
 
 import jsonschema
 import jsonschema.exceptions
@@ -15,8 +15,16 @@ JsonObjectSchema = Annotated[
 Must be a valid JSON schema object with 'type': 'object' and 'properties' defined.
 """
 
+JsonSchema = Annotated[
+    str,
+    AfterValidator(lambda v: _check_json_schema(v, require_object=False)),
+]
+"""A pydantic type that validates strings containing JSON schema definitions.
+Must be a valid JSON schema, unlike above does not need to be a object schema.
+"""
 
-def _check_json_schema(v: str) -> str:
+
+def _check_json_schema(v: str, require_object: bool = True) -> str:
     """Internal validation function for JSON schema strings.
 
     Args:
@@ -28,27 +36,32 @@ def _check_json_schema(v: str) -> str:
     Raises:
         ValueError: If the schema is invalid
     """
-    schema_from_json_str(v)
+    schema_from_json_str(v, require_object=require_object)
     return v
 
 
-def validate_schema(instance: Dict, schema_str: str) -> None:
-    """Validate a dictionary against a JSON schema.
+def validate_schema(
+    instance: Any, schema_str: str, require_object: bool = True
+) -> None:
+    """Validate an instance against a JSON schema.
 
     Args:
-        instance: Dictionary to validate
+        instance: Instance to validate
         schema_str: JSON schema string to validate against
 
     Raises:
         jsonschema.exceptions.ValidationError: If validation fails
     """
-    schema = schema_from_json_str(schema_str)
+    schema = schema_from_json_str(schema_str, require_object=require_object)
     v = jsonschema.Draft202012Validator(schema)
     v.validate(instance)
 
 
 def validate_schema_with_value_error(
-    instance: Dict, schema_str: str, error_prefix: str | None = None
+    instance: Any,
+    schema_str: str,
+    error_prefix: str | None = None,
+    require_object: bool = True,
 ) -> None:
     """Validate a dictionary against a JSON schema and raise a ValueError if the schema is invalid.
 
@@ -61,7 +74,7 @@ def validate_schema_with_value_error(
         ValueError: If the instance does not match the schema
     """
     try:
-        validate_schema(instance, schema_str)
+        validate_schema(instance, schema_str, require_object=require_object)
     except jsonschema.exceptions.ValidationError as e:
         msg = f"The error from the schema check was: {e.message}. The JSON was: \n```json\n{instance}\n```"
         if error_prefix:
@@ -70,7 +83,7 @@ def validate_schema_with_value_error(
         raise ValueError(msg) from e
 
 
-def schema_from_json_str(v: str) -> Dict:
+def schema_from_json_str(v: str, require_object: bool = True) -> Dict:
     """Parse and validate a JSON schema string.
 
     Args:
@@ -87,7 +100,7 @@ def schema_from_json_str(v: str) -> Dict:
         if not isinstance(parsed, dict):
             raise ValueError(f"JSON schema must be a dict, not {type(parsed)}")
 
-        validate_schema_dict(parsed)
+        validate_schema_dict(parsed, require_object=require_object)
         return parsed
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON: {v}\n {e}")
@@ -95,7 +108,7 @@ def schema_from_json_str(v: str) -> Dict:
         raise ValueError(f"Unexpected error parsing JSON schema: {v}\n {e}")
 
 
-def validate_schema_dict(v: Dict):
+def validate_schema_dict(v: Dict, require_object: bool = True):
     """Parse and validate a JSON schema dictionary.
 
     Args:
@@ -109,8 +122,10 @@ def validate_schema_dict(v: Dict):
     """
     try:
         jsonschema.Draft202012Validator.check_schema(v)
-        # Top level arrays are valid JSON schemas, but we don't want to allow them here as they often cause issues
-        if "type" not in v or v["type"] != "object" or "properties" not in v:
+
+        if require_object and (
+            "type" not in v or v["type"] != "object" or "properties" not in v
+        ):
             raise ValueError(f"JSON schema must be an object with properties: {v}")
     except jsonschema.exceptions.SchemaError as e:
         raise ValueError(f"Invalid JSON schema: {v} \n{e}")
