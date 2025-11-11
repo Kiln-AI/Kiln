@@ -1888,6 +1888,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tool Definition
+         * @description Get the actual OpenAI tool definition for a specific tool ID.
+         *
+         *     This returns the real function name and parameters that would be used
+         *     in OpenAI function calls, not the display names from ToolSetApiDescription.
+         *
+         *     Args:
+         *         project_id: The project ID
+         *         task_id: The task ID for tools that require task context
+         *         tool_id: The tool ID to get the definition for
+         */
+        get: operations["get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2350,6 +2378,7 @@ export interface components {
             template_properties: {
                 [key: string]: string | number | boolean;
             };
+            evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -2917,6 +2946,11 @@ export interface components {
             template_properties: {
                 [key: string]: string | number | boolean;
             };
+            /**
+             * @description The output of the task run to evaluate. Can be final answer or full trace.
+             * @default final_answer
+             */
+            evaluation_data_type: components["schemas"]["EvalDataType"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3011,6 +3045,11 @@ export interface components {
          * @enum {string}
          */
         EvalConfigType: "g_eval" | "llm_as_judge";
+        /**
+         * EvalDataType
+         * @enum {string}
+         */
+        EvalDataType: "final_answer" | "full_trace";
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -3121,6 +3160,11 @@ export interface components {
                 [key: string]: string;
             } | null;
             /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output.
+             */
+            task_run_trace?: string | null;
+            /**
              * Scores
              * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).
              */
@@ -3145,7 +3189,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -5110,6 +5154,23 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /**
+         * ToolDefinitionResponse
+         * @description Response model for tool definition endpoint.
+         *     Provides the OpenAI-compatible tool definition along with extracted fields.
+         */
+        ToolDefinitionResponse: {
+            /** Tool Id */
+            tool_id: string;
+            /** Function Name */
+            function_name: string;
+            /** Description */
+            description: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ToolServerType
@@ -9439,6 +9500,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchToolApiDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolDefinitionResponse"];
                 };
             };
             /** @description Validation Error */

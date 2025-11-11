@@ -303,6 +303,15 @@
     params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
     params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
     params.set("eval_link", window.location.pathname)
+
+    // Add tool_id for tool call evals
+    if (
+      evaluator.template === "tool_call" &&
+      evaluator.template_properties?.tool
+    ) {
+      params.set("tool_id", String(evaluator.template_properties.tool))
+    }
+
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)

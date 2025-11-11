@@ -140,7 +140,14 @@ class TwoMessageCotFormatter(ChatFormatter):
         if self._state == "start":
             # User message combines the input and the thinking instructions
             formatted_user_message = format_user_message(self.user_input)
-            user_message = f"The input is:\n<user_input>\n{formatted_user_message}\n</user_input>\n\n{self.thinking_instructions}"
+
+            # If the input contains conversation_history, it's a full_trace evaluation description and formatted_user_message contains more that a single turn of user_input and shouldn't be wrapped in <user_input> tags to avoid confusing the judge models.
+            if "<conversation_history>" in formatted_user_message:
+                user_message = (
+                    f"{formatted_user_message}\n\n{self.thinking_instructions}"
+                )
+            else:
+                user_message = f"The input is:\n<user_input>\n{formatted_user_message}\n</user_input>\n\n{self.thinking_instructions}"
 
             msgs = [
                 ChatMessage("system", self.system_message),
