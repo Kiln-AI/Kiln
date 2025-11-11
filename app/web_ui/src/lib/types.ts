@@ -100,6 +100,7 @@ export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 

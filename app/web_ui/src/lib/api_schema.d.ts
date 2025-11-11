@@ -423,6 +423,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Extractions For Extractor Config
+         * @description Return mapping of document id to list of extractions for the given extractor config id.
+         */
+        get: operations["get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/tags": {
         parameters: {
             query?: never;
@@ -907,6 +927,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/check_library_state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Library State */
+        get: operations["check_library_state_api_projects__project_id__check_library_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ephemeral Split Document
+         * @description Return chunks for a document extraction using FixedWindowChunker without persisting.
+         *
+         *     If chunk_size is None, return a single chunk with the full extraction output.
+         *     chunk_overlap defaults to 0 when not provided.
+         */
+        post: operations["ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -1246,6 +1306,45 @@ export interface paths {
         put?: never;
         /** Generate Sample */
         post: operations["generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_qna": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Qna Pairs */
+        post: operations["generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Qna Pair
+         * @description Save a single QnA pair as a TaskRun. We store the task's system prompt
+         *     as the system message, the query as the user message, and the answer
+         *     as the assistant message in the trace. The output is the answer.
+         */
+        post: operations["save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2549,6 +2648,38 @@ export interface components {
             /** @description The run config properties to use for topic generation */
             run_config_properties: components["schemas"]["RunConfigProperties"];
         };
+        /** DataGenQnaApiInput */
+        DataGenQnaApiInput: {
+            /**
+             * Document Id
+             * @description Document ID for Q&A generation
+             */
+            document_id: string;
+            /**
+             * Part Text
+             * @description Part text for Q&A generation
+             * @default []
+             */
+            part_text: string[];
+            /**
+             * Num Samples
+             * @description Number of Q&A pairs to generate for this part
+             * @default 10
+             */
+            num_samples: number;
+            /** @description The run config properties to use for the output */
+            run_config_properties: components["schemas"]["RunConfigProperties"];
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to the sample
+             */
+            tags?: string[] | null;
+        };
         /** DataGenSampleApiInput */
         DataGenSampleApiInput: {
             /**
@@ -2807,6 +2938,14 @@ export interface components {
             /** Friendly Name */
             readonly friendly_name: string;
         };
+        /** DocumentLibraryState */
+        DocumentLibraryState: {
+            /**
+             * Is Empty
+             * @description Whether the library is empty
+             */
+            is_empty: boolean;
+        };
         /** EmbeddingConfig */
         EmbeddingConfig: {
             /**
@@ -2881,6 +3020,31 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
+        };
+        /** EphemeralSplitChunk */
+        EphemeralSplitChunk: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** EphemeralSplitRequest */
+        EphemeralSplitRequest: {
+            /**
+             * Chunk Size
+             * @description The size of each chunk in tokens. If None, return a single chunk with the full extraction output.
+             */
+            chunk_size?: number | null;
+            /**
+             * Chunk Overlap
+             * @description The overlap between chunks in tokens. If None, use the default overlap for the chunker.
+             */
+            chunk_overlap?: number | null;
+        };
+        /** EphemeralSplitResponse */
+        EphemeralSplitResponse: {
+            /** Chunks */
+            chunks: components["schemas"]["EphemeralSplitChunk"][];
         };
         /** Eval */
         Eval: {
@@ -4631,6 +4795,34 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** SaveQnaPairInput */
+        SaveQnaPairInput: {
+            /**
+             * Query
+             * @description The synthetic user query
+             */
+            query: string;
+            /**
+             * Answer
+             * @description The synthetic assistant answer/response for the given user query
+             */
+            answer: string;
+            /**
+             * Model Name
+             * @description Model name used to generate the Q&A pair
+             */
+            model_name: string;
+            /**
+             * Model Provider
+             * @description Model provider used to generate the Q&A pair
+             */
+            model_provider: string;
+            /**
+             * Tags
+             * @description Optional tags
+             */
+            tags?: string[] | null;
+        };
         /** ScoreSummary */
         ScoreSummary: {
             /** Mean Score */
@@ -6246,7 +6438,9 @@ export interface operations {
     };
     get_documents_api_projects__project_id__documents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tags?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6262,6 +6456,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["ExtractionSummary"][];
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6616,7 +6844,9 @@ export interface operations {
     };
     run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tags?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -7384,6 +7614,74 @@ export interface operations {
             };
         };
     };
+    check_library_state_api_projects__project_id__check_library_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLibraryState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EphemeralSplitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EphemeralSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_providers_models_api_providers_models_get: {
         parameters: {
             query?: never;
@@ -8025,6 +8323,82 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DataGenSaveSamplesApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post: {
+        parameters: {
+            query?: {
+                session_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataGenQnaApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveQnaPairInput"];
             };
         };
         responses: {

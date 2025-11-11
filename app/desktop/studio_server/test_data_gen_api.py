@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -12,13 +12,16 @@ from kiln_ai.datamodel import (
     TaskRun,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import RunConfigProperties
 
 from app.desktop.studio_server.data_gen_api import (
     DataGenCategoriesApiInput,
+    DataGenQnaApiInput,
     DataGenSampleApiInput,
     DataGenSaveSamplesApiInput,
+    SaveQnaPairInput,
     connect_data_gen_api,
     topic_path_from_string,
     topic_path_to_string,
@@ -76,7 +79,7 @@ def mock_task_run(data_source, test_task):
 
 
 @pytest.fixture
-def mock_langchain_adapter(mock_task_run):
+def mock_task_adapter(mock_task_run):
     with patch("app.desktop.studio_server.data_gen_api.adapter_for_task") as mock:
         mock_adapter = AsyncMock()
         mock_adapter.invoke = AsyncMock()
@@ -96,7 +99,7 @@ def mock_task_from_id(test_task):
 
 def test_generate_categories_success(
     mock_task_from_id,
-    mock_langchain_adapter,
+    mock_task_adapter,
     client,
     mock_task_run,
 ):
@@ -124,12 +127,12 @@ def test_generate_categories_success(
     assert response.status_code == 200
     res = response.json()
     assert TaskOutput.model_validate(res["output"]) == mock_task_run.output
-    mock_langchain_adapter.invoke.assert_awaited_once()
+    mock_task_adapter.invoke.assert_awaited_once()
 
 
 def test_generate_samples_success(
     mock_task_from_id,
-    mock_langchain_adapter,
+    mock_task_adapter,
     client,
     mock_task_run,
 ):
@@ -156,7 +159,7 @@ def test_generate_samples_success(
     assert response.status_code == 200
     res = response.json()
     assert TaskOutput.model_validate(res["output"]) == mock_task_run.output
-    mock_langchain_adapter.invoke.assert_awaited_once()
+    mock_task_adapter.invoke.assert_awaited_once()
 
 
 @pytest.mark.paid
@@ -217,7 +220,7 @@ def test_save_sample_success_paid_run(
 
 def test_generate_sample_success_with_mock_invoke(
     mock_task_from_id,
-    mock_langchain_adapter,
+    mock_task_adapter,
     client,
     mock_task_run,
     test_task,
@@ -244,8 +247,8 @@ def test_generate_sample_success_with_mock_invoke(
         json=input_data.model_dump(),
     )
 
-    mock_langchain_adapter.invoke.assert_awaited_once()
-    invoke_args = mock_langchain_adapter.invoke.await_args[1]
+    mock_task_adapter.invoke.assert_awaited_once()
+    invoke_args = mock_task_adapter.invoke.await_args[1]
     assert invoke_args["input"] == "Test sample input"
     assert invoke_args["input_source"].type == DataSourceType.synthetic
     properties = invoke_args["input_source"].properties
@@ -292,7 +295,7 @@ def test_generate_sample_success_with_mock_invoke(
 
 def test_generate_sample_success_with_topic_path(
     mock_task_from_id,
-    mock_langchain_adapter,
+    mock_task_adapter,
     client,
     mock_task_run,
 ):
@@ -318,7 +321,7 @@ def test_generate_sample_success_with_topic_path(
 
     # Assert
     assert response.status_code == 200
-    invoke_args = mock_langchain_adapter.invoke.await_args[1]
+    invoke_args = mock_task_adapter.invoke.await_args[1]
     assert (
         invoke_args["input_source"].properties["topic_path"]
         == "AI>>>>>Machine Learning>>>>>Deep Learning"
@@ -413,7 +416,7 @@ The topic path for this sample is:
 )
 def test_generate_sample_guidance_generation(
     mock_task_from_id,
-    mock_langchain_adapter,
+    mock_task_adapter,
     client,
     mock_task_run,
     test_task,
@@ -466,3 +469,110 @@ def test_generate_sample_guidance_generation(
 
         # Verify task instruction final state
         assert test_task.instruction == expected_final_instruction
+
+
+def test_generate_qna_success_with_session_and_tags(
+    mock_task_from_id,
+    mock_task_adapter,
+    client,
+    mock_task_run,
+    test_task,
+):
+    with (
+        patch(
+            "kiln_ai.datamodel.extraction.Document.from_id_and_parent_path"
+        ) as mock_document,
+        patch(
+            "app.desktop.studio_server.data_gen_api.project_from_id"
+        ) as mock_project_from_id,
+    ):
+        mock_document.return_value = MagicMock(friendly_name="doc1", spec=Document)
+        mock_project_from_id.return_value = test_task.parent
+
+        input_data = DataGenQnaApiInput(
+            document_id="doc1",
+            part_text=["section a", "section b"],
+            num_samples=3,
+            run_config_properties=RunConfigProperties(
+                model_name="gpt_4o_mini",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            guidance="Make concise QnA",
+            tags=["custom_tag"],
+        )
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_qna?session_id=abcd",
+            json=input_data.model_dump(),
+        )
+
+        assert response.status_code == 200
+        res = response.json()
+        assert set(
+            ["synthetic", "qna", "synthetic_qna_session_abcd", "custom_tag"]
+        ).issubset(set(res.get("tags", [])))
+
+        # Verify adapter was invoked with the expected positional dict payload
+        called_args, called_kwargs = mock_task_adapter.invoke.await_args
+        assert called_kwargs == {}
+        payload = called_args[0]
+        assert payload["kiln_data_gen_document_name"] == "doc1"
+        assert payload["kiln_data_gen_part_text"] == ["section a", "section b"]
+        assert payload["kiln_data_gen_num_samples"] == 3
+
+
+def test_save_qna_pair_persists_task_run(
+    mock_task_from_id,
+    client,
+    test_task,
+):
+    input_data = SaveQnaPairInput(
+        query="What is Kiln?",
+        answer="Kiln is an app for building AI systems.",
+        model_name="gpt-4",
+        model_provider="openai",
+        tags=["my_tag"],
+    )
+
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/save_qna_pair?session_id=9876",
+        json=input_data.model_dump(),
+    )
+
+    assert response.status_code == 200
+    mock_task_from_id.assert_called_once_with("proj-ID", "task-ID")
+
+    saved_runs = test_task.runs()
+    assert len(saved_runs) == 1
+    run = saved_runs[0]
+
+    assert run.input == "What is Kiln?"
+    assert run.output.output == "Kiln is an app for building AI systems."
+
+    assert run.input_source.type == DataSourceType.synthetic
+    assert run.input_source.properties == {
+        "model_name": "gpt-4",
+        "model_provider": "openai",
+        "adapter_name": "kiln_qna_manual_save",
+    }
+
+    assert run.output.source.type == DataSourceType.synthetic
+    assert run.output.source.properties == {
+        "model_name": "gpt-4",
+        "model_provider": "openai",
+        "adapter_name": "kiln_qna_manual_save",
+    }
+
+    tags = set(run.tags)
+    assert {"synthetic", "qna", "synthetic_qna_session_9876", "my_tag"}.issubset(tags)
+
+    # Verify trace contains system, user, assistant messages
+    assert isinstance(run.trace, list) and len(run.trace) == 3
+    assert run.trace[0]["role"] == "system"
+    assert run.trace[1]["role"] == "user" and run.trace[1]["content"] == "What is Kiln?"
+    assert (
+        run.trace[2]["role"] == "assistant"
+        and run.trace[2]["content"] == "Kiln is an app for building AI systems."
+    )

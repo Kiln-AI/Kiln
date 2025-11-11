@@ -7,6 +7,9 @@
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
 
+  // watch out because query param value is not the same as gen_type
+  type SynthReasonQueryParam = "eval" | "fine_tune" | "qna"
+
   let loading = true
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -27,7 +30,9 @@
 
   async function handle_routing() {
     loading = true
-    const reason_param = $page.url.searchParams.get("reason")
+    const reason_param = $page.url.searchParams.get(
+      "reason",
+    ) as SynthReasonQueryParam | null
 
     // Eval/Fine-tuning modes redirect to synth page - this is when we explicitly link back
     // to the synth page (e.g. via toast UI)
@@ -36,6 +41,14 @@
       await goto(
         `/generate/${project_id}/${task_id}/synth?${params.toString()}`,
       )
+      return
+    } else if (reason_param === "qna") {
+      await goto(`/generate/${project_id}/${task_id}/qna`)
+      return
+    } else if (reason_param) {
+      //typecheck will flag this if we add a new case that we don't handle
+      const _: never = reason_param
+      console.error(`Invalid reason: ${_}`)
       return
     }
 

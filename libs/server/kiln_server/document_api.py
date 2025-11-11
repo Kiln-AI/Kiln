@@ -6,6 +6,7 @@ from typing import Annotated, Awaitable, Callable, Dict, List, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
@@ -74,7 +75,7 @@ from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
 
@@ -86,6 +87,37 @@ background_tasks: set[asyncio.Task] = set()
 class BulkCreateDocumentsResponse(BaseModel):
     created_documents: List[Document]
     failed_files: List[str]
+
+
+class EphemeralSplitRequest(BaseModel):
+    chunk_size: PositiveInt | None = Field(
+        default=None,
+        description="The size of each chunk in tokens. If None, return a single chunk with the full extraction output.",
+    )
+    chunk_overlap: int | None = Field(
+        ge=0,
+        default=None,
+        description="The overlap between chunks in tokens. If None, use the default overlap for the chunker.",
+    )
+
+
+class EphemeralSplitChunk(BaseModel):
+    id: str
+    text: str
+
+
+class EphemeralSplitResponse(BaseModel):
+    chunks: list[EphemeralSplitChunk]
+
+
+def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
+    try:
+        if tags:
+            # split tags by commas
+            return [tag.strip() for tag in tags.split(",") if tag.strip()]
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid tags: {e!s}")
 
 
 def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
@@ -637,6 +669,12 @@ class RagSearchResponse(BaseModel):
     )
 
 
+class DocumentLibraryState(BaseModel):
+    is_empty: bool = Field(
+        description="Whether the library is empty",
+    )
+
+
 async def build_rag_workflow_runner(
     project: Project,
     rag_config_id: str,
@@ -754,6 +792,33 @@ async def build_rag_workflow_runner(
     return runner
 
 
+def get_documents_filtered(
+    project: Project,
+    exclude_extracted_by_extractor_config_id: str | None = None,
+    target_tags: list[str] | None = None,
+) -> list[Document]:
+    documents: list[Document] = []
+    for document in project.documents(readonly=True):
+        # no tags target every document
+        is_target_document = not target_tags or any(
+            tag in (document.tags or []) for tag in target_tags
+        )
+        if not is_target_document:
+            continue
+
+        if exclude_extracted_by_extractor_config_id:
+            is_document_already_extracted = any(
+                extraction.extractor_config_id
+                == exclude_extracted_by_extractor_config_id
+                for extraction in document.extractions(readonly=True)
+            )
+            if is_document_already_extracted:
+                continue
+
+        documents.append(document)
+    return documents
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents/bulk")
     async def create_documents_bulk(
@@ -849,9 +914,57 @@ def connect_document_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/documents")
     async def get_documents(
         project_id: str,
+        tags: str | None = None,
     ) -> list[Document]:
         project = project_from_id(project_id)
-        return project.documents(readonly=True)
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
+
+        documents = project.documents(readonly=True)
+        if target_tags:
+            return [
+                document
+                for document in documents
+                if any(tag in document.tags for tag in target_tags)
+            ]
+
+        return documents
+
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions"
+    )
+    async def get_extractions_for_extractor_config(
+        project_id: str, extractor_config_id: str
+    ) -> dict[str, list[ExtractionSummary]]:
+        """Return mapping of document id to list of extractions for the given extractor config id."""
+        project = project_from_id(project_id)
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(status_code=404, detail="Extractor config not found")
+
+        results: dict[str, list[ExtractionSummary]] = {}
+
+        documents = project.documents(readonly=True)
+        for document in documents:
+            matched: list[ExtractionSummary] = []
+            for extraction in document.extractions(readonly=True):
+                if extraction.extractor_config_id == extractor_config_id:
+                    output = await extraction.output_content() or ""
+                    matched.append(
+                        build_extraction_summary(
+                            extraction=extraction,
+                            output_content=output,
+                            extractor_config=extractor_config,
+                        )
+                    )
+            if matched:
+                results[str(document.id)] = matched
+
+        return results
 
     @app.get("/api/projects/{project_id}/documents/tags")
     async def get_document_tags(
@@ -1031,7 +1144,11 @@ def connect_document_api(app: FastAPI):
     async def run_extractor_config(
         project_id: str,
         extractor_config_id: str,
+        tags: str | None = None,
     ) -> StreamingResponse:
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
         async with shared_async_lock_manager.acquire(
@@ -1053,7 +1170,11 @@ def connect_document_api(app: FastAPI):
                     detail="Extractor config is archived. You must unarchive it to use it.",
                 )
 
-            documents = project.documents(readonly=True)
+            documents = get_documents_filtered(
+                project,
+                exclude_extracted_by_extractor_config_id=extractor_config_id,
+                target_tags=target_tags,
+            )
 
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
@@ -1845,3 +1966,76 @@ def connect_document_api(app: FastAPI):
                 status_code=500,
                 detail=f"Search failed: {e!s}",
             )
+
+    @app.get("/api/projects/{project_id}/check_library_state")
+    async def check_library_state(
+        project_id: str,
+    ) -> DocumentLibraryState:
+        project = project_from_id(project_id)
+        documents = project.documents(readonly=True)
+        return DocumentLibraryState(is_empty=len(documents) == 0)
+
+    @app.post(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split"
+    )
+    async def ephemeral_split_document(
+        project_id: str,
+        extractor_config_id: str,
+        document_id: str,
+        request: EphemeralSplitRequest,
+    ) -> EphemeralSplitResponse:
+        """Return chunks for a document extraction using FixedWindowChunker without persisting.
+
+        If chunk_size is None, return a single chunk with the full extraction output.
+        chunk_overlap defaults to 0 when not provided.
+        """
+        project = project_from_id(project_id)
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(status_code=404, detail="Extractor config not found")
+
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Find the latest extraction for this extractor config
+        extractions = [
+            e
+            for e in document.extractions(readonly=True)
+            if e.extractor_config_id == extractor_config_id
+        ]
+        if not extractions:
+            raise HTTPException(
+                status_code=404, detail="No extraction found for document and extractor"
+            )
+
+        extraction = sorted(extractions, key=lambda e: e.created_at, reverse=True)[0]
+        output_text = await extraction.output_content() or ""
+
+        # chunk_size is None - return a single chunk with the full extraction output
+        if request.chunk_size is None:
+            return EphemeralSplitResponse(
+                chunks=[EphemeralSplitChunk(id=str(extraction.id), text=output_text)]
+            )
+
+        chunker_config = ChunkerConfig(
+            name="ephemeral-fixed-window",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": request.chunk_size,
+                "chunk_overlap": request.chunk_overlap or 0,
+            },
+        )
+
+        chunker = chunker_adapter_from_type(ChunkerType.FIXED_WINDOW, chunker_config)
+        result = await chunker.chunk(output_text)
+
+        chunks = [
+            EphemeralSplitChunk(id=str(i), text=chunk.text)
+            for i, chunk in enumerate(result.chunks)
+        ]
+        return EphemeralSplitResponse(chunks=chunks)
