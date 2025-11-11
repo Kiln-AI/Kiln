@@ -298,10 +298,12 @@
     if (score_summary) {
       eval_configs_set_size = " (" + score_summary.dataset_size + " items)"
     }
-    properties.push({
-      name: "Golden Dataset",
-      value: evaluator.eval_configs_filter_id + eval_configs_set_size,
-    })
+    if (evaluator.eval_configs_filter_id) {
+      properties.push({
+        name: "Golden Dataset",
+        value: evaluator.eval_configs_filter_id + eval_configs_set_size,
+      })
+    }
     return properties
   }
 
