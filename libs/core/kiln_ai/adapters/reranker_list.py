@@ -13,7 +13,6 @@ class KilnRerankerModelFamily(str, Enum):
 
     llama_rank = "llama_rank"
     vertex_reranker = "vertex_reranker"
-    cohere_rerank = "cohere_rerank"
     amazon_rerank = "amazon_rerank"
 
 
@@ -25,7 +24,6 @@ class RerankerModelName(str, Enum):
     llama_rank = "llama_rank"
     semantic_ranker_default_004 = "semantic_ranker_default_004"
     semantic_ranker_fast_004 = "semantic_ranker_fast_004"
-    cohere_rerank_v3_5 = "cohere_rerank_v3_5"
     amazon_rerank_1_0 = "amazon_rerank_1_0"
 
 
