@@ -594,7 +594,13 @@ class TestTraceBasedDatasetFormatter:
     async def test_VERTEX_GEMINI_with_tools(self):
         """Test generate vertex gemini message with multiple tool calls"""
         formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = create_mock_task_run(trace_with_tools())
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
 
         result = await formatter.build_training_chat_from_trace(
             task, DatasetFormat.VERTEX_GEMINI
@@ -671,4 +677,177 @@ class TestTraceBasedDatasetFormatter:
                     ],
                 },
             ],
+            "tools": [
+                {
+                    "functionDeclarations": [
+                        {
+                            "name": "add",
+                            "description": "Add two numbers together and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The first number to add",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The second number to add",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                        {
+                            "name": "subtract",
+                            "description": "Subtract the second number from the first number and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The first number (minuend)",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The second number to subtract (subtrahend)",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                        {
+                            "name": "multiply",
+                            "description": "Multiply two numbers together and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The first number to multiply",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The second number to multiply",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                        {
+                            "name": "divide",
+                            "description": "Divide the first number by the second number and return the result",
+                            "parameters": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "a": {
+                                        "type": "NUMBER",
+                                        "description": "The dividend (number to be divided)",
+                                    },
+                                    "b": {
+                                        "type": "NUMBER",
+                                        "description": "The divisor (number to divide by)",
+                                    },
+                                },
+                                "required": ["a", "b"],
+                            },
+                        },
+                    ],
+                }
+            ],
         }
+
+    async def test_VERTEX_GEMINI_with_tool_declarations(self):
+        """Test generate vertex gemini message with tool declarations"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+        ]
+        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
+
+        result = await formatter.build_training_chat_from_trace(
+            task, DatasetFormat.VERTEX_GEMINI
+        )
+
+        assert "tools" in result
+        assert len(result["tools"]) == 1
+        assert "functionDeclarations" in result["tools"][0]
+        declarations = result["tools"][0]["functionDeclarations"]
+        assert len(declarations) == 2
+
+        add_tool = declarations[0]
+        assert add_tool["name"] == "add"
+        assert add_tool["parameters"]["type"] == "OBJECT"
+        assert add_tool["parameters"]["properties"]["a"]["type"] == "NUMBER"
+        assert add_tool["parameters"]["properties"]["b"]["type"] == "NUMBER"
+
+        subtract_tool = declarations[1]
+        assert subtract_tool["name"] == "subtract"
+        assert subtract_tool["parameters"]["type"] == "OBJECT"
+
+    def test_convert_schema_to_vertex_types(self):
+        """Test schema conversion from OpenAI (lowercase) to Vertex (uppercase) types"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test")
+
+        openai_schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Person name"},
+                "age": {"type": "integer", "description": "Person age"},
+                "score": {"type": "number"},
+                "active": {"type": "boolean"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "metadata": {
+                    "type": "object",
+                    "properties": {"key": {"type": "string"}},
+                },
+            },
+        }
+
+        vertex_schema = formatter._convert_schema_to_vertex_types(openai_schema)
+
+        assert vertex_schema["type"] == "OBJECT"
+        assert vertex_schema["properties"]["name"]["type"] == "STRING"
+        assert vertex_schema["properties"]["age"]["type"] == "INTEGER"
+        assert vertex_schema["properties"]["score"]["type"] == "NUMBER"
+        assert vertex_schema["properties"]["active"]["type"] == "BOOLEAN"
+        assert vertex_schema["properties"]["tags"]["type"] == "ARRAY"
+        assert vertex_schema["properties"]["tags"]["items"]["type"] == "STRING"
+        assert vertex_schema["properties"]["metadata"]["type"] == "OBJECT"
+        assert (
+            vertex_schema["properties"]["metadata"]["properties"]["key"]["type"]
+            == "STRING"
+        )
+
+    def test_convert_schema_preserves_non_type_fields(self):
+        """Test that schema conversion preserves all non-type fields"""
+        formatter = TraceBasedDatasetFormatter(system_message="Test")
+
+        openai_schema = {
+            "type": "object",
+            "properties": {
+                "product": {
+                    "type": "string",
+                    "description": "Product name",
+                    "enum": ["Pixel 8 Pro 128GB", "Pixel 8 Pro 256GB"],
+                }
+            },
+            "required": ["product"],
+        }
+
+        vertex_schema = formatter._convert_schema_to_vertex_types(openai_schema)
+
+        expected_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "product": {
+                    "type": "STRING",
+                    "description": "Product name",
+                    "enum": ["Pixel 8 Pro 128GB", "Pixel 8 Pro 256GB"],
+                }
+            },
+            "required": ["product"],
+        }
+
+        assert vertex_schema == expected_schema

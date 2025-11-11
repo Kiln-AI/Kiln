@@ -46,7 +46,7 @@ class TraceBasedDatasetFormatter:
             case DatasetFormat.HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL:
                 return self.generate_huggingface_chat_template_toolcall(trace)
             case DatasetFormat.VERTEX_GEMINI:
-                return self.generate_vertex_gemini(trace)
+                return self.generate_vertex_gemini(trace, tool_definitions)
             case _:
                 raise ValueError(f"Unsupported data format: {data_format}")
 
@@ -266,6 +266,7 @@ class TraceBasedDatasetFormatter:
     def generate_vertex_gemini(
         self,
         trace: list[ChatCompletionMessageParam],
+        tools: list[ToolCallDefinition] | None = None,
     ) -> Dict[str, Any]:
         """Generate vertex gemini message from trace"""
         # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/tune-function-calling
@@ -449,7 +450,7 @@ class TraceBasedDatasetFormatter:
         # Flush any remaining buffered tool responses
         flush_tool_responses()
 
-        return {
+        result = {
             "systemInstruction": {
                 "role": "system",
                 "parts": [
@@ -459,4 +460,63 @@ class TraceBasedDatasetFormatter:
                 ],
             },
             "contents": contents,
+        }
+
+        # Add tools if available
+        if tools:
+            result["tools"] = [
+                {
+                    "functionDeclarations": [
+                        self._vertex_function_declaration(tool) for tool in tools
+                    ],
+                }
+            ]
+
+        return result
+
+    def _convert_schema_to_vertex_types(self, schema: dict[str, Any]) -> dict[str, Any]:
+        """
+        Recursively convert JSON Schema types from lowercase (OpenAI) to uppercase (Vertex).
+
+        """
+        supported_vertex_types = {
+            "string": "STRING",
+            "integer": "INTEGER",
+            "boolean": "BOOLEAN",
+            "number": "NUMBER",
+            "array": "ARRAY",
+            "object": "OBJECT",
+        }
+
+        result = {}
+        for key, value in schema.items():
+            if key == "type" and isinstance(value, str):
+                vertex_type = supported_vertex_types.get(value.lower())
+                if vertex_type:
+                    result[key] = vertex_type
+            elif isinstance(value, dict):
+                result[key] = self._convert_schema_to_vertex_types(value)
+            elif isinstance(value, list):
+                result[key] = [
+                    self._convert_schema_to_vertex_types(item)
+                    if isinstance(item, dict)
+                    else item
+                    for item in value
+                ]
+            else:
+                result[key] = value
+        return result
+
+    def _vertex_function_declaration(self, tool: ToolCallDefinition) -> dict[str, Any]:
+        """
+        Convert OpenAI tool call definition to Vertex function declaration.
+        See https://cloud.google.com/vertex-ai/generative-ai/docs/models/tune-function-calling
+        """
+        function = tool["function"]
+        parameters = function["parameters"]
+
+        return {
+            "name": function["name"],
+            "description": function["description"],
+            "parameters": self._convert_schema_to_vertex_types(parameters),
         }
