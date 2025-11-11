@@ -14,8 +14,12 @@ import {
   default_extractor_video_prompts,
   default_extractor_audio_prompts,
 } from "../../../extractors/[project_id]/create_extractor/default_extractor_prompts"
+import { createKilnError } from "$lib/utils/error_handlers"
 
-export type RequiredProvider = "Openai" | "Gemini" | "Ollama"
+export type RequiredProvider =
+  | "Ollama"
+  | "GeminiOrOpenRouter"
+  | "OpenaiOrOpenRouter"
 
 type SubConfig = {
   config_name: string
@@ -88,7 +92,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "The best quality search configuration. Uses Gemini 2.5 Pro with hybrid search.",
     preview_tooltip:
       "Gemini 2.5 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
-    required_provider: "Gemini",
+    required_provider: "GeminiOrOpenRouter",
     extractor: {
       config_name: "Gemini 2p5 Pro w Default Prompts",
       description: "Gemini 2.5 Pro",
@@ -107,7 +111,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "Great quality at a lower price. Uses Gemini 2.5 Flash with hybrid search.",
     preview_tooltip:
       "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
-    required_provider: "Gemini",
+    required_provider: "GeminiOrOpenRouter",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
@@ -149,7 +153,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "Use only vector search for semantic similarity, without keyword search.",
     preview_tooltip:
       "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB vector search (no full-text search).",
-    required_provider: "Gemini",
+    required_provider: "GeminiOrOpenRouter",
     extractor: gemini_2_5_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
@@ -168,7 +172,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       "We suggest Gemini, but if you need to use OpenAI try this template.",
     preview_tooltip:
       "GPT-5 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
-    required_provider: "Openai",
+    required_provider: "OpenaiOrOpenRouter",
     notice_text: "Does not support audio or video files.",
     notice_tooltip:
       "GPT 5 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
@@ -190,6 +194,20 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
   },
 }
 
+const providerOrOpenRouter = (
+  settings: Record<string, unknown>,
+  provider: ModelProviderName,
+): ModelProviderName => {
+  if (provider === "openai" && settings["open_ai_api_key"]) {
+    return "openai"
+  }
+  if (provider === "gemini_api" && settings["gemini_api_key"]) {
+    return "gemini_api"
+  }
+
+  return "openrouter"
+}
+
 export async function build_rag_config_sub_configs(
   template: RagConfigTemplate,
   project_id: string,
@@ -205,16 +223,27 @@ export async function build_rag_config_sub_configs(
 }> {
   // General design note: matching on name isn't perfect, but assuming people won't make exact name conflicts with the wrong config
 
+  const { data: settings, error: settings_error } =
+    await client.GET("/api/settings")
+  if (settings_error) {
+    throw createKilnError(settings_error)
+  }
+
   let extractor_config_id: string | null = null
   let chunker_config_id: string | null = null
   let embedding_config_id: string | null = null
   let vector_store_config_id: string | null = null
 
   // Find an existing extractor config with the same name
+  const extractor_provider = providerOrOpenRouter(
+    settings,
+    template.extractor.model_provider_name,
+  )
   for (const extractor_config of extractor_configs) {
     if (
       extractor_config.name === template.extractor.config_name &&
-      extractor_config.id
+      extractor_config.id &&
+      extractor_config.model_provider_name === extractor_provider
     ) {
       extractor_config_id = extractor_config.id
     }
@@ -223,13 +252,13 @@ export async function build_rag_config_sub_configs(
     extractor_config_id = await create_default_extractor_config(
       template.extractor.config_name,
       project_id,
-      template.extractor.model_provider_name,
+      extractor_provider,
       template.extractor.model_name,
     )
   }
   if (!extractor_config_id) {
     throw new Error(
-      `Extractor config not found: ${template.extractor.config_name}`,
+      `Extractor config not found: ${template.extractor.config_name} (${extractor_provider})`,
     )
   }
 
@@ -252,10 +281,15 @@ export async function build_rag_config_sub_configs(
   }
 
   // Find an existing embedding config with the same name
+  const embedding_provider = providerOrOpenRouter(
+    settings,
+    template.embedding.model_provider_name,
+  )
   for (const embedding_config of embedding_configs) {
     if (
       embedding_config.name === template.embedding.config_name &&
-      embedding_config.id
+      embedding_config.id &&
+      embedding_config.model_provider_name === embedding_provider
     ) {
       embedding_config_id = embedding_config.id
     }
@@ -264,13 +298,13 @@ export async function build_rag_config_sub_configs(
     embedding_config_id = await create_default_embedding_config(
       template.embedding.config_name,
       project_id,
-      template.embedding.model_provider_name,
+      embedding_provider,
       template.embedding.model_name,
     )
   }
   if (!embedding_config_id) {
     throw new Error(
-      `Embedding config not found: ${template.embedding.config_name}`,
+      `Embedding config not found: ${template.embedding.config_name} (${embedding_provider})`,
     )
   }
 
