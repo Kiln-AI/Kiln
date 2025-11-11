@@ -299,7 +299,7 @@ class DatasetFormatter:
             raise ValueError("Dataset has no parent task")
         self.task = task
 
-    def dump_to_file(
+    async def dump_to_file(
         self,
         split_name: str,
         format_type: DatasetFormat,

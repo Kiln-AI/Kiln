@@ -214,29 +214,31 @@ def test_generate_chat_message_toolcall_invalid_json(mock_training_chat_two_step
         generate_chat_message_toolcall(mock_training_chat_two_step_json)
 
 
-def test_dataset_formatter_dump_invalid_format(mock_dataset):
+async def test_dataset_formatter_dump_invalid_format(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message")
 
     with pytest.raises(ValueError, match="Unsupported format"):
-        formatter.dump_to_file("train", "invalid_format", ChatStrategy.single_turn)
+        await formatter.dump_to_file(
+            "train", "invalid_format", ChatStrategy.single_turn
+        )
 
 
-def test_dataset_formatter_dump_invalid_split(mock_dataset):
+async def test_dataset_formatter_dump_invalid_split(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message")
 
     with pytest.raises(ValueError, match="Split invalid_split not found in dataset"):
-        formatter.dump_to_file(
+        await formatter.dump_to_file(
             "invalid_split",
             DatasetFormat.OPENAI_CHAT_JSONL,
             ChatStrategy.single_turn,
         )
 
 
-def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
+async def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         path=output_path,
@@ -260,10 +262,10 @@ def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
             assert data["messages"][2]["content"] == '{"test":   "output 你好"}'
 
 
-def test_dataset_formatter_dump_to_temp_file(mock_dataset):
+async def test_dataset_formatter_dump_to_temp_file(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message 你好")
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.single_turn,
@@ -289,11 +291,11 @@ def test_dataset_formatter_dump_to_temp_file(mock_dataset):
         assert "thinking instructions" not in lines[0]
 
 
-def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
+async def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL,
         path=output_path,
@@ -325,7 +327,7 @@ def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
             assert tool_call["function"]["arguments"] == '{"test": "output 你好"}'
 
 
-def test_dataset_formatter_dump_with_intermediate_data(
+async def test_dataset_formatter_dump_with_intermediate_data(
     mock_dataset, mock_intermediate_outputs
 ):
     formatter = DatasetFormatter(
@@ -334,7 +336,7 @@ def test_dataset_formatter_dump_with_intermediate_data(
         thinking_instructions="thinking instructions",
     )
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.two_message_cot_legacy,
@@ -356,7 +358,7 @@ def test_dataset_formatter_dump_with_intermediate_data(
             assert "thinking instructions" in line
 
 
-def test_dataset_formatter_dump_with_intermediate_data_r1_style(
+async def test_dataset_formatter_dump_with_intermediate_data_r1_style(
     mock_dataset, mock_intermediate_outputs
 ):
     formatter = DatasetFormatter(
@@ -365,7 +367,7 @@ def test_dataset_formatter_dump_with_intermediate_data_r1_style(
         thinking_instructions=None,
     )
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.single_turn_r1_thinking,
@@ -387,14 +389,14 @@ def test_dataset_formatter_dump_with_intermediate_data_r1_style(
             assert "</think>" in line
 
 
-def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
+async def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
     mock_dataset, mock_intermediate_outputs
 ):
     formatter = DatasetFormatter(
         mock_dataset, "custom system message 你好", "custom thinking instructions"
     )
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.two_message_cot_legacy,
@@ -793,11 +795,13 @@ def test_build_training_data_with_repaired_output(mock_task):
     assert final_msg.content == '{"test": "repaired output"}'
 
 
-def test_dataset_formatter_dump_to_file_json_schema_format(mock_dataset, tmp_path):
+async def test_dataset_formatter_dump_to_file_json_schema_format(
+    mock_dataset, tmp_path
+):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL,
         path=output_path,
@@ -880,7 +884,7 @@ def test_vertex_gemini_role_map_coverage():
     )
 
 
-def test_should_call_trace_based_dataset_formatter(mock_dataset):
+async def test_should_call_trace_based_dataset_formatter(mock_dataset):
     """Test that if trace is available we should call trace based dataset formatter"""
     sample_trace = [
         {"role": "system", "content": "You are a helpful assistant."},
@@ -901,7 +905,7 @@ def test_should_call_trace_based_dataset_formatter(mock_dataset):
         "build_training_chat_from_trace",
         return_value={"messages": [{"role": "user", "content": "test"}]},
     ) as mock_trace_formatter:
-        formatter.dump_to_file(
+        await formatter.dump_to_file(
             split_name="train",
             format_type=DatasetFormat.OPENAI_CHAT_JSONL,
             data_strategy=ChatStrategy.single_turn,

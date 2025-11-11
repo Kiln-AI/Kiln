@@ -509,7 +509,7 @@ def connect_fine_tune_api(app: FastAPI):
             system_message=system_message,
             thinking_instructions=thinking_instructions,
         )
-        path = dataset_formatter.dump_to_file(
+        path = await dataset_formatter.dump_to_file(
             split_name,
             format_type_typed,
             data_strategy_typed,
