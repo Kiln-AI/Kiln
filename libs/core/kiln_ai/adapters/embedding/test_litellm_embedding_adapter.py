@@ -1173,14 +1173,6 @@ def test_generate_embeddings_response_not_embedding_response():
         validate_map_to_embeddings(response, 1)
 
 
-def get_all_embedding_models_and_providers() -> List[Tuple[ModelProviderName, str]]:
-    results = []
-    for model in built_in_embedding_models:
-        for provider in model.providers:
-            results.append((provider.name, model.name))
-    return results
-
-
 @pytest.mark.parametrize(
     "provider_name,model_name", get_all_embedding_models_and_providers()
 )
@@ -1191,14 +1183,23 @@ def test_openrouter_transformed_into_openai_compatible(provider_name, model_name
     model_provider = built_in_embedding_models_from_provider(provider_name, model_name)
     assert model_provider is not None
 
-    adapter = embedding_adapter_from_type(
-        EmbeddingConfig(
-            name="test-embedding",
-            model_provider_name=provider_name,
-            model_name=model_name,
-            properties={},
+    # patch the lite_llm_core_config_for_provider
+    with patch(
+        "kiln_ai.adapters.embedding.embedding_registry.lite_llm_core_config_for_provider"
+    ) as mock_lite_llm_core_config_for_provider:
+        mock_lite_llm_core_config_for_provider.return_value = LiteLlmCoreConfig(
+            base_url="https://api.example.com/v1",
+            default_headers={},
+            additional_body_options={},
         )
-    )
+        adapter = embedding_adapter_from_type(
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider_name=provider_name,
+                model_name=model_name,
+                properties={},
+            )
+        )
     assert isinstance(adapter, LitellmEmbeddingAdapter)
     assert adapter.litellm_model_id.startswith("openai/"), (
         f"Final slug {adapter.litellm_model_id} does not start with openai/ - unless LiteLLM has added support for openrouter embeddings, it should start with openai/ to be run as a OpenAI compatible provider"
