@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Any, Awaitable, Callable, Dict, List
+from typing import Annotated, Awaitable, Callable, Dict, List, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -283,6 +283,33 @@ class CreateRagConfigRequest(BaseModel):
     )
 
 
+class SemanticChunkerPropertiesPublic(BaseModel):
+    chunker_type: Literal[ChunkerType.SEMANTIC] = Field(
+        description="The type of the chunker",
+    )
+    embedding_config_id: str = Field(
+        description="The embedding config to use for the RAG workflow.",
+    )
+    buffer_size: int = Field(
+        description="The buffer size to use for the chunker.",
+    )
+    breakpoint_percentile_threshold: int = Field(
+        description="The breakpoint percentile threshold to use for the chunker.",
+    )
+
+
+class FixedWindowChunkerPropertiesPublic(BaseModel):
+    chunker_type: Literal[ChunkerType.FIXED_WINDOW] = Field(
+        description="The type of the chunker",
+    )
+    chunk_size: int = Field(
+        description="The chunk size to use for the chunker.",
+    )
+    chunk_overlap: int = Field(
+        description="The chunk overlap to use for the chunker.",
+    )
+
+
 class CreateChunkerConfigRequest(BaseModel):
     name: FilenameString | None = Field(
         description="A name for this entity.",
@@ -295,26 +322,33 @@ class CreateChunkerConfigRequest(BaseModel):
     chunker_type: ChunkerType = Field(
         description="The type of the chunker",
     )
-    properties: SemanticChunkerProperties | FixedWindowChunkerProperties = Field()
+    properties: SemanticChunkerPropertiesPublic | FixedWindowChunkerPropertiesPublic = (
+        Field(
+            discriminator="chunker_type",
+        )
+    )
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_semantic_chunker_properties(cls, data: Any) -> Any:
-        chunker_type = data.get("chunker_type")
-
-        properties = data.get("properties") or {}
-        if not isinstance(properties, dict):
-            return data
-
-        if chunker_type == ChunkerType.SEMANTIC:
-            # currently too granular to be exposed to the user in the UI
-            # but we should pass on these fields as part of the config to
-            # make sure the config is stable and complete
-            properties["include_metadata"] = False
-            properties["include_prev_next_rel"] = False
-            data["properties"] = properties
-
-        return data
+    def get_properties_for_chunker_type(
+        self,
+    ) -> SemanticChunkerProperties | FixedWindowChunkerProperties:
+        properties = self.properties
+        match properties.chunker_type:
+            case ChunkerType.SEMANTIC:
+                return SemanticChunkerProperties(
+                    chunker_type=ChunkerType.SEMANTIC,
+                    embedding_config_id=properties.embedding_config_id,
+                    buffer_size=properties.buffer_size,
+                    breakpoint_percentile_threshold=properties.breakpoint_percentile_threshold,
+                    include_metadata=False,
+                    include_prev_next_rel=False,
+                )
+            case ChunkerType.FIXED_WINDOW:
+                return FixedWindowChunkerProperties(
+                    chunker_type=ChunkerType.FIXED_WINDOW,
+                    chunk_size=properties.chunk_size,
+                    chunk_overlap=properties.chunk_overlap,
+                )
+        raise_exhaustive_enum_error(properties.chunker_type)
 
 
 class CreateEmbeddingConfigRequest(BaseModel):
@@ -1426,21 +1460,14 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
 
         # if semantic, validate that the referenced embedding config exists
-        if request.chunker_type == ChunkerType.SEMANTIC:
-            embedding_config_id = request.properties.get("embedding_config_id")
-            # should already be enforced by request validator, but needed for type checking
-            if not isinstance(embedding_config_id, str):  # pragma: no cover
-                raise HTTPException(
-                    status_code=422,
-                    detail="embedding_config_id must be provided and be a string",
-                )
+        if request.properties.chunker_type == ChunkerType.SEMANTIC:
             embedding_config = EmbeddingConfig.from_id_and_parent_path(
-                embedding_config_id, project.path
+                request.properties.embedding_config_id, project.path
             )
             if not embedding_config:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Embedding config {embedding_config_id} not found",
+                    detail=f"Embedding config {request.properties.embedding_config_id} not found",
                 )
 
         chunker_config = ChunkerConfig(
@@ -1448,7 +1475,7 @@ def connect_document_api(app: FastAPI):
             name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
             chunker_type=request.chunker_type,
-            properties=request.properties,
+            properties=request.get_properties_for_chunker_type(),
         )
         chunker_config.save_to_file()
 
