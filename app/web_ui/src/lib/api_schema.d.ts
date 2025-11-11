@@ -2475,7 +2475,7 @@ export interface components {
             eval_configs_filter_id: string | null;
             /** Template Properties */
             template_properties: {
-                [key: string]: string | number | boolean | string[];
+                [key: string]: string | number | boolean;
             };
             evaluation_data_type: components["schemas"]["EvalDataType"];
         };
@@ -3108,7 +3108,7 @@ export interface components {
              * @default {}
              */
             template_properties: {
-                [key: string]: string | number | boolean | string[];
+                [key: string]: string | number | boolean;
             };
             /**
              * @description The output of the task run to evaluate. Can be final answer or full trace.

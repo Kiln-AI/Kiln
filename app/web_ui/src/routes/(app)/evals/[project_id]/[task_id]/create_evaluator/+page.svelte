@@ -43,10 +43,7 @@
   let selected_template: EvalTemplateId | "none" | null = null
   let default_eval_tag: string | undefined = undefined
   let default_golden_tag: string | null = null
-  let template_properties: Record<
-    string,
-    string | number | boolean | string[]
-  > = {}
+  let template_properties: Record<string, string | number | boolean> = {}
   let evaluation_data_type: EvalDataType | undefined = undefined
   function on_selected_template(template: EvalTemplateResult) {
     // Populate out model from the template

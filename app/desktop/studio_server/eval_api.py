@@ -101,7 +101,7 @@ class CreateEvaluatorRequest(BaseModel):
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
     eval_configs_filter_id: DatasetFilterId | None
-    template_properties: dict[str, str | float | int | bool | list[str]]
+    template_properties: dict[str, str | float | int | bool]
     evaluation_data_type: EvalDataType
 
 

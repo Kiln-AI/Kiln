@@ -8,6 +8,6 @@ export type EvalTemplateResult = {
   output_scores: EvalOutputScore[]
   default_eval_tag: string
   default_golden_tag: string | null
-  template_properties: Record<string, string | number | boolean | string[]>
+  template_properties: Record<string, string | number | boolean>
   evaluation_data_type: EvalDataType
 }
