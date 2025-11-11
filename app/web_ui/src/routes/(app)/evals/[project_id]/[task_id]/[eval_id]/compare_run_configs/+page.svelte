@@ -45,8 +45,6 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import type { ActionButton } from "../../../../../types"
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
-  import PropertyList from "$lib/ui/property_list.svelte"
-  import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -385,28 +383,6 @@
       return []
     }
   }
-
-  function judge_properties(evaluator: Eval): UiProperty[] {
-    if (evaluator.template === "rag") {
-      return [
-        {
-          name: "Judge Instructions",
-          value: "View",
-          onClick: () => {
-            judge_instructions_dialog?.show()
-          },
-        },
-      ]
-    } else {
-      return [
-        {
-          name: "Judge Quality",
-          value: "Compare and optimize",
-          link: `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`,
-        },
-      ]
-    }
-  }
 </script>
 
 <AppPage
@@ -474,7 +450,26 @@
           {/if}
         </div>
         {#if current_eval_config_id && evaluator}
-          <PropertyList properties={judge_properties(evaluator)} />
+          {#if evaluator.template === "rag"}
+            <button
+              class="flex link text-gray-500 text-sm 2xl:text-base"
+              on:click={() => {
+                judge_instructions_dialog?.show()
+              }}
+            >
+              Judge Instructions
+            </button>
+          {:else}
+            <div class="flex gap-x-4 text-sm 2xl:text-base items-center">
+              <span>Judge Quality</span>
+              <a
+                href={`/evals/${project_id}/${task_id}/${eval_id}/eval_configs`}
+                class="link text-gray-500"
+              >
+                Compare and optimize
+              </a>
+            </div>
+          {/if}
         {/if}
       </div>
     </div>
@@ -662,8 +657,8 @@
         <div class="text-xl font-bold">Compare Run Configurations</div>
         <div class="text-sm text-gray-500">
           Find the best way of running your task comparing various prompts,
-          models, fine-tunes, and more. Add one or more task run configurations
-          to get started.
+          models, tools, fine-tunes, and more. Add one or more task run
+          configurations to get started.
         </div>
 
         <button

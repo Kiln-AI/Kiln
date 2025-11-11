@@ -61,21 +61,21 @@ describe("generate_eval_tag", () => {
     vi.mocked(Math.random).mockReturnValue(0.5)
 
     const result = generate_eval_tag("")
-    expect(result).toBe("issue_55000") // 10000 + floor(0.5 * 90000) = 10000 + 45000 = 55000
+    expect(result).toBe("eval_55000") // 10000 + floor(0.5 * 90000) = 10000 + 45000 = 55000
   })
 
   it("generates random tag with minimum value when Math.random returns 0", () => {
     vi.mocked(Math.random).mockReturnValue(0)
 
     const result = generate_eval_tag("")
-    expect(result).toBe("issue_10000")
+    expect(result).toBe("eval_10000")
   })
 
   it("generates random tag with maximum value when Math.random returns close to 1", () => {
     vi.mocked(Math.random).mockReturnValue(0.999999)
 
     const result = generate_eval_tag("")
-    expect(result).toBe("issue_99999")
+    expect(result).toBe("eval_99999")
   })
 
   it("handles whitespace-only names (they become underscores, not random)", () => {
@@ -109,8 +109,8 @@ describe("generate_eval_tag", () => {
     const result1 = generate_eval_tag("")
     const result2 = generate_eval_tag("")
 
-    expect(result1).toBe("issue_19000") // 10000 + floor(0.1 * 90000) = 10000 + 9000 = 19000
-    expect(result2).toBe("issue_91000") // 10000 + floor(0.9 * 90000) = 10000 + 81000 = 91000
+    expect(result1).toBe("eval_19000") // 10000 + floor(0.1 * 90000) = 10000 + 9000 = 19000
+    expect(result2).toBe("eval_91000") // 10000 + floor(0.9 * 90000) = 10000 + 81000 = 91000
     expect(result1).not.toBe(result2)
   })
 
@@ -123,6 +123,6 @@ describe("generate_eval_tag", () => {
     expect(generate_eval_tag("a")).toBe("a")
 
     // Only this should generate a random tag
-    expect(generate_eval_tag("")).toBe("issue_55000")
+    expect(generate_eval_tag("")).toBe("eval_55000")
   })
 })

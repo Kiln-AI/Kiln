@@ -113,7 +113,7 @@
 <AppPage
   limit_max_width={true}
   title="Evals"
-  subtitle="Evaluate the quality of your task or search tools"
+  subtitle="Evaluate the quality of your prompts, models, tools and fine-tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
