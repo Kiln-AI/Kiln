@@ -148,9 +148,12 @@
   $: suggested_config_set_tag = default_golden_tag || "golden"
 </script>
 
-<div class="max-w-[1400px]">
+<div class="max-w-[900px]">
   <AppPage
-    title="Create New Evaluator"
+    title="Create a New Evaluator"
+    subtitle="Evaluators judge task performance and help you find the best method of running your task."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[
       {
         label: "Evals",

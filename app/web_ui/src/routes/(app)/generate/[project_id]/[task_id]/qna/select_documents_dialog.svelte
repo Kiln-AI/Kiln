@@ -12,12 +12,11 @@
     document_tag_store_by_project_id,
     load_document_tags,
   } from "$lib/stores/document_tag_store"
-  import { derived } from "svelte/store"
 
-  $: available_tags = derived(document_tag_store_by_project_id, ($store) => {
-    const tag_counts = $store[project_id]
+  $: available_tags = (() => {
+    const tag_counts = $document_tag_store_by_project_id[project_id]
     return tag_counts ? Object.keys(tag_counts) : []
-  })
+  })()
 
   onMount(async () => {
     await Promise.all([check_library_state(), load_document_tags(project_id)])
@@ -160,7 +159,7 @@
         info_description="If a tag filter is applied, only documents with those tags will be used during Q&A generation. You can add tags to your documents in the document library."
         inputType="multi_select"
         empty_label="All Documents in Library"
-        fancy_select_options={get_fancy_select_options_tags($available_tags)}
+        fancy_select_options={get_fancy_select_options_tags(available_tags)}
         bind:value={selected_tags}
         empty_state_message="No Document Tags"
         empty_state_subtitle="Add tags to documents in the document library to filter documents."

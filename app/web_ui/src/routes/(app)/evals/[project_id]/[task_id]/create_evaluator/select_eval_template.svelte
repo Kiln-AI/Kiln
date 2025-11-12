@@ -81,7 +81,7 @@
           {
             type: "eval_template",
             id: "rag",
-            name: "Reference Answer Accuracy Eval",
+            name: "Reference Answer Accuracy Eval (RAG)",
             description:
               "Evaluate model accuracy against ground-truth Q&A pairs.",
             recommended: false,
