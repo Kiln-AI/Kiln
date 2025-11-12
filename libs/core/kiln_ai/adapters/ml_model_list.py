@@ -1370,6 +1370,72 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 2.5 Flash Lite
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_2_5_flash_lite,
+        friendly_name="Gemini 2.5 Flash Lite",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-2.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=False,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-2.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                thinking_level="medium",
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=False,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-2.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                thinking_level="medium",
+            ),
+        ],
+    ),
     # Gemini 2.0 Flash
     KilnModel(
         family=ModelFamily.gemini,
