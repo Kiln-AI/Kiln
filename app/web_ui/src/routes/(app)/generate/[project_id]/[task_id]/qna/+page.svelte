@@ -287,6 +287,8 @@
   <AppPage
     title="Synthetic Data Generation"
     no_y_padding
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations/evaluate-rag-accuracy-q-and-a-evals"
     action_buttons={[
       {
         label: "Reset",
@@ -299,6 +301,10 @@
             clear_state_and_go_to_intro()
           }
         },
+      },
+      {
+        label: "Docs & Guide",
+        href: "https://docs.kiln.tech/docs/evaluations/evaluate-rag-accuracy-q-and-a-evals",
       },
     ]}
   >
