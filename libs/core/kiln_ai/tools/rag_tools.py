@@ -1,3 +1,4 @@
+import logging
 from functools import cached_property
 from typing import List, TypedDict
 
@@ -32,6 +33,8 @@ from kiln_ai.utils.rag_utils import (
     convert_search_results_to_rerank_input,
     split_global_chunk_id,
 )
+
+logger = logging.getLogger("ModelCalls")
 
 
 class ChunkContext(BaseModel):
@@ -172,6 +175,23 @@ class RagTool(KilnToolInterface):
         if self.reranker is None:
             return search_results
 
+        logger.info(
+            f"RAG Reranker Input: query='{query}', "
+            f"reranker_config_id={self._reranker_config.id if self._reranker_config else None}, "
+            f"top_n={getattr(self._reranker_config, 'top_n', None) if self._reranker_config else None}, "
+            f"input_candidates_count={len(search_results)}"
+        )
+
+        def format_reranker_input(r: SearchResult) -> str:
+            sim_str = f"{r.similarity:.4f}" if r.similarity is not None else "None"
+            return (
+                f"doc_id={r.document_id} chunk_idx={r.chunk_idx} similarity={sim_str}"
+            )
+
+        logger.info(
+            f"RAG Reranker Input Candidates: {[format_reranker_input(r) for r in search_results]}"
+        )
+
         reranked_results = await self.reranker.rerank(
             query=query,
             documents=convert_search_results_to_rerank_input(search_results),
@@ -188,6 +208,19 @@ class RagTool(KilnToolInterface):
                     similarity=result.relevance_score,
                 )
             )
+
+        logger.info(
+            f"RAG Reranker Output: output_count={len(reranked_search_results)}, "
+            f"top_n={getattr(self._reranker_config, 'top_n', None) if self._reranker_config else None}"
+        )
+
+        def format_reranker_output(r: SearchResult) -> str:
+            sim_str = f"{r.similarity:.4f}" if r.similarity is not None else "None"
+            return f"doc_id={r.document_id} chunk_idx={r.chunk_idx} relevance_score={sim_str}"
+
+        logger.info(
+            f"RAG Reranker Output Results: {[format_reranker_output(r) for r in reranked_search_results]}"
+        )
 
         return reranked_search_results
 
@@ -216,7 +249,32 @@ class RagTool(KilnToolInterface):
                 raise ValueError("No embeddings generated")
             store_query.query_embedding = query_embedding_result.embeddings[0].vector
 
+        similarity_top_k = self._vector_store_config.properties.get("similarity_top_k")
+        logger.info(
+            f"RAG Vector Store Search: query='{query}', "
+            f"rag_config_id={self._rag_config.id}, "
+            f"vector_store_config_id={self._vector_store_config.id}, "
+            f"store_type={self._vector_store_config.store_type}, "
+            f"similarity_top_k={similarity_top_k}, "
+            f"reranker_config_id={self._reranker_config.id if self._reranker_config else None}"
+        )
+
         search_results = await vector_store_adapter.search(store_query)
+
+        logger.info(
+            f"RAG Vector Store Search Results: count={len(search_results)}, "
+            f"similarity_top_k={similarity_top_k}"
+        )
+
+        def format_result(r: SearchResult) -> str:
+            sim_str = f"{r.similarity:.4f}" if r.similarity is not None else "None"
+            return (
+                f"doc_id={r.document_id} chunk_idx={r.chunk_idx} similarity={sim_str}"
+            )
+
+        logger.info(
+            f"RAG Vector Store Search Results Details: {[format_result(r) for r in search_results]}"
+        )
 
         if self.reranker is not None:
             reranked_search_results = await self.rerank(search_results, query)
