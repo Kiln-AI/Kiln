@@ -12,6 +12,7 @@
   export let empty_state_link: string | null = null
   export let multi_select: boolean = false
   export let disabled: boolean = false
+  export let error_outline: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -473,7 +474,9 @@
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
+      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''} {error_outline
+      ? 'border-error'
+      : ''}"
     bind:this={selectedElement}
     on:click={() => {
       if (!disabled) {
