@@ -95,8 +95,11 @@
   }
 
   // run validator after value change
+  let initialized = false
   function run_validator_on_change(_: unknown) {
-    run_validator()
+    if (initialized) {
+      run_validator()
+    }
   }
   $: run_validator_on_change(value)
 
@@ -109,6 +112,7 @@
   let unregister: (() => void) | null = null
 
   onMount(() => {
+    initialized = true
     if (formContainer) {
       unregister = formContainer.registerFormElement({ run_validator })
     }
@@ -171,7 +175,7 @@
         {/if}
         {#if error_message}
           <span class="text-error">
-            <InfoTooltip tooltip_text={error_message} />
+            <InfoTooltip tooltip_text={error_message} symbol="exclaim" />
           </span>
         {/if}
       </div>
