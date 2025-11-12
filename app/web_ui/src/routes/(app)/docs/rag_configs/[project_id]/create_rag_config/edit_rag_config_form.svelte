@@ -752,7 +752,7 @@
             fancy_select_options={reranker_options}
             bind:value={selected_reranker_config_id}
             inputType="fancy_select"
-            empty_label="No Reranker"
+            empty_label="None"
             optional={true}
           />
         </div>
