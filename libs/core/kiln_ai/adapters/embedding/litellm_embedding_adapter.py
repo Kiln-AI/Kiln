@@ -13,6 +13,7 @@ from kiln_ai.adapters.embedding.base_embedding_adapter import (
 from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
     built_in_embedding_models_from_provider,
+    transform_slug_for_litellm,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -196,4 +197,6 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 f"Provider {self.model_provider.name.value} must have an explicit base URL"
             )
 
-        return provider_info.litellm_model_id
+        return transform_slug_for_litellm(
+            self.model_provider.name, provider_info.litellm_model_id
+        )
