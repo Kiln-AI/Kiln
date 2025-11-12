@@ -554,7 +554,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         chunk_overlap_tokens: null,
       },
       documents: [],
-      splits: {},
+      // we don't want to clear splits when we reset
     }))
   }
 

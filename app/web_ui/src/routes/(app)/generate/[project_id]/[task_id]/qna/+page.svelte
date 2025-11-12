@@ -113,7 +113,6 @@
 
   function clear_state_and_go_to_intro() {
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
-    window.location.href = `/generate/${project_id}/${task_id}`
     return true
   }
 
@@ -288,8 +287,6 @@
   <AppPage
     title="Synthetic Data Generation"
     no_y_padding
-    sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/qna-data-generation"
     action_buttons={[
       {
         label: "Reset",
@@ -302,10 +299,6 @@
             clear_state_and_go_to_intro()
           }
         },
-      },
-      {
-        label: "Docs & Guide",
-        href: "https://docs.kiln.tech/docs/qna-data-generation",
       },
     ]}
   >

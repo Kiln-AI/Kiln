@@ -39,6 +39,7 @@
   export function show() {
     // Clear the error, so the dialog can be used again
     error = null
+    dispatch("show")
     // @ts-expect-error showModal is not a method on HTMLElement
     document.getElementById(id)?.showModal()
   }
