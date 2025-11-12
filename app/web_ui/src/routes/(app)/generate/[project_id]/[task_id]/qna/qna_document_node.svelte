@@ -26,6 +26,7 @@
     name: string
     tags: string[]
     extracted: boolean
+    extraction_failed: boolean
     parts: QnADocPart[]
   }
 
@@ -98,7 +99,11 @@
         >
           {document.name}
         </button>
-        {#if document.extracted}
+        {#if document.extraction_failed}
+          <div class="badge badge-sm badge-error badge-outline ml-2">
+            Extraction Failed
+          </div>
+        {:else if document.extracted}
           <div class="badge badge-sm badge-secondary badge-outline ml-2">
             Extracted
           </div>

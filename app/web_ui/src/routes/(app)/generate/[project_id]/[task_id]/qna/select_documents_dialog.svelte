@@ -22,6 +22,10 @@
     await Promise.all([check_library_state(), load_document_tags(project_id)])
   })
 
+  function handle_show() {
+    submitting = false
+  }
+
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
   export let project_id: string
@@ -38,6 +42,7 @@
   let error: KilnError | null = null
   let library_state: DocumentLibraryState | null = null
   let library_state_loading = false
+  let submitting = false
 
   function get_fancy_select_options_tags(tags: string[]): OptionGroup[] {
     if (tags.length === 0) {
@@ -126,6 +131,7 @@
   title="Select Documents"
   sub_subtitle="These documents will be used to generate query & answer pairs for your eval."
   width="normal"
+  on:show={handle_show}
 >
   <FormContainer
     submit_visible={!library_state_loading && !library_state?.is_empty}
@@ -136,6 +142,7 @@
     {error}
     gap={4}
     {keyboard_submit}
+    bind:submitting
     on:close={() => dispatch("close")}
   >
     {#if library_state_loading}

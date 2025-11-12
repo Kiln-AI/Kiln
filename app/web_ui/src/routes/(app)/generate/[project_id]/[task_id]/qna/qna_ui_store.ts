@@ -47,6 +47,7 @@ type QnADocumentNode = {
   name: string
   tags: string[]
   extracted: boolean
+  extraction_failed: boolean
   parts: QnADocPart[]
 }
 
@@ -54,6 +55,7 @@ export type QnASession = {
   selected_tags: string[]
   extractor_id: string | null
   extraction_complete: boolean
+  extraction_error_count: number
   template: "custom" | "query_answer_generation"
   generation_config: {
     pairs_per_part: number
@@ -107,6 +109,7 @@ export type QnaStore = {
   }>
   targetType: Readable<"all" | "document" | "part">
   targetDescription: Readable<string>
+  extractionErrorCount: Readable<number>
 
   extractorId: Writable<string | null>
   pairsPerPart: Writable<number>
@@ -121,7 +124,7 @@ export type QnaStore = {
   setPendingTarget(target: GenerationTarget): void
   addDocuments(documents: KilnDocument[], tags: string[]): void
   setExtractor(id: string): void
-  markExtractionComplete(id: string): void
+  markExtractionComplete(id: string, errorCount: number): Promise<void>
   deleteDocument(id: string): void
   setSplits(splits: Record<string, number>): void
   removePair(documentId: string, partId: string, qaId: string): void
@@ -137,6 +140,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     selected_tags: [],
     extractor_id: null,
     extraction_complete: false,
+    extraction_error_count: 0,
     template: "custom",
     generation_config: {
       pairs_per_part: 5,
@@ -191,6 +195,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       selected_tags: [],
       extractor_id: null,
       extraction_complete: false,
+      extraction_error_count: 0,
       template: "query_answer_generation",
       generation_config: {
         pairs_per_part: 5,
@@ -302,8 +307,12 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     const hasQaPairs = $state.documents.some((d) =>
       d.parts.some((p) => p.qa_pairs.length > 0),
     )
-    if (hasQaPairs) return 4
-    if ($state.extraction_complete) return 3
+    if (hasQaPairs) {
+      return 4
+    }
+    if ($state.extraction_complete && $state.extraction_error_count === 0) {
+      return 3
+    }
     if ($state.documents.length > 0) return 2
     return 1
   })
@@ -364,6 +373,11 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     },
   )
 
+  const extractionErrorCount = derived(
+    _state,
+    ($state): number => $state.extraction_error_count,
+  )
+
   function setPendingTarget(target: GenerationTarget): void {
     pendingTarget.set(target)
   }
@@ -381,6 +395,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           name: doc.friendly_name,
           tags: doc.tags || [],
           extracted: false,
+          extraction_failed: false,
           parts: [],
         }
       })
@@ -389,6 +404,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         documents: [...s.documents, ...newDocuments],
         selected_tags: tags,
         extraction_complete: false,
+        extraction_error_count: 0,
       }
     })
     manualStep.set(null)
@@ -399,12 +415,55 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     extractorId.set(extractorConfigId)
   }
 
-  function markExtractionComplete(extractorConfigId: string): void {
+  async function markExtractionComplete(
+    extractorConfigId: string,
+    errorCount: number,
+  ): Promise<void> {
     extractorId.set(extractorConfigId)
+
+    const successfulDocIds = new Set<string>()
+
+    if (errorCount > 0) {
+      try {
+        const { data, error } = await client.GET(
+          "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions",
+          {
+            params: {
+              path: {
+                project_id: projectId,
+                extractor_config_id: extractorConfigId,
+              },
+            },
+          },
+        )
+
+        if (!error && data) {
+          Object.keys(data).forEach((docId) => {
+            if (data[docId] && data[docId].length > 0) {
+              successfulDocIds.add(docId)
+            }
+          })
+        }
+      } catch (e) {
+        console.error("Failed to fetch extraction results", e)
+      }
+    }
+
     _state.update((s) => ({
       ...s,
       extraction_complete: true,
-      documents: s.documents.map((doc) => ({ ...doc, extracted: true })),
+      extraction_error_count: errorCount,
+      documents: s.documents.map((doc) => {
+        if (errorCount === 0) {
+          return { ...doc, extracted: true, extraction_failed: false }
+        }
+        const extracted = successfulDocIds.has(doc.id)
+        return {
+          ...doc,
+          extracted,
+          extraction_failed: !extracted,
+        }
+      }),
     }))
   }
 
@@ -417,6 +476,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
           ...s,
           documents: newDocuments,
           extraction_complete: false,
+          extraction_error_count: 0,
         }
       }
       return {
@@ -484,6 +544,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
       selected_tags: [],
       extractor_id: null,
       extraction_complete: false,
+      extraction_error_count: 0,
       template: "query_answer_generation",
       generation_config: {
         pairs_per_part: 5,
@@ -493,7 +554,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
         chunk_overlap_tokens: null,
       },
       documents: [],
-      splits: {},
+      // we don't want to clear splits when we reset
     }))
   }
 
@@ -1005,6 +1066,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     saveAllStatus,
     targetType,
     targetDescription,
+    extractionErrorCount,
     extractorId,
     pairsPerPart,
     guidance,
