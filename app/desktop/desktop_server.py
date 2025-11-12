@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import FastAPI
 from kiln_ai.adapters.remote_config import load_remote_models
 from kiln_ai.utils.logging import setup_litellm_logging
+from kiln_ai.utils.pdf_utils import shutdown_pdf_executor
 
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
@@ -47,6 +48,8 @@ async def lifespan(app: FastAPI):
     yield
     # Reset datamodel strict mode on shutdown
     datamodel_strict_mode.set_strict_mode(original_strict_mode)
+    # Clean up process pool executor to prevent semaphore leaks
+    shutdown_pdf_executor()
 
 
 def make_app(tk_root: tk.Tk | None = None):

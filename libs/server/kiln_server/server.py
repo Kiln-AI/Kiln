@@ -1,10 +1,12 @@
 import argparse
+from contextlib import asynccontextmanager
 from importlib.metadata import version
 from typing import Sequence
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from kiln_ai.utils.pdf_utils import shutdown_pdf_executor
 
 from .custom_errors import connect_custom_errors
 from .document_api import connect_document_api
@@ -22,7 +24,15 @@ def _get_version() -> str:
         return "unknown"
 
 
+@asynccontextmanager
+async def default_lifespan(app: FastAPI):
+    yield
+    shutdown_pdf_executor()
+
+
 def make_app(lifespan=None):
+    if lifespan is None:
+        lifespan = default_lifespan
     app = FastAPI(
         title="Kiln AI Server",
         summary="A REST API for the Kiln AI datamodel.",

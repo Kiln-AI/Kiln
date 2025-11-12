@@ -9,6 +9,7 @@ from conftest import MockFileFactoryMimeType
 from kiln_ai.utils.pdf_utils import (
     _convert_pdf_to_images_sync,
     convert_pdf_to_images,
+    shutdown_pdf_executor,
     split_pdf_into_pages,
 )
 
@@ -131,3 +132,17 @@ def test__convert_pdf_to_images_sync(mock_file_factory):
 async def test_convert_pdf_to_images_concurrent_access_100(mock_file_factory):
     """Test running convert_pdf_to_images concurrently from multiple tasks."""
     await run_convert_pdf_concurrently(mock_file_factory, concurrency=100)
+
+
+def test_shutdown_pdf_executor():
+    """Test that shutdown_pdf_executor properly cleans up the executor."""
+    import kiln_ai.utils.pdf_utils as pdf_utils_module
+
+    original_executor = pdf_utils_module.pdf_conversion_executor
+    assert original_executor is not None
+
+    shutdown_pdf_executor()
+
+    assert pdf_utils_module.pdf_conversion_executor is None
+
+    pdf_utils_module.pdf_conversion_executor = original_executor

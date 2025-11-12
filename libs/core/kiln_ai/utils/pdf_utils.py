@@ -16,6 +16,14 @@ from pypdf import PdfReader, PdfWriter
 pdf_conversion_executor = ProcessPoolExecutor(max_workers=1)
 
 
+def shutdown_pdf_executor():
+    """Shutdown the PDF conversion executor and clean up resources."""
+    global pdf_conversion_executor
+    if pdf_conversion_executor is not None:
+        pdf_conversion_executor.shutdown(wait=True)
+        pdf_conversion_executor = None
+
+
 @asynccontextmanager
 async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], None]:
     with tempfile.TemporaryDirectory(prefix="kiln_pdf_pages_") as temp_dir:
