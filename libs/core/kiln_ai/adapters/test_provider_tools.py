@@ -709,9 +709,7 @@ def test_lite_llm_config_single_provider_infers_name(mock_shared_config):
     )
 
     assert config_result.base_url == "https://api.solo-provider.test/v1"
-    assert config_result.additional_body_options == {
-        "api_key": "solo-provider-key"
-    }
+    assert config_result.additional_body_options == {"api_key": "solo-provider-key"}
     assert config_result.run_config_properties.model_name == "model-without-prefix"
 
 

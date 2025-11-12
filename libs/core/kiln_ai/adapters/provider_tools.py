@@ -185,9 +185,7 @@ def resolve_openai_compatible_model_id(model_id: str) -> tuple[str, str]:
                 matching_provider = candidate
                 canonical_model_id = model_id[len(prefix) :]
                 if not canonical_model_id:
-                    raise ValueError(
-                        f"Invalid openai compatible model ID: {model_id}"
-                    )
+                    raise ValueError(f"Invalid openai compatible model ID: {model_id}")
                 return matching_provider, canonical_model_id
 
     if len(provider_names) == 1:
