@@ -27,6 +27,7 @@
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import type { KilnDocument, RunConfigProperties } from "$lib/types"
+  import posthog from "posthog-js"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
   let ui_show_errors = false
@@ -175,6 +176,9 @@
   ) {
     const { documents, tags } = event.detail
     qna.addDocuments(documents, tags)
+    posthog.capture("setup_qna_gen", {
+      document_count: documents.length,
+    })
   }
 
   function handle_extraction_complete(
@@ -280,6 +284,20 @@
 
   async function save_all_qna_pairs() {
     await qna.saveAll(session_id)
+
+    const state = get(qna)
+    const firstPair = state.documents
+      .flatMap((d) => d.parts)
+      .flatMap((p) => p.qa_pairs)
+      .find((p) => p.model_name && p.model_provider)
+    if (firstPair) {
+      posthog.capture("save_qna_data", {
+        model_name: firstPair.model_name,
+        provider: firstPair.model_provider,
+        template: state.template,
+        total_pairs: total_qa_pairs,
+      })
+    }
   }
 </script>
 
