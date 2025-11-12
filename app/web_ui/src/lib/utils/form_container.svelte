@@ -1,11 +1,31 @@
 <script lang="ts">
-  import { onMount } from "svelte"
+  import { onMount, setContext } from "svelte"
   import { createEventDispatcher } from "svelte"
   import { KilnError } from "./error_handlers"
   import { beforeNavigate } from "$app/navigation"
   import { isMacOS } from "./platform"
 
   const id = "form_container_" + Math.random().toString(36)
+
+  type FormElementValidator = {
+    run_validator: () => void
+  }
+
+  const formElements: FormElementValidator[] = []
+
+  function registerFormElement(validator: FormElementValidator) {
+    formElements.push(validator)
+    return () => {
+      const index = formElements.indexOf(validator)
+      if (index > -1) {
+        formElements.splice(index, 1)
+      }
+    }
+  }
+
+  setContext("form_container", {
+    registerFormElement,
+  })
 
   export let primary: boolean = true
   export let submit_label: string = "Submit"
@@ -39,20 +59,9 @@
   }
 
   async function trigger_validation() {
-    const form = document.getElementById(id)
-    if (form) {
-      const formElements = form.querySelectorAll("input, textarea, select")
-      await formElements.forEach(async (element) => {
-        if (element instanceof HTMLElement) {
-          // The input events are monitored by the form validation
-          const inputEvent = new Event("input", {
-            bubbles: true,
-            cancelable: true,
-          })
-          await element.dispatchEvent(inputEvent)
-        }
-      })
-    }
+    formElements.forEach((element) => {
+      element.run_validator()
+    })
   }
 
   function first_error() {

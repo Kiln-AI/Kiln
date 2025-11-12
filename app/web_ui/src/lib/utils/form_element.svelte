@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+  import { onMount, onDestroy, getContext } from "svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -88,10 +89,36 @@
     }
   }
 
-  function run_validator() {
+  export function run_validator() {
     const error = validator(value)
     error_message = error
   }
+
+  // run validator after value change
+  function run_validator_on_change(_: unknown) {
+    run_validator()
+  }
+  $: run_validator_on_change(value)
+
+  const formContainer = getContext<{
+    registerFormElement: (validator: {
+      run_validator: () => void
+    }) => () => void
+  } | null>("form_container")
+
+  let unregister: (() => void) | null = null
+
+  onMount(() => {
+    if (formContainer) {
+      unregister = formContainer.registerFormElement({ run_validator })
+    }
+  })
+
+  onDestroy(() => {
+    if (unregister) {
+      unregister()
+    }
+  })
 
   // Little dance to keep type checker happy
   function handleCheckboxChange(event: Event) {
@@ -142,15 +169,15 @@
             <InfoTooltip tooltip_text={info_description} />
           </div>
         {/if}
+        {#if error_message}
+          <span class="text-error">
+            <InfoTooltip tooltip_text={error_message} />
+          </span>
+        {/if}
       </div>
-      {#if description || error_message}
+      {#if description}
         <div class="text-xs text-gray-500">
-          {description || ""}
-          {#if error_message}
-            <span class="text-error">
-              <InfoTooltip tooltip_text={error_message} position="bottom" />
-            </span>
-          {/if}
+          {description}
         </div>
       {/if}
     </label>
@@ -165,7 +192,6 @@
         ]} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -180,7 +206,6 @@
           ? 'input-error'
           : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -195,7 +220,6 @@
           ? 'input-error'
           : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -237,6 +261,7 @@
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
+        error_outline={!!error_message}
         {disabled}
         {empty_label}
         {empty_state_message}
