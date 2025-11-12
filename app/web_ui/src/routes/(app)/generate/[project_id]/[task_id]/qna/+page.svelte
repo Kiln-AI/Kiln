@@ -84,6 +84,7 @@
   $: qnaGenerationErrors = qna?.generationErrors
   $: qnaStatus = qna?.status
   $: qnaSelectedTags = qna?.selectedTags
+  $: qnaExtractionErrorCount = qna?.extractionErrorCount
 
   onMount(async () => {
     qna = createQnaStore(project_id, task_id)
@@ -178,10 +179,10 @@
   }
 
   function handle_extraction_complete(
-    event: CustomEvent<{ extractor_config_id: string }>,
+    event: CustomEvent<{ extractor_config_id: string; error_count: number }>,
   ) {
-    const { extractor_config_id } = event.detail
-    qna.markExtractionComplete(extractor_config_id)
+    const { extractor_config_id, error_count } = event.detail
+    qna.markExtractionComplete(extractor_config_id, error_count)
   }
 
   function handle_generate_for_document(
@@ -465,20 +466,40 @@
                 </div>
               {:else if $qnaCurrentStep == 2}
                 <button
-                  class="btn btn-sm btn-primary"
+                  class="btn btn-sm {$qna &&
+                  $qna.extraction_complete &&
+                  $qnaExtractionErrorCount === 0
+                    ? 'btn-outline btn-primary'
+                    : 'btn-primary'}"
                   on:click={open_extraction_dialog}
-                  disabled={!has_documents ||
-                    ($qna && $qna.extraction_complete)}
+                  disabled={!has_documents}
                 >
-                  Run Extraction
+                  {$qna &&
+                  $qna.extraction_complete &&
+                  $qnaExtractionErrorCount > 0
+                    ? "Retry Extraction"
+                    : "Run Extraction"}
                 </button>
-                {#if $qna && $qna.extraction_complete}
+                {#if $qna && $qna.extraction_complete && $qnaExtractionErrorCount === 0}
                   <button
                     class="btn btn-sm btn-primary ml-2"
                     on:click={() => qna.setCurrentStep(3)}
                   >
                     Next Step
                   </button>
+                {/if}
+                {#if $qnaExtractionErrorCount && $qnaExtractionErrorCount > 0}
+                  <div class="mt-3 flex flex-col items-center">
+                    <Warning
+                      warning_message="{$qnaExtractionErrorCount} document{$qnaExtractionErrorCount >
+                      1
+                        ? 's'
+                        : ''} failed to extract. Retry or delete documents."
+                      warning_color="error"
+                      warning_icon="exclaim"
+                      tight
+                    />
+                  </div>
                 {/if}
               {:else if $qnaCurrentStep == 3}
                 <button
