@@ -1,4 +1,4 @@
-import os
+from typing import List, Tuple
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -6,17 +6,21 @@ from litellm import Usage
 from litellm.types.utils import EmbeddingResponse
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import Embedding
+from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.embedding.litellm_embedding_adapter import (
     MAX_BATCH_SIZE,
     EmbeddingOptions,
     LitellmEmbeddingAdapter,
     validate_map_to_embeddings,
 )
-from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
+from kiln_ai.adapters.ml_embedding_model_list import (
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+    built_in_embedding_models_from_provider,
+)
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
-from kiln_ai.utils.config import Config
 
 
 @pytest.fixture
@@ -39,6 +43,14 @@ def mock_litellm_adapter(mock_embedding_config, mock_litellm_core_config):
     return LitellmEmbeddingAdapter(
         mock_embedding_config, litellm_core_config=mock_litellm_core_config
     )
+
+
+def get_all_embedding_models_and_providers() -> List[Tuple[ModelProviderName, str]]:
+    results = []
+    for model in built_in_embedding_models:
+        for provider in model.providers:
+            results.append((provider.name, model.name))
+    return results
 
 
 class TestEmbeddingOptions:
@@ -720,43 +732,59 @@ class TestLitellmEmbeddingAdapterEdgeCases:
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    "provider,model_name,expected_dim",
-    [
-        (ModelProviderName.openai, "openai_text_embedding_3_small", 1536),
-        (ModelProviderName.openai, "openai_text_embedding_3_large", 3072),
-        (ModelProviderName.gemini_api, "gemini_text_embedding_004", 768),
-    ],
+    "provider,model_name",
+    get_all_embedding_models_and_providers(),
 )
 @pytest.mark.asyncio
-async def test_paid_generate_embeddings_basic(
-    provider, model_name, expected_dim, mock_litellm_core_config
-):
-    openai_key = Config.shared().open_ai_api_key
-    if not openai_key:
-        pytest.skip("OPENAI_API_KEY not set")
-    # Set the API key for litellm
-    os.environ["OPENAI_API_KEY"] = openai_key
-
-    # gemini key
-    gemini_key = Config.shared().gemini_api_key
-    if not gemini_key:
-        pytest.skip("GEMINI_API_KEY not set")
-    os.environ["GEMINI_API_KEY"] = gemini_key
-
-    config = EmbeddingConfig(
-        name="paid-embedding",
-        model_provider_name=provider,
-        model_name=model_name,
-        properties={},
-    )
-    adapter = LitellmEmbeddingAdapter(
-        config, litellm_core_config=mock_litellm_core_config
+async def test_paid_generate_embeddings_basic(provider, model_name):
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="paid-embedding",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={},
+        )
     )
     text = ["Kiln is an open-source evaluation platform for LLMs."]
     result = await adapter.generate_embeddings(text)
     assert len(result.embeddings) == 1
     assert isinstance(result.embeddings[0].vector, list)
-    assert len(result.embeddings[0].vector) == expected_dim
+    assert len(result.embeddings[0].vector) == model_provider.n_dimensions, (
+        f"Expected {model_provider.n_dimensions} dimensions, got {len(result.embeddings[0].vector)}"
+    )
+    assert all(isinstance(x, float) for x in result.embeddings[0].vector)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "provider,model_name,batch_size",
+    [
+        (provider, model_name, batch_size)
+        for provider, model_name in get_all_embedding_models_and_providers()
+        for batch_size in [10, 100]
+    ],
+)
+@pytest.mark.asyncio
+async def test_paid_generate_embeddings_batch(provider, model_name, batch_size):
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name=f"paid-embedding-batch-{batch_size}",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={},
+        )
+    )
+    text = ["Kiln is an open-source evaluation platform for LLMs."] * batch_size
+    result = await adapter.generate_embeddings(text)
+    assert len(result.embeddings) == batch_size
+    assert isinstance(result.embeddings[0].vector, list)
+    assert len(result.embeddings[0].vector) == model_provider.n_dimensions, (
+        f"Expected {model_provider.n_dimensions} dimensions, got {len(result.embeddings[0].vector)}"
+    )
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
 
 
@@ -997,42 +1025,38 @@ def test_litellm_model_id_custom_provider_openai_compatible_without_base_url():
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    "provider,model_name,expected_dim",
-    [
-        (ModelProviderName.openai, "openai_text_embedding_3_small", 256),
-        (ModelProviderName.openai, "openai_text_embedding_3_small", 512),
-        (ModelProviderName.openai, "openai_text_embedding_3_large", 256),
-        (ModelProviderName.openai, "openai_text_embedding_3_large", 512),
-        (ModelProviderName.openai, "openai_text_embedding_3_large", 1024),
-        (ModelProviderName.openai, "openai_text_embedding_3_large", 2048),
-    ],
+    "provider,model_name",
+    get_all_embedding_models_and_providers(),
 )
 @pytest.mark.asyncio
 async def test_paid_generate_embeddings_with_custom_dimensions_supported(
-    provider, model_name, expected_dim, mock_litellm_core_config
+    provider, model_name, mock_litellm_core_config
 ):
     """
     Some models support custom dimensions - where the provider shortens the dimensions to match
     the desired custom number of dimensions. Ref: https://openai.com/index/new-embedding-models-and-api-updates/
     """
-    api_key = Config.shared().open_ai_api_key or os.environ.get("OPENAI_API_KEY")
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
 
-    config = EmbeddingConfig(
-        name="paid-embedding",
-        model_provider_name=provider,
-        model_name=model_name,
-        properties={"dimensions": expected_dim},
-    )
-    adapter = LitellmEmbeddingAdapter(
-        config, litellm_core_config=mock_litellm_core_config
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    if not model_provider.supports_custom_dimensions:
+        pytest.skip("Model does not support custom dimensions")
+    max_dimensions = model_provider.n_dimensions
+    custom_dimensions = max_dimensions // 2
+
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="paid-embedding",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={"dimensions": custom_dimensions},
+        )
     )
     text = ["Kiln is an open-source evaluation platform for LLMs."]
     result = await adapter.generate_embeddings(text)
     assert len(result.embeddings) == 1
     assert isinstance(result.embeddings[0].vector, list)
-    assert len(result.embeddings[0].vector) == expected_dim
+    assert len(result.embeddings[0].vector) == custom_dimensions
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
 
 
@@ -1147,3 +1171,39 @@ def test_generate_embeddings_response_not_embedding_response():
         match=r"Expected EmbeddingResponse, got <class 'unittest.mock.AsyncMock'>.",
     ):
         validate_map_to_embeddings(response, 1)
+
+
+@pytest.mark.parametrize(
+    "provider_name,model_name", get_all_embedding_models_and_providers()
+)
+def test_openrouter_transformed_into_openai_compatible(provider_name, model_name):
+    if provider_name != ModelProviderName.openrouter:
+        pytest.skip("Provider is not openrouter")
+
+    model_provider = built_in_embedding_models_from_provider(provider_name, model_name)
+    assert model_provider is not None
+
+    # patch the lite_llm_core_config_for_provider
+    with patch(
+        "kiln_ai.adapters.embedding.embedding_registry.lite_llm_core_config_for_provider"
+    ) as mock_lite_llm_core_config_for_provider:
+        mock_lite_llm_core_config_for_provider.return_value = LiteLlmCoreConfig(
+            base_url="https://api.example.com/v1",
+            default_headers={},
+            additional_body_options={},
+        )
+        adapter = embedding_adapter_from_type(
+            EmbeddingConfig(
+                name="test-embedding",
+                model_provider_name=provider_name,
+                model_name=model_name,
+                properties={},
+            )
+        )
+    assert isinstance(adapter, LitellmEmbeddingAdapter)
+    assert adapter.litellm_model_id.startswith("openai/"), (
+        f"Final slug {adapter.litellm_model_id} does not start with openai/ - unless LiteLLM has added support for openrouter embeddings, it should start with openai/ to be run as a OpenAI compatible provider"
+    )
+    assert "openrouter" not in adapter.litellm_model_id, (
+        f"Final slug {adapter.litellm_model_id} contains openrouter, which should not be present - unless LiteLLM has added support for openrouter embeddings, it should not contain openrouter/ prefix because LiteLLM rejects it"
+    )

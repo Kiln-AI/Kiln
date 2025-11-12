@@ -1,7 +1,12 @@
+import json
+import logging
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 def format_error_loc(loc: tuple):
@@ -29,6 +34,16 @@ def connect_custom_errors(app: FastAPI):
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError | ValidationError
     ):
+        # Warn level because user data being incorrect isn't a server problem
+        # Format errors as JSON string so they're fully captured in dev logs
+        if logger.isEnabledFor(logging.WARNING):
+            errors = exc.errors()
+            errors_json = json.dumps(errors, indent=2, default=str)
+            logger.warning(
+                f"Validation error on {request.method} {request.url.path} ({len(errors)} error(s)):\n{errors_json}",
+                exc_info=exc,
+            )
+
         # Write user friendly error messages
         error_messages = []
         for error in exc.errors():
