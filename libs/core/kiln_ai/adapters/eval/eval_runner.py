@@ -6,7 +6,7 @@ from typing import AsyncGenerator, Dict, List, Literal, Set
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
+from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
@@ -79,11 +79,21 @@ class EvalRunner:
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
-            return self.collect_tasks_for_eval_config_eval()
+            if self.eval.eval_configs_filter_id is not None:
+                return self.collect_tasks_for_eval_config_eval(
+                    self.eval.eval_configs_filter_id
+                )
+            else:
+                raise ValueError(
+                    "Eval configs filter ID is required for eval runs of type 'eval_config_eval'"
+                )
+
         else:
             return self.collect_tasks_for_task_run_eval()
 
-    def collect_tasks_for_eval_config_eval(self) -> List[EvalJob]:
+    def collect_tasks_for_eval_config_eval(
+        self, eval_configs_filter_id: DatasetFilterId
+    ) -> List[EvalJob]:
         """
         Collect all jobs for this run, excluding any that have already been run.
 
@@ -93,7 +103,7 @@ class EvalRunner:
         - should be in the eval config set filter
         - should not have already been run for this eval config + dataset item pair
         """
-        filter = dataset_filter_from_id(self.eval.eval_configs_filter_id)
+        filter = dataset_filter_from_id(eval_configs_filter_id)
 
         # already_run[eval_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Set[ID_TYPE]] = {}

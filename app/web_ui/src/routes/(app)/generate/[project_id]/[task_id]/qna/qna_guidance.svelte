@@ -56,6 +56,7 @@
     guidance = ""
     selected_template = "custom"
     last_selected_template = "custom"
+    // Return false to keep dialog open after clearing
     return false
   }
 

@@ -55,10 +55,6 @@
     ]
   }
 
-  onMount(async () => {
-    await load_document_tags(project_id)
-  })
-
   async function fetch_documents_by_tag() {
     error = null
 

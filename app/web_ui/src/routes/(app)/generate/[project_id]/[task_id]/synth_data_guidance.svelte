@@ -25,6 +25,7 @@
 
   function clear_guidance() {
     guidance_data.set_guidance_for_type(guidance_type, null, "custom")
+    // Return false to keep dialog open after clearing
     return false
   }
 

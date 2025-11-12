@@ -6,7 +6,7 @@
   import DataGenIntro from "./data_gen_intro.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { get, writable, type Writable } from "svelte/store"
-  import { createQnaStore } from "./qna/qna_ui_store"
+  import { createQnaStore, type QnaStore } from "./qna/qna_ui_store"
   import { DEFAULT_QNA_GUIDANCE } from "./qna/guidance"
 
   // watch out because query param value is not the same as gen_type
@@ -15,6 +15,11 @@
   let loading = true
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
+
+  let cachedQnaStore: QnaStore | null = null
+  let cachedQnaProjectId: string | null = null
+  let cachedQnaTaskId: string | null = null
+  let cachedQnaInitialized = false
 
   // we only need gen_type to do the routing, the type-specific data is handled by the
   // mode-specific pages we redirect to
@@ -90,8 +95,21 @@
     "training" | "eval" | "qna" | null
   > {
     // Check for saved Q&A session first
-    const qna = createQnaStore(project_id, task_id)
-    await qna.init(DEFAULT_QNA_GUIDANCE)
+    if (
+      !cachedQnaStore ||
+      cachedQnaProjectId !== project_id ||
+      cachedQnaTaskId !== task_id
+    ) {
+      cachedQnaStore = createQnaStore(project_id, task_id)
+      cachedQnaProjectId = project_id
+      cachedQnaTaskId = task_id
+      cachedQnaInitialized = false
+    }
+    if (!cachedQnaInitialized) {
+      await cachedQnaStore.init(DEFAULT_QNA_GUIDANCE)
+      cachedQnaInitialized = true
+    }
+    const qna = cachedQnaStore
     if (get(qna).documents.length > 0) {
       return "qna"
     }

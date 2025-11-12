@@ -85,7 +85,7 @@
     create_evaluator_loading = true
     try {
       if (!eval_dataset) {
-        throw new Error("Please select both evaluation and config datasets")
+        throw new Error("Please select an evaluation dataset")
       }
       let eval_configs_filter_id: string | null = null
       if (selected_template !== "rag") {

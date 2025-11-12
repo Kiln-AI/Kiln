@@ -143,6 +143,8 @@ def connect_task_api(app: FastAPI):
 
         # Then add eval requirements. We want these to be shown for all items in the eval's golden set filter.
         for eval in task.evals(readonly=True):
+            if eval.eval_configs_filter_id is None:
+                continue
             if not eval.eval_configs_filter_id.startswith("tag::"):
                 logger.warning(
                     "Eval '%s' has non-tag filter '%s'. This isn't compatible with the web UI for automatic rating visibility.",
