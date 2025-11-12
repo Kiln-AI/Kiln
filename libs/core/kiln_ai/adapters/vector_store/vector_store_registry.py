@@ -46,6 +46,16 @@ async def vector_store_adapter_for_config(
                     rag_config,
                     vector_store_config,
                 )
+
+                # this flag is initially set to False in llama_index lancedb driver, it is used internally to lazy create the
+                # FTS index on query (hybrid or FTS), turning it on here means that:
+                # 1. An incoming query won't trigger reindexing
+                # 2. A write / add node will still create reindexing
+                #
+                # FTS reindexing is asynchronous and can take a while, and while it rebuilds, the previous index
+                # is deleted, so results are missing from the Top K, and that causes poorer results as well as unstable
+                # rankings, because a few minutes later, once indexing has completed, the FTS results will start changing
+                adapter.lancedb_vector_store._fts_index_ready = True
             case _:
                 raise_exhaustive_enum_error(vector_store_config.store_type)
 
