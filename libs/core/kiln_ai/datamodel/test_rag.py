@@ -66,6 +66,23 @@ def test_rag_config_minimal_creation():
     assert rag_config.chunker_config_id == "chunker456"
     assert rag_config.embedding_config_id == "embedding789"
     assert rag_config.vector_store_config_id == "vector_store123"
+    assert rag_config.reranker_config_id is None
+
+
+def test_rag_config_with_reranker_creation():
+    """Test creating a RagConfig with a reranker."""
+    rag_config = RagConfig(
+        name="Test RAG Config",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for document retrieval",
+        extractor_config_id="extractor123",
+        chunker_config_id="chunker456",
+        embedding_config_id="embedding789",
+        vector_store_config_id="vector_store123",
+        reranker_config_id="reranker123",
+    )
+
+    assert rag_config.reranker_config_id == "reranker123"
 
 
 def test_rag_config_missing_required_fields():

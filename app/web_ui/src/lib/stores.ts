@@ -1,6 +1,10 @@
 import { writable, get } from "svelte/store"
 import { dev } from "$app/environment"
-import type { ModelProviderName } from "$lib/types"
+import type {
+  ModelProviderName,
+  RerankerModelDetails,
+  RerankerProvider,
+} from "$lib/types"
 import type {
   Project,
   Task,
@@ -308,6 +312,37 @@ export async function load_available_embedding_models() {
   }
 }
 
+// Available reranker models for each provider
+export const available_reranker_models = writable<RerankerProvider[]>([])
+let available_reranker_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
+
+export async function load_available_reranker_models() {
+  try {
+    if (
+      available_reranker_models_loaded === "loading" ||
+      available_reranker_models_loaded === "loaded" ||
+      available_reranker_models_loaded === "error_loading"
+    ) {
+      return
+    }
+    available_reranker_models_loaded = "loading"
+    const { data, error } = await client.GET("/api/available_reranker_models")
+    if (error) {
+      throw error
+    }
+    available_reranker_models.set(data)
+    available_reranker_models_loaded = "loaded"
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    available_reranker_models.set([])
+    available_reranker_models_loaded = "error_loading"
+  }
+}
+
 export function clear_available_models_cache() {
   available_models_loaded = "not_loaded"
   available_models.set([])
@@ -407,6 +442,27 @@ export function get_embedding_model_info(
   return null
 }
 
+export function get_reranker_model_info(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): RerankerModelDetails | null {
+  if (!model_id) {
+    return null
+  }
+
+  for (const provider of get(available_reranker_models)) {
+    if (provider.provider_id === provider_id) {
+      const models = provider.models || []
+      for (const model of models) {
+        if (model.id === model_id) {
+          return model
+        }
+      }
+    }
+  }
+  return null
+}
+
 export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
@@ -430,6 +486,20 @@ export function embedding_model_name(
     return "Unknown"
   }
   const model = get_embedding_model_info(model_id, provider_id)
+  if (model?.name) {
+    return model.name
+  }
+  return "Model ID: " + model_id
+}
+
+export function reranker_name(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): string {
+  if (!model_id) {
+    return "Unknown"
+  }
+  const model = get_reranker_model_info(model_id, provider_id)
   if (model?.name) {
     return model.name
   }

@@ -5,6 +5,7 @@
   import {
     load_available_embedding_models,
     load_available_models,
+    load_available_reranker_models,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
@@ -42,6 +43,7 @@
       load_available_embedding_models(),
       load_all_rag_config_progress(project_id),
       load_rag_configs(project_id),
+      load_available_reranker_models(),
     ])
     loading = false
   })
