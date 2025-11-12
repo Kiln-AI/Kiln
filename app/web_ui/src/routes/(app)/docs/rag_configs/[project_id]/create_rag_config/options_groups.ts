@@ -7,6 +7,7 @@ import type {
   ChunkerConfig,
   EmbeddingConfig,
   ExtractorConfig,
+  RerankerConfig,
   VectorStoreConfig,
 } from "$lib/types"
 import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -160,6 +161,39 @@ export function build_vector_store_options(
               description:
                 config.name +
                 ` • ${config.properties.similarity_top_k ?? 10} results`,
+            })),
+          },
+        ]
+      : []),
+  ] as OptionGroup[]
+}
+
+function fmt_reranker_label(config: RerankerConfig) {
+  return `${get_model_friendly_name(config.model_name)} (${provider_name_from_id(config.model_provider_name)}) • ${config.top_n} results`
+}
+
+export function build_reranker_options(reranker_configs: RerankerConfig[]) {
+  return [
+    {
+      options: [
+        {
+          label: "New Reranker Configuration",
+          value: "create_new",
+          badge: "New",
+          badge_color: "primary",
+        },
+      ],
+    },
+    ...(reranker_configs.length > 0
+      ? [
+          {
+            label: "Rerankers",
+            options: reranker_configs.map((config) => ({
+              label: fmt_reranker_label(config),
+              value: config.id,
+              description:
+                config.name +
+                (config.description ? " • " + config.description : ""),
             })),
           },
         ]

@@ -15,6 +15,11 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModelProvider,
     built_in_embedding_models,
 )
+from kiln_ai.adapters.reranker_list import (
+    KilnRerankerModel,
+    KilnRerankerModelProvider,
+    built_in_rerankers,
+)
 from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 
 from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
@@ -26,16 +31,19 @@ logger = logging.getLogger(__name__)
 class KilnRemoteConfig:
     model_list: List[KilnModel]
     embedding_model_list: List[KilnEmbeddingModel]
+    reranker_model_list: List[KilnRerankerModel]
 
 
 def serialize_config(
     models: List[KilnModel],
     embedding_models: List[KilnEmbeddingModel],
+    reranker_models: List[KilnRerankerModel],
     path: str | Path,
 ) -> None:
     data = {
         "model_list": [m.model_dump(mode="json") for m in models],
         "embedding_model_list": [m.model_dump(mode="json") for m in embedding_models],
+        "reranker_model_list": [m.model_dump(mode="json") for m in reranker_models],
     }
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True))
 
@@ -63,6 +71,12 @@ def deserialize_config_data(
     if not isinstance(embedding_model_data, list):
         raise ValueError(
             f"Remote config expected list of embedding models, got {type(embedding_model_data)}"
+        )
+
+    reranker_model_data = config_data.get("reranker_model_list", [])
+    if not isinstance(reranker_model_data, list):
+        raise ValueError(
+            f"Remote config expected list of reranker models, got {type(reranker_model_data)}"
         )
 
     # We must be careful here, because some of the JSON data may be generated from a forward
@@ -139,7 +153,38 @@ def deserialize_config_data(
                 e,
             )
 
-    return KilnRemoteConfig(model_list=models, embedding_model_list=embedding_models)
+    reranker_models = []
+    for reranker_model_data in reranker_model_data:
+        try:
+            provider_list = reranker_model_data.get("providers", [])
+            providers = []
+            for provider_data in provider_list:
+                try:
+                    provider = KilnRerankerModelProvider.model_validate(provider_data)
+                    providers.append(provider)
+                except ValidationError as e:
+                    logger.warning(
+                        "Failed to validate a reranker model provider from remote config. Upgrade Kiln to use this model. Details %s: %s",
+                        provider_data,
+                        e,
+                    )
+
+            reranker_model_data["providers"] = []
+            reranker_model = KilnRerankerModel.model_validate(reranker_model_data)
+            reranker_model.providers = providers
+            reranker_models.append(reranker_model)
+        except ValidationError as e:
+            logger.warning(
+                "Failed to validate a reranker model from remote config. Upgrade Kiln to use this model. Details %s: %s",
+                reranker_model_data,
+                e,
+            )
+
+    return KilnRemoteConfig(
+        model_list=models,
+        embedding_model_list=embedding_models,
+        reranker_model_list=reranker_models,
+    )
 
 
 def load_from_url(url: str) -> KilnRemoteConfig:
@@ -153,6 +198,7 @@ def dump_builtin_config(path: str | Path) -> None:
     serialize_config(
         models=built_in_models,
         embedding_models=built_in_embedding_models,
+        reranker_models=built_in_rerankers,
         path=path,
     )
 
@@ -166,6 +212,7 @@ def load_remote_models(url: str) -> None:
             models = load_from_url(url)
             built_in_models[:] = models.model_list
             built_in_embedding_models[:] = models.embedding_model_list
+            built_in_rerankers[:] = models.reranker_model_list
         except Exception as exc:
             # Do not crash startup, but surface the issue
             logger.warning("Failed to fetch remote model list from %s: %s", url, exc)

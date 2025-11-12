@@ -6,7 +6,6 @@ from typing import Annotated, Awaitable, Callable, Dict, List, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
@@ -28,13 +27,9 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
 )
-from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
-    SearchResult,
-    VectorStoreQuery,
-)
-from kiln_ai.adapters.vector_store.vector_store_registry import (
-    vector_store_adapter_for_config,
-)
+from kiln_ai.adapters.reranker_list import built_in_reranker_models_from_provider
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
+from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     FilenameString,
@@ -61,6 +56,12 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.reranker import (
+    CohereCompatibleProperties,
+    RerankerConfig,
+    RerankerType,
+)
+from kiln_ai.datamodel.tool_id import RAG_TOOL_ID_PREFIX
 from kiln_ai.datamodel.vector_store import (
     LanceDBConfigFTSProperties,
     LanceDBConfigHybridProperties,
@@ -68,13 +69,15 @@ from kiln_ai.datamodel.vector_store import (
     VectorStoreConfig,
     VectorStoreType,
 )
+from kiln_ai.tools.rag_tools import RagTool
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
 
@@ -236,6 +239,7 @@ class RagConfigWithSubConfigs(BaseModel):
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
     vector_store_config: VectorStoreConfig
+    reranker_config: RerankerConfig | None
     tags: list[str] | None
 
 
@@ -265,6 +269,10 @@ class CreateRagConfigRequest(BaseModel):
     )
     vector_store_config_id: ID_TYPE = Field(
         description="The vector store config to use for the RAG workflow.",
+    )
+    reranker_config_id: ID_TYPE | None = Field(
+        description="The reranker config to use for the RAG workflow.",
+        default=None,
     )
     tags: list[str] | None = Field(
         description="List of document tags to filter by. If None, all documents in the project are used.",
@@ -466,6 +474,59 @@ class CreateVectorStoreConfigRequest(BaseModel):
                 )
             case _:
                 raise_exhaustive_enum_error(self.store_type)
+
+
+class CreateRerankerConfigRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the reranker config",
+        default=None,
+    )
+    top_n: PositiveInt = Field(
+        description="Number of results to return from the reranker"
+    )
+    model_provider_name: ModelProviderName = Field(
+        description="The name of the model provider to use for the reranker config.",
+    )
+    model_name: str = Field(
+        description="The name of the model to use for the reranker config.",
+    )
+    properties: CohereCompatibleProperties = Field(
+        description="The properties of the reranker config.",
+        default=CohereCompatibleProperties(
+            type=RerankerType.COHERE_COMPATIBLE,
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_properties(self):
+        # check the reranker exists
+        model = built_in_reranker_models_from_provider(
+            provider_name=self.model_provider_name,
+            model_name=self.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {self.model_name} not found in {self.model_provider_name}",
+            )
+
+        return self
+
+    def get_reranker_config_properties(self) -> CohereCompatibleProperties:
+        # currently only one type is supported, but we may add more in the future
+        match self.properties.get("type"):
+            case RerankerType.COHERE_COMPATIBLE:
+                return CohereCompatibleProperties(
+                    type=RerankerType.COHERE_COMPATIBLE,
+                )
+            case _:
+                raise ValueError(
+                    f"Invalid reranker type: {self.properties.get('type')}"
+                )
 
 
 class CreateExtractorConfigRequest(BaseModel):
@@ -995,7 +1056,8 @@ def connect_document_api(app: FastAPI):
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
             extractor_type=properties["extractor_type"],
-            properties=properties,
+            properties=request.get_properties(),
+            is_archived=False,
         )
         extractor_config.save_to_file()
 
@@ -1454,6 +1516,33 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
+    @app.post("/api/projects/{project_id}/create_reranker_config")
+    async def create_reranker_config(
+        project_id: str,
+        request: CreateRerankerConfigRequest,
+    ) -> RerankerConfig:
+        project = project_from_id(project_id)
+
+        reranker_config = RerankerConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            top_n=request.top_n,
+            model_provider_name=request.model_provider_name,
+            model_name=request.model_name,
+            properties=request.get_reranker_config_properties(),
+        )
+        reranker_config.save_to_file()
+
+        return reranker_config
+
+    @app.get("/api/projects/{project_id}/reranker_configs")
+    async def get_reranker_configs(
+        project_id: str,
+    ) -> list[RerankerConfig]:
+        project = project_from_id(project_id)
+        return project.reranker_configs(readonly=True)
+
     @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
     async def get_embedding_config(
         project_id: str,
@@ -1551,6 +1640,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Vector store config {request.vector_store_config_id} not found",
             )
 
+        reranker_config = None
+        has_reranker = request.reranker_config_id is not None
+        if has_reranker:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(request.reranker_config_id), project.path
+            )
+            if not reranker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reranker config {request.reranker_config_id} not found",
+                )
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1561,6 +1662,7 @@ def connect_document_api(app: FastAPI):
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
             vector_store_config_id=vector_store_config.id,
+            reranker_config_id=reranker_config.id if reranker_config else None,
             tags=request.tags,
         )
         rag_config.save_to_file()
@@ -1611,6 +1713,18 @@ def connect_document_api(app: FastAPI):
                     detail=f"Vector store config {rag_config.vector_store_config_id} not found",
                 )
 
+            reranker_config = None
+            has_reranker = rag_config.reranker_config_id is not None
+            if has_reranker:
+                reranker_config = RerankerConfig.from_id_and_parent_path(
+                    str(rag_config.reranker_config_id), project.path
+                )
+                if not reranker_config:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                    )
+
             rag_configs.append(
                 RagConfigWithSubConfigs(
                     id=rag_config.id,
@@ -1626,6 +1740,7 @@ def connect_document_api(app: FastAPI):
                     chunker_config=chunker_config,
                     embedding_config=embedding_config,
                     vector_store_config=vector_store_config,
+                    reranker_config=reranker_config,
                 )
             )
 
@@ -1674,6 +1789,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Vector store config {rag_config.vector_store_config_id} not found",
             )
 
+        reranker_config = None
+        has_reranker = rag_config.reranker_config_id is not None
+        if has_reranker:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(rag_config.reranker_config_id), project.path
+            )
+            if not reranker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                )
+
         return RagConfigWithSubConfigs(
             id=rag_config.id,
             name=rag_config.name,
@@ -1687,6 +1814,7 @@ def connect_document_api(app: FastAPI):
             chunker_config=chunker_config,
             embedding_config=embedding_config,
             vector_store_config=vector_store_config,
+            reranker_config=reranker_config,
             tags=rag_config.tags,
         )
 
@@ -1765,79 +1893,23 @@ def connect_document_api(app: FastAPI):
         if not request.query.strip():
             return RagSearchResponse(results=[])
 
-        # Get the vector store config
-        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
-            str(rag_config.vector_store_config_id), project.path
+        # we do a tool call to have the exact same behavior as during a live LLM tool call
+        rag_tool = tool_from_id(
+            f"{RAG_TOOL_ID_PREFIX}{rag_config_id}",
+            task=Task(
+                name="Fake RAG Search",
+                instruction="This is a dummy task to match the params expected by the tool_from_id factory, but is not a real task.",
+                parent=project,
+            ),
         )
-        if vector_store_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Vector store config not found",
-            )
-
-        # Get the embedding config
-        embedding_config = EmbeddingConfig.from_id_and_parent_path(
-            str(rag_config.embedding_config_id), project.path
-        )
-        if not embedding_config:
-            raise HTTPException(
-                status_code=404,
-                detail="Embedding config not found",
-            )
-
-        # Create the vector store adapter
-        vector_store_adapter = await vector_store_adapter_for_config(
-            rag_config, vector_store_config
-        )
-
-        # Prepare the search query based on vector store type
-        search_query: VectorStoreQuery
-
-        if vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS:
-            # For FTS, just use the text query
-            search_query = VectorStoreQuery(
-                query_string=request.query,
-                query_embedding=None,
-            )
-        elif vector_store_config.store_type in [
-            VectorStoreType.LANCE_DB_VECTOR,
-            VectorStoreType.LANCE_DB_HYBRID,
-        ]:
-            # For vector and hybrid search, generate embeddings for the query
-            embedding_adapter = embedding_adapter_from_type(embedding_config)
-            embedding_result = await embedding_adapter.generate_embeddings(
-                [request.query]
-            )
-
-            if not embedding_result.embeddings:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to generate embeddings for search query",
-                )
-
-            query_embedding = embedding_result.embeddings[0].vector
-
-            if vector_store_config.store_type == VectorStoreType.LANCE_DB_VECTOR:
-                # Pure vector search
-                search_query = VectorStoreQuery(
-                    query_string=None,
-                    query_embedding=query_embedding,
-                )
-            else:
-                # Hybrid search
-                search_query = VectorStoreQuery(
-                    query_string=request.query,
-                    query_embedding=query_embedding,
-                )
-        else:
+        if not isinstance(rag_tool, RagTool):
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported vector store type: {vector_store_config.store_type}",
+                detail="Retrieved RAG tool is not a RagTool",
             )
 
-        # Perform the search
         try:
-            search_results = await vector_store_adapter.search(search_query)
+            search_results = await rag_tool.search(query=request.query)
             return RagSearchResponse(results=search_results)
         except Exception as e:
             logger.error(f"Search failed: {e}")

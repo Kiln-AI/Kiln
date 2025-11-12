@@ -15,6 +15,8 @@
     provider_name_from_id,
     available_model_details,
     available_models,
+    reranker_name,
+    load_available_reranker_models,
   } from "$lib/stores"
   import type { AvailableModels } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -59,6 +61,7 @@
     await Promise.all([
       load_available_models(),
       load_available_embedding_models(),
+      load_available_reranker_models(),
       get_rag_config(),
     ])
   })
@@ -533,10 +536,46 @@
                     rag_config.vector_store_config.properties
                       .similarity_top_k || 10,
                   ),
-                  tooltip: "The number of top search results returned",
+                  tooltip:
+                    "The number of top search results returned. If a reranker is used, this will be the number of results passed to the reranker. If no reranker is used, this will be the number of results returned to the LLM.",
                 },
               ]}
             />
+            {#if rag_config.reranker_config}
+              <PropertyList
+                title="Reranker"
+                properties={[
+                  {
+                    name: "Model Provider",
+                    value:
+                      provider_name_from_id(
+                        rag_config.reranker_config.model_provider_name,
+                      ) || "N/A",
+                  },
+                  {
+                    name: "Model",
+                    value:
+                      reranker_name(
+                        rag_config.reranker_config.model_name,
+                        rag_config.reranker_config.model_provider_name,
+                      ) || "N/A",
+                  },
+                  {
+                    name: "Top N",
+                    value: String(rag_config.reranker_config.top_n || 5),
+                    tooltip:
+                      "The number of chunks to return after reranking. The results from the vector store are reranked by the reranker model and the top N results are returned and passed to the LLM.",
+                  },
+                ]}
+              />
+            {:else}
+              <div>
+                <div class="text-xl font-bold mb-1">Reranker</div>
+                <div class="flex flex-row flex-wrap gap-2 text-sm items-center">
+                  No reranker configured.
+                </div>
+              </div>
+            {/if}
             <div>
               <div class="text-xl font-bold mb-1">Documents</div>
               <div class="flex flex-row flex-wrap gap-2 text-sm items-center">
