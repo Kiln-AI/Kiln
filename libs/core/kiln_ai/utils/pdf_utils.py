@@ -3,6 +3,7 @@ Utilities for working with PDF files.
 """
 
 import asyncio
+import atexit
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
@@ -12,8 +13,15 @@ from typing import AsyncGenerator
 import pypdfium2
 from pypdf import PdfReader, PdfWriter
 
-# some of these operations are blocking, so we should run them outside of the event loop
-pdf_conversion_executor = ProcessPoolExecutor(max_workers=1)
+_pdf_conversion_executor: ProcessPoolExecutor | None = None
+
+
+# Lazy load for speed, singleton so dev-server reloading doesn't recreate the executor
+def get_pdf_conversion_executor() -> ProcessPoolExecutor:
+    global _pdf_conversion_executor
+    if _pdf_conversion_executor is None:
+        _pdf_conversion_executor = ProcessPoolExecutor(max_workers=1)
+    return _pdf_conversion_executor
 
 
 @asynccontextmanager
@@ -65,9 +73,21 @@ def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
 async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        pdf_conversion_executor,
+        get_pdf_conversion_executor(),
         _convert_pdf_to_images_sync,
         pdf_path,
         output_dir,
     )
     return result
+
+
+def _shutdown_pdf_conversion_executor():
+    """Shutdown the PDF conversion executor process."""
+    global _pdf_conversion_executor
+    if _pdf_conversion_executor is not None:
+        _pdf_conversion_executor.shutdown(wait=True)
+        _pdf_conversion_executor = None
+
+
+# Register shutdown function to ensure clean executor termination
+atexit.register(_shutdown_pdf_conversion_executor)
