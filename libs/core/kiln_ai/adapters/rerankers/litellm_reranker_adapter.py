@@ -1,6 +1,7 @@
 from functools import cached_property
 
 import litellm
+from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.adapters.reranker_list import (
     KilnRerankerModelProvider,
     built_in_reranker_models_from_provider,
@@ -17,8 +18,13 @@ from kiln_ai.utils.litellm import get_litellm_provider_info
 
 
 class LitellmRerankerAdapter(BaseReranker):
-    def __init__(self, reranker_config: RerankerConfig):
+    def __init__(
+        self,
+        reranker_config: RerankerConfig,
+        litellm_provider_config: LiteLlmCoreConfig,
+    ):
         super().__init__(reranker_config)
+        self.litellm_provider_config = litellm_provider_config
 
     async def rerank(
         self, query: str, documents: list[RerankDocument]
@@ -26,13 +32,25 @@ class LitellmRerankerAdapter(BaseReranker):
         if len(documents) == 0:
             return RerankResponse(results=[])
 
-        response = await litellm.arerank(
-            model=self.litellm_model_slug,
-            query=query,
-            documents=[document.text for document in documents],
-            top_n=self.reranker_config.top_n,
-        )
+        rerank_kwargs = {
+            "model": self.litellm_model_slug,
+            "query": query,
+            "documents": [document.text for document in documents],
+            "top_n": self.reranker_config.top_n,
+        }
 
+        if self.litellm_provider_config.base_url:
+            rerank_kwargs["base_url"] = self.litellm_provider_config.base_url
+
+        if self.litellm_provider_config.default_headers:
+            rerank_kwargs["default_headers"] = (
+                self.litellm_provider_config.default_headers
+            )
+
+        if self.litellm_provider_config.additional_body_options:
+            rerank_kwargs.update(self.litellm_provider_config.additional_body_options)
+
+        response = await litellm.arerank(**rerank_kwargs)
         if not isinstance(response, litellm.RerankResponse):
             raise ValueError(f"Expected RerankResponse, got {type(response)}")
 

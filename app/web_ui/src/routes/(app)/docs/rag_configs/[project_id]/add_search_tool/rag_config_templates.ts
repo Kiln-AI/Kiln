@@ -54,6 +54,7 @@ export type RagConfigTemplate = {
   chunker: ChunkerSubConfig
   embedding: EmbeddingSubConfig
   vector_store: VectorStoreSubConfig
+  reranker: null // we can add one later, at this time we just use this to explicitly show that we don't set a reranker
   rag_config_name: string
   notice_text?: string
   notice_tooltip?: string
@@ -102,6 +103,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: default_vector_store,
+    reranker: null,
     rag_config_name: "Best Quality - Gemini Pro Hybrid Search",
   },
   cost_optimized: {
@@ -116,6 +118,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: default_vector_store,
+    reranker: null,
     rag_config_name: "Cost Optimized - Gemini Flash Hybrid Search",
   },
   local_qwen: {
@@ -144,6 +147,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       model_name: "qwen_3_embedding_0p6b",
     },
     vector_store: default_vector_store,
+    reranker: null,
     rag_config_name: "Ollama - Qwen 2p5 VL",
   },
   vector_only: {
@@ -163,6 +167,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       store_type: "lancedb_vector",
       top_k: 10,
     },
+    reranker: null,
     rag_config_name: "Vector Search - Gemini Flash Vector Search",
   },
   openai_based: {
@@ -190,6 +195,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
       model_name: "openai_text_embedding_3_large",
     },
     vector_store: default_vector_store,
+    reranker: null,
     rag_config_name: "OpenAI Based - GPT-5 Hybrid Search",
   },
 }

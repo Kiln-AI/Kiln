@@ -51,7 +51,7 @@ class RagConfig(KilnParentedModel):
 
     reranker_config_id: ID_TYPE | None = Field(
         default=None,
-        description="The ID of the reranker config used to rerank the search results.",
+        description="The ID of the reranker config used to rerank the documents. If None, no reranking will be performed.",
     )
 
     tags: list[str] | None = Field(

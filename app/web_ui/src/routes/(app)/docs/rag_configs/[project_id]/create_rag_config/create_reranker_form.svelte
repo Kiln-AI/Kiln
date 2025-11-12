@@ -147,6 +147,7 @@
         fancy_select_options={rerankerModels}
         bind:value={selectedReranker}
         id="reranker_model"
+        optional={true}
       />
 
       <FormElement
