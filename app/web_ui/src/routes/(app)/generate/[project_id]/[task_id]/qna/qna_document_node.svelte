@@ -4,6 +4,7 @@
   import Output from "../../../../run/output.svelte"
   import { createEventDispatcher } from "svelte"
   import type { QnaStore } from "./qna_ui_store"
+  import Warning from "$lib/ui/warning.svelte"
 
   type QnAPair = {
     id: string
@@ -49,6 +50,7 @@
   let part_output_dialog: Dialog | null = null
   let selected_part_text: string | null = null
   let document_parts_dialog: Dialog | null = null
+  let generate_document_warning_dialog: Dialog | null = null
 
   function toggleQAPairExpand(qaId: string) {
     expandedQAPairs[qaId] = !expandedQAPairs[qaId]
@@ -79,6 +81,18 @@
       `/dataset/${project_id}/${task_id}/${qa.saved_id}/run`,
       "_blank",
     )
+  }
+
+  function handle_generate_for_document() {
+    if (document.parts.length > 1) {
+      generate_document_warning_dialog?.show()
+    } else {
+      proceed_with_generate_for_document()
+    }
+  }
+
+  function proceed_with_generate_for_document() {
+    dispatch("generate_for_document", { document_id: document.id })
   }
 </script>
 
@@ -131,14 +145,13 @@
             Remove Document
           </button>
         </li>
-        <li>
-          <button
-            on:click|stopPropagation={() =>
-              dispatch("generate_for_document", { document_id: document.id })}
-          >
-            Generate Q&A Pairs
-          </button>
-        </li>
+        {#if $qnaMaxStep && $qnaMaxStep > 2 && !document.extraction_failed}
+          <li>
+            <button on:click|stopPropagation={handle_generate_for_document}>
+              Generate Q&A Pairs
+            </button>
+          </li>
+        {/if}
       </ul>
     </div>
   </td>
@@ -300,4 +313,38 @@
       {/each}
     </div>
   {/if}
+</Dialog>
+
+<!-- The idea is that generating Q&A for a whole document might let user mess with the chunking so the whole structure would be different -->
+<Dialog
+  title="Generate Q&A Pairs"
+  bind:this={generate_document_warning_dialog}
+  action_buttons={[
+    {
+      label: "Cancel",
+      action: () => {
+        generate_document_warning_dialog?.close()
+        return true
+      },
+    },
+    {
+      label: "Continue",
+      action: () => {
+        proceed_with_generate_for_document()
+        return true
+      },
+      isPrimary: true,
+    },
+  ]}
+>
+  <div class="flex flex-col gap-3">
+    <div class="mt-2">
+      <Warning
+        large_icon={true}
+        warning_icon="exclaim"
+        warning_color="warning"
+        warning_message="If you proceed, all existing Q&A pairs for this document will be lost and any document chunks will be replaced. Consider generating Q&A for specific chunks instead."
+      />
+    </div>
+  </div>
 </Dialog>
