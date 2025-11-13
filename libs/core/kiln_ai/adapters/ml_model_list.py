@@ -315,52 +315,6 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
-    # GPT 5
-    KilnModel(
-        family=ModelFamily.gpt,
-        name=ModelName.gpt_5,
-        friendly_name="GPT-5",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openai,
-                model_id="gpt-5",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="openai/gpt-5",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
-        ],
-    ),
     # GPT 5.1
     KilnModel(
         family=ModelFamily.gpt,
@@ -389,6 +343,52 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 5
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5,
+        friendly_name="GPT-5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
