@@ -19,6 +19,7 @@ from uvicorn import Config as UvicornConfig
 
 from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
+from app.desktop.util.resource_limits import setup_resource_limits
 
 # Set writeable cache directories as soon as we start
 os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
@@ -152,6 +153,8 @@ class DesktopServer(ThreadedServer):
 
 
 if __name__ == "__main__":
+    setup_resource_limits()
+
     app = DesktopApp()
 
     # Create and run the server
