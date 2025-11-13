@@ -2,6 +2,7 @@ import {
   embedding_model_name,
   get_model_friendly_name,
   provider_name_from_id,
+  reranker_name,
 } from "$lib/stores"
 import type {
   ChunkerConfig,
@@ -169,7 +170,7 @@ export function build_vector_store_options(
 }
 
 function fmt_reranker_label(config: RerankerConfig) {
-  return `${get_model_friendly_name(config.model_name)} (${provider_name_from_id(config.model_provider_name)}) • ${config.top_n} results`
+  return `${reranker_name(config.model_name, config.model_provider_name)} (${provider_name_from_id(config.model_provider_name)}) • ${config.top_n} results`
 }
 
 export function build_reranker_options(reranker_configs: RerankerConfig[]) {

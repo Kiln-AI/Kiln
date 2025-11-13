@@ -14,7 +14,10 @@
     VectorStoreConfig,
     RerankerConfig,
   } from "$lib/types"
-  import { load_available_embedding_models } from "$lib/stores"
+  import {
+    load_available_embedding_models,
+    load_available_reranker_models,
+  } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
   import {
     build_rag_config_sub_configs,
@@ -186,6 +189,7 @@
 
     await Promise.all([
       load_available_embedding_models(),
+      load_available_reranker_models(),
       loadExtractorConfigs(),
       loadChunkerConfigs(),
       loadEmbeddingConfigs(),
