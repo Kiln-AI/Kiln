@@ -25,7 +25,8 @@
 
   function clear_guidance() {
     guidance_data.set_guidance_for_type(guidance_type, null, "custom")
-    return true
+    // Return false to keep dialog open after clearing
+    return false
   }
 
   function show_guidance_dialog() {
@@ -127,7 +128,7 @@
         description={`Guidance to help the model generate relevant ${description_plural()}.`}
         inputType={"textarea"}
         optional={true}
-        tall={true}
+        height="large"
         bind:value={$guidance_store}
       />
       {#if guidance_data.custom_warning($selected_template_store)}

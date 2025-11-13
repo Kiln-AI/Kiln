@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, TypedDict
 
+from pydantic import BaseModel
+
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
 
@@ -29,6 +31,10 @@ class ToolCallContext:
     allow_saving: bool = True
 
 
+class ToolCallResult(BaseModel):
+    output: str
+
+
 class KilnToolInterface(ABC):
     """
     Abstract interface defining the core API that all Kiln tools must implement.
@@ -36,7 +42,9 @@ class KilnToolInterface(ABC):
     """
 
     @abstractmethod
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> Any:
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
         """Execute the tool with the given parameters and calling context if provided."""
         pass
 
@@ -101,6 +109,8 @@ class KilnTool(KilnToolInterface):
         }
 
     @abstractmethod
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> Any:
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
         """Subclasses must implement the actual tool logic."""
         pass

@@ -18,7 +18,11 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.dataset_split import DatasetSplit
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.finetune import Finetune
-from kiln_ai.datamodel.json_schema import JsonObjectSchema, schema_from_json_str
+from kiln_ai.datamodel.json_schema import (
+    JsonObjectSchema,
+    JsonSchema,
+    schema_from_json_str,
+)
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.task_run import TaskRun
@@ -124,8 +128,10 @@ class Task(
         description="The instructions for the task. Will be used in prompts/training/validation.",
     )
     requirements: List[TaskRequirement] = Field(default=[])
+    # Output must be an object schema, as things like tool calls only allow objects
     output_json_schema: JsonObjectSchema | None = None
-    input_json_schema: JsonObjectSchema | None = None
+    # Inputs are more flexible, allowing arrays
+    input_json_schema: JsonSchema | None = None
     thinking_instruction: str | None = Field(
         default=None,
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
@@ -144,7 +150,8 @@ class Task(
     def input_schema(self) -> Dict | None:
         if self.input_json_schema is None:
             return None
-        return schema_from_json_str(self.input_json_schema)
+        # Allow arrays, not just objects
+        return schema_from_json_str(self.input_json_schema, require_object=False)
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel
     def runs(self, readonly: bool = False) -> list[TaskRun]:

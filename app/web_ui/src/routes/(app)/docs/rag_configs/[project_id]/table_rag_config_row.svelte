@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { RagConfigWithSubConfigs } from "$lib/types"
+  import type { RagConfigWithSubConfigs, RerankerConfig } from "$lib/types"
   import RunRagControl from "./run_rag_control.svelte"
   import {
     embedding_model_name,
     model_name,
     provider_name_from_id,
+    reranker_name,
     vector_store_name,
   } from "$lib/stores"
   import {
@@ -13,6 +14,7 @@
     type RagConfigurationStatus,
   } from "$lib/stores/rag_progress_store"
   import { goto } from "$app/navigation"
+  import { format_chunker_config_overview } from "$lib/utils/formatters"
 
   $: projectStateStore = getProjectRagStateStore(project_id)
   $: ragProgressState = $projectStateStore
@@ -81,19 +83,24 @@
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
   }
 
-  $: chunk_size = rag_config.chunker_config.properties.chunk_size
-  $: chunk_overlap = rag_config.chunker_config.properties.chunk_overlap
-
-  function format_chunking(chunk_size: unknown, chunk_overlap: unknown) {
-    // we expect a non-nullable number for both, but we validate because we
-    // do not have typing on the properties object
-    const is_chunk_size_valid = typeof chunk_size === "number"
-    const is_chunk_overlap_valid = typeof chunk_overlap === "number"
-    if (!is_chunk_size_valid || !is_chunk_overlap_valid) {
-      return "Invalid chunk size or overlap, not a number"
+  $: reranker_name_with_provider = (
+    reranker_config: RerankerConfig | null,
+  ): string => {
+    if (!reranker_config) {
+      return "None"
     }
 
-    return `${chunk_size} words, ${chunk_overlap} overlap`
+    const name = reranker_name(
+      reranker_config.model_name,
+      reranker_config.model_provider_name,
+    )
+
+    return (
+      name +
+      " (" +
+      provider_name_from_id(reranker_config.model_provider_name) +
+      ")"
+    )
   }
 </script>
 
@@ -121,7 +128,9 @@
             ) || ""})
           </div>
           <div>
-            Chunking: {format_chunking(chunk_size, chunk_overlap) || "N/A"}
+            Chunking: {format_chunker_config_overview(
+              rag_config.chunker_config,
+            )}
           </div>
           <div>
             Embedding: {embedding_model_name(
@@ -133,6 +142,9 @@
             Search Index: {vector_store_name(
               rag_config.vector_store_config.store_type,
             ) || "N/A"}
+          </div>
+          <div>
+            Reranker: {reranker_name_with_provider(rag_config.reranker_config)}
           </div>
           <div class="text-xs text-gray-500 flex flex-row flex-wrap gap-2 w-80">
             {#each rag_config.tags || [] as tag}

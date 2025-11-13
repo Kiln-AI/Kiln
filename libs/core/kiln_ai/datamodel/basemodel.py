@@ -31,14 +31,25 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 from kiln_ai.utils.mime_type import guess_extension
 
+
+def generate_model_id() -> str:
+    return str(uuid.uuid4().int)[:12]
+
+
 # ID is a 12 digit random integer string.
 # Should be unique per item, at least inside the context of a parent/child relationship.
 # Use integers to make it easier to type for a search function.
 # Allow none, even though we generate it, because we clear it in the REST API if the object is ephemeral (not persisted to disk)
-ID_FIELD = Field(default_factory=lambda: str(uuid.uuid4().int)[:12])
+ID_FIELD = Field(default_factory=generate_model_id)
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
+
+
+class ReadOnlyMutationError(RuntimeError):
+    """Raised when attempting to mutate a readonly KilnBaseModel instance."""
+
+    pass
 
 
 # Naming conventions:
@@ -276,10 +287,46 @@ class KilnBaseModel(BaseModel):
     created_by: str = Field(default_factory=lambda: Config.shared().user_id)
 
     _loaded_from_file: bool = False
+    _readonly: bool = False
 
     @computed_field()
     def model_type(self) -> str:
         return self.type_name()
+
+    def mark_as_readonly(self) -> None:
+        """Mark this model instance as readonly to prevent mutations."""
+        self._readonly = True
+
+    def _ensure_not_readonly(self, attr_name: str) -> None:
+        """Check if model is readonly and raise exception if it is"""
+        if self._readonly:
+            attr_msg = f" '{attr_name}'" if attr_name else ""
+            raise ReadOnlyMutationError(
+                f"Cannot mutate readonly model{attr_msg} of type {self.__class__.__name__}. "
+                f"Load with readonly=False to get a mutable copy."
+            )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Override setattr to prevent mutations on readonly models."""
+        # Check for error condition: attempting to mutate readonly model
+        # Allow private attributes and certain safe operations even on readonly models
+        readonly_safe_attrs = {"parent", "path"}
+        if (
+            not name.startswith("_")
+            and self._readonly
+            and name not in readonly_safe_attrs
+        ):
+            self._ensure_not_readonly(name)
+
+        # proceed with attribute setting
+        super().__setattr__(name, value)
+
+    def mutable_copy(self) -> Self:
+        """Create a mutable copy of the model, resetting readonly flag."""
+        copy = super().model_copy(deep=True)
+        # Reset readonly flag on copies so they can be mutated
+        copy._readonly = False
+        return copy
 
     # if changing the model name, should keep the original name here for parsing old files
     @classmethod
@@ -347,7 +394,12 @@ class KilnBaseModel(BaseModel):
                 f"Class: {m.__class__.__name__}, id: {getattr(m, 'id', None)}, path: {path}, "
                 f"version: {m.v}, max version: {m.max_schema_version()}"
             )
-        ModelCache.shared().set_model(path, m, mtime_ns)
+
+        if readonly:
+            m.mark_as_readonly()
+            # Cache, but only if readonly. Mutable models should not be cached.
+            ModelCache.shared().set_model(path, m, mtime_ns)
+
         return m
 
     def loaded_from_file(self, info: ValidationInfo | None = None) -> bool:

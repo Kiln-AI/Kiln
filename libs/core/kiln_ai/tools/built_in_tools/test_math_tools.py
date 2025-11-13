@@ -51,7 +51,7 @@ class TestAddTool:
         """Test AddTool run method with various inputs."""
         tool = AddTool()
         result = await tool.run(a=a, b=b)
-        assert result == expected
+        assert result.output == expected
 
 
 class TestSubtractTool:
@@ -97,7 +97,7 @@ class TestSubtractTool:
         """Test SubtractTool run method with various inputs."""
         tool = SubtractTool()
         result = await tool.run(a=a, b=b)
-        assert result == expected
+        assert result.output == expected
 
 
 class TestMultiplyTool:
@@ -143,7 +143,7 @@ class TestMultiplyTool:
         """Test MultiplyTool run method with various inputs."""
         tool = MultiplyTool()
         result = await tool.run(a=a, b=b)
-        assert result == expected
+        assert result.output == expected
 
 
 class TestDivideTool:
@@ -189,7 +189,7 @@ class TestDivideTool:
         """Test DivideTool run method with various inputs."""
         tool = DivideTool()
         result = await tool.run(a=a, b=b)
-        assert result == expected
+        assert result.output == expected
 
     async def test_divide_by_zero(self):
         """Test that division by zero raises ZeroDivisionError."""

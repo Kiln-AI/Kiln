@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, Union
+from typing import TYPE_CHECKING, List, Literal, Union
 
 import anyio
 from pydantic import (
@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import Self
+from typing_extensions import Self, TypedDict
 
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
@@ -23,6 +23,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
+from kiln_ai.utils.validation import NonEmptyString
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +78,6 @@ class ExtractionModel(BaseModel):
     label: str
 
 
-def validate_prompt(prompt: Any, name: str):
-    if not isinstance(prompt, str):
-        raise ValueError(f"{name} must be a string.")
-    if prompt == "":
-        raise ValueError(f"{name} cannot be empty.")
-
-
 class ExtractionSource(str, Enum):
     PROCESSED = "processed"
     PASSTHROUGH = "passthrough"
@@ -127,6 +121,14 @@ class Extraction(
         return super().chunked_documents(readonly=readonly)  # type: ignore
 
 
+class LitellmExtractorConfigProperties(TypedDict, total=True):
+    extractor_type: Literal[ExtractorType.LITELLM]
+    prompt_document: NonEmptyString
+    prompt_image: NonEmptyString
+    prompt_video: NonEmptyString
+    prompt_audio: NonEmptyString
+
+
 class ExtractorConfig(KilnParentedModel):
     name: FilenameString = Field(
         description="A name to identify the extractor config.",
@@ -155,70 +157,49 @@ class ExtractorConfig(KilnParentedModel):
     extractor_type: ExtractorType = Field(
         description="This is used to determine the type of extractor to use.",
     )
-    properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
-        default_factory=dict,
+    properties: LitellmExtractorConfigProperties = Field(
         description="Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.",
+        # the discriminator refers to the properties->extractor_type key (not the extractor_type field on the parent model)
+        discriminator="extractor_type",
     )
 
-    @field_validator("properties")
-    @classmethod
-    def validate_properties(
-        cls, properties: dict[str, Any], info: ValidationInfo
-    ) -> dict[str, Any]:
-        def get_property(key: str) -> str:
-            value = properties.get(key)
-            if value is None or value == "" or not isinstance(value, str):
-                raise ValueError(f"Prompt for {key} must be a string")
-            return value
+    @model_validator(mode="before")
+    def upgrade_missing_discriminator_properties(
+        cls, data: dict, info: ValidationInfo
+    ) -> dict:
+        if not info.context or not info.context.get("loading_from_file", False):
+            # Not loading from file, so no need to upgrade
+            return data
 
-        return {
-            "prompt_document": get_property(
-                "prompt_document",
-            ),
-            "prompt_image": get_property(
-                "prompt_image",
-            ),
-            "prompt_video": get_property(
-                "prompt_video",
-            ),
-            "prompt_audio": get_property(
-                "prompt_audio",
-            ),
-        }
+        if not isinstance(data, dict):
+            return data
 
-    def prompt_document(self) -> str | None:
-        prompt = self.properties.get("prompt_document")
-        if prompt is None:
-            return None
-        if not isinstance(prompt, str):
+        # backward compatibility:
+        # - we originally did not have the extractor_type in the properties, so we need to add it here
+        # - we started wanted to have extractor_type in the properties to use pydantic's discriminated union feature
+        properties = data.get("properties", {})
+        if "extractor_type" not in properties:
+            # the extractor_type on the parent model is always there, we just need to add it to the properties
+            properties["extractor_type"] = data["extractor_type"]
+            data["properties"] = properties
+        return data
+
+    @model_validator(mode="after")
+    def ensure_extractor_type_matches_properties(self):
+        # sanity check to ensure the extractor_type matches the properties extractor_type
+        if self.extractor_type != self.properties["extractor_type"]:
             raise ValueError(
-                "Invalid prompt_document. prompt_document must be a string."
+                f"Extractor type mismatch: {self.extractor_type} != {self.properties['extractor_type']}. This is a bug, please report it."
             )
-        return prompt
+        return self
 
-    def prompt_video(self) -> str | None:
-        prompt = self.properties.get("prompt_video")
-        if prompt is None:
-            return None
-        if not isinstance(prompt, str):
-            raise ValueError("Invalid prompt_video. prompt_video must be a string.")
-        return prompt
-
-    def prompt_audio(self) -> str | None:
-        prompt = self.properties.get("prompt_audio")
-        if prompt is None:
-            return None
-        if not isinstance(prompt, str):
-            raise ValueError("Invalid prompt_audio. prompt_audio must be a string.")
-        return prompt
-
-    def prompt_image(self) -> str | None:
-        prompt = self.properties.get("prompt_image")
-        if prompt is None:
-            return None
-        if not isinstance(prompt, str):
-            raise ValueError("Invalid prompt_image. prompt_image must be a string.")
-        return prompt
+    @property
+    def litellm_properties(self) -> LitellmExtractorConfigProperties:
+        if self.properties["extractor_type"] != ExtractorType.LITELLM:
+            raise ValueError(
+                f"Litellm properties are only available for litellm extractor type. Got {self.properties.get('extractor_type')}"
+            )
+        return self.properties
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:

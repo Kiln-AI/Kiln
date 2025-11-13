@@ -25,6 +25,7 @@
   import type { TaskOutputRatingType } from "$lib/types"
   import posthog from "posthog-js"
   import type { UiProperty } from "$lib/ui/property_list"
+  import Intro from "$lib/ui/intro.svelte"
 
   let score_legend_dialog: Dialog | null = null
 
@@ -297,10 +298,12 @@
     if (score_summary) {
       eval_configs_set_size = " (" + score_summary.dataset_size + " items)"
     }
-    properties.push({
-      name: "Golden Dataset",
-      value: evaluator.eval_configs_filter_id + eval_configs_set_size,
-    })
+    if (evaluator.eval_configs_filter_id) {
+      properties.push({
+        name: "Golden Dataset",
+        value: evaluator.eval_configs_filter_id + eval_configs_set_size,
+      })
+    }
     return properties
   }
 
@@ -337,7 +340,7 @@
         : 1.0
     if (minComplete < 1.0) {
       warnings.push(
-        "You evals are incomplete. Click 'Run All Eval' to generate scores for the missing items.",
+        "You evals are incomplete. Click 'Run All Evals' to generate scores for the missing items.",
       )
     }
 
@@ -708,7 +711,7 @@
                       {:else}
                         None
                         <InfoTooltip
-                          tooltip_text="No scores were found for this judge. Click 'Run All Eval' to generate scores and ensure your golden dataset has human ratings."
+                          tooltip_text="No scores were found for this judge. Click 'Run All Evals' to generate scores and ensure your golden dataset has human ratings."
                           no_pad={true}
                         />
                       {/if}
@@ -721,18 +724,20 @@
         </div>
       </div>
     {:else}
-      <div class="max-w-[280px] mx-auto flex flex-col gap-2 mt-[20vh]">
-        <div class="font-medium">Create a Judge to Get Started</div>
-        <div class="font-light text-sm">
-          A judge specifies how an eval is run (algorithm, model, instructions,
-          etc).
-        </div>
-        <a
-          class="btn btn-primary mt-2"
-          href={`/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`}
-        >
-          Add Judge
-        </a>
+      <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
+        <Intro
+          title="Create a Judge to Get Started"
+          description_paragraphs={[
+            "A judge specifies how an eval is run (algorithm, model, instructions, etc).",
+          ]}
+          action_buttons={[
+            {
+              label: "Add Judge",
+              href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`,
+              is_primary: true,
+            },
+          ]}
+        />
       </div>
     {/if}
   {/if}
@@ -770,7 +775,7 @@
     <div class="font-bold text-xl">Quick Start</div>
     <div>
       Add a variety of judges with different options (model, algorithm,
-      instructions). Then click 'Run All Eval' to generate scores from each
+      instructions). Then click 'Run All Evals' to generate scores from each
       judge on your golden dataset.
     </div>
     <div>

@@ -30,7 +30,7 @@
   <div class="font-medium text-gray-500">{nameTag}:</div>
   <div class="font-mono">
     {#if get_tool_link()}
-      <a href={get_tool_link()} class="text-primary link" target="_blank">
+      <a href={get_tool_link()} class="text-gray-500 link" target="_blank">
         {tool_call.function.name}
       </a>
     {:else}

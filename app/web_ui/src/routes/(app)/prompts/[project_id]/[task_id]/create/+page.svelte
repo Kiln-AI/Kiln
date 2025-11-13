@@ -73,12 +73,12 @@
   }
 
   // Warn before unload if there's any user input
-  $: prompt_name,
-    prompt_description,
-    prompt,
-    is_chain_of_thought,
-    chain_of_thought_instructions,
-    user_input_detected()
+  $: void (prompt_name,
+  prompt_description,
+  prompt,
+  is_chain_of_thought,
+  chain_of_thought_instructions,
+  user_input_detected())
 
   function user_input_detected() {
     if (mounted) {
@@ -127,7 +127,7 @@
           id="prompt"
           bind:value={prompt}
           inputType="textarea"
-          tall={true}
+          height="large"
           description="A prompt to use for this task."
           info_description="A LLM prompt such as 'You are a helpful assistant.'. This prompt is specific to this task. To use this prompt after creation, select it from the prompts dropdown."
         />

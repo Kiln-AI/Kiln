@@ -185,6 +185,10 @@
         goto(
           `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
         )
+      } else if (next_page === "compare_run_configs") {
+        goto(
+          `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+        )
       } else {
         goto(
           `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}?selected_eval_config=${data.id}`,
@@ -396,9 +400,11 @@
             bind:model={combined_model_name}
             bind:model_name
             bind:provider_name
-            requires_structured_output={selected_algo !== "g_eval"}
-            requires_logprobs={selected_algo === "g_eval"}
-            suggested_mode="evals"
+            settings={{
+              requires_structured_output: selected_algo !== "g_eval",
+              requires_logprobs: selected_algo === "g_eval",
+              suggested_mode: "evals",
+            }}
           />
         {/if}
 

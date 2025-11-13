@@ -32,6 +32,7 @@ def create_remote_server(
             "server_url": "http://example.com/mcp",
             "headers": headers or {},
             "secret_header_keys": secret_header_keys or [],
+            "is_archived": False,
         },
     )
 
@@ -52,6 +53,7 @@ def create_local_server(
             "args": args or [],
             "env_vars": env_vars or {},
             "secret_env_var_keys": secret_env_var_keys or [],
+            "is_archived": False,
         },
     )
 
@@ -556,6 +558,7 @@ class TestMCPSessionManager:
                 "server_url": "http://example.com/mcp",
                 "headers": {"Content-Type": "application/json"},
                 "secret_header_keys": ["Authorization", "X-API-Key"],
+                "is_archived": False,
             },
         )
         tool_server.id = "test_server_id"
@@ -614,6 +617,7 @@ class TestMCPSessionManager:
                 "server_url": "http://example.com/mcp",
                 "headers": {"Content-Type": "application/json"},
                 "secret_header_keys": ["Authorization"],
+                "is_archived": False,
             },
         )
 
@@ -659,6 +663,7 @@ class TestMCPSessionManager:
                 "server_url": "http://example.com/mcp",
                 "headers": {"Content-Type": "application/json"},
                 "secret_header_keys": [],  # Empty list
+                "is_archived": False,
             },
         )
 
@@ -703,6 +708,7 @@ class TestMCPSessionManager:
             properties={
                 "server_url": "http://example.com/mcp",
                 "headers": {"Content-Type": "application/json"},
+                "is_archived": False,
                 # No secret_header_keys property
             },
         )
@@ -760,6 +766,7 @@ class TestMCPSessionManager:
                 "server_url": "http://example.com/mcp",
                 "headers": {"Content-Type": "application/json"},
                 "secret_header_keys": ["Authorization", "X-API-Key"],
+                "is_archived": False,
             },
         )
         # Set the server ID to match our mock secrets
@@ -844,6 +851,7 @@ class TestMCPSessionManager:
                 "server_url": "http://example.com/mcp",
                 "headers": {"Content-Type": "application/json"},
                 "secret_header_keys": ["Authorization"],
+                "is_archived": False,
             },
         )
         tool_server.id = "test_server_id"
@@ -937,6 +945,7 @@ class TestMCPSessionManager:
             properties={
                 "command": "node",
                 "args": ["server.js"],
+                "is_archived": False,
                 # No env_vars provided
             },
         )
@@ -976,6 +985,7 @@ class TestMCPSessionManager:
                     "command": "",  # Empty command to trigger validation error
                     "args": ["arg1"],
                     "env_vars": {},
+                    "is_archived": False,
                 },
             )
 
@@ -990,6 +1000,7 @@ class TestMCPSessionManager:
                 "command": "python",
                 "args": [],  # Empty args list should now be allowed
                 "env_vars": {},
+                "is_archived": False,
             },
         )
 
@@ -1135,6 +1146,7 @@ class TestMCPSessionManager:
                 "command": "python",
                 "args": ["-m", "broken_server"],
                 "env_vars": {},
+                "is_archived": False,
             },
         )
 
@@ -1205,6 +1217,7 @@ class TestMCPSessionManager:
                 "args": ["-m", "my_server"],
                 "env_vars": {"PUBLIC_VAR": "public_value"},
                 "secret_env_var_keys": ["SECRET_API_KEY"],
+                "is_archived": False,
             },
         )
         tool_server.id = "test_server_id"
@@ -1507,6 +1520,7 @@ class TestMCPServerIntegration:
             description="Postman Echo MCP Server for testing",
             properties={
                 "server_url": "https://postman-echo-mcp.fly.dev/",
+                "is_archived": False,
             },
         )
 
@@ -1532,6 +1546,7 @@ class TestMCPServerIntegration:
                 "command": "npx",
                 "args": ["-y", "firecrawl-mcp"],
                 "env_vars": {"FIRECRAWL_API_KEY": "REPLACE_WITH_YOUR_API_KEY"},
+                "is_archived": False,
             },
         )
 

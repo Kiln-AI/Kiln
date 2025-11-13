@@ -4,6 +4,7 @@ import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    generate_qna_generation_prompt,
     generate_sample_generation_prompt,
     generate_topic_tree_prompt,
 )
@@ -619,3 +620,29 @@ def test_generate_sample_generation_prompt_with_none_guidance():
     )
     assert "## Specific Guidance" not in prompt
     assert "The guidance is:" not in prompt
+
+
+def test_generate_qna_generation_prompt_without_guidance():
+    """Test generate_qna_generation_prompt with no guidance (None)"""
+    prompt = generate_qna_generation_prompt(guidance=None)
+
+    assert isinstance(prompt, str)
+    assert "You are a **Q&A generation assistant**" in prompt
+    assert "## Custom Guidance" not in prompt
+
+
+def test_generate_qna_generation_prompt_with_guidance():
+    """Test generate_qna_generation_prompt with guidance provided"""
+
+    guidance = "Focus on technical questions and detailed answers"
+
+    prompt = generate_qna_generation_prompt(guidance=guidance)
+
+    assert isinstance(prompt, str)
+    assert "You are a **Q&A generation assistant**" in prompt
+    assert "## Custom Guidance" in prompt
+    assert f"<guidance>\n{guidance}\n</guidance>" in prompt
+    assert (
+        "When generating Q&A pairs, focus on generating queries and answers that are relevant to the document content."
+        not in prompt
+    )

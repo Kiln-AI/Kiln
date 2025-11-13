@@ -8,7 +8,13 @@ from kiln_ai.adapters.vector_store.lancedb_helpers import (
     lancedb_construct_from_config,
     store_type_to_lancedb_query_type,
 )
-from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.datamodel.vector_store import (
+    LanceDBConfigFTSProperties,
+    LanceDBConfigHybridProperties,
+    LanceDBConfigVectorProperties,
+    VectorStoreConfig,
+    VectorStoreType,
+)
 from kiln_ai.utils.uuid import string_to_uuid
 
 
@@ -17,27 +23,53 @@ class _FakeLanceDBVectorStore:
         self.kwargs = kwargs
 
 
-def _base_properties(nprobes: int | None = None) -> dict[str, str | int | float | None]:
-    props: dict[str, str | int | float | None] = {
-        "similarity_top_k": 5,
-        "overfetch_factor": 2,
-        "vector_column_name": "vec",
-        "text_key": "text",
-        "doc_id_key": "doc_id",
-    }
-    if nprobes is not None:
-        props["nprobes"] = nprobes
-    return props
+def _base_properties(
+    store_type: VectorStoreType, nprobes: int
+) -> (
+    LanceDBConfigFTSProperties
+    | LanceDBConfigVectorProperties
+    | LanceDBConfigHybridProperties
+):
+    match store_type:
+        case VectorStoreType.LANCE_DB_FTS:
+            return LanceDBConfigFTSProperties(
+                store_type=store_type,
+                similarity_top_k=5,
+                overfetch_factor=2,
+                vector_column_name="vec",
+                text_key="text",
+                doc_id_key="doc_id",
+            )
+        case VectorStoreType.LANCE_DB_VECTOR:
+            return LanceDBConfigVectorProperties(
+                store_type=store_type,
+                similarity_top_k=5,
+                overfetch_factor=2,
+                vector_column_name="vec",
+                text_key="text",
+                doc_id_key="doc_id",
+                nprobes=nprobes,
+            )
+        case VectorStoreType.LANCE_DB_HYBRID:
+            return LanceDBConfigHybridProperties(
+                store_type=store_type,
+                similarity_top_k=5,
+                overfetch_factor=2,
+                vector_column_name="vec",
+                text_key="text",
+                doc_id_key="doc_id",
+                nprobes=nprobes,
+            )
+        case _:
+            raise ValueError(f"Unsupported store type: {store_type}")
 
 
-def _make_config(
-    store_type: VectorStoreType, nprobes: int | None = None
-) -> VectorStoreConfig:
+def _make_config(store_type: VectorStoreType, nprobes: int) -> VectorStoreConfig:
     return VectorStoreConfig(
         name="test_store",
         description=None,
         store_type=store_type,
-        properties=_base_properties(nprobes),
+        properties=_base_properties(store_type, nprobes),
     )
 
 
@@ -89,7 +121,7 @@ def test_lancedb_construct_from_config_omits_nprobes_when_none():
         "kiln_ai.adapters.vector_store.lancedb_helpers.LanceDBVectorStore",
         new=_FakeLanceDBVectorStore,
     ):
-        cfg = _make_config(VectorStoreType.LANCE_DB_FTS, nprobes=None)
+        cfg = _make_config(VectorStoreType.LANCE_DB_FTS, nprobes=20)
 
         result = lancedb_construct_from_config(
             vector_store_config=cfg,

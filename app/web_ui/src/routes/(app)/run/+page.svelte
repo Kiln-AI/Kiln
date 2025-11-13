@@ -33,7 +33,6 @@
   $: project_id = $current_project?.id ?? ""
   $: task_id = $current_task?.id ?? ""
   $: input_schema = $current_task?.input_json_schema
-  $: requires_structured_output = !!$current_task?.output_json_schema
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
 
@@ -68,6 +67,7 @@
           run_config_properties:
             run_config_component.run_options_as_run_config_properties(),
           plaintext_input: input_form.get_plaintext_input_data(),
+          // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
           structured_input: input_form.get_structured_input_data(),
           tags: ["manual_run"],
         },
@@ -86,6 +86,9 @@
         mcp_tools: run_config_component
           .get_tools()
           .filter((tool) => tool.startsWith("mcp::")).length,
+        kiln_task_tools: run_config_component
+          .get_tools()
+          .filter((tool) => tool.startsWith("kiln_task::")).length,
       })
       response = data
     } catch (e) {
@@ -145,7 +148,7 @@
   async function handle_save_new_run_config(): Promise<TaskRunConfig | null> {
     try {
       if (!run_config_component) {
-        throw new Error("Run config component is not loaded")
+        throw new Error("Run configuration component is not loaded")
       }
       return await run_config_component.save_new_run_config()
     } catch (e) {
@@ -200,7 +203,7 @@
             bind:this={run_config_component}
             {project_id}
             current_task={$current_task}
-            {requires_structured_output}
+            requires_structured_output={!!$current_task.output_json_schema}
             bind:selected_run_config_id
             bind:save_config_error
             bind:set_default_error

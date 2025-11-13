@@ -19,6 +19,7 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models_from_provider,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
@@ -102,69 +103,69 @@ class LitellmExtractor(BaseExtractor):
                 f"LitellmExtractor must be initialized with a litellm extractor_type config. Got {extractor_config.extractor_type}"
             )
 
-        prompt_document = extractor_config.prompt_document()
-        if prompt_document is None or prompt_document == "":
-            raise ValueError(
-                "properties.prompt_document is required for LitellmExtractor"
-            )
-        prompt_video = extractor_config.prompt_video()
-        if prompt_video is None or prompt_video == "":
-            raise ValueError("properties.prompt_video is required for LitellmExtractor")
-        prompt_audio = extractor_config.prompt_audio()
-        if prompt_audio is None or prompt_audio == "":
-            raise ValueError("properties.prompt_audio is required for LitellmExtractor")
-        prompt_image = extractor_config.prompt_image()
-        if prompt_image is None or prompt_image == "":
-            raise ValueError("properties.prompt_image is required for LitellmExtractor")
-
         self.filesystem_cache = filesystem_cache
 
         super().__init__(extractor_config)
-        self.prompt_for_kind = {
-            Kind.DOCUMENT: prompt_document,
-            Kind.VIDEO: prompt_video,
-            Kind.AUDIO: prompt_audio,
-            Kind.IMAGE: prompt_image,
+
+        self.prompt_for_kind: dict[Kind, str] = {
+            Kind.DOCUMENT: extractor_config.litellm_properties["prompt_document"],
+            Kind.VIDEO: extractor_config.litellm_properties["prompt_video"],
+            Kind.AUDIO: extractor_config.litellm_properties["prompt_audio"],
+            Kind.IMAGE: extractor_config.litellm_properties["prompt_image"],
         }
 
         self.litellm_core_config = litellm_core_config
         self.default_max_parallel_requests = default_max_parallel_requests
 
-    def pdf_page_cache_key(self, pdf_path: Path, page_number: int) -> str:
+    def _cache_prefix_for_file_path(self, file_path: Path) -> str:
+        if self.extractor_config.id is None:
+            raise ValueError("Extractor config ID is required for cache prefix")
+        file_path_hash = hashlib.md5(
+            str(file_path.resolve()).encode("utf-8")
+        ).hexdigest()
+        # sanitize the extractor ID to make sure we don't have special cases
+        # a known pattern in the codebase is to make custom IDs like theid::something
+        safe_extractor_id = string_to_valid_name(self.extractor_config.id)
+        return f"{safe_extractor_id}_{file_path_hash}_"
+
+    def _cache_key_for_page(self, file_path: Path, page_number: int) -> str:
         """
-        Generate a cache key for a page of a PDF. The PDF path must be the full path to the PDF file,
-        not the path to the page - since page path is temporary and changes on each run.
+        Generate a cache key for a page of a file. The file path must be the full path to the file
+        and stable across runs.
         """
         if self.extractor_config.id is None:
-            raise ValueError("Extractor config ID is required for PDF page cache key")
+            raise ValueError("Extractor config ID is required for page cache key")
+        return f"{self._cache_prefix_for_file_path(file_path)}{page_number}"
 
-        raw_key = f"{pdf_path.resolve()}::{page_number}"
-        digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
-        return f"{self.extractor_config.id}_{digest}"
+    async def clear_cache_for_file_path(self, file_path: Path) -> None:
+        prefix = self._cache_prefix_for_file_path(file_path)
+        if self.filesystem_cache is None:
+            return
+        await self.filesystem_cache.delete_by_prefix(prefix)
 
     async def get_page_content_from_cache(
-        self, pdf_path: Path, page_number: int
+        self, file_path: Path, page_number: int
     ) -> str | None:
         if self.filesystem_cache is None:
             return None
 
         page_bytes = await self.filesystem_cache.get(
-            self.pdf_page_cache_key(pdf_path, page_number)
+            self._cache_key_for_page(file_path, page_number)
         )
 
         if page_bytes is not None:
-            logger.debug(f"Cache hit for page {page_number} of {pdf_path}")
+            logger.debug(f"Cache hit for page {page_number} of {file_path}")
             try:
                 return page_bytes.decode("utf-8")
             except UnicodeDecodeError:
-                logger.warning(
+                logger.debug(
                     "Cached bytes for page %s of %s are not valid UTF-8; treating as miss.",
                     page_number,
-                    pdf_path,
+                    file_path,
                     exc_info=True,
                 )
 
-        logger.debug(f"Cache miss for page {page_number} of {pdf_path}")
+        logger.debug(f"Cache miss for page {page_number} of {file_path}")
         return None
 
     async def convert_pdf_page_to_image_input(
@@ -225,7 +226,7 @@ class LitellmExtractor(BaseExtractor):
             try:
                 logger.debug(f"Caching page {page_number} of {page_path} in cache")
                 await self.filesystem_cache.set(
-                    self.pdf_page_cache_key(pdf_path, page_number),
+                    self._cache_key_for_page(pdf_path, page_number),
                     content.encode("utf-8"),
                 )
             except Exception:

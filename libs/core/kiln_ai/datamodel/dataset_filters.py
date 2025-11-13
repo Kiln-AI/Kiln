@@ -176,7 +176,8 @@ def dataset_filter_from_id(id: DatasetFilterId) -> DatasetFilter:
     if id.startswith(MultiDatasetFilter.PREFIX):
         return MultiDatasetFilter(id)
 
-    if id in static_dataset_filters:
-        return static_dataset_filters[id]
-
-    raise ValueError(f"Invalid dataset filter ID: {id}")
+    try:
+        static_filter = StaticDatasetFilters(id)
+        return static_dataset_filters[static_filter]
+    except ValueError:
+        raise ValueError(f"Invalid dataset filter ID: {id}")

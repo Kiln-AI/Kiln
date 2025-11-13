@@ -9,6 +9,7 @@ __pycache__/
 **/.venv
 **/*.egg-info
 node_modules/
+conductor.json
 
 libs/core/docs
 libs/core/build

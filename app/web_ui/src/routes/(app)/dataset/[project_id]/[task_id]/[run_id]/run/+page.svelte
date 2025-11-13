@@ -12,6 +12,8 @@
     current_task_prompts,
     provider_name_from_id,
     load_available_models,
+    load_available_tools,
+    available_tools,
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { onMount, getContext } from "svelte"
@@ -29,6 +31,7 @@
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
+  import { get_tools_property_info } from "$lib/stores/tools_store"
 
   $: run_id = $page.params.run_id
   $: task_id = $page.params.task_id
@@ -41,6 +44,18 @@
   let loading = true
   let load_error: KilnError | null = null
   let see_all_properties = false
+  let tools_property_value: string | string[] = "Loading..."
+  let tool_links: (string | null)[] | undefined
+
+  $: {
+    const tools_property_info = get_tools_property_info(
+      run?.output?.source?.run_config?.tools_config?.tools ?? [],
+      project_id,
+      $available_tools,
+    )
+    tools_property_value = tools_property_info.value
+    tool_links = tools_property_info.links
+  }
 
   function get_properties(
     run: TaskRun | null,
@@ -90,6 +105,13 @@
         })
       }
     }
+
+    properties.push({
+      name: "Available Tools",
+      value: tools_property_value,
+      links: tool_links,
+      badge: Array.isArray(tools_property_value) ? true : false,
+    })
 
     if (run?.created_at) {
       properties.push({
@@ -170,9 +192,12 @@
   }
 
   onMount(async () => {
-    await load_run()
-    load_model_info()
-    load_available_models()
+    await Promise.all([
+      load_run(),
+      load_model_info(),
+      load_available_models(),
+      load_available_tools(project_id),
+    ])
   })
 
   async function load_run() {

@@ -220,10 +220,9 @@ class TestBaseEmbeddingAdapterEdgeCases:
 
     def test_embedding_config_properties(self, mock_embedding_config):
         """Test that embedding config properties are accessible."""
-        mock_embedding_config.properties = {"dimensions": 1536, "normalize": True}
+        mock_embedding_config.properties = {"dimensions": 1536}
         adapter = MockEmbeddingAdapter(mock_embedding_config)
-        assert adapter.embedding_config.properties["dimensions"] == 1536
-        assert adapter.embedding_config.properties["normalize"] is True
+        assert adapter.embedding_config.properties.get("dimensions") == 1536
 
 
 class TestBaseEmbeddingAdapterIntegration:

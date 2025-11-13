@@ -16,6 +16,8 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.extraction import (
     Document,
+    Extraction,
+    ExtractionSource,
     ExtractorConfig,
     ExtractorType,
     FileInfo,
@@ -24,13 +26,17 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.tools.rag_tools import RagTool
 
 from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
+    CreateExtractorConfigRequest,
     build_rag_workflow_runner,
     connect_document_api,
+    get_documents_filtered,
     run_rag_workflow_runner_with_status,
 )
 
@@ -71,6 +77,7 @@ def mock_extractor_config(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -89,6 +96,7 @@ def mock_chunker_config(mock_project):
         description="Test chunker description",
         chunker_type=ChunkerType.FIXED_WINDOW,
         properties={
+            "chunker_type": ChunkerType.FIXED_WINDOW,
             "chunk_size": 100,
             "chunk_overlap": 10,
         },
@@ -112,11 +120,11 @@ def mock_embedding_config(mock_project):
 
 
 @pytest.fixture
-def mock_vector_store_config(mock_project, tmp_path):
+def mock_vector_store_config_fts(mock_project, tmp_path):
     vector_store_config = VectorStoreConfig(
         id="kiln:vector_store:lancedb",
         parent=mock_project,
-        name="Test Vector Store",
+        name="Test Vector Store FTS",
         store_type=VectorStoreType.LANCE_DB_FTS,
         properties={
             "similarity_top_k": 10,
@@ -124,10 +132,68 @@ def mock_vector_store_config(mock_project, tmp_path):
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_FTS,
         },
     )
     vector_store_config.save_to_file()
     return vector_store_config
+
+
+@pytest.fixture
+def mock_vector_store_config_vector(mock_project, tmp_path):
+    vector_store_config = VectorStoreConfig(
+        id="kiln:vector_store:lancedb",
+        parent=mock_project,
+        name="Test Vector Store Vector",
+        store_type=VectorStoreType.LANCE_DB_VECTOR,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+            "nprobes": 20,
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
+        },
+    )
+    vector_store_config.save_to_file()
+    return vector_store_config
+
+
+@pytest.fixture
+def mock_vector_store_config_hybrid(mock_project, tmp_path):
+    vector_store_config = VectorStoreConfig(
+        id="kiln:vector_store:lancedb",
+        parent=mock_project,
+        name="Test Vector Store Hybrid",
+        store_type=VectorStoreType.LANCE_DB_HYBRID,
+        properties={
+            "similarity_top_k": 10,
+            "overfetch_factor": 20,
+            "vector_column_name": "vector",
+            "text_key": "text",
+            "doc_id_key": "doc_id",
+            "nprobes": 20,
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
+        },
+    )
+    vector_store_config.save_to_file()
+    return vector_store_config
+
+
+@pytest.fixture
+def mock_reranker_config(mock_project):
+    reranker_config = RerankerConfig(
+        parent=mock_project,
+        name="Test Reranker",
+        description="Test reranker description",
+        top_n=5,
+        model_provider_name=ModelProviderName.together_ai,
+        model_name="llama_rank",
+        properties={"type": RerankerType.COHERE_COMPATIBLE},
+    )
+    reranker_config.save_to_file()
+    return reranker_config
 
 
 @pytest.fixture
@@ -167,6 +233,7 @@ def extractor_config_setup(mock_project):
         model_provider_name="gemini_api",
         model_name="gemini-2.0-flash",
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "test-prompt",
             "prompt_video": "test-video-prompt",
             "prompt_audio": "test-audio-prompt",
@@ -189,7 +256,6 @@ def check_attachment_saved(document: Document, test_content: bytes):
         assert f.read() == test_content
 
 
-@pytest.mark.asyncio
 async def test_get_documents_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -209,7 +275,6 @@ async def test_get_documents_success(client, mock_document):
     assert result[0]["id"] == document.id
 
 
-@pytest.mark.asyncio
 async def test_get_document_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -234,7 +299,6 @@ async def test_get_document_success(client, mock_document):
     assert result["name"] == document.name
 
 
-@pytest.mark.asyncio
 async def test_get_document_not_found(client, mock_project):
     project = mock_project
 
@@ -253,7 +317,6 @@ async def test_get_document_not_found(client, mock_project):
     assert "Document not found" in response.json()["message"]
 
 
-@pytest.mark.asyncio
 async def test_edit_tags_add_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -281,7 +344,6 @@ async def test_edit_tags_add_success(client, mock_document):
     assert "existing_tag" in updated_document.tags
 
 
-@pytest.mark.asyncio
 async def test_edit_tags_remove_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -310,7 +372,6 @@ async def test_edit_tags_remove_success(client, mock_document):
     assert "tag2" in updated_document.tags
 
 
-@pytest.mark.asyncio
 async def test_edit_tags_document_not_found(client, mock_project):
     project = mock_project
 
@@ -336,7 +397,6 @@ async def test_edit_tags_document_not_found(client, mock_project):
     assert "fake_id" in result["message"]["failed_documents"]
 
 
-@pytest.mark.asyncio
 async def test_create_extractor_config_success(client, mock_project):
     project = mock_project
 
@@ -362,6 +422,7 @@ async def test_create_extractor_config_success(client, mock_project):
             "model_provider_name": "gemini_api",
             "model_name": "gemini-2.0-flash",
             "properties": {
+                "extractor_type": "litellm",
                 "prompt_document": "test-prompt",
                 "prompt_video": "test-video-prompt",
                 "prompt_audio": "test-audio-prompt",
@@ -382,13 +443,13 @@ async def test_create_extractor_config_success(client, mock_project):
     assert result["passthrough_mimetypes"] == ["text/plain"]
     assert result["model_provider_name"] == "gemini_api"
     assert result["model_name"] == "gemini-2.0-flash"
+    assert result["properties"]["extractor_type"] == "litellm"
     assert result["properties"]["prompt_document"] == "test-prompt"
     assert result["properties"]["prompt_video"] == "test-video-prompt"
     assert result["properties"]["prompt_audio"] == "test-audio-prompt"
     assert result["properties"]["prompt_image"] == "test-image-prompt"
 
 
-@pytest.mark.asyncio
 async def test_get_extractor_configs_success(client, extractor_config_setup):
     project = extractor_config_setup["project"]
     extractor_config = extractor_config_setup["extractor_config"]
@@ -406,7 +467,6 @@ async def test_get_extractor_configs_success(client, extractor_config_setup):
     assert result[0]["id"] == extractor_config.id
 
 
-@pytest.mark.asyncio
 async def test_get_extractor_config_success(client, extractor_config_setup):
     project = extractor_config_setup["project"]
     extractor_config = extractor_config_setup["extractor_config"]
@@ -429,7 +489,6 @@ async def test_get_extractor_config_success(client, extractor_config_setup):
     assert result["id"] == extractor_config.id
 
 
-@pytest.mark.asyncio
 async def test_get_extractor_config_not_found(client, mock_project):
     project = mock_project
 
@@ -448,7 +507,6 @@ async def test_get_extractor_config_not_found(client, mock_project):
     assert "Extractor config not found" in response.json()["message"]
 
 
-@pytest.mark.asyncio
 async def test_patch_extractor_config_success(client, extractor_config_setup):
     project = extractor_config_setup["project"]
     extractor_config = extractor_config_setup["extractor_config"]
@@ -481,7 +539,6 @@ async def test_patch_extractor_config_success(client, extractor_config_setup):
     assert extractor_config.is_archived is True
 
 
-@pytest.mark.asyncio
 async def test_delete_document_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -504,7 +561,6 @@ async def test_delete_document_success(client, mock_document):
     assert document.id in result["message"]
 
 
-@pytest.mark.asyncio
 async def test_delete_documents_success(client, mock_document):
     project = mock_document["project"]
     document = mock_document["document"]
@@ -530,7 +586,8 @@ async def test_delete_documents_success(client, mock_document):
 
 
 # test for create chunker config
-@pytest.mark.asyncio
+
+
 async def test_create_chunker_config_success(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -544,6 +601,7 @@ async def test_create_chunker_config_success(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -560,7 +618,6 @@ async def test_create_chunker_config_success(client, mock_project):
     assert result["properties"]["chunk_overlap"] == 10
 
 
-@pytest.mark.asyncio
 async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -573,6 +630,7 @@ async def test_create_chunker_config_invalid_chunker_type(client, mock_project):
                 "description": "Test Chunker Config description",
                 "chunker_type": "invalid_chunker_type",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": 100,
                     "chunk_overlap": 10,
                 },
@@ -597,6 +655,7 @@ async def test_create_chunker_config_invalid_chunk_size(
                 "description": "Test Chunker Config description",
                 "chunker_type": "fixed_window",
                 "properties": {
+                    "chunker_type": "fixed_window",
                     "chunk_size": chunk_size,
                     "chunk_overlap": chunk_overlap,
                 },
@@ -607,7 +666,321 @@ async def test_create_chunker_config_invalid_chunk_size(
     assert "Chunk overlap must be less than chunk size" in response.json()["message"]
 
 
-@pytest.mark.asyncio
+# test for create semantic chunker config using unified endpoint
+
+
+async def test_create_semantic_chunker_config_success(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Test Semantic Chunker Config",
+                "description": "Test Semantic Chunker Config description",
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test Semantic Chunker Config"
+    assert result["description"] == "Test Semantic Chunker Config description"
+    assert result["chunker_type"] == "semantic"
+    assert result["properties"]["embedding_config_id"] == str(embedding.id)
+    assert result["properties"]["buffer_size"] == 2
+    assert result["properties"]["breakpoint_percentile_threshold"] == 90.0
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
+async def test_create_semantic_chunker_config_override_include_metadata_and_include_prev_next_rel(
+    client, mock_project
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Test Semantic Chunker Config",
+                "description": "Test Semantic Chunker Config description",
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": True,
+                    "include_prev_next_rel": True,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+
+    # we currently override these in the API layer - they are too granular to be exposed to the user in the UI
+    # we could expose those in the future, if we want to allow users to override them
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
+async def test_create_semantic_chunker_config_minimal(client, mock_project):
+    """Test creating semantic chunker config with only required fields."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        embedding = EmbeddingConfig(
+            parent=mock_project,
+            name="emb-for-chunker-min",
+            description=None,
+            model_provider_name=ModelProviderName.openai,
+            model_name=EmbeddingModelName.openai_text_embedding_3_small,
+            properties={},
+        )
+        embedding.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "embedding_config_id": str(embedding.id),
+                    "buffer_size": 1,
+                    "breakpoint_percentile_threshold": 95,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["chunker_type"] == "semantic"
+    assert result["properties"]["embedding_config_id"] == str(embedding.id)
+    assert result["properties"]["buffer_size"] == 1
+    assert result["properties"]["breakpoint_percentile_threshold"] == 95
+    # These are set by the endpoint
+    assert result["properties"]["include_metadata"] is False
+    assert result["properties"]["include_prev_next_rel"] is False
+
+
+async def test_create_semantic_chunker_config_missing_embedding_config_id(
+    client, mock_project
+):
+    """Test creating semantic chunker config with missing embedding_config_id."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "breakpoint_percentile_threshold": 95,
+                    "buffer_size": 1,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_create_semantic_chunker_config_missing_buffer_size(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with missing buffer_size."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "breakpoint_percentile_threshold": 95,
+                    "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_create_semantic_chunker_config_missing_breakpoint_threshold(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with missing breakpoint_percentile_threshold."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "buffer_size": 1,
+                    "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_create_semantic_chunker_config_invalid_buffer_size(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with invalid buffer size."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "buffer_size": 0,  # Invalid buffer size
+                    "breakpoint_percentile_threshold": 95,
+                    "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_create_semantic_chunker_config_invalid_breakpoint_threshold(
+    client, mock_project, mock_embedding_config
+):
+    """Test creating semantic chunker config with invalid breakpoint threshold."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "buffer_size": 1,
+                    "breakpoint_percentile_threshold": 150.0,  # Invalid threshold
+                    "embedding_config_id": "emb-1",
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 422, response.text
+    assert "breakpoint_percentile_threshold" in response.json()["message"]
+
+
+async def test_create_semantic_chunker_config_embedding_config_not_found(
+    client, mock_project
+):
+    """Should return 404 if embedding_config_id does not exist."""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_chunker_config",
+            json={
+                "name": "Bad Semantic Chunker Config",
+                "chunker_type": "semantic",
+                "properties": {
+                    "chunker_type": "semantic",
+                    "embedding_config_id": "does-not-exist",
+                    "buffer_size": 2,
+                    "breakpoint_percentile_threshold": 90,
+                    "include_metadata": False,
+                    "include_prev_next_rel": False,
+                },
+            },
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Embedding config does-not-exist not found" in response.text
+
+
 async def test_create_extractor_config_model_not_found(client, mock_project):
     project = mock_project
 
@@ -629,14 +1002,20 @@ async def test_create_extractor_config_model_not_found(client, mock_project):
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
-    assert response.status_code == 422, response.text
+    assert response.status_code == 404, response.text
     assert "Model fake_model not found" in response.json()["message"]
 
 
-@pytest.mark.asyncio
 async def test_create_extractor_config_model_invalid_provider_name(
     client, mock_project
 ):
@@ -663,7 +1042,6 @@ async def test_create_extractor_config_model_invalid_provider_name(
     assert response.status_code == 422, response.text
 
 
-@pytest.mark.asyncio
 async def test_get_chunker_configs_success(client, mock_project, mock_chunker_config):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -677,7 +1055,6 @@ async def test_get_chunker_configs_success(client, mock_project, mock_chunker_co
     assert result[0]["id"] == mock_chunker_config.id
 
 
-@pytest.mark.asyncio
 async def test_get_chunker_configs_no_chunker_configs(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -698,7 +1075,6 @@ async def test_get_chunker_configs_no_chunker_configs(client, mock_project):
         ("gemini_api", "gemini_text_embedding_004"),
     ],
 )
-@pytest.mark.asyncio
 async def test_create_embedding_config_success(
     client, mock_project, model_provider_name, model_name
 ):
@@ -727,7 +1103,6 @@ async def test_create_embedding_config_success(
     assert result["properties"] == {}
 
 
-@pytest.mark.asyncio
 async def test_create_embedding_config_invalid_model_provider_name(
     client, mock_project
 ):
@@ -778,13 +1153,14 @@ async def test_create_embedding_config_invalid_dimensions(
         )
 
     assert response.status_code == 422, response.text
+    error_message = response.json()["message"]
+    assert error_message
     assert (
-        "Dimensions must be a positive integer and less than the model's dimensions"
-        in response.json()["message"]
+        "Properties.Dimensions: Input should be greater than 0" in error_message
+        or "Dimensions must be less than the model's dimensions" in error_message
     )
 
 
-@pytest.mark.asyncio
 async def test_get_embedding_configs_success(
     client, mock_project, mock_embedding_config
 ):
@@ -800,7 +1176,6 @@ async def test_get_embedding_configs_success(
     assert result[0]["id"] == mock_embedding_config.id
 
 
-@pytest.mark.asyncio
 async def test_get_embedding_configs_no_embedding_configs(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -813,7 +1188,6 @@ async def test_get_embedding_configs_no_embedding_configs(client, mock_project):
     assert len(result) == 0
 
 
-@pytest.mark.asyncio
 async def test_create_vector_store_config_success(client, mock_project):
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
@@ -842,7 +1216,99 @@ async def test_create_vector_store_config_success(client, mock_project):
     assert result["properties"]["doc_id_key"] == "doc_id"
 
 
-@pytest.mark.asyncio
+async def test_create_reranker_config_success(client, mock_project):
+    project = mock_project
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_ai.datamodel.reranker.RerankerConfig.save_to_file") as mock_save,
+        patch(
+            "kiln_server.document_api.built_in_reranker_models_from_provider"
+        ) as mock_built_in_reranker_models_from_provider,
+    ):
+        mock_built_in_reranker_models_from_provider.return_value = MagicMock()
+        mock_built_in_reranker_models_from_provider.return_value.model_name = (
+            "rerank-xyz"
+        )
+        mock_project_from_id.return_value = project
+        mock_save.return_value = None
+
+        request_data = {
+            "name": "Test Reranker",
+            "description": "Test reranker description",
+            "top_n": 5,
+            "model_provider_name": ModelProviderName.together_ai,
+            "model_name": "rerank-xyz",
+            "properties": {"type": "cohere_compatible"},
+        }
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_reranker_config", json=request_data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["name"] == "Test Reranker"
+    assert result["description"] == "Test reranker description"
+    assert result["top_n"] == 5
+    assert result["model_provider_name"] == ModelProviderName.together_ai
+    assert result["model_name"] == "rerank-xyz"
+    assert result["properties"]["type"] == "cohere_compatible"
+
+
+async def test_create_reranker_config_model_not_found(client, mock_project):
+    project = mock_project
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = project
+
+        request_data = {
+            "name": "Bad Reranker",
+            "description": "Should fail",
+            "top_n": 5,
+            "model_provider_name": ModelProviderName.together_ai,
+            "model_name": "does-not-exist",
+            "properties": {"type": "cohere_compatible"},
+        }
+
+        response = client.post(
+            f"/api/projects/{project.id}/create_reranker_config", json=request_data
+        )
+
+    assert response.status_code == 404, response.text
+    assert "Model does-not-exist not found" in response.json()["message"]
+
+
+async def test_get_reranker_configs_success(client, mock_project):
+    reranker_config = RerankerConfig(
+        name="my-reranker",
+        description="desc",
+        top_n=3,
+        model_provider_name=ModelProviderName.together_ai,
+        model_name="rerank-xyz",
+        properties={"type": RerankerType.COHERE_COMPATIBLE},
+    )
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_instance = MagicMock()
+        mock_project_instance.reranker_configs = MagicMock(
+            return_value=[reranker_config]
+        )
+        mock_project_from_id.return_value = mock_project_instance
+
+        response = client.get(f"/api/projects/{mock_project.id}/reranker_configs")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result) == 1
+    assert result[0]["name"] == "my-reranker"
+    assert result[0]["properties"]["type"] == "cohere_compatible"
+    assert result[0]["description"] == "desc"
+    assert result[0]["top_n"] == 3
+    assert result[0]["model_provider_name"] == ModelProviderName.together_ai
+    assert result[0]["model_name"] == "rerank-xyz"
+
+
 async def test_create_vector_store_config_with_hybrid_type(client, mock_project):
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
@@ -870,8 +1336,9 @@ async def test_create_vector_store_config_with_hybrid_type(client, mock_project)
     assert result["properties"]["doc_id_key"] == "doc_id"
 
 
-@pytest.mark.asyncio
-async def test_get_vector_store_configs(client, mock_project, mock_vector_store_config):
+async def test_get_vector_store_configs(
+    client, mock_project, mock_vector_store_config_fts
+):
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
         response = client.get(f"/api/projects/{mock_project.id}/vector_store_configs")
@@ -879,17 +1346,16 @@ async def test_get_vector_store_configs(client, mock_project, mock_vector_store_
     assert response.status_code == 200, response.text
     result = response.json()
     assert len(result) == 1
-    assert result[0]["name"] == "Test Vector Store"
+    assert result[0]["name"] == "Test Vector Store FTS"
 
 
-@pytest.mark.asyncio
 async def test_create_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -905,7 +1371,8 @@ async def test_create_rag_config_success(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": None,
             },
         )
 
@@ -931,14 +1398,13 @@ async def test_create_rag_config_success(
         "vector_store_config_id",
     ],
 )
-@pytest.mark.asyncio
 async def test_create_rag_config_missing_config(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
     missing_config_type,
 ):
     project = mock_project
@@ -956,7 +1422,7 @@ async def test_create_rag_config_missing_config(
             "extractor_config_id": mock_extractor_config.id,
             "chunker_config_id": mock_chunker_config.id,
             "embedding_config_id": mock_embedding_config.id,
-            "vector_store_config_id": mock_vector_store_config.id,
+            "vector_store_config_id": mock_vector_store_config_fts.id,
         }
 
         # set one of the configs to a fake id - where we expect the error to be thrown
@@ -971,14 +1437,13 @@ async def test_create_rag_config_missing_config(
     assert "fake_id not found" in response.json()["message"]
 
 
-@pytest.mark.asyncio
 async def test_create_rag_config_with_tags(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with tag filtering"""
     with (
@@ -995,7 +1460,7 @@ async def test_create_rag_config_with_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": ["python", "ml", "backend"],
             },
         )
@@ -1008,14 +1473,13 @@ async def test_create_rag_config_with_tags(
     assert result["tags"] == ["python", "ml", "backend"]
 
 
-@pytest.mark.asyncio
 async def test_create_rag_config_with_empty_tags(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with empty tags list fails validation"""
     with (
@@ -1032,7 +1496,7 @@ async def test_create_rag_config_with_empty_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": [],  # Empty tags list should fail validation
             },
         )
@@ -1050,14 +1514,13 @@ async def test_create_rag_config_with_empty_tags(
         assert "Tags cannot be an empty list" in str(response_json)
 
 
-@pytest.mark.asyncio
 async def test_create_rag_config_with_invalid_tags(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with invalid tags (empty strings) fails validation"""
     with (
@@ -1074,7 +1537,7 @@ async def test_create_rag_config_with_invalid_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": ["python", "", "ml"],  # Empty string in tags should fail
             },
         )
@@ -1084,14 +1547,13 @@ async def test_create_rag_config_with_invalid_tags(
     assert "Tags cannot be empty" in response_json["message"]
 
 
-@pytest.mark.asyncio
 async def test_create_rag_config_with_null_tags(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config with null tags (no filtering)"""
     with (
@@ -1108,7 +1570,7 @@ async def test_create_rag_config_with_null_tags(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 "tags": None,
             },
         )
@@ -1118,14 +1580,13 @@ async def test_create_rag_config_with_null_tags(
     assert result["tags"] is None
 
 
-@pytest.mark.asyncio
 async def test_create_rag_config_tags_omitted(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test creating a RAG config without specifying tags field defaults to None"""
     with (
@@ -1142,7 +1603,7 @@ async def test_create_rag_config_tags_omitted(
                 "extractor_config_id": mock_extractor_config.id,
                 "chunker_config_id": mock_chunker_config.id,
                 "embedding_config_id": mock_embedding_config.id,
-                "vector_store_config_id": mock_vector_store_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
                 # tags field omitted - should default to None
             },
         )
@@ -1152,7 +1613,6 @@ async def test_create_rag_config_tags_omitted(
     assert result["tags"] is None
 
 
-@pytest.mark.asyncio
 async def test_get_document_tags_success(client):
     """Test getting document tags from a project"""
     # Create mock documents with various tags
@@ -1188,7 +1648,6 @@ async def test_get_document_tags_success(client):
     assert result == expected_tags
 
 
-@pytest.mark.asyncio
 async def test_get_document_tags_empty_project(client):
     """Test getting document tags from a project with no documents"""
     # Create mock project with no documents
@@ -1205,7 +1664,6 @@ async def test_get_document_tags_empty_project(client):
     assert result == []
 
 
-@pytest.mark.asyncio
 async def test_get_document_tags_no_tags(client):
     """Test getting document tags from a project where no documents have tags"""
     doc1 = MagicMock()
@@ -1228,14 +1686,84 @@ async def test_get_document_tags_no_tags(client):
     assert result == []
 
 
-@pytest.mark.asyncio
+async def test_get_document_tag_counts_success(client):
+    """Test getting document tag counts from a project"""
+    # Create mock documents with various tags
+    doc1 = MagicMock()
+    doc1.tags = ["python", "ml", "backend"]
+    doc2 = MagicMock()
+    doc2.tags = ["javascript", "python", "frontend", "web"]
+    doc3 = MagicMock()
+    doc3.tags = ["web"]  # Overlapping tags
+    doc4 = MagicMock()
+    doc4.tags = None  # No tags
+    doc5 = MagicMock()
+    doc5.tags = []  # Empty tags
+
+    mock_project = MagicMock()
+    mock_project.id = "tag-counts-project-123"
+    mock_project.documents.return_value = [doc1, doc2, doc3, doc4, doc5]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tag_counts")
+
+    assert response.status_code == 200
+    result = response.json()
+    # Should return tag counts: python(2), ml(1), backend(1), javascript(1), frontend(1), web(2)
+    expected_counts = {
+        "python": 2,
+        "ml": 1,
+        "backend": 1,
+        "javascript": 1,
+        "frontend": 1,
+        "web": 2,
+    }
+    assert result == expected_counts
+
+
+async def test_get_document_tag_counts_empty_project(client):
+    """Test getting document tag counts from a project with no documents"""
+    mock_project = MagicMock()
+    mock_project.id = "empty-project-123"
+    mock_project.documents.return_value = []
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tag_counts")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == {}
+
+
+async def test_get_document_tag_counts_no_tags(client):
+    """Test getting document tag counts from a project where no documents have tags"""
+    doc1 = MagicMock()
+    doc1.tags = None
+    doc2 = MagicMock()
+    doc2.tags = []
+
+    mock_project = MagicMock()
+    mock_project.id = "no-tags-project-123"
+    mock_project.documents.return_value = [doc1, doc2]
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/documents/tag_counts")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result == {}
+
+
 async def test_get_rag_configs_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # create a rag config
     rag_configs = [
@@ -1248,7 +1776,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1259,7 +1787,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1270,7 +1798,7 @@ async def test_get_rag_configs_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
     ]
 
@@ -1310,14 +1838,13 @@ async def test_get_rag_configs_success(
         assert response_rag_config["tags"] == rag_config.tags
 
 
-@pytest.mark.asyncio
 async def test_get_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1328,7 +1855,7 @@ async def test_get_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -1351,7 +1878,6 @@ async def test_get_rag_config_success(
     assert result["tags"] == rag_config.tags
 
 
-@pytest.mark.asyncio
 async def test_get_rag_config_not_found(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -1363,14 +1889,183 @@ async def test_get_rag_config_not_found(client, mock_project):
     assert "RAG config not found" in response.json()["message"]
 
 
-@pytest.mark.asyncio
+async def test_create_rag_config_with_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config with Reranker",
+                "description": "Test RAG Config with reranker description",
+                "tool_name": "test_rerank_tool",
+                "tool_description": "A test search tool with reranking",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": mock_reranker_config.id,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test RAG Config with Reranker"
+    assert result["description"] == "Test RAG Config with reranker description"
+    assert result["tool_name"] == "test_rerank_tool"
+    assert result["tool_description"] == "A test search tool with reranking"
+    assert result["extractor_config_id"] is not None
+    assert result["chunker_config_id"] is not None
+    assert result["embedding_config_id"] is not None
+    assert result["vector_store_config_id"] is not None
+    assert result["reranker_config_id"] == mock_reranker_config.id
+
+
+async def test_create_rag_config_with_invalid_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/create_rag_config",
+            json={
+                "name": "Test RAG Config with Invalid Reranker",
+                "description": "Test RAG Config description",
+                "tool_name": "test_search_tool",
+                "tool_description": "A test search tool for invalid reranker testing",
+                "extractor_config_id": mock_extractor_config.id,
+                "chunker_config_id": mock_chunker_config.id,
+                "embedding_config_id": mock_embedding_config.id,
+                "vector_store_config_id": mock_vector_store_config_fts.id,
+                "reranker_config_id": "fake_reranker_id",
+            },
+        )
+
+    assert response.status_code == 404
+    assert "fake_reranker_id not found" in response.json()["message"]
+
+
+async def test_get_rag_config_with_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config with Reranker",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for getting config with reranker",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+        reranker_config_id=mock_reranker_config.id,
+    )
+    rag_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(
+            f"/api/projects/{mock_project.id}/rag_configs/{rag_config.id}"
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] == rag_config.id
+    assert result["name"] == rag_config.name
+    assert result["description"] == rag_config.description
+    assert result["extractor_config"]["id"] == rag_config.extractor_config_id
+    assert result["chunker_config"]["id"] == rag_config.chunker_config_id
+    assert result["embedding_config"]["id"] == rag_config.embedding_config_id
+    assert result["vector_store_config"]["id"] == rag_config.vector_store_config_id
+    assert result["reranker_config"] is not None
+    assert result["reranker_config"]["id"] == mock_reranker_config.id
+    assert result["reranker_config"]["name"] == mock_reranker_config.name
+    assert result["reranker_config"]["top_n"] == mock_reranker_config.top_n
+
+
+async def test_get_rag_configs_with_and_without_reranker(
+    client,
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+    mock_reranker_config,
+):
+    rag_configs = [
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config with Reranker",
+            description="Has reranker",
+            tool_name="test_search_tool_1",
+            tool_description="First test search tool",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
+            reranker_config_id=mock_reranker_config.id,
+        ),
+        RagConfig(
+            parent=mock_project,
+            name="Test RAG Config without Reranker",
+            description="No reranker",
+            tool_name="test_search_tool_2",
+            tool_description="Second test search tool",
+            extractor_config_id=mock_extractor_config.id,
+            chunker_config_id=mock_chunker_config.id,
+            embedding_config_id=mock_embedding_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
+            reranker_config_id=None,
+        ),
+    ]
+
+    for rag_config in rag_configs:
+        rag_config.save_to_file()
+
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+        response = client.get(f"/api/projects/{mock_project.id}/rag_configs")
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert len(result) == 2
+
+    result_by_name = {r["name"]: r for r in result}
+
+    with_reranker = result_by_name["Test RAG Config with Reranker"]
+    assert with_reranker["reranker_config"] is not None
+    assert with_reranker["reranker_config"]["id"] == mock_reranker_config.id
+
+    without_reranker = result_by_name["Test RAG Config without Reranker"]
+    assert without_reranker["reranker_config"] is None
+
+
 async def test_get_rag_configs_with_mixed_tags_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test getting multiple RAG configs with mixed tags (some with tags, some without)"""
     # Create RAG configs with different tag scenarios
@@ -1384,7 +2079,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             tags=["python", "ml"],
         ),
         RagConfig(
@@ -1396,7 +2091,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             tags=None,
         ),
         RagConfig(
@@ -1408,7 +2103,7 @@ async def test_get_rag_configs_with_mixed_tags_success(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             tags=["frontend", "api"],
         ),
     ]
@@ -1437,14 +2132,13 @@ async def test_get_rag_configs_with_mixed_tags_success(
         assert response_rag_config["tags"] == rag_config.tags
 
 
-@pytest.mark.asyncio
 async def test_patch_rag_config_only_updates_is_archived(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1455,7 +2149,7 @@ async def test_patch_rag_config_only_updates_is_archived(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
         tags=["a"],
     )
     rag_config.save_to_file()
@@ -1492,14 +2186,13 @@ async def test_patch_rag_config_only_updates_is_archived(
     assert updated["description"] == "Patch Desc"
 
 
-@pytest.mark.asyncio
 async def test_run_rag_config_returns_error_when_archived(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -1510,7 +2203,7 @@ async def test_run_rag_config_returns_error_when_archived(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
         tags=None,
         is_archived=True,
     )
@@ -1531,14 +2224,13 @@ async def test_run_rag_config_returns_error_when_archived(
     assert "archived" in response.json()["message"].lower()
 
 
-@pytest.mark.asyncio
 async def test_update_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test successful update of RAG config"""
     # Create a rag config
@@ -1551,7 +2243,7 @@ async def test_update_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -1589,7 +2281,6 @@ async def test_update_rag_config_success(
     assert rag_config_from_disk.description == "Updated description"
 
 
-@pytest.mark.asyncio
 async def test_create_extractor_config_model_not_supported_for_extraction(
     client, mock_project
 ):
@@ -1614,6 +2305,13 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
                 "passthrough_mimetypes": ["text/plain"],
                 "model_provider_name": "openai",
                 "model_name": "fake_model",
+                "properties": {
+                    "extractor_type": ExtractorType.LITELLM,
+                    "prompt_document": "Extract the text from the document",
+                    "prompt_audio": "Extract the text from the audio",
+                    "prompt_video": "Extract the text from the video",
+                    "prompt_image": "Extract the text from the image",
+                },
             },
         )
 
@@ -1624,14 +2322,13 @@ async def test_create_extractor_config_model_not_supported_for_extraction(
     )
 
 
-@pytest.mark.asyncio
 async def test_run_rag_config_success(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create a rag config
     rag_config = RagConfig(
@@ -1643,7 +2340,7 @@ async def test_run_rag_config_success(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -1679,7 +2376,6 @@ async def test_run_rag_config_success(
     assert callable(call_args[0])  # First argument should be the factory function
 
 
-@pytest.mark.asyncio
 async def test_run_rag_config_not_found(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -1711,14 +2407,13 @@ async def test_run_rag_config_not_found(client, mock_project):
     assert "RAG config not found" in content or "Unexpected server error" in content
 
 
-@pytest.mark.asyncio
 async def test_run_rag_config_missing_configs(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create a rag config with missing configs
     rag_config = RagConfig(
@@ -1730,7 +2425,7 @@ async def test_run_rag_config_missing_configs(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -1759,14 +2454,13 @@ async def test_run_rag_config_missing_configs(
     assert "missing required configs" in content or "Unexpected server error" in content
 
 
-@pytest.mark.asyncio
 async def test_get_rag_config_progress_specific_configs(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create rag configs
     rag_configs = [
@@ -1779,7 +2473,7 @@ async def test_get_rag_config_progress_specific_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             is_archived=False,
         ),
         RagConfig(
@@ -1791,7 +2485,7 @@ async def test_get_rag_config_progress_specific_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
             is_archived=True,  # we should keep archived configs in the progress
         ),
     ]
@@ -1849,14 +2543,13 @@ async def test_get_rag_config_progress_specific_configs(
     assert call_args[0][1][1].id == rag_configs[1].id
 
 
-@pytest.mark.asyncio
 async def test_get_rag_config_progress_all_configs(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create rag configs
     rag_configs = [
@@ -1869,7 +2562,7 @@ async def test_get_rag_config_progress_all_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
         RagConfig(
             parent=mock_project,
@@ -1880,7 +2573,7 @@ async def test_get_rag_config_progress_all_configs(
             extractor_config_id=mock_extractor_config.id,
             chunker_config_id=mock_chunker_config.id,
             embedding_config_id=mock_embedding_config.id,
-            vector_store_config_id=mock_vector_store_config.id,
+            vector_store_config_id=mock_vector_store_config_fts.id,
         ),
     ]
 
@@ -1936,7 +2629,6 @@ async def test_get_rag_config_progress_all_configs(
     assert call_args[0][1][1].id == rag_configs[1].id
 
 
-@pytest.mark.asyncio
 async def test_get_rag_config_progress_empty_list(
     client,
     mock_project,
@@ -1963,14 +2655,13 @@ async def test_get_rag_config_progress_empty_list(
     assert result == {}
 
 
-@pytest.mark.asyncio
 async def test_get_rag_config_progress_invalid_config_id(
     client,
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     # Create a valid rag config
     rag_config = RagConfig(
@@ -1982,7 +2673,7 @@ async def test_get_rag_config_progress_invalid_config_id(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -2018,7 +2709,6 @@ async def test_get_rag_config_progress_invalid_config_id(
     assert "fake_id" not in result
 
 
-@pytest.mark.asyncio
 async def test_run_rag_workflow_runner_with_status_success():
     """Test successful execution of run_rag_workflow_runner_with_status"""
 
@@ -2116,7 +2806,6 @@ async def test_run_rag_workflow_runner_with_status_success():
 
 
 @pytest.mark.parametrize("logs", [None, []])
-@pytest.mark.asyncio
 async def test_run_rag_workflow_runner_with_status_no_logs(logs):
     """Test run_rag_workflow_runner_with_status with progress that has no logs"""
 
@@ -2172,7 +2861,6 @@ async def test_run_rag_workflow_runner_with_status_no_logs(logs):
     assert data_lines[-1] == "data: complete"
 
 
-@pytest.mark.asyncio
 async def test_run_rag_workflow_runner_with_status_multiple_logs():
     """Test run_rag_workflow_runner_with_status with multiple log messages"""
 
@@ -2239,7 +2927,6 @@ async def test_run_rag_workflow_runner_with_status_multiple_logs():
     assert data_lines[-1] == "data: complete"
 
 
-@pytest.mark.asyncio
 async def test_run_rag_workflow_runner_with_status_no_progress():
     """Test run_rag_workflow_runner_with_status when runner yields no progress updates"""
 
@@ -2277,12 +2964,12 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
 
 
 @pytest.fixture
-def mock_rag_config(
+def mock_rag_config_fts(
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     rag_config = RagConfig(
         parent=mock_project,
@@ -2293,15 +2980,60 @@ def mock_rag_config(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
     return rag_config
 
 
-@pytest.mark.asyncio
-async def test_search_rag_config_fts_success(client, mock_project, mock_rag_config):
-    """Test successful FTS search in RAG config"""
+@pytest.fixture
+def mock_rag_config_vector(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_vector,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for document retrieval",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_vector.id,
+    )
+    rag_config.save_to_file()
+    return rag_config
+
+
+@pytest.fixture
+def mock_rag_config_hybrid(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_hybrid,
+):
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for document retrieval",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_hybrid.id,
+    )
+    rag_config.save_to_file()
+    return rag_config
+
+
+async def test_search_rag_config_success_fts(client, mock_project, mock_rag_config_fts):
+    """Test successful tool call to RAG config search"""
     search_query = "test search query"
     mock_search_results = [
         {
@@ -2318,15 +3050,13 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
+        patch("kiln_server.document_api.tool_from_id") as mock_tool_from_id,
     ):
         mock_project_from_id.return_value = mock_project
 
         # Mock vector store adapter
-        mock_adapter = AsyncMock()
-        mock_adapter.search.return_value = [
+        mock_rag_tool = AsyncMock(spec=RagTool)
+        mock_rag_tool.search.return_value = [
             SearchResult(
                 chunk_idx=0,
                 document_id=result["document_id"],
@@ -2335,10 +3065,10 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
             )
             for result in mock_search_results
         ]
-        mock_vector_store_adapter.return_value = mock_adapter
+        mock_tool_from_id.return_value = mock_rag_tool
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": search_query},
         )
 
@@ -2355,57 +3085,64 @@ async def test_search_rag_config_fts_success(client, mock_project, mock_rag_conf
     assert result["results"][1]["document_id"] == "doc_002"
 
     # Verify search was called with correct parameters
-    mock_adapter.search.assert_called_once()
-    search_call = mock_adapter.search.call_args[0][0]
-    assert search_call.query_string == search_query
-    assert search_call.query_embedding is None
+    mock_rag_tool.search.assert_called_once_with(query=search_query)
 
 
-@pytest.mark.asyncio
-async def test_search_rag_config_vector_success(
-    client, mock_project, mock_rag_config, mock_vector_store_config
+async def test_search_rag_config_search_raises_error(
+    client, mock_project, mock_rag_config_fts
 ):
-    """Test successful vector search in RAG config"""
-    # Update vector store config to use vector search
-    mock_vector_store_config.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-    mock_vector_store_config.save_to_file()
+    """When RagTool.search raises, the endpoint should surface a 500 with the error."""
+    search_query = "failing query"
 
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch("kiln_server.document_api.tool_from_id") as mock_tool_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        mock_rag_tool = AsyncMock(spec=RagTool)
+        mock_rag_tool.search.side_effect = Exception("boom")
+        mock_tool_from_id.return_value = mock_rag_tool
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
+            json={"query": search_query},
+        )
+
+    assert response.status_code == 500, response.text
+    payload = response.json()
+    # Our API error schema uses 'message' for HTTPException details
+    assert payload.get("message") == "Search failed: boom"
+    mock_rag_tool.search.assert_called_once_with(query=search_query)
+
+
+async def test_search_rag_config_success_hybrid(
+    client, mock_project, mock_rag_config_hybrid
+):
+    """Test successful tool call to RAG config search"""
     search_query = "test search query"
-    mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
     mock_search_results = [
         {
             "document_id": "doc_001",
-            "chunk_text": "This is a test document chunk",
-            "similarity": 0.95,
+            "chunk_text": "This is a test document chunk containing the search query",
+            "similarity": None,
+        },
+        {
+            "document_id": "doc_002",
+            "chunk_text": "Another test chunk with relevant content",
+            "similarity": None,
         },
     ]
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
-        patch(
-            "kiln_server.document_api.embedding_adapter_from_type"
-        ) as mock_embedding_adapter_factory,
+        patch("kiln_server.document_api.tool_from_id") as mock_tool_from_id,
     ):
         mock_project_from_id.return_value = mock_project
 
-        # Mock embedding adapter
-        mock_embedding_adapter = AsyncMock()
-        mock_embedding_result = MagicMock()
-        mock_embedding_result.embeddings = [MagicMock(vector=mock_embedding_vector)]
-        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
-        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
-
         # Mock vector store adapter
-        mock_adapter = AsyncMock()
-        mock_adapter.search.return_value = [
+        mock_rag_tool = AsyncMock(spec=RagTool)
+        mock_rag_tool.search.return_value = [
             SearchResult(
                 chunk_idx=0,
                 document_id=result["document_id"],
@@ -2414,75 +3151,56 @@ async def test_search_rag_config_vector_success(
             )
             for result in mock_search_results
         ]
-        mock_vector_store_adapter.return_value = mock_adapter
+        mock_tool_from_id.return_value = mock_rag_tool
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_hybrid.id}/search",
             json={"query": search_query},
         )
 
     assert response.status_code == 200, response.text
     result = response.json()
     assert "results" in result
-    assert len(result["results"]) == 1
+    assert len(result["results"]) == 2
     assert result["results"][0]["document_id"] == "doc_001"
-    assert result["results"][0]["similarity"] == 0.95
-
-    # Verify embedding generation was called
-    mock_embedding_adapter.generate_embeddings.assert_called_once_with([search_query])
+    assert (
+        result["results"][0]["chunk_text"]
+        == "This is a test document chunk containing the search query"
+    )
+    assert result["results"][0]["similarity"] is None
+    assert result["results"][1]["document_id"] == "doc_002"
 
     # Verify search was called with correct parameters
-    mock_adapter.search.assert_called_once()
-    search_call = mock_adapter.search.call_args[0][0]
-    assert search_call.query_string is None
-    assert search_call.query_embedding == mock_embedding_vector
+    mock_rag_tool.search.assert_called_once_with(query=search_query)
 
 
-@pytest.mark.asyncio
-async def test_search_rag_config_hybrid_success(
-    client, mock_project, mock_rag_config, mock_vector_store_config
+async def test_search_rag_config_success_vector(
+    client, mock_project, mock_rag_config_vector
 ):
-    """Test successful hybrid search in RAG config"""
-    # Update vector store config to use hybrid search
-    mock_vector_store_config.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_HYBRID
-    mock_vector_store_config.save_to_file()
-
+    """Test successful tool call to RAG config search"""
     search_query = "test search query"
-    mock_embedding_vector = [0.1, 0.2, 0.3, 0.4, 0.5]
     mock_search_results = [
         {
             "document_id": "doc_001",
-            "chunk_text": "This is a test document chunk",
-            "similarity": 0.88,
+            "chunk_text": "This is a test document chunk containing the search query",
+            "similarity": None,
+        },
+        {
+            "document_id": "doc_002",
+            "chunk_text": "Another test chunk with relevant content",
+            "similarity": None,
         },
     ]
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
-        patch(
-            "kiln_server.document_api.embedding_adapter_from_type"
-        ) as mock_embedding_adapter_factory,
+        patch("kiln_server.document_api.tool_from_id") as mock_tool_from_id,
     ):
         mock_project_from_id.return_value = mock_project
 
-        # Mock embedding adapter
-        mock_embedding_adapter = AsyncMock()
-        mock_embedding_result = MagicMock()
-        mock_embedding_result.embeddings = [MagicMock(vector=mock_embedding_vector)]
-        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
-        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
-
         # Mock vector store adapter
-        mock_adapter = AsyncMock()
-        mock_adapter.search.return_value = [
+        mock_rag_tool = AsyncMock(spec=RagTool)
+        mock_rag_tool.search.return_value = [
             SearchResult(
                 chunk_idx=0,
                 document_id=result["document_id"],
@@ -2491,31 +3209,29 @@ async def test_search_rag_config_hybrid_success(
             )
             for result in mock_search_results
         ]
-        mock_vector_store_adapter.return_value = mock_adapter
+        mock_tool_from_id.return_value = mock_rag_tool
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_vector.id}/search",
             json={"query": search_query},
         )
 
     assert response.status_code == 200, response.text
     result = response.json()
     assert "results" in result
-    assert len(result["results"]) == 1
+    assert len(result["results"]) == 2
     assert result["results"][0]["document_id"] == "doc_001"
-    assert result["results"][0]["similarity"] == 0.88
-
-    # Verify embedding generation was called
-    mock_embedding_adapter.generate_embeddings.assert_called_once_with([search_query])
+    assert (
+        result["results"][0]["chunk_text"]
+        == "This is a test document chunk containing the search query"
+    )
+    assert result["results"][0]["similarity"] is None
+    assert result["results"][1]["document_id"] == "doc_002"
 
     # Verify search was called with correct parameters
-    mock_adapter.search.assert_called_once()
-    search_call = mock_adapter.search.call_args[0][0]
-    assert search_call.query_string == search_query
-    assert search_call.query_embedding == mock_embedding_vector
+    mock_rag_tool.search.assert_called_once_with(query=search_query)
 
 
-@pytest.mark.asyncio
 async def test_search_rag_config_not_found(client, mock_project):
     """Test search with non-existent RAG config"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
@@ -2530,17 +3246,16 @@ async def test_search_rag_config_not_found(client, mock_project):
     assert "RAG config not found" in response.json()["message"]
 
 
-@pytest.mark.asyncio
-async def test_search_rag_config_archived(client, mock_project, mock_rag_config):
+async def test_search_rag_config_archived(client, mock_project, mock_rag_config_fts):
     """Test search with archived RAG config"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
 
-        mock_rag_config.is_archived = True
-        mock_rag_config.save_to_file()
+        mock_rag_config_fts.is_archived = True
+        mock_rag_config_fts.save_to_file()
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": "test query"},
         )
 
@@ -2548,148 +3263,15 @@ async def test_search_rag_config_archived(client, mock_project, mock_rag_config)
     assert "archived" in response.json()["message"]
 
 
-@pytest.mark.asyncio
-async def test_search_rag_config_vector_store_not_found(
-    client, mock_project, mock_rag_config
-):
-    """Test search when vector store config is missing"""
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
-        ) as mock_vector_store_from_id,
-    ):
-        mock_project_from_id.return_value = mock_project
-        mock_vector_store_from_id.return_value = None  # Simulate missing config
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
-            json={"query": "test query"},
-        )
-
-    assert response.status_code == 404, response.text
-    assert "Vector store config not found" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_search_rag_config_embedding_config_not_found(
-    client, mock_project, mock_rag_config
-):
-    """Test search when embedding config is missing"""
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
-        ) as mock_embedding_from_id,
-    ):
-        mock_project_from_id.return_value = mock_project
-        mock_embedding_from_id.return_value = None  # Simulate missing config
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
-            json={"query": "test query"},
-        )
-
-    assert response.status_code == 404, response.text
-    assert "Embedding config not found" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_search_rag_config_embedding_generation_failure(
-    client, mock_project, mock_rag_config, mock_vector_store_config
-):
-    """Test search when embedding generation fails"""
-    # Update vector store config to use vector search
-    mock_vector_store_config.properties.update(
-        {
-            "nprobes": 10,
-        }
-    )
-    mock_vector_store_config.store_type = VectorStoreType.LANCE_DB_VECTOR
-    mock_vector_store_config.save_to_file()
-
-    search_query = "test search query"
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
-        patch(
-            "kiln_server.document_api.embedding_adapter_from_type"
-        ) as mock_embedding_adapter_factory,
-    ):
-        mock_project_from_id.return_value = mock_project
-
-        # Mock embedding adapter to return empty embeddings
-        mock_embedding_adapter = AsyncMock()
-        mock_embedding_result = MagicMock()
-        mock_embedding_result.embeddings = []  # Empty embeddings list
-        mock_embedding_adapter.generate_embeddings.return_value = mock_embedding_result
-        mock_embedding_adapter_factory.return_value = mock_embedding_adapter
-
-        # Mock vector store adapter
-        mock_adapter = AsyncMock()
-        mock_vector_store_adapter.return_value = mock_adapter
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
-            json={"query": search_query},
-        )
-
-    assert response.status_code == 500, response.text
-    assert (
-        "Failed to generate embeddings for search query" in response.json()["message"]
-    )
-
-
-@pytest.mark.asyncio
-async def test_search_rag_config_vector_store_search_failure(
-    client, mock_project, mock_rag_config
-):
-    """Test search when vector store search fails"""
-    search_query = "test search query"
-
-    with (
-        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
-    ):
-        mock_project_from_id.return_value = mock_project
-
-        # Mock vector store adapter to raise an exception
-        mock_adapter = AsyncMock()
-        mock_adapter.search.side_effect = Exception("Vector store connection failed")
-        mock_vector_store_adapter.return_value = mock_adapter
-
-        response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
-            json={"query": search_query},
-        )
-
-    assert response.status_code == 500, response.text
-    assert "Search failed: Vector store connection failed" in response.json()["message"]
-
-
-@pytest.mark.asyncio
-async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config):
+async def test_search_rag_config_empty_query(client, mock_project, mock_rag_config_fts):
     """Test search with empty query"""
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
     ):
         mock_project_from_id.return_value = mock_project
 
-        # Mock vector store adapter
-        mock_adapter = AsyncMock()
-        mock_adapter.search.return_value = []
-        mock_vector_store_adapter.return_value = mock_adapter
-
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": ""},
         )
 
@@ -2700,26 +3282,22 @@ async def test_search_rag_config_empty_query(client, mock_project, mock_rag_conf
     assert len(result["results"]) == 0
 
 
-@pytest.mark.asyncio
-async def test_search_rag_config_no_results(client, mock_project, mock_rag_config):
+async def test_search_rag_config_no_results(client, mock_project, mock_rag_config_fts):
     """Test search that returns no results (should return empty list, not error)"""
     search_query = "nonexistent query that should return no results"
 
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
-        patch(
-            "kiln_server.document_api.vector_store_adapter_for_config"
-        ) as mock_vector_store_adapter,
+        patch("kiln_server.document_api.tool_from_id") as mock_tool_from_id,
     ):
         mock_project_from_id.return_value = mock_project
 
-        # Mock vector store adapter to return empty results
-        mock_adapter = AsyncMock()
-        mock_adapter.search.return_value = []  # Empty results
-        mock_vector_store_adapter.return_value = mock_adapter
+        mock_rag_tool = AsyncMock(spec=RagTool)
+        mock_rag_tool.search.return_value = []
+        mock_tool_from_id.return_value = mock_rag_tool
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"query": search_query},
         )
 
@@ -2731,16 +3309,15 @@ async def test_search_rag_config_no_results(client, mock_project, mock_rag_confi
     assert result["results"] == []
 
 
-@pytest.mark.asyncio
 async def test_search_rag_config_invalid_request_body(
-    client, mock_project, mock_rag_config
+    client, mock_project, mock_rag_config_fts
 ):
     """Test search with invalid request body"""
     with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = mock_project
 
         response = client.post(
-            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config.id}/search",
+            f"/api/projects/{mock_project.id}/rag_configs/{mock_rag_config_fts.id}/search",
             json={"invalid_field": "test"},
         )
 
@@ -2763,7 +3340,6 @@ async def test_search_rag_config_invalid_request_body(
         ("audio.ogg", "audio/ogg", "audio"),
     ],
 )
-@pytest.mark.asyncio
 async def test_create_document_content_type_detection(
     client, mock_project, filename, expected_content_type, expected_kind
 ):
@@ -2798,7 +3374,6 @@ async def test_create_document_content_type_detection(
     assert doc["original_file"]["size"] == len(test_content)
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_success(client, mock_project):
     """Test successful bulk upload of multiple documents"""
     project = mock_project
@@ -2846,7 +3421,6 @@ async def test_create_documents_bulk_success(client, mock_project):
     )
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_without_names(client, mock_project):
     """Test bulk upload without providing custom names (should use filenames)"""
     project = mock_project
@@ -2883,7 +3457,6 @@ async def test_create_documents_bulk_without_names(client, mock_project):
     assert result["created_documents"][1]["friendly_name"] == "test2.txt"
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_mixed_file_types(
     client, mock_project, mock_file_factory
 ):
@@ -2919,7 +3492,6 @@ async def test_create_documents_bulk_mixed_file_types(
     assert result["created_documents"][1]["kind"] == "image"
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_some_invalid_files(client, mock_project):
     """Test bulk upload where some files are invalid (should skip invalid, process valid)"""
     project = mock_project
@@ -2964,7 +3536,6 @@ async def test_create_documents_bulk_some_invalid_files(client, mock_project):
     assert result["created_documents"][0]["kind"] == "document"
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_no_files(client, mock_project):
     """Test bulk upload with no files provided"""
     project = mock_project
@@ -2978,7 +3549,6 @@ async def test_create_documents_bulk_no_files(client, mock_project):
     assert "At least one file must be provided" in response.json()["message"]
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_all_invalid_files(client, mock_project):
     """Test bulk upload where all files are invalid"""
     project = mock_project
@@ -3009,7 +3579,6 @@ async def test_create_documents_bulk_all_invalid_files(client, mock_project):
     assert len(result["message"]["failed_files"]) == 2
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_mismatched_names_count(client, mock_project):
     """Test bulk upload with mismatched number of names and files"""
     project = mock_project
@@ -3034,7 +3603,6 @@ async def test_create_documents_bulk_mismatched_names_count(client, mock_project
     assert "Number of names must match number of files" in response.json()["message"]
 
 
-@pytest.mark.asyncio
 async def test_create_documents_bulk_duplicate_filenames(client, mock_project):
     """Test bulk upload with files that have the same filename"""
     project = mock_project
@@ -3083,7 +3651,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
     missing_sub_config_type,
     error_message,
 ):
@@ -3098,7 +3666,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -3137,7 +3705,7 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         mock_vector_store_from_id.return_value = (
             None
             if missing_sub_config_type == "vector_store_config"
-            else mock_vector_store_config
+            else mock_vector_store_config_fts
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -3147,13 +3715,12 @@ async def test_build_rag_workflow_runner_sub_configs_not_found(
         assert error_message in exc_info.value.detail
 
 
-@pytest.mark.asyncio
 async def test_build_rag_workflow_runner_success_with_progress(
     mock_project,
     mock_extractor_config,
     mock_chunker_config,
     mock_embedding_config,
-    mock_vector_store_config,
+    mock_vector_store_config_fts,
 ):
     """Test build_rag_workflow_runner success path including progress computation"""
     # Create a rag config
@@ -3166,7 +3733,7 @@ async def test_build_rag_workflow_runner_success_with_progress(
         extractor_config_id=mock_extractor_config.id,
         chunker_config_id=mock_chunker_config.id,
         embedding_config_id=mock_embedding_config.id,
-        vector_store_config_id=mock_vector_store_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
     )
     rag_config.save_to_file()
 
@@ -3203,7 +3770,7 @@ async def test_build_rag_workflow_runner_success_with_progress(
         mock_extractor_from_id.return_value = mock_extractor_config
         mock_chunker_from_id.return_value = mock_chunker_config
         mock_embedding_from_id.return_value = mock_embedding_config
-        mock_vector_store_from_id.return_value = mock_vector_store_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config_fts
         mock_compute_progress.return_value = mock_progress
 
         mock_runner = MagicMock()
@@ -3214,6 +3781,101 @@ async def test_build_rag_workflow_runner_success_with_progress(
         assert result == mock_runner
         mock_compute_progress.assert_called_once_with(mock_project, rag_config)
         mock_runner_class.assert_called_once()
+
+
+async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
+    mock_project,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    """Ensure extractor concurrency is 1 when provider is ollama."""
+    # Create an extractor config that uses the ollama provider
+    extractor_config_ollama = ExtractorConfig(
+        parent=mock_project,
+        name="Ollama Extractor",
+        description="Extractor using ollama",
+        output_format=OutputFormat.TEXT,
+        passthrough_mimetypes=[OutputFormat.TEXT],
+        extractor_type=ExtractorType.LITELLM,
+        model_provider_name=ModelProviderName.ollama,
+        model_name="llama3",
+        properties={
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": "prompt",
+            "prompt_video": "prompt",
+            "prompt_audio": "prompt",
+            "prompt_image": "prompt",
+        },
+    )
+    extractor_config_ollama.save_to_file()
+
+    # Create a rag config referencing the ollama extractor
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="RAG with Ollama",
+        description="Test RAG with ollama extractor",
+        tool_name="test_search_tool",
+        tool_description="A test search tool",
+        extractor_config_id=extractor_config_ollama.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+    )
+    rag_config.save_to_file()
+
+    with (
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+        patch(
+            "kiln_ai.datamodel.extraction.ExtractorConfig.from_id_and_parent_path"
+        ) as mock_extractor_from_id,
+        patch(
+            "kiln_ai.datamodel.chunk.ChunkerConfig.from_id_and_parent_path"
+        ) as mock_chunker_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+        patch(
+            "kiln_server.document_api.RagExtractionStepRunner.__init__",
+            autospec=True,
+        ) as mock_extract_runner_init,
+        patch("kiln_server.document_api.RagWorkflowRunner") as mock_runner_class,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_config",
+            return_value=RagProgress(
+                total_document_count=0,
+                total_document_completed_count=0,
+                total_document_extracted_count=0,
+                total_document_chunked_count=0,
+                total_document_embedded_count=0,
+            ),
+        ),
+    ):
+        mock_rag_from_id.return_value = rag_config
+        mock_extractor_from_id.return_value = extractor_config_ollama
+        mock_chunker_from_id.return_value = mock_chunker_config
+        mock_embedding_from_id.return_value = mock_embedding_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config_fts
+
+        # Ensure __init__ behaves like a normal constructor
+        mock_extract_runner_init.return_value = None
+
+        mock_runner = MagicMock()
+        mock_runner_class.return_value = mock_runner
+
+        result = await build_rag_workflow_runner(mock_project, str(rag_config.id))
+
+        assert result == mock_runner
+        # Validate that the extraction step is constructed with concurrency=1
+        assert mock_extract_runner_init.call_count == 1
+        # __init__ is autospecced; args: (self, project, extractor_config, ...)
+        _, _args, kwargs = mock_extract_runner_init.mock_calls[0]
+        assert kwargs.get("concurrency") == 1
 
 
 def test_patch_document_success_name_only(client, mock_project, mock_document):
@@ -3509,7 +4171,6 @@ def test_patch_document_partial_update_preserves_other_fields(
         ),
     ],
 )
-@pytest.mark.asyncio
 async def test_create_rag_config_invalid_tool_fields(
     client,
     mock_project,
@@ -3526,3 +4187,800 @@ async def test_create_rag_config_invalid_tool_fields(
     assert response.status_code == 422
     error_detail = response.json()
     assert "error_messages" in error_detail
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        [],
+        ["tag1"],
+        ["tag1", "tag2"],
+        ["tag1", "tag2", "tag3"],
+    ],
+)
+async def test_create_documents_bulk_with_tags_success(client, mock_project, tags):
+    """Test successful bulk upload with various tag combinations"""
+    project = mock_project
+    test_content_1 = b"test file content 1"
+    test_content_2 = b"test file content 2"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test1.txt", io.BytesIO(test_content_1), "text/plain")),
+            ("files", ("test2.txt", io.BytesIO(test_content_2), "text/plain")),
+        ]
+        data = {"names": ["Custom Name 1", "Custom Name 2"]}
+
+        # Add tags to the data
+        for tag in tags:
+            data.setdefault("tags", []).append(tag)
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 2
+    assert len(result["failed_files"]) == 0
+
+    # Check that both documents have all the tags
+    for doc in result["created_documents"]:
+        assert "tags" in doc
+        assert doc["tags"] == tags
+        assert len(doc["tags"]) == len(tags)
+        assert sorted(tags) == sorted(doc["tags"])
+
+
+@pytest.mark.parametrize(
+    "invalid_tags",
+    [
+        ["tag with spaces"],
+        ["tag with spaces", "valid_tag"],
+        ["", "valid_tag"],
+        ["   ", "valid_tag"],
+    ],
+)
+async def test_create_documents_bulk_with_invalid_tags_failure(
+    client, mock_project, invalid_tags
+):
+    """Test bulk upload failure due to invalid tags (spaces, empty strings)"""
+    project = mock_project
+    test_content = b"test file content"
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test.txt", io.BytesIO(test_content), "text/plain")),
+        ]
+        data = {"names": ["Custom Name"]}
+
+        # Add invalid tags to the data
+        for tag in invalid_tags:
+            data.setdefault("tags", []).append(tag)
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    # Should return 422 for invalid tags
+    assert response.status_code == 422, response.text
+    result = response.json()
+    assert "message" in result
+    assert "failed_files" in result["message"]
+    assert len(result["message"]["failed_files"]) == 1
+    assert (
+        "Tags cannot contain spaces" in result["message"]["failed_files"][0]
+        or "Tags cannot be empty strings" in result["message"]["failed_files"][0]
+    )
+
+
+async def test_delete_extraction_extractor_config_not_found(
+    client, mock_project, mock_document
+):
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id="nonexistent-id",
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.delete(
+            f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
+        )
+
+    assert response.status_code == 404
+
+
+async def test_delete_extraction_success(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test DELETE extraction endpoint success"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.extractor_adapter_from_type"
+        ) as mock_extractor_factory,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        mock_extractor = MagicMock()
+        mock_extractor.clear_cache_for_file_path = AsyncMock()
+        mock_extractor_factory.return_value = mock_extractor
+
+        # Create an extraction on disk so the DELETE endpoint can find it
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.delete(
+            f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
+        )
+
+        assert response.status_code == 200
+
+        # Assert cache clear called with resolved attachment path
+        document = mock_document["document"]
+        expected_path = document.original_file.attachment.resolve_path(
+            document.path.parent
+        )
+        mock_extractor.clear_cache_for_file_path.assert_awaited_once_with(expected_path)
+
+
+async def test_delete_extraction_failed_to_clear_cache(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Deletion of extraction should not fail if failed to clear cache"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.extractor_adapter_from_type"
+        ) as mock_extractor_factory,
+        patch("kiln_server.document_api.logger") as mock_logger,
+    ):
+        mock_project_from_id.return_value = mock_project
+
+        mock_extractor = MagicMock()
+        mock_extractor.clear_cache_for_file_path = AsyncMock(
+            side_effect=Exception("Deleting cache for file path failed"),
+        )
+        mock_extractor_factory.return_value = mock_extractor
+
+        # Create an extraction on disk so the DELETE endpoint can find it
+        document = mock_document["document"]
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("hello", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.delete(
+            f"/api/projects/{mock_project.id}/documents/{document.id}/extractions/{extraction.id}",
+        )
+
+        assert response.status_code == 200
+
+        mock_logger.warning.assert_called_once()
+        warning_args, _ = mock_logger.warning.call_args
+        assert (
+            warning_args[0]
+            == "Failed to clear extractor cache for document %s (extraction %s): %s"
+        )
+
+
+async def test_get_extractions_for_extractor_config_success(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test GET extractions for extractor config endpoint"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "test extraction output", "text/plain"
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/extractions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+        assert str(document.id) in data
+        assert len(data[str(document.id)]) == 1
+        assert data[str(document.id)][0]["output_content"] == "test extraction output"
+
+
+async def test_get_extractions_for_extractor_config_not_found(client, mock_project):
+    """Test GET extractions for extractor config endpoint when config not found"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/extractions"
+        )
+
+        assert response.status_code == 404
+        assert "Extractor config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_extractor_config_no_documents_to_extract(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config when all documents already have extractions"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "test extraction output", "text/plain"
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+        )
+
+        assert response.status_code == 200
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 0
+
+
+async def test_run_extractor_config_no_tags(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config with no tags parameter"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=None,
+        )
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 1
+        assert extractor_runner.documents[0].id == document.id
+
+
+async def test_run_extractor_config_with_tags(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config with tags filtering"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config",
+            params={"tags": "python,ml,backend"},
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=["python", "ml", "backend"],
+        )
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 1
+        assert extractor_runner.documents[0].id == document.id
+
+
+async def test_ephemeral_split_document_success_with_chunks(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with valid chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "This is a test extraction output that will be split into chunks. "
+                * 50,
+                "text/plain",
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={
+                "chunk_size": 20,
+                "chunk_overlap": 5,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "chunks" in data
+        assert len(data["chunks"]) > 1
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_no_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with null chunk_size returns single chunk"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+        test_output = "This is the full extraction output."
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(test_output, "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": None},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "chunks" in data
+        assert len(data["chunks"]) == 1
+        assert data["chunks"][0]["text"] == test_output
+        assert data["chunks"][0]["id"] == str(extraction.id)
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_extractor_config_not_found(
+    client, mock_project, mock_document
+):
+    """Test ephemeral_split_document with non-existent extractor config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "Extractor config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_document_not_found(
+    client, mock_project, mock_extractor_config
+):
+    """Test ephemeral_split_document with non-existent document"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/non-existent-id/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "Document not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_no_extraction_found(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document when no extraction exists for the document and extractor"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "No extraction found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_invalid_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with invalid chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 0},
+        )
+
+        assert response.status_code == 422
+        assert (
+            "Chunk_size: Input should be greater than 0" in response.json()["message"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_negative_chunk_overlap(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with negative chunk_overlap"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100, "chunk_overlap": -1},
+        )
+
+        assert response.status_code == 422
+        assert (
+            "Chunk_overlap: Input should be greater than or equal to 0"
+            in response.json()["message"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_overlap_exceeds_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document when chunk_overlap >= chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100, "chunk_overlap": 100},
+        )
+
+        assert response.status_code == 422
+        assert (
+            "Chunk overlap must be less than chunk size" in response.json()["message"]
+        )
+
+
+async def test_get_embedding_config_not_found(client, mock_project):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = None
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/not-found",
+        )
+
+    assert response.status_code == 404
+    error_detail = response.json()
+    assert "message" in error_detail
+    assert "Embedding config not-found not found" in error_detail["message"]
+
+
+async def test_get_embedding_config_success(
+    client, mock_project, mock_embedding_config
+):
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_from_id,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_from_id.return_value = mock_embedding_config
+        response = client.get(
+            f"/api/projects/{mock_project.id}/embedding_configs/{mock_embedding_config.id}",
+        )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == mock_embedding_config.id
+    assert result["name"] == mock_embedding_config.name
+    assert result["description"] == mock_embedding_config.description
+    assert result["model_provider_name"] == mock_embedding_config.model_provider_name
+    assert result["model_name"] == mock_embedding_config.model_name
+    assert result["properties"] == mock_embedding_config.properties
+
+
+def test_get_properties_unsupported_extractor_type_raises() -> None:
+    req = CreateExtractorConfigRequest(
+        name="n",
+        description=None,
+        model_provider_name=ModelProviderName.openai,
+        model_name="gpt_5_mini",
+        output_format=OutputFormat.MARKDOWN,
+        passthrough_mimetypes=[],
+        properties={
+            "extractor_type": ExtractorType.LITELLM,
+            "prompt_document": "x",
+            "prompt_image": "x",
+            "prompt_video": "x",
+            "prompt_audio": "x",
+        },
+    )
+
+    # Corrupt to an unknown extractor_type to hit the default branch
+    req.__dict__["properties"] = {"extractor_type": "bogus"}
+
+    with pytest.raises(Exception):
+        req.get_properties()
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_no_filters(mock_project, mock_document):
+    """Test get_documents_filtered with no filters (should return all documents)"""
+    project = mock_project
+    document = mock_document["document"]
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    result = get_documents_filtered(project)
+
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_tag_filtering(mock_project, mock_document):
+    """Test get_documents_filtered with tag filtering"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python", "ml"]
+    document.save_to_file()
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    # Test with matching tags
+    result = get_documents_filtered(project, target_tags=["python"])
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Test with non-matching tags
+    result = get_documents_filtered(project, target_tags=["javascript"])
+    assert len(result) == 0
+
+    # Test with multiple tags where one matches
+    result = get_documents_filtered(project, target_tags=["python", "javascript"])
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_exclude_extracted(
+    mock_project, mock_document, mock_extractor_config
+):
+    """Test get_documents_filtered with exclude_extracted_by_extractor_config_id"""
+    project = mock_project
+    document = mock_document["document"]
+
+    # Document has no extraction, so should be included
+    result = get_documents_filtered(
+        project, exclude_extracted_by_extractor_config_id=mock_extractor_config.id
+    )
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Add extraction to document
+    extraction = Extraction(
+        parent=document,
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+        output=KilnAttachmentModel.from_data("test output", "text/plain"),
+    )
+    extraction.save_to_file()
+
+    # Document now has extraction, so should be excluded
+    result = get_documents_filtered(
+        project, exclude_extracted_by_extractor_config_id=mock_extractor_config.id
+    )
+    assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_both_filters(
+    mock_project, mock_document, mock_extractor_config
+):
+    """Test get_documents_filtered with both tag filtering and exclude_extracted"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python", "ml"]
+    document.save_to_file()
+
+    # Test with matching tags and no extraction (should be included)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["python"],
+    )
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Add extraction to document
+    extraction = Extraction(
+        parent=document,
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+        output=KilnAttachmentModel.from_data("test output", "text/plain"),
+    )
+    extraction.save_to_file()
+
+    # Test with matching tags but has extraction (should be excluded)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["python"],
+    )
+    assert len(result) == 0
+
+    # Test with non-matching tags and no extraction (should be excluded)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["javascript"],
+    )
+    assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_document_no_tags(
+    mock_project, mock_document
+):
+    """Test get_documents_filtered with document that has no tags"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = []
+    document.save_to_file()
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    # Document has no tags, so should not match any tag filter
+    result = get_documents_filtered(project, target_tags=["python"])
+    assert len(result) == 0
+
+    # But should be included when no tag filter is applied
+    result = get_documents_filtered(project)
+    assert len(result) == 1
+    assert result[0].id == document.id
+    assert result[0].id == document.id

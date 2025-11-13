@@ -26,6 +26,7 @@ done
 
 # work from the root of the repo
 cd "$(dirname "$0")"
+echo $PWD
 
 headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
@@ -71,7 +72,7 @@ if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
     pyright .
 
     echo "${headerStart}Running Python Tests${headerEnd}"
-    python3 -m pytest --benchmark-quiet -q .
+    python3 -m pytest --benchmark-quiet -q -n auto .
 else
     echo "${headerStart}Python Checks${headerEnd}"
     echo "Skipping Python tests/typecheck: no .py files changed"

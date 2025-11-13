@@ -1,7 +1,12 @@
-from typing import Union
+from typing import TypedDict, Union
 
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import KilnTool
+from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
+
+
+class AddParams(TypedDict):
+    a: Union[int, float]
+    b: Union[int, float]
 
 
 class AddTool(KilnTool):
@@ -27,11 +32,17 @@ class AddTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(
-        self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Add two numbers and return the result."""
-        return str(a + b)
+        kwargs = AddParams(**kwargs)
+        a = kwargs["a"]
+        b = kwargs["b"]
+        return ToolCallResult(output=str(a + b))
+
+
+class SubtractParams(TypedDict):
+    a: Union[int, float]
+    b: Union[int, float]
 
 
 class SubtractTool(KilnTool):
@@ -59,11 +70,17 @@ class SubtractTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(
-        self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Subtract b from a and return the result."""
-        return str(a - b)
+        kwargs = SubtractParams(**kwargs)
+        a = kwargs["a"]
+        b = kwargs["b"]
+        return ToolCallResult(output=str(a - b))
+
+
+class MultiplyParams(TypedDict):
+    a: Union[int, float]
+    b: Union[int, float]
 
 
 class MultiplyTool(KilnTool):
@@ -88,11 +105,17 @@ class MultiplyTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(
-        self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Multiply two numbers and return the result."""
-        return str(a * b)
+        kwargs = MultiplyParams(**kwargs)
+        a = kwargs["a"]
+        b = kwargs["b"]
+        return ToolCallResult(output=str(a * b))
+
+
+class DivideParams(TypedDict):
+    a: Union[int, float]
+    b: Union[int, float]
 
 
 class DivideTool(KilnTool):
@@ -123,10 +146,11 @@ class DivideTool(KilnTool):
             parameters_schema=parameters_schema,
         )
 
-    async def run(
-        self, context=None, *, a: Union[int, float], b: Union[int, float]
-    ) -> str:
+    async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Divide a by b and return the result."""
+        kwargs = DivideParams(**kwargs)
+        a = kwargs["a"]
+        b = kwargs["b"]
         if b == 0:
             raise ZeroDivisionError("Cannot divide by zero")
-        return str(a / b)
+        return ToolCallResult(output=str(a / b))

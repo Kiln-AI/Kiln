@@ -16,7 +16,11 @@ def config() -> ChunkerConfig:
     return ChunkerConfig(
         name="test-chunker",
         chunker_type=ChunkerType.FIXED_WINDOW,
-        properties={"chunk_size": 100, "chunk_overlap": 10},
+        properties={
+            "chunker_type": ChunkerType.FIXED_WINDOW,
+            "chunk_size": 100,
+            "chunk_overlap": 10,
+        },
     )
 
 

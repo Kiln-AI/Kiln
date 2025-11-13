@@ -34,3 +34,23 @@ export function dataset_item_link(
   }
   return `/dataset/${project_id}/${task_id}/${run_id}/run`
 }
+
+export function tool_link(project_id: string, tool_id: string): string | null {
+  if (!project_id || !tool_id) {
+    return null
+  }
+  if (
+    tool_id.startsWith("mcp::remote::") ||
+    tool_id.startsWith("mcp::local::")
+  ) {
+    return `/settings/manage_tools/${project_id}/tool_servers/${tool_id.split("::")[2]}`
+  } else if (tool_id.startsWith("kiln_task::")) {
+    return `/settings/manage_tools/${project_id}/kiln_task/${tool_id.split("::")[1]}`
+  } else if (tool_id.startsWith("kiln_tool::rag::")) {
+    return `/docs/rag_configs/${project_id}/${tool_id.split("::")[2]}/rag_config`
+  } else if (tool_id.startsWith("kiln_tool::")) {
+    return `/settings/manage_tools/${project_id}`
+  } else {
+    return null
+  }
+}

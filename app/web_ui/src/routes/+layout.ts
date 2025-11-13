@@ -1,6 +1,7 @@
 import posthog from "posthog-js"
 import { browser } from "$app/environment"
 import { dev } from "$app/environment"
+import { setup_ph_work_user } from "$lib/utils/connect_ph"
 
 export const prerender = true
 export const ssr = false
@@ -14,6 +15,7 @@ export const load = async () => {
       capture_pageleave: false,
       autocapture: false,
     })
+    setup_ph_work_user()
   }
   return
 }

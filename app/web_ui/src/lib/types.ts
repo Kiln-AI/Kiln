@@ -29,6 +29,7 @@ export type EvalOutputScore = components["schemas"]["EvalOutputScore"]
 export type EvalTemplateId = components["schemas"]["EvalTemplateId"]
 export type Eval = components["schemas"]["Eval"]
 export type EvalConfigType = components["schemas"]["EvalConfigType"]
+export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
 export type RunConfigProperties = components["schemas"]["RunConfigProperties"]
@@ -50,18 +51,26 @@ export type ExtractorType = components["schemas"]["ExtractorType"]
 export type OutputFormat = components["schemas"]["OutputFormat"]
 export type ExtractionProgress = components["schemas"]["ExtractionProgress"]
 export type EmbeddingConfig = components["schemas"]["EmbeddingConfig"]
+export type EmbeddingProperties = components["schemas"]["EmbeddingProperties"]
 export type EmbeddingModelDetails =
   components["schemas"]["EmbeddingModelDetails"]
 export type EmbeddingProvider = components["schemas"]["EmbeddingProvider"]
 export type EmbeddingModelName = components["schemas"]["EmbeddingModelName"]
 export type ChunkerConfig = components["schemas"]["ChunkerConfig"]
 export type ChunkerType = components["schemas"]["ChunkerType"]
+export type CreateChunkerConfigRequest =
+  components["schemas"]["CreateChunkerConfigRequest"]
 export type ModelProviderName = components["schemas"]["ModelProviderName"]
 export type RagProgress = components["schemas"]["RagProgress"]
 export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
 export type VectorStoreConfig = components["schemas"]["VectorStoreConfig"]
 export type VectorStoreType = components["schemas"]["VectorStoreType"]
+export type RerankerConfig = components["schemas"]["RerankerConfig"]
+export type RerankerType =
+  components["schemas"]["RerankerConfig"]["properties"]["type"]
+export type RerankerProvider = components["schemas"]["RerankerProvider"]
+export type RerankerModelDetails = components["schemas"]["RerankerModelDetails"]
 export type LogMessage = components["schemas"]["LogMessage"]
 export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
@@ -96,6 +105,7 @@ export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 

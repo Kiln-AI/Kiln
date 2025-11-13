@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Literal, Sequence
 
@@ -14,15 +13,6 @@ from .mcp_server_tool_utils import ToolContext
 logger = logging.getLogger(__name__)
 
 Transport = Literal["stdio", "sse", "streamable-http"]
-
-
-def _format_unstructured_result(result: Any) -> str:
-    if isinstance(result, str):
-        return result
-    try:
-        return json.dumps(result, ensure_ascii=False, indent=2)
-    except TypeError:
-        return str(result)
 
 
 def create_fastmcp_server(
@@ -78,14 +68,7 @@ def create_fastmcp_server(
             logger.exception("Tool %s failed", name)
             raise ValueError(str(exc)) from exc
 
-        if context.requires_structured_output:
-            if not isinstance(result, dict):
-                raise ValueError(
-                    f"Tool {name} returned non-dict output despite declaring an output schema."
-                )
-            return result
-
-        return [TextContent(type="text", text=_format_unstructured_result(result))]
+        return [TextContent(type="text", text=result.output)]
 
     return server
 

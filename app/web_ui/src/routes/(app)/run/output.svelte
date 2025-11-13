@@ -25,7 +25,7 @@
           language: "json",
         }).value
       }
-    } catch (e) {
+    } catch (_) {
       formatted_json_html = null
     }
   }
@@ -87,7 +87,7 @@
   <link rel="stylesheet" href="/styles/highlightjs.min.css" />
 </head>
 
-<div class="relative">
+<div class="relative" translate="no">
   <div
     class="flex flex-row gap-2 bg-base-200 p-1 rounded-lg {no_padding
       ? ''

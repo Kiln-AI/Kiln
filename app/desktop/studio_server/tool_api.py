@@ -21,6 +21,7 @@ from kiln_ai.datamodel.tool_id import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
@@ -63,6 +64,7 @@ class ExternalToolServerCreationRequest(BaseModel):
     server_url: str
     headers: Dict[str, str] = Field(default_factory=dict)
     secret_header_keys: List[str] = Field(default_factory=list)
+    is_archived: bool
 
 
 class LocalToolServerCreationRequest(BaseModel):
@@ -72,6 +74,7 @@ class LocalToolServerCreationRequest(BaseModel):
     args: List[str]
     env_vars: Dict[str, str] = Field(default_factory=dict)
     secret_env_var_keys: List[str] = Field(default_factory=list)
+    is_archived: bool
 
 
 class KilnTaskToolServerCreationRequest(BaseModel):
@@ -154,6 +157,18 @@ class SearchToolApiDescription(BaseModel):
     tool_name: str
     name: str
     description: str | None
+
+
+class ToolDefinitionResponse(BaseModel):
+    """
+    Response model for tool definition endpoint.
+    Provides the OpenAI-compatible tool definition along with extracted fields.
+    """
+
+    tool_id: str
+    function_name: str
+    description: str
+    parameters: Dict[str, Any]
 
 
 def tool_server_from_id(project_id: str, tool_server_id: str) -> ExternalToolServer:
@@ -247,6 +262,9 @@ def connect_tool_servers_api(app: FastAPI):
         task_tools = []
         mcp_tool_sets = []
         for server in project.external_tool_servers(readonly=True):
+            if server.properties.get("is_archived", False):
+                continue
+
             server_tools = []
             match server.type:
                 case ToolServerType.remote_mcp | ToolServerType.local_mcp:
@@ -256,14 +274,13 @@ def connect_tool_servers_api(app: FastAPI):
                         # Skip the tool when we can't connect to the server
                         continue
                 case ToolServerType.kiln_task:
-                    if not server.properties.get("is_archived", False):
-                        task_tools.append(
-                            ToolApiDescription(
-                                id=build_kiln_task_tool_id(server.id),
-                                name=server.properties.get("name") or "",
-                                description=server.properties.get("description") or "",
-                            )
+                    task_tools.append(
+                        ToolApiDescription(
+                            id=build_kiln_task_tool_id(server.id),
+                            name=server.properties.get("name") or "",
+                            description=server.properties.get("description") or "",
                         )
+                    )
                 case _:
                     raise_exhaustive_enum_error(server.type)
 
@@ -342,6 +359,9 @@ def connect_tool_servers_api(app: FastAPI):
                     is_archived=tool.properties.get("is_archived", False),
                 )
             )
+
+        # Sort the result and put archived tools at the end
+        results.sort(key=lambda x: x.is_archived)
         return results
 
     @app.get("/api/projects/{project_id}/kiln_task_tools")
@@ -492,6 +512,7 @@ def connect_tool_servers_api(app: FastAPI):
             "server_url": tool_data.server_url,
             "headers": tool_data.headers,
             "secret_header_keys": tool_data.secret_header_keys,
+            "is_archived": tool_data.is_archived,
         }
 
     @app.post("/api/projects/{project_id}/connect_local_mcp")
@@ -551,6 +572,7 @@ def connect_tool_servers_api(app: FastAPI):
             "args": tool_data.args,
             "env_vars": tool_data.env_vars,
             "secret_env_var_keys": tool_data.secret_env_var_keys,
+            "is_archived": tool_data.is_archived,
         }
 
     def _validate_kiln_task_tool_task_and_run_config(
@@ -659,3 +681,40 @@ def connect_tool_servers_api(app: FastAPI):
             for rag_config in project.rag_configs(readonly=True)
             if not rag_config.is_archived
         ]
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition")
+    async def get_tool_definition(
+        project_id: str, task_id: str, tool_id: str
+    ) -> ToolDefinitionResponse:
+        """
+        Get the actual OpenAI tool definition for a specific tool ID.
+
+        This returns the real function name and parameters that would be used
+        in OpenAI function calls, not the display names from ToolSetApiDescription.
+
+        Args:
+            project_id: The project ID
+            task_id: The task ID for tools that require task context
+            tool_id: The tool ID to get the definition for
+        """
+
+        task = task_from_id(project_id, task_id)
+
+        try:
+            # Instantiate the tool from its ID
+            tool = tool_from_id(tool_id, task)
+
+            # Get the actual toolcall definition
+            definition = await tool.toolcall_definition()
+            return ToolDefinitionResponse(
+                tool_id=tool_id,
+                function_name=definition["function"]["name"],
+                description=definition["function"]["description"],
+                parameters=definition["function"]["parameters"],
+            )
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tool not found or could not be instantiated: {tool_id}. Error: {e!s}",
+            )

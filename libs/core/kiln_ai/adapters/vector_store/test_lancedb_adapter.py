@@ -4,7 +4,7 @@ import random
 import uuid
 from pathlib import Path
 from typing import Callable, List
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from llama_index.core.schema import MetadataMode, NodeRelationship
@@ -62,6 +62,7 @@ def hybrid_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
         },
     )
 
@@ -78,6 +79,7 @@ def fts_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_FTS,
         },
     )
 
@@ -95,6 +97,7 @@ def knn_vector_store_config():
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
         },
     )
 
@@ -539,6 +542,31 @@ async def test_search_with_empty_results_error(
     assert results == []
 
 
+async def test_search_with_uninitialized_table(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test that search raises ValueError when table is not initialized"""
+
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    # Create the adapter normally
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Mock the table property at the class level to return None using PropertyMock
+    # We need to patch at the class level because accessing the property on the instance
+    # raises TableNotFoundError before we can patch it
+    with patch(
+        "llama_index.vector_stores.lancedb.base.LanceDBVectorStore.table",
+        new_callable=PropertyMock,
+        return_value=None,
+    ):
+        query = VectorStoreQuery(query_string="test query")
+        with pytest.raises(ValueError, match="Table is not initialized"):
+            await adapter.search(query)
+
+
 async def test_destroy(
     fts_vector_store_config,
     mock_chunked_documents,
@@ -618,6 +646,7 @@ def test_query_type_property(
         name="fts_test",
         store_type=VectorStoreType.LANCE_DB_FTS,
         properties={
+            "store_type": VectorStoreType.LANCE_DB_FTS,
             "similarity_top_k": 10,
             "overfetch_factor": 10,
             "vector_column_name": "vector",
@@ -635,6 +664,7 @@ def test_query_type_property(
         name="hybrid_test",
         store_type=VectorStoreType.LANCE_DB_HYBRID,
         properties={
+            "store_type": VectorStoreType.LANCE_DB_HYBRID,
             "similarity_top_k": 10,
             "nprobes": 10,
             "overfetch_factor": 10,
@@ -659,6 +689,7 @@ def test_query_type_property(
             "vector_column_name": "vector",
             "text_key": "text",
             "doc_id_key": "doc_id",
+            "store_type": VectorStoreType.LANCE_DB_VECTOR,
         },
     )
     rag_config = create_rag_config_factory(vector_config, embedding_config)

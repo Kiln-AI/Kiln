@@ -7,6 +7,7 @@ from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
     ToolCallDefinition,
+    ToolCallResult,
 )
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
@@ -40,7 +41,9 @@ class MCPServerTool(KilnToolInterface):
             },
         }
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
         result = await self._call_tool(**kwargs)
 
         if result.isError:
@@ -59,7 +62,7 @@ class MCPServerTool(KilnToolInterface):
         if len(result.content) > 1:
             raise ValueError("Tool returned multiple content blocks, expected one")
 
-        return result.content[0].text
+        return ToolCallResult(output=result.content[0].text)
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:

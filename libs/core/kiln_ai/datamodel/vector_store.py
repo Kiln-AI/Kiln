@@ -1,14 +1,10 @@
 from enum import Enum
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, PositiveInt, ValidationInfo, model_validator
+from typing_extensions import TypedDict
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
-from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-from kiln_ai.utils.validation import (
-    validate_return_dict_prop,
-    validate_return_dict_prop_optional,
-)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -20,26 +16,29 @@ class VectorStoreType(str, Enum):
     LANCE_DB_VECTOR = "lancedb_vector"
 
 
-class LanceDBConfigBaseProperties(BaseModel):
-    similarity_top_k: int = Field(
-        description="The number of results to return from the vector store.",
-    )
-    overfetch_factor: int = Field(
-        description="The overfetch factor to use for the vector search.",
-    )
-    vector_column_name: str = Field(
-        description="The name of the vector column in the vector store.",
-    )
-    text_key: str = Field(
-        description="The name of the text column in the vector store.",
-    )
-    doc_id_key: str = Field(
-        description="The name of the document id column in the vector store.",
-    )
-    nprobes: int | None = Field(
-        description="The number of probes to use for the vector search.",
-        default=None,
-    )
+class LanceDBConfigFTSProperties(TypedDict, total=True):
+    store_type: Literal[VectorStoreType.LANCE_DB_FTS]
+    similarity_top_k: PositiveInt
+    overfetch_factor: PositiveInt
+    vector_column_name: str
+    text_key: str
+    doc_id_key: str
+
+
+class LanceDBConfigVectorProperties(TypedDict, total=True):
+    store_type: Literal[VectorStoreType.LANCE_DB_VECTOR]
+    similarity_top_k: PositiveInt
+    overfetch_factor: PositiveInt
+    vector_column_name: str
+    text_key: str
+    doc_id_key: str
+    nprobes: PositiveInt
+
+
+class LanceDBConfigHybridProperties(LanceDBConfigVectorProperties, total=True):
+    store_type: Literal[VectorStoreType.LANCE_DB_HYBRID]
+    # no additional properties for hybrid, it is the same as the vector properties
+    pass
 
 
 class VectorStoreConfig(KilnParentedModel):
@@ -53,86 +52,69 @@ class VectorStoreConfig(KilnParentedModel):
     store_type: VectorStoreType = Field(
         description="The type of vector store to use.",
     )
-    properties: dict[str, str | int | float | None] = Field(
+    properties: (
+        LanceDBConfigFTSProperties
+        | LanceDBConfigVectorProperties
+        | LanceDBConfigHybridProperties
+    ) = Field(
         description="The properties of the vector store config, specific to the selected store_type.",
+        # the discriminator refers to the properties->store_type key (not the store_type field on the parent model)
+        discriminator="store_type",
     )
 
+    @model_validator(mode="before")
+    def upgrade_missing_discriminator_properties(
+        cls, data: dict, info: ValidationInfo
+    ) -> dict:
+        if not info.context or not info.context.get("loading_from_file", False):
+            # Not loading from file, so no need to upgrade
+            return data
+
+        if not isinstance(data, dict):
+            return data
+
+        # backward compatibility:
+        # - we originally did not have the store_type in the properties, so we need to add it here
+        # - we started wanted to have store_type in the properties to use pydantic's discriminated union feature
+        properties = data.get("properties", {})
+        if "store_type" not in properties:
+            # the store_type on the parent model is always there, we just need to add it to the properties
+            properties["store_type"] = data["store_type"]
+            data["properties"] = properties
+        return data
+
     @model_validator(mode="after")
-    def validate_properties(self):
-        match self.store_type:
-            case (
-                VectorStoreType.LANCE_DB_FTS
-                | VectorStoreType.LANCE_DB_HYBRID
-                | VectorStoreType.LANCE_DB_VECTOR
-            ):
-                return self.validate_lancedb_properties(self.store_type)
-            case _:
-                raise_exhaustive_enum_error(self.store_type)
-
-    def validate_lancedb_properties(self, store_type: VectorStoreType):
-        err_msg_prefix = f"LanceDB vector store configs properties for {store_type}:"
-        validate_return_dict_prop(
-            self.properties, "similarity_top_k", int, err_msg_prefix
-        )
-        validate_return_dict_prop(
-            self.properties, "overfetch_factor", int, err_msg_prefix
-        )
-        validate_return_dict_prop(
-            self.properties, "vector_column_name", str, err_msg_prefix
-        )
-        validate_return_dict_prop(self.properties, "text_key", str, err_msg_prefix)
-        validate_return_dict_prop(self.properties, "doc_id_key", str, err_msg_prefix)
-
-        # nprobes is only used for vector and hybrid queries
-        if (
-            store_type == VectorStoreType.LANCE_DB_VECTOR
-            or store_type == VectorStoreType.LANCE_DB_HYBRID
-        ):
-            validate_return_dict_prop(self.properties, "nprobes", int, err_msg_prefix)
-
+    def ensure_store_type_matches_properties(self):
+        # sanity check to ensure the store_type matches the properties store_type
+        if self.store_type != self.properties["store_type"]:
+            raise ValueError(
+                f"Store type mismatch: {self.store_type} != {self.properties['store_type']}. This is a bug, please report it."
+            )
         return self
 
     @property
-    def lancedb_properties(self) -> LanceDBConfigBaseProperties:
-        err_msg_prefix = "LanceDB vector store configs properties:"
-        return LanceDBConfigBaseProperties(
-            similarity_top_k=validate_return_dict_prop(
-                self.properties,
-                "similarity_top_k",
-                int,
-                err_msg_prefix,
-            ),
-            overfetch_factor=validate_return_dict_prop(
-                self.properties,
-                "overfetch_factor",
-                int,
-                err_msg_prefix,
-            ),
-            vector_column_name=validate_return_dict_prop(
-                self.properties,
-                "vector_column_name",
-                str,
-                err_msg_prefix,
-            ),
-            text_key=validate_return_dict_prop(
-                self.properties,
-                "text_key",
-                str,
-                err_msg_prefix,
-            ),
-            doc_id_key=validate_return_dict_prop(
-                self.properties,
-                "doc_id_key",
-                str,
-                err_msg_prefix,
-            ),
-            nprobes=validate_return_dict_prop_optional(
-                self.properties,
-                "nprobes",
-                int,
-                err_msg_prefix,
-            ),
-        )
+    def lancedb_vector_properties(self) -> LanceDBConfigVectorProperties:
+        if self.properties["store_type"] != VectorStoreType.LANCE_DB_VECTOR:
+            raise ValueError(
+                f"Lancedb vector properties are only available for LanceDB vector store type. Got {self.properties.get('store_type')}"
+            )
+        return self.properties
+
+    @property
+    def lancedb_hybrid_properties(self) -> LanceDBConfigHybridProperties:
+        if self.properties["store_type"] != VectorStoreType.LANCE_DB_HYBRID:
+            raise ValueError(
+                f"Lancedb hybrid properties are only available for LanceDB hybrid store type. Got {self.properties.get('store_type')}"
+            )
+        return self.properties
+
+    @property
+    def lancedb_fts_properties(self) -> LanceDBConfigFTSProperties:
+        if self.properties["store_type"] != VectorStoreType.LANCE_DB_FTS:
+            raise ValueError(
+                f"Lancedb FTS properties are only available for LanceDB FTS store type. Got {self.properties.get('store_type')}"
+            )
+        return self.properties
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:

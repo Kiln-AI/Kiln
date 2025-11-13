@@ -19,7 +19,7 @@ from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -780,10 +780,12 @@ class MockTool:
             }
         }
 
-    async def run(self, context: ToolCallContext | None = None, **kwargs) -> str:
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
         if self._raise_on_run:
             raise self._raise_on_run
-        return self._return_value
+        return ToolCallResult(output=self._return_value)
 
     async def id(self) -> ToolId:
         """Mock implementation of id for testing."""

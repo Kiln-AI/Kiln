@@ -32,6 +32,7 @@
       "Best suited for tasks that require multi-step reasoning or complex decision-making.",
     supports_doc_extraction:
       "Supports document extraction, used for RAG (Retrieval-Augmented Generation).",
+    supports_vision: "Supports vision inputs (image, video).",
   }
 
   interface Provider {
@@ -45,11 +46,13 @@
     suggested_for_data_gen: boolean
     suggested_for_evals: boolean
     suggested_for_uncensored_data_gen: boolean
+    supports_vision: boolean
     supports_doc_extraction: boolean
     uncensored: boolean
     untested_model: boolean
     structured_output_mode: string
     reasoning_capable: boolean
+    multimodal_mime_types: string[] | null
   }
 
   interface Model {
@@ -87,6 +90,7 @@
     { value: "uncensored", label: "Uncensored" },
     { value: "finetune", label: "Finetune" },
     { value: "doc_extraction", label: "Doc Extraction (RAG)" },
+    { value: "vision", label: "Vision" },
     { value: "reasoning_capable", label: "Reasoning" },
     { value: "suggested_for_evals", label: "Suggested for Evals" },
   ]
@@ -223,6 +227,8 @@
               return !!p.provider_finetune_id
             case "reasoning_capable":
               return p.reasoning_capable
+            case "vision":
+              return p.supports_vision
             default:
               return true
           }
@@ -377,15 +383,26 @@
         tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_doc_extraction,
       })
     }
+    if (providers.some((p) => p.supports_vision)) {
+      trailing_badges.push({
+        text: "Vision",
+        color: "bg-pink-100 text-pink-800",
+        tooltip: CAPABILITY_TOOLTIP_MESSAGES.supports_vision,
+      })
+    }
 
     return [...leading_badges, ...trailing_badges]
   }
 
   // Watch for filter changes
-  $: searchQuery, selectedProvider, selectedCapability, models, applyFilters()
+  $: void (searchQuery,
+  selectedProvider,
+  selectedCapability,
+  models,
+  applyFilters())
 
   // Watch for sort changes
-  $: sortBy, sortDirection, applySorting()
+  $: void (sortBy, sortDirection, applySorting())
 
   onMount(async () => {
     await load_available_models()
@@ -822,6 +839,16 @@
                             <span
                               class="w-2 h-2 bg-amber-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
                               data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_doc_extraction}
+                            ></span>
+                          {/if}
+                          {#if provider.supports_vision}
+                            <span
+                              class="w-2 h-2 bg-pink-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              data-tip={// in practice, vision models should always have some mime types, if the fallback kicks in, the model definition is probably incorrect
+                              provider.multimodal_mime_types &&
+                              provider.multimodal_mime_types.length > 0
+                                ? provider.multimodal_mime_types.join(", ")
+                                : CAPABILITY_TOOLTIP_MESSAGES.supports_vision}
                             ></span>
                           {/if}
                           {#if provider.supports_logprobs}

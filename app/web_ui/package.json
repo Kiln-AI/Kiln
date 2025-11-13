@@ -21,21 +21,22 @@
     "@sveltejs/kit": "^2.20.6",
     "@sveltejs/vite-plugin-svelte": "^3.1.1",
     "@tailwindcss/typography": "^0.5.13",
-    "@typescript-eslint/eslint-plugin": "^6.20.0",
-    "@typescript-eslint/parser": "^6.19.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.1",
+    "@typescript-eslint/parser": "^8.46.1",
     "autoprefixer": "^10.4.15",
     "daisyui": "^4.7.3",
-    "eslint": "^8.28.0",
+    "eslint": "^9.38.0",
     "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-svelte": "^2.30.0",
+    "eslint-plugin-svelte": "^3.12.5",
     "openapi-typescript": "^7.4.1",
     "postcss": "^8.4.31",
     "prettier": "^3.0.3",
     "prettier-plugin-svelte": "^3.0.3",
     "svelte": "^4.2.19",
     "svelte-check": "^3.4.3",
+    "svelte-eslint-parser": "^1.4.0",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.6.3",
+    "typescript": "^5.9.3",
     "vite": "^5.4.20",
     "vitest": "^1.6.1"
   },
@@ -49,6 +50,12 @@
   "overrides": {
     "@sveltejs/kit": {
       "cookie": "^0.7.0"
+    },
+    "vite": {
+      "esbuild": "^0.25.0"
+    },
+    "vitest": {
+      "esbuild": "^0.25.0"
     }
   }
 }

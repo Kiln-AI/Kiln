@@ -12,6 +12,7 @@
   export let empty_state_link: string | null = null
   export let multi_select: boolean = false
   export let disabled: boolean = false
+  export let error_outline: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -139,7 +140,7 @@
   }
 
   // Watch for changes to options and recheck scrollability
-  $: options, setTimeout(checkIfScrollable, 0)
+  $: void (options, setTimeout(checkIfScrollable, 0))
 
   // Set up floating UI positioning when dropdown becomes visible
   $: if (listVisible && selectedElement && dropdownElement && mounted) {
@@ -309,6 +310,42 @@
     }
   }
 
+  function getFlatOptions() {
+    return filteredOptions.flatMap((group) => group.options)
+  }
+
+  function findNextEnabledOptionIndex(
+    currentIndex: number,
+    flatOptions: Array<{ disabled?: boolean }>,
+  ): number {
+    const originalIndex = currentIndex
+    let nextIndex = currentIndex + 1
+    while (nextIndex < flatOptions.length && flatOptions[nextIndex].disabled) {
+      nextIndex++
+    }
+    // If we couldn't find a next enabled option, stay at the original index
+    if (nextIndex >= flatOptions.length) {
+      return originalIndex
+    }
+    return nextIndex
+  }
+
+  function findPreviousEnabledOptionIndex(
+    currentIndex: number,
+    flatOptions: Array<{ disabled?: boolean }>,
+  ): number {
+    const originalIndex = currentIndex
+    let prevIndex = currentIndex - 1
+    while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
+      prevIndex--
+    }
+    // If we couldn't find a previous enabled option, stay at the original index
+    if (prevIndex < 0) {
+      return originalIndex
+    }
+    return prevIndex
+  }
+
   // Handle clear search
   function clearSearch() {
     searchText = ""
@@ -437,7 +474,9 @@
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
+      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''} {error_outline
+      ? 'border-error'
+      : ''}"
     bind:this={selectedElement}
     on:click={() => {
       if (!disabled) {
@@ -480,19 +519,19 @@
       }
       if (event.key === "ArrowDown") {
         event.preventDefault()
-        focusedIndex = Math.min(
-          focusedIndex + 1,
-          filteredOptions.flatMap((group) => group.options).length - 1,
-        )
+        const flatOptions = getFlatOptions()
+        focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
         scrollToFocusedIndex()
       } else if (event.key === "ArrowUp") {
         event.preventDefault()
-        focusedIndex = Math.max(focusedIndex - 1, 0)
+        const flatOptions = getFlatOptions()
+        focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
         scrollToFocusedIndex()
       } else if (event.key === "Enter") {
-        selectOption(
-          filteredOptions.flatMap((group) => group.options)[focusedIndex].value,
-        )
+        const flatOptions = getFlatOptions()
+        if (flatOptions[focusedIndex]) {
+          selectOption(flatOptions[focusedIndex].value)
+        }
       }
     }}
   >
@@ -528,22 +567,25 @@
                 clearSearch()
               } else if (event.key === "ArrowDown") {
                 event.preventDefault()
-                focusedIndex = Math.min(
-                  focusedIndex + 1,
-                  filteredOptions.flatMap((group) => group.options).length - 1,
+                const flatOptions = getFlatOptions()
+                focusedIndex = findNextEnabledOptionIndex(
+                  focusedIndex,
+                  flatOptions,
                 )
                 scrollToFocusedIndex()
               } else if (event.key === "ArrowUp") {
                 event.preventDefault()
-                focusedIndex = Math.max(focusedIndex - 1, 0)
+                const flatOptions = getFlatOptions()
+                focusedIndex = findPreviousEnabledOptionIndex(
+                  focusedIndex,
+                  flatOptions,
+                )
                 scrollToFocusedIndex()
               } else if (event.key === "Enter") {
                 event.preventDefault()
-                const flatFiltered = filteredOptions.flatMap(
-                  (group) => group.options,
-                )
-                if (flatFiltered[focusedIndex]) {
-                  selectOption(flatFiltered[focusedIndex].value)
+                const flatOptions = getFlatOptions()
+                if (flatOptions[focusedIndex]) {
+                  selectOption(flatOptions[focusedIndex].value)
                 }
               }
             }}
@@ -630,13 +672,22 @@
                   : selected === item.value}
                 class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
-                  : 'hover:bg-transparent'}"
+                  : 'hover:bg-transparent'} {item.disabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : ''}"
+                disabled={item.disabled}
                 on:mousedown={(event) => {
+                  if (item.disabled) {
+                    event.preventDefault()
+                    return
+                  }
                   event.stopPropagation()
                   selectOption(item.value)
                 }}
                 on:mouseenter={() => {
-                  focusedIndex = overallIndex
+                  if (!item.disabled) {
+                    focusedIndex = overallIndex
+                  }
                 }}
               >
                 <div class="flex flex-row gap-3 items-center flex-1">
@@ -645,6 +696,7 @@
                       type="checkbox"
                       class="checkbox checkbox-sm no-animation"
                       checked={selected_values.includes(item.value)}
+                      disabled={item.disabled}
                     />
                   {/if}
                   <div class="flex-grow flex flex-col text-left gap-[1px]">

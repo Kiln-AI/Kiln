@@ -13,6 +13,7 @@ from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
@@ -99,8 +100,9 @@ class CreateEvaluatorRequest(BaseModel):
     template: EvalTemplateId | None
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
-    eval_configs_filter_id: DatasetFilterId
+    eval_configs_filter_id: DatasetFilterId | None
     template_properties: dict[str, str | float | int | bool]
+    evaluation_data_type: EvalDataType
 
 
 class CreateEvalConfigRequest(BaseModel):
@@ -154,8 +156,6 @@ class EvalProgress(BaseModel):
     golden_dataset_fully_rated_count: int
     # The current selected eval method
     current_eval_method: EvalConfig | None
-    # The current selected run method
-    current_run_method: TaskRunConfig | None
 
 
 class EvalResultSummary(BaseModel):
@@ -309,6 +309,7 @@ def connect_evals_api(app: FastAPI):
             eval_set_filter_id=request.eval_set_filter_id,
             eval_configs_filter_id=request.eval_configs_filter_id,
             template_properties=request.template_properties,
+            evaluation_data_type=request.evaluation_data_type,
             parent=task,
         )
         eval.save_to_file()
@@ -511,41 +512,6 @@ def connect_evals_api(app: FastAPI):
 
         return eval
 
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_run_config/{run_config_id}"
-    )
-    async def set_default_run_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        run_config_id: str | None,
-    ) -> Eval:
-        task = task_from_id(project_id, task_id)
-
-        # Confirm the run config exists, unless the user is clearing the default run config
-        if run_config_id == "None":
-            run_config_id = None
-        else:
-            run_config = next(
-                (
-                    run_config
-                    for run_config in task.run_configs()
-                    if run_config.id == run_config_id
-                ),
-                None,
-            )
-            if run_config is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Run config not found.",
-                )
-
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.current_run_config_id = run_config_id
-        eval.save_to_file()
-
-        return eval
-
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval"
@@ -602,8 +568,10 @@ def connect_evals_api(app: FastAPI):
         dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
-        golden_dataset_runs = runs_in_filter(
-            task, eval.eval_configs_filter_id, readonly=True
+        golden_dataset_runs = (
+            runs_in_filter(task, eval.eval_configs_filter_id, readonly=True)
+            if eval.eval_configs_filter_id
+            else []
         )
 
         # Count how many dataset items have human evals
@@ -622,15 +590,6 @@ def connect_evals_api(app: FastAPI):
             None,
         )
 
-        current_run_method = next(
-            (
-                run_config
-                for run_config in task.run_configs()
-                if run_config.id == eval.current_run_config_id
-            ),
-            None,
-        )
-
         return EvalProgress(
             dataset_size=len(dataset_ids),
             golden_dataset_size=len(golden_dataset_runs),
@@ -638,7 +597,6 @@ def connect_evals_api(app: FastAPI):
             golden_dataset_partially_rated_count=partially_rated_count,
             golden_dataset_fully_rated_count=fully_rated_count,
             current_eval_method=current_eval_method,
-            current_run_method=current_run_method,
         )
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
@@ -761,6 +719,12 @@ def connect_evals_api(app: FastAPI):
 
         # Build a set of all the dataset items IDs we expect to have scores for
         # Fetch all the dataset items in a filter, and return a map of dataset_id -> TaskRun
+        if eval.eval_configs_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No eval configs filter id set, cannot get eval configs score summary.",
+            )
+
         filter = dataset_filter_from_id(eval.eval_configs_filter_id)
         expected_dataset_items = {run.id: run for run in task.runs() if filter(run)}
         expected_dataset_ids = set(expected_dataset_items.keys())

@@ -32,6 +32,7 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
+from kiln_ai.adapters.reranker_list import built_in_rerankers
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -144,6 +145,7 @@ class ModelDetails(BaseModel):
     supports_function_calling: bool
     uncensored: bool
     suggested_for_uncensored_data_gen: bool
+    supports_vision: bool
     supports_doc_extraction: bool
     suggested_for_doc_extraction: bool
     multimodal_capable: bool = Field(default=False)
@@ -176,6 +178,17 @@ class EmbeddingProvider(BaseModel):
     models: List[EmbeddingModelDetails]
 
 
+class RerankerModelDetails(BaseModel):
+    id: str
+    name: str
+
+
+class RerankerProvider(BaseModel):
+    provider_name: str
+    provider_id: str
+    models: List[RerankerModelDetails]
+
+
 class ProviderModel(BaseModel):
     id: str
     name: str
@@ -187,6 +200,10 @@ class ProviderModels(BaseModel):
 
 class ProviderEmbeddingModels(BaseModel):
     models: Dict[EmbeddingModelName, ProviderModel]
+
+
+class ProviderRerankerModels(BaseModel):
+    models: Dict[str, ProviderModel]
 
 
 def connect_provider_api(app: FastAPI):
@@ -252,6 +269,7 @@ def connect_provider_api(app: FastAPI):
                                 uncensored=provider.uncensored,
                                 suggested_for_uncensored_data_gen=provider.suggested_for_uncensored_data_gen,
                                 structured_output_mode=provider.structured_output_mode,
+                                supports_vision=provider.supports_vision,
                                 supports_doc_extraction=provider.supports_doc_extraction,
                                 suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
                                 multimodal_capable=provider.multimodal_capable,
@@ -338,6 +356,55 @@ def connect_provider_api(app: FastAPI):
         ollama_models = await available_ollama_embedding_models()
         if ollama_models:
             models.insert(0, ollama_models)
+
+        return models
+
+    @app.get("/api/providers/reranker_models")
+    async def get_providers_reranker_models() -> ProviderRerankerModels:
+        models = {}
+        for model in built_in_rerankers:
+            models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
+        return ProviderRerankerModels(models=models)
+
+    # returns map, of provider name to list of model names
+    @app.get("/api/available_reranker_models")
+    async def get_available_reranker_models() -> List[RerankerProvider]:
+        # Providers with just keys can return all their models if keys are set
+        key_providers: List[str] = []
+
+        for provider, provider_warning in provider_warnings.items():
+            has_keys = True
+            for required_key in provider_warning.required_config_keys:
+                if Config.shared().get_value(required_key) is None:
+                    has_keys = False
+                    break
+            if has_keys:
+                key_providers.append(provider)
+
+        models: List[RerankerProvider] = [
+            RerankerProvider(
+                provider_name=provider_name_from_id(provider),
+                provider_id=provider,
+                models=[],
+            )
+            for provider in key_providers
+        ]
+
+        for model in built_in_rerankers:
+            for provider in model.providers:
+                if provider.name in key_providers:
+                    available_models = next(
+                        (m for m in models if m.provider_id == provider.name), None
+                    )
+                    if available_models:
+                        available_models.models.append(
+                            RerankerModelDetails(
+                                id=model.name,
+                                name=model.friendly_name,
+                            )
+                        )
+
+        # ollama not supported yet - we can add it later
 
         return models
 
@@ -1111,6 +1178,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             suggested_for_uncensored_data_gen=False,
                             # Ollama has constrained decode and all models support json_schema. Use it!
                             structured_output_mode=StructuredOutputMode.json_schema,
+                            supports_vision=ollama_provider.supports_vision,
                             supports_doc_extraction=ollama_provider.supports_doc_extraction,
                             suggested_for_doc_extraction=ollama_provider.suggested_for_doc_extraction,
                             multimodal_capable=ollama_provider.multimodal_capable,
@@ -1138,6 +1206,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Ollama has constrained decode and all models support json_schema. Use it!
                     structured_output_mode=StructuredOutputMode.json_schema,
+                    supports_vision=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
                     multimodal_capable=False,
@@ -1217,6 +1286,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             suggested_for_evals=docker_provider.suggested_for_evals,
                             uncensored=docker_provider.uncensored,
                             suggested_for_uncensored_data_gen=docker_provider.suggested_for_uncensored_data_gen,
+                            supports_vision=docker_provider.supports_vision,
                             supports_doc_extraction=docker_provider.supports_doc_extraction,
                             suggested_for_doc_extraction=docker_provider.suggested_for_doc_extraction,
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
@@ -1237,6 +1307,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     suggested_for_evals=False,
                     uncensored=False,
                     suggested_for_uncensored_data_gen=False,
+                    supports_vision=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
@@ -1349,6 +1420,7 @@ def custom_models() -> AvailableModels | None:
                     suggested_for_uncensored_data_gen=False,
                     # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
                     structured_output_mode=StructuredOutputMode.json_instructions,
+                    supports_vision=False,
                     supports_doc_extraction=False,
                     suggested_for_doc_extraction=False,
                     multimodal_capable=False,
@@ -1400,6 +1472,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                                 and isinstance(fine_tune_mode, StructuredOutputMode)
                                 else StructuredOutputMode.json_instructions
                             ),
+                            supports_vision=False,
                             supports_doc_extraction=False,
                             suggested_for_doc_extraction=False,
                             multimodal_capable=False,
@@ -1513,6 +1586,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         suggested_for_uncensored_data_gen=False,
                         # OpenAI compatible models could be anything. JSON instructions is the only safe bet that works everywhere.
                         structured_output_mode=StructuredOutputMode.json_instructions,
+                        supports_vision=False,
                         supports_doc_extraction=False,
                         suggested_for_doc_extraction=False,
                         multimodal_capable=False,

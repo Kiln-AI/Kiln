@@ -1,10 +1,15 @@
 import {
+  type ChunkerConfig,
   type ChunkerType,
   type EvalConfigType,
   type OutputFormat,
   type StructuredOutputMode,
   type ToolServerType,
 } from "$lib/types"
+import {
+  fixedWindowChunkerProperties,
+  semanticChunkerProperties,
+} from "./properties_cast"
 
 export function formatDate(dateString: string | undefined): string {
   if (!dateString) {
@@ -153,11 +158,36 @@ export function chunker_type_format(chunker_type: ChunkerType): string {
   switch (chunker_type) {
     case "fixed_window":
       return "Fixed Window"
+    case "semantic":
+      return "Semantic"
     default: {
       // trigger a type error if there is a new chunker type, but don't handle it
       // in the switch
       const exhaustiveCheck: never = chunker_type
       return exhaustiveCheck
+    }
+  }
+}
+
+function format_percentile(percentile: number) {
+  return `${String(percentile)}%`
+}
+
+export function format_chunker_config_overview(config: ChunkerConfig) {
+  switch (config.chunker_type) {
+    case "fixed_window": {
+      const props = fixedWindowChunkerProperties(config)
+      return `${chunker_type_format(config.chunker_type)} • Size: ${props.chunk_size ?? "N/A"} words • Overlap: ${props.chunk_overlap ?? "N/A"} words`
+    }
+    case "semantic": {
+      const props = semanticChunkerProperties(config)
+      return `${chunker_type_format(config.chunker_type)} • Buffer: ${props.buffer_size ?? "N/A"} • Threshold: ${format_percentile(props.breakpoint_percentile_threshold) ?? "N/A"}`
+    }
+    default: {
+      // type check will catch missing cases
+      const unknownChunkerType: never = config.chunker_type
+      console.error(`Invalid chunker type: ${unknownChunkerType}`)
+      return "unknown"
     }
   }
 }

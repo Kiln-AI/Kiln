@@ -28,6 +28,13 @@ from kiln_ai.adapters.remote_config import (
     load_remote_models,
     serialize_config,
 )
+from kiln_ai.adapters.reranker_list import (
+    KilnRerankerModel,
+    KilnRerankerModelFamily,
+    KilnRerankerModelProvider,
+    RerankerModelName,
+    built_in_rerankers,
+)
 from kiln_ai.datamodel.datamodel_enums import (
     KilnMimeType,
     ModelProviderName,
@@ -84,9 +91,26 @@ def mock_embedding_model() -> KilnEmbeddingModel:
     )
 
 
+@pytest.fixture
+def mock_reranker_model() -> KilnRerankerModel:
+    return KilnRerankerModel(
+        family=KilnRerankerModelFamily.llama_rank,
+        name=RerankerModelName.llama_rank,
+        friendly_name="LlamaRank",
+        providers=[
+            KilnRerankerModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Salesforce/Llama-Rank-V1",
+            ),
+        ],
+    )
+
+
 def test_round_trip(tmp_path):
     path = tmp_path / "models.json"
-    serialize_config(built_in_models, built_in_embedding_models, path)
+    serialize_config(
+        built_in_models, built_in_embedding_models, built_in_rerankers, path
+    )
     loaded = deserialize_config_at_path(path)
     assert [m.model_dump(mode="json") for m in loaded.model_list] == [
         m.model_dump(mode="json") for m in built_in_models
@@ -94,20 +118,29 @@ def test_round_trip(tmp_path):
     assert [m.model_dump(mode="json") for m in loaded.embedding_model_list] == [
         m.model_dump(mode="json") for m in built_in_embedding_models
     ]
+    assert [m.model_dump(mode="json") for m in loaded.reranker_model_list] == [
+        m.model_dump(mode="json") for m in built_in_rerankers
+    ]
 
 
-def test_load_from_url(mock_model, mock_embedding_model):
+def test_load_from_url(mock_model, mock_embedding_model, mock_reranker_model):
     sample_model = mock_model
     sample = [sample_model.model_dump(mode="json")]
     sample_embedding_model = mock_embedding_model
     sample_embedding = [sample_embedding_model.model_dump(mode="json")]
+    sample_reranker_model = mock_reranker_model
+    sample_reranker = [sample_reranker_model.model_dump(mode="json")]
 
     class FakeResponse:
         def raise_for_status(self):
             pass
 
         def json(self):
-            return {"model_list": sample, "embedding_model_list": sample_embedding}
+            return {
+                "model_list": sample,
+                "embedding_model_list": sample_embedding,
+                "reranker_model_list": sample_reranker,
+            }
 
     with patch(
         "kiln_ai.adapters.remote_config.requests.get", return_value=FakeResponse()
@@ -120,14 +153,21 @@ def test_load_from_url(mock_model, mock_embedding_model):
     assert len(remote_config.embedding_model_list) == 1
     assert sample_embedding_model == remote_config.embedding_model_list[0]
 
+    assert len(remote_config.reranker_model_list) == 1
+    assert sample_reranker_model == remote_config.reranker_model_list[0]
 
-def test_load_from_url_calls_deserialize_config_data(mock_model, mock_embedding_model):
+
+def test_load_from_url_calls_deserialize_config_data(
+    mock_model, mock_embedding_model, mock_reranker_model
+):
     """Test that load_from_url calls deserialize_config_data with the model_list from the response."""
     sample_model_data = [mock_model.model_dump(mode="json")]
     sample_embedding_model_data = [mock_embedding_model.model_dump(mode="json")]
+    sample_reranker_model_data = [mock_reranker_model.model_dump(mode="json")]
     response_data = {
         "model_list": sample_model_data,
         "embedding_model_list": sample_embedding_model_data,
+        "reranker_model_list": sample_reranker_model_data,
     }
 
     class FakeResponse:
@@ -148,6 +188,7 @@ def test_load_from_url_calls_deserialize_config_data(mock_model, mock_embedding_
         mock_deserialize.return_value = KilnRemoteConfig(
             model_list=[mock_model],
             embedding_model_list=[mock_embedding_model],
+            reranker_model_list=[mock_reranker_model],
         )
 
         result = load_from_url("http://example.com/models.json")
@@ -161,6 +202,66 @@ def test_load_from_url_calls_deserialize_config_data(mock_model, mock_embedding_
         # Verify the result is what deserialize_config_data returned
         assert result.model_list == [mock_model]
         assert result.embedding_model_list == [mock_embedding_model]
+        assert result.reranker_model_list == [mock_reranker_model]
+
+
+def test_deserialize_config_reranker_models(tmp_path, mock_reranker_model):
+    reranker_dict = mock_reranker_model.model_dump(mode="json")
+    reranker_dict["future_field"] = "ignored"
+    reranker_dict["providers"][0]["extra_field"] = "ignored"
+
+    data = {
+        "model_list": [],
+        "embedding_model_list": [],
+        "reranker_model_list": [reranker_dict],
+    }
+    path = tmp_path / "rerankers.json"
+    path.write_text(json.dumps(data))
+
+    remote_config = deserialize_config_at_path(path)
+
+    assert len(remote_config.reranker_model_list) == 1
+    reranker = remote_config.reranker_model_list[0]
+    assert reranker.name == mock_reranker_model.name
+    assert len(reranker.providers) == 1
+    assert reranker.providers[0].name == mock_reranker_model.providers[0].name
+    assert not hasattr(reranker, "future_field")
+    assert not hasattr(reranker.providers[0], "extra_field")
+
+
+def test_deserialize_config_with_invalid_reranker_providers(
+    tmp_path, caplog, mock_reranker_model
+):
+    reranker_dict = mock_reranker_model.model_dump(mode="json")
+    valid_provider = reranker_dict["providers"][0].copy()
+    invalid_provider = valid_provider.copy()
+    invalid_provider["name"] = "unknown-provider"
+    reranker_dict["providers"] = [invalid_provider, valid_provider]
+
+    data = {
+        "model_list": [],
+        "embedding_model_list": [],
+        "reranker_model_list": [reranker_dict],
+    }
+
+    path = tmp_path / "invalid_rerankers.json"
+    path.write_text(json.dumps(data))
+
+    with caplog.at_level(logging.WARNING):
+        remote_config = deserialize_config_at_path(path)
+
+    assert len(remote_config.reranker_model_list) == 1
+    providers = remote_config.reranker_model_list[0].providers
+    assert len(providers) == 1
+    assert providers[0].name.value == valid_provider["name"]
+
+    reranker_warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "Failed to validate a reranker model provider" in record.message
+    ]
+    assert len(reranker_warnings) == 1
 
 
 def test_dump_builtin_config(tmp_path):
@@ -173,18 +274,23 @@ def test_dump_builtin_config(tmp_path):
     assert [m.model_dump(mode="json") for m in loaded.embedding_model_list] == [
         m.model_dump(mode="json") for m in built_in_embedding_models
     ]
+    assert [m.model_dump(mode="json") for m in loaded.reranker_model_list] == [
+        m.model_dump(mode="json") for m in built_in_rerankers
+    ]
 
 
 async def test_load_remote_models_success(
-    monkeypatch, mock_model, mock_embedding_model
+    monkeypatch, mock_model, mock_embedding_model, mock_reranker_model
 ):
     del os.environ["KILN_SKIP_REMOTE_MODEL_LIST"]
     sample_models = [mock_model]
     sample_embedding_models = [mock_embedding_model]
+    sample_reranker_models = [mock_reranker_model]
 
     # Save original state to restore later
     original_models = built_in_models.copy()
     original_embedding = built_in_embedding_models.copy()
+    original_rerankers = built_in_rerankers.copy()
 
     try:
         # Mock the load_from_url function to return our test data
@@ -192,6 +298,7 @@ async def test_load_remote_models_success(
             return KilnRemoteConfig(
                 model_list=sample_models,
                 embedding_model_list=sample_embedding_models,
+                reranker_model_list=sample_reranker_models,
             )
 
         # Mock the function call
@@ -208,10 +315,12 @@ async def test_load_remote_models_success(
             # Verify the global state was modified as expected
             assert built_in_models == sample_models
             assert built_in_embedding_models == sample_embedding_models
+            assert built_in_rerankers == sample_reranker_models
     finally:
         # Restore original state to prevent test pollution
         built_in_models[:] = original_models
         built_in_embedding_models[:] = original_embedding
+        built_in_rerankers[:] = original_rerankers
 
 
 @pytest.mark.asyncio
@@ -221,6 +330,7 @@ async def test_load_remote_models_failure(monkeypatch):
 
     original_models = built_in_models.copy()
     original_embedding = built_in_embedding_models.copy()
+    original_rerankers = built_in_rerankers.copy()
 
     def fake_fetch(url):
         raise RuntimeError("fail")
@@ -231,12 +341,13 @@ async def test_load_remote_models_failure(monkeypatch):
         load_remote_models("http://example.com/models.json")
         assert built_in_models == original_models
         assert built_in_embedding_models == original_embedding
+        assert built_in_rerankers == original_rerankers
 
         # assert that logger.warning was called
         mock_logger.warning.assert_called_once()
 
 
-def test_deserialize_config_with_extra_keys(tmp_path, mock_model):
+def test_deserialize_config_with_extra_keys(tmp_path, mock_model, mock_reranker_model):
     # Take a valid model and add an extra key, ensure it is ignored and still loads
     model_dict = mock_model.model_dump(mode="json")
     model_dict["extra_key"] = "should be ignored or error"
@@ -246,7 +357,15 @@ def test_deserialize_config_with_extra_keys(tmp_path, mock_model):
     embedding_model_dict["extra_key"] = "should be ignored or error"
     embedding_model_dict["providers"][0]["extra_key"] = "should be ignored or error"
 
-    data = {"model_list": [model_dict], "embedding_model_list": [embedding_model_dict]}
+    reranker_model_dict = mock_reranker_model.model_dump(mode="json")
+    reranker_model_dict["extra_key"] = "should be ignored or error"
+    reranker_model_dict["providers"][0]["extra_key"] = "should be ignored or error"
+
+    data = {
+        "model_list": [model_dict],
+        "embedding_model_list": [embedding_model_dict],
+        "reranker_model_list": [reranker_model_dict],
+    }
     path = tmp_path / "extra.json"
     path.write_text(json.dumps(data))
     # Should NOT raise, and extra key should be ignored
@@ -259,6 +378,10 @@ def test_deserialize_config_with_extra_keys(tmp_path, mock_model):
     assert not hasattr(models.embedding_model_list[0], "extra_key")
     assert hasattr(models.embedding_model_list[0], "providers")
     assert not hasattr(models.embedding_model_list[0].providers[0], "extra_key")
+    assert hasattr(models.reranker_model_list[0], "family")
+    assert not hasattr(models.reranker_model_list[0], "extra_key")
+    assert hasattr(models.reranker_model_list[0], "providers")
+    assert not hasattr(models.reranker_model_list[0].providers[0], "extra_key")
 
 
 def test_multimodal_fields_specified(tmp_path):
@@ -281,7 +404,11 @@ def test_multimodal_fields_specified(tmp_path):
         ],
     ).model_dump(mode="json")
 
-    data = {"model_list": [model_dict], "embedding_model_list": []}
+    data = {
+        "model_list": [model_dict],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
+    }
     path = tmp_path / "extra.json"
     path.write_text(json.dumps(data))
     models = deserialize_config_at_path(path)
@@ -316,7 +443,11 @@ def test_multimodal_fields_mime_type_forward_compat(tmp_path):
         ],
     ).model_dump(mode="json")
 
-    data = {"model_list": [model_dict], "embedding_model_list": []}
+    data = {
+        "model_list": [model_dict],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
+    }
     path = tmp_path / "extra.json"
     path.write_text(json.dumps(data))
     models = deserialize_config_at_path(path)
@@ -360,7 +491,11 @@ def test_multimodal_fields_not_specified(tmp_path):
         ],
     ).model_dump(mode="json")
 
-    data = {"model_list": [model_dict], "embedding_model_list": [embedding_model_dict]}
+    data = {
+        "model_list": [model_dict],
+        "embedding_model_list": [embedding_model_dict],
+        "reranker_model_list": [],
+    }
     path = tmp_path / "extra.json"
     path.write_text(json.dumps(data))
     remote_config = deserialize_config_at_path(path)
@@ -451,7 +586,9 @@ def test_deserialize_config_with_invalid_models(tmp_path, caplog, mock_model):
             valid_model_invalid_provider,  # Should be kept with empty providers
             valid_model_mixed_providers,  # Should be kept with 1 valid provider
             valid_model_all_invalid_providers,  # Should be kept with empty providers
-        ]
+        ],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
     }
     path = tmp_path / "mixed_models.json"
     path.write_text(json.dumps(data))
@@ -601,6 +738,7 @@ def test_deserialize_config_with_invalid_embedding_models(
             valid_embedding_model_mixed_providers,  # Should be kept with 1 valid provider
             valid_embedding_model_all_invalid_providers,  # Should be kept with empty providers
         ],
+        "reranker_model_list": [],
     }
     path = tmp_path / "mixed_embedding_models.json"
     path.write_text(json.dumps(data))
@@ -680,17 +818,20 @@ def test_deserialize_config_with_invalid_embedding_models(
 
 
 def test_deserialize_config_empty_provider_list(
-    tmp_path, mock_model, mock_embedding_model
+    tmp_path, mock_model, mock_embedding_model, mock_reranker_model
 ):
     """Test that models with empty provider lists are handled correctly."""
     model_with_empty_providers = mock_model.model_dump(mode="json")
     model_with_empty_providers["providers"] = []
     embedding_model_with_empty_providers = mock_embedding_model.model_dump(mode="json")
     embedding_model_with_empty_providers["providers"] = []
+    reranker_model_with_empty_providers = mock_reranker_model.model_dump(mode="json")
+    reranker_model_with_empty_providers["providers"] = []
 
     data = {
         "model_list": [model_with_empty_providers],
         "embedding_model_list": [embedding_model_with_empty_providers],
+        "reranker_model_list": [reranker_model_with_empty_providers],
     }
     path = tmp_path / "empty_providers.json"
     path.write_text(json.dumps(data))
@@ -704,9 +845,13 @@ def test_deserialize_config_empty_provider_list(
     assert len(embedding_models) == 1
     assert len(embedding_models[0].providers) == 0
 
+    reranker_models = remote_config.reranker_model_list
+    assert len(reranker_models) == 1
+    assert len(reranker_models[0].providers) == 0
+
 
 def test_deserialize_config_missing_provider_field(
-    tmp_path, caplog, mock_model, mock_embedding_model
+    tmp_path, caplog, mock_model, mock_embedding_model, mock_reranker_model
 ):
     """Test that models missing the providers field are handled correctly."""
     model_without_providers = mock_model.model_dump(mode="json")
@@ -715,9 +860,13 @@ def test_deserialize_config_missing_provider_field(
     embedding_model_without_providers = mock_embedding_model.model_dump(mode="json")
     del embedding_model_without_providers["providers"]
 
+    reranker_model_without_providers = mock_reranker_model.model_dump(mode="json")
+    del reranker_model_without_providers["providers"]
+
     data = {
         "model_list": [model_without_providers],
         "embedding_model_list": [embedding_model_without_providers],
+        "reranker_model_list": [reranker_model_without_providers],
     }
     path = tmp_path / "no_providers.json"
     path.write_text(json.dumps(data))
@@ -728,6 +877,8 @@ def test_deserialize_config_missing_provider_field(
     models = remote_config.model_list
 
     embedding_models = remote_config.embedding_model_list
+
+    reranker_models = remote_config.reranker_model_list
 
     # Model should be kept with empty providers (deserialize_config handles missing providers gracefully)
     assert len(models) == 1
@@ -750,9 +901,19 @@ def test_deserialize_config_missing_provider_field(
     ]
     assert len(warning_logs) == 0
 
+    assert len(reranker_models) == 1
+    assert len(reranker_models[0].providers) == 0
+    assert reranker_models[0].name == mock_reranker_model.name
+
+    # Should not have any warnings since the function handles missing providers gracefully
+    warning_logs = [
+        record for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert len(warning_logs) == 0
+
 
 def test_deserialize_config_provider_with_extra_fields(
-    tmp_path, mock_model, mock_embedding_model
+    tmp_path, mock_model, mock_embedding_model, mock_reranker_model
 ):
     """Test that providers with extra unknown fields are handled gracefully."""
     model_with_extra_provider_fields = mock_model.model_dump(mode="json")
@@ -773,9 +934,20 @@ def test_deserialize_config_provider_with_extra_fields(
         "nested": "data"
     }
 
+    reranker_model_with_extra_provider_fields = mock_reranker_model.model_dump(
+        mode="json"
+    )
+    reranker_model_with_extra_provider_fields["providers"][0]["unknown_field"] = (
+        "should_be_ignored"
+    )
+    reranker_model_with_extra_provider_fields["providers"][0]["another_extra"] = {
+        "nested": "data"
+    }
+
     data = {
         "model_list": [model_with_extra_provider_fields],
         "embedding_model_list": [embedding_model_with_extra_provider_fields],
+        "reranker_model_list": [reranker_model_with_extra_provider_fields],
     }
     path = tmp_path / "extra_provider_fields.json"
     path.write_text(json.dumps(data))
@@ -783,6 +955,7 @@ def test_deserialize_config_provider_with_extra_fields(
     remote_config = deserialize_config_at_path(path)
     models = remote_config.model_list
     embedding_models = remote_config.embedding_model_list
+    reranker_models = remote_config.reranker_model_list
 
     assert len(models) == 1
     assert len(models[0].providers) == 3  # mock_model has 3 providers
@@ -798,9 +971,15 @@ def test_deserialize_config_provider_with_extra_fields(
     assert not hasattr(embedding_models[0].providers[0], "unknown_field")
     assert not hasattr(embedding_models[0].providers[0], "another_extra")
 
+    assert len(reranker_models) == 1
+    assert len(reranker_models[0].providers) == 1  # mock_reranker_model has 1 provider
+    # Extra fields should be ignored, not present in the final object
+    assert not hasattr(reranker_models[0].providers[0], "unknown_field")
+    assert not hasattr(reranker_models[0].providers[0], "another_extra")
+
 
 def test_deserialize_config_model_with_extra_fields(
-    tmp_path, mock_model, mock_embedding_model
+    tmp_path, mock_model, mock_embedding_model, mock_reranker_model
 ):
     """Test that models with extra unknown fields are handled gracefully."""
     model_with_extra_fields = mock_model.model_dump(mode="json")
@@ -811,9 +990,14 @@ def test_deserialize_config_model_with_extra_fields(
     embedding_model_with_extra_fields["future_field"] = "should_be_ignored"
     embedding_model_with_extra_fields["complex_extra"] = {"nested": {"data": [1, 2, 3]}}
 
+    reranker_model_with_extra_fields = mock_reranker_model.model_dump(mode="json")
+    reranker_model_with_extra_fields["future_field"] = "should_be_ignored"
+    reranker_model_with_extra_fields["complex_extra"] = {"nested": {"data": [1, 2, 3]}}
+
     data = {
         "model_list": [model_with_extra_fields],
         "embedding_model_list": [embedding_model_with_extra_fields],
+        "reranker_model_list": [reranker_model_with_extra_fields],
     }
     path = tmp_path / "extra_model_fields.json"
     path.write_text(json.dumps(data))
@@ -821,6 +1005,7 @@ def test_deserialize_config_model_with_extra_fields(
     remote_config = deserialize_config_at_path(path)
     models = remote_config.model_list
     embedding_models = remote_config.embedding_model_list
+    reranker_models = remote_config.reranker_model_list
 
     assert len(models) == 1
     assert models[0].name == mock_model.name
@@ -834,9 +1019,15 @@ def test_deserialize_config_model_with_extra_fields(
     assert not hasattr(embedding_models[0], "future_field")
     assert not hasattr(embedding_models[0], "complex_extra")
 
+    assert len(reranker_models) == 1
+    assert reranker_models[0].name == mock_reranker_model.name
+    # Extra fields should be ignored, not present in the final object
+    assert not hasattr(reranker_models[0], "future_field")
+    assert not hasattr(reranker_models[0], "complex_extra")
+
 
 def test_deserialize_config_mixed_valid_invalid_providers_single_model(
-    tmp_path, caplog, mock_model, mock_embedding_model
+    tmp_path, caplog, mock_model, mock_embedding_model, mock_reranker_model
 ):
     """Test a single model with a mix of valid and invalid providers in detail."""
     model = mock_model.model_dump(mode="json")
@@ -892,7 +1083,40 @@ def test_deserialize_config_mixed_valid_invalid_providers_single_model(
         invalid_embedding_provider_wrong_type,
     ]
 
-    data = {"model_list": [model], "embedding_model_list": [embedding_model]}
+    # Create reranker model with mixed valid/invalid providers
+    reranker_model = mock_reranker_model.model_dump(mode="json")
+
+    # Create a mix of reranker provider scenarios
+    valid_reranker_provider_1 = reranker_model["providers"][0].copy()
+    valid_reranker_provider_1["name"] = "together_ai"
+
+    valid_reranker_provider_2 = reranker_model["providers"][0].copy()
+    valid_reranker_provider_2["name"] = "openai"
+
+    invalid_reranker_provider_unknown_name = reranker_model["providers"][0].copy()
+    invalid_reranker_provider_unknown_name["name"] = "nonexistent_reranker_provider"
+
+    invalid_reranker_provider_missing_name = reranker_model["providers"][0].copy()
+    del invalid_reranker_provider_missing_name["name"]
+
+    invalid_reranker_provider_wrong_type = reranker_model["providers"][0].copy()
+    invalid_reranker_provider_wrong_type["model_id"] = (
+        None  # model_id should be a string
+    )
+
+    reranker_model["providers"] = [
+        valid_reranker_provider_1,
+        invalid_reranker_provider_unknown_name,
+        valid_reranker_provider_2,
+        invalid_reranker_provider_missing_name,
+        invalid_reranker_provider_wrong_type,
+    ]
+
+    data = {
+        "model_list": [model],
+        "embedding_model_list": [embedding_model],
+        "reranker_model_list": [reranker_model],
+    }
     path = tmp_path / "mixed_providers_single.json"
     path.write_text(json.dumps(data))
 
@@ -901,6 +1125,7 @@ def test_deserialize_config_mixed_valid_invalid_providers_single_model(
 
     models = remote_config.model_list
     embedding_models = remote_config.embedding_model_list
+    reranker_models = remote_config.reranker_model_list
 
     # Should have 1 model with 2 valid providers
     assert len(models) == 1
@@ -914,7 +1139,13 @@ def test_deserialize_config_mixed_valid_invalid_providers_single_model(
     assert embedding_models[0].providers[0].name.value == "openai"
     assert embedding_models[0].providers[1].name.value == "azure_openai"
 
-    # Should have logged 3 model provider validation warnings + 3 embedding model provider validation warnings = 6 total
+    # Should have 1 reranker model with 2 valid providers
+    assert len(reranker_models) == 1
+    assert len(reranker_models[0].providers) == 2
+    assert reranker_models[0].providers[0].name.value == "together_ai"
+    assert reranker_models[0].providers[1].name.value == "openai"
+
+    # Should have logged 3 model provider validation warnings + 3 embedding model provider validation warnings + 3 reranker model provider validation warnings = 9 total
     model_provider_warnings = [
         log
         for log in caplog.records
@@ -927,22 +1158,35 @@ def test_deserialize_config_mixed_valid_invalid_providers_single_model(
         if log.levelno == logging.WARNING
         and "Failed to validate an embedding model provider" in log.message
     ]
+    reranker_provider_warnings = [
+        log
+        for log in caplog.records
+        if log.levelno == logging.WARNING
+        and "Failed to validate a reranker model provider" in log.message
+    ]
     assert len(model_provider_warnings) == 3
     assert len(embedding_provider_warnings) == 3
+    assert len(reranker_provider_warnings) == 3
 
 
 def test_deserialize_config_empty_json_structures(tmp_path):
     """Test various empty JSON structures."""
     # Test empty model_list
-    data = {"model_list": [], "embedding_model_list": []}
+    data = {
+        "model_list": [],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
+    }
     path = tmp_path / "empty_model_list.json"
     path.write_text(json.dumps(data))
     remote_config = deserialize_config_at_path(path)
     models = remote_config.model_list
     embedding_models = remote_config.embedding_model_list
+    reranker_models = remote_config.reranker_model_list
 
     assert len(models) == 0
     assert len(embedding_models) == 0
+    assert len(reranker_models) == 0
 
     # Test empty object with no model_list key
     path = tmp_path / "empty_object.json"
@@ -975,7 +1219,12 @@ def test_backwards_compatibility_with_v0_19(tmp_path):
 
     # Create JSON with current version
     current_json_path = tmp_path / "current_models.json"
-    serialize_config(built_in_models, built_in_embedding_models, current_json_path)
+    serialize_config(
+        built_in_models,
+        built_in_embedding_models,
+        built_in_rerankers,
+        current_json_path,
+    )
 
     # Test script using uv inline script metadata to install v0.19
     test_script = f'''# /// script

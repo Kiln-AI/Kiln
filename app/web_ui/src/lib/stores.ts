@@ -1,6 +1,11 @@
 import { writable, get } from "svelte/store"
 import { dev } from "$app/environment"
 import type {
+  ModelProviderName,
+  RerankerModelDetails,
+  RerankerProvider,
+} from "$lib/types"
+import type {
   Project,
   Task,
   AvailableModels,
@@ -18,6 +23,7 @@ import { client } from "./api_client"
 import { createKilnError } from "$lib/utils/error_handlers"
 import type { Writable } from "svelte/store"
 import type { ProviderModel } from "./types"
+import { localStorageStore } from "./stores/local_storage_store"
 
 export type TaskCompositeId = string & { __brand: "TaskCompositeId" }
 
@@ -129,35 +135,6 @@ export async function load_projects() {
     }
     projects.set(all_projects)
   }
-}
-
-// Custom function to create a localStorage-backed store
-export function localStorageStore<T>(key: string, initialValue: T) {
-  // Check if localStorage is available
-  const isBrowser = typeof window !== "undefined" && window.localStorage
-
-  // Get stored value from localStorage or use initial value
-  const storedValue = isBrowser
-    ? JSON.parse(localStorage.getItem(key) || "null")
-    : null
-  const store = writable(storedValue !== null ? storedValue : initialValue)
-
-  if (isBrowser) {
-    // Subscribe to changes and update localStorage
-    store.subscribe((value) => {
-      const stringified = JSON.stringify(value)
-      // 1MB is a reasonable limit. Most browsers have a 5MB limit total for localStorage.
-      if (stringified.length > 1 * 1024 * 1024) {
-        console.error(
-          "Skipping localStorage save for " + key + " as it's too large (>1MB)",
-        )
-      } else {
-        localStorage.setItem(key, stringified)
-      }
-    })
-  }
-
-  return store
 }
 
 export async function load_task(
@@ -274,15 +251,20 @@ export async function load_available_tools(
 
 // Available models for each provider
 export const available_models = writable<AvailableModels[]>([])
-let available_models_loaded: "not_loaded" | "loading" | "loaded" = "not_loaded"
+let available_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
 
 export async function load_available_models() {
   try {
     if (
       available_models_loaded === "loading" ||
-      available_models_loaded === "loaded"
+      available_models_loaded === "loaded" ||
+      available_models_loaded === "error_loading"
     ) {
-      // Block parallel requests or if already loaded
+      // Block parallel requests or if already loaded or errored
       return
     }
     available_models_loaded = "loading"
@@ -295,20 +277,24 @@ export async function load_available_models() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     available_models.set([])
-    available_models_loaded = "not_loaded"
+    available_models_loaded = "error_loading"
   }
 }
 
 // Available embedding models for each provider
 export const available_embedding_models = writable<EmbeddingProvider[]>([])
-let available_embedding_models_loaded: "not_loaded" | "loading" | "loaded" =
-  "not_loaded"
+let available_embedding_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
 
 export async function load_available_embedding_models() {
   try {
     if (
       available_embedding_models_loaded === "loading" ||
-      available_embedding_models_loaded === "loaded"
+      available_embedding_models_loaded === "loaded" ||
+      available_embedding_models_loaded === "error_loading"
     ) {
       return
     }
@@ -322,7 +308,38 @@ export async function load_available_embedding_models() {
   } catch (error: unknown) {
     console.error(createKilnError(error).getMessage())
     available_embedding_models.set([])
-    available_embedding_models_loaded = "not_loaded"
+    available_embedding_models_loaded = "error_loading"
+  }
+}
+
+// Available reranker models for each provider
+export const available_reranker_models = writable<RerankerProvider[]>([])
+let available_reranker_models_loaded:
+  | "not_loaded"
+  | "loading"
+  | "loaded"
+  | "error_loading" = "not_loaded"
+
+export async function load_available_reranker_models() {
+  try {
+    if (
+      available_reranker_models_loaded === "loading" ||
+      available_reranker_models_loaded === "loaded" ||
+      available_reranker_models_loaded === "error_loading"
+    ) {
+      return
+    }
+    available_reranker_models_loaded = "loading"
+    const { data, error } = await client.GET("/api/available_reranker_models")
+    if (error) {
+      throw error
+    }
+    available_reranker_models.set(data)
+    available_reranker_models_loaded = "loaded"
+  } catch (error: unknown) {
+    console.error(createKilnError(error).getMessage())
+    available_reranker_models.set([])
+    available_reranker_models_loaded = "error_loading"
   }
 }
 
@@ -425,6 +442,27 @@ export function get_embedding_model_info(
   return null
 }
 
+export function get_reranker_model_info(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): RerankerModelDetails | null {
+  if (!model_id) {
+    return null
+  }
+
+  for (const provider of get(available_reranker_models)) {
+    if (provider.provider_id === provider_id) {
+      const models = provider.models || []
+      for (const model of models) {
+        if (model.id === model_id) {
+          return model
+        }
+      }
+    }
+  }
+  return null
+}
+
 export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
@@ -454,6 +492,20 @@ export function embedding_model_name(
   return "Model ID: " + model_id
 }
 
+export function reranker_name(
+  model_id: string | number | undefined,
+  provider_id: string | null,
+): string {
+  if (!model_id) {
+    return "Unknown"
+  }
+  const model = get_reranker_model_info(model_id, provider_id)
+  if (model?.name) {
+    return model.name
+  }
+  return "Model ID: " + model_id
+}
+
 export function vector_store_name(store_type: VectorStoreType | null): string {
   if (!store_type) {
     return "Unknown"
@@ -470,14 +522,46 @@ export function vector_store_name(store_type: VectorStoreType | null): string {
   }
 }
 
+// Friendly names for model providers.
+// Prefer the ones from the server if available, but can fall back to these
+const provider_name_map: Record<ModelProviderName, string> = {
+  openai: "OpenAI",
+  groq: "Groq",
+  amazon_bedrock: "Amazon Bedrock",
+  ollama: "Ollama",
+  openrouter: "OpenRouter",
+  fireworks_ai: "Fireworks AI",
+  kiln_fine_tune: "Kiln Fine Tune",
+  kiln_custom_registry: "Custom Registry",
+  openai_compatible: "OpenAI Compatible",
+  anthropic: "Anthropic",
+  gemini_api: "Gemini API",
+  azure_openai: "Azure OpenAI",
+  huggingface: "Hugging Face",
+  vertex: "Google Vertex AI",
+  together_ai: "Together AI",
+  siliconflow_cn: "SiliconFlow CN",
+  cerebras: "Cerebras",
+  docker_model_runner: "Docker Model Runner",
+}
+
 export function provider_name_from_id(provider_id: string): string {
   if (!provider_id) {
     return "Unknown"
   }
+  // Prefer the provider name from the available models list
   const provider = get(available_models).find(
     (provider) => provider.provider_id === provider_id,
   )
-  return provider?.provider_name || provider_id
+  if (provider?.provider_name) {
+    return provider?.provider_name
+  }
+  // Fallback to the provider name map
+  if (provider_id in provider_name_map) {
+    return provider_name_map[provider_id as ModelProviderName]
+  }
+  // Fallback to the provider ID
+  return provider_id
 }
 
 export function prompt_name_from_id(

@@ -27,6 +27,12 @@ export function get_splits_from_url_param(splitsParam: string | null) {
   }
 }
 
+export function encode_splits_for_url(splits: Record<string, number>) {
+  return Object.entries(splits)
+    .map(([name, value]) => `${name}:${value}`)
+    .join(",")
+}
+
 export function get_splits_subtitle(splits: Record<string, number>) {
   if (Object.keys(splits).length === 0) return undefined
   return `Added data will be assigned the following tags: ${Object.entries(

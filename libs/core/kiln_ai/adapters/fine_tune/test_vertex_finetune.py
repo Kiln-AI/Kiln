@@ -276,7 +276,7 @@ async def test_generate_and_upload_jsonl(
     )
 
     mock_path = Path("mock_path.jsonl")
-    expected_uri = "gs://kiln-ai-data/1234567890/mock_path.jsonl"
+    expected_uri = "gs://kiln-ai-data-test-project/1234567890/mock_path.jsonl"
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
@@ -284,7 +284,7 @@ async def test_generate_and_upload_jsonl(
 
     # Mock storage client and bucket operations
     mock_bucket = MagicMock()
-    mock_bucket.name = "kiln-ai-data"
+    mock_bucket.name = "kiln-ai-data-test-project"
 
     mock_blob = MagicMock()
     mock_blob.name = f"1234567890/{mock_path.name}"
@@ -323,7 +323,7 @@ async def test_generate_and_upload_jsonl(
         )
 
         # Verify storage client was created with correct parameters
-        mock_storage_client.bucket.assert_called_once_with("kiln-ai-data")
+        mock_storage_client.bucket.assert_called_once_with("kiln-ai-data-test-project")
 
         # Verify blob was created and uploaded
         mock_bucket.blob.assert_called_once_with(f"1234567890/{mock_path.name}")
@@ -337,7 +337,7 @@ async def test_generate_and_upload_jsonl_create_bucket(
     vertex_finetune, mock_dataset, mock_task
 ):
     mock_path = Path("mock_path.jsonl")
-    expected_uri = "gs://kiln-ai-data/1234567890/mock_path.jsonl"
+    expected_uri = "gs://kiln-ai-data-test-project/1234567890/mock_path.jsonl"
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
@@ -345,7 +345,7 @@ async def test_generate_and_upload_jsonl_create_bucket(
 
     # Mock storage client and bucket operations - bucket doesn't exist
     mock_bucket = MagicMock()
-    mock_bucket.name = "kiln-ai-data"
+    mock_bucket.name = "kiln-ai-data-test-project"
 
     mock_blob = MagicMock()
     mock_blob.name = f"1234567890/{mock_path.name}"
@@ -380,7 +380,7 @@ async def test_generate_and_upload_jsonl_create_bucket(
 
         # Verify bucket was created
         mock_storage_client.create_bucket.assert_called_once_with(
-            "kiln-ai-data", location="us-central1"
+            "kiln-ai-data-test-project", location="us-central1"
         )
 
         # Verify blob was created and uploaded
@@ -424,8 +424,8 @@ async def test_start_success(
     mock_sft_job = MagicMock()
     mock_sft_job.resource_name = "vertex-ft-123"
 
-    train_file_uri = "gs://kiln-ai-data/train.jsonl"
-    validation_file_uri = "gs://kiln-ai-data/validation.jsonl"
+    train_file_uri = "gs://kiln-ai-data-test-project/train.jsonl"
+    validation_file_uri = "gs://kiln-ai-data-test-project/validation.jsonl"
 
     with (
         patch.object(
@@ -491,8 +491,8 @@ async def test_start_with_validation(vertex_finetune, mock_dataset, mock_task):
     mock_sft_job = MagicMock()
     mock_sft_job.resource_name = "vertex-ft-123"
 
-    train_file_uri = "gs://kiln-ai-data/train.jsonl"
-    validation_file_uri = "gs://kiln-ai-data/validation.jsonl"
+    train_file_uri = "gs://kiln-ai-data-test-project/train.jsonl"
+    validation_file_uri = "gs://kiln-ai-data-test-project/validation.jsonl"
 
     with (
         patch.object(
@@ -579,3 +579,19 @@ def test_get_vertex_provider_location(project_id, location, should_raise):
             project, loc = VertexFinetune.get_vertex_provider_location()
             assert project == project_id
             assert loc == location
+
+
+@pytest.mark.parametrize(
+    "project_id, expected_bucket_name",
+    [
+        ("my-test-project", "kiln-ai-data-my-test-project"),
+        ("project123", "kiln-ai-data-project123"),
+        ("test-project-456", "kiln-ai-data-test-project-456"),
+    ],
+)
+def test_bucket_name(project_id, expected_bucket_name):
+    with patch.object(Config, "shared") as mock_config:
+        mock_config.return_value.vertex_project_id = project_id
+
+        bucket_name = VertexFinetune._unique_bucket_name()
+        assert bucket_name == expected_bucket_name

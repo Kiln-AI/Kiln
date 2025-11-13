@@ -24,6 +24,7 @@ dev = [
     "python-dotenv>=1.0.1",
     "ruff>=0.13.0",
     "watchfiles>=1.1.0",
+    "scalar-fastapi>=1.4.3",
 ]
 
 [tool.uv]

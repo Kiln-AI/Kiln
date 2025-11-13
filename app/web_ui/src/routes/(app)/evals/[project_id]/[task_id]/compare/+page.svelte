@@ -1,19 +1,12 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import FancySelect from "$lib/ui/fancy_select.svelte"
-  import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type {
-    AvailableModels,
-    PromptResponse,
-    TaskRunConfig,
-  } from "$lib/types"
+  import type { Task, TaskRunConfig } from "$lib/types"
   import type { components } from "$lib/api_schema"
-  import AddRunMethod from "../[eval_id]/compare_run_methods/add_run_method.svelte"
   import RunEval from "../[eval_id]/run_eval.svelte"
 
   type RunConfigEvalScoresSummary =
@@ -22,24 +15,25 @@
   import {
     model_info,
     load_model_info,
-    model_name,
-    provider_name_from_id,
     current_task_prompts,
     load_available_prompts,
     load_available_models,
-    available_models,
     get_task_composite_id,
+    load_task,
   } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
+    getDetailedModelName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -49,8 +43,16 @@
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
 
   // Run configs state
-  let loading = true
-  let error: KilnError | null = null
+  let loading_run_configs = true
+  let loading_run_configs_error: KilnError | null = null
+
+  // Task state
+  let task: Task | null = null
+  let loading_task = true
+  let task_error: KilnError | null = null
+
+  $: loading = loading_run_configs || loading_task
+  $: error = loading_run_configs_error || task_error
 
   // Eval scores cache and state
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
@@ -113,7 +115,9 @@
     urlParams.set("columns", columns.toString())
 
     // Update models (empty string for null values)
-    const modelIds = selectedModels.map((id) => id || "")
+    const modelIds = selectedModels.map((id) =>
+      id && id !== "__create_new_run_config__" ? id : "",
+    )
     urlParams.set("models", modelIds.join(","))
 
     // Use replace to avoid creating new history entries
@@ -127,6 +131,9 @@
   }
 
   onMount(async () => {
+    // Wait for page params to load
+    await tick()
+
     // Initialize basic state from URL first (columns)
     initializeFromURL()
 
@@ -135,6 +142,7 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      get_task(),
     ])
     await get_task_run_configs()
 
@@ -146,13 +154,27 @@
   })
 
   async function get_task_run_configs() {
-    loading = true
+    loading_run_configs = true
     try {
       await load_task_run_configs(project_id, task_id)
     } catch (err) {
-      error = createKilnError(err)
+      loading_run_configs_error = createKilnError(err)
     } finally {
-      loading = false
+      loading_run_configs = false
+    }
+  }
+
+  async function get_task() {
+    loading_task = true
+    try {
+      task = await load_task(project_id, task_id)
+      if (!task) {
+        throw createKilnError("Task not found")
+      }
+    } catch (err) {
+      task_error = createKilnError(err)
+    } finally {
+      loading_task = false
     }
   }
 
@@ -197,6 +219,7 @@
     selectedModels.forEach((modelId) => {
       if (
         modelId &&
+        modelId !== "__create_new_run_config__" &&
         !eval_scores_cache[modelId] &&
         !eval_scores_loading[modelId]
       ) {
@@ -288,76 +311,13 @@
       get_task_composite_id(project_id, task_id)
     ] || null
 
-  $: modelOptions = generateRunConfigOptions(
-    current_task_run_configs,
-    $current_task_prompts,
-    $available_models,
-  )
-
-  function generateRunConfigOptions(
-    configs: TaskRunConfig[] | null,
-    task_prompts: PromptResponse | null,
-    _: AvailableModels[],
-  ): OptionGroup[] {
-    // Default to empty, so we still get default "Add New" option group
-    if (!configs) {
-      configs = []
-    }
-
-    // Group by provider
-    const providerGroups: Record<string, TaskRunConfig[]> = {}
-
-    configs.forEach((config) => {
-      const provider =
-        provider_name_from_id(
-          config.run_config_properties?.model_provider_name,
-        ) || "Unknown Provider"
-      if (!providerGroups[provider]) {
-        providerGroups[provider] = []
-      }
-      providerGroups[provider].push(config)
-    })
-
-    const providerOptions = Object.entries(providerGroups).map(
-      ([provider, configs]) => ({
-        label: provider,
-        options: configs.map((config) => {
-          const modelName =
-            model_name(config.run_config_properties?.model_name, $model_info) ||
-            "Unknown Model"
-          const promptName = getRunConfigPromptDisplayName(config, task_prompts)
-
-          return {
-            label: modelName,
-            value: config.id || "",
-            description: `With the prompt '${promptName}'. Method named '${config.name}'.`,
-          }
-        }),
-      }),
-    )
-
-    // Add "Add New" option group at the first position
-    return [
-      {
-        label: "Add New",
-        options: [
-          {
-            label: "New Run Method",
-            value: "kiln_add_run_config",
-            description: "Compare an additional model and prompt",
-          },
-        ],
-      },
-      ...providerOptions,
-    ]
-  }
-
   let target_new_run_config_col: number | null = null
-  let add_run_method_component: AddRunMethod | null = null
-  $: if (selectedModels.includes("kiln_add_run_config")) {
-    target_new_run_config_col = selectedModels.indexOf("kiln_add_run_config")
-    add_run_method_component?.show()
-    selectedModels = selectedModels.filter((m) => m !== "kiln_add_run_config")
+  let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+  $: if (selectedModels.includes("__create_new_run_config__")) {
+    target_new_run_config_col = selectedModels.indexOf(
+      "__create_new_run_config__",
+    )
+    create_new_run_config_dialog?.show()
   }
 
   function addColumn() {
@@ -510,11 +470,17 @@
 
     return percentDiff >= 0 ? `+${formatted}%` : `${formatted}%`
   }
+
+  function getValidSelectedModels(): string[] {
+    return selectedModels.filter(
+      (m): m is string => m !== null && m !== "__create_new_run_config__",
+    )
+  }
 </script>
 
 <AppPage
-  title="Compare Run Methods"
-  subtitle="Compare run methods for your task using evals"
+  title="Compare Run Configurations"
+  subtitle="Compare run Configurations for your task using evals"
   breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
 >
   {#if loading}
@@ -525,13 +491,13 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Run Methods</div>
+      <div class="font-medium">Error Loading Run Configurations</div>
       <div class="text-error text-sm">
         {error.getMessage() || "An unknown error occurred"}
       </div>
     </div>
   {:else}
-    {@const hasSelectedModels = selectedModels.filter((m) => m !== null)}
+    {@const hasSelectedModels = getValidSelectedModels()}
     {@const allSelectedLoading = hasSelectedModels.every(
       (modelId) =>
         eval_scores_loading[modelId] ||
@@ -585,13 +551,29 @@
             <div class="px-6 py-4 font-semibold text-gray-900"></div>
             {#each Array(columns) as _, i}
               <div class="px-6 py-4 relative min-w-0">
-                <div class="w-full mx-auto">
-                  <FancySelect
-                    options={modelOptions}
-                    bind:selected={selectedModels[i]}
-                    empty_label="Choose a run method..."
-                  />
-                </div>
+                {#if task}
+                  <div class="flex items-center gap-1 xl:flex-row">
+                    {#if columns > 2}
+                      <button
+                        on:click={() => removeColumn(i)}
+                        class="w-6 h-6 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors flex-shrink-0"
+                        title="Remove column"
+                      >
+                        ✕
+                      </button>
+                    {/if}
+                    <div class="flex-1 min-w-0">
+                      <SavedRunConfigurationsDropdown
+                        title=""
+                        {project_id}
+                        current_task={task}
+                        bind:selected_run_config_id={selectedModels[i]}
+                        run_page={false}
+                        auto_select_default={i === 0}
+                      />
+                    </div>
+                  </div>
+                {/if}
 
                 <!-- Show selected model info below dropdown -->
                 {#if selectedModels[i]}
@@ -608,18 +590,16 @@
                     )}
                     <div class="mt-3 text-center">
                       <div class="font-semibold text-gray-900 text-sm">
-                        {model_name(
-                          selectedConfig.run_config_properties?.model_name,
-                          $model_info,
-                        ) || "Unknown Model"}
+                        {getDetailedModelName(selectedConfig, $model_info) ||
+                          "Unknown Model"}
                       </div>
                       <div class="text-xs text-gray-500 font-normal mt-1">
                         {#if prompt_link_url}
-                          <a
+                          Prompt: <a
                             href={prompt_link_url}
                             class="text-gray-500 font-normal link"
                           >
-                            Prompt: {getRunConfigPromptDisplayName(
+                            {getRunConfigPromptDisplayName(
                               selectedConfig,
                               $current_task_prompts,
                             )}
@@ -638,24 +618,8 @@
                           />
                         {/if}
                       </div>
-                      <div>
-                        <div
-                          class="badge bg-gray-200 text-gray-500 whitespace-nowrap text-xs"
-                        >
-                          {selectedConfig.name}
-                        </div>
-                      </div>
                     </div>
                   {/if}
-                {/if}
-                {#if columns > 2}
-                  <button
-                    on:click={() => removeColumn(i)}
-                    class="mt-2 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition-colors mx-auto"
-                    title="Remove column"
-                  >
-                    ×
-                  </button>
                 {/if}
               </div>
             {/each}
@@ -760,7 +724,7 @@
                                       selectedModels[i],
                                       section.eval_id,
                                     )}
-                                    eval_type="run_method"
+                                    eval_type="run_config"
                                     btn_size="xs"
                                     btn_primary={false}
                                     on_run_complete={() => {
@@ -836,11 +800,11 @@
                 />
               </svg>
               <div class="text-lg font-medium text-gray-900 mb-2">
-                Select run methods to compare
+                Select run configurations to compare
               </div>
               <div class="text-gray-500">
-                Choose run methods from the dropdowns above to see a detailed
-                comparison
+                Choose run configurations from the dropdowns above to see a
+                detailed comparison
               </div>
             </div>
           {/if}
@@ -850,17 +814,26 @@
   {/if}
 </AppPage>
 
-<AddRunMethod
-  bind:this={add_run_method_component}
+<CreateNewRunConfigDialog
+  bind:this={create_new_run_config_dialog}
   {project_id}
-  {task_id}
-  run_method_added={(task_run_config) => {
-    if (
-      target_new_run_config_col !== null &&
-      target_new_run_config_col < columns
-    ) {
-      selectedModels[target_new_run_config_col] = task_run_config.id || null
+  {task}
+  new_run_config_created={(run_config) => {
+    if (target_new_run_config_col !== null) {
+      if (target_new_run_config_col < columns) {
+        selectedModels[target_new_run_config_col] = run_config.id || null
+        selectedModels = [...selectedModels] // Trigger reactivity
+      }
+      target_new_run_config_col = null
     }
-    get_task_run_configs()
+  }}
+  on:close={() => {
+    if (target_new_run_config_col !== null) {
+      if (target_new_run_config_col < columns) {
+        selectedModels[target_new_run_config_col] = null
+        selectedModels = [...selectedModels]
+      }
+      target_new_run_config_col = null // Trigger reactivity
+    }
   }}
 />

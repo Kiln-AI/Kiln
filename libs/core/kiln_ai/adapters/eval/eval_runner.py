@@ -1,3 +1,4 @@
+import json
 import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
@@ -5,8 +6,8 @@ from typing import AsyncGenerator, Dict, List, Literal, Set
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
-from kiln_ai.datamodel.eval import EvalConfig, EvalRun, EvalScores
+from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
@@ -78,11 +79,21 @@ class EvalRunner:
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
-            return self.collect_tasks_for_eval_config_eval()
+            if self.eval.eval_configs_filter_id is not None:
+                return self.collect_tasks_for_eval_config_eval(
+                    self.eval.eval_configs_filter_id
+                )
+            else:
+                raise ValueError(
+                    "Eval configs filter ID is required for eval runs of type 'eval_config_eval'"
+                )
+
         else:
             return self.collect_tasks_for_task_run_eval()
 
-    def collect_tasks_for_eval_config_eval(self) -> List[EvalJob]:
+    def collect_tasks_for_eval_config_eval(
+        self, eval_configs_filter_id: DatasetFilterId
+    ) -> List[EvalJob]:
         """
         Collect all jobs for this run, excluding any that have already been run.
 
@@ -92,7 +103,7 @@ class EvalRunner:
         - should be in the eval config set filter
         - should not have already been run for this eval config + dataset item pair
         """
-        filter = dataset_filter_from_id(self.eval.eval_configs_filter_id)
+        filter = dataset_filter_from_id(eval_configs_filter_id)
 
         # already_run[eval_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Set[ID_TYPE]] = {}
@@ -181,6 +192,7 @@ class EvalRunner:
                 raise ValueError("Not able to create evaluator from eval config")
 
             task_output: str | None = None
+            trace: str | None = None
             scores: EvalScores | None = None
             intermediate_outputs: Dict[str, str] | None = None
             task_run_usage: Usage | None = None
@@ -195,9 +207,17 @@ class EvalRunner:
                     result_task_run,
                     scores,
                     intermediate_outputs,
-                ) = await evaluator.run_task_and_eval(job.item.input)
+                ) = await evaluator.run_task_and_eval(job.item)
                 task_output = result_task_run.output.output
                 task_run_usage = result_task_run.usage
+
+                parent_eval = job.eval_config.parent_eval()
+                if (
+                    parent_eval
+                    and parent_eval.evaluation_data_type == EvalDataType.full_trace
+                    and result_task_run.trace
+                ):
+                    trace = json.dumps(result_task_run.trace, indent=2)
 
             # Save the job result
             eval_run = EvalRun(
@@ -211,6 +231,7 @@ class EvalRunner:
                 input=job.item.input,
                 output=task_output,
                 intermediate_outputs=intermediate_outputs,
+                task_run_trace=trace,
                 task_run_usage=task_run_usage,
             )
             eval_run.save_to_file()

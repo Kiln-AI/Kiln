@@ -2,11 +2,12 @@ import {
   string_to_json_key,
   schema_from_model,
   model_from_schema,
-  typed_json_from_schema_model,
 } from "./json_schema_templates"
-import type { SchemaModel, JsonSchema } from "./json_schema_templates"
+import type {
+  JsonSchemaProperty,
+  SchemaModelProperty,
+} from "./json_schema_templates"
 import { describe, it, expect } from "vitest"
-import { KilnError } from "$lib/utils/error_handlers"
 
 describe("string_to_json_key", () => {
   it("converts spaces to underscores", () => {
@@ -47,8 +48,12 @@ describe("string_to_json_key", () => {
 })
 
 describe("schema_from_model", () => {
-  it("converts a simple SchemaModel to JsonSchema", () => {
-    const model: SchemaModel = {
+  it("converts a simple SchemaModelProperty to JsonSchema", () => {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "user_name",
@@ -67,7 +72,7 @@ describe("schema_from_model", () => {
       ],
     }
 
-    const expected: JsonSchema = {
+    const expected: JsonSchemaProperty = {
       type: "object",
       properties: {
         user_name: {
@@ -88,11 +93,15 @@ describe("schema_from_model", () => {
   })
 
   it("handles empty SchemaModel", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [],
     }
 
-    const expected: JsonSchema = {
+    const expected: JsonSchemaProperty = {
       type: "object",
       properties: {},
       required: [],
@@ -102,7 +111,11 @@ describe("schema_from_model", () => {
   })
 
   it("correctly handles required fields", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "field1",
@@ -133,7 +146,11 @@ describe("schema_from_model", () => {
   })
 
   it("correctly converts property titles to names", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "user_name",
@@ -153,14 +170,18 @@ describe("schema_from_model", () => {
     }
 
     const result = schema_from_model(model, true)
-    expect(Object.keys(result.properties)).toEqual([
+    expect(Object.keys(result.properties!)).toEqual([
       "user_name",
       "email_address",
     ])
   })
 
   it("preserves property IDs when creating=false, even if titles change", () => {
-    const model: SchemaModel = {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
       properties: [
         {
           id: "original_id",
@@ -182,22 +203,237 @@ describe("schema_from_model", () => {
     const result = schema_from_model(model, false)
 
     // Check that the property keys match the original IDs, not the new titles
-    expect(Object.keys(result.properties)).toEqual([
+    expect(Object.keys(result.properties!)).toEqual([
       "original_id",
       "another_id",
     ])
 
     // Verify the titles were updated while IDs were preserved
-    expect(result.properties["original_id"].title).toBe("Changed Title")
-    expect(result.properties["another_id"].title).toBe("Another Changed Title")
+    expect(result.properties!["original_id"].title).toBe("Changed Title")
+    expect(result.properties!["another_id"].title).toBe("Another Changed Title")
     expect(result.required).toEqual(["original_id"])
+  })
+
+  it("converts nested object properties to schema correctly", () => {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
+      properties: [
+        {
+          id: "user",
+          title: "User",
+          description: "User information",
+          type: "object",
+          required: true,
+          additionalProperties: false,
+          properties: [
+            {
+              id: "name",
+              title: "Name",
+              description: "User's name",
+              type: "string",
+              required: true,
+            },
+            {
+              id: "age",
+              title: "Age",
+              description: "User's age",
+              type: "integer",
+              required: false,
+            },
+          ],
+        },
+      ],
+    }
+
+    const result = schema_from_model(model, false)
+
+    expect(result.properties!["user"]).toBeDefined()
+    expect(result.properties!["user"].type).toBe("object")
+    expect(result.properties!["user"].properties).toBeDefined()
+    expect(result.properties!["user"].additionalProperties).toBe(false)
+
+    const userProps = result.properties!["user"].properties!
+    expect(Object.keys(userProps)).toEqual(["name", "age"])
+    expect(userProps["name"].title).toBe("Name")
+    expect(userProps["name"].type).toBe("string")
+    expect(userProps["age"].title).toBe("Age")
+    expect(userProps["age"].type).toBe("integer")
+
+    expect(result.properties!["user"].required).toEqual(["name"])
+    expect(result.required).toEqual(["user"])
+  })
+
+  it("handles multiple levels of nesting when converting to schema", () => {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
+      properties: [
+        {
+          id: "company",
+          title: "Company",
+          description: "Company information",
+          type: "object",
+          required: false,
+          properties: [
+            {
+              id: "name",
+              title: "Company Name",
+              description: "Name of the company",
+              type: "string",
+              required: true,
+            },
+            {
+              id: "address",
+              title: "Address",
+              description: "Company address",
+              type: "object",
+              required: true,
+              properties: [
+                {
+                  id: "street",
+                  title: "Street",
+                  description: "Street address",
+                  type: "string",
+                  required: false,
+                },
+                {
+                  id: "city",
+                  title: "City",
+                  description: "City name",
+                  type: "string",
+                  required: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    const result = schema_from_model(model, false)
+
+    expect(result.properties!["company"]).toBeDefined()
+    expect(result.properties!["company"].type).toBe("object")
+
+    const companyProps = result.properties!["company"].properties!
+    expect(companyProps["address"]).toBeDefined()
+    expect(companyProps["address"].type).toBe("object")
+
+    const addressProps = companyProps["address"].properties!
+    expect(Object.keys(addressProps)).toEqual(["street", "city"])
+    expect(addressProps["city"].title).toBe("City")
+    expect(addressProps["street"].title).toBe("Street")
+
+    expect(companyProps["address"].required).toEqual(["city"])
+    expect(result.properties!["company"].required).toEqual(["name", "address"])
+  })
+
+  it("preserves additionalProperties in nested objects", () => {
+    const model: SchemaModelProperty = {
+      type: "object",
+      id: "root",
+      title: "root",
+      required: true,
+      properties: [
+        {
+          id: "config",
+          title: "Config",
+          description: "Configuration object",
+          type: "object",
+          required: true,
+          additionalProperties: true,
+          properties: [
+            {
+              id: "nested",
+              title: "Nested Config",
+              description: "Nested configuration",
+              type: "object",
+              required: false,
+              additionalProperties: false,
+              properties: [
+                {
+                  id: "value",
+                  title: "Value",
+                  description: "A value",
+                  type: "string",
+                  required: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      additionalProperties: false,
+    }
+
+    const result = schema_from_model(model, false)
+
+    expect(result.additionalProperties).toBe(false)
+    expect(result.properties!["config"].additionalProperties).toBe(true)
+    expect(
+      result.properties!["config"].properties!["nested"].additionalProperties,
+    ).toBe(false)
+  })
+
+  it("round-trip conversion preserves nested structure", () => {
+    const originalSchema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        person: {
+          title: "Person",
+          description: "Person information",
+          type: "object",
+          properties: {
+            name: {
+              title: "Name",
+              description: "Person's name",
+              type: "string",
+            },
+            contact: {
+              title: "Contact",
+              description: "Contact information",
+              type: "object",
+              properties: {
+                email: {
+                  title: "Email",
+                  description: "Email address",
+                  type: "string",
+                },
+                phone: {
+                  title: "Phone",
+                  description: "Phone number",
+                  type: "string",
+                },
+              },
+              required: ["email"],
+              additionalProperties: false,
+            },
+          },
+          required: ["name", "contact"],
+          additionalProperties: true,
+        },
+      },
+      required: ["person"],
+      additionalProperties: false,
+    }
+
+    const model = model_from_schema(originalSchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(originalSchema)
   })
 })
 
 describe("model_from_schema", () => {
   it("converts a simple JsonSchema to SchemaModel", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
+      additionalProperties: false,
       properties: {
         user_name: {
           title: "User Name",
@@ -229,6 +465,8 @@ describe("model_from_schema", () => {
           type: "array",
           description: "The user's siblings",
           items: {
+            title: "Sibling",
+            description: "A sibling object",
             type: "object",
             properties: {
               name: {
@@ -249,7 +487,7 @@ describe("model_from_schema", () => {
       required: ["user_name"],
     }
 
-    const expected: SchemaModel = {
+    const expected: SchemaModelProperty = {
       properties: [
         {
           id: "user_name",
@@ -271,6 +509,13 @@ describe("model_from_schema", () => {
           description: "The user's contact emails",
           type: "array",
           required: false,
+          items: {
+            id: "items",
+            title: "Contact Email",
+            description: "The user's contact email",
+            type: "string",
+            required: false,
+          },
         },
         {
           id: "siblings",
@@ -278,29 +523,65 @@ describe("model_from_schema", () => {
           description: "The user's siblings",
           type: "array",
           required: false,
+          items: {
+            id: "items",
+            title: "Sibling",
+            description: "A sibling object",
+            type: "object",
+            required: false,
+            properties: [
+              {
+                id: "name",
+                title: "Name",
+                description: "The user's name",
+                type: "string",
+                required: true,
+              },
+              {
+                id: "age",
+                title: "Age",
+                description: "The user's age",
+                type: "integer",
+                required: true,
+              },
+            ],
+          },
         },
       ],
+      additionalProperties: false,
+      id: "root",
+      title: "root",
+      description: undefined,
+      type: "object",
+      required: true,
     }
 
     expect(model_from_schema(schema)).toEqual(expected)
   })
 
   it("handles empty JsonSchema", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
+      additionalProperties: false,
       properties: {},
       required: [],
     }
 
-    const expected: SchemaModel = {
+    const expected: SchemaModelProperty = {
       properties: [],
+      id: "root",
+      title: "root",
+      description: undefined,
+      type: "object",
+      required: true,
+      additionalProperties: false,
     }
 
     expect(model_from_schema(schema)).toEqual(expected)
   })
 
   it("correctly handles required fields", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         field1: {
@@ -329,15 +610,14 @@ describe("model_from_schema", () => {
 
     const result = model_from_schema(schema)
     expect(
-      result.properties.filter((p) => p.required).map((p) => p.title),
+      result.properties!.filter((p) => p.required).map((p) => p.title),
     ).toEqual(["Field1", "Field3"])
   })
 
   it("uses property name as title when title is not provided", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
-        // @ts-expect-error -- title is missing to test this case
         user_name: {
           type: "string",
           description: "The user's name",
@@ -347,11 +627,11 @@ describe("model_from_schema", () => {
     }
 
     const result = model_from_schema(schema)
-    expect(result.properties[0].title).toBe("user_name")
+    expect(result.properties![0].title).toBe("user_name")
   })
 
   it("handles array types", () => {
-    const schema: JsonSchema = {
+    const schema: JsonSchemaProperty = {
       type: "object",
       properties: {
         ingredients: {
@@ -369,207 +649,528 @@ describe("model_from_schema", () => {
     }
 
     const result = model_from_schema(schema)
-    expect(result.properties[0].type).toBe("array")
+    expect(result.properties![0].type).toBe("array")
+  })
+
+  it("converts nested object properties correctly", () => {
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        user: {
+          title: "User",
+          description: "User information",
+          type: "object",
+          properties: {
+            name: {
+              title: "Name",
+              description: "User's name",
+              type: "string",
+            },
+            age: {
+              title: "Age",
+              description: "User's age",
+              type: "integer",
+            },
+          },
+          required: ["name"],
+          additionalProperties: false,
+        },
+      },
+      required: ["user"],
+    }
+
+    const result = model_from_schema(schema)
+
+    expect(result.properties).toHaveLength(1)
+    expect(result.properties![0].id).toBe("user")
+    expect(result.properties![0].type).toBe("object")
+    expect(result.properties![0].required).toBe(true)
+    expect(result.properties![0].properties).toHaveLength(2)
+    expect(result.properties![0].additionalProperties).toBe(false)
+
+    const nameProperty = result.properties![0].properties![0]
+    expect(nameProperty.id).toBe("name")
+    expect(nameProperty.title).toBe("Name")
+    expect(nameProperty.type).toBe("string")
+    expect(nameProperty.required).toBe(true)
+
+    const ageProperty = result.properties![0].properties![1]
+    expect(ageProperty.id).toBe("age")
+    expect(ageProperty.title).toBe("Age")
+    expect(ageProperty.type).toBe("integer")
+    expect(ageProperty.required).toBe(false)
+  })
+
+  it("handles multiple levels of nesting", () => {
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        company: {
+          title: "Company",
+          description: "Company information",
+          type: "object",
+          properties: {
+            name: {
+              title: "Company Name",
+              description: "Name of the company",
+              type: "string",
+            },
+            address: {
+              title: "Address",
+              description: "Company address",
+              type: "object",
+              properties: {
+                street: {
+                  title: "Street",
+                  description: "Street address",
+                  type: "string",
+                },
+                city: {
+                  title: "City",
+                  description: "City name",
+                  type: "string",
+                },
+              },
+              required: ["city"],
+            },
+          },
+          required: ["name", "address"],
+        },
+      },
+      required: [],
+    }
+
+    const result = model_from_schema(schema)
+
+    expect(result.properties).toHaveLength(1)
+    const companyProp = result.properties![0]
+    expect(companyProp.type).toBe("object")
+    expect(companyProp.properties).toHaveLength(2)
+
+    const addressProp = companyProp.properties![1]
+    expect(addressProp.id).toBe("address")
+    expect(addressProp.type).toBe("object")
+    expect(addressProp.properties).toHaveLength(2)
+
+    const cityProp = addressProp.properties![1]
+    expect(cityProp.id).toBe("city")
+    expect(cityProp.required).toBe(true)
+
+    const streetProp = addressProp.properties![0]
+    expect(streetProp.id).toBe("street")
+    expect(streetProp.required).toBe(false)
+  })
+
+  it("doesn't modify additionalProperties when not specified for nested objects", () => {
+    const schema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        config: {
+          title: "Config",
+          description: "Configuration object",
+          type: "object",
+          properties: {
+            setting: {
+              title: "Setting",
+              description: "A setting",
+              type: "string",
+            },
+          },
+        },
+      },
+      required: [],
+    }
+
+    const result = model_from_schema(schema)
+    expect(result.properties![0].additionalProperties).toBe(undefined)
   })
 })
 
-describe("typed_json_from_schema_model", () => {
-  const testSchema: SchemaModel = {
-    properties: [
-      {
-        id: "name",
-        title: "Name",
-        description: "User's name",
-        type: "string",
-        required: true,
+// Our best tests. Converts from JSON schema, to internal model, and back. Catches the widest range of possible issues.
+describe("round-trip conversion tests", () => {
+  it("preserves a complex real-world schema through model conversion", () => {
+    const complexSchema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        userId: {
+          title: "User ID",
+          description: "Unique identifier for the user",
+          type: "string",
+        },
+        profile: {
+          title: "Profile",
+          description: "User profile information",
+          type: "object",
+          properties: {
+            firstName: {
+              title: "First Name",
+              description: "User's first name",
+              type: "string",
+            },
+            lastName: {
+              title: "Last Name",
+              description: "User's last name",
+              type: "string",
+            },
+            age: {
+              title: "Age",
+              description: "User's age in years",
+              type: "integer",
+            },
+            height: {
+              title: "Height",
+              description: "User's height in meters",
+              type: "number",
+            },
+            isVerified: {
+              title: "Is Verified",
+              description: "Whether the user is verified",
+              type: "boolean",
+            },
+            address: {
+              title: "Address",
+              description: "User's address",
+              type: "object",
+              properties: {
+                street: {
+                  title: "Street",
+                  description: "Street address",
+                  type: "string",
+                },
+                city: {
+                  title: "City",
+                  description: "City name",
+                  type: "string",
+                },
+                postalCode: {
+                  title: "Postal Code",
+                  description: "Postal/ZIP code",
+                  type: "string",
+                },
+                coordinates: {
+                  title: "Coordinates",
+                  description: "GPS coordinates",
+                  type: "object",
+                  properties: {
+                    latitude: {
+                      title: "Latitude",
+                      description: "Latitude coordinate",
+                      type: "number",
+                    },
+                    longitude: {
+                      title: "Longitude",
+                      description: "Longitude coordinate",
+                      type: "number",
+                    },
+                  },
+                  required: ["latitude", "longitude"],
+                  additionalProperties: false,
+                },
+              },
+              required: ["city", "postalCode"],
+              additionalProperties: true,
+            },
+          },
+          required: ["firstName", "lastName", "age"],
+          additionalProperties: false,
+        },
+        tags: {
+          title: "Tags",
+          description: "User tags",
+          type: "array",
+        },
+        preferences: {
+          title: "Preferences",
+          description: "User preferences",
+          type: "object",
+          properties: {
+            notifications: {
+              title: "Notifications",
+              description: "Notification settings",
+              type: "boolean",
+            },
+            theme: {
+              title: "Theme",
+              description: "UI theme preference",
+              type: "string",
+            },
+          },
+          required: [],
+          additionalProperties: true,
+        },
+        phoneNumbers: {
+          title: "Phone Numbers",
+          description: "Contact phone numbers",
+          type: "array",
+        },
+        metadata: {
+          title: "Metadata",
+          description: "Additional metadata",
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: true,
+        },
       },
-      {
-        id: "age",
-        title: "Age",
-        description: "User's age",
-        type: "integer",
-        required: true,
+      required: ["userId", "profile", "tags"],
+      additionalProperties: false,
+    }
+
+    const model = model_from_schema(complexSchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(complexSchema)
+  })
+
+  it("preserves array items specifications through round-trip conversion", () => {
+    const arraySchema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        simpleStringArray: {
+          title: "Simple String Array",
+          description: "An array of strings",
+          type: "array",
+          items: {
+            title: "String Item",
+            description: "A string value",
+            type: "string",
+          },
+        },
+        numberArray: {
+          title: "Number Array",
+          description: "An array of numbers",
+          type: "array",
+          items: {
+            title: "Number Item",
+            description: "A number value",
+            type: "number",
+          },
+        },
+        objectArray: {
+          title: "Object Array",
+          description: "An array of complex objects",
+          type: "array",
+          items: {
+            title: "Person",
+            description: "A person object",
+            type: "object",
+            properties: {
+              name: {
+                title: "Name",
+                description: "Person's name",
+                type: "string",
+              },
+              age: {
+                title: "Age",
+                description: "Person's age",
+                type: "integer",
+              },
+              active: {
+                title: "Active",
+                description: "Whether person is active",
+                type: "boolean",
+              },
+            },
+            required: ["name"],
+            additionalProperties: false,
+          },
+        },
+        nestedArrays: {
+          title: "Nested Arrays",
+          description: "An array of arrays",
+          type: "array",
+          items: {
+            title: "Inner Array",
+            description: "An inner array of integers",
+            type: "array",
+            items: {
+              title: "Integer",
+              description: "An integer value",
+              type: "integer",
+            },
+          },
+        },
+        mixedRequired: {
+          title: "Mixed Required Array",
+          description: "A required array of optional objects",
+          type: "array",
+          items: {
+            title: "Config",
+            description: "Configuration object",
+            type: "object",
+            properties: {
+              key: {
+                title: "Key",
+                description: "Config key",
+                type: "string",
+              },
+              value: {
+                title: "Value",
+                description: "Config value",
+                type: "string",
+              },
+              priority: {
+                title: "Priority",
+                description: "Priority level",
+                type: "integer",
+              },
+            },
+            required: ["key"],
+            additionalProperties: true,
+          },
+        },
       },
-      {
-        id: "height",
-        title: "Height",
-        description: "User's height in meters",
-        type: "number",
-        required: false,
+      required: ["simpleStringArray", "mixedRequired"],
+      additionalProperties: false,
+    }
+
+    const model = model_from_schema(arraySchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(arraySchema)
+  })
+
+  it("preserves an array with items at top level through round-trip conversion", () => {
+    const topLevelArraySchema: JsonSchemaProperty = {
+      title: "Top Level Array",
+      description: "An array at the root level",
+      type: "array",
+      items: {
+        title: "Task",
+        description: "A task object",
+        type: "object",
+        properties: {
+          id: {
+            title: "ID",
+            description: "Task identifier",
+            type: "string",
+          },
+          name: {
+            title: "Name",
+            description: "Task name",
+            type: "string",
+          },
+          completed: {
+            title: "Completed",
+            description: "Whether the task is completed",
+            type: "boolean",
+          },
+        },
+        required: ["id", "name"],
+        additionalProperties: false,
       },
-      {
-        id: "is_active",
-        title: "Is Active",
-        description: "User's active status",
-        type: "boolean",
-        required: false,
+    }
+
+    const model = model_from_schema(topLevelArraySchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(topLevelArraySchema)
+  })
+
+  it("preserves a basic type at top level through round-trip conversion", () => {
+    const topLevelStringSchema: JsonSchemaProperty = {
+      title: "Simple String",
+      description: "A string value at the root level",
+      type: "string",
+    }
+
+    const model = model_from_schema(topLevelStringSchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(topLevelStringSchema)
+  })
+
+  it("preserves enum properties through round-trip conversion", () => {
+    const enumSchema: JsonSchemaProperty = {
+      title: "User Preferences",
+      description: "Configuration with enum values",
+      type: "object",
+      properties: {
+        theme: {
+          title: "Theme",
+          description: "Color theme preference",
+          type: "string",
+          enum: ["light", "dark", "auto"],
+        },
+        size: {
+          title: "Size",
+          description: "UI size preference",
+          type: "string",
+          enum: ["small", "medium", "large"],
+        },
+        notifications: {
+          title: "Notifications",
+          description: "Notification level",
+          type: "integer",
+          enum: [0, 1, 2, 3],
+        },
       },
-      {
-        id: "contact_emails",
-        title: "Contact Emails",
-        description: "The user's contact emails",
-        type: "array",
-        required: true,
+      required: ["theme"],
+      additionalProperties: false,
+    }
+
+    const model = model_from_schema(enumSchema)
+    const reconstructedSchema = schema_from_model(model, false)
+
+    expect(reconstructedSchema).toEqual(enumSchema)
+  })
+
+  it("preserves an object with a required array through round-trip conversion", () => {
+    const objectWithRequiredArraySchema: JsonSchemaProperty = {
+      type: "object",
+      properties: {
+        username: {
+          title: "Username",
+          description: "User's username",
+          type: "string",
+        },
+        roles: {
+          title: "Roles",
+          description: "User's assigned roles",
+          type: "array",
+          items: {
+            title: "Role",
+            description: "A role name",
+            type: "string",
+          },
+        },
+        permissions: {
+          title: "Permissions",
+          description: "User's permissions",
+          type: "array",
+          items: {
+            title: "Permission",
+            description: "Permission object",
+            type: "object",
+            properties: {
+              resource: {
+                title: "Resource",
+                description: "Resource name",
+                type: "string",
+              },
+              actions: {
+                title: "Actions",
+                description: "Allowed actions",
+                type: "array",
+                items: {
+                  title: "Action",
+                  description: "An action name",
+                  type: "string",
+                },
+              },
+            },
+            required: ["resource", "actions"],
+            additionalProperties: false,
+          },
+        },
       },
-    ],
-  }
-
-  it("correctly parses valid input data", () => {
-    const inputData = {
-      name: "John Doe",
-      age: "30",
-      height: "1.75",
-      is_active: "true",
-      contact_emails: JSON.stringify(["john.doe@example.com"]),
+      required: ["username", "roles", "permissions"],
+      additionalProperties: false,
     }
 
-    const result = typed_json_from_schema_model(testSchema, inputData)
+    const model = model_from_schema(objectWithRequiredArraySchema)
+    const reconstructedSchema = schema_from_model(model, false)
 
-    expect(result).toEqual({
-      name: "John Doe",
-      age: 30,
-      height: 1.75,
-      is_active: true,
-      contact_emails: ["john.doe@example.com"],
-    })
-  })
-
-  it("handles missing optional properties", () => {
-    const inputData = {
-      name: "Jane Doe",
-      age: "25",
-      contact_emails: JSON.stringify(["jane.doe@example.com"]),
-    }
-
-    const result = typed_json_from_schema_model(testSchema, inputData)
-
-    expect(result).toEqual({
-      name: "Jane Doe",
-      age: 25,
-      contact_emails: ["jane.doe@example.com"],
-    })
-  })
-
-  it("throws error for invalid integer", () => {
-    const inputData = {
-      name: "Alice",
-      age: "not a number",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for invalid boolean", () => {
-    const inputData = {
-      name: "Bob",
-      age: "40",
-      is_active: "not a boolean",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for invalid JSON input for array property", () => {
-    const inputData = {
-      name: "Alice",
-      age: "30",
-      contact_emails: "[123", // invalid JSON
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for non-array input for array property", () => {
-    const inputData = {
-      name: "Alice",
-      age: "30",
-      contact_emails: JSON.stringify({ value: 123 }), // valid JSON, but not an array
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for unknown property", () => {
-    const inputData = {
-      name: "Charlie",
-      age: "35",
-      unknown_prop: "some value",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("correctly parses zero values", () => {
-    const inputData = {
-      name: "Zero",
-      age: "0",
-      height: "0",
-      contact_emails: JSON.stringify([]),
-    }
-
-    const result = typed_json_from_schema_model(testSchema, inputData)
-
-    expect(result).toEqual({
-      name: "Zero",
-      age: 0,
-      height: 0,
-      contact_emails: [],
-    })
-  })
-
-  it("throws error for missing required property", () => {
-    const inputData = {
-      name: "Alice",
-      // age is missing, but it's required
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error for empty string in required property", () => {
-    const inputData = {
-      name: "Bob",
-      age: "", // Empty string for required integer
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("allows empty string for optional properties", () => {
-    const inputData = {
-      name: "Charlie",
-      age: "30",
-      height: "", // Empty string for number
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
-  })
-
-  it("throws error when all required properties are missing", () => {
-    const inputData = {
-      // Both name and age are missing
-      height: "1.75",
-      is_active: "true",
-    }
-
-    expect(() => typed_json_from_schema_model(testSchema, inputData)).toThrow(
-      KilnError,
-    )
+    expect(reconstructedSchema).toEqual(objectWithRequiredArraySchema)
   })
 })

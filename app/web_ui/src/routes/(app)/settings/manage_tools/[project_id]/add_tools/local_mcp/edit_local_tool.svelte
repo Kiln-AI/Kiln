@@ -26,6 +26,7 @@
   let env_vars: McpServerKeyValuePair[] = []
   let description = ""
   let installation_instruction = ""
+  let is_archived = false
   // Form state
   let error: KilnError | null = null
   let submitting = false
@@ -70,6 +71,9 @@
 
     // We should fix the server type, so it's not "never" and we don't need a cast
     const props = editing_tool_server.properties as Record<string, unknown>
+    if (typeof props.is_archived === "boolean") {
+      is_archived = props.is_archived
+    }
 
     if (props.command && typeof props.command === "string") {
       command = props.command
@@ -181,6 +185,7 @@
         args: args.trim() ? args.trim().split(/\s+/) : [], // Split into argv list; empty -> []
         env_vars: envVarsData.envVarsObj,
         secret_env_var_keys: envVarsData.secret_env_var_keys,
+        is_archived: is_archived,
       }
 
       let server_id: string | null | undefined = undefined

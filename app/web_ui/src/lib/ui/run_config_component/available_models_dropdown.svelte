@@ -14,16 +14,13 @@
     type RecentModel,
     recent_model_store,
   } from "$lib/stores/recent_model_store"
-  import type {
-    AvailableModels,
-    ModelDetails,
-    ProviderModels,
-  } from "$lib/types"
+  import type { AvailableModels, ProviderModels } from "$lib/types"
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import { mime_type_to_string } from "$lib/utils/formatters"
+  import type { ModelDropdownSettings } from "./model_dropdown_settings"
 
   const LOGPROBS_WARNING =
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
@@ -33,31 +30,27 @@
   export let label: string = "Model"
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
-  // filter out all the models that do not match the predicate
-  export let filter_models_predicate: (model: ModelDetails) => boolean = (_) =>
-    true
-  export let requires_structured_output: boolean = false
-  export let requires_data_gen: boolean = false
-  export let requires_logprobs: boolean = false
-  export let requires_uncensored_data_gen: boolean = false
-  export let requires_doc_extraction: boolean = false
-  export let requires_tool_support: boolean = false
+  export let settings: Partial<ModelDropdownSettings> = {}
   export let error_message: string | null = null
-  export let suggested_mode:
-    | "data_gen"
-    | "evals"
-    | "uncensored_data_gen"
-    | "doc_extraction"
-    | null = null
+
+  let default_model_dropdown_settings: ModelDropdownSettings = {
+    filter_models_predicate: (_) => true,
+    requires_structured_output: false,
+    requires_data_gen: false,
+    requires_logprobs: false,
+    requires_uncensored_data_gen: false,
+    requires_doc_extraction: false,
+    requires_tool_support: false,
+    suggested_mode: null,
+  }
+  $: model_dropdown_settings = {
+    ...default_model_dropdown_settings,
+    ...settings,
+  }
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || [],
-    requires_structured_output,
-    requires_data_gen,
-    requires_uncensored_data_gen,
-    requires_logprobs,
-    requires_doc_extraction,
-    requires_tool_support,
+    model_dropdown_settings,
     task_id,
     $recent_model_store,
     $model_info,
@@ -87,7 +80,9 @@
 
   function get_model_warning(selected: string): string | null {
     if (
-      unsupported_models.some((m) => m.value === selected && requires_logprobs)
+      unsupported_models.some(
+        (m) => m.value === selected && settings.requires_logprobs,
+      )
     ) {
       return LOGPROBS_WARNING
     }
@@ -109,12 +104,7 @@
 
   function format_model_options(
     providers: AvailableModels[],
-    structured_output: boolean,
-    requires_data_gen: boolean,
-    requires_uncensored_data_gen: boolean,
-    requires_logprobs: boolean,
-    requires_doc_extraction: boolean,
-    requires_tool_support: boolean,
+    model_dropdown_settings: ModelDropdownSettings,
     task_id: string | null,
     recent_models: RecentModel[],
     model_data: ProviderModels | null,
@@ -131,7 +121,10 @@
         recent_model.model_provider,
         providers,
       )
-      if (!model_details || !filter_models_predicate(model_details)) {
+      if (
+        !model_details ||
+        !model_dropdown_settings.filter_models_predicate(model_details)
+      ) {
         continue
       }
       recent_model_list.push({
@@ -153,7 +146,7 @@
     for (const provider of providers) {
       let model_list: Option[] = []
       for (const model of provider.models) {
-        if (!filter_models_predicate(model)) {
+        if (!model_dropdown_settings.filter_models_predicate(model)) {
           continue
         }
         // Exclude models that are not available for the current task
@@ -177,12 +170,18 @@
         }
 
         const unsupported =
-          (requires_data_gen && !model.supports_data_gen) ||
-          (structured_output && !model.supports_structured_output) ||
-          (requires_logprobs && !model.supports_logprobs) ||
-          (requires_uncensored_data_gen && !model.uncensored) ||
-          (requires_doc_extraction && !model.supports_doc_extraction) ||
-          (requires_tool_support && !model.supports_function_calling)
+          (model_dropdown_settings.requires_data_gen &&
+            !model.supports_data_gen) ||
+          (model_dropdown_settings.requires_structured_output &&
+            !model.supports_structured_output) ||
+          (model_dropdown_settings.requires_logprobs &&
+            !model.supports_logprobs) ||
+          (model_dropdown_settings.requires_uncensored_data_gen &&
+            !model.uncensored) ||
+          (model_dropdown_settings.requires_doc_extraction &&
+            !model.supports_doc_extraction) ||
+          (model_dropdown_settings.requires_tool_support &&
+            !model.supports_function_calling)
         if (unsupported) {
           unsupported_models.push({
             value: id,
@@ -193,11 +192,12 @@
 
         let badge: string | undefined = undefined
         if (
-          (suggested_mode === "data_gen" && model.suggested_for_data_gen) ||
-          (suggested_mode === "evals" && model.suggested_for_evals) ||
-          (suggested_mode === "uncensored_data_gen" &&
+          (settings.suggested_mode === "data_gen" &&
+            model.suggested_for_data_gen) ||
+          (settings.suggested_mode === "evals" && model.suggested_for_evals) ||
+          (settings.suggested_mode === "uncensored_data_gen" &&
             model.suggested_for_uncensored_data_gen) ||
-          (suggested_mode === "doc_extraction" &&
+          (settings.suggested_mode === "doc_extraction" &&
             model.suggested_for_doc_extraction)
         ) {
           badge = "Recommended"
@@ -225,16 +225,16 @@
 
     if (unsupported_models.length > 0) {
       let not_recommended_label = "Not Recommended"
-      if (requires_uncensored_data_gen) {
+      if (model_dropdown_settings.requires_uncensored_data_gen) {
         not_recommended_label =
           "Not Recommended - Uncensored Data Gen Not Supported"
-      } else if (requires_tool_support) {
+      } else if (model_dropdown_settings.requires_tool_support) {
         not_recommended_label = "Not Recommended - Tool Calling Not Supported"
-      } else if (requires_data_gen) {
+      } else if (model_dropdown_settings.requires_data_gen) {
         not_recommended_label = "Not Recommended - Data Gen Not Supported"
-      } else if (requires_structured_output) {
+      } else if (model_dropdown_settings.requires_structured_output) {
         not_recommended_label = "Not Recommended - Structured Output Fails"
-      } else if (requires_logprobs) {
+      } else if (model_dropdown_settings.requires_logprobs) {
         not_recommended_label = "Not Recommended - Logprobs Not Supported"
       }
 
@@ -244,7 +244,7 @@
       })
     }
 
-    if (suggested_mode === "doc_extraction") {
+    if (settings.suggested_mode === "doc_extraction") {
       for (const option_group of options) {
         for (const option of option_group.options) {
           if (typeof option.value !== "string") {
@@ -324,24 +324,24 @@
       warning_message="This model has not been tested with Kiln. It may not work as expected."
     />
   {:else if selected_model_unsupported}
-    {#if requires_uncensored_data_gen}
+    {#if model_dropdown_settings.requires_uncensored_data_gen}
       <Warning
         warning_message="The current data gen template works best with uncensored models like Grok. This model may refuse to generate data for sensitive topics."
       />
-    {:else if requires_tool_support}
+    {:else if model_dropdown_settings.requires_tool_support}
       <Warning warning_message="This model does not support tool calling." />
-    {:else if requires_data_gen}
+    {:else if model_dropdown_settings.requires_data_gen}
       <Warning
         warning_message="This model is not recommended for use with data generation. It's known to generate incorrect data."
       />
-    {:else if requires_logprobs}
+    {:else if model_dropdown_settings.requires_logprobs}
       <Warning large_icon warning_message={LOGPROBS_WARNING} />
-    {:else if requires_structured_output}
+    {:else if model_dropdown_settings.requires_structured_output}
       <Warning
         warning_message="This model is not recommended for use with tasks requiring structured output. It fails to consistently return structured data."
       />
     {/if}
-  {:else if suggested_mode === "data_gen"}
+  {:else if settings.suggested_mode === "data_gen"}
     <Warning
       warning_icon={!model
         ? "info"
@@ -355,7 +355,7 @@
           : "warning"}
       warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
     />
-  {:else if suggested_mode === "uncensored_data_gen"}
+  {:else if settings.suggested_mode === "uncensored_data_gen"}
     <Warning
       warning_icon={!model
         ? "info"
@@ -369,7 +369,7 @@
           : "warning"}
       warning_message="For this data gen template we suggest a large uncensored model like Grok 4."
     />
-  {:else if suggested_mode === "evals"}
+  {:else if settings.suggested_mode === "evals"}
     <Warning
       warning_icon={!model
         ? "info"
@@ -383,7 +383,7 @@
           : "warning"}
       warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
     />
-  {:else if suggested_mode === "doc_extraction"}
+  {:else if settings.suggested_mode === "doc_extraction"}
     <Warning
       warning_icon={!model
         ? "info"

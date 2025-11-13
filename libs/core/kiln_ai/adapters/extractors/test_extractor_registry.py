@@ -32,6 +32,7 @@ def test_extractor_adapter_from_type(mock_provider_configs):
             model_provider_name="gemini_api",
             model_name="gemini-2.0-flash",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "Extract the text from the document",
                 "prompt_image": "Extract the text from the image",
                 "prompt_video": "Extract the text from the video",
@@ -66,6 +67,7 @@ def test_extractor_adapter_from_type_uses_litellm_core_config(
             model_provider_name="openai",
             model_name="gpt-4",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "Extract the text from the document",
                 "prompt_image": "Extract the text from the image",
                 "prompt_video": "Extract the text from the video",
@@ -92,6 +94,7 @@ def test_extractor_adapter_from_type_invalid_provider():
                 model_provider_name="invalid_provider",
                 model_name="some-model",
                 properties={
+                    "extractor_type": ExtractorType.LITELLM,
                     "prompt_document": "Extract the text from the document",
                     "prompt_image": "Extract the text from the image",
                     "prompt_video": "Extract the text from the video",
@@ -111,6 +114,7 @@ def test_extractor_adapter_from_type_invalid():
                 model_provider_name="invalid_provider",
                 model_name="some-model",
                 properties={
+                    "extractor_type": ExtractorType.LITELLM,
                     "prompt_document": "Extract the text from the document",
                     "prompt_image": "Extract the text from the image",
                     "prompt_video": "Extract the text from the video",
@@ -144,6 +148,7 @@ def test_extractor_adapter_from_type_different_providers(
             model_provider_name=provider_name,
             model_name="test-model",
             properties={
+                "extractor_type": ExtractorType.LITELLM,
                 "prompt_document": "Extract the text from the document",
                 "prompt_image": "Extract the text from the image",
                 "prompt_video": "Extract the text from the video",
@@ -172,6 +177,7 @@ def test_extractor_adapter_from_type_no_config_found(mock_provider_configs):
                     model_provider_name="openai",
                     model_name="gpt-4",
                     properties={
+                        "extractor_type": ExtractorType.LITELLM,
                         "prompt_document": "Extract the text from the document",
                         "prompt_image": "Extract the text from the image",
                         "prompt_video": "Extract the text from the video",

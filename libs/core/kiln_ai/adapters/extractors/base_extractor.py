@@ -70,3 +70,7 @@ class BaseExtractor(ABC):
 
     def output_format(self) -> OutputFormat:
         return self.extractor_config.output_format
+
+    @abstractmethod
+    async def clear_cache_for_file_path(self, file_path: Path) -> None:
+        pass

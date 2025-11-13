@@ -97,6 +97,7 @@ def real_extractor_config(mock_project):
         extractor_type=ExtractorType.LITELLM,
         output_format=OutputFormat.MARKDOWN,
         properties={
+            "extractor_type": ExtractorType.LITELLM,
             "prompt_document": "Transcribe the document.",
             "prompt_audio": "Transcribe the audio.",
             "prompt_video": "Transcribe the video.",
@@ -112,7 +113,11 @@ def real_chunker_config(mock_project):
     return ChunkerConfig(
         name="test-chunker",
         chunker_type=ChunkerType.FIXED_WINDOW,
-        properties={"chunk_size": 500, "chunk_overlap": 50},
+        properties={
+            "chunker_type": ChunkerType.FIXED_WINDOW,
+            "chunk_size": 500,
+            "chunk_overlap": 50,
+        },
         parent=mock_project,
     )
 
@@ -474,10 +479,10 @@ class TestExecuteEmbeddingJob:
         )
         mock_embedding_adapter = MagicMock(spec=BaseEmbeddingAdapter)
 
-        with pytest.raises(
-            ValueError, match="Failed to load chunks for chunked document: 123"
-        ):
-            await execute_embedding_job(job, mock_embedding_adapter)
+        # we should not raise because no chunks may be the legitimate result of the previous step
+        # e.g. an empty document; a document whose content was intentionally excluded by the extraction prompt
+        result = await execute_embedding_job(job, mock_embedding_adapter)
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_execute_embedding_job_no_embedding_result_raises_error(
@@ -1573,7 +1578,9 @@ class TestRagIndexingStepRunner:
             )
 
     @pytest.mark.asyncio
-    async def test_run_raises_error_when_no_documents_match_tags(self, indexing_runner):
+    async def test_run_raises_error_when_no_upstream_records_to_index(
+        self, indexing_runner
+    ):
         """Test that run raises ValueError when no documents match the tag filter"""
         # Setup mock documents that don't match the configured tags
         mock_doc1 = MagicMock(spec=Document)
@@ -1624,12 +1631,19 @@ class TestRagIndexingStepRunner:
             mock_vector_store.delete_nodes_not_in_set = AsyncMock()
             mock_vector_store_factory.return_value = mock_vector_store
 
-            # Should raise ValueError when no documents match the tag filter
-            with pytest.raises(ValueError, match="Vector dimensions are not set"):
-                async for _ in indexing_runner.run():
-                    pass
+            # Should yield a progress message and return early when no documents match the tag filter
+            progress_values = []
+            async for progress in indexing_runner.run():
+                progress_values.append(progress)
 
-            # Should not call vector store methods since it fails before that
+            # Should yield one progress message about no records to index
+            assert len(progress_values) == 1
+            assert progress_values[0].success_count == 0
+            assert progress_values[0].error_count == 0
+            assert len(progress_values[0].logs) == 1
+            assert "No records to index" in progress_values[0].logs[0].message
+
+            # Should not call vector store methods since it returns early
             mock_vector_store_factory.assert_not_called()
             mock_vector_store.delete_nodes_not_in_set.assert_not_called()
 
@@ -1705,6 +1719,51 @@ class TestRagIndexingStepRunner:
             mock_vector_store.delete_nodes_not_in_set.assert_called_once_with(
                 {"doc-1", "doc-2", "doc-4"}
             )
+
+    async def test_run_calls_aclose_with_early_return(self, indexing_runner):
+        """Test that aclose() is called when collect_records exits early"""
+
+        # Create a mock class that tracks aclose() calls
+        class MockAsyncGenerator:
+            def __init__(self):
+                self.aclose_called = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+            async def aclose(self):
+                self.aclose_called = True
+
+        mock_generator = MockAsyncGenerator()
+
+        with patch.object(
+            indexing_runner, "collect_records", return_value=mock_generator
+        ):
+            with (
+                patch("kiln_ai.utils.lock.shared_async_lock_manager"),
+                patch(
+                    "kiln_ai.adapters.rag.rag_runners.vector_store_adapter_for_config",
+                    new_callable=AsyncMock,
+                ),
+            ):
+                # Run the indexing - should return early due to no records
+                # The new behavior yields a progress message and returns early instead of raising an exception
+                progress_values = []
+                async for progress in indexing_runner.run():
+                    progress_values.append(progress)
+
+                # Should yield one progress message about no records to index
+                assert len(progress_values) == 1
+                assert progress_values[0].success_count == 0
+                assert progress_values[0].error_count == 0
+                assert len(progress_values[0].logs) == 1
+                assert "No records to index" in progress_values[0].logs[0].message
+
+                # Verify aclose() was called
+                assert mock_generator.aclose_called
 
 
 # Tests for workflow runner

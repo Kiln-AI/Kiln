@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+  import { onMount, onDestroy, getContext } from "svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -36,7 +37,7 @@
   export let on_select: (e: Event) => void = () => {}
   export let disabled: boolean = false
   export let info_msg: string | null = null
-  export let tall: boolean | "medium" | "xl" = false
+  export let height: "base" | "medium" | "large" | "xl" = "base"
   export let empty_label: string = "Select an option"
   export let empty_state_message: string = "No options available"
   export let empty_state_subtitle: string | null = null
@@ -88,15 +89,52 @@
     }
   }
 
-  function run_validator() {
+  export function run_validator() {
     const error = validator(value)
     error_message = error
   }
+
+  // run validator after value change
+  let initialized = false
+  function run_validator_on_change(_: unknown) {
+    if (initialized) {
+      run_validator()
+    }
+  }
+  $: run_validator_on_change(value)
+
+  const formContainer = getContext<{
+    registerFormElement: (validator: {
+      run_validator: () => void
+    }) => () => void
+  } | null>("form_container")
+
+  let unregister: (() => void) | null = null
+
+  onMount(() => {
+    initialized = true
+    if (formContainer) {
+      unregister = formContainer.registerFormElement({ run_validator })
+    }
+  })
+
+  onDestroy(() => {
+    if (unregister) {
+      unregister()
+    }
+  })
 
   // Little dance to keep type checker happy
   function handleCheckboxChange(event: Event) {
     const target = event.target as HTMLInputElement
     if (target) value = target.checked
+  }
+
+  const height_class = {
+    base: "h-18",
+    medium: "h-36",
+    large: "h-60",
+    xl: "h-96",
   }
 </script>
 
@@ -135,37 +173,31 @@
             <InfoTooltip tooltip_text={info_description} />
           </div>
         {/if}
+        {#if error_message}
+          <span class="text-error">
+            <InfoTooltip tooltip_text={error_message} symbol="exclaim" />
+          </span>
+        {/if}
       </div>
-      {#if description || error_message}
+      {#if description}
         <div class="text-xs text-gray-500">
-          {description || ""}
-          {#if error_message}
-            <span class="text-error">
-              <InfoTooltip tooltip_text={error_message} position="bottom" />
-            </span>
-          {/if}
+          {description}
         </div>
       {/if}
     </label>
   </div>
   <div class="relative">
     {#if inputType === "textarea"}
-      <!-- Ensure compiler doesn't optimize away the heights -->
-      <span class="h-18 h-60 hidden"></span>
       <textarea
         placeholder={error_message || placeholder || label}
         {id}
-        class="textarea text-base textarea-bordered w-full {tall === true
-          ? 'h-60'
-          : tall === 'xl'
-            ? 'h-96'
-            : tall === 'medium'
-              ? 'h-36'
-              : 'h-18'} wrap-pre text-left align-top
+        class="textarea text-base textarea-bordered w-full {height_class[
+          height
+        ]} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
+        data-op-ignore="true"
         {disabled}
       />
     {:else if inputType === "input"}
@@ -178,7 +210,6 @@
           ? 'input-error'
           : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -193,7 +224,6 @@
           ? 'input-error'
           : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -235,6 +265,7 @@
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
+        error_outline={!!error_message}
         {disabled}
         {empty_label}
         {empty_state_message}

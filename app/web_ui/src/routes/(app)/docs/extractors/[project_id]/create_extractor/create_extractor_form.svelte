@@ -57,11 +57,11 @@
             model_name: model_name,
             output_format: output_format as OutputFormat,
             properties: {
-              model_name,
-              prompt_document: prompt_document || null,
-              prompt_image: prompt_image || null,
-              prompt_video: prompt_video || null,
-              prompt_audio: prompt_audio || null,
+              extractor_type: "litellm",
+              prompt_document: prompt_document,
+              prompt_image: prompt_image,
+              prompt_video: prompt_video,
+              prompt_audio: prompt_audio,
             },
             passthrough_mimetypes: ["text/plain", "text/markdown"],
           },
@@ -97,8 +97,10 @@
       description="The model to use to transform your documents into text."
       info_description="Files like PDFs, audio and video must be converted to text before they can be indexed and searched. This model extracts text from these files."
       bind:model={selected_extractor_option}
-      filter_models_predicate={(m) => m.supports_doc_extraction}
-      suggested_mode="doc_extraction"
+      settings={{
+        filter_models_predicate: (m) => m.supports_doc_extraction,
+        suggested_mode: "doc_extraction",
+      }}
     />
     <FormElement
       label="Output Format"

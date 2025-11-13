@@ -18,7 +18,7 @@
     if (task.output_json_schema) {
       try {
         return JSON.stringify(JSON.parse(text), null, 2)
-      } catch (err) {
+      } catch (_) {
         return text
       }
     }
@@ -104,7 +104,7 @@
       label="Manual Repair"
       info_description="Provide a improvement or correction to the task's output"
       inputType="textarea"
-      tall={true}
+      height="large"
       bind:value={repair_output_edited}
     />
 

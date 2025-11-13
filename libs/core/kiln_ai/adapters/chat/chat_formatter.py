@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional
 
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
@@ -31,7 +31,7 @@ class ChatFormatter(ABC):
     def __init__(
         self,
         system_message: str,
-        user_input: str | Dict,
+        user_input: InputType,
         thinking_instructions: str | None = None,
     ) -> None:
         self.system_message = system_message
@@ -83,7 +83,7 @@ class TwoMessageCotLegacyFormatter(ChatFormatter):
     def __init__(
         self,
         system_message: str,
-        user_input: str | Dict,
+        user_input: InputType,
         thinking_instructions: str | None,
     ) -> None:
         super().__init__(system_message, user_input, thinking_instructions)
@@ -127,7 +127,7 @@ class TwoMessageCotFormatter(ChatFormatter):
     def __init__(
         self,
         system_message: str,
-        user_input: str | Dict,
+        user_input: InputType,
         thinking_instructions: str | None,
     ) -> None:
         super().__init__(system_message, user_input, thinking_instructions)
@@ -140,7 +140,14 @@ class TwoMessageCotFormatter(ChatFormatter):
         if self._state == "start":
             # User message combines the input and the thinking instructions
             formatted_user_message = format_user_message(self.user_input)
-            user_message = f"The input is:\n<user_input>\n{formatted_user_message}\n</user_input>\n\n{self.thinking_instructions}"
+
+            # If the input contains conversation_history, it's a full_trace evaluation description and formatted_user_message contains more that a single turn of user_input and shouldn't be wrapped in <user_input> tags to avoid confusing the judge models.
+            if "<conversation_history>" in formatted_user_message:
+                user_message = (
+                    f"{formatted_user_message}\n\n{self.thinking_instructions}"
+                )
+            else:
+                user_message = f"The input is:\n<user_input>\n{formatted_user_message}\n</user_input>\n\n{self.thinking_instructions}"
 
             msgs = [
                 ChatMessage("system", self.system_message),
@@ -194,7 +201,7 @@ class SingleTurnR1ThinkingFormatter(ChatFormatter):
 def get_chat_formatter(
     strategy: ChatStrategy,
     system_message: str,
-    user_input: str | Dict,
+    user_input: InputType,
     thinking_instructions: str | None = None,
 ) -> ChatFormatter:
     match strategy:
@@ -214,7 +221,7 @@ def get_chat_formatter(
             raise_exhaustive_enum_error(strategy)
 
 
-def format_user_message(input: Dict | str) -> str:
+def format_user_message(input: InputType) -> str:
     """Build a user message from the input.
 
     Args:
@@ -223,7 +230,7 @@ def format_user_message(input: Dict | str) -> str:
     Returns:
         str: The formatted user message.
     """
-    if isinstance(input, dict):
+    if not isinstance(input, str):
         return json.dumps(input, ensure_ascii=False)
 
     return input

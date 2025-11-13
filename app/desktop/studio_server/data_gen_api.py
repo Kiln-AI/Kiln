@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
@@ -9,15 +9,24 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenSampleTaskInput,
     wrap_task_with_guidance,
 )
-from kiln_ai.adapters.ml_model_list import (
-    default_structured_output_mode_for_model_provider,
-)
-from kiln_ai.datamodel import DataSource, DataSourceType, PromptId, TaskRun
+from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
+from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_server.run_api import model_provider_from_string
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionAssistantMessageParamWrapper,
+    ChatCompletionMessageParam,
+)
+from kiln_ai.utils.project_utils import project_from_id
 from kiln_server.task_api import task_from_id
-from pydantic import BaseModel, ConfigDict, Field
+from openai.types.chat import (
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
+from pydantic import BaseModel, Field
 
 
 class DataGenCategoriesApiInput(BaseModel):
@@ -36,11 +45,9 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Optional list of existing topics to avoid",
         default=None,
     )
-    model_name: str = Field(description="The name of the model to use")
-    provider: str = Field(description="The provider of the model to use")
-
-    # Allows use of the model_name field (usually pydantic will reserve model_*)
-    model_config = ConfigDict(protected_namespaces=())
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for topic generation"
+    )
 
 
 class DataGenSampleApiInput(BaseModel):
@@ -53,11 +60,9 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
-    model_name: str = Field(description="The name of the model to use")
-    provider: str = Field(description="The provider of the model to use")
-
-    # Allows use of the model_name field (usually pydantic will reserve model_*)
-    model_config = ConfigDict(protected_namespaces=())
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for input generation"
+    )
 
 
 class DataGenSaveSamplesApiInput(BaseModel):
@@ -71,10 +76,8 @@ class DataGenSaveSamplesApiInput(BaseModel):
     input_provider: str = Field(
         description="The provider of the model used to generate the input"
     )
-    output_model_name: str = Field(description="The name of the model to use")
-    output_provider: str = Field(description="The provider of the model to use")
-    prompt_method: PromptId = Field(
-        description="The prompt method used to generate the output"
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for output generation"
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",
@@ -84,6 +87,37 @@ class DataGenSaveSamplesApiInput(BaseModel):
         description="Tags to add to the sample",
         default=None,
     )
+
+
+class DataGenQnaApiInput(BaseModel):
+    document_id: str = Field(description="Document ID for Q&A generation")
+    part_text: list[str] = Field(description="Part text for Q&A generation", default=[])
+    num_samples: int = Field(
+        description="Number of Q&A pairs to generate for this part", default=10
+    )
+    run_config_properties: RunConfigProperties = Field(
+        description="The run config properties to use for the output"
+    )
+    guidance: str | None = Field(
+        description="Optional custom guidance for generation",
+        default=None,
+    )
+    tags: list[str] | None = Field(
+        description="Tags to add to the sample",
+        default=None,
+    )
+
+
+class SaveQnaPairInput(BaseModel):
+    query: str = Field(description="The synthetic user query")
+    answer: str = Field(
+        description="The synthetic assistant answer/response for the given user query"
+    )
+    model_name: str = Field(description="Model name used to generate the Q&A pair")
+    model_provider: str = Field(
+        description="Model provider used to generate the Q&A pair"
+    )
+    tags: list[str] | None = Field(default=None, description="Optional tags")
 
 
 def connect_data_gen_api(app: FastAPI):
@@ -104,17 +138,12 @@ def connect_data_gen_api(app: FastAPI):
             existing_topics=input.existing_topics,
         )
 
+        run_config_properties = input.run_config_properties.model_copy()
+        # Override prompt id to simple just in case we change the default in the UI in the future.
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
             categories_task,
-            run_config_properties=RunConfigProperties(
-                model_name=input.model_name,
-                model_provider_name=model_provider_from_string(input.provider),
-                prompt_id=PromptGenerators.SIMPLE,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    input.model_name, model_provider_from_string(input.provider)
-                ),
-            ),
+            run_config_properties=run_config_properties,
         )
 
         categories_run = await adapter.invoke(task_input.model_dump())
@@ -137,17 +166,12 @@ def connect_data_gen_api(app: FastAPI):
             num_samples=input.num_samples,
         )
 
+        run_config_properties = input.run_config_properties.model_copy()
+        # Override prompt id to simple just in case we change the default in the UI in the future.
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
             sample_task,
-            run_config_properties=RunConfigProperties(
-                model_name=input.model_name,
-                model_provider_name=model_provider_from_string(input.provider),
-                prompt_id=PromptGenerators.SIMPLE,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    input.model_name, model_provider_from_string(input.provider)
-                ),
-            ),
+            run_config_properties=run_config_properties,
         )
 
         samples_run = await adapter.invoke(task_input.model_dump())
@@ -190,16 +214,8 @@ The topic path for this sample is:
 
         adapter = adapter_for_task(
             task,
-            run_config_properties=RunConfigProperties(
-                model_name=sample.output_model_name,
-                model_provider_name=model_provider_from_string(sample.output_provider),
-                prompt_id=sample.prompt_method,
-                # We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
-                structured_output_mode=default_structured_output_mode_for_model_provider(
-                    sample.output_model_name,
-                    model_provider_from_string(sample.output_provider),
-                ),
-            ),
+            run_config_properties=sample.run_config_properties,
+            base_adapter_config=AdapterConfig(allow_saving=False),
         )
 
         properties: dict[str, str | int | float] = {
@@ -227,7 +243,123 @@ The topic path for this sample is:
             tags.extend(sample.tags)
         run.tags = tags
 
+        # we do not save the TaskRun to disk, so the ID is null, but we need
+        # an ID in the frontend to identify the sample before / after saving it
+        run.id = generate_model_id()
+
         return run
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_qna")
+    async def generate_qna_pairs(
+        project_id: str,
+        task_id: str,
+        input: DataGenQnaApiInput,
+        session_id: str | None = None,
+    ) -> TaskRun:
+        project = project_from_id(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        task = task_from_id(project_id, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        doc = Document.from_id_and_parent_path(input.document_id, project.path)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        qna_task = DataGenQnaTask(target_task=task, guidance=input.guidance)
+        task_input = DataGenQnaTaskInput(
+            kiln_data_gen_document_name=doc.friendly_name,
+            kiln_data_gen_part_text=input.part_text,
+            kiln_data_gen_num_samples=input.num_samples,
+        )
+        adapter = adapter_for_task(
+            qna_task,
+            run_config_properties=input.run_config_properties,
+        )
+        qna_run = await adapter.invoke(task_input.model_dump())
+
+        tags = ["synthetic", "qna"]
+        if session_id:
+            tags.append(f"synthetic_qna_session_{session_id}")
+
+        if input.tags:
+            tags.extend(input.tags)
+        qna_run.tags = tags
+
+        return qna_run
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/save_qna_pair")
+    async def save_qna_pair(
+        project_id: str,
+        task_id: str,
+        input: SaveQnaPairInput,
+        session_id: str,
+    ) -> TaskRun:
+        """
+        Save a single QnA pair as a TaskRun. We store the task's system prompt
+        as the system message, the query as the user message, and the answer
+        as the assistant message in the trace. The output is the answer.
+        """
+        task = task_from_id(project_id, task_id)
+
+        # Build trace in OpenAI message format using the task instruction as system prompt
+        system_msg: ChatCompletionSystemMessageParam = {
+            "role": "system",
+            "content": task.instruction,
+        }
+        user_msg: ChatCompletionUserMessageParam = {
+            "role": "user",
+            "content": input.query,
+        }
+        assistant_msg: ChatCompletionAssistantMessageParamWrapper = {
+            "role": "assistant",
+            "content": input.answer,
+        }
+        trace: list[ChatCompletionMessageParam] = [
+            system_msg,
+            user_msg,
+            assistant_msg,
+        ]
+
+        task_run = TaskRun(
+            input=input.query,
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties=(
+                    {
+                        "model_name": input.model_name,
+                        "model_provider": input.model_provider,
+                        "adapter_name": "kiln_qna_manual_save",
+                    }
+                ),
+            ),
+            output=TaskOutput(
+                output=input.answer,
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties=(
+                        {
+                            "model_name": input.model_name,
+                            "model_provider": input.model_provider,
+                            "adapter_name": "kiln_qna_manual_save",
+                        }
+                    ),
+                ),
+            ),
+            tags=[
+                "synthetic",
+                "qna",
+                f"synthetic_qna_session_{session_id}",
+                *(input.tags or []),
+            ],
+            trace=trace,
+        )
+
+        task_run.parent = task
+        task_run.save_to_file()
+        return task_run
 
 
 def topic_path_to_string(topic_path: list[str]) -> str | None:

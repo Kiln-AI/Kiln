@@ -30,12 +30,14 @@ class LocalServerProperties(TypedDict, total=True):
     args: NotRequired[list[str]]
     env_vars: NotRequired[dict[str, str]]
     secret_env_var_keys: NotRequired[list[str]]
+    is_archived: bool
 
 
 class RemoteServerProperties(TypedDict, total=True):
     server_url: str
     headers: NotRequired[dict[str, str]]
     secret_header_keys: NotRequired[list[str]]
+    is_archived: bool
 
 
 class KilnTaskServerProperties(TypedDict, total=True):
@@ -211,6 +213,18 @@ class ExternalToolServer(KilnParentedModel):
         except ValueError:
             valid_types = ", ".join(type.value for type in ToolServerType)
             raise ValueError(f"type must be one of: {valid_types}")
+
+    @model_validator(mode="before")
+    def upgrade_old_properties(cls, data: dict) -> dict:
+        """
+        Upgrade properties for backwards compatibility.
+        """
+        properties = data.get("properties")
+        if properties is not None and "is_archived" not in properties:
+            # Add is_archived field with default value back to data
+            properties["is_archived"] = False
+            data["properties"] = properties
+        return data
 
     @model_validator(mode="before")
     def validate_required_fields(cls, data: dict) -> dict:

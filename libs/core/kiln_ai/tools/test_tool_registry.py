@@ -93,6 +93,7 @@ class TestToolRegistry:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
 
@@ -124,6 +125,7 @@ class TestToolRegistry:
                 "command": "python",
                 "args": ["server.py", "--port", "8080"],
                 "env_vars": {},
+                "is_archived": False,
             },
         )
 
@@ -162,6 +164,7 @@ class TestToolRegistry:
             type=ToolServerType.remote_mcp,
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
 
@@ -612,6 +615,7 @@ class TestToolRegistry:
             description="Test MCP server",
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
 
@@ -642,6 +646,7 @@ class TestToolRegistry:
             description="Different MCP server",
             properties={
                 "server_url": "https://example.com",
+                "is_archived": False,
             },
         )
 

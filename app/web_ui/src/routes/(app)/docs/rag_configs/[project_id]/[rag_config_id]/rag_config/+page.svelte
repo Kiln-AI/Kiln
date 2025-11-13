@@ -1,16 +1,12 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { ChunkerType, RagConfigWithSubConfigs } from "$lib/types"
+  import type { RagConfigWithSubConfigs } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
-  import {
-    chunker_type_format,
-    extractor_output_format,
-    formatDate,
-  } from "$lib/utils/formatters"
+  import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import {
     embedding_model_name,
     load_available_embedding_models,
@@ -19,6 +15,8 @@
     provider_name_from_id,
     available_model_details,
     available_models,
+    reranker_name,
+    load_available_reranker_models,
   } from "$lib/stores"
   import type { AvailableModels } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -29,6 +27,13 @@
   import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
   import { uncache_available_tools } from "$lib/stores"
+  import { goto } from "$app/navigation"
+  import {
+    fixedWindowChunkerProperties,
+    semanticChunkerProperties,
+  } from "$lib/utils/properties_cast"
+  import FixedWindowChunkerPropertyList from "./fixed_window_chunker_property_list.svelte"
+  import SemanticChunkerPropertyList from "./semantic_chunker_property_list.svelte"
 
   $: project_id = $page.params.project_id
   $: rag_config_id = $page.params.rag_config_id
@@ -53,12 +58,12 @@
   }> = []
 
   onMount(async () => {
-    // need to load available models to get the model store populated
-    await load_available_models()
-    await load_available_embedding_models()
-
-    await get_rag_config()
-    await load_available_models()
+    await Promise.all([
+      load_available_models(),
+      load_available_embedding_models(),
+      load_available_reranker_models(),
+      get_rag_config(),
+    ])
   })
 
   async function get_rag_config() {
@@ -130,20 +135,6 @@
     )
   }
 
-  function tooltip_for_chunker_type(chunker_type: ChunkerType): string {
-    const friendly_chunker_type = chunker_type_format(chunker_type)
-    switch (chunker_type) {
-      case "fixed_window":
-        return `The ${friendly_chunker_type} chunking algorithm splits the text into fixed-size chunks of a specified number of words, while respecting sentence boundaries.`
-      default: {
-        // trigger a type error if there is a new output format, but don't handle it
-        // in the switch
-        const exhaustiveCheck: never = chunker_type
-        return exhaustiveCheck
-      }
-    }
-  }
-
   async function performSearch() {
     if (!searchQuery.trim() || !rag_config) {
       return
@@ -210,6 +201,15 @@
     rag_config?.extractor_config?.model_name,
     rag_config?.extractor_config?.model_provider_name,
   )
+
+  $: fixed_window_properties =
+    rag_config?.chunker_config.chunker_type === "fixed_window"
+      ? fixedWindowChunkerProperties(rag_config.chunker_config)
+      : null
+  $: semantic_properties =
+    rag_config?.chunker_config.chunker_type === "semantic"
+      ? semanticChunkerProperties(rag_config.chunker_config)
+      : null
 </script>
 
 <div class="max-w-[1400px]">
@@ -239,6 +239,14 @@
               },
             },
           ]),
+      {
+        label: "Clone",
+        handler: () => {
+          goto(
+            `/docs/rag_configs/${project_id}/${rag_config_id}/rag_config/clone`,
+          )
+        },
+      },
       {
         label: rag_config?.is_archived ? "Unarchive" : "Archive",
         primary: rag_config?.is_archived,
@@ -465,37 +473,21 @@
               ]}
             />
 
-            <PropertyList
-              title="Chunker"
-              properties={[
-                {
-                  name: "Strategy",
-                  value:
-                    chunker_type_format(
-                      rag_config.chunker_config.chunker_type,
-                    ) || "N/A",
-                  tooltip: tooltip_for_chunker_type(
-                    rag_config.chunker_config.chunker_type,
-                  ),
-                },
-                {
-                  name: "Chunk Size",
-                  value: rag_config.chunker_config.properties?.chunk_size
-                    ? `${String(rag_config.chunker_config.properties.chunk_size)} words`
-                    : "N/A",
-                  tooltip:
-                    "The approximate number of words to include in each chunk",
-                },
-                {
-                  name: "Overlap",
-                  value: rag_config.chunker_config.properties?.chunk_overlap
-                    ? `${String(rag_config.chunker_config.properties.chunk_overlap)} words`
-                    : "N/A",
-                  tooltip:
-                    "The approximate number of words to overlap between chunks",
-                },
-              ]}
-            />
+            {#if semantic_properties}
+              <SemanticChunkerPropertyList
+                {project_id}
+                buffer_size={semantic_properties.buffer_size}
+                breakpoint_percentile_threshold={semantic_properties.breakpoint_percentile_threshold}
+                embedding_config_id={semantic_properties.embedding_config_id}
+              />
+            {/if}
+
+            {#if fixed_window_properties}
+              <FixedWindowChunkerPropertyList
+                chunk_size={fixed_window_properties.chunk_size}
+                chunk_overlap={fixed_window_properties.chunk_overlap}
+              />
+            {/if}
 
             <PropertyList
               title="Embedding Model"
@@ -544,10 +536,46 @@
                     rag_config.vector_store_config.properties
                       .similarity_top_k || 10,
                   ),
-                  tooltip: "The number of top search results returned",
+                  tooltip:
+                    "The number of top search results returned. If a reranker is used, this will be the number of results passed to the reranker. If no reranker is used, this will be the number of results returned to the LLM.",
                 },
               ]}
             />
+            {#if rag_config.reranker_config}
+              <PropertyList
+                title="Reranker"
+                properties={[
+                  {
+                    name: "Model Provider",
+                    value:
+                      provider_name_from_id(
+                        rag_config.reranker_config.model_provider_name,
+                      ) || "N/A",
+                  },
+                  {
+                    name: "Model",
+                    value:
+                      reranker_name(
+                        rag_config.reranker_config.model_name,
+                        rag_config.reranker_config.model_provider_name,
+                      ) || "N/A",
+                  },
+                  {
+                    name: "Top N",
+                    value: String(rag_config.reranker_config.top_n || 5),
+                    tooltip:
+                      "The number of chunks to return after reranking. The results from the vector store are reranked by the reranker model and the top N results are returned and passed to the LLM.",
+                  },
+                ]}
+              />
+            {:else}
+              <div>
+                <div class="text-xl font-bold mb-1">Reranker</div>
+                <div class="flex flex-row flex-wrap gap-2 text-sm items-center">
+                  No reranker configured.
+                </div>
+              </div>
+            {/if}
             <div>
               <div class="text-xl font-bold mb-1">Documents</div>
               <div class="flex flex-row flex-wrap gap-2 text-sm items-center">

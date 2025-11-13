@@ -2,14 +2,19 @@
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
   import Dialog from "$lib/ui/dialog.svelte"
-  import TrashIcon from "$lib/ui/trash_icon.svelte"
-  import UploadIcon from "$lib/ui/upload_icon.svelte"
+  import TagPicker from "$lib/ui/tag_picker.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import { load_document_tags } from "$lib/stores/document_tag_store"
   import type { BulkCreateDocumentsResponse } from "$lib/types"
   import posthog from "posthog-js"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import UploadIcon from "$lib/ui/icons/upload_icon.svelte"
+  import TrashIcon from "$lib/ui/icons/trash_icon.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
 
   export let onUploadCompleted: () => void
 
+  let upload_error: KilnError | null = null
   let selected_files: File[] = []
   let file_input: HTMLInputElement
   let drag_over = false
@@ -97,7 +102,11 @@
   let unsupported_files_count = 0
   let show_success_dialog = false
 
+  // tags
+  let selected_tags: string[] = []
+
   async function handleUpload(): Promise<boolean> {
+    upload_error = null
     upload_in_progress = true
     upload_progress = 0
     upload_total = selected_files.length
@@ -112,6 +121,9 @@
         return false
       }
       return success
+    } catch (e) {
+      upload_error = createKilnError(e)
+      return false
     } finally {
       upload_in_progress = false
       upload_progress = 0
@@ -130,6 +142,12 @@
       formData.append("files", file)
       formData.append(`names`, file.name)
     })
+
+    if (selected_tags.length > 0) {
+      selected_tags.forEach((tag) => {
+        formData.append("tags", tag)
+      })
+    }
 
     const { data, error } = await client.POST(
       "/api/projects/{project_id}/documents/bulk",
@@ -157,6 +175,11 @@
     const uploaded_files = selected_files
     selected_files = []
     onUploadCompleted()
+
+    // reload document tags for the project - because total counts have changed
+    // and we cannot know which ones due to partial upload rejection possibly
+    // happening on the backend
+    await load_document_tags(project_id, { invalidate_cache: true })
 
     ragProgressStore.run_all_rag_configs(project_id).catch((error) => {
       console.error("Error running all rag configs", error)
@@ -244,6 +267,7 @@
     show_upload_result = false
     show_success_dialog = false
     unsupported_files_count = 0
+    selected_tags = []
   }
 
   export function close() {
@@ -253,6 +277,7 @@
     show_upload_result = false
     show_success_dialog = false
     unsupported_files_count = 0
+    selected_tags = []
     return true
   }
 
@@ -329,51 +354,77 @@
       {/if}
 
       {#if !show_success_dialog}
-        <!-- Dropzone -->
-        <div
-          class="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer {drag_over
-            ? 'border-primary bg-primary/5'
-            : 'border-gray-300 hover:border-gray-400'}"
-          on:dragover={handleDragOver}
-          on:dragleave={handleDragLeave}
-          on:drop={handleDrop}
-          on:click={openFileDialog}
-          role="button"
-          tabindex="0"
-          on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault()
-              openFileDialog()
-            }
-          }}
-        >
-          <div class="space-y-2">
-            <div class="w-10 h-10 mx-auto text-gray-500">
-              <UploadIcon />
-            </div>
-            <div>
-              <p class="text-gray-500">Drop files here or click to select</p>
+        <div class="pb-2">
+          <!-- Dropzone -->
+          <div
+            class="border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer {drag_over
+              ? 'border-primary bg-primary/5'
+              : 'border-gray-300 hover:border-gray-400'}"
+            on:dragover={handleDragOver}
+            on:dragleave={handleDragLeave}
+            on:drop={handleDrop}
+            on:click={openFileDialog}
+            role="button"
+            tabindex="0"
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                openFileDialog()
+              }
+            }}
+          >
+            <div class="space-y-2">
+              <div class="w-10 h-10 mx-auto text-gray-500">
+                <UploadIcon />
+              </div>
+              <div>
+                <p class="text-gray-500">Drop files here or click to select</p>
+              </div>
             </div>
           </div>
+
+          <!-- Hidden file input -->
+          <input
+            bind:this={file_input}
+            type="file"
+            multiple
+            class="hidden"
+            on:change={handleFileSelect}
+            accept={supported_file_types.join(",")}
+          />
+
+          {#if unsupported_files_count > 0}
+            <div class="text-error text-sm">
+              {unsupported_files_count} file{unsupported_files_count === 1
+                ? ""
+                : "s"} skipped due to unsupported format
+            </div>
+          {/if}
         </div>
 
-        <!-- Hidden file input -->
-        <input
-          bind:this={file_input}
-          type="file"
-          multiple
-          class="hidden"
-          on:change={handleFileSelect}
-          accept={supported_file_types.join(",")}
-        />
-
-        {#if unsupported_files_count > 0}
-          <div class="text-error text-sm">
-            {unsupported_files_count} file{unsupported_files_count === 1
-              ? ""
-              : "s"} skipped due to unsupported format
-          </div>
-        {/if}
+        <!-- Tag selection -->
+        <div>
+          <FormElement
+            inputType="header_only"
+            label="Tags"
+            id="tags_section"
+            description="Add tags to organize your documents"
+            info_description="Any tags set here will be added to each document you add. Tags can be used to filter your document set."
+            optional={true}
+            value=""
+          />
+          <TagPicker
+            tags={selected_tags}
+            tag_type="doc"
+            {project_id}
+            initial_expanded={true}
+            hide_dropdown_after_select={false}
+            show_close_button={false}
+            on:tags_changed={(event) => {
+              selected_tags = event.detail.current
+            }}
+          />
+        </div>
 
         {#if show_upload_result && upload_result}
           {#if upload_result.created_documents.length > 0}
@@ -446,6 +497,12 @@
             ></progress>
           </div>
         {/if}
+      {/if}
+
+      {#if upload_error}
+        <div class="text-error text-sm">
+          {upload_error.getMessage() || "An unknown error occurred"}
+        </div>
       {/if}
     </div>
   </div>

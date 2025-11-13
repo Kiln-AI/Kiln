@@ -53,7 +53,7 @@
         let error_body: unknown
         try {
           error_body = await response.json()
-        } catch (e) {
+        } catch (_) {
           throw new Error("Failed to save edit. Invalid JSON response.")
         }
         throw createKilnError(error_body)

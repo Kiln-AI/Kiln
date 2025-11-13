@@ -15,18 +15,10 @@ class FixedWindowChunker(BaseChunker):
         if chunker_config.chunker_type != ChunkerType.FIXED_WINDOW:
             raise ValueError("Chunker type must be FIXED_WINDOW")
 
-        chunk_size = chunker_config.chunk_size()
-        if chunk_size is None:
-            raise ValueError("Chunk size must be set")
-
-        chunk_overlap = chunker_config.chunk_overlap()
-        if chunk_overlap is None:
-            raise ValueError("Chunk overlap must be set")
-
         super().__init__(chunker_config)
         self.splitter = SentenceSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
+            chunk_size=chunker_config.fixed_window_properties["chunk_size"],
+            chunk_overlap=chunker_config.fixed_window_properties["chunk_overlap"],
         )
 
     async def _chunk(self, text: str) -> ChunkingResult:
