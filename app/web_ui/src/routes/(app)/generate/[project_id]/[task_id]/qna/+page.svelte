@@ -112,22 +112,8 @@
   let save_all_dialog: Dialog | null = null
   let rechunk_warning_dialog: Dialog | null = null
 
-  function clear_state_and_go_to_intro() {
-    qna.clearAll(DEFAULT_QNA_GUIDANCE)
-    return true
-  }
-
-  function handle_new_session() {
-    if ($page.url.searchParams.get("template_id") !== null) {
-      return clear_state_and_reload()
-    } else {
-      return clear_state_and_go_to_intro()
-    }
-  }
-
   function clear_state_and_reload() {
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
-    window.location.reload()
     return true
   }
 
@@ -316,7 +302,7 @@
               "Are you sure you want to clear all Q&A generation state? This cannot be undone.",
             )
           ) {
-            clear_state_and_go_to_intro()
+            clear_state_and_reload()
           }
         },
       },
@@ -864,7 +850,7 @@
   action_buttons={[
     {
       label: "New Session",
-      action: handle_new_session,
+      action: clear_state_and_reload,
     },
     {
       label: "Continue Session",
