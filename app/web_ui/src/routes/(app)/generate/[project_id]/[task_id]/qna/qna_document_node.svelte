@@ -165,7 +165,7 @@
           <div class="font-medium flex flex-row pr-4 w-full">
             <div class="flex-1">
               <span class="text-xs relative" style="top: -3px">⮑</span>
-              Part {partIndex + 1}
+              Chunk {partIndex + 1}
             </div>
           </div>
         </td>
@@ -179,7 +179,7 @@
             >
               <li>
                 <button on:click|stopPropagation={() => remove_part(part.id)}>
-                  Remove Part
+                  Remove Chunk
                 </button>
               </li>
               <li>
