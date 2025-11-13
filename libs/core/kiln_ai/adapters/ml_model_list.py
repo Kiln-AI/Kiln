@@ -62,6 +62,7 @@ class ModelName(str, Enum):
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
     gpt_5 = "gpt_5"
+    gpt_5_1 = "gpt_5_1"
     gpt_5_chat = "gpt_5_chat"
     gpt_5_mini = "gpt_5_mini"
     gpt_5_nano = "gpt_5_nano"
@@ -314,6 +315,52 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 5.1
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_1,
+        friendly_name="GPT-5.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5
     KilnModel(
         family=ModelFamily.gpt,
