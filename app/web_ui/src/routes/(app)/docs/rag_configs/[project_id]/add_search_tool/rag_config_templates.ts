@@ -210,10 +210,7 @@ const providerOrOpenRouter = (
     case "gemini_api":
       return settings["gemini_api_key"] ? "gemini_api" : "openrouter"
     default:
-      // implement support for other providers here if you need them
-      throw new Error(
-        `Unsupported provider in providerOrOpenRouter: ${provider}`,
-      )
+      return provider
   }
 }
 
