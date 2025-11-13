@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { TaskRunConfig } from "$lib/types"
@@ -8,6 +9,8 @@
   import { get_task_composite_id } from "$lib/stores"
   import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
 
+  const dispatch = createEventDispatcher()
+
   export let project_id: string
   export let task_id: string
   export let task_run_config: TaskRunConfig
@@ -16,6 +19,10 @@
 
   export function show() {
     dialog?.show()
+  }
+
+  function handle_close() {
+    dispatch("close")
   }
 
   $: task_prompts =
@@ -32,6 +39,11 @@
   )
 </script>
 
-<Dialog bind:this={dialog} title="Run Configuration Details" width="wide">
+<Dialog
+  bind:this={dialog}
+  title="Run Configuration Details"
+  width="wide"
+  on:close={handle_close}
+>
   <PropertyList {properties} />
 </Dialog>

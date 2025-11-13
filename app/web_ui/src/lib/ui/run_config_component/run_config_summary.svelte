@@ -12,9 +12,19 @@
   export let is_default: boolean = false
 
   let details_dialog: RunConfigDetailsDialog | null = null
+  let clickable_element: HTMLDivElement | null = null
+  let opened_by_click = false
 
   function open_details_dialog() {
     details_dialog?.show()
+  }
+
+  function handle_dialog_close() {
+    // Blur if opened by click to prevent focus returning
+    if (opened_by_click && clickable_element) {
+      clickable_element.blur()
+    }
+    opened_by_click = false
   }
 
   $: tools_count =
@@ -22,8 +32,22 @@
 </script>
 
 <div
-  class="rounded-md p-2 cursor-pointer hover:bg-base-200 transition-colors"
-  on:click={open_details_dialog}
+  bind:this={clickable_element}
+  class="rounded-md p-2 cursor-pointer hover:bg-base-200 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-base-300"
+  on:click={() => {
+    opened_by_click = true
+    open_details_dialog()
+  }}
+  on:keydown={(e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      opened_by_click = false
+      open_details_dialog()
+    }
+  }}
+  role="button"
+  tabindex="0"
+  aria-label="Open run configuration details"
 >
   <div class="flex items-center gap-2">
     <div class="font-medium">
@@ -54,4 +78,5 @@
   {task_run_config}
   {project_id}
   {task_id}
+  on:close={handle_dialog_close}
 />
