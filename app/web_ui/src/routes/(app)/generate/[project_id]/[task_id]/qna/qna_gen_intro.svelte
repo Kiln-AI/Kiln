@@ -7,7 +7,7 @@
 
 <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
   <Intro
-    title="Search Tool Evaluator"
+    title="Generate Q&A Data"
     description_paragraphs={[]}
     action_buttons={[
       {
@@ -18,10 +18,9 @@
     ]}
   >
     <div slot="description">
-      Select documents from your library to generate Q&A pairs. Questions and
-      answers will be extracted from the document content to create training
-      data. <a
-        href="https://docs.kiln.tech/docs/qna-data-generation"
+      Build an eval dataset containing queries and correct answers from your
+      document library. <a
+        href="https://docs.kiln.tech/docs/evaluations/evaluate-rag-accuracy-q-and-a-evals"
         target="_blank"
         rel="noopener noreferrer"
         class="link">Guide</a

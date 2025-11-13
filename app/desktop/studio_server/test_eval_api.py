@@ -1843,3 +1843,42 @@ async def test_get_run_config_eval_scores_with_usage(
     assert mean_usage["mean_output_tokens"] == 75.0
     assert mean_usage["mean_total_tokens"] == 225.0
     assert mean_usage["mean_cost"] == 0.0075
+
+
+def test_get_eval_configs_score_summary_no_filter_id(
+    client, mock_task, mock_task_from_id
+):
+    """Test that get_eval_configs_score_summary returns 400 when eval_configs_filter_id is None"""
+    mock_task_from_id.return_value = mock_task
+
+    # Create an eval with eval_configs_filter_id set to None
+    # Only RAG template allows eval_configs_filter_id to be None
+    eval_without_filter = Eval(
+        id="eval1",
+        name="Test Eval",
+        description="Test Description",
+        template=EvalTemplateId.rag,
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id=None,
+        parent=mock_task,
+    )
+    eval_without_filter.save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = eval_without_filter
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/eval/eval1/eval_configs_score_summary"
+        )
+
+        assert response.status_code == 400
+        assert (
+            response.json()["detail"]
+            == "No eval configs filter id set, cannot get eval configs score summary."
+        )
+        mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")

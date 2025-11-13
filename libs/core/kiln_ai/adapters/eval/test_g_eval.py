@@ -18,6 +18,7 @@ from kiln_ai.datamodel import (
     TaskRequirement,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
@@ -102,9 +103,9 @@ def test_eval_config(test_task):
 def test_run_config():
     return RunConfigProperties(
         model_name="llama_3_1_8b",
-        model_provider_name="groq",
+        model_provider_name=ModelProviderName.groq,
         prompt_id="simple_prompt_builder",
-        structured_output_mode="json_schema",
+        structured_output_mode=StructuredOutputMode.json_schema,
     )
 
 
@@ -152,6 +153,7 @@ async def run_g_eval_test(
     eval_result, intermediate_outputs = await g_eval.run_eval(test_task_run)
 
     # Should have 1 intermediate output (thinking or chain of thought)
+    assert intermediate_outputs is not None
     assert len(intermediate_outputs) == 1
 
     assert "topic_alignment" in eval_result
@@ -194,12 +196,18 @@ async def test_run_g_eval_e2e(
     g_eval = GEval(test_eval_config, test_run_config)
 
     # Run the evaluation
-    _, scores, intermediate_outputs = await g_eval.run_task_and_eval("chickens")
+    eval_job_item = TaskRun(
+        parent=test_task,
+        input="chickens",
+        output=TaskOutput(output=""),
+    )
+    _, scores, intermediate_outputs = await g_eval.run_task_and_eval(eval_job_item)
 
     # Verify the evaluation results
     assert isinstance(scores, dict)
 
     # Should have 1 intermediate output (thinking or chain of thought)
+    assert intermediate_outputs is not None
     assert len(intermediate_outputs) == 1
 
     assert "topic_alignment" in scores
@@ -544,7 +552,7 @@ def test_raw_output_from_logprobs(test_eval_config, test_run_config):
 
     run_output = RunOutput(
         output={"score": 5},
-        output_logprobs=MockLogprobs(),
+        output_logprobs=MockLogprobs(),  # type: ignore[arg-type]
         intermediate_outputs={},
     )
 

@@ -2472,7 +2472,7 @@ export interface components {
             /** Eval Set Filter Id */
             eval_set_filter_id: string;
             /** Eval Configs Filter Id */
-            eval_configs_filter_id: string;
+            eval_configs_filter_id: string | null;
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
@@ -3090,7 +3090,7 @@ export interface components {
              * Eval Configs Filter Id
              * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
              */
-            eval_configs_filter_id: string;
+            eval_configs_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -3213,7 +3213,7 @@ export interface components {
          * EvalDataType
          * @enum {string}
          */
-        EvalDataType: "final_answer" | "full_trace";
+        EvalDataType: "final_answer" | "full_trace" | "reference_answer";
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -3353,7 +3353,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].

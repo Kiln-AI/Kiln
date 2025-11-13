@@ -185,6 +185,10 @@
         goto(
           `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
         )
+      } else if (next_page === "compare_run_configs") {
+        goto(
+          `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+        )
       } else {
         goto(
           `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}?selected_eval_config=${data.id}`,

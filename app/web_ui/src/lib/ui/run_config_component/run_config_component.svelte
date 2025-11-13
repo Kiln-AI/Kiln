@@ -282,6 +282,7 @@
       />
     {/if}
     <Collapse title="Advanced Options">
+      <slot name="advanced" />
       <AdvancedRunOptions
         bind:temperature
         bind:top_p
@@ -291,23 +292,22 @@
     </Collapse>
   {:else}
     <Collapse title="Advanced Options">
-      <div class="flex flex-col gap-0">
-        {#if !hide_tools_selector}
-          <ToolsSelector
-            bind:tools
-            {project_id}
-            task_id={current_task?.id ?? null}
-            {hide_create_kiln_task_tool_button}
-            {mandatory_tools}
-          />
-        {/if}
-        <AdvancedRunOptions
-          bind:temperature
-          bind:top_p
-          bind:structured_output_mode
-          has_structured_output={requires_structured_output}
+      <slot name="advanced" />
+      {#if !hide_tools_selector}
+        <ToolsSelector
+          bind:tools
+          {project_id}
+          task_id={current_task?.id ?? null}
+          {hide_create_kiln_task_tool_button}
+          {mandatory_tools}
         />
-      </div>
+      {/if}
+      <AdvancedRunOptions
+        bind:temperature
+        bind:top_p
+        bind:structured_output_mode
+        has_structured_output={requires_structured_output}
+      />
     </Collapse>
   {/if}
 </div>

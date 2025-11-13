@@ -47,12 +47,16 @@ class GEvalTask(Task, parent_of={}):
             system_instruction += f"\nThe task the model was given is as follows:\n<eval_data>\n<task_description>{task_description}</task_description>\n</eval_data>\n"
 
         # Build the COT eval instructions
-        cot_instructions = "First, think step by step about the model's performance following these evaluation steps:\n\n"
         steps = eval_config.properties.get("eval_steps", [])
         if not isinstance(steps, list):
             raise ValueError("eval_steps must be a list.")
-        for i, step in enumerate(steps):
-            cot_instructions += f"{i + 1}) {step}\n"
+        if len(steps) == 1:
+            cot_instructions = "First, think step by step about the model's performance following this evaluation step:\n\n"
+            cot_instructions += f"{steps[0]}\n"
+        else:
+            cot_instructions = "First, think step by step about the model's performance following these evaluation steps:\n\n"
+            for i, step in enumerate(steps):
+                cot_instructions += f"{i + 1}) {step}\n"
 
         eval = eval_config.parent_eval()
         if not eval:
@@ -118,6 +122,25 @@ The model produced the following output for the task:
 </eval_data>
 """
 
+    def generate_ref_ans_run_description(
+        self, eval_input: str, eval_output: str, reference_answer: str
+    ) -> str:
+        return f"""The model was given the following input for the task: 
+<eval_data>
+{eval_input}
+</eval_data>
+
+The model produced the following output for the task:
+<eval_data>
+{eval_output}
+</eval_data>
+
+This is the reference answer:
+<eval_data>
+{reference_answer}
+</eval_data>
+"""
+
     def generate_full_trace_run_description(
         self,
         eval_input: str,
@@ -177,7 +200,7 @@ This is the full conversation history for the task run:
         return description
 
     async def run_eval(
-        self, task_run: TaskRun
+        self, task_run: TaskRun, eval_job_item: TaskRun | None = None
     ) -> tuple[EvalScores, Dict[str, str] | None]:
         """
         Run this eval on the given task run.
@@ -233,6 +256,16 @@ This is the full conversation history for the task run:
                     task_run.trace
                 ),
             )
+
+        elif self.eval.evaluation_data_type == EvalDataType.reference_answer:
+            if eval_job_item is None:
+                raise ValueError(
+                    "Eval job item is required for reference answer evaluation"
+                )
+            run_description = self.generate_ref_ans_run_description(
+                task_run.input, task_run.output.output, eval_job_item.output.output
+            )
+
         else:  # EvalDataType.final_answer
             run_description = self.generate_final_answer_run_description(
                 task_run.input, task_run.output.output

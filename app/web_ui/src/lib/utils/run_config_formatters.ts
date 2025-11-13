@@ -1,9 +1,17 @@
-import type { TaskRunConfig, PromptResponse, ProviderModels } from "$lib/types"
+import type {
+  TaskRunConfig,
+  PromptResponse,
+  ProviderModels,
+  ToolSetApiDescription,
+} from "$lib/types"
 import {
   model_name,
   prompt_name_from_id,
   provider_name_from_id,
 } from "$lib/stores"
+import { get_tools_property_info } from "$lib/stores/tools_store"
+import { prompt_link } from "$lib/utils/link_builder"
+import type { UiProperty } from "$lib/ui/property_list"
 
 export function getDetailedModelName(
   config: TaskRunConfig,
@@ -80,4 +88,68 @@ export function getRunConfigPromptInfoText(
   }
 
   return null
+}
+
+export function getRunConfigUiProperties(
+  project_id: string,
+  task_id: string,
+  run_config: TaskRunConfig,
+  model_info: ProviderModels | null,
+  task_prompts: PromptResponse | null,
+  available_tools: Record<string, ToolSetApiDescription[]> | null,
+): UiProperty[] {
+  const model_value = model_info
+    ? `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`
+    : "Loading..."
+
+  const prompt_value = task_prompts
+    ? getRunConfigPromptDisplayName(run_config, task_prompts)
+    : "Loading..."
+
+  const prompt_id = run_config.run_config_properties.prompt_id
+  const prompt_link_value = prompt_id
+    ? prompt_link(project_id, task_id, prompt_id)
+    : undefined
+
+  const prompt_info_text = getRunConfigPromptInfoText(run_config)
+
+  const tool_ids = run_config.run_config_properties.tools_config?.tools || []
+  const tools_property_info = available_tools
+    ? get_tools_property_info(tool_ids, project_id, available_tools)
+    : { value: "Loading...", links: undefined }
+
+  return [
+    {
+      name: "ID",
+      value: run_config.id || "N/A",
+    },
+    {
+      name: "Name",
+      value: run_config.name || "N/A",
+    },
+    {
+      name: "Model",
+      value: model_value,
+    },
+    {
+      name: "Prompt",
+      value: prompt_value,
+      link: prompt_link_value,
+      tooltip: prompt_info_text || undefined,
+    },
+    {
+      name: "Available Tools",
+      value: tools_property_info.value,
+      links: tools_property_info.links,
+      badge: Array.isArray(tools_property_info.value) ? true : false,
+    },
+    {
+      name: "Temperature",
+      value: run_config.run_config_properties.temperature.toString(),
+    },
+    {
+      name: "Top P",
+      value: run_config.run_config_properties.top_p.toString(),
+    },
+  ]
 }

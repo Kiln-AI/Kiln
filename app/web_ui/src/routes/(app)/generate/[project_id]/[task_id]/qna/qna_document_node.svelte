@@ -4,6 +4,7 @@
   import Output from "../../../../run/output.svelte"
   import { createEventDispatcher } from "svelte"
   import type { QnaStore } from "./qna_ui_store"
+  import Warning from "$lib/ui/warning.svelte"
 
   type QnAPair = {
     id: string
@@ -26,6 +27,7 @@
     name: string
     tags: string[]
     extracted: boolean
+    extraction_failed: boolean
     parts: QnADocPart[]
   }
 
@@ -48,6 +50,7 @@
   let part_output_dialog: Dialog | null = null
   let selected_part_text: string | null = null
   let document_parts_dialog: Dialog | null = null
+  let generate_document_warning_dialog: Dialog | null = null
 
   function toggleQAPairExpand(qaId: string) {
     expandedQAPairs[qaId] = !expandedQAPairs[qaId]
@@ -79,6 +82,18 @@
       "_blank",
     )
   }
+
+  function handle_generate_for_document() {
+    if (document.parts.length > 1) {
+      generate_document_warning_dialog?.show()
+    } else {
+      proceed_with_generate_for_document()
+    }
+  }
+
+  function proceed_with_generate_for_document() {
+    dispatch("generate_for_document", { document_id: document.id })
+  }
 </script>
 
 <!-- Document Header Row -->
@@ -98,7 +113,11 @@
         >
           {document.name}
         </button>
-        {#if document.extracted}
+        {#if document.extraction_failed}
+          <div class="badge badge-sm badge-error badge-outline ml-2">
+            Extraction Failed
+          </div>
+        {:else if document.extracted}
           <div class="badge badge-sm badge-secondary badge-outline ml-2">
             Extracted
           </div>
@@ -121,19 +140,18 @@
         <li>
           <button
             on:click|stopPropagation={() =>
-              dispatch("generate_for_document", { document_id: document.id })}
-          >
-            Generate Q&A for Document
-          </button>
-        </li>
-        <li>
-          <button
-            on:click|stopPropagation={() =>
               dispatch("delete_document", { document_id: document.id })}
           >
             Remove Document
           </button>
         </li>
+        {#if $qnaMaxStep && $qnaMaxStep > 2 && !document.extraction_failed}
+          <li>
+            <button on:click|stopPropagation={handle_generate_for_document}>
+              Generate Q&A Pairs
+            </button>
+          </li>
+        {/if}
       </ul>
     </div>
   </td>
@@ -160,7 +178,7 @@
           <div class="font-medium flex flex-row pr-4 w-full">
             <div class="flex-1">
               <span class="text-xs relative" style="top: -3px">⮑</span>
-              Part {partIndex + 1}
+              Chunk {partIndex + 1}
             </div>
           </div>
         </td>
@@ -174,7 +192,7 @@
             >
               <li>
                 <button on:click|stopPropagation={() => remove_part(part.id)}>
-                  Remove Part
+                  Remove Chunk
                 </button>
               </li>
               <li>
@@ -185,7 +203,7 @@
                       part_id: part.id,
                     })}
                 >
-                  Generate Q&A for Part
+                  Generate Q&A Pairs for Chunk
                 </button>
               </li>
             </ul>
@@ -239,7 +257,7 @@
                   on:click|stopPropagation={() =>
                     delete_qa_pair(part.id, qa.id)}
                 >
-                  Remove Q&A Pair
+                  Delete Q&A Pair
                 </button>
               </li>
               {#if qa.saved_id}
@@ -295,4 +313,38 @@
       {/each}
     </div>
   {/if}
+</Dialog>
+
+<!-- The idea is that generating Q&A for a whole document might let user mess with the chunking so the whole structure would be different -->
+<Dialog
+  title="Generate Q&A Pairs"
+  bind:this={generate_document_warning_dialog}
+  action_buttons={[
+    {
+      label: "Cancel",
+      action: () => {
+        generate_document_warning_dialog?.close()
+        return true
+      },
+    },
+    {
+      label: "Continue",
+      action: () => {
+        proceed_with_generate_for_document()
+        return true
+      },
+      isPrimary: true,
+    },
+  ]}
+>
+  <div class="flex flex-col gap-3">
+    <div class="mt-2">
+      <Warning
+        large_icon={true}
+        warning_icon="exclaim"
+        warning_color="warning"
+        warning_message="If you proceed, all existing Q&A pairs for this document will be lost and any document chunks will be replaced. Consider generating Q&A for specific chunks instead."
+      />
+    </div>
+  </div>
 </Dialog>

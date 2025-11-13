@@ -23,7 +23,7 @@
 
   const dispatch = createEventDispatcher<{
     extractor_config_selected: { extractor_config_id: string }
-    extraction_complete: { extractor_config_id: string }
+    extraction_complete: { extractor_config_id: string; error_count: number }
     close: void
   }>()
 
@@ -152,9 +152,10 @@
             return
           }
 
-          // Dispatch event
+          // Dispatch event with error count
           dispatch("extraction_complete", {
             extractor_config_id: selected_extractor_id,
+            error_count: extraction_errors,
           })
 
           // Close modal

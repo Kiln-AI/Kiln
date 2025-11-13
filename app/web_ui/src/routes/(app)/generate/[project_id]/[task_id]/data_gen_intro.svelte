@@ -9,7 +9,6 @@
   import { goto } from "$app/navigation"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
-  import QnaIcon from "$lib/ui/icons/qna_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
 
   export let generate_subtopics: () => void
@@ -59,16 +58,21 @@
 
   function select_eval(evaluator: Eval) {
     const eval_set_filter_id = evaluator.eval_set_filter_id
-    const eval_configs_filter_id = evaluator.eval_configs_filter_id
+    const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
     const splits: Record<string, number> = {}
     if (
       eval_set_filter_id.startsWith("tag::") &&
-      eval_configs_filter_id.startsWith("tag::")
+      (eval_configs_filter_id === null ||
+        eval_configs_filter_id.startsWith("tag::"))
     ) {
       const eval_set_tag = eval_set_filter_id.split("::")[1]
-      const eval_configs_tag = eval_configs_filter_id.split("::")[1]
-      splits[eval_set_tag] = 0.8
-      splits[eval_configs_tag] = 0.2
+      if (eval_configs_filter_id) {
+        const eval_configs_tag = eval_configs_filter_id.split("::")[1]
+        splits[eval_set_tag] = 0.8
+        splits[eval_configs_tag] = 0.2
+      } else {
+        splits[eval_set_tag] = 1.0
+      }
     } else {
       alert(
         "We can't generate synthetic data for this eval as it's eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
@@ -93,7 +97,12 @@
     // .set will automatically URL encode
     params.set("splits", encode_splits_for_url(splits))
 
-    goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+    // For reference answer evals, redirect to QnA page instead of synth page
+    if (template_id === "rag") {
+      goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
+    } else {
+      goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+    }
     evals_dialog?.close()
   }
 
@@ -188,10 +197,6 @@
     tags = Object.fromEntries(Object.entries(tags).sort((a, b) => b[1] - a[1]))
     return tags
   }
-
-  function show_qa_from_documents_dialog() {
-    goto(`/generate/${project_id}/${task_id}/qna`)
-  }
 </script>
 
 <div class="flex flex-col md:flex-row gap-32 justify-center items-center">
@@ -271,18 +276,6 @@
             },
           ],
         },
-        {
-          title: "Search Tool Evaluator",
-          description:
-            "Generate question and answer dataset, using documents from your document library. Useful for creating evaluators which check that that a search tool (RAG) can find relevant answers.",
-          action_buttons: [
-            {
-              label: "Generate Q&A Data",
-              handler: show_qa_from_documents_dialog,
-              primary: true,
-            },
-          ],
-        },
       ]}
     >
       <div slot="image-0" class="h-12 w-12">
@@ -290,9 +283,6 @@
       </div>
       <div slot="image-1" class="h-12 w-12">
         <FinetuneIcon />
-      </div>
-      <div slot="image-2" class="h-12 w-12">
-        <QnaIcon />
       </div>
     </MultiIntro>
   {/if}
