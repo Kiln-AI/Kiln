@@ -18,7 +18,6 @@
     load_model_info,
     model_name,
     provider_name_from_id,
-    current_task_prompts,
     load_available_prompts,
     load_available_models,
     load_task,
@@ -28,11 +27,6 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
-  import {
-    getDetailedModelName,
-    getRunConfigPromptDisplayName,
-    getRunConfigPromptInfoText,
-  } from "$lib/utils/run_config_formatters"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import RunEval from "../run_eval.svelte"
@@ -40,12 +34,12 @@
   import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
-  import { prompt_link } from "$lib/utils/link_builder"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { ActionButton } from "../../../../../types"
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
   import Intro from "$lib/ui/intro.svelte"
+  import RunConfigSummary from "$lib/ui/run_config_component/run_config_summary.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -588,51 +582,15 @@
                     score_summary?.run_config_percent_complete?.[
                       "" + task_run_config.id
                     ] || 0.0}
-                  {@const prompt_info_text =
-                    getRunConfigPromptInfoText(task_run_config)}
                   <tr class="max-w-[400px]">
                     <td>
-                      <div class="flex items-center gap-2">
-                        <div class="font-medium">
-                          {task_run_config.name}
-                        </div>
-                        {#if task_run_config.id === task?.default_run_config_id}
-                          <span
-                            class="badge badge-sm badge-primary badge-outline"
-                          >
-                            Default
-                          </span>
-                        {/if}
-                      </div>
-                      <div class="text-sm text-gray-500">
-                        Model: {getDetailedModelName(
-                          task_run_config,
-                          $model_info,
-                        )}
-                      </div>
-                      <div class="text-sm text-gray-500">
-                        Prompt: <a
-                          href={prompt_link(
-                            $page.params.project_id,
-                            $page.params.task_id,
-                            task_run_config.run_config_properties.prompt_id,
-                          )}
-                          class="link"
-                        >
-                          {getRunConfigPromptDisplayName(
-                            task_run_config,
-                            $current_task_prompts,
-                          )}
-                        </a>
-
-                        {#if prompt_info_text}
-                          <InfoTooltip
-                            tooltip_text={prompt_info_text}
-                            position="right"
-                            no_pad={true}
-                          />
-                        {/if}
-                      </div>
+                      <RunConfigSummary
+                        {task_run_config}
+                        is_default={task_run_config.id ===
+                          task?.default_run_config_id}
+                        {project_id}
+                        {task_id}
+                      />
                     </td>
                     <td class="text-sm text-center">
                       {#if percent_complete < 1.0}
