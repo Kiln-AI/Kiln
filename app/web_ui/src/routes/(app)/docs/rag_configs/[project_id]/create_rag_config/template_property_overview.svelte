@@ -39,6 +39,11 @@
           tooltip:
             "How documents will be indexed and searched. Vector = semantic similarity, Full-Text = keyword search, Hybrid = both",
         },
+        {
+          name: "Reranker",
+          value: "None",
+          tooltip: "No reranker configured.",
+        },
         ...(template.notice_text
           ? [
               {

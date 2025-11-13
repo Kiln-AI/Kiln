@@ -14,7 +14,6 @@
     type RequiredProvider,
     type RagConfigTemplate,
   } from "./rag_config_templates"
-  import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id
@@ -43,13 +42,6 @@
   )
 
   let missing_provider: RequiredProvider | null = null
-  $: missing_provider_string = missing_provider
-    ? {
-        OpenaiOrOpenRouter: "OpenAI or OpenRouter",
-        GeminiOrOpenRouter: "Google Gemini or OpenRouter",
-        Ollama: "Ollama",
-      }[missing_provider]
-    : null
 
   function redirect_to_template(template_id: string) {
     // Go to the create search tool page with the template id
@@ -235,13 +227,6 @@
         API key.
       {/if}
     </p>
-    {#if settings && settings["open_router_api_key"]}
-      <Warning
-        warning_message="OpenRouter doesn't support embeddings yet. Please add a direct {missing_provider_string} API key for search tools."
-        warning_color="warning"
-        warning_icon="info"
-      />
-    {/if}
   </div>
 </Dialog>
 

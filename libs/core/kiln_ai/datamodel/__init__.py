@@ -18,6 +18,7 @@ from kiln_ai.datamodel import (
     eval,
     extraction,
     rag,
+    reranker,
     strict_mode,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
@@ -80,5 +81,6 @@ __all__ = [
     "generate_model_id",
     "prompt_generator_values",
     "rag",
+    "reranker",
     "strict_mode",
 ]

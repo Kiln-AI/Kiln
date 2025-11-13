@@ -32,6 +32,7 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
+from kiln_ai.adapters.reranker_list import built_in_rerankers
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -177,6 +178,17 @@ class EmbeddingProvider(BaseModel):
     models: List[EmbeddingModelDetails]
 
 
+class RerankerModelDetails(BaseModel):
+    id: str
+    name: str
+
+
+class RerankerProvider(BaseModel):
+    provider_name: str
+    provider_id: str
+    models: List[RerankerModelDetails]
+
+
 class ProviderModel(BaseModel):
     id: str
     name: str
@@ -188,6 +200,10 @@ class ProviderModels(BaseModel):
 
 class ProviderEmbeddingModels(BaseModel):
     models: Dict[EmbeddingModelName, ProviderModel]
+
+
+class ProviderRerankerModels(BaseModel):
+    models: Dict[str, ProviderModel]
 
 
 def connect_provider_api(app: FastAPI):
@@ -340,6 +356,55 @@ def connect_provider_api(app: FastAPI):
         ollama_models = await available_ollama_embedding_models()
         if ollama_models:
             models.insert(0, ollama_models)
+
+        return models
+
+    @app.get("/api/providers/reranker_models")
+    async def get_providers_reranker_models() -> ProviderRerankerModels:
+        models = {}
+        for model in built_in_rerankers:
+            models[model.name] = ProviderModel(id=model.name, name=model.friendly_name)
+        return ProviderRerankerModels(models=models)
+
+    # returns map, of provider name to list of model names
+    @app.get("/api/available_reranker_models")
+    async def get_available_reranker_models() -> List[RerankerProvider]:
+        # Providers with just keys can return all their models if keys are set
+        key_providers: List[str] = []
+
+        for provider, provider_warning in provider_warnings.items():
+            has_keys = True
+            for required_key in provider_warning.required_config_keys:
+                if Config.shared().get_value(required_key) is None:
+                    has_keys = False
+                    break
+            if has_keys:
+                key_providers.append(provider)
+
+        models: List[RerankerProvider] = [
+            RerankerProvider(
+                provider_name=provider_name_from_id(provider),
+                provider_id=provider,
+                models=[],
+            )
+            for provider in key_providers
+        ]
+
+        for model in built_in_rerankers:
+            for provider in model.providers:
+                if provider.name in key_providers:
+                    available_models = next(
+                        (m for m in models if m.provider_id == provider.name), None
+                    )
+                    if available_models:
+                        available_models.models.append(
+                            RerankerModelDetails(
+                                id=model.name,
+                                name=model.friendly_name,
+                            )
+                        )
+
+        # ollama not supported yet - we can add it later
 
         return models
 

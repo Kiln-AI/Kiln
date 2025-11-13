@@ -770,6 +770,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_reranker_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Reranker Config */
+        post: operations["create_reranker_config_api_projects__project_id__create_reranker_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/reranker_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reranker Configs */
+        get: operations["get_reranker_configs_api_projects__project_id__reranker_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/embedding_configs/{embedding_config_id}": {
         parameters: {
             query?: never;
@@ -1027,6 +1061,40 @@ export interface paths {
         };
         /** Get Available Embedding Models */
         get: operations["get_available_embedding_models_api_available_embedding_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/reranker_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Reranker Models */
+        get: operations["get_providers_reranker_models_api_providers_reranker_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_reranker_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Reranker Models */
+        get: operations["get_available_reranker_models_api_available_reranker_models_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2381,6 +2449,14 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
+        /** CohereCompatibleProperties */
+        CohereCompatibleProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "cohere_compatible";
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -2582,10 +2658,47 @@ export interface components {
              */
             vector_store_config_id: string | null;
             /**
+             * Reranker Config Id
+             * @description The reranker config to use for the RAG workflow.
+             */
+            reranker_config_id?: string | null;
+            /**
              * Tags
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+        };
+        /** CreateRerankerConfigRequest */
+        CreateRerankerConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the reranker config
+             */
+            description?: string | null;
+            /**
+             * Top N
+             * @description Number of results to return from the reranker
+             */
+            top_n: number;
+            /** @description The name of the model provider to use for the reranker config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The name of the model to use for the reranker config.
+             */
+            model_name: string;
+            /**
+             * @description The properties of the reranker config.
+             * @default {
+             *       "type": "cohere_compatible"
+             *     }
+             */
+            properties: components["schemas"]["CohereCompatibleProperties"];
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -4454,6 +4567,13 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
         };
+        /** ProviderRerankerModels */
+        ProviderRerankerModels: {
+            /** Models */
+            models: {
+                [key: string]: components["schemas"]["ProviderModel"];
+            };
+        };
         /** RagConfig */
         RagConfig: {
             /**
@@ -4519,6 +4639,11 @@ export interface components {
              */
             vector_store_config_id: string | null;
             /**
+             * Reranker Config Id
+             * @description The ID of the reranker config used to rerank the documents. If None, no reranking will be performed.
+             */
+            reranker_config_id?: string | null;
+            /**
              * Tags
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
@@ -4551,6 +4676,7 @@ export interface components {
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
             vector_store_config: components["schemas"]["VectorStoreConfig"];
+            reranker_config: components["schemas"]["RerankerConfig"] | null;
             /** Tags */
             tags: string[] | null;
         };
@@ -4702,6 +4828,73 @@ export interface components {
             value: number;
             /** @description The type of rating */
             type: components["schemas"]["TaskOutputRatingType"];
+        };
+        /** RerankerConfig */
+        RerankerConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for your own reference to identify the reranker config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /**
+             * Top N
+             * @description The number of results to return from the reranker.
+             */
+            top_n: number;
+            /**
+             * Model Provider Name
+             * @description The name of the model provider to use.
+             */
+            model_provider_name: string;
+            /**
+             * Model Name
+             * @description The name of the model to use.
+             */
+            model_name: string;
+            /**
+             * Properties
+             * @description The properties of the reranker config, specific to the selected type.
+             */
+            properties: components["schemas"]["CohereCompatibleProperties"];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** RerankerModelDetails */
+        RerankerModelDetails: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** RerankerProvider */
+        RerankerProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["RerankerModelDetails"][];
         };
         /** RunConfigEvalResult */
         RunConfigEvalResult: {
@@ -7277,6 +7470,72 @@ export interface operations {
             };
         };
     };
+    create_reranker_config_api_projects__project_id__create_reranker_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRerankerConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reranker_configs_api_projects__project_id__reranker_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get: {
         parameters: {
             query?: never;
@@ -7758,6 +8017,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingProvider"][];
+                };
+            };
+        };
+    };
+    get_providers_reranker_models_api_providers_reranker_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRerankerModels"];
+                };
+            };
+        };
+    };
+    get_available_reranker_models_api_available_reranker_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerProvider"][];
                 };
             };
         };
