@@ -6,6 +6,7 @@ setup_certs()
 
 import contextlib
 import os
+import resource
 import sys
 import tkinter as tk
 import webbrowser
@@ -25,6 +26,11 @@ os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
     Config.settings_dir(), "cache", "llama_index_cache"
 )
 os.environ["NLTK_DATA"] = os.path.join(Config.settings_dir(), "cache", "nltk_data")
+
+# Increase file descriptor limit
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+target_soft = max(soft, min(hard, 16384))
+resource.setrlimit(resource.RLIMIT_NOFILE, (target_soft, hard))
 
 
 class DesktopApp:

@@ -1,4 +1,5 @@
 import argparse
+import resource
 from importlib.metadata import version
 from typing import Sequence
 
@@ -86,6 +87,10 @@ app = make_app()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    target_soft = max(soft, min(hard, 16384))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (target_soft, hard))
+
     parser = build_argument_parser()
     args = parser.parse_args(argv)
     uvicorn.run(
