@@ -58,16 +58,21 @@
 
   function select_eval(evaluator: Eval) {
     const eval_set_filter_id = evaluator.eval_set_filter_id
-    const eval_configs_filter_id = evaluator.eval_configs_filter_id
+    const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
     const splits: Record<string, number> = {}
     if (
       eval_set_filter_id.startsWith("tag::") &&
-      eval_configs_filter_id.startsWith("tag::")
+      (eval_configs_filter_id === null ||
+        eval_configs_filter_id.startsWith("tag::"))
     ) {
       const eval_set_tag = eval_set_filter_id.split("::")[1]
-      const eval_configs_tag = eval_configs_filter_id.split("::")[1]
-      splits[eval_set_tag] = 0.8
-      splits[eval_configs_tag] = 0.2
+      if (eval_configs_filter_id) {
+        const eval_configs_tag = eval_configs_filter_id.split("::")[1]
+        splits[eval_set_tag] = 0.8
+        splits[eval_configs_tag] = 0.2
+      } else {
+        splits[eval_set_tag] = 1.0
+      }
     } else {
       alert(
         "We can't generate synthetic data for this eval as it's eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
@@ -92,7 +97,12 @@
     // .set will automatically URL encode
     params.set("splits", encode_splits_for_url(splits))
 
-    goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+    // For reference answer evals, redirect to QnA page instead of synth page
+    if (template_id === "rag") {
+      goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
+    } else {
+      goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+    }
     evals_dialog?.close()
   }
 

@@ -11,15 +11,11 @@
     Task,
     TaskRunConfig,
     KilnTaskServerProperties,
-    ProviderModels,
-    PromptResponse,
   } from "$lib/types"
   import {
     load_available_models,
     load_model_info,
     model_info,
-    model_name,
-    provider_name_from_id,
     load_available_tools,
     get_task_composite_id,
     available_tools,
@@ -30,12 +26,11 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
-  import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
+  import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
-  import { get_tools_property_info } from "$lib/stores/tools_store"
   import type { UiProperty } from "$lib/ui/property_list"
 
   $: project_id = $page.params.project_id
@@ -51,9 +46,8 @@
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
   let unarchive_error: KilnError | null = null
-  let tools_property_value: string | string[] = "Loading..."
-  let tool_links: (string | null)[] | undefined = undefined
   let run_config_properties: UiProperty[] = []
+  let task_id_for_run_config: string | null = null
 
   onMount(async () => {
     await fetch_tool_server()
@@ -98,6 +92,7 @@
             ]
           run_config =
             run_configs?.find((rc) => rc.id === run_config_id) || null
+          task_id_for_run_config = task_id
         } catch (err) {
           console.error("Failed to load run configs:", err)
         }
@@ -223,69 +218,22 @@
   }
 
   $: {
-    const tools_property_info = get_tools_property_info(
-      run_config?.run_config_properties?.tools_config?.tools || [],
-      project_id,
-      $available_tools,
-    )
-    tools_property_value = tools_property_info.value
-    tool_links = tools_property_info.links
-  }
-
-  $: run_config_properties = get_run_config_properties(
-    run_config,
-    $model_info,
-    $prompts_by_task_composite_id,
-    tools_property_value,
-  )
-
-  function get_run_config_properties(
-    run_config: TaskRunConfig | null,
-    model_info: ProviderModels | null,
-    prompts_by_task_composite_id: Record<string, PromptResponse>,
-    tools_property_value: string | string[],
-  ): UiProperty[] {
-    if (!run_config || !model_info) {
-      return []
+    if (task_id_for_run_config && run_config) {
+      const task_prompts =
+        $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id_for_run_config)
+        ] || null
+      run_config_properties = getRunConfigUiProperties(
+        project_id,
+        task_id_for_run_config,
+        run_config,
+        $model_info,
+        task_prompts,
+        $available_tools,
+      )
+    } else {
+      run_config_properties = []
     }
-
-    return [
-      {
-        name: "ID",
-        value: run_config.id || "N/A",
-      },
-      {
-        name: "Name",
-        value: run_config.name || "N/A",
-      },
-      {
-        name: "Model",
-        value: `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`,
-      },
-      {
-        name: "Prompt",
-        value: getRunConfigPromptDisplayName(
-          run_config,
-          prompts_by_task_composite_id[
-            get_task_composite_id(project_id, task?.id ?? "")
-          ] ?? { generators: [], prompts: [] },
-        ),
-      },
-      {
-        name: "Available Tools",
-        value: tools_property_value,
-        links: tool_links,
-        badge: Array.isArray(tools_property_value) ? true : false,
-      },
-      {
-        name: "Temperature",
-        value: run_config.run_config_properties.temperature.toString(),
-      },
-      {
-        name: "Top P",
-        value: run_config.run_config_properties.top_p.toString(),
-      },
-    ]
   }
 
   async function archive() {

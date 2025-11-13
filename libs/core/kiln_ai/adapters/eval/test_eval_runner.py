@@ -5,6 +5,7 @@ import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
+from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -21,7 +22,11 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalScores,
 )
-from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.datamodel.task import (
+    RunConfigProperties,
+    StructuredOutputMode,
+    TaskRunConfig,
+)
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -94,9 +99,9 @@ def mock_run_config(
         description="test",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
+            structured_output_mode=StructuredOutputMode.json_schema,
         ),
         parent=mock_task,
     )
@@ -185,6 +190,7 @@ def test_collect_tasks_filtering(
     job = jobs[0]
     # job should be the tag1 item, and setup as a task run eval for mock_run_config
     assert job.item.tags == ["tag1"]
+    assert job.task_run_config is not None
     assert job.task_run_config.id == mock_run_config.id
     assert job.eval_config.id == mock_eval_config.id
 
@@ -210,9 +216,9 @@ def test_collect_tasks_filtering(
         description="test2",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
+            structured_output_mode=StructuredOutputMode.json_schema,
         ),
         parent=mock_task,
     )
@@ -226,8 +232,11 @@ def test_collect_tasks_filtering(
     assert len(jobs) == 2
     for job in jobs:
         assert job.item.tags == ["tag1"]
+        assert job.task_run_config is not None
         assert job.task_run_config.id in [mock_run_config.id, rc.id]
         assert job.eval_config.id == mock_eval_config.id
+    assert jobs[0].task_run_config is not None
+    assert jobs[1].task_run_config is not None
     assert jobs[0].task_run_config.id != jobs[1].task_run_config.id
 
     # add a second eval config, and call a new runner with multiple eval configs
@@ -418,9 +427,9 @@ def test_collect_tasks_multiple_run_configs(
         description="test2",
         run_config_properties=RunConfigProperties(
             model_name="gpt-3.5",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
+            structured_output_mode=StructuredOutputMode.json_schema,
         ),
         parent=mock_task,
     )
@@ -490,10 +499,10 @@ async def test_run_job_success_task_run_eval(
     mock_scores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
             return (
                 TaskRun(
-                    input="test input",
+                    input=eval_job_item.input,
                     input_source=data_source,
                     output=TaskOutput(output="evaluated output"),
                     intermediate_outputs={"intermediate_output": "intermediate output"},
@@ -550,11 +559,11 @@ async def test_run_job_success_eval_config_eval(
     mock_scores: EvalScores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
             raise ValueError("Attempted to run task and eval for a config eval")
 
         async def run_eval(
-            self, task_run: TaskRun
+            self, task_run: TaskRun, eval_job_item: TaskRun | None = None
         ) -> tuple[EvalScores, Dict[str, str] | None]:
             return mock_scores, {"intermediate_output": "intermediate output"}
 
@@ -627,7 +636,7 @@ async def test_run_job_evaluator_error(
     )
 
     class ErrorEvaluator(BaseEval):
-        async def run_task_and_eval(self, input):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
             raise ValueError("Evaluation failed")
 
     with patch(
@@ -675,9 +684,9 @@ async def test_run_job_with_full_trace_evaluation_data_type(
     ]
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
             result_task_run = TaskRun(
-                input="test input",
+                input=eval_job_item.input,
                 input_source=data_source,
                 output=TaskOutput(output="evaluated output"),
                 intermediate_outputs={"intermediate_output": "intermediate output"},
@@ -743,9 +752,9 @@ async def test_run_job_with_final_answer_evaluation_data_type(
     ]
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
             result_task_run = TaskRun(
-                input="test input",
+                input=eval_job_item.input,
                 input_source=data_source,
                 output=TaskOutput(output="evaluated output"),
                 intermediate_outputs={"intermediate_output": "intermediate output"},
@@ -801,9 +810,9 @@ async def test_run_job_with_none_trace(
     mock_scores = {"accuracy": 0.95}
 
     class MockEvaluator(BaseEval):
-        async def run_task_and_eval(self, input):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
             result_task_run = TaskRun(
-                input="test input",
+                input=eval_job_item.input,
                 input_source=data_source,
                 output=TaskOutput(output="evaluated output"),
                 intermediate_outputs={"intermediate_output": "intermediate output"},

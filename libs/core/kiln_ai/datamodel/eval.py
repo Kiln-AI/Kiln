@@ -36,6 +36,7 @@ class EvalTemplateId(str, Enum):
     maliciousness = "maliciousness"
     factual_correctness = "factual_correctness"
     jailbreak = "jailbreak"
+    rag = "rag"
 
 
 class EvalConfigType(str, Enum):
@@ -286,6 +287,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 class EvalDataType(str, Enum):
     final_answer = "final_answer"
     full_trace = "full_trace"
+    reference_answer = "reference_answer"
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
@@ -304,8 +306,9 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     eval_set_filter_id: DatasetFilterId = Field(
         description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
     )
-    eval_configs_filter_id: DatasetFilterId = Field(
-        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id."
+    eval_configs_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -349,6 +352,15 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     @model_validator(mode="after")
     def validate_template_properties(self) -> Self:
+        # eval_configs_filter_id is required for all templates except "rag"
+        if (
+            self.template is not EvalTemplateId.rag
+            and self.eval_configs_filter_id is None
+        ):
+            raise ValueError(
+                "eval_configs_filter_id is required for all templates except 'rag'"
+            )
+
         # Check for properties that are required for the issue template
         if self.template == EvalTemplateId.issue:
             if "issue_prompt" not in self.template_properties or not isinstance(
@@ -367,6 +379,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 raise ValueError(
                     "pass_example is optional for issue template, but if provided must be a string"
                 )
+
         if self.template == EvalTemplateId.tool_call:
             if self.evaluation_data_type != EvalDataType.full_trace:
                 raise ValueError(

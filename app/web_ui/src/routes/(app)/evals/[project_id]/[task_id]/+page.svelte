@@ -113,7 +113,7 @@
 <AppPage
   limit_max_width={true}
   title="Evals"
-  subtitle="Evaluate the quality of your prompts, models and tunes"
+  subtitle="Evaluate the quality of your prompts, models, tools and fine-tunes"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
@@ -196,11 +196,11 @@
 
           <div class="flex-grow flex flex-col text-sm justify-center">
             <span class="font-medium text-base"
-              >Compare Models, Prompts and Fine-Tunes</span
+              >Compare Models, Prompts, Tools and Fine-Tunes</span
             >
             <span class="text-sm font-light mt-1"
-              >Find the best way to run this task by comparing models, prompts
-              and fine-tunes using evals, cost and performance.</span
+              >Find the best way to run this task by comparing models, prompts,
+              tools and fine-tunes using evals, cost and performance.</span
             >
             <button
               class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"

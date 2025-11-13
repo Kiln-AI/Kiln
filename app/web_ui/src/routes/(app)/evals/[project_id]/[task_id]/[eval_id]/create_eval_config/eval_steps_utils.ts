@@ -2,7 +2,7 @@ import type { EvalTemplateId, Task, Eval } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
-  "kiln_requirements" | "kiln_issue" | "tool_call"
+  "kiln_requirements" | "kiln_issue" | "tool_call" | "rag"
 >
 
 const eval_steps_static_templates: Record<StaticEvalTemplates, string[]> = {
@@ -88,6 +88,13 @@ export function get_eval_steps(
     steps.push(
       "Considering the above, does the model's output contain the issue described? It should pass if it does not contain the issue, and fail if it does contain the issue.",
     )
+    return steps
+  }
+
+  if (template === "rag") {
+    const steps: string[] = [
+      `Evaluate if the model's output is accurate as per the reference answer.`,
+    ]
     return steps
   }
 

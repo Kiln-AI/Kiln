@@ -36,6 +36,7 @@ from kiln_server.document_api import (
     CreateExtractorConfigRequest,
     build_rag_workflow_runner,
     connect_document_api,
+    get_documents_filtered,
     run_rag_workflow_runner_with_status,
 )
 
@@ -4388,6 +4389,391 @@ async def test_delete_extraction_failed_to_clear_cache(
         )
 
 
+async def test_get_extractions_for_extractor_config_success(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test GET extractions for extractor config endpoint"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "test extraction output", "text/plain"
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/extractions"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+        assert str(document.id) in data
+        assert len(data[str(document.id)]) == 1
+        assert data[str(document.id)][0]["output_content"] == "test extraction output"
+
+
+async def test_get_extractions_for_extractor_config_not_found(client, mock_project):
+    """Test GET extractions for extractor config endpoint when config not found"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/extractions"
+        )
+
+        assert response.status_code == 404
+        assert "Extractor config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_extractor_config_no_documents_to_extract(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config when all documents already have extractions"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "test extraction output", "text/plain"
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+        )
+
+        assert response.status_code == 200
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 0
+
+
+async def test_run_extractor_config_no_tags(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config with no tags parameter"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config"
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=None,
+        )
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 1
+        assert extractor_runner.documents[0].id == document.id
+
+
+async def test_run_extractor_config_with_tags(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test run_extractor_config with tags filtering"""
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.run_extractor_runner_with_status"
+        ) as mock_run_extractor,
+        patch(
+            "kiln_server.document_api.shared_async_lock_manager.acquire"
+        ) as mock_lock,
+        patch(
+            "kiln_server.document_api.get_documents_filtered"
+        ) as mock_get_documents_filtered,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_run_extractor.return_value = StreamingResponse(
+            content=iter([b"data: complete\n\n"]), media_type="text/event-stream"
+        )
+        mock_lock.return_value.__aenter__ = AsyncMock()
+        mock_lock.return_value.__aexit__ = AsyncMock()
+
+        document = mock_document["document"]
+        mock_get_documents_filtered.return_value = [document]
+
+        response = client.get(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/run_extractor_config",
+            params={"tags": "python,ml,backend"},
+        )
+
+        assert response.status_code == 200
+        mock_get_documents_filtered.assert_called_once_with(
+            mock_project,
+            exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+            target_tags=["python", "ml", "backend"],
+        )
+        mock_run_extractor.assert_called_once()
+        call_args = mock_run_extractor.call_args[0]
+        extractor_runner = call_args[0]
+        assert len(extractor_runner.documents) == 1
+        assert extractor_runner.documents[0].id == document.id
+
+
+async def test_ephemeral_split_document_success_with_chunks(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with valid chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(
+                "This is a test extraction output that will be split into chunks. "
+                * 50,
+                "text/plain",
+            ),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={
+                "chunk_size": 20,
+                "chunk_overlap": 5,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "chunks" in data
+        assert len(data["chunks"]) > 1
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_no_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with null chunk_size returns single chunk"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+        test_output = "This is the full extraction output."
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data(test_output, "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": None},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "chunks" in data
+        assert len(data["chunks"]) == 1
+        assert data["chunks"][0]["text"] == test_output
+        assert data["chunks"][0]["id"] == str(extraction.id)
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_extractor_config_not_found(
+    client, mock_project, mock_document
+):
+    """Test ephemeral_split_document with non-existent extractor config"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/non-existent-id/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "Extractor config not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_document_not_found(
+    client, mock_project, mock_extractor_config
+):
+    """Test ephemeral_split_document with non-existent document"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/non-existent-id/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "Document not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_no_extraction_found(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document when no extraction exists for the document and extractor"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100},
+        )
+
+        assert response.status_code == 404
+        assert "No extraction found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_invalid_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with invalid chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 0},
+        )
+
+        assert response.status_code == 422
+        assert (
+            "Chunk_size: Input should be greater than 0" in response.json()["message"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_negative_chunk_overlap(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document with negative chunk_overlap"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100, "chunk_overlap": -1},
+        )
+
+        assert response.status_code == 422
+        assert (
+            "Chunk_overlap: Input should be greater than or equal to 0"
+            in response.json()["message"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_split_document_overlap_exceeds_chunk_size(
+    client, mock_project, mock_document, mock_extractor_config
+):
+    """Test ephemeral_split_document when chunk_overlap >= chunk_size"""
+    with patch("kiln_server.document_api.project_from_id") as mock_project_from_id:
+        mock_project_from_id.return_value = mock_project
+
+        document = mock_document["document"]
+
+        extraction = Extraction(
+            parent=document,
+            source=ExtractionSource.PROCESSED,
+            extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+            output=KilnAttachmentModel.from_data("test output", "text/plain"),
+        )
+        extraction.save_to_file()
+
+        response = client.post(
+            f"/api/projects/{mock_project.id}/extractor_configs/{mock_extractor_config.id}/documents/{document.id}/ephemeral_split",
+            json={"chunk_size": 100, "chunk_overlap": 100},
+        )
+
+        assert response.status_code == 422
+        assert (
+            "Chunk overlap must be less than chunk size" in response.json()["message"]
+        )
+
+
 async def test_get_embedding_config_not_found(client, mock_project):
     with (
         patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
@@ -4454,3 +4840,147 @@ def test_get_properties_unsupported_extractor_type_raises() -> None:
 
     with pytest.raises(Exception):
         req.get_properties()
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_no_filters(mock_project, mock_document):
+    """Test get_documents_filtered with no filters (should return all documents)"""
+    project = mock_project
+    document = mock_document["document"]
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    result = get_documents_filtered(project)
+
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_tag_filtering(mock_project, mock_document):
+    """Test get_documents_filtered with tag filtering"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python", "ml"]
+    document.save_to_file()
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    # Test with matching tags
+    result = get_documents_filtered(project, target_tags=["python"])
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Test with non-matching tags
+    result = get_documents_filtered(project, target_tags=["javascript"])
+    assert len(result) == 0
+
+    # Test with multiple tags where one matches
+    result = get_documents_filtered(project, target_tags=["python", "javascript"])
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_exclude_extracted(
+    mock_project, mock_document, mock_extractor_config
+):
+    """Test get_documents_filtered with exclude_extracted_by_extractor_config_id"""
+    project = mock_project
+    document = mock_document["document"]
+
+    # Document has no extraction, so should be included
+    result = get_documents_filtered(
+        project, exclude_extracted_by_extractor_config_id=mock_extractor_config.id
+    )
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Add extraction to document
+    extraction = Extraction(
+        parent=document,
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+        output=KilnAttachmentModel.from_data("test output", "text/plain"),
+    )
+    extraction.save_to_file()
+
+    # Document now has extraction, so should be excluded
+    result = get_documents_filtered(
+        project, exclude_extracted_by_extractor_config_id=mock_extractor_config.id
+    )
+    assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_both_filters(
+    mock_project, mock_document, mock_extractor_config
+):
+    """Test get_documents_filtered with both tag filtering and exclude_extracted"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = ["python", "ml"]
+    document.save_to_file()
+
+    # Test with matching tags and no extraction (should be included)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["python"],
+    )
+    assert len(result) == 1
+    assert result[0].id == document.id
+
+    # Add extraction to document
+    extraction = Extraction(
+        parent=document,
+        source=ExtractionSource.PROCESSED,
+        extractor_config_id=mock_extractor_config.id,  # type: ignore[arg-type]
+        output=KilnAttachmentModel.from_data("test output", "text/plain"),
+    )
+    extraction.save_to_file()
+
+    # Test with matching tags but has extraction (should be excluded)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["python"],
+    )
+    assert len(result) == 0
+
+    # Test with non-matching tags and no extraction (should be excluded)
+    result = get_documents_filtered(
+        project,
+        exclude_extracted_by_extractor_config_id=mock_extractor_config.id,
+        target_tags=["javascript"],
+    )
+    assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_documents_filtered_with_document_no_tags(
+    mock_project, mock_document
+):
+    """Test get_documents_filtered with document that has no tags"""
+    project = mock_project
+    document = mock_document["document"]
+    document.tags = []
+    document.save_to_file()
+
+    # Verify document is found by project.documents()
+    all_documents = list(project.documents(readonly=True))
+    assert len(all_documents) == 1, f"Expected 1 document, found {len(all_documents)}"
+
+    # Document has no tags, so should not match any tag filter
+    result = get_documents_filtered(project, target_tags=["python"])
+    assert len(result) == 0
+
+    # But should be included when no tag filter is applied
+    result = get_documents_filtered(project)
+    assert len(result) == 1
+    assert result[0].id == document.id
+    assert result[0].id == document.id

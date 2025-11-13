@@ -100,7 +100,7 @@ class CreateEvaluatorRequest(BaseModel):
     template: EvalTemplateId | None
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
-    eval_configs_filter_id: DatasetFilterId
+    eval_configs_filter_id: DatasetFilterId | None
     template_properties: dict[str, str | float | int | bool]
     evaluation_data_type: EvalDataType
 
@@ -568,8 +568,10 @@ def connect_evals_api(app: FastAPI):
         dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
-        golden_dataset_runs = runs_in_filter(
-            task, eval.eval_configs_filter_id, readonly=True
+        golden_dataset_runs = (
+            runs_in_filter(task, eval.eval_configs_filter_id, readonly=True)
+            if eval.eval_configs_filter_id
+            else []
         )
 
         # Count how many dataset items have human evals
@@ -717,6 +719,12 @@ def connect_evals_api(app: FastAPI):
 
         # Build a set of all the dataset items IDs we expect to have scores for
         # Fetch all the dataset items in a filter, and return a map of dataset_id -> TaskRun
+        if eval.eval_configs_filter_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No eval configs filter id set, cannot get eval configs score summary.",
+            )
+
         filter = dataset_filter_from_id(eval.eval_configs_filter_id)
         expected_dataset_items = {run.id: run for run in task.runs() if filter(run)}
         expected_dataset_ids = set(expected_dataset_items.keys())
