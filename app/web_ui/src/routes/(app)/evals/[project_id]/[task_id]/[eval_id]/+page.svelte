@@ -455,6 +455,13 @@
     )
     goto(url)
   }
+
+  function docs_link(evaluator: Eval | null): string | undefined {
+    if (evaluator?.template === "tool_call") {
+      return "https://docs.kiln.tech/docs/evaluations/evaluate-appropriate-tool-use"
+    }
+    return "https://docs.kiln.tech/docs/evaluations"
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -462,7 +469,7 @@
     title="Eval: {evaluator?.name || ''}"
     subtitle="Follow these steps to find the best way to evaluate and run your task"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+    sub_subtitle_link={docs_link(evaluator)}
     breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
     action_buttons={[
       {

@@ -637,7 +637,9 @@
 <Dialog
   bind:this={tool_call_eval_dialog}
   title="Create Appropriate Tool Use Eval"
-  sub_subtitle="Appropriate Tool Use evals test whether your model appropriately invokes the selected tool."
+  subtitle="Evaluate if your model appropriately invokes a tool."
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations/evaluate-appropriate-tool-use"
 >
   <FormContainer
     submit_label="Create Appropriate Tool Use Eval"
