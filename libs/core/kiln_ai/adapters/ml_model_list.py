@@ -4940,7 +4940,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -4949,7 +4948,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
                 supports_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
