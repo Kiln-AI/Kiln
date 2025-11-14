@@ -107,6 +107,12 @@
       // Delay hiding the dropdown to ensure the click event is fully processed
       setTimeout(() => {
         listVisible = false
+        setTimeout(() => {
+          // Return focus to the main select element so keyboard nav still works
+          if (selectedElement) {
+            selectedElement.focus()
+          }
+        }, 0)
       }, 0)
     }
   }
@@ -466,6 +472,58 @@
     )
     return selectedOption ? selectedOption.label : empty_label
   }
+
+  function containerKeyDown(event: KeyboardEvent) {
+    if (disabled) {
+      return
+    }
+    const key_is_alpha_numeric = /^[a-zA-Z0-9]$/.test(event.key)
+    if (
+      !listVisible &&
+      (event.key === "ArrowDown" ||
+        event.key === "ArrowUp" ||
+        event.key === "Enter" ||
+        key_is_alpha_numeric)
+    ) {
+      event.preventDefault()
+      listVisible = true
+      focusedIndex = 0
+      // Typing should start a search
+      if (key_is_alpha_numeric) {
+        searchText = event.key
+        isSearching = true
+        focusedIndex = 0
+        // Focus the search input after it's rendered
+        setTimeout(() => {
+          if (searchInputElement) {
+            searchInputElement.focus()
+          }
+        }, 0)
+      }
+      return
+    }
+    if (event.key === "Escape") {
+      event.preventDefault()
+      listVisible = false
+      return
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      const flatOptions = getFlatOptions()
+      focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
+      scrollToFocusedIndex()
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      const flatOptions = getFlatOptions()
+      focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
+      scrollToFocusedIndex()
+    } else if (event.key === "Enter") {
+      const flatOptions = getFlatOptions()
+      if (flatOptions[focusedIndex]) {
+        selectOption(flatOptions[focusedIndex].value)
+      }
+    }
+  }
 </script>
 
 <div class="dropdown w-full relative">
@@ -497,43 +555,7 @@
         }
       }, 0)
     }}
-    on:keydown={(event) => {
-      if (disabled) {
-        return
-      }
-      if (
-        !listVisible &&
-        (event.key === "ArrowDown" ||
-          event.key === "ArrowUp" ||
-          event.key === "Enter")
-      ) {
-        event.preventDefault()
-        listVisible = true
-        focusedIndex = 0
-        return
-      }
-      if (event.key === "Escape") {
-        event.preventDefault()
-        listVisible = false
-        return
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault()
-        const flatOptions = getFlatOptions()
-        focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
-        scrollToFocusedIndex()
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault()
-        const flatOptions = getFlatOptions()
-        focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
-        scrollToFocusedIndex()
-      } else if (event.key === "Enter") {
-        const flatOptions = getFlatOptions()
-        if (flatOptions[focusedIndex]) {
-          selectOption(flatOptions[focusedIndex].value)
-        }
-      }
-    }}
+    on:keydown={containerKeyDown}
   >
     <span class="truncate">
       {selectedLabel(selected, selected_values, options)}
