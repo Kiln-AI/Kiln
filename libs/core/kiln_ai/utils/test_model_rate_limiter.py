@@ -6,7 +6,18 @@ import pytest
 import yaml
 
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.model_rate_limiter import ModelRateLimiter
+from kiln_ai.utils.model_rate_limiter import (
+    ModelRateLimiter,
+    reset_global_rate_limiter,
+)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset global rate limiter before and after each test."""
+    reset_global_rate_limiter()
+    yield
+    reset_global_rate_limiter()
 
 
 @pytest.fixture

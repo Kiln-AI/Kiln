@@ -150,3 +150,13 @@ def get_global_rate_limiter() -> ModelRateLimiter:
     if _global_rate_limiter is None:
         _global_rate_limiter = ModelRateLimiter()
     return _global_rate_limiter
+
+
+def reset_global_rate_limiter() -> None:
+    """
+    Reset the global rate limiter instance.
+
+    This is primarily used for testing to ensure a clean state between tests.
+    """
+    global _global_rate_limiter
+    _global_rate_limiter = None
