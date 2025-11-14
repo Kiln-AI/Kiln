@@ -15,6 +15,7 @@ from kiln_ai.adapters.rerankers.base_reranker import (
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
 
 
 class LitellmRerankerAdapter(BaseReranker):
@@ -22,9 +23,13 @@ class LitellmRerankerAdapter(BaseReranker):
         self,
         reranker_config: RerankerConfig,
         litellm_provider_config: LiteLlmCoreConfig,
+        rate_limiter: ModelRateLimiter | None = None,
     ):
         super().__init__(reranker_config)
         self.litellm_provider_config = litellm_provider_config
+        self.rate_limiter = (
+            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+        )
 
     async def rerank(
         self, query: str, documents: list[RerankDocument]
@@ -50,7 +55,11 @@ class LitellmRerankerAdapter(BaseReranker):
         if self.litellm_provider_config.additional_body_options:
             rerank_kwargs.update(self.litellm_provider_config.additional_body_options)
 
-        response = await litellm.arerank(**rerank_kwargs)
+        async with self.rate_limiter.limit(
+            self.reranker_config.model_provider_name,
+            self.reranker_config.model_name,
+        ):
+            response = await litellm.arerank(**rerank_kwargs)
         if not isinstance(response, litellm.RerankResponse):
             raise ValueError(f"Expected RerankResponse, got {type(response)}")
 

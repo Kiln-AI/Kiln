@@ -21,6 +21,7 @@ from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
+from app.desktop.studio_server.rate_limits_api import connect_rate_limits
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.settings_api import connect_settings
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
@@ -59,6 +60,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_prompt_api(app)
     connect_repair_api(app)
     connect_settings(app)
+    connect_rate_limits(app)
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
     connect_evals_api(app)

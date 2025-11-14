@@ -40,6 +40,7 @@ from kiln_ai.tools.base_tool import (
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
@@ -71,6 +72,7 @@ class LiteLlmAdapter(BaseAdapter):
         config: LiteLlmConfig,
         kiln_task: datamodel.Task,
         base_adapter_config: AdapterConfig | None = None,
+        rate_limiter: ModelRateLimiter | None = None,
     ):
         self.config = config
         self._additional_body_options = config.additional_body_options
@@ -78,6 +80,9 @@ class LiteLlmAdapter(BaseAdapter):
         self._headers = config.default_headers
         self._litellm_model_id: str | None = None
         self._cached_available_tools: list[KilnToolInterface] | None = None
+        self.rate_limiter = (
+            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+        )
 
         super().__init__(
             task=kiln_task,
@@ -286,7 +291,10 @@ class LiteLlmAdapter(BaseAdapter):
     async def acompletion_checking_response(
         self, **kwargs
     ) -> Tuple[ModelResponse, Choices]:
-        response = await litellm.acompletion(**kwargs)
+        async with self.rate_limiter.limit(
+            self.run_config.model_provider_name, self.run_config.model_name
+        ):
+            response = await litellm.acompletion(**kwargs)
         if (
             not isinstance(response, ModelResponse)
             or not response.choices

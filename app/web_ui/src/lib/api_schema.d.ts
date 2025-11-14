@@ -1309,6 +1309,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rate_limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Rate Limits */
+        get: operations["read_rate_limits_api_rate_limits_get"];
+        put?: never;
+        /** Update Rate Limits */
+        post: operations["update_rate_limits_api_rate_limits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get All Models */
+        get: operations["get_all_models_api_models_all_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/generate_categories": {
         parameters: {
             query?: never;
@@ -2087,6 +2122,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AllModelsResponse */
+        AllModelsResponse: {
+            /** Normal Models */
+            normal_models: components["schemas"]["ModelInfo"][];
+            /** Embedding Models */
+            embedding_models: components["schemas"]["ModelInfo"][];
+            /** Reranker Models */
+            reranker_models: components["schemas"]["ModelInfo"][];
+        };
         /** ApiPrompt */
         ApiPrompt: {
             /**
@@ -4308,6 +4352,17 @@ export interface components {
             untested_model: boolean;
             /** Task Filter */
             task_filter?: string[] | null;
+        };
+        /** ModelInfo */
+        ModelInfo: {
+            /** Model Name */
+            model_name: string;
+            /** Friendly Name */
+            friendly_name: string;
+            /** Provider Name */
+            provider_name: string;
+            /** Model Id */
+            model_id: string | null;
         };
         /**
          * ModelProviderName
@@ -8495,6 +8550,87 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_rate_limits_api_rate_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    update_rate_limits_api_rate_limits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: {
+                        [key: string]: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_all_models_api_models_all_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllModelsResponse"];
                 };
             };
         };

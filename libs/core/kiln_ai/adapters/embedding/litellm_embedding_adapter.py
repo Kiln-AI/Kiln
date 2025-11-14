@@ -18,6 +18,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
 
 # litellm enforces a limit, documented here:
 # https://docs.litellm.ai/docs/embedding/supported_embedding
@@ -89,11 +90,17 @@ def validate_map_to_embeddings(
 
 class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
     def __init__(
-        self, embedding_config: EmbeddingConfig, litellm_core_config: LiteLlmCoreConfig
+        self,
+        embedding_config: EmbeddingConfig,
+        litellm_core_config: LiteLlmCoreConfig,
+        rate_limiter: ModelRateLimiter | None = None,
     ):
         super().__init__(embedding_config)
 
         self.litellm_core_config = litellm_core_config
+        self.rate_limiter = (
+            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+        )
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
         # batch the requests
@@ -152,12 +159,16 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 self.litellm_core_config.default_headers
             )
 
-        response = await litellm.aembedding(
-            model=self.litellm_model_id,
-            input=input_texts,
-            **self.build_options().model_dump(exclude_none=True),
-            **completion_kwargs,
-        )
+        async with self.rate_limiter.limit(
+            self.embedding_config.model_provider_name,
+            self.embedding_config.model_name,
+        ):
+            response = await litellm.aembedding(
+                model=self.litellm_model_id,
+                input=input_texts,
+                **self.build_options().model_dump(exclude_none=True),
+                **completion_kwargs,
+            )
 
         validated_embeddings = validate_map_to_embeddings(
             response, expected_embedding_count=len(input_texts)
