@@ -9,6 +9,7 @@
   import type { ChatStrategy } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
   import { fine_tune_target_model as model_provider } from "$lib/stores"
   import {
     available_tuning_models,
@@ -40,13 +41,12 @@
   let finetune_custom_system_prompt = ""
   let finetune_custom_thinking_instructions =
     "Think step by step, explaining your reasoning."
+  let system_prompt_method = "simple_prompt_builder"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
   let run_config_component: RunConfigComponent | null = null
-  $: system_prompt_method =
-    run_config_component?.get_prompt_method() || "simple_prompt_builder"
 
   let provider_id: ModelProviderName | null = null
   $: provider_id = $model_provider?.includes("/")
@@ -599,14 +599,72 @@
           <div class="text-xl font-bold mb-4">
             Step 2: Configure Fine-Tuning Run Settings
           </div>
-          <RunConfigComponent
-            bind:this={run_config_component}
-            bind:tools={selected_tools}
-            {project_id}
-            hide_create_kiln_task_tool_button={true}
-            hide_model_selector={true}
-            {hide_tools_selector}
-          />
+          <div>
+            <PromptTypeSelector
+              bind:prompt_method={system_prompt_method}
+              description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
+              info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+              exclude_cot={true}
+              custom_prompt_name="Custom Fine Tuning Prompt"
+            />
+            {#if system_prompt_method === "custom"}
+              <div class="p-4 border-l-4 border-gray-300">
+                <FormElement
+                  label="Custom System Prompt"
+                  description="Enter a custom system prompt to use during fine-tuning."
+                  info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                  inputType="textarea"
+                  id="finetune_custom_system_prompt"
+                  bind:value={finetune_custom_system_prompt}
+                />
+                {#if data_strategy === "two_message_cot"}
+                  <div class="mt-4"></div>
+                  <FormElement
+                    label="Custom Thinking Instructions"
+                    description="Instructions for the model's 'thinking' stage, before returning the final response."
+                    info_description="When training with intermediate results (reasoning, chain of thought, etc.), this prompt will be used to ask the model to 'think' before returning the final response."
+                    inputType="textarea"
+                    id="finetune_custom_thinking_instructions"
+                    bind:value={finetune_custom_thinking_instructions}
+                  />
+                {/if}
+              </div>
+            {/if}
+          </div>
+          <div class="mt-4">
+            <FormElement
+              label="Reasoning"
+              description="Should the model be trained on reasoning/thinking content?"
+              info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
+              inputType="select"
+              id="data_strategy"
+              select_options={data_strategy_select_options}
+              bind:value={data_strategy}
+            />
+            {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
+              <Warning
+                warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
+                large_icon={true}
+              />
+            {/if}
+            {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
+              <Warning
+                warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
+                large_icon={true}
+              />
+            {/if}
+          </div>
+          <div class="mt-4">
+            <RunConfigComponent
+              bind:this={run_config_component}
+              bind:tools={selected_tools}
+              {project_id}
+              hide_create_kiln_task_tool_button={true}
+              hide_model_selector={true}
+              hide_prompt_selector={true}
+              {hide_tools_selector}
+            />
+          </div>
         </div>
 
         {#if step_3_visible}
@@ -632,102 +690,58 @@
         {/if}
 
         {#if step_4_visible}
-          <div class="text-xl font-bold">Step 4: Options</div>
-          {#if system_prompt_method === "custom"}
-            <div class="p-4 border-l-4 border-gray-300">
-              <FormElement
-                label="Custom System Prompt"
-                description="Enter a custom system prompt to use during fine-tuning."
-                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
-                inputType="textarea"
-                id="finetune_custom_system_prompt"
-                bind:value={finetune_custom_system_prompt}
-              />
-              {#if data_strategy === "two_message_cot"}
-                <div class="mt-4"></div>
-                <FormElement
-                  label="Custom Thinking Instructions"
-                  description="Instructions for the model's 'thinking' stage, before returning the final response."
-                  info_description="When training with intermediate results (reasoning, chain of thought, etc.), this prompt will be used to ask the model to 'think' before returning the final response."
-                  inputType="textarea"
-                  id="finetune_custom_thinking_instructions"
-                  bind:value={finetune_custom_thinking_instructions}
-                />
-              {/if}
-            </div>
-          {/if}
           <div>
-            <FormElement
-              label="Reasoning"
-              description="Should the model be trained on reasoning/thinking content?"
-              info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
-              inputType="select"
-              id="data_strategy"
-              select_options={data_strategy_select_options}
-              bind:value={data_strategy}
-            />
-            {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
-              <Warning
-                warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
-                large_icon={true}
-              />
-            {/if}
-            {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
-              <Warning
-                warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
-                large_icon={true}
-              />
+            <div class="text-xl font-bold">Step 4: Options</div>
+            {#if !is_download}
+              <div class="collapse collapse-arrow bg-base-200">
+                <input type="checkbox" class="peer" />
+                <div class="collapse-title font-medium">Advanced Options</div>
+                <div class="collapse-content flex flex-col gap-4">
+                  <FormElement
+                    label="Name"
+                    description="A name to identify this fine-tune. Leave blank and we'll generate one for you."
+                    optional={true}
+                    inputType="input"
+                    id="finetune_name"
+                    bind:value={finetune_name}
+                  />
+                  <FormElement
+                    label="Description"
+                    description="An optional description of this fine-tune."
+                    optional={true}
+                    inputType="textarea"
+                    id="finetune_description"
+                    bind:value={finetune_description}
+                  />
+                  {#if hyperparameters_loading}
+                    <div class="w-full flex justify-center items-center">
+                      <div class="loading loading-spinner loading-lg"></div>
+                    </div>
+                  {:else if hyperparameters_error || !hyperparameters}
+                    <div class="text-error text-sm">
+                      {hyperparameters_error?.getMessage() ||
+                        "An unknown error occurred"}
+                    </div>
+                  {:else if hyperparameters.length > 0}
+                    {#each hyperparameters as hyperparameter}
+                      <FormElement
+                        label={hyperparameter.name +
+                          " (" +
+                          type_strings[hyperparameter.type] +
+                          ")"}
+                        description={hyperparameter.description}
+                        info_description="If you aren't sure, leave blank for default/recommended value. Ensure your value is valid for the type (e.g. an integer can't have decimals)."
+                        inputType="input"
+                        optional={hyperparameter.optional}
+                        id={hyperparameter.name}
+                        bind:value={hyperparameter_values[hyperparameter.name]}
+                      />
+                    {/each}
+                  {/if}
+                </div>
+              </div>
             {/if}
           </div>
-          {#if !is_download}
-            <div class="collapse collapse-arrow bg-base-200">
-              <input type="checkbox" class="peer" />
-              <div class="collapse-title font-medium">Advanced Options</div>
-              <div class="collapse-content flex flex-col gap-4">
-                <FormElement
-                  label="Name"
-                  description="A name to identify this fine-tune. Leave blank and we'll generate one for you."
-                  optional={true}
-                  inputType="input"
-                  id="finetune_name"
-                  bind:value={finetune_name}
-                />
-                <FormElement
-                  label="Description"
-                  description="An optional description of this fine-tune."
-                  optional={true}
-                  inputType="textarea"
-                  id="finetune_description"
-                  bind:value={finetune_description}
-                />
-                {#if hyperparameters_loading}
-                  <div class="w-full flex justify-center items-center">
-                    <div class="loading loading-spinner loading-lg"></div>
-                  </div>
-                {:else if hyperparameters_error || !hyperparameters}
-                  <div class="text-error text-sm">
-                    {hyperparameters_error?.getMessage() ||
-                      "An unknown error occurred"}
-                  </div>
-                {:else if hyperparameters.length > 0}
-                  {#each hyperparameters as hyperparameter}
-                    <FormElement
-                      label={hyperparameter.name +
-                        " (" +
-                        type_strings[hyperparameter.type] +
-                        ")"}
-                      description={hyperparameter.description}
-                      info_description="If you aren't sure, leave blank for default/recommended value. Ensure your value is valid for the type (e.g. an integer can't have decimals)."
-                      inputType="input"
-                      optional={hyperparameter.optional}
-                      id={hyperparameter.name}
-                      bind:value={hyperparameter_values[hyperparameter.name]}
-                    />
-                  {/each}
-                {/if}
-              </div>
-            </div>
-          {/if}
         {/if}
       </FormContainer>
     {/if}
