@@ -477,6 +477,9 @@
                   on:click={open_extraction_dialog}
                   disabled={!has_documents}
                 >
+                  <!-- TODO: Pop up if you retry extraction: If you proceed, all existing successful document extractions will be replaced. -->
+                  <!-- TODO: After questions are generated, probably shouldn't allow re-extraction? Or after a successful extraction? -->
+                  <!-- TODO: Running an extraction again right now just spins indefinitely. -->
                   {$qna &&
                   $qna.extraction_complete &&
                   $qnaExtractionErrorCount > 0
@@ -505,22 +508,37 @@
                   </div>
                 {/if}
               {:else if $qnaCurrentStep == 3}
-                <button
-                  class="btn btn-sm {total_qa_pairs > 0
-                    ? 'btn-outline btn-primary'
-                    : 'btn-primary'}"
-                  on:click={open_generate_qna_dialog}
-                  disabled={$qna && !$qna.extraction_complete}
-                >
-                  Generate Q&A Pairs
-                </button>
-                {#if total_qa_pairs > 0}
+                {@const already_saved_count =
+                  total_qa_pairs - ($qnaPendingSaveCount || 0)}
+                {@const has_pending = ($qnaPendingSaveCount || 0) > 0}
+                {@const all_saved = already_saved_count > 0 && !has_pending}
+                {#if !all_saved}
                   <button
-                    class="btn btn-sm btn-primary ml-2"
-                    on:click={() => qna.setCurrentStep(4)}
+                    class="btn btn-sm {total_qa_pairs > 0
+                      ? 'btn-outline btn-primary'
+                      : 'btn-primary'}"
+                    on:click={open_generate_qna_dialog}
+                    disabled={$qna && !$qna.extraction_complete}
                   >
-                    Next Step
+                    Generate Q&A Pairs
                   </button>
+                  {#if total_qa_pairs > 0}
+                    <button
+                      class="btn btn-sm btn-primary ml-2"
+                      on:click={() => qna.setCurrentStep(4)}
+                    >
+                      Next Step
+                    </button>
+                  {/if}
+                {:else}
+                  <div class="flex flex-col items-center">
+                    <Warning
+                      warning_message="{total_qa_pairs} Q&A pairs generated & saved"
+                      warning_icon="check"
+                      warning_color="success"
+                      tight
+                    />
+                  </div>
                 {/if}
                 {#if $qnaGenerationErrors && $qnaGenerationErrors.length > 0}
                   <div class="mt-3 flex flex-col items-center">
