@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
 
-from kiln_ai.adapters.chat.chat_formatter import ChatMessage, get_chat_formatter
+from kiln_ai.adapters.chat.chat_formatter import BasicChatMessage, get_chat_formatter
 from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
 from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
     TraceBasedDatasetFormatter,
@@ -19,7 +19,7 @@ class FormatGenerator(Protocol):
 
     def __call__(
         self,
-        training_chat: list[ChatMessage],
+        training_chat: list[BasicChatMessage],
     ) -> Dict[str, Any]: ...
 
 
@@ -28,7 +28,7 @@ def build_training_chat(
     system_message: str,
     data_strategy: ChatStrategy,
     thinking_instructions: str | None = None,
-) -> list[ChatMessage]:
+) -> list[BasicChatMessage]:
     """
     Generate chat message list for training.
 
@@ -100,7 +100,7 @@ def serialize_r1_style_message(thinking: str | None, final_output: str):
 
 
 def generate_chat_message_list(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> list[dict[str, str | None]]:
     """Generate OpenAI chat list. Not the full OpenAI body, just the list of messages."""
 
@@ -121,7 +121,7 @@ def generate_chat_message_list(
 
 
 def generate_chat_message_response(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with plaintext response"""
 
@@ -130,7 +130,7 @@ def generate_chat_message_response(
     return {"messages": messages}
 
 
-def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
+def last_message_structured_content(training_chat: list[BasicChatMessage]) -> Dict:
     """Get the structured content of the last message"""
     if len(training_chat) < 1:
         raise ValueError("Training chat is empty")
@@ -148,7 +148,7 @@ def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
 
 
 def generate_json_schema_message(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with validated JSON response"""
     # Load and dump to ensure it's valid JSON and goes to 1 line
@@ -162,7 +162,7 @@ def generate_json_schema_message(
 
 
 def generate_chat_message_toolcall(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with tool call response"""
     last_message_data = last_message_structured_content(training_chat)
@@ -193,7 +193,7 @@ def generate_chat_message_toolcall(
 
 
 def generate_huggingface_chat_template(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template"""
 
@@ -203,7 +203,7 @@ def generate_huggingface_chat_template(
 
 
 def generate_huggingface_chat_template_toolcall(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template with tool calls"""
     last_message_data = last_message_structured_content(training_chat)
@@ -241,7 +241,7 @@ VERTEX_GEMINI_ROLE_MAP = {
 
 
 def generate_vertex_gemini(
-    training_chat: list[ChatMessage],
+    training_chat: list[BasicChatMessage],
 ) -> Dict[str, Any]:
     """Generate Vertex Gemini format (flash and pro)"""
     # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning-prepare

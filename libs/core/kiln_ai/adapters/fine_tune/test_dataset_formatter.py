@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from kiln_ai.adapters.chat.chat_formatter import COT_FINAL_ANSWER_PROMPT, ChatMessage
+from kiln_ai.adapters.chat.chat_formatter import (
+    COT_FINAL_ANSWER_PROMPT,
+    BasicChatMessage,
+)
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
     VERTEX_GEMINI_ROLE_MAP,
     DatasetFormat,
@@ -107,40 +110,40 @@ def mock_dataset(mock_task):
 @pytest.fixture
 def mock_training_chat_short():
     return [
-        ChatMessage(role="system", content="system message"),
-        ChatMessage(
+        BasicChatMessage(role="system", content="system message"),
+        BasicChatMessage(
             role="user",
             content="test input",
         ),
-        ChatMessage(role="assistant", content="test output"),
+        BasicChatMessage(role="assistant", content="test output"),
     ]
 
 
 @pytest.fixture
 def mock_training_chat_two_step_plaintext():
     return [
-        ChatMessage(role="system", content="system message"),
-        ChatMessage(
+        BasicChatMessage(role="system", content="system message"),
+        BasicChatMessage(
             role="user",
             content="The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
         ),
-        ChatMessage(role="assistant", content="thinking output"),
-        ChatMessage(role="user", content="thinking final answer prompt"),
-        ChatMessage(role="assistant", content="test output"),
+        BasicChatMessage(role="assistant", content="thinking output"),
+        BasicChatMessage(role="user", content="thinking final answer prompt"),
+        BasicChatMessage(role="assistant", content="test output"),
     ]
 
 
 @pytest.fixture
 def mock_training_chat_two_step_json():
     return [
-        ChatMessage(role="system", content="system message"),
-        ChatMessage(
+        BasicChatMessage(role="system", content="system message"),
+        BasicChatMessage(
             role="user",
             content="The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
         ),
-        ChatMessage(role="assistant", content="thinking output"),
-        ChatMessage(role="user", content="thinking final answer prompt"),
-        ChatMessage(role="assistant", content='{"a":"你好"}'),
+        BasicChatMessage(role="assistant", content="thinking output"),
+        BasicChatMessage(role="user", content="thinking final answer prompt"),
+        BasicChatMessage(role="assistant", content='{"a":"你好"}'),
     ]
 
 
@@ -485,9 +488,9 @@ def test_generate_vertex_template_thinking(mock_training_chat_two_step_plaintext
 
 def test_generate_huggingface_chat_template_toolcall():
     messages = [
-        ChatMessage("system", "system message"),
-        ChatMessage("user", "test input"),
-        ChatMessage("assistant", '{"key":"value"}'),
+        BasicChatMessage("system", "system message"),
+        BasicChatMessage("user", "test input"),
+        BasicChatMessage("assistant", '{"key":"value"}'),
     ]
 
     result = generate_huggingface_chat_template_toolcall(messages)
@@ -864,11 +867,11 @@ def test_serialize_r1_style_message_missing_thinking(thinking, final_output):
 
 
 def test_vertex_gemini_role_map_coverage():
-    """Test that VERTEX_GEMINI_ROLE_MAP covers all possible ChatMessage.role values"""
+    """Test that VERTEX_GEMINI_ROLE_MAP covers all possible BasicChatMessage.role values"""
     from typing import get_type_hints
 
-    # Get the Literal type from ChatMessage.role
-    role_type = get_type_hints(ChatMessage)["role"]
+    # Get the Literal type from BasicChatMessage.role
+    role_type = get_type_hints(BasicChatMessage)["role"]
     # Extract the possible values from the Literal type
     possible_roles = role_type.__args__  # type: ignore
 
