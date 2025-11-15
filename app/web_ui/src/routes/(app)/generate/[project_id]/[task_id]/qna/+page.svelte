@@ -477,9 +477,6 @@
                   on:click={open_extraction_dialog}
                   disabled={!has_documents}
                 >
-                  <!-- TODO: Pop up if you retry extraction: If you proceed, all existing successful document extractions will be replaced. -->
-                  <!-- TODO: After questions are generated, probably shouldn't allow re-extraction? Or after a successful extraction? -->
-                  <!-- TODO: Running an extraction again right now just spins indefinitely. -->
                   {$qna &&
                   $qna.extraction_complete &&
                   $qnaExtractionErrorCount > 0
