@@ -7,6 +7,7 @@ from .chat_formatter import (
     ToolResponseMessage,
     get_chat_formatter,
 )
+from .chat_utils import build_tool_call_messages
 
 __all__ = [
     "BasicChatMessage",
@@ -15,5 +16,6 @@ __all__ = [
     "ChatStrategy",
     "ToolCallMessage",
     "ToolResponseMessage",
+    "build_tool_call_messages",
     "get_chat_formatter",
 ]

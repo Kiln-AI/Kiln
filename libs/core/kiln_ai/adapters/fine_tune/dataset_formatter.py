@@ -4,11 +4,12 @@ from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
 
-from kiln_ai.adapters.chat.chat_formatter import BasicChatMessage, get_chat_formatter
-from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
-from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
-    TraceBasedDatasetFormatter,
+from kiln_ai.adapters.chat.chat_formatter import (
+    ChatMessage,
+    get_chat_formatter,
 )
+from kiln_ai.adapters.chat.chat_utils import build_tool_call_messages
+from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -19,7 +20,7 @@ class FormatGenerator(Protocol):
 
     def __call__(
         self,
-        training_chat: list[BasicChatMessage],
+        training_chat: list[ChatMessage],
     ) -> Dict[str, Any]: ...
 
 
@@ -28,7 +29,7 @@ def build_training_chat(
     system_message: str,
     data_strategy: ChatStrategy,
     thinking_instructions: str | None = None,
-) -> list[BasicChatMessage]:
+) -> list[ChatMessage]:
     """
     Generate chat message list for training.
 
@@ -50,6 +51,10 @@ def build_training_chat(
     )
     # First turn already has it's content (user message)
     chat_formatter.next_turn(None)
+
+    # Extract the tool calls from the Traces and insert
+    tool_call_messages = build_tool_call_messages(task_run.trace)
+    chat_formatter.messages.extend(tool_call_messages)
 
     match data_strategy:
         case ChatStrategy.single_turn:
@@ -100,7 +105,7 @@ def serialize_r1_style_message(thinking: str | None, final_output: str):
 
 
 def generate_chat_message_list(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> list[dict[str, str | None]]:
     """Generate OpenAI chat list. Not the full OpenAI body, just the list of messages."""
 
@@ -121,7 +126,7 @@ def generate_chat_message_list(
 
 
 def generate_chat_message_response(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with plaintext response"""
 
@@ -130,7 +135,7 @@ def generate_chat_message_response(
     return {"messages": messages}
 
 
-def last_message_structured_content(training_chat: list[BasicChatMessage]) -> Dict:
+def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
     """Get the structured content of the last message"""
     if len(training_chat) < 1:
         raise ValueError("Training chat is empty")
@@ -148,7 +153,7 @@ def last_message_structured_content(training_chat: list[BasicChatMessage]) -> Di
 
 
 def generate_json_schema_message(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with validated JSON response"""
     # Load and dump to ensure it's valid JSON and goes to 1 line
@@ -162,7 +167,7 @@ def generate_json_schema_message(
 
 
 def generate_chat_message_toolcall(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with tool call response"""
     last_message_data = last_message_structured_content(training_chat)
@@ -193,7 +198,7 @@ def generate_chat_message_toolcall(
 
 
 def generate_huggingface_chat_template(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template"""
 
@@ -203,7 +208,7 @@ def generate_huggingface_chat_template(
 
 
 def generate_huggingface_chat_template_toolcall(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template with tool calls"""
     last_message_data = last_message_structured_content(training_chat)
@@ -241,7 +246,7 @@ VERTEX_GEMINI_ROLE_MAP = {
 
 
 def generate_vertex_gemini(
-    training_chat: list[BasicChatMessage],
+    training_chat: list[ChatMessage],
 ) -> Dict[str, Any]:
     """Generate Vertex Gemini format (flash and pro)"""
     # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning-prepare
@@ -351,24 +356,15 @@ class DatasetFormatter:
                         f"Task run {run_id} not found. This is required by this dataset."
                     )
 
-                # Create example if trace is available and not empty
-                if task_run.trace is not None and len(task_run.trace) > 0:
-                    formatter = TraceBasedDatasetFormatter(
-                        system_message=self.system_message
-                    )
-                    example = await formatter.build_training_chat_from_trace(
-                        task_run=task_run,
-                        data_format=format_type,
-                    )
-                else:
-                    # Training_chat is a list of ChatMessage
-                    training_chat = build_training_chat(
-                        task_run=task_run,
-                        system_message=self.system_message,
-                        data_strategy=data_strategy,
-                        thinking_instructions=self.thinking_instructions,
-                    )
-                    example = generator(training_chat)
+                # Training_chat is a list of ChatMessage
+                training_chat = build_training_chat(
+                    task_run=task_run,
+                    system_message=self.system_message,
+                    data_strategy=data_strategy,
+                    thinking_instructions=self.thinking_instructions,
+                )
+                example = generator(training_chat)
+
                 # Allow non-ascii characters in the dataset.
                 # Better readability for non-English users. If you don't support UTF-8... you should.
                 f.write(json.dumps(example, ensure_ascii=False) + "\n")

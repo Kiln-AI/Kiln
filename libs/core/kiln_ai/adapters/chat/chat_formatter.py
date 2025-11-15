@@ -63,12 +63,12 @@ class ChatFormatter(ABC):
         self.system_message = system_message
         self.user_input = user_input
         self.thinking_instructions = thinking_instructions
-        self._messages: List[BasicChatMessage] = []
+        self._messages: List[ChatMessage] = []
         self._state = "start"
         self._intermediate_outputs: Dict[str, str] = {}
 
     @property
-    def messages(self) -> List[BasicChatMessage]:
+    def messages(self) -> List[ChatMessage]:
         return list(self._messages)
 
     def message_dicts(self) -> List[dict]:
