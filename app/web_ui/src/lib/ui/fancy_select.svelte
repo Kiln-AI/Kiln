@@ -11,7 +11,6 @@
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
   export let multi_select: boolean = false
-  export let multi_select_close_on_select: boolean = false
   export let disabled: boolean = false
   export let error_outline: boolean = false
 
@@ -100,12 +99,11 @@
       }
       // Update selected, which is what we expose outside the component
       selected = selected_values
+
+      // Don't close the dropdown for multi select
     } else {
       selected = option
-    }
 
-    // Close if single select or if multi select and close on select is enabled
-    if (!multi_select || multi_select_close_on_select) {
       // Delay hiding the dropdown to ensure the click event is fully processed
       setTimeout(() => {
         listVisible = false
@@ -408,7 +406,7 @@
   }
 
   // Handle click outside to close dropdown
-  function handleDocumentClick(event: MouseEvent) {
+  function handleCloseElementClick(event: Event) {
     if (
       listVisible &&
       selectedElement &&
@@ -416,16 +414,28 @@
       dropdownElement &&
       !dropdownElement.contains(event.target as Node)
     ) {
+      event.preventDefault()
       listVisible = false
     }
   }
 
+  // The "click away to close" element. Document unless a modal is open.
+  let target_close_element: Document | Element | null = null
+  function getTargetCloseElement(): Document | Element {
+    if (!target_close_element) {
+      const topModal = [...document.querySelectorAll("dialog[open]")].pop()
+      target_close_element = topModal ? topModal : document
+    }
+    return target_close_element
+  }
+
   $: if (mounted) {
+    const target_close_element = getTargetCloseElement()
     if (listVisible) {
-      document.addEventListener("click", handleDocumentClick)
+      target_close_element.addEventListener("click", handleCloseElementClick)
       document.addEventListener("keydown", handleKeyInput)
     } else {
-      document.removeEventListener("click", handleDocumentClick)
+      target_close_element.removeEventListener("click", handleCloseElementClick)
       document.removeEventListener("keydown", handleKeyInput)
     }
   }

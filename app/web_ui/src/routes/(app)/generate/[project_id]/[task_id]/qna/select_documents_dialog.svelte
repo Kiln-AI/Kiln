@@ -171,7 +171,6 @@
         empty_state_message="No Document Tags"
         empty_state_subtitle="Add tags to documents in the document library to filter documents."
         empty_state_link={`/docs/library/${project_id}`}
-        multi_select_close_on_select={true}
       />
     {/if}
   </FormContainer>
