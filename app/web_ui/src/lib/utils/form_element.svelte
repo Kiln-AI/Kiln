@@ -21,7 +21,7 @@
     | "header_only"
     | "checkbox" = "input"
   export let id: string
-  export let label: string
+  export let label: string = ""
   export let value: unknown
   export let description: string = ""
   export let info_description: string = ""
@@ -30,7 +30,6 @@
   export let max_length: number | null = null
   export let error_message: string | null = null // start null because they haven't had a chance to edit it yet
   export let light_label: boolean = false // styling
-  export let hide_label: boolean = false
   export let select_options: [unknown, string][] = []
   export let select_options_grouped: [string, [unknown, string][]][] = []
   export let fancy_select_options: OptionGroup[] = []
@@ -149,42 +148,51 @@
         on:change={handleCheckboxChange}
       />
     {/if}
-    <label
-      for={id}
-      class="text-sm font-medium text-left flex flex-col gap-1 w-full"
-    >
-      <div class="flex flex-row items-center {hide_label ? 'hidden' : ''}">
-        <span class="grow {light_label ? 'text-xs text-gray-500 h-4' : ''}"
-          >{label}</span
-        >
-        <span class="pl-1 text-xs text-gray-500 flex-none"
-          >{info_msg || (optional ? "Optional" : "")}</span
-        >
-        {#if inline_action}
-          <button
-            type="button"
-            class="link font-normal text-gray-500"
-            on:click|stopPropagation={inline_action.handler}
-            >{inline_action.label}</button
-          >
-        {/if}
-        {#if info_description}
-          <div class="text-gray-500 {light_label ? 'h-4 mt-[-4px]' : ''}">
-            <InfoTooltip tooltip_text={info_description} />
+    {#if label || inline_action || info_description || error_message || description}
+      <label
+        for={id}
+        class="text-sm font-medium text-left flex flex-col gap-1 w-full"
+      >
+        {#if label || inline_action || info_description || error_message}
+          <div class="flex flex-row items-center">
+            {#if label}
+              <span
+                class="grow {light_label ? 'text-xs text-gray-500 h-4' : ''}"
+                >{label}</span
+              >
+              <span class="pl-1 text-xs text-gray-500 flex-none"
+                >{info_msg || (optional ? "Optional" : "")}</span
+              >
+            {:else}
+              <span class="grow"></span>
+            {/if}
+            {#if inline_action}
+              <button
+                type="button"
+                class="link font-normal text-gray-500"
+                on:click|stopPropagation={inline_action.handler}
+                >{inline_action.label}</button
+              >
+            {/if}
+            {#if info_description}
+              <div class="text-gray-500 {light_label ? 'h-4 mt-[-4px]' : ''}">
+                <InfoTooltip tooltip_text={info_description} />
+              </div>
+            {/if}
+            {#if error_message}
+              <span class="text-error">
+                <InfoTooltip tooltip_text={error_message} symbol="exclaim" />
+              </span>
+            {/if}
           </div>
         {/if}
-        {#if error_message}
-          <span class="text-error">
-            <InfoTooltip tooltip_text={error_message} symbol="exclaim" />
-          </span>
+        {#if description}
+          <div class="text-xs text-gray-500">
+            {description}
+          </div>
         {/if}
-      </div>
-      {#if description}
-        <div class="text-xs text-gray-500">
-          {description}
-        </div>
-      {/if}
-    </label>
+      </label>
+    {/if}
   </div>
   <div class="relative">
     {#if inputType === "textarea"}

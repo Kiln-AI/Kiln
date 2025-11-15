@@ -16,6 +16,7 @@
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
+  import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
@@ -23,7 +24,6 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
-  import posthog from "posthog-js"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
 
@@ -347,37 +347,14 @@
     return warnings
   }
 
-  async function set_current_eval_config(
-    eval_config_id: string | null | undefined,
-  ) {
-    if (eval_config_id === undefined) {
-      return
-    }
-    if (eval_config_id === null) {
-      eval_config_id = "None"
-    }
+  async function handle_set_current_eval_config(eval_config_id: string | null) {
     try {
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}",
-        {
-          params: {
-            path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
-              eval_config_id: eval_config_id,
-            },
-          },
-        },
+      evaluator = await set_current_eval_config(
+        $page.params.project_id,
+        $page.params.task_id,
+        $page.params.eval_id,
+        eval_config_id,
       )
-      if (error) {
-        throw error
-      }
-
-      posthog.capture("set_current_eval_config", {})
-
-      // Update the evaluator with the latest
-      evaluator = data
     } catch (error) {
       eval_error = createKilnError(error)
     }
@@ -505,8 +482,7 @@
           <div class="flex flex-row gap-2">
             <FormElement
               id="score-type"
-              label="Score"
-              hide_label={true}
+              label=""
               inputType="select"
               select_options={[
                 ["kendalltau", "Kendall's Tau Correlation"],
@@ -622,7 +598,7 @@
                       <button
                         class="btn btn-xs rounded-full btn-primary mt-1 min-w-[120px]"
                         on:click={() => {
-                          set_current_eval_config(null)
+                          handle_set_current_eval_config(null)
                         }}
                       >
                         Default <span class="pl-[1px]">&#x2715;</span>
@@ -633,7 +609,9 @@
                           ? 'btn-primary'
                           : 'btn-secondary btn-outline'}"
                         on:click={() => {
-                          set_current_eval_config(eval_config.id)
+                          if (eval_config.id) {
+                            handle_set_current_eval_config(eval_config.id)
+                          }
                         }}
                       >
                         Set as Default
