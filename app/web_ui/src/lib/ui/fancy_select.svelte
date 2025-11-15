@@ -420,22 +420,23 @@
   }
 
   // The "click away to close" element. Document unless a modal is open.
-  let target_close_element: Document | Element | null = null
-  function getTargetCloseElement(): Document | Element {
-    if (!target_close_element) {
-      const topModal = [...document.querySelectorAll("dialog[open]")].pop()
-      target_close_element = topModal ? topModal : document
-    }
-    return target_close_element
+  function getClickToCloseElement(): Document | Element {
+    const topModal = [...document.querySelectorAll("dialog[open]")].pop()
+    return topModal ? topModal : document
   }
 
+  let target_close_element: Document | Element | null = null
   $: if (mounted) {
-    const target_close_element = getTargetCloseElement()
     if (listVisible) {
+      // Save the element we're adding event listeners to so we can remove them later
+      target_close_element = getClickToCloseElement()
       target_close_element.addEventListener("click", handleCloseElementClick)
       document.addEventListener("keydown", handleKeyInput)
     } else {
-      target_close_element.removeEventListener("click", handleCloseElementClick)
+      target_close_element?.removeEventListener(
+        "click",
+        handleCloseElementClick,
+      )
       document.removeEventListener("keydown", handleKeyInput)
     }
   }
