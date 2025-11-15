@@ -43,6 +43,7 @@
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
   export let inline_action: InlineAction | null = null
+  export let multi_select_close_on_select: boolean = false
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -271,6 +272,7 @@
         {empty_state_message}
         {empty_state_subtitle}
         {empty_state_link}
+        {multi_select_close_on_select}
       />
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}

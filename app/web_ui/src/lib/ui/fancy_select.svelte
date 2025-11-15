@@ -11,6 +11,7 @@
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
   export let multi_select: boolean = false
+  export let multi_select_close_on_select: boolean = false
   export let disabled: boolean = false
   export let error_outline: boolean = false
 
@@ -99,11 +100,12 @@
       }
       // Update selected, which is what we expose outside the component
       selected = selected_values
-
-      // Note: we don't close the dropdown for multi-select
     } else {
       selected = option
+    }
 
+    // Close if single select or if multi select and close on select is enabled
+    if (!multi_select || multi_select_close_on_select) {
       // Delay hiding the dropdown to ensure the click event is fully processed
       setTimeout(() => {
         listVisible = false
