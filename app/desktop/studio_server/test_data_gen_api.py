@@ -53,14 +53,17 @@ def data_source():
 
 
 @pytest.fixture
-def test_task(tmp_path) -> Task:
+def test_project(tmp_path) -> Project:
     project_path = tmp_path / "test_project" / "project.kiln"
     project_path.parent.mkdir()
-
     project = Project(name="Test Project", path=project_path)
     project.save_to_file()
+    return project
 
-    task = Task(name="Test Task", instruction="Test Instruction", parent=project)
+
+@pytest.fixture
+def test_task(test_project) -> Task:
+    task = Task(name="Test Task", instruction="Test Instruction", parent=test_project)
     task.save_to_file()
     return task
 
@@ -91,6 +94,13 @@ def mock_task_adapter(mock_task_run):
 
 
 @pytest.fixture
+def mock_project_from_id(test_project):
+    with patch("app.desktop.studio_server.data_gen_api.project_from_id") as mock:
+        mock.return_value = test_project
+        yield mock
+
+
+@pytest.fixture
 def mock_task_from_id(test_task):
     with patch("app.desktop.studio_server.data_gen_api.task_from_id") as mock:
         mock.return_value = test_task
@@ -99,6 +109,7 @@ def mock_task_from_id(test_task):
 
 def test_generate_categories_success(
     mock_task_from_id,
+    mock_project_from_id,
     mock_task_adapter,
     client,
     mock_task_run,
@@ -131,6 +142,7 @@ def test_generate_categories_success(
 
 
 def test_generate_samples_success(
+    mock_project_from_id,
     mock_task_from_id,
     mock_task_adapter,
     client,

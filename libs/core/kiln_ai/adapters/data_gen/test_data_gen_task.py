@@ -34,6 +34,15 @@ def base_task():
     )
 
 
+@pytest.fixture
+def test_project(tmp_path) -> Project:
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    return project
+
+
 def test_data_gen_categories_task_input_initialization(base_task):
     # Arrange
     node_path = ["root", "branch", "leaf"]
@@ -62,9 +71,11 @@ def test_data_gen_categories_task_input_default_values(base_task):
     assert input_model.kiln_data_gen_topic_path == []
 
 
-def test_data_gen_categories_task_initialization():
+def test_data_gen_categories_task_initialization(test_project):
     # Act
-    task = DataGenCategoriesTask(gen_type="training", guidance="Test guidance")
+    task = DataGenCategoriesTask(
+        gen_type="training", guidance="Test guidance", parent_project=test_project
+    )
 
     # Assert
     assert task.name == "DataGen"
@@ -77,9 +88,11 @@ def test_data_gen_categories_task_initialization():
     assert "Test guidance" in task.instruction
 
 
-def test_data_gen_categories_task_schemas():
+def test_data_gen_categories_task_schemas(test_project):
     # Act
-    task = DataGenCategoriesTask(gen_type="eval", guidance="Test guidance")
+    task = DataGenCategoriesTask(
+        gen_type="eval", guidance="Test guidance", parent_project=test_project
+    )
 
     assert "I want to evaluate a large language model" in task.instruction
     assert "Test guidance" in task.instruction
@@ -165,10 +178,13 @@ def test_data_gen_sample_task_input_default_values(base_task):
     assert input_model.kiln_data_gen_topic_path == []
 
 
-def test_data_gen_sample_task_initialization(base_task):
+def test_data_gen_sample_task_initialization(base_task, test_project):
     # Act
     task = DataGenSampleTask(
-        target_task=base_task, gen_type="eval", guidance="Test guidance"
+        target_task=base_task,
+        gen_type="eval",
+        guidance="Test guidance",
+        parent_project=test_project,
     )
 
     # Assert
