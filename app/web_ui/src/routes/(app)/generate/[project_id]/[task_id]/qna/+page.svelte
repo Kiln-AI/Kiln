@@ -747,15 +747,17 @@
 >
   {#if $qnaSaveAllStatus}
     {#if $qnaSaveAllStatus.running}
+      {@const totalToSave =
+        $qnaSaveAllStatus.savedCount + ($qnaPendingSaveCount || 0)}
       <div class="min-h-[200px] flex flex-col justify-center items-center">
         <div class="loading loading-spinner loading-lg mb-6 text-success"></div>
         <progress
           class="progress w-56 progress-success"
           value={$qnaSaveAllStatus.savedCount}
-          max={$qnaPendingSaveCount || 0}
+          max={totalToSave}
         ></progress>
         <div class="font-light text-xs text-center mt-1">
-          {$qnaSaveAllStatus.savedCount} of {$qnaPendingSaveCount || 0}
+          {$qnaSaveAllStatus.savedCount} of {totalToSave}
           {#if $qnaSaveAllStatus.errors.length > 0}
             complete — {$qnaSaveAllStatus.errors.length} failed
           {/if}
