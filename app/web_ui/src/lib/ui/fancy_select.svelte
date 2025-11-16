@@ -100,7 +100,7 @@
       // Update selected, which is what we expose outside the component
       selected = selected_values
 
-      // Note: we don't close the dropdown for multi-select
+      // Don't close the dropdown for multi select
     } else {
       selected = option
 
@@ -412,7 +412,7 @@
   }
 
   // Handle click outside to close dropdown
-  function handleDocumentClick(event: MouseEvent) {
+  function handleCloseElementClick(event: Event) {
     if (
       listVisible &&
       selectedElement &&
@@ -420,16 +420,29 @@
       dropdownElement &&
       !dropdownElement.contains(event.target as Node)
     ) {
+      event.preventDefault()
       listVisible = false
     }
   }
 
+  // The "click away to close" element. Document unless a modal is open.
+  function getClickToCloseElement(): Document | Element {
+    const topModal = [...document.querySelectorAll("dialog[open]")].pop()
+    return topModal ? topModal : document
+  }
+
+  let target_close_element: Document | Element | null = null
   $: if (mounted) {
     if (listVisible) {
-      document.addEventListener("click", handleDocumentClick)
+      // Save the element we're adding event listeners to so we can remove them later
+      target_close_element = getClickToCloseElement()
+      target_close_element.addEventListener("click", handleCloseElementClick)
       document.addEventListener("keydown", handleKeyInput)
     } else {
-      document.removeEventListener("click", handleDocumentClick)
+      target_close_element?.removeEventListener(
+        "click",
+        handleCloseElementClick,
+      )
       document.removeEventListener("keydown", handleKeyInput)
     }
   }
