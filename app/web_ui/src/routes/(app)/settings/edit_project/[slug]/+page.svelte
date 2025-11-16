@@ -14,6 +14,7 @@
     title="Edit Project"
     subtitle={project?.name}
     breadcrumbs={[{ label: "Settings", href: "/settings" }]}
+    sub_subtitle={`ID: ${project_id || "Unknown"}`}
   >
     <EditProject {project} />
   </AppPage>
