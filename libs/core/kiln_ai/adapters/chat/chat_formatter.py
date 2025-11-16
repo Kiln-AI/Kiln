@@ -71,6 +71,10 @@ class ChatFormatter(ABC):
     def messages(self) -> List[ChatMessage]:
         return list(self._messages)
 
+    def append_messages(self, messages: Sequence[ChatMessage]) -> None:
+        """Append messages to the internal messages list."""
+        self._messages.extend(messages)
+
     def message_dicts(self) -> List[dict]:
         result = []
         for m in self._messages:

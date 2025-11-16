@@ -5,13 +5,18 @@ from typing import Any, Dict, Protocol
 from uuid import uuid4
 
 from kiln_ai.adapters.chat.chat_formatter import (
+    BasicChatMessage,
     ChatMessage,
+    ToolCallMessage,
+    ToolResponseMessage,
     get_chat_formatter,
 )
 from kiln_ai.adapters.chat.chat_utils import build_tool_call_messages
 from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
+from kiln_ai.tools.base_tool import ToolCallDefinition
+from kiln_ai.tools.tool_registry import tool_definitions_from_ids
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -21,6 +26,7 @@ class FormatGenerator(Protocol):
     def __call__(
         self,
         training_chat: list[ChatMessage],
+        tools: list[ToolCallDefinition] | None = None,
     ) -> Dict[str, Any]: ...
 
 
@@ -29,6 +35,7 @@ def build_training_chat(
     system_message: str,
     data_strategy: ChatStrategy,
     thinking_instructions: str | None = None,
+    tool_definitions: list[ToolCallDefinition] | None = None,
 ) -> list[ChatMessage]:
     """
     Generate chat message list for training.
@@ -52,9 +59,9 @@ def build_training_chat(
     # First turn already has it's content (user message)
     chat_formatter.next_turn(None)
 
-    # Extract the tool calls from the Traces and insert
+    # Extract the tool calls from the Traces and insert into the internal messages list
     tool_call_messages = build_tool_call_messages(task_run.trace)
-    chat_formatter.messages.extend(tool_call_messages)
+    chat_formatter.append_messages(tool_call_messages)
 
     match data_strategy:
         case ChatStrategy.single_turn:
@@ -109,30 +116,56 @@ def generate_chat_message_list(
 ) -> list[dict[str, str | None]]:
     """Generate OpenAI chat list. Not the full OpenAI body, just the list of messages."""
 
-    messages: list[dict[str, str | None]] = []
+    messages: list[dict[str, Any]] = []
 
     for msg in training_chat:
-        if msg.role not in ["user", "assistant", "system"]:
-            raise ValueError(f"Unsupported role for OpenAI chat format: {msg.role}")
-
-        messages.append(
-            {
-                "role": msg.role,
-                "content": msg.content,
-            }
-        )
+        # if msg is BasicChatMessage, output as is.
+        if isinstance(msg, BasicChatMessage):
+            messages.append(
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                }
+            )
+        # Assistant message with tool call
+        elif isinstance(msg, ToolCallMessage):
+            messages.append(
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "tool_calls": msg.tool_calls,
+                }
+            )
+        # Tool call response message
+        elif isinstance(msg, ToolResponseMessage):
+            messages.append(
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "tool_call_id": msg.tool_call_id,
+                }
+            )
+        else:
+            # Should never happen
+            raise ValueError(f"Unsupported message type: {type(msg)}")
 
     return messages
 
 
 def generate_chat_message_response(
     training_chat: list[ChatMessage],
+    tools: list[ToolCallDefinition] | None = None,
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with plaintext response"""
 
     messages: list[dict[str, str | None]] = generate_chat_message_list(training_chat)
 
-    return {"messages": messages}
+    result: Dict[str, Any] = {"messages": messages}
+
+    if tools:
+        result["tools"] = tools
+
+    return result
 
 
 def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
@@ -154,6 +187,7 @@ def last_message_structured_content(training_chat: list[ChatMessage]) -> Dict:
 
 def generate_json_schema_message(
     training_chat: list[ChatMessage],
+    tools: list[ToolCallDefinition] | None = None,
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with validated JSON response"""
     # Load and dump to ensure it's valid JSON and goes to 1 line
@@ -163,11 +197,12 @@ def generate_json_schema_message(
     json_string = json.dumps(last_msg_data, ensure_ascii=False)
     training_chat[-1].content = json_string
 
-    return generate_chat_message_response(training_chat)
+    return generate_chat_message_response(training_chat, tools=tools)
 
 
 def generate_chat_message_toolcall(
     training_chat: list[ChatMessage],
+    tools: list[ToolCallDefinition] | None = None,
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with tool call response"""
     last_message_data = last_message_structured_content(training_chat)
@@ -194,11 +229,17 @@ def generate_chat_message_toolcall(
         },
     )
 
-    return {"messages": messages}
+    result: Dict[str, Any] = {"messages": messages}
+
+    if tools:
+        result["tools"] = tools
+
+    return result
 
 
 def generate_huggingface_chat_template(
     training_chat: list[ChatMessage],
+    tools: list[ToolCallDefinition] | None = None,
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template"""
 
@@ -209,6 +250,7 @@ def generate_huggingface_chat_template(
 
 def generate_huggingface_chat_template_toolcall(
     training_chat: list[ChatMessage],
+    tools: list[ToolCallDefinition] | None = None,
 ) -> Dict[str, Any]:
     """Generate HuggingFace chat template with tool calls"""
     last_message_data = last_message_structured_content(training_chat)
@@ -247,6 +289,7 @@ VERTEX_GEMINI_ROLE_MAP = {
 
 def generate_vertex_gemini(
     training_chat: list[ChatMessage],
+    tools: list[ToolCallDefinition] | None = None,
 ) -> Dict[str, Any]:
     """Generate Vertex Gemini format (flash and pro)"""
     # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning-prepare
@@ -356,17 +399,46 @@ class DatasetFormatter:
                         f"Task run {run_id} not found. This is required by this dataset."
                     )
 
+                # Fetch tool definitions
+                tools = await self._get_tool_definitions_from_config(task_run)
+
                 # Training_chat is a list of ChatMessage
                 training_chat = build_training_chat(
                     task_run=task_run,
                     system_message=self.system_message,
                     data_strategy=data_strategy,
                     thinking_instructions=self.thinking_instructions,
+                    tool_definitions=tools,
                 )
-                example = generator(training_chat)
+                example = generator(training_chat, tools=tools)
 
                 # Allow non-ascii characters in the dataset.
                 # Better readability for non-English users. If you don't support UTF-8... you should.
                 f.write(json.dumps(example, ensure_ascii=False) + "\n")
 
         return output_path
+
+    # Helper
+
+    async def _get_tool_definitions_from_config(
+        self,
+        task_run: TaskRun,
+    ) -> list[ToolCallDefinition] | None:
+        """Extract tool definitions from task run config"""
+        if not task_run.output.source:
+            return None
+
+        run_config = task_run.output.source.run_config
+        if run_config is None:
+            return None
+
+        tools_config = run_config.tools_config
+        if tools_config is None:
+            return None
+
+        task = task_run.parent_task()
+        if task is None:
+            return None
+
+        tool_definitions = await tool_definitions_from_ids(tools_config.tools, task)
+        return tool_definitions

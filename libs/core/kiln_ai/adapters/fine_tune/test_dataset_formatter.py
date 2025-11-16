@@ -68,6 +68,7 @@ def mock_task():
                                     "model_provider": "test",
                                     "adapter_name": "test",
                                 },
+                                "run_config": None,
                             },
                         ),
                     },
