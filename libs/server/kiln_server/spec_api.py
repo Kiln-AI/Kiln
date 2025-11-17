@@ -32,7 +32,6 @@ class SpecCreateRequest(BaseModel):
 class SpecUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
-    type: SpecType | None = None
     priority: SpecPriority | None = None
     status: SpecStatus | None = None
     tags: List[str] | None = None

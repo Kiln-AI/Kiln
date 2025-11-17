@@ -5248,7 +5248,6 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
-            type?: components["schemas"]["SpecType"] | null;
             priority?: components["schemas"]["SpecPriority"] | null;
             status?: components["schemas"]["SpecStatus"] | null;
             /** Tags */
