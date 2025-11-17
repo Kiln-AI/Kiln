@@ -56,6 +56,9 @@
 
   // Export to let parent redefine this. This is a basic "Optional" and max length check
   export let validator: (value: unknown) => string | null = () => {
+    if (inputType === "header_only") {
+      return null
+    }
     if (!optional && is_empty(value)) {
       return '"' + label + '" is required'
     }
@@ -74,7 +77,9 @@
   let inline_error: string | null = null
   let initial_run = true
   $: {
-    if (initial_run) {
+    if (inputType === "header_only") {
+      inline_error = null
+    } else if (initial_run) {
       initial_run = false
     } else if (!optional && is_empty(value)) {
       inline_error = "Required"
