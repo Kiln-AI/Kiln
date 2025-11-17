@@ -75,7 +75,36 @@ def mock_task():
                         ),
                     },
                 ),
-                "trace": None,
+                "trace": [
+                    {
+                        "content": "system message",
+                        "role": "system",
+                    },
+                    {"content": '{"test": "input 你好"}', "role": "user"},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": f"call_tool{i}_1",
+                                "function": {
+                                    "arguments": '{"value": "intermediate"}',
+                                    "name": "helper_tool",
+                                },
+                                "type": "function",
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "content": "intermediate result",
+                        "tool_call_id": f"call_tool{i}_1",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": '{"test": "output 你好"}',
+                    },
+                ],
             },
         )
         for i in range(1, 4)
@@ -258,11 +287,13 @@ async def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
         for line in lines:
             data = json.loads(line)
             assert "messages" in data
-            assert len(data["messages"]) == 3
+            assert len(data["messages"]) == 5
             assert data["messages"][0]["content"] == "system message"
             assert data["messages"][1]["content"] == '{"test": "input 你好"}'
+            assert data["messages"][2]["role"] == "assistant"
+            assert data["messages"][3]["role"] == "tool"
             # Raw chat doesn't fix json issues, like extra spaces
-            assert data["messages"][2]["content"] == '{"test":   "output 你好"}'
+            assert data["messages"][4]["content"] == '{"test":   "output 你好"}'
 
 
 async def test_dataset_formatter_dump_to_temp_file(mock_dataset):
@@ -315,12 +346,15 @@ async def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path
         for line in lines:
             data = json.loads(line)
             assert "messages" in data
-            assert len(data["messages"]) == 3
+            assert len(data["messages"]) == 5
             # Check system and user messages
             assert data["messages"][0]["content"] == "system message"
             assert data["messages"][1]["content"] == '{"test": "input 你好"}'
-            # Check tool call format
-            assistant_msg = data["messages"][2]
+            # Check trace tool calls (from trace)
+            assert data["messages"][2]["role"] == "assistant"
+            assert data["messages"][3]["role"] == "tool"
+            # Check final tool call format (task_response)
+            assistant_msg = data["messages"][4]
             assert assistant_msg["content"] is None
             assert "tool_calls" in assistant_msg
             assert len(assistant_msg["tool_calls"]) == 1
@@ -558,7 +592,7 @@ def test_build_training_chat(mock_task):
         data_strategy=ChatStrategy.single_turn,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -567,7 +601,15 @@ def test_build_training_chat(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -586,7 +628,7 @@ def test_build_training_data_with_COT(mock_task):
         thinking_instructions="thinking instructions",
     )
 
-    assert len(messages) == 5
+    assert len(messages) == 7
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -598,15 +640,23 @@ def test_build_training_data_with_COT(mock_task):
         == 'The input is:\n<user_input>\n{"test": "input 你好"}\n</user_input>\n\nthinking instructions'
     )
 
-    assistant_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    assistant_msg = messages[4]
     assert assistant_msg.role == "assistant"
     assert assistant_msg.content == "cot output"
 
-    final_answer_prompt_msg = messages[3]
+    final_answer_prompt_msg = messages[5]
     assert final_answer_prompt_msg.role == "user"
     assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
 
-    final_msg = messages[4]
+    final_msg = messages[6]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -625,7 +675,7 @@ def test_build_training_data_with_COT_legacy(mock_task):
         thinking_instructions="thinking instructions",
     )
 
-    assert len(messages) == 6
+    assert len(messages) == 8
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -638,15 +688,23 @@ def test_build_training_data_with_COT_legacy(mock_task):
     assert cot_msg.role == "system"
     assert cot_msg.content == "thinking instructions"
 
-    assistant_msg = messages[3]
+    tool_call_msg = messages[3]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[4]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    assistant_msg = messages[5]
     assert assistant_msg.role == "assistant"
     assert assistant_msg.content == "cot output"
 
-    final_answer_prompt_msg = messages[4]
+    final_answer_prompt_msg = messages[6]
     assert final_answer_prompt_msg.role == "user"
     assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
 
-    final_msg = messages[5]
+    final_msg = messages[7]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -665,7 +723,7 @@ def test_build_training_data_with_COT_r1_style(mock_task):
         thinking_instructions=None,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -674,7 +732,15 @@ def test_build_training_data_with_COT_r1_style(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     assert (
         final_msg.content
@@ -702,7 +768,7 @@ def test_build_training_data_with_thinking(mock_task):
         thinking_instructions="thinking instructions",
     )
 
-    assert len(messages) == 5
+    assert len(messages) == 7
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -714,15 +780,23 @@ def test_build_training_data_with_thinking(mock_task):
         == 'The input is:\n<user_input>\n{"test": "input 你好"}\n</user_input>\n\nthinking instructions'
     )
 
-    assistant_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    assistant_msg = messages[4]
     assert assistant_msg.role == "assistant"
     assert assistant_msg.content == "thinking output"
 
-    final_answer_prompt_msg = messages[3]
+    final_answer_prompt_msg = messages[5]
     assert final_answer_prompt_msg.role == "user"
     assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
 
-    final_msg = messages[4]
+    final_msg = messages[6]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -748,7 +822,7 @@ def test_build_training_data_with_thinking_r1_style(mock_task):
         thinking_instructions=None,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -757,7 +831,15 @@ def test_build_training_data_with_thinking_r1_style(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     assert (
         final_msg.content
@@ -783,7 +865,7 @@ def test_build_training_data_with_repaired_output(mock_task):
         data_strategy=ChatStrategy.single_turn,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -792,7 +874,15 @@ def test_build_training_data_with_repaired_output(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     # Note we re-format the json
     assert final_msg.content == '{"test": "repaired output"}'
@@ -821,12 +911,15 @@ async def test_dataset_formatter_dump_to_file_json_schema_format(
         for line in lines:
             data = json.loads(line)
             assert "messages" in data
-            assert len(data["messages"]) == 3
+            assert len(data["messages"]) == 5
             # Check system and user messages
             assert data["messages"][0]["content"] == "system message"
             assert data["messages"][1]["content"] == '{"test": "input 你好"}'
+            # Check trace tool calls
+            assert data["messages"][2]["role"] == "assistant"
+            assert data["messages"][3]["role"] == "tool"
             # Check JSON format
-            assistant_msg = data["messages"][2]
+            assistant_msg = data["messages"][4]
             assert assistant_msg["role"] == "assistant"
             # Verify the content is valid JSON
             assert assistant_msg["content"] == '{"test": "output 你好"}'
