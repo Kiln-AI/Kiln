@@ -6,10 +6,7 @@ import pytest
 import yaml
 
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.model_rate_limiter import (
-    ModelRateLimiter,
-    reset_global_rate_limiter,
-)
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, reset_global_rate_limiter
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +19,10 @@ def reset_rate_limiter():
 
 @pytest.fixture
 def temp_home(tmp_path):
-    with patch.object(os.path, "expanduser", return_value=str(tmp_path)):
+    with (
+        patch.object(os.path, "expanduser", return_value=str(tmp_path)),
+        patch("pathlib.Path.home", return_value=tmp_path),
+    ):
         yield tmp_path
 
 
