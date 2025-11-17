@@ -202,21 +202,12 @@ class LitellmExtractor(BaseExtractor):
                     path=str(page_path), mime_type="application/pdf"
                 )
 
-            # hash pdf path
-            pdf_path_hash = hashlib.md5(
-                str(pdf_path.resolve()).encode("utf-8")
-            ).hexdigest()
-            last_digits = pdf_path_hash[-4:] + "::" + str(page_number)
-            print(f"> ACQUIRING: {last_digits}")
-
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
             async with self.rate_limiter.limit(
                 self.extractor_config.model_provider_name,
                 self.extractor_config.model_name,
             ):
-                print(f"> STARTING: {last_digits}")
                 response = await litellm.acompletion(**completion_kwargs)
-                print(f"> COMPLETED: {last_digits}")
         except Exception as e:
             raise RuntimeError(
                 f"Error extracting page {page_number} in file {page_path}: {e}"
