@@ -103,7 +103,7 @@
   </div>
 
   {#if show_dropdown}
-    <div class="flex flex-row gap-2 items-center">
+    <div class="flex flex-row gap-2 items-start">
       <TagDropdown
         bind:tag={current_tag}
         {project_id}
@@ -114,7 +114,7 @@
         focus_on_mount={true}
       />
       {#if show_close_button}
-        <div class="flex-none">
+        <div class="flex-none mt-2">
           <button
             class="btn btn-sm btn-circle text-xl font-medium"
             on:click={handle_close_dropdown}>✕</button
