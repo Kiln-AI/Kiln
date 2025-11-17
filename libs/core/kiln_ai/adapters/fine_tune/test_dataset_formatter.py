@@ -10,6 +10,8 @@ import pytest
 from kiln_ai.adapters.chat.chat_formatter import (
     COT_FINAL_ANSWER_PROMPT,
     BasicChatMessage,
+    ToolCallMessage,
+    ToolResponseMessage,
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
     VERTEX_GEMINI_ROLE_MAP,
@@ -883,3 +885,207 @@ def test_vertex_gemini_role_map_coverage():
     assert set(VERTEX_GEMINI_ROLE_MAP.keys()) == set(possible_roles), (
         "VERTEX_GEMINI_ROLE_MAP has extra mappings"
     )
+
+
+def mock_training_chat_two_step_with_tools(jsonOutput: bool = False):
+    return [
+        BasicChatMessage(
+            role="system",
+            content="You are a calculator, your task is to solve math equation by leveraging tools and standard conventions.",
+        ),
+        BasicChatMessage(role="user", content="Calculate 92 - (21+34)"),
+        ToolCallMessage(
+            role="assistant",
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_EeflFatFRBKui10Z23uTQQIN",
+                    "function": {"arguments": '{"a":21,"b":34}', "name": "add"},
+                    "type": "function",
+                },
+            ],
+        ),
+        ToolResponseMessage(
+            role="tool", content="55", tool_call_id="call_EeflFatFRBKui10Z23uTQQIN"
+        ),
+        ToolCallMessage(
+            role="assistant",
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+                    "function": {"arguments": '{"a":92,"b":55}', "name": "subtract"},
+                    "type": "function",
+                }
+            ],
+        ),
+        ToolResponseMessage(
+            role="tool", content="37", tool_call_id="call_zzMBArMOdlDD0Pn3vWMliMmn"
+        ),
+        BasicChatMessage(
+            role="assistant",
+            content="The result of \\( 92 - (21 + 34) \\) is 37."
+            if not jsonOutput
+            else '{"answer": 37}',
+        ),
+    ]
+
+
+@pytest.fixture
+def mock_tool_definitions():
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "add",
+                "description": "Add two numbers together and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number to add",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to add",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "subtract",
+                "description": "Subtract the second number from the first number and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number (minuend)",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to subtract (subtrahend)",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+    ]
+
+
+def test_generate_chat_message_response_with_tools(mock_tool_definitions):
+    result = generate_chat_message_response(
+        mock_training_chat_two_step_with_tools(),
+        mock_tool_definitions,
+    )
+    assert result == {
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a calculator, your task is to solve math equation by leveraging tools and standard conventions.",
+            },
+            {"role": "user", "content": "Calculate 92 - (21+34)"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_EeflFatFRBKui10Z23uTQQIN",
+                        "function": {"arguments": '{"a":21,"b":34}', "name": "add"},
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "55",
+                "tool_call_id": "call_EeflFatFRBKui10Z23uTQQIN",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+                        "function": {
+                            "arguments": '{"a":92,"b":55}',
+                            "name": "subtract",
+                        },
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "37",
+                "tool_call_id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+            },
+            {
+                "role": "assistant",
+                "content": "The result of \\( 92 - (21 + 34) \\) is 37.",
+            },
+        ],
+        "tools": mock_tool_definitions,
+    }
+
+
+def test_generate_chat_message_response_with_tools_json(mock_tool_definitions):
+    result = generate_chat_message_response(
+        mock_training_chat_two_step_with_tools(jsonOutput=True),
+        mock_tool_definitions,
+    )
+    assert result == {
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a calculator, your task is to solve math equation by leveraging tools and standard conventions.",
+            },
+            {"role": "user", "content": "Calculate 92 - (21+34)"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_EeflFatFRBKui10Z23uTQQIN",
+                        "function": {"arguments": '{"a":21,"b":34}', "name": "add"},
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "55",
+                "tool_call_id": "call_EeflFatFRBKui10Z23uTQQIN",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+                        "function": {
+                            "arguments": '{"a":92,"b":55}',
+                            "name": "subtract",
+                        },
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "37",
+                "tool_call_id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+            },
+            {
+                "role": "assistant",
+                "content": '{"answer": 37}',
+            },
+        ],
+        "tools": mock_tool_definitions,
+    }
