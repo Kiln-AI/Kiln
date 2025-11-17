@@ -5,7 +5,10 @@
   import { get } from "svelte/store"
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import { get_splits_from_url_param } from "$lib/utils/splits_util"
+  import {
+    get_splits_from_url_param,
+    splits_equal,
+  } from "$lib/utils/splits_util"
 
   import SelectDocumentsdialog from "./select_documents_dialog.svelte"
   import Extractiondialog from "./extraction_dialog.svelte"
@@ -87,21 +90,24 @@
   $: qnaSelectedTags = qna?.selectedTags
   $: qnaExtractionErrorCount = qna?.extractionErrorCount
 
+  let pendingUrlSplits: Record<string, number> = {}
+
   onMount(async () => {
     qna = createQnaStore(project_id, task_id)
     await qna.init(DEFAULT_QNA_GUIDANCE)
 
     // Check for splits in URL parameters (for non-reference answer evals)
     const splitsParam = $page.url.searchParams.get("splits")
-    if (splitsParam) {
-      const splits = get_splits_from_url_param(splitsParam)
-      if (Object.keys(splits).length > 0) {
-        qna.setSplits(splits)
-      }
-    }
+    const urlSplits = splitsParam ? get_splits_from_url_param(splitsParam) : {}
+    const savedSplits = get(qna).splits
 
-    if (get(qna).documents.length > 0) {
+    const hasDocuments = get(qna).documents.length > 0
+    const splitsChanged = !splits_equal(urlSplits, savedSplits)
+    if (hasDocuments && splitsChanged) {
+      pendingUrlSplits = urlSplits
       clear_existing_state_dialog?.show()
+    } else if (!hasDocuments && Object.keys(urlSplits).length > 0) {
+      qna.setSplits(urlSplits)
     }
   })
 
@@ -114,6 +120,10 @@
 
   function clear_state_and_reload() {
     qna.clearAll(DEFAULT_QNA_GUIDANCE)
+    if (Object.keys(pendingUrlSplits).length > 0) {
+      qna.setSplits(pendingUrlSplits)
+      pendingUrlSplits = {}
+    }
     return true
   }
 
@@ -162,6 +172,7 @@
   ) {
     const { documents, tags } = event.detail
     qna.addDocuments(documents, tags)
+
     posthog.capture("setup_qna_gen", {
       document_count: documents.length,
     })
@@ -856,6 +867,7 @@
       label: "Continue Session",
       isPrimary: true,
       action: () => {
+        pendingUrlSplits = {}
         clear_existing_state_dialog?.close()
         return true
       },
