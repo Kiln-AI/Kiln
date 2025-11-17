@@ -76,6 +76,13 @@
     show_dropdown = false
     current_tag = ""
   }
+
+  export function flush_pending_tag() {
+    if (current_tag && current_tag.trim().length > 0) {
+      const cleaned_tag = current_tag.trim().replace(/\s+/g, "_")
+      handle_tag_select(cleaned_tag)
+    }
+  }
 </script>
 
 <div class="w-full">
