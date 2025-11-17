@@ -1573,3 +1573,82 @@ def test_validate_output_fields_parametrized(
     else:
         run = EvalRun(**run_data)
         assert run.task_run_trace == trace
+
+
+def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
+    """Test that reference answer evals with no current_config_id get the first config set as default."""
+    # Create an eval with reference_answer type and save to disk
+    task = mock_task
+    task.path = tmp_path / "task.kiln"
+    task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=task,
+        evaluation_data_type=EvalDataType.reference_answer,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="high_rating",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    # Create two configs with different created_at times
+    from datetime import datetime, timedelta
+
+    config1 = EvalConfig(
+        parent=eval,
+        name="First Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+    )
+    config1.created_at = datetime.now()
+    config1.save_to_file()
+
+    config2 = EvalConfig(
+        parent=eval,
+        name="Second Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+    )
+    config2.created_at = datetime.now() + timedelta(seconds=1)
+    config2.save_to_file()
+
+    # Load from file - should set the first (oldest) config as default
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.current_config_id == config1.id  # First by created_at
+
+    # Test with current_config_id already set - should not change it
+    eval.current_config_id = config2.id
+    eval.save_to_file()
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.current_config_id == config2.id  # Should keep existing value
+
+    # Test with non-reference_answer type - should not set current_config_id
+    eval.evaluation_data_type = EvalDataType.final_answer
+    eval.current_config_id = None
+    eval.save_to_file()
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert (
+        loaded_eval.current_config_id is None
+    )  # Should not set for non-reference_answer
+
+    # Test with no configs - should not error
+    eval.evaluation_data_type = EvalDataType.reference_answer
+    eval.current_config_id = None
+    eval.save_to_file()
+    # Delete config files
+    if config1.path is not None:
+        config1.path.unlink()
+    if config2.path is not None:
+        config2.path.unlink()
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.current_config_id is None  # No configs to set
