@@ -6,6 +6,8 @@
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
   import type { Spec } from "$lib/types"
+  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import { goto } from "$app/navigation"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -86,17 +88,50 @@
         />
       </div>
     {:else if specs}
-      <div class="flex flex-col gap-4">
-        {#each specs as spec}
-          <div class="card border p-3 mb-4 rounded-md hover:bg-gray-50">
-            <div class="flex flex-row gap-4 items-center">
-              <div class="flex flex-col">
-                <div class="text-lg font-bold">{spec.name}</div>
-                <div class="text-sm text-gray-500">{spec.description}</div>
-              </div>
-            </div>
-          </div>
-        {/each}
+      <div class="overflow-x-auto rounded-lg border">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Type</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Created At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each specs as spec}
+              <tr
+                class="hover cursor-pointer"
+                on:click={() => {
+                  goto(`/specs/${project_id}/${task_id}/${spec.id}`)
+                }}
+              >
+                <td class="font-medium">{spec.name}</td>
+                <td class="max-w-md truncate">{spec.description}</td>
+                <td>
+                  {spec.type
+                    .replace(/_/g, " ")
+                    .split(" ")
+                    .map((word) => capitalize(word))
+                    .join(" ")}
+                </td>
+                <td>{capitalize(spec.priority)}</td>
+                <td>
+                  {spec.status === "not_started"
+                    ? "Not Started"
+                    : spec.status === "in_progress"
+                      ? "In Progress"
+                      : capitalize(spec.status)}
+                </td>
+                <td class="text-sm text-gray-500">
+                  {formatDate(spec.created_at)}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     {/if}
   </div>
