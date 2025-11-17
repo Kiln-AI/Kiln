@@ -107,6 +107,10 @@ class EvalRun(KilnParentedModel):
     output: str = Field(
         description="The output of the task. JSON formatted for structured output, plaintext for unstructured output."
     )
+    reference_answer: str | None = Field(
+        default=None,
+        description="The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
+    )
     intermediate_outputs: Dict[str, str] | None = Field(
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
@@ -220,6 +224,24 @@ class EvalRun(KilnParentedModel):
                 case _:
                     # Catch missing cases
                     raise_exhaustive_enum_error(output_score.type)
+        return self
+
+    @model_validator(mode="after")
+    def validate_reference_answer(self) -> Self:
+        parent_eval_config = self.parent_eval_config()
+        parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        if not parent_eval:
+            # Can't validate without the grand-parent eval, allow it to be validated later
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+        if (
+            self.reference_answer is not None
+            and evaluation_data_type != EvalDataType.reference_answer
+        ):
+            raise ValueError(
+                f"reference_answer is only valid for reference answer evals. Got: {evaluation_data_type}"
+            )
         return self
 
 
