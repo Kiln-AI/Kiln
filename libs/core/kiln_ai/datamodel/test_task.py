@@ -360,3 +360,28 @@ def test_task_specs_relationship(tmp_path):
     assert specs[0].description == "Test spec description"
     assert specs[0].definition == "The system should behave correctly"
     assert specs[0].type == SpecType.desired_behaviour
+
+
+def test_task_specs_readonly(tmp_path):
+    """Test that specs can be retrieved with readonly parameter."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    spec = Spec(
+        name="Readonly Spec",
+        description="Testing readonly parameter",
+        definition="System should handle readonly correctly",
+        type=SpecType.toxicity,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    specs_readonly = task.specs(readonly=True)
+    assert len(specs_readonly) == 1
+    assert specs_readonly[0].name == "Readonly Spec"
+
+    specs_default = task.specs(readonly=False)
+    assert len(specs_default) == 1
+    assert specs_default[0].name == "Readonly Spec"

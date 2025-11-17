@@ -342,3 +342,338 @@ def test_create_spec_with_eval_id(client, project_and_task):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].eval_id == "test_eval_123"
+
+
+# Validation error tests (422 responses)
+
+
+def test_create_spec_missing_name(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "name"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_missing_description(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "description"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_missing_definition(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "description": "This is a test spec",
+        "type": "desired_behaviour",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "definition"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_missing_type(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "type"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_invalid_type_enum(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+        "type": "invalid_type_value",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "type"] and error["type"] == "enum"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_invalid_priority_enum(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+        "priority": "ultra_high",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "priority"] and error["type"] == "enum"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_invalid_status_enum(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+        "status": "pending",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "status"] and error["type"] == "enum"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_invalid_name_type(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": 12345,
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(error["loc"] == ["body", "name"] for error in res["source_errors"])
+
+
+def test_create_spec_invalid_tags_type(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "description": "This is a test spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+        "tags": "not_a_list",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(error["loc"] == ["body", "tags"] for error in res["source_errors"])
+
+
+def test_update_spec_invalid_priority_enum(client, project_and_task):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        description="This is a test spec",
+        definition="System should behave correctly",
+        type=SpecType.desired_behaviour,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"priority": "critical"}
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "priority"] and error["type"] == "enum"
+        for error in res["source_errors"]
+    )
+
+
+def test_update_spec_invalid_status_enum(client, project_and_task):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        description="This is a test spec",
+        definition="System should behave correctly",
+        type=SpecType.desired_behaviour,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"status": "finished"}
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "status"] and error["type"] == "enum"
+        for error in res["source_errors"]
+    )
+
+
+def test_update_spec_invalid_name_type(client, project_and_task):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        description="This is a test spec",
+        definition="System should behave correctly",
+        type=SpecType.desired_behaviour,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"name": 12345}
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(error["loc"] == ["body", "name"] for error in res["source_errors"])
+
+
+def test_update_spec_invalid_tags_type(client, project_and_task):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        description="This is a test spec",
+        definition="System should behave correctly",
+        type=SpecType.desired_behaviour,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"tags": {"not": "a list"}}
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(error["loc"] == ["body", "tags"] for error in res["source_errors"])
