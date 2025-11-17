@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.spec import Priority, Spec, SpecStatus, SpecType
+from kiln_ai.datamodel.spec import Spec, SpecPriority, SpecStatus, SpecType
 from kiln_ai.datamodel.task import Task
 
 
@@ -22,7 +22,7 @@ def test_spec_valid_creation(sample_task):
     assert spec.name == "Test Spec"
     assert spec.description == "A test spec for validation"
     assert spec.type == SpecType.desired_behaviour
-    assert spec.priority == Priority.high
+    assert spec.priority == SpecPriority.high
     assert spec.status == SpecStatus.not_started
     assert spec.tags == []
     assert spec.eval_id is None
@@ -34,14 +34,14 @@ def test_spec_with_custom_values(sample_task):
         name="Custom Spec",
         description="A spec with custom values",
         type=SpecType.toxicity,
-        priority=Priority.low,
+        priority=SpecPriority.low,
         status=SpecStatus.in_progress,
         tags=["tag1", "tag2"],
         eval_id="test_eval_id",
         parent=sample_task,
     )
 
-    assert spec.priority == Priority.low
+    assert spec.priority == SpecPriority.low
     assert spec.status == SpecStatus.in_progress
     assert spec.tags == ["tag1", "tag2"]
     assert spec.eval_id == "test_eval_id"
@@ -136,7 +136,7 @@ def test_spec_all_types(sample_task, spec_type):
 
 @pytest.mark.parametrize(
     "priority",
-    [Priority.low, Priority.medium, Priority.high],
+    [SpecPriority.low, SpecPriority.medium, SpecPriority.high],
 )
 def test_spec_all_priorities(sample_task, priority):
     """Test that all priority levels can be set."""

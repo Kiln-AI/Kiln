@@ -40,7 +40,7 @@ class SpecType(str, Enum):
     prompt_leakage = "prompt_leakage"
 
 
-class Priority(str, Enum):
+class SpecPriority(str, Enum):
     """Defines priority levels for specs."""
 
     low = "low"
@@ -65,8 +65,8 @@ class Spec(KilnParentedModel):
     type: SpecType = Field(
         description="The type of spec.",
     )
-    priority: Priority = Field(
-        default=Priority.high,
+    priority: SpecPriority = Field(
+        default=SpecPriority.high,
         description="The priority of the spec.",
     )
     status: SpecStatus = Field(
