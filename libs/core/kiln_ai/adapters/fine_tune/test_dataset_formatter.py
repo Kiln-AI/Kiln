@@ -14,7 +14,6 @@ from kiln_ai.adapters.chat.chat_formatter import (
     ToolResponseMessage,
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
-    VERTEX_GEMINI_ROLE_MAP,
     DatasetFormat,
     DatasetFormatter,
     build_training_chat,
@@ -22,8 +21,11 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_chat_message_toolcall,
     generate_huggingface_chat_template,
     generate_huggingface_chat_template_toolcall,
-    generate_vertex_gemini,
     serialize_r1_style_message,
+)
+from kiln_ai.adapters.fine_tune.vertext_formatter import (
+    VERTEX_GEMINI_ROLE_MAP,
+    generate_vertex_gemini,
 )
 from kiln_ai.datamodel import (
     DatasetSplit,

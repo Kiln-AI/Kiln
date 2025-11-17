@@ -13,6 +13,7 @@ from kiln_ai.adapters.chat.chat_formatter import (
 )
 from kiln_ai.adapters.chat.chat_utils import build_tool_call_messages
 from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
+from kiln_ai.adapters.fine_tune.vertext_formatter import generate_vertex_gemini
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.tools.base_tool import ToolCallDefinition
@@ -280,45 +281,6 @@ def generate_huggingface_chat_template_toolcall(
     return {"conversations": conversations}
 
 
-VERTEX_GEMINI_ROLE_MAP = {
-    "system": "system",
-    "user": "user",
-    "assistant": "model",
-}
-
-
-def generate_vertex_gemini(
-    training_chat: list[ChatMessage],
-    tools: list[ToolCallDefinition] | None = None,
-) -> Dict[str, Any]:
-    """Generate Vertex Gemini format (flash and pro)"""
-    # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini-supervised-tuning-prepare
-
-    # System message get's it's own entry in top level UI
-    system_instruction = training_chat[0].content
-
-    messages: list[Dict[str, Any]] = []
-    for msg in training_chat[1:]:
-        messages.append(
-            {
-                "role": VERTEX_GEMINI_ROLE_MAP[msg.role],
-                "parts": [{"text": msg.content}],
-            }
-        )
-
-    return {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [
-                {
-                    "text": system_instruction,
-                }
-            ],
-        },
-        "contents": messages,
-    }
-
-
 FORMAT_GENERATORS: Dict[DatasetFormat, FormatGenerator] = {
     DatasetFormat.OPENAI_CHAT_JSONL: generate_chat_message_response,
     DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL: generate_json_schema_message,
@@ -368,8 +330,6 @@ class DatasetFormatter:
         Note:
             The output is written in UTF-8 encoding with ensure_ascii=False to properly
             support international text content while maintaining readability.
-
-            When task runs contain traces, the trace-based formatter is used and data_strategy and thinking_instructions are ignored.
         """
         if format_type not in FORMAT_GENERATORS:
             raise ValueError(f"Unsupported format: {format_type}")
