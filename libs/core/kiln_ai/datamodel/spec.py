@@ -61,7 +61,12 @@ class Spec(KilnParentedModel):
     """A spec for a task."""
 
     name: FilenameString = Field(description="The name of the spec.", min_length=1)
-    description: str = Field(description="The description of the spec", min_length=1)
+    description: str = Field(
+        description="A description for your own reference.", min_length=1
+    )
+    definition: str = Field(
+        description="A detailed definition of the spec.", min_length=1
+    )
     type: SpecType = Field(
         description="The type of spec.",
     )

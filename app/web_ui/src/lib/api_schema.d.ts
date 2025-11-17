@@ -5181,9 +5181,14 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description The description of the spec
+             * @description A description for your own reference.
              */
             description: string;
+            /**
+             * Definition
+             * @description A detailed definition of the spec.
+             */
+            definition: string;
             /** @description The type of spec. */
             type: components["schemas"]["SpecType"];
             /**
@@ -5216,6 +5221,8 @@ export interface components {
             name: string;
             /** Description */
             description: string;
+            /** Definition */
+            definition: string;
             type: components["schemas"]["SpecType"];
             priority?: components["schemas"]["SpecPriority"] | null;
             status?: components["schemas"]["SpecStatus"] | null;
@@ -5248,7 +5255,8 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
-            type?: components["schemas"]["SpecType"] | null;
+            /** Definition */
+            definition?: string | null;
             priority?: components["schemas"]["SpecPriority"] | null;
             status?: components["schemas"]["SpecStatus"] | null;
             /** Tags */

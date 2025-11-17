@@ -47,6 +47,7 @@ def test_create_spec_success(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "description": "This is a test spec",
+        "definition": "The system should always respond politely",
         "type": "desired_behaviour",
         "priority": "high",
         "status": "not_started",
@@ -63,6 +64,7 @@ def test_create_spec_success(client, project_and_task):
     res = response.json()
     assert res["name"] == "Test Spec"
     assert res["description"] == "This is a test spec"
+    assert res["definition"] == "The system should always respond politely"
     assert res["type"] == "desired_behaviour"
     assert res["priority"] == "high"
     assert res["status"] == "not_started"
@@ -72,6 +74,7 @@ def test_create_spec_success(client, project_and_task):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].name == "Test Spec"
+    assert specs[0].definition == "The system should always respond politely"
     assert specs[0].type == SpecType.desired_behaviour
     assert specs[0].priority == SpecPriority.high
     assert specs[0].status == SpecStatus.not_started
@@ -83,6 +86,7 @@ def test_create_spec_with_defaults(client, project_and_task):
     spec_data = {
         "name": "Minimal Spec",
         "description": "Spec with minimal fields",
+        "definition": "No toxic content allowed",
         "type": "toxicity",
     }
 
@@ -95,6 +99,7 @@ def test_create_spec_with_defaults(client, project_and_task):
     assert response.status_code == 200
     res = response.json()
     assert res["name"] == "Minimal Spec"
+    assert res["definition"] == "No toxic content allowed"
     assert res["type"] == "toxicity"
     assert res["priority"] == "high"
     assert res["status"] == "not_started"
@@ -106,6 +111,7 @@ def test_create_spec_task_not_found(client):
     spec_data = {
         "name": "Test Spec",
         "description": "This is a test spec",
+        "definition": "System should behave correctly",
         "type": "desired_behaviour",
     }
 
@@ -121,6 +127,7 @@ def test_get_specs_success(client, project_and_task):
     spec1 = Spec(
         name="Spec 1",
         description="First spec",
+        definition="System should respond appropriately",
         type=SpecType.desired_behaviour,
         parent=task,
     )
@@ -129,6 +136,7 @@ def test_get_specs_success(client, project_and_task):
     spec2 = Spec(
         name="Spec 2",
         description="Second spec",
+        definition="No toxic responses",
         type=SpecType.toxicity,
         priority=SpecPriority.low,
         parent=task,
@@ -171,6 +179,7 @@ def test_get_spec_success(client, project_and_task):
     spec = Spec(
         name="Test Spec",
         description="This is a test spec",
+        definition="System should not hallucinate facts",
         type=SpecType.hallucinations,
         priority=SpecPriority.medium,
         status=SpecStatus.in_progress,
@@ -189,6 +198,7 @@ def test_get_spec_success(client, project_and_task):
     res = response.json()
     assert res["name"] == "Test Spec"
     assert res["description"] == "This is a test spec"
+    assert res["definition"] == "System should not hallucinate facts"
     assert res["type"] == "hallucinations"
     assert res["priority"] == "medium"
     assert res["status"] == "in_progress"
@@ -214,6 +224,7 @@ def test_update_spec_success(client, project_and_task):
     spec = Spec(
         name="Original Name",
         description="Original description",
+        definition="Original definition",
         type=SpecType.desired_behaviour,
         priority=SpecPriority.low,
         status=SpecStatus.not_started,
@@ -225,6 +236,7 @@ def test_update_spec_success(client, project_and_task):
     update_data = {
         "name": "Updated Name",
         "description": "Updated description",
+        "definition": "Updated definition",
         "priority": "high",
         "status": "complete",
         "tags": ["new_tag", "updated"],
@@ -241,6 +253,7 @@ def test_update_spec_success(client, project_and_task):
     res = response.json()
     assert res["name"] == "Updated Name"
     assert res["description"] == "Updated description"
+    assert res["definition"] == "Updated definition"
     assert res["priority"] == "high"
     assert res["status"] == "complete"
     assert res["tags"] == ["new_tag", "updated"]
@@ -251,6 +264,7 @@ def test_update_spec_success(client, project_and_task):
     assert updated_spec is not None
     assert updated_spec.name == "Updated Name"
     assert updated_spec.description == "Updated description"
+    assert updated_spec.definition == "Updated definition"
     assert updated_spec.priority == SpecPriority.high
     assert updated_spec.status == SpecStatus.complete
     assert updated_spec.tags == ["new_tag", "updated"]
@@ -262,6 +276,7 @@ def test_update_spec_partial(client, project_and_task):
     spec = Spec(
         name="Original Name",
         description="Original description",
+        definition="Original definition",
         type=SpecType.toxicity,
         priority=SpecPriority.medium,
         parent=task,
@@ -281,6 +296,7 @@ def test_update_spec_partial(client, project_and_task):
     res = response.json()
     assert res["name"] == "Original Name"
     assert res["description"] == "Original description"
+    assert res["definition"] == "Original definition"
     assert res["type"] == "toxicity"
     assert res["priority"] == "medium"
     assert res["status"] == "in_progress"
@@ -308,6 +324,7 @@ def test_create_spec_with_eval_id(client, project_and_task):
     spec_data = {
         "name": "Eval Spec",
         "description": "Spec linked to an eval",
+        "definition": "Answers must match reference answers",
         "type": "reference_answer_accuracy",
         "eval_id": "test_eval_123",
     }

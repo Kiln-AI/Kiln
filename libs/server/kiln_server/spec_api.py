@@ -22,6 +22,7 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 class SpecCreateRequest(BaseModel):
     name: str
     description: str
+    definition: str
     type: SpecType
     priority: Optional[SpecPriority] = None
     status: Optional[SpecStatus] = None
@@ -32,7 +33,7 @@ class SpecCreateRequest(BaseModel):
 class SpecUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
-    type: SpecType | None = None
+    definition: str | None = None
     priority: SpecPriority | None = None
     status: SpecStatus | None = None
     tags: List[str] | None = None
@@ -50,6 +51,7 @@ def connect_spec_api(app: FastAPI):
             "parent": parent_task,
             "name": spec_data.name,
             "description": spec_data.description,
+            "definition": spec_data.definition,
             "type": spec_data.type,
         }
         if spec_data.priority is not None:
