@@ -41,11 +41,18 @@
       spec_loading = false
     }
   }
+
+  function formatValue(value: string): string {
+    return value
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ")
+  }
 </script>
 
 <AppPage
-  title="Spec Details"
-  subtitle={spec?.name || ""}
+  title="Spec{spec?.name ? `: ${spec.name}` : ''}"
+  subtitle={spec?.description || ""}
   breadcrumbs={[
     {
       label: "Specs",
@@ -66,37 +73,46 @@
       Failed to load spec, please refresh the page and try again.
     </div>
   {:else}
-    <PropertyList
-      properties={[
-        {
-          name: "Name",
-          value: spec.name,
-        },
-        {
-          name: "Description",
-          value: spec.description,
-        },
-        {
-          name: "Type",
-          value: spec.type,
-        },
-        {
-          name: "Priority",
-          value: spec.priority,
-        },
-        {
-          name: "Status",
-          value: spec.status,
-        },
-        {
-          name: "Tags",
-          value: spec.tags.length > 0 ? spec.tags.join(", ") : "None",
-        },
-        {
-          name: "Eval ID",
-          value: spec.eval_id || "None",
-        },
-      ]}
-    />
+    <div class="grid grid-cols-1 lg:grid-cols-[900px,500px] gap-12">
+      <div class="flex flex-col gap-4">
+        <div class="bg-base-200 rounded-lg p-6">
+          <h3 class="text-lg font-medium mb-4">Definition</h3>
+          <div class="prose prose-sm max-w-none whitespace-pre-wrap">
+            {spec.definition}
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-4">
+        <PropertyList
+          properties={[
+            {
+              name: "ID",
+              value: spec.id ?? "None",
+            },
+            {
+              name: "Type",
+              value: formatValue(spec.type),
+            },
+            {
+              name: "Priority",
+              value: formatValue(spec.priority),
+            },
+            {
+              name: "Status",
+              value: formatValue(spec.status),
+            },
+            {
+              name: "Tags",
+              value: spec.tags.length > 0 ? spec.tags.join(", ") : "None",
+            },
+            {
+              name: "Eval ID",
+              value: spec.eval_id || "None",
+            },
+          ]}
+        />
+      </div>
+    </div>
   {/if}
 </AppPage>
