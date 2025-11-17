@@ -251,6 +251,58 @@ export interface paths {
         patch: operations["update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Spec */
+        post: operations["create_spec_api_projects__project_id__tasks__task_id__spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/specs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Specs */
+        get: operations["get_specs_api_projects__project_id__tasks__task_id__specs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Spec */
+        get: operations["get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Spec */
+        patch: operations["update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -5102,6 +5154,111 @@ export interface components {
             breakpoint_percentile_threshold: number;
         };
         /**
+         * Spec
+         * @description A spec for a task.
+         */
+        Spec: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the spec.
+             */
+            name: string;
+            /**
+             * Description
+             * @description The description of the spec
+             */
+            description: string;
+            /** @description The type of spec. */
+            type: components["schemas"]["SpecType"];
+            /**
+             * @description The priority of the spec.
+             * @default high
+             */
+            priority: components["schemas"]["SpecPriority"];
+            /**
+             * @description The status of the spec.
+             * @default not_started
+             */
+            status: components["schemas"]["SpecStatus"];
+            /**
+             * Tags
+             * @description The tags of the spec.
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Eval Id
+             * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
+             */
+            eval_id?: string | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** SpecCreateRequest */
+        SpecCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            type: components["schemas"]["SpecType"];
+            /** @default high */
+            priority: components["schemas"]["SpecPriority"];
+            /** @default not_started */
+            status: components["schemas"]["SpecStatus"];
+            /** Tags */
+            tags?: string[];
+            /** Eval Id */
+            eval_id?: string | null;
+        };
+        /**
+         * SpecPriority
+         * @description Defines priority levels for specs.
+         * @enum {string}
+         */
+        SpecPriority: "low" | "medium" | "high";
+        /**
+         * SpecStatus
+         * @description Defines the status of a spec.
+         * @enum {string}
+         */
+        SpecStatus: "deprecated" | "not_started" | "in_progress" | "complete";
+        /**
+         * SpecType
+         * @description Defines the type of spec.
+         * @enum {string}
+         */
+        SpecType: "desired_behaviour" | "undesired_behaviour" | "appropriate_tool_use" | "intermediate_reasoning" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "tone" | "formatting" | "localization" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
+        /** SpecUpdateRequest */
+        SpecUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            type?: components["schemas"]["SpecType"] | null;
+            priority?: components["schemas"]["SpecPriority"] | null;
+            status?: components["schemas"]["SpecStatus"] | null;
+            /** Tags */
+            tags?: string[] | null;
+            /** Eval Id */
+            eval_id?: string | null;
+        };
+        /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
          *
@@ -6239,6 +6396,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Prompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_api_projects__project_id__tasks__task_id__spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_specs_api_projects__project_id__tasks__task_id__specs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                spec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                spec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
                 };
             };
             /** @description Validation Error */
