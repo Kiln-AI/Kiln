@@ -1,8 +1,8 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.spec import Spec, SpecPriority, SpecStatus, SpecType
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
 
@@ -23,10 +23,10 @@ class SpecCreateRequest(BaseModel):
     name: str
     description: str
     type: SpecType
-    priority: SpecPriority = SpecPriority.high
-    status: SpecStatus = SpecStatus.not_started
-    tags: List[str] = Field(default_factory=list)
-    eval_id: str | None = None
+    priority: Optional[SpecPriority] = None
+    status: Optional[SpecStatus] = None
+    tags: Optional[List[str]] = None
+    eval_id: Optional[str] = None
 
 
 class SpecUpdateRequest(BaseModel):
@@ -46,16 +46,22 @@ def connect_spec_api(app: FastAPI):
     ) -> Spec:
         parent_task = task_from_id(project_id, task_id)
 
-        spec = Spec(
-            parent=parent_task,
-            name=spec_data.name,
-            description=spec_data.description,
-            type=spec_data.type,
-            priority=spec_data.priority,
-            status=spec_data.status,
-            tags=spec_data.tags,
-            eval_id=spec_data.eval_id,
-        )
+        spec_kwargs = {
+            "parent": parent_task,
+            "name": spec_data.name,
+            "description": spec_data.description,
+            "type": spec_data.type,
+        }
+        if spec_data.priority is not None:
+            spec_kwargs["priority"] = spec_data.priority
+        if spec_data.status is not None:
+            spec_kwargs["status"] = spec_data.status
+        if spec_data.tags is not None:
+            spec_kwargs["tags"] = spec_data.tags
+        if spec_data.eval_id is not None:
+            spec_kwargs["eval_id"] = spec_data.eval_id
+
+        spec = Spec(**spec_kwargs)
         spec.save_to_file()
         return spec
 
