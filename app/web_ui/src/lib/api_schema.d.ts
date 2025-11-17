@@ -5217,12 +5217,10 @@ export interface components {
             /** Description */
             description: string;
             type: components["schemas"]["SpecType"];
-            /** @default high */
-            priority: components["schemas"]["SpecPriority"];
-            /** @default not_started */
-            status: components["schemas"]["SpecStatus"];
+            priority?: components["schemas"]["SpecPriority"] | null;
+            status?: components["schemas"]["SpecStatus"] | null;
             /** Tags */
-            tags?: string[];
+            tags?: string[] | null;
             /** Eval Id */
             eval_id?: string | null;
         };
