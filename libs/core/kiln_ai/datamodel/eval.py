@@ -1,5 +1,6 @@
 import json
 from enum import Enum
+from threading import Lock
 from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from pydantic import BaseModel, Field, model_validator
@@ -23,7 +24,9 @@ if TYPE_CHECKING:
 EvalScores = Dict[str, float]
 
 # Module-level set to track evals currently being migrated (to prevent recursion)
-_currently_migrating_eval_ids: set[str] = set()
+# Protected by _migration_lock to ensure thread-safe access
+_migration_lock = Lock()
+_currently_migrating_eval_ids: set[ID_TYPE] = set()
 
 
 class EvalTemplateId(str, Enum):
@@ -361,10 +364,11 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         # Prevent recursion: self.configs() loads child files, which re-loads this parent
         # (see basemodel.py where we iterate_children_paths_of_parent_path calls load_from_file)
         # This causes the validator to run again, creating an infinite loop without this guard.
-        if self.id in _currently_migrating_eval_ids:
-            return self
+        with _migration_lock:
+            if self.id in _currently_migrating_eval_ids:
+                return self
+            _currently_migrating_eval_ids.add(self.id)
 
-        _currently_migrating_eval_ids.add(str(self.id))
         try:
             # Get the configs - these are loaded from child files
             configs_list = self.configs(readonly=True)
@@ -373,7 +377,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 sorted_configs = sorted(configs_list, key=lambda c: c.created_at)
                 self.current_config_id = sorted_configs[0].id
         finally:
-            _currently_migrating_eval_ids.discard(str(self.id))
+            with _migration_lock:
+                _currently_migrating_eval_ids.discard(self.id)
 
         return self
 
