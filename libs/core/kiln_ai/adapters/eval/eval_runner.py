@@ -192,6 +192,7 @@ class EvalRunner:
                 raise ValueError("Not able to create evaluator from eval config")
 
             task_output: str | None = None
+            reference_answer: str | None = None
             trace: str | None = None
             scores: EvalScores | None = None
             intermediate_outputs: Dict[str, str] | None = None
@@ -219,6 +220,13 @@ class EvalRunner:
                 ):
                     trace = json.dumps(result_task_run.trace, indent=2)
 
+                if (
+                    parent_eval
+                    and parent_eval.evaluation_data_type
+                    == EvalDataType.reference_answer
+                ):
+                    reference_answer = job.item.output.output
+
             # Save the job result
             eval_run = EvalRun(
                 parent=job.eval_config,
@@ -230,6 +238,7 @@ class EvalRunner:
                 scores=scores,
                 input=job.item.input,
                 output=task_output,
+                reference_answer=reference_answer,
                 intermediate_outputs=intermediate_outputs,
                 task_run_trace=trace,
                 task_run_usage=task_run_usage,
