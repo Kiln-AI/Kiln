@@ -49,27 +49,29 @@
   }
 </script>
 
-<AppPage
-  title="Define a Spec"
-  subtitle="Define how you want your task to behave"
-  breadcrumbs={[
-    {
-      label: "Specs",
-      href: `/specs/${project_id}/${task_id}`,
-    },
-  ]}
->
-  <FormContainer
-    submit_label="Create Spec"
-    on:submit={create_spec}
-    bind:error={create_error}
-    bind:submitting={create_loading}
+<div class="max-w-[900px]">
+  <AppPage
+    title="Define a Spec"
+    subtitle="Define how you want your task to behave"
+    breadcrumbs={[
+      {
+        label: "Specs",
+        href: `/specs/${project_id}/${task_id}`,
+      },
+    ]}
   >
-    <FormElement label="Spec Name" id="spec_name" bind:value={spec_name} />
-    <FormElement
-      label="Spec Description"
-      id="spec_description"
-      bind:value={spec_description}
-    />
-  </FormContainer>
-</AppPage>
+    <FormContainer
+      submit_label="Create Spec"
+      on:submit={create_spec}
+      bind:error={create_error}
+      bind:submitting={create_loading}
+    >
+      <FormElement label="Spec Name" id="spec_name" bind:value={spec_name} />
+      <FormElement
+        label="Spec Description"
+        id="spec_description"
+        bind:value={spec_description}
+      />
+    </FormContainer>
+  </AppPage>
+</div>
