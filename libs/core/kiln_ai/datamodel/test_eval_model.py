@@ -1587,7 +1587,7 @@ def test_validate_output_fields_parametrized(
             EvalDataType.final_answer,
             "answer text",
             True,
-            r"reference_answer is only valid for reference answer evals\. Got: EvalDataType\.final_answer",
+            r"reference_answer is only valid for reference answer evals\. Got: final_answer",
         ),
         # full_trace eval type
         (EvalDataType.full_trace, None, False, None),
@@ -1595,7 +1595,7 @@ def test_validate_output_fields_parametrized(
             EvalDataType.full_trace,
             "answer text",
             True,
-            r"reference_answer is only valid for reference answer evals\. Got: EvalDataType\.full_trace",
+            r"reference_answer is only valid for reference answer evals\. Got: full_trace",
         ),
     ],
 )

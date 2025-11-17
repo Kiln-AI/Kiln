@@ -240,7 +240,7 @@ class EvalRun(KilnParentedModel):
             and evaluation_data_type != EvalDataType.reference_answer
         ):
             raise ValueError(
-                f"reference_answer is only valid for reference answer evals. Got: {evaluation_data_type}"
+                f"reference_answer is only valid for reference answer evals. Got: {evaluation_data_type.value}"
             )
         return self
 
