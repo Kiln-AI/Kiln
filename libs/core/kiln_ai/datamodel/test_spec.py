@@ -15,12 +15,14 @@ def test_spec_valid_creation(sample_task):
     spec = Spec(
         name="Test Spec",
         description="A test spec for validation",
+        definition="The system should behave correctly",
         type=SpecType.desired_behaviour,
         parent=sample_task,
     )
 
     assert spec.name == "Test Spec"
     assert spec.description == "A test spec for validation"
+    assert spec.definition == "The system should behave correctly"
     assert spec.type == SpecType.desired_behaviour
     assert spec.priority == SpecPriority.high
     assert spec.status == SpecStatus.not_started
@@ -33,6 +35,7 @@ def test_spec_with_custom_values(sample_task):
     spec = Spec(
         name="Custom Spec",
         description="A spec with custom values",
+        definition="No toxic content should be present",
         type=SpecType.toxicity,
         priority=SpecPriority.low,
         status=SpecStatus.in_progress,
@@ -53,6 +56,7 @@ def test_spec_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         Spec(
             description="Test",
+            definition="Test definition",
             type=SpecType.desired_behaviour,
             parent=sample_task,
         )  # type: ignore
@@ -62,6 +66,17 @@ def test_spec_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         Spec(
             name="Test",
+            definition="Test definition",
+            type=SpecType.desired_behaviour,
+            parent=sample_task,
+        )  # type: ignore
+    assert "Field required" in str(exc_info.value)
+
+    # Missing definition
+    with pytest.raises(ValidationError) as exc_info:
+        Spec(
+            name="Test",
+            description="Test description",
             type=SpecType.desired_behaviour,
             parent=sample_task,
         )  # type: ignore
@@ -72,6 +87,7 @@ def test_spec_missing_required_fields(sample_task):
         Spec(
             name="Test",
             description="Test description",
+            definition="Test definition",
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
@@ -83,6 +99,7 @@ def test_spec_empty_name(sample_task):
         Spec(
             name="",
             description="Test description",
+            definition="Test definition",
             type=SpecType.desired_behaviour,
             parent=sample_task,
         )
@@ -95,6 +112,20 @@ def test_spec_empty_description(sample_task):
         Spec(
             name="Test",
             description="",
+            definition="Test definition",
+            type=SpecType.desired_behaviour,
+            parent=sample_task,
+        )
+    assert "String should have at least 1 character" in str(exc_info.value)
+
+
+def test_spec_empty_definition(sample_task):
+    """Test that spec creation fails with empty definition."""
+    with pytest.raises(ValidationError) as exc_info:
+        Spec(
+            name="Test",
+            description="Test description",
+            definition="",
             type=SpecType.desired_behaviour,
             parent=sample_task,
         )
@@ -128,6 +159,7 @@ def test_spec_all_types(sample_task, spec_type):
     spec = Spec(
         name="Test Spec",
         description="Test description",
+        definition="Test definition",
         type=spec_type,
         parent=sample_task,
     )
@@ -143,6 +175,7 @@ def test_spec_all_priorities(sample_task, priority):
     spec = Spec(
         name="Test Spec",
         description="Test description",
+        definition="Test definition",
         type=SpecType.desired_behaviour,
         priority=priority,
         parent=sample_task,
@@ -164,6 +197,7 @@ def test_spec_all_statuses(sample_task, status):
     spec = Spec(
         name="Test Spec",
         description="Test description",
+        definition="Test definition",
         type=SpecType.desired_behaviour,
         status=status,
         parent=sample_task,
@@ -177,6 +211,7 @@ def test_spec_tags_validation_empty_string(sample_task):
         Spec(
             name="Test Spec",
             description="Test description",
+            definition="Test definition",
             type=SpecType.desired_behaviour,
             tags=["valid_tag", ""],
             parent=sample_task,
@@ -191,6 +226,7 @@ def test_spec_tags_validation_spaces(sample_task):
         Spec(
             name="Test Spec",
             description="Test description",
+            definition="Test definition",
             type=SpecType.desired_behaviour,
             tags=["valid_tag", "invalid tag"],
             parent=sample_task,
@@ -202,6 +238,7 @@ def test_spec_tags_valid(sample_task):
     spec = Spec(
         name="Test Spec",
         description="Test description",
+        definition="Test definition",
         type=SpecType.desired_behaviour,
         tags=["tag1", "tag_2", "tag-3", "TAG4"],
         parent=sample_task,
