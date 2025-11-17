@@ -400,17 +400,23 @@
   }
 
   let inline_judge_action: InlineAction | null = null
+  let set_current_eval_config_error: KilnError | null = null
 
   async function handle_set_current_eval_config() {
     if (!current_eval_config_id) {
       return
     }
-    evaluator = await set_current_eval_config(
-      $page.params.project_id,
-      $page.params.task_id,
-      $page.params.eval_id,
-      current_eval_config_id,
-    )
+    try {
+      set_current_eval_config_error = null
+      evaluator = await set_current_eval_config(
+        $page.params.project_id,
+        $page.params.task_id,
+        $page.params.eval_id,
+        current_eval_config_id,
+      )
+    } catch (error) {
+      set_current_eval_config_error = createKilnError(error)
+    }
   }
 
   $: void (current_eval_config_id,
@@ -497,6 +503,12 @@
               )}
               inline_action={inline_judge_action}
             />
+            {#if set_current_eval_config_error}
+              <div class="text-error text-sm mt-2">
+                {set_current_eval_config_error.getMessage() ||
+                  "An unknown error occurred"}
+              </div>
+            {/if}
             {#if !has_default_eval_config && evaluator?.template !== "rag"}
               <div class="mt-2">
                 <Warning

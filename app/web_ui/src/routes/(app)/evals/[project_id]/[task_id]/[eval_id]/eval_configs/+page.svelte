@@ -483,6 +483,7 @@
             <FormElement
               id="score-type"
               label=""
+              aria_label="Score"
               inputType="select"
               select_options={[
                 ["kendalltau", "Kendall's Tau Correlation"],

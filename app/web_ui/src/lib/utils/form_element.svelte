@@ -42,6 +42,7 @@
   export let empty_state_subtitle: string | null = null
   export let empty_state_link: string | null = null
   export let inline_action: InlineAction | null = null
+  export let aria_label: string | null = null
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -146,6 +147,7 @@
         class="checkbox"
         checked={value ? true : false}
         on:change={handleCheckboxChange}
+        aria-label={aria_label || label}
       />
     {/if}
     {#if label || inline_action || info_description || error_message || description}
@@ -197,6 +199,7 @@
   <div class="relative">
     {#if inputType === "textarea"}
       <textarea
+        aria-label={aria_label || label}
         placeholder={error_message || placeholder || label}
         {id}
         class="textarea text-base textarea-bordered w-full {height_class[
@@ -210,6 +213,7 @@
       />
     {:else if inputType === "input"}
       <input
+        aria-label={aria_label || label}
         type="text"
         placeholder={error_message || placeholder || label}
         {id}
@@ -224,6 +228,7 @@
       />
     {:else if inputType === "input_number"}
       <input
+        aria-label={aria_label || label}
         type="number"
         placeholder={error_message || placeholder || label}
         {id}
@@ -238,6 +243,7 @@
       />
     {:else if inputType === "select"}
       <select
+        aria-label={aria_label || label}
         {id}
         class="select select-bordered w-full {error_message || inline_error
           ? 'select-error'
@@ -270,6 +276,7 @@
       </select>
     {:else if inputType === "fancy_select" || inputType === "multi_select"}
       <FancySelect
+        aria_label={aria_label || label}
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}

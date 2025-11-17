@@ -519,6 +519,7 @@
             >
               <FormElement
                 label=""
+                aria_label="Model Instructions"
                 inputType="textarea"
                 id="eval_step_{item_index}"
                 bind:value={eval_steps[item_index]}
