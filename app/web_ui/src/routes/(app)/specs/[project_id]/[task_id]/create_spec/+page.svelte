@@ -16,7 +16,6 @@
   let complete = false
 
   let spec_name = ""
-  let spec_description = ""
   let spec_definition = ""
   let spec_type: SpecType = "desired_behaviour"
 
@@ -33,9 +32,12 @@
           },
           body: {
             name: spec_name,
-            description: spec_description,
             definition: spec_definition,
             type: spec_type,
+            priority: 1,
+            status: "not_started",
+            tags: [],
+            eval_id: null,
           },
         },
       )
@@ -70,23 +72,13 @@
       on:submit={create_spec}
       bind:error={create_error}
       bind:submitting={create_loading}
-      warn_before_unload={!!(
-        !complete &&
-        (spec_name || spec_description || spec_definition)
-      )}
+      warn_before_unload={!!(!complete && (spec_name || spec_definition))}
     >
       <FormElement
         label="Spec Name"
         description="A short name for your own reference."
         id="spec_name"
         bind:value={spec_name}
-      />
-      <FormElement
-        label="Spec Description"
-        description="A description for your own reference."
-        id="spec_description"
-        bind:value={spec_description}
-        inputType="textarea"
       />
       <FormElement
         label="Spec Definition"

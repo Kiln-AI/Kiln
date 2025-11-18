@@ -48,11 +48,15 @@
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(" ")
   }
+
+  function formatPriority(priority: number): string {
+    return `P${priority}`
+  }
 </script>
 
 <AppPage
   title="Spec{spec?.name ? `: ${spec.name}` : ''}"
-  subtitle={spec?.description || ""}
+  subtitle={spec?.type ? `Type: ${formatValue(spec.type)}` : ""}
   breadcrumbs={[
     {
       label: "Specs",
@@ -96,7 +100,7 @@
             },
             {
               name: "Priority",
-              value: formatValue(spec.priority),
+              value: formatPriority(spec.priority),
             },
             {
               name: "Status",

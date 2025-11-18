@@ -44,6 +44,10 @@
       specs_loading = false
     }
   }
+
+  function formatPriority(priority: number): string {
+    return `P${priority}`
+  }
 </script>
 
 <AppPage
@@ -93,7 +97,7 @@
           <thead>
             <tr>
               <th>Name</th>
-              <th>Description</th>
+              <th>Definition</th>
               <th>Type</th>
               <th>Priority</th>
               <th>Status</th>
@@ -109,7 +113,7 @@
                 }}
               >
                 <td class="font-medium">{spec.name}</td>
-                <td class="max-w-md truncate">{spec.description}</td>
+                <td class="max-w-md truncate">{spec.definition}</td>
                 <td>
                   {spec.type
                     .replace(/_/g, " ")
@@ -117,7 +121,7 @@
                     .map((word) => capitalize(word))
                     .join(" ")}
                 </td>
-                <td>{capitalize(spec.priority)}</td>
+                <td>{formatPriority(spec.priority)}</td>
                 <td>
                   {spec.status === "not_started"
                     ? "Not Started"
