@@ -704,14 +704,24 @@
                   <div class="px-6 py-4 text-center">
                     {#if section.has_default_eval_config === false}
                       <div>Select a default eval config to compare scores.</div>
-                      <a
-                        href={eval_templates_cache[section.eval_id] === "rag"
-                          ? `/evals/${project_id}/${task_id}/${section.eval_id}/compare_run_configs`
-                          : `/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
-                        class="btn btn-xs rounded-full"
-                      >
-                        Manage Eval Configs
-                      </a>
+                      {#if eval_templates_loading[section.eval_id]}
+                        <div class="mt-2">
+                          <div class="loading loading-spinner loading-xs"></div>
+                        </div>
+                      {:else if eval_templates_errors[section.eval_id]}
+                        <div class="mt-2 text-error text-xs">
+                          {eval_templates_errors[section.eval_id]}
+                        </div>
+                      {:else if eval_templates_cache[section.eval_id] !== undefined}
+                        <a
+                          href={eval_templates_cache[section.eval_id] === "rag"
+                            ? `/evals/${project_id}/${task_id}/${section.eval_id}/compare_run_configs`
+                            : `/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
+                          class="btn btn-xs rounded-full mt-2"
+                        >
+                          Manage Eval Configs
+                        </a>
+                      {/if}
                     {:else}
                       Unknown issue - no scores found
                     {/if}
