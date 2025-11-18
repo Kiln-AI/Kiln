@@ -59,6 +59,11 @@
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
 
+  // Eval template cache
+  let eval_templates_cache: Record<string, string | null> = {}
+  let eval_templates_loading: Record<string, boolean> = {}
+  let eval_templates_errors: Record<string, string> = {}
+
   // Track if we're initializing from URL to avoid updating URL during initial load
   let isInitializing = true
 
@@ -228,11 +233,61 @@
     })
   }
 
+  async function fetch_eval_template(eval_id: string) {
+    if (
+      eval_templates_cache[eval_id] !== undefined ||
+      eval_templates_loading[eval_id]
+    ) {
+      return // Already cached or loading
+    }
+
+    try {
+      eval_templates_loading[eval_id] = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              eval_id,
+            },
+          },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      eval_templates_cache[eval_id] = data.template || null
+      delete eval_templates_errors[eval_id]
+    } catch (err) {
+      const kilnError = createKilnError(err)
+      eval_templates_errors[eval_id] =
+        kilnError.getMessage() || "Failed to fetch eval template"
+    } finally {
+      eval_templates_loading[eval_id] = false
+    }
+  }
+
   // Generate comparison features dynamically from eval_scores
   $: comparisonFeatures = generateComparisonFeatures(
     selectedModels,
     eval_scores_cache,
   )
+
+  // Reactively fetch eval templates for sections
+  $: {
+    comparisonFeatures.forEach((section) => {
+      if (
+        section.eval_id &&
+        section.eval_id !== "kiln_cost_section" &&
+        eval_templates_cache[section.eval_id] === undefined &&
+        !eval_templates_loading[section.eval_id]
+      ) {
+        fetch_eval_template(section.eval_id)
+      }
+    })
+  }
 
   function generateComparisonFeatures(
     models: (string | null)[],
@@ -650,7 +705,9 @@
                     {#if section.has_default_eval_config === false}
                       <div>Select a default eval config to compare scores.</div>
                       <a
-                        href={`/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
+                        href={eval_templates_cache[section.eval_id] === "rag"
+                          ? `/evals/${project_id}/${task_id}/${section.eval_id}/compare_run_configs`
+                          : `/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
                         class="btn btn-xs rounded-full"
                       >
                         Manage Eval Configs
