@@ -223,3 +223,125 @@ def test_rate_limits_nested_structure(client, temp_home):
     assert get_response.json()["openai"]["gpt_5"] == 10
     assert get_response.json()["openai"]["gpt_5_1"] == 8
     assert get_response.json()["openai"]["gpt_4o"] == 5
+
+
+def test_provider_limits_new_format(client, temp_home):
+    """Test the new format with provider-wide limits."""
+    test_rate_limits = {
+        "provider_limits": {"openai": 20, "anthropic": 10},
+        "model_limits": {},
+    }
+
+    response = client.post("/api/rate_limits", json=test_rate_limits)
+    assert response.status_code == 200
+    assert response.json() == test_rate_limits
+
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    with open(rate_limits_path, "r") as f:
+        saved_rate_limits = yaml.safe_load(f)
+    assert saved_rate_limits == test_rate_limits
+
+
+def test_mixed_provider_and_model_limits(client, temp_home):
+    """Test both provider-wide and model-specific limits together."""
+    test_rate_limits = {
+        "provider_limits": {"openai": 20, "anthropic": 10},
+        "model_limits": {
+            "openai": {"gpt_5": 5, "gpt_4o": 3},
+            "anthropic": {"claude_opus_4_1": 2},
+        },
+    }
+
+    response = client.post("/api/rate_limits", json=test_rate_limits)
+    assert response.status_code == 200
+    result = response.json()
+
+    assert result["provider_limits"]["openai"] == 20
+    assert result["provider_limits"]["anthropic"] == 10
+    assert result["model_limits"]["openai"]["gpt_5"] == 5
+    assert result["model_limits"]["openai"]["gpt_4o"] == 3
+    assert result["model_limits"]["anthropic"]["claude_opus_4_1"] == 2
+
+
+def test_read_rate_limits_with_provider_limits(client, temp_home):
+    """Test reading rate limits with provider-wide limits from file."""
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    test_rate_limits = {
+        "provider_limits": {"openai": 15},
+        "model_limits": {"openai": {"gpt_5": 5}},
+    }
+    with open(rate_limits_path, "w") as f:
+        yaml.dump(test_rate_limits, f)
+
+    response = client.get("/api/rate_limits")
+    assert response.status_code == 200
+    result = response.json()
+
+    assert result["provider_limits"]["openai"] == 15
+    assert result["model_limits"]["openai"]["gpt_5"] == 5
+
+
+def test_backward_compatibility_old_format_api(client, temp_home):
+    """Test that API works with old format rate limits in file."""
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    old_format_rate_limits = {
+        "openai": {"gpt_5": 10, "gpt_4o": 5},
+        "anthropic": {"claude_opus_4_1": 3},
+    }
+    with open(rate_limits_path, "w") as f:
+        yaml.dump(old_format_rate_limits, f)
+
+    response = client.get("/api/rate_limits")
+    assert response.status_code == 200
+    result = response.json()
+    assert result == old_format_rate_limits
+
+
+def test_update_to_new_format(client, temp_home):
+    """Test updating from old format to new format."""
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    old_format_rate_limits = {"openai": {"gpt_5": 10}}
+    with open(rate_limits_path, "w") as f:
+        yaml.dump(old_format_rate_limits, f)
+
+    new_format_rate_limits = {
+        "provider_limits": {"openai": 20},
+        "model_limits": {"openai": {"gpt_5": 5}},
+    }
+
+    response = client.post("/api/rate_limits", json=new_format_rate_limits)
+    assert response.status_code == 200
+
+    with open(rate_limits_path, "r") as f:
+        saved_rate_limits = yaml.safe_load(f)
+    assert saved_rate_limits == new_format_rate_limits
+
+
+def test_empty_provider_limits(client, temp_home):
+    """Test with empty provider limits but with model limits."""
+    test_rate_limits = {
+        "provider_limits": {},
+        "model_limits": {"openai": {"gpt_5": 10}},
+    }
+
+    response = client.post("/api/rate_limits", json=test_rate_limits)
+    assert response.status_code == 200
+    assert response.json() == test_rate_limits
+
+
+def test_provider_limits_roundtrip(client, temp_home):
+    """Test full roundtrip with provider and model limits."""
+    test_rate_limits = {
+        "provider_limits": {"openai": 25, "anthropic": 15, "gemini_api": 10},
+        "model_limits": {
+            "openai": {"gpt_5": 5, "gpt_4o": 8},
+            "anthropic": {"claude_opus_4_1": 3},
+        },
+    }
+
+    post_response = client.post("/api/rate_limits", json=test_rate_limits)
+    assert post_response.status_code == 200
+
+    get_response = client.get("/api/rate_limits")
+    assert get_response.status_code == 200
+    assert get_response.json() == test_rate_limits

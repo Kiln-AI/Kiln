@@ -246,3 +246,236 @@ def test_semaphore_key_generation():
     assert key2 == "anthropic::claude"
     assert key1 == key3
     assert key1 != key2
+
+
+def test_provider_limit_basic():
+    """Test basic provider-wide rate limiting."""
+    rate_limits = {
+        "provider_limits": {"openai": 10, "anthropic": 5},
+        "model_limits": {},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    assert limiter.get_provider_limit("openai") == 10
+    assert limiter.get_provider_limit("anthropic") == 5
+    assert limiter.get_provider_limit("nonexistent") is None
+
+
+def test_provider_limit_fallback():
+    """Test that provider limit is used when no model-specific limit exists."""
+    rate_limits = {
+        "provider_limits": {"openai": 10},
+        "model_limits": {"openai": {"gpt_5": 5}},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    assert limiter.get_limit("openai", "gpt_5") == 5
+    assert limiter.get_limit("openai", "gpt_4o") == 10
+
+
+def test_model_limit_precedence():
+    """Test that model-specific limit takes precedence over provider limit."""
+    rate_limits = {
+        "provider_limits": {"openai": 10},
+        "model_limits": {"openai": {"gpt_5": 3}},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    assert limiter.get_limit("openai", "gpt_5") == 3
+    assert limiter.get_provider_limit("openai") == 10
+
+
+def test_unlimited_when_no_limits():
+    """Test that None is returned when neither provider nor model limit exists."""
+    rate_limits = {
+        "provider_limits": {"openai": 10},
+        "model_limits": {},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    assert limiter.get_limit("anthropic", "claude") is None
+
+
+def test_set_provider_limit():
+    """Test setting provider-wide rate limits."""
+    limiter = ModelRateLimiter({})
+
+    limiter.set_provider_limit("openai", 15)
+    assert limiter.get_provider_limit("openai") == 15
+
+    limiter.set_provider_limit("anthropic", 8)
+    assert limiter.get_provider_limit("anthropic") == 8
+
+
+def test_set_provider_limit_to_none_removes_limit():
+    """Test that setting provider limit to None removes it."""
+    rate_limits = {
+        "provider_limits": {"openai": 10},
+        "model_limits": {},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    limiter.set_provider_limit("openai", None)
+    assert limiter.get_provider_limit("openai") is None
+
+
+def test_set_provider_limit_to_zero_removes_limit():
+    """Test that setting provider limit to 0 removes it."""
+    rate_limits = {
+        "provider_limits": {"openai": 10},
+        "model_limits": {},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    limiter.set_provider_limit("openai", 0)
+    assert limiter.get_provider_limit("openai") is None
+
+
+@pytest.mark.asyncio
+async def test_provider_limit_enforces_concurrency():
+    """Test that provider-wide limit enforces concurrency across models."""
+    rate_limits = {
+        "provider_limits": {"openai": 2},
+        "model_limits": {},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    active_count = 0
+    max_concurrent = 0
+
+    async def task(model):
+        nonlocal active_count, max_concurrent
+        async with limiter.limit("openai", model):
+            active_count += 1
+            max_concurrent = max(max_concurrent, active_count)
+            await asyncio.sleep(0.05)
+            active_count -= 1
+
+    await asyncio.gather(
+        task("gpt_5"),
+        task("gpt_5"),
+        task("gpt_4o"),
+        task("gpt_4o"),
+        task("gpt_3_5"),
+    )
+
+    assert max_concurrent == 2
+
+
+@pytest.mark.asyncio
+async def test_model_limit_overrides_provider_limit_concurrency():
+    """Test that model-specific limit overrides provider limit for concurrency."""
+    rate_limits = {
+        "provider_limits": {"openai": 5},
+        "model_limits": {"openai": {"gpt_5": 1}},
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    gpt5_active = 0
+    gpt4o_active = 0
+    max_gpt5_concurrent = 0
+    max_gpt4o_concurrent = 0
+
+    async def task_gpt5():
+        nonlocal gpt5_active, max_gpt5_concurrent
+        async with limiter.limit("openai", "gpt_5"):
+            gpt5_active += 1
+            max_gpt5_concurrent = max(max_gpt5_concurrent, gpt5_active)
+            await asyncio.sleep(0.05)
+            gpt5_active -= 1
+
+    async def task_gpt4o():
+        nonlocal gpt4o_active, max_gpt4o_concurrent
+        async with limiter.limit("openai", "gpt_4o"):
+            gpt4o_active += 1
+            max_gpt4o_concurrent = max(max_gpt4o_concurrent, gpt4o_active)
+            await asyncio.sleep(0.05)
+            gpt4o_active -= 1
+
+    await asyncio.gather(
+        task_gpt5(),
+        task_gpt5(),
+        task_gpt5(),
+        task_gpt4o(),
+        task_gpt4o(),
+        task_gpt4o(),
+    )
+
+    assert max_gpt5_concurrent == 1
+    assert max_gpt4o_concurrent == 3
+
+
+def test_backward_compatibility_old_format():
+    """Test that old rate limits format is converted to new format."""
+    old_rate_limits = {
+        "openai": {"gpt_5": 10, "gpt_4o": 5},
+        "anthropic": {"claude_opus_4_1": 2},
+    }
+    limiter = ModelRateLimiter(old_rate_limits)
+
+    assert limiter.get_limit("openai", "gpt_5") == 10
+    assert limiter.get_limit("openai", "gpt_4o") == 5
+    assert limiter.get_limit("anthropic", "claude_opus_4_1") == 2
+    assert limiter.get_provider_limit("openai") is None
+
+
+def test_new_format_with_both_limits():
+    """Test new format with both provider and model limits."""
+    rate_limits = {
+        "provider_limits": {"openai": 20, "anthropic": 10},
+        "model_limits": {
+            "openai": {"gpt_5": 5},
+            "anthropic": {"claude_opus_4_1": 3},
+        },
+    }
+    limiter = ModelRateLimiter(rate_limits)
+
+    assert limiter.get_provider_limit("openai") == 20
+    assert limiter.get_provider_limit("anthropic") == 10
+    assert limiter.get_limit("openai", "gpt_5") == 5
+    assert limiter.get_limit("openai", "gpt_4o") == 20
+    assert limiter.get_limit("anthropic", "claude_opus_4_1") == 3
+
+
+def test_empty_rate_limits():
+    """Test initialization with empty rate limits."""
+    limiter = ModelRateLimiter({})
+
+    assert limiter.get_limit("openai", "gpt_5") is None
+    assert limiter.get_provider_limit("openai") is None
+
+
+@pytest.fixture
+def new_format_rate_limits_file(temp_home):
+    """Create a rate limits file with new format."""
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    rate_limits = {
+        "provider_limits": {"openai": 20, "anthropic": 10},
+        "model_limits": {
+            "openai": {"gpt_5": 5},
+            "anthropic": {"claude_opus_4_1": 3},
+        },
+    }
+    with open(rate_limits_path, "w") as f:
+        yaml.dump(rate_limits, f)
+    return rate_limits
+
+
+def test_reload_new_format(new_format_rate_limits_file):
+    """Test reloading rate limits from file with new format."""
+    limiter = ModelRateLimiter()
+    assert limiter.get_provider_limit("openai") == 20
+    assert limiter.get_limit("openai", "gpt_5") == 5
+
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    new_limits = {
+        "provider_limits": {"openai": 50},
+        "model_limits": {"openai": {"gpt_5": 10}},
+    }
+    with open(rate_limits_path, "w") as f:
+        yaml.dump(new_limits, f)
+
+    limiter.reload()
+    assert limiter.get_provider_limit("openai") == 50
+    assert limiter.get_limit("openai", "gpt_5") == 10
+    assert limiter.get_provider_limit("anthropic") is None

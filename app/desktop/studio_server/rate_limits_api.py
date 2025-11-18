@@ -28,7 +28,7 @@ def get_rate_limits_path() -> str:
     return os.path.join(settings_dir, "rate_limits.yaml")
 
 
-def load_rate_limits() -> Dict[str, Dict[str, int]]:
+def load_rate_limits() -> Dict[str, Any]:
     rate_limits_path = get_rate_limits_path()
     if not os.path.isfile(rate_limits_path):
         return {}
@@ -37,7 +37,7 @@ def load_rate_limits() -> Dict[str, Dict[str, int]]:
     return rate_limits
 
 
-def save_rate_limits(rate_limits: Dict[str, Dict[str, int]]) -> None:
+def save_rate_limits(rate_limits: Dict[str, Any]) -> None:
     rate_limits_path = get_rate_limits_path()
     with open(rate_limits_path, "w") as f:
         yaml.dump(rate_limits, f)
@@ -53,7 +53,7 @@ def connect_rate_limits(app: FastAPI):
 
     @app.post("/api/rate_limits")
     def update_rate_limits(
-        rate_limits: Dict[str, Dict[str, int]],
+        rate_limits: Dict[str, Any],
     ) -> Dict[str, Any]:
         try:
             save_rate_limits(rate_limits)

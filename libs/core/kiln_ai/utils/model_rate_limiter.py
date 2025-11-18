@@ -1,7 +1,7 @@
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Dict
+from typing import Any, AsyncIterator, Dict
 
 import yaml
 
@@ -15,6 +15,10 @@ class ModelRateLimiter:
     Limits concurrent requests per model/provider combination based on
     rate limits defined in ~/.kiln_ai/rate_limits.yaml.
 
+    The rate limits file supports two levels of limits:
+    - provider_limits: Max concurrent requests for all models from a provider
+    - model_limits: Max concurrent requests for specific models (takes precedence)
+
     Usage:
         limiter = ModelRateLimiter()
         async with limiter.limit("openai", "gpt_5"):
@@ -22,20 +26,25 @@ class ModelRateLimiter:
             result = await call_model()
     """
 
-    def __init__(self, rate_limits: Dict[str, Dict[str, int]] | None = None):
+    def __init__(self, rate_limits: Dict[str, Any] | None = None):
         """
         Initialize the rate limiter.
 
         Args:
             rate_limits: Optional dict of rate limits. If None, loads from file.
-                        Format: {provider_name: {model_name: max_concurrent}}
+                        Format: {
+                            "provider_limits": {provider_name: max_concurrent},
+                            "model_limits": {provider_name: {model_name: max_concurrent}}
+                        }
+                        Also supports legacy format: {provider_name: {model_name: max_concurrent}}
         """
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
-        self._rate_limits = (
+        loaded_limits = (
             rate_limits if rate_limits is not None else self._load_rate_limits()
         )
+        self._rate_limits = self._normalize_rate_limits(loaded_limits)
 
-    def _load_rate_limits(self) -> Dict[str, Dict[str, int]]:
+    def _load_rate_limits(self) -> Dict[str, Any]:
         """Load rate limits from the config file."""
         rate_limits_path = os.path.join(
             Config.settings_dir(create=False), "rate_limits.yaml"
@@ -48,8 +57,33 @@ class ModelRateLimiter:
         except Exception:
             return {}
 
-    def _get_semaphore_key(self, provider: str, model: str) -> str:
-        """Generate a unique key for the provider/model combination."""
+    def _normalize_rate_limits(self, rate_limits: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize rate limits to the new format with provider_limits and model_limits.
+
+        Handles backward compatibility with the old flat format.
+        """
+        if not rate_limits:
+            return {"provider_limits": {}, "model_limits": {}}
+
+        if "provider_limits" in rate_limits or "model_limits" in rate_limits:
+            return {
+                "provider_limits": rate_limits.get("provider_limits", {}),
+                "model_limits": rate_limits.get("model_limits", {}),
+            }
+
+        return {"provider_limits": {}, "model_limits": rate_limits}
+
+    def _get_semaphore_key(self, provider: str, model: str | None = None) -> str:
+        """
+        Generate a unique key for the provider/model combination or provider-only.
+
+        Args:
+            provider: The provider name
+            model: The model name (None for provider-wide semaphores)
+        """
+        if model is None:
+            return f"{provider}::__provider__"
         return f"{provider}::{model}"
 
     def _get_semaphore(self, provider: str, model: str) -> asyncio.Semaphore | None:
@@ -57,20 +91,28 @@ class ModelRateLimiter:
         Get or create a semaphore for the given provider/model.
 
         Returns None if no rate limit is configured (unlimited concurrency).
+        Checks model-specific limit first, then falls back to provider-wide limit.
+        If using provider-wide limit, all models from that provider share the same semaphore.
         """
-        key = self._get_semaphore_key(provider, model)
+        model_limits = self._rate_limits.get("model_limits", {})
+        model_limit = model_limits.get(provider, {}).get(model)
 
-        if key in self._semaphores:
+        if model_limit is not None and model_limit > 0:
+            key = self._get_semaphore_key(provider, model)
+            if key not in self._semaphores:
+                self._semaphores[key] = asyncio.Semaphore(model_limit)
             return self._semaphores[key]
 
-        limit = self._rate_limits.get(provider, {}).get(model)
+        provider_limits = self._rate_limits.get("provider_limits", {})
+        provider_limit = provider_limits.get(provider)
 
-        if limit is None or limit <= 0:
-            return None
+        if provider_limit is not None and provider_limit > 0:
+            key = self._get_semaphore_key(provider, None)
+            if key not in self._semaphores:
+                self._semaphores[key] = asyncio.Semaphore(provider_limit)
+            return self._semaphores[key]
 
-        semaphore = asyncio.Semaphore(limit)
-        self._semaphores[key] = semaphore
-        return semaphore
+        return None
 
     @asynccontextmanager
     async def limit(self, provider: str, model: str) -> AsyncIterator[None]:
@@ -97,9 +139,26 @@ class ModelRateLimiter:
         """
         Get the configured rate limit for a provider/model.
 
+        Returns the model-specific limit if set, otherwise the provider-wide limit.
         Returns None if no limit is configured (unlimited).
         """
-        return self._rate_limits.get(provider, {}).get(model)
+        model_limits = self._rate_limits.get("model_limits", {})
+        model_limit = model_limits.get(provider, {}).get(model)
+
+        if model_limit is not None:
+            return model_limit
+
+        provider_limits = self._rate_limits.get("provider_limits", {})
+        return provider_limits.get(provider)
+
+    def get_provider_limit(self, provider: str) -> int | None:
+        """
+        Get the configured provider-wide rate limit.
+
+        Returns None if no limit is configured (unlimited).
+        """
+        provider_limits = self._rate_limits.get("provider_limits", {})
+        return provider_limits.get(provider)
 
     def set_limit(self, provider: str, model: str, limit: int | None) -> None:
         """
@@ -110,25 +169,45 @@ class ModelRateLimiter:
             model: The model name
             limit: Max concurrent requests (None or 0 for unlimited)
         """
-        if provider not in self._rate_limits:
-            self._rate_limits[provider] = {}
+        model_limits = self._rate_limits.setdefault("model_limits", {})
+
+        if provider not in model_limits:
+            model_limits[provider] = {}
 
         if limit is None or limit <= 0:
-            self._rate_limits[provider].pop(model, None)
-            if not self._rate_limits[provider]:
-                self._rate_limits.pop(provider, None)
+            model_limits[provider].pop(model, None)
+            if not model_limits[provider]:
+                model_limits.pop(provider, None)
 
             key = self._get_semaphore_key(provider, model)
             self._semaphores.pop(key, None)
         else:
-            self._rate_limits[provider][model] = limit
+            model_limits[provider][model] = limit
 
             key = self._get_semaphore_key(provider, model)
             self._semaphores[key] = asyncio.Semaphore(limit)
 
+    def set_provider_limit(self, provider: str, limit: int | None) -> None:
+        """
+        Set or update the provider-wide rate limit.
+
+        Args:
+            provider: The provider name
+            limit: Max concurrent requests (None or 0 for unlimited)
+        """
+        provider_limits = self._rate_limits.setdefault("provider_limits", {})
+
+        if limit is None or limit <= 0:
+            provider_limits.pop(provider, None)
+        else:
+            provider_limits[provider] = limit
+
+        self._semaphores.clear()
+
     def reload(self) -> None:
         """Reload rate limits from the config file and update semaphores."""
-        self._rate_limits = self._load_rate_limits()
+        loaded_limits = self._load_rate_limits()
+        self._rate_limits = self._normalize_rate_limits(loaded_limits)
         self._semaphores.clear()
 
 
