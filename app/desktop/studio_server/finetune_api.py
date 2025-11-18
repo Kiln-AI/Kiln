@@ -307,11 +307,17 @@ def connect_fine_tune_api(app: FastAPI):
                 if provider.provider_finetune_id:
                     if provider.name not in provider_models:
                         provider_models[provider.name] = []
+
+                    # special case, Together AI doesn't support fine-tuning with tools
+                    supports_tools = (
+                        provider.supports_function_calling
+                        and provider.name != ModelProviderName.together_ai
+                    )
                     provider_models[provider.name].append(
                         FinetuneProviderModel(
                             name=model.friendly_name,
                             id=provider.provider_finetune_id,
-                            supports_function_calling=provider.supports_function_calling,
+                            supports_function_calling=supports_tools,
                         )
                     )
 

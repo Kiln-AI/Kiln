@@ -458,6 +458,7 @@
     selected: unknown,
     selected_values: unknown[],
     options: OptionGroup[],
+    empty_label: string,
   ) {
     if (multi_select && selected_values.length > 1) {
       return (
@@ -578,7 +579,7 @@
     on:keydown={containerKeyDown}
   >
     <span class="truncate">
-      {selectedLabel(selected, selected_values, options)}
+      {selectedLabel(selected, selected_values, options, empty_label)}
     </span>
   </div>
 

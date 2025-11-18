@@ -84,6 +84,10 @@
   $: disabled_tools_selector =
     selected_model && !selected_model.model.supports_function_calling
 
+  $: disabled_tools_selector_reason = disabled_tools_selector
+    ? "Tool calling not supported on this model"
+    : undefined
+
   let selected_tools: string[] = []
 
   onMount(() => {
@@ -677,6 +681,7 @@
             hide_model_selector={true}
             hide_prompt_selector={true}
             {disabled_tools_selector}
+            {disabled_tools_selector_reason}
           />
         </div>
 

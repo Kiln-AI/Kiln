@@ -18,6 +18,7 @@
   export let mandatory_tools: string[] | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
   export let disabled: boolean = false
+  export let disabled_reason: string | undefined = undefined
 
   $: if (disabled && tools.length > 0) {
     tools = []
@@ -203,6 +204,9 @@
       {info_description}
       bind:value={single_select_selected_tool}
       fancy_select_options={get_tool_options($available_tools[project_id])}
+      empty_label={disabled && disabled_reason
+        ? disabled_reason
+        : "Select an option"}
       empty_state_message={$available_tools[project_id] === undefined
         ? "Loading tools..."
         : "No Tools Available"}
@@ -219,6 +223,9 @@
       {info_description}
       bind:value={tools}
       fancy_select_options={get_tool_options($available_tools[project_id])}
+      empty_label={disabled && disabled_reason
+        ? disabled_reason
+        : "Select an option"}
       empty_state_message={$available_tools[project_id] === undefined
         ? "Loading tools..."
         : "No Tools Available"}
