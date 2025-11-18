@@ -11,6 +11,11 @@
   export let task_id: string | null = null
   export let tools: string[] = []
   export let hide_create_kiln_task_tool_button: boolean = false
+  export let disabled: boolean = false
+
+  $: if (disabled && tools.length > 0) {
+    tools = []
+  }
 
   let tools_store_loaded_task_id: string | null = null
   onMount(async () => {
@@ -151,10 +156,14 @@
     info_description="Select the tools available to the model. The model may or may not choose to use them."
     bind:value={tools}
     fancy_select_options={get_tool_options($available_tools[project_id])}
+    empty_label={disabled
+      ? "Tool calling not supported on this model"
+      : "Select an option"}
     empty_state_message={$available_tools[project_id] === undefined
       ? "Loading tools..."
       : "No Tools Available"}
     empty_state_subtitle="Add Tools"
     empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
+    {disabled}
   />
 </div>

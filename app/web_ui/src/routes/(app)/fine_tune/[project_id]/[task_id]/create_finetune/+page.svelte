@@ -77,7 +77,7 @@
     run_config_component.clear_tools()
   }
 
-  $: hide_tools_selector =
+  $: disabled_tools_selector =
     selected_model && !selected_model.model.supports_function_calling
 
   let selected_tools: string[] = []
@@ -662,7 +662,7 @@
               hide_create_kiln_task_tool_button={true}
               hide_model_selector={true}
               hide_prompt_selector={true}
-              {hide_tools_selector}
+              {disabled_tools_selector}
             />
           </div>
         </div>
