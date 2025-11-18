@@ -349,6 +349,9 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         For reference_answer evals that don't have a current_config_id set, this migration
         will set the first config (by created_at) as the default.
         """
+        if self.id is None:
+            return self
+
         # Only run during file loading
         if not self._loaded_from_file:
             return self
