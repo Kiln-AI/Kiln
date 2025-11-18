@@ -4,6 +4,7 @@ from typing import Any, Dict
 import yaml
 from fastapi import FastAPI, HTTPException
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.model_rate_limiter import get_global_rate_limiter
 
 
 def get_rate_limits_path() -> str:
@@ -40,6 +41,7 @@ def connect_rate_limits(app: FastAPI):
     ) -> Dict[str, Any]:
         try:
             save_rate_limits(rate_limits)
+            get_global_rate_limiter().reload()
             return load_rate_limits()
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

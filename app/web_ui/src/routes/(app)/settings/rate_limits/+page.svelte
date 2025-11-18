@@ -12,20 +12,17 @@
     load_available_reranker_models,
     provider_name_from_id,
   } from "$lib/stores"
+  import type {
+    AvailableModels,
+    EmbeddingProvider,
+    RerankerProvider,
+    ModelDetails,
+    EmbeddingModelDetails,
+    RerankerModelDetails,
+  } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-
-  type ModelInfo = {
-    id: string
-    name: string
-  }
-
-  type ProviderModels = {
-    provider_name: string
-    provider_id: string
-    models: ModelInfo[]
-  }
 
   type RateLimits = {
     provider_limits?: { [provider: string]: number }
@@ -37,12 +34,13 @@
   }
 
   type ModelsByProvider = {
-    [provider: string]: ModelInfo[]
+    [provider: string]: (
+      | ModelDetails
+      | EmbeddingModelDetails
+      | RerankerModelDetails
+    )[]
   }
 
-  let available_models: ProviderModels[] = []
-  let available_embedding_models: ProviderModels[] = []
-  let available_reranker_models: ProviderModels[] = []
   let rate_limits: RateLimits = {}
   let loading = true
   let load_error: KilnError | null = null
@@ -78,10 +76,6 @@
         load_available_embedding_models(),
         load_available_reranker_models(),
       ])
-
-      available_models = $available_models_store
-      available_embedding_models = $available_embedding_models_store
-      available_reranker_models = $available_reranker_models_store
 
       const limits_response = (await client.GET("/api/rate_limits")) as {
         data?: Record<string, unknown>
@@ -131,19 +125,21 @@
   }
 
   function group_models_by_provider() {
-    normal_models_by_provider = group_by_provider_from_list(available_models)
-    embedding_models_by_provider = group_by_provider_from_list(
-      available_embedding_models,
+    normal_models_by_provider = group_by_provider_from_list(
+      $available_models_store,
     )
-    reranker_models_by_provider = group_by_provider_from_list(
-      available_reranker_models,
+    embedding_models_by_provider = group_by_provider_from_embedding_list(
+      $available_embedding_models_store,
+    )
+    reranker_models_by_provider = group_by_provider_from_reranker_list(
+      $available_reranker_models_store,
     )
 
     const all_providers = new Set<string>()
     model_inputs = {}
     provider_inputs = {}
 
-    for (const provider_group of available_models) {
+    for (const provider_group of $available_models_store) {
       if (provider_group.models.length === 0) {
         continue
       }
@@ -157,7 +153,7 @@
       }
     }
 
-    for (const provider_group of available_embedding_models) {
+    for (const provider_group of $available_embedding_models_store) {
       if (provider_group.models.length === 0) {
         continue
       }
@@ -171,7 +167,7 @@
       }
     }
 
-    for (const provider_group of available_reranker_models) {
+    for (const provider_group of $available_reranker_models_store) {
       if (provider_group.models.length === 0) {
         continue
       }
@@ -191,7 +187,39 @@
   }
 
   function group_by_provider_from_list(
-    provider_list: ProviderModels[],
+    provider_list: AvailableModels[],
+  ): ModelsByProvider {
+    const grouped: ModelsByProvider = {}
+    for (const provider_group of provider_list) {
+      if (provider_group.models.length === 0) {
+        continue
+      }
+      if (!grouped[provider_group.provider_id]) {
+        grouped[provider_group.provider_id] = []
+      }
+      grouped[provider_group.provider_id].push(...provider_group.models)
+    }
+    return grouped
+  }
+
+  function group_by_provider_from_embedding_list(
+    provider_list: EmbeddingProvider[],
+  ): ModelsByProvider {
+    const grouped: ModelsByProvider = {}
+    for (const provider_group of provider_list) {
+      if (provider_group.models.length === 0) {
+        continue
+      }
+      if (!grouped[provider_group.provider_id]) {
+        grouped[provider_group.provider_id] = []
+      }
+      grouped[provider_group.provider_id].push(...provider_group.models)
+    }
+    return grouped
+  }
+
+  function group_by_provider_from_reranker_list(
+    provider_list: RerankerProvider[],
   ): ModelsByProvider {
     const grouped: ModelsByProvider = {}
     for (const provider_group of provider_list) {
