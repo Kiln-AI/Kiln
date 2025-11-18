@@ -2,22 +2,21 @@
   import AppPage from "../../app_page.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import { provider_name_from_id } from "$lib/stores"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
 
   type ModelInfo = {
-    model_name: string
-    friendly_name: string
-    provider_name: string
-    model_id: string | null
+    id: string
+    name: string
   }
 
-  type AllModelsResponse = {
-    normal_models: ModelInfo[]
-    embedding_models: ModelInfo[]
-    reranker_models: ModelInfo[]
+  type ProviderModels = {
+    provider_name: string
+    provider_id: string
+    models: ModelInfo[]
   }
 
   type RateLimits = {
@@ -33,13 +32,15 @@
     [provider: string]: ModelInfo[]
   }
 
-  let all_models: AllModelsResponse | null = null
+  let available_models: ProviderModels[] = []
+  let available_embedding_models: ProviderModels[] = []
+  let available_reranker_models: ProviderModels[] = []
   let rate_limits: RateLimits = {}
   let loading = true
   let load_error: KilnError | null = null
-  let saving = false
+  let submitting = false
   let save_error: KilnError | null = null
-  let save_success = false
+  let saved = false
 
   let normal_models_by_provider: ModelsByProvider = {}
   let embedding_models_by_provider: ModelsByProvider = {}
@@ -50,29 +51,53 @@
   let model_inputs: { [key: string]: number | null } = {}
   let provider_inputs: { [provider: string]: number | null } = {}
 
+  let initial_model_inputs: { [key: string]: number | null } = {}
+  let initial_provider_inputs: { [provider: string]: number | null } = {}
+
+  $: has_changes =
+    !saved &&
+    (JSON.stringify(model_inputs) !== JSON.stringify(initial_model_inputs) ||
+      JSON.stringify(provider_inputs) !==
+        JSON.stringify(initial_provider_inputs))
+
+  $: warn_before_unload = has_changes
+
   const load_data = async () => {
     try {
       loading = true
       load_error = null
 
-      const { data: models_data, error: models_error } =
-        await client.GET("/api/models/all")
-      if (models_error) {
-        throw models_error
+      const models_response = (await client.GET(
+        "/api/available_models",
+      )) as unknown as { data?: ProviderModels[]; error?: Error }
+      const embedding_response = (await client.GET(
+        "/api/available_embedding_models",
+      )) as unknown as { data?: ProviderModels[]; error?: Error }
+      const reranker_response = (await client.GET(
+        "/api/available_reranker_models",
+      )) as unknown as { data?: ProviderModels[]; error?: Error }
+      const limits_response = (await client.GET(
+        "/api/rate_limits",
+      )) as unknown as {
+        data?: Record<string, unknown>
+        error?: Error
       }
-      if (!models_data) {
-        throw new KilnError("Failed to load models", null)
-      }
-      all_models = models_data
 
-      const { data: limits_data, error: limits_error } =
-        await client.GET("/api/rate_limits")
-      if (limits_error) {
-        throw limits_error
-      }
-      rate_limits = normalize_rate_limits(limits_data)
+      if (models_response.error) throw models_response.error
+      if (embedding_response.error) throw embedding_response.error
+      if (reranker_response.error) throw reranker_response.error
+      if (limits_response.error) throw limits_response.error
+
+      available_models = models_response.data || []
+      available_embedding_models = embedding_response.data || []
+      available_reranker_models = reranker_response.data || []
+      rate_limits = normalize_rate_limits(limits_response.data)
 
       group_models_by_provider()
+
+      await tick()
+      initial_model_inputs = { ...model_inputs }
+      initial_provider_inputs = { ...provider_inputs }
     } catch (e) {
       load_error = createKilnError(e)
     } finally {
@@ -105,32 +130,49 @@
   }
 
   function group_models_by_provider() {
-    if (!all_models) return
-
-    normal_models_by_provider = group_by_provider(all_models.normal_models)
-    embedding_models_by_provider = group_by_provider(
-      all_models.embedding_models,
+    normal_models_by_provider = group_by_provider_from_list(available_models)
+    embedding_models_by_provider = group_by_provider_from_list(
+      available_embedding_models,
     )
-    reranker_models_by_provider = group_by_provider(all_models.reranker_models)
+    reranker_models_by_provider = group_by_provider_from_list(
+      available_reranker_models,
+    )
 
     const all_providers = new Set<string>()
     model_inputs = {}
     provider_inputs = {}
 
-    for (const model of all_models.normal_models) {
-      all_providers.add(model.provider_name)
-      const key = getModelInputKey(model.provider_name, model.model_name)
-      model_inputs[key] = get_model_limit(model.provider_name, model.model_name)
+    for (const provider_group of available_models) {
+      all_providers.add(provider_group.provider_id)
+      for (const model of provider_group.models) {
+        const key = getModelInputKey(provider_group.provider_id, model.id)
+        model_inputs[key] = get_model_limit(
+          provider_group.provider_id,
+          model.id,
+        )
+      }
     }
-    for (const model of all_models.embedding_models) {
-      all_providers.add(model.provider_name)
-      const key = getModelInputKey(model.provider_name, model.model_name)
-      model_inputs[key] = get_model_limit(model.provider_name, model.model_name)
+
+    for (const provider_group of available_embedding_models) {
+      all_providers.add(provider_group.provider_id)
+      for (const model of provider_group.models) {
+        const key = getModelInputKey(provider_group.provider_id, model.id)
+        model_inputs[key] = get_model_limit(
+          provider_group.provider_id,
+          model.id,
+        )
+      }
     }
-    for (const model of all_models.reranker_models) {
-      all_providers.add(model.provider_name)
-      const key = getModelInputKey(model.provider_name, model.model_name)
-      model_inputs[key] = get_model_limit(model.provider_name, model.model_name)
+
+    for (const provider_group of available_reranker_models) {
+      all_providers.add(provider_group.provider_id)
+      for (const model of provider_group.models) {
+        const key = getModelInputKey(provider_group.provider_id, model.id)
+        model_inputs[key] = get_model_limit(
+          provider_group.provider_id,
+          model.id,
+        )
+      }
     }
 
     for (const provider of all_providers) {
@@ -138,13 +180,15 @@
     }
   }
 
-  function group_by_provider(models: ModelInfo[]): ModelsByProvider {
+  function group_by_provider_from_list(
+    provider_list: ProviderModels[],
+  ): ModelsByProvider {
     const grouped: ModelsByProvider = {}
-    for (const model of models) {
-      if (!grouped[model.provider_name]) {
-        grouped[model.provider_name] = []
+    for (const provider_group of provider_list) {
+      if (!grouped[provider_group.provider_id]) {
+        grouped[provider_group.provider_id] = []
       }
-      grouped[model.provider_name].push(model)
+      grouped[provider_group.provider_id].push(...provider_group.models)
     }
     return grouped
   }
@@ -237,9 +281,8 @@
 
   async function save_rate_limits_handler() {
     try {
-      saving = true
-      save_success = false
       save_error = null
+      saved = false
 
       const { error: api_error } = await client.POST("/api/rate_limits", {
         body: rate_limits as Record<string, Record<string, number>>,
@@ -248,14 +291,14 @@
         throw api_error
       }
 
-      save_success = true
-      setTimeout(() => {
-        save_success = false
-      }, 3000)
+      saved = true
+      await tick()
+      initial_model_inputs = { ...model_inputs }
+      initial_provider_inputs = { ...provider_inputs }
     } catch (e) {
       save_error = createKilnError(e)
     } finally {
-      saving = false
+      submitting = false
     }
   }
 
@@ -281,7 +324,15 @@
         </div>
       </div>
     {:else}
-      <div class="max-w-5xl space-y-8">
+      <FormContainer
+        submit_label="Save Rate Limits"
+        on:submit={save_rate_limits_handler}
+        bind:submitting
+        bind:saved
+        bind:warn_before_unload
+        error={save_error}
+        focus_on_mount={false}
+      >
         <!-- LLMs -->
         {#if Object.keys(normal_models_by_provider).length > 0}
           <div class="space-y-4">
@@ -311,22 +362,19 @@
                       description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
                     />
                     <div class="space-y-3 mt-4">
-                      {#each models as model (model.model_name + rate_limits_version)}
-                        {@const inputKey = getModelInputKey(
-                          provider,
-                          model.model_name,
-                        )}
+                      {#each models as model (model.id + rate_limits_version)}
+                        {@const inputKey = getModelInputKey(provider, model.id)}
                         {@const modelLimit = get_model_limit(
                           provider,
-                          model.model_name,
+                          model.id,
                         )}
                         {#if model_inputs[inputKey] === undefined}
                           {((model_inputs[inputKey] = modelLimit), "")}
                         {/if}
                         <FormElement
                           inputType="input_number"
-                          id="{provider}_{model.model_name}"
-                          label={model.friendly_name}
+                          id="{provider}_{model.id}"
+                          label={model.name}
                           bind:value={model_inputs[inputKey]}
                           placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
                           optional={true}
@@ -372,22 +420,19 @@
                       description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
                     />
                     <div class="space-y-3 mt-4">
-                      {#each models as model (model.model_name + rate_limits_version)}
-                        {@const inputKey = getModelInputKey(
-                          provider,
-                          model.model_name,
-                        )}
+                      {#each models as model (model.id + rate_limits_version)}
+                        {@const inputKey = getModelInputKey(provider, model.id)}
                         {@const modelLimit = get_model_limit(
                           provider,
-                          model.model_name,
+                          model.id,
                         )}
                         {#if model_inputs[inputKey] === undefined}
                           {((model_inputs[inputKey] = modelLimit), "")}
                         {/if}
                         <FormElement
                           inputType="input_number"
-                          id="{provider}_{model.model_name}"
-                          label={model.friendly_name}
+                          id="{provider}_{model.id}"
+                          label={model.name}
                           bind:value={model_inputs[inputKey]}
                           placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
                           optional={true}
@@ -431,22 +476,19 @@
                       description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
                     />
                     <div class="space-y-3 mt-4">
-                      {#each models as model (model.model_name + rate_limits_version)}
-                        {@const inputKey = getModelInputKey(
-                          provider,
-                          model.model_name,
-                        )}
+                      {#each models as model (model.id + rate_limits_version)}
+                        {@const inputKey = getModelInputKey(provider, model.id)}
                         {@const modelLimit = get_model_limit(
                           provider,
-                          model.model_name,
+                          model.id,
                         )}
                         {#if model_inputs[inputKey] === undefined}
                           {((model_inputs[inputKey] = modelLimit), "")}
                         {/if}
                         <FormElement
                           inputType="input_number"
-                          id="{provider}_{model.model_name}"
-                          label={model.friendly_name}
+                          id="{provider}_{model.id}"
+                          label={model.name}
                           bind:value={model_inputs[inputKey]}
                           placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
                           optional={true}
@@ -460,33 +502,7 @@
             {/each}
           </div>
         {/if}
-
-        <!-- Save button and status -->
-        <div class="flex items-center gap-4 pt-4">
-          <button
-            class="btn btn-primary"
-            on:click={save_rate_limits_handler}
-            disabled={saving}
-          >
-            {#if saving}
-              <span class="loading loading-spinner loading-sm"></span>
-            {/if}
-            Save Rate Limits
-          </button>
-
-          {#if save_success}
-            <div class="text-success font-medium">
-              Rate limits saved successfully!
-            </div>
-          {/if}
-
-          {#if save_error}
-            <div class="text-error font-medium">
-              Error: {save_error.message}
-            </div>
-          {/if}
-        </div>
-      </div>
+      </FormContainer>
     {/if}
   </AppPage>
 </div>
