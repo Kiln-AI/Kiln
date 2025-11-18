@@ -41,3 +41,16 @@ export function get_splits_subtitle(splits: Record<string, number>) {
     .map(([name, value]) => `${Math.round(value * 100)}% ${name}`)
     .join(", ")}`
 }
+
+export function splits_equal(
+  a: Record<string, number>,
+  b: Record<string, number>,
+): boolean {
+  const keysA = Object.keys(a).sort()
+  const keysB = Object.keys(b).sort()
+  if (keysA.length !== keysB.length) return false
+  for (let i = 0; i < keysA.length; i++) {
+    if (keysA[i] !== keysB[i] || a[keysA[i]] !== b[keysA[i]]) return false
+  }
+  return true
+}
