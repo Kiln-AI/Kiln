@@ -536,6 +536,8 @@
   <AppPage
     title="Create a New Fine Tune"
     subtitle="Fine-tuned models learn from your dataset."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
     breadcrumbs={[
       { label: "Fine Tunes", href: `/fine_tune/${project_id}/${task_id}` },
     ]}
@@ -595,76 +597,74 @@
             />
           </button>
         </div>
+        <div class="text-xl font-bold">
+          Step 2: Configure Fine-Tuning Run Configuration
+        </div>
         <div>
-          <div class="text-xl font-bold mb-4">
-            Step 2: Configure Fine-Tuning Run Settings
-          </div>
-          <div>
-            <PromptTypeSelector
-              bind:prompt_method={system_prompt_method}
-              description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-              info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
-              exclude_cot={true}
-              custom_prompt_name="Custom Fine Tuning Prompt"
-            />
-            {#if system_prompt_method === "custom"}
-              <div class="p-4 border-l-4 border-gray-300">
+          <PromptTypeSelector
+            bind:prompt_method={system_prompt_method}
+            description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
+            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+            exclude_cot={true}
+            custom_prompt_name="Custom Fine Tuning Prompt"
+          />
+          {#if system_prompt_method === "custom"}
+            <div class="p-4 border-l-4 border-gray-300">
+              <FormElement
+                label="Custom System Prompt"
+                description="Enter a custom system prompt to use during fine-tuning."
+                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                inputType="textarea"
+                id="finetune_custom_system_prompt"
+                bind:value={finetune_custom_system_prompt}
+              />
+              {#if data_strategy === "two_message_cot"}
+                <div class="mt-4"></div>
                 <FormElement
-                  label="Custom System Prompt"
-                  description="Enter a custom system prompt to use during fine-tuning."
-                  info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                  label="Custom Thinking Instructions"
+                  description="Instructions for the model's 'thinking' stage, before returning the final response."
+                  info_description="When training with intermediate results (reasoning, chain of thought, etc.), this prompt will be used to ask the model to 'think' before returning the final response."
                   inputType="textarea"
-                  id="finetune_custom_system_prompt"
-                  bind:value={finetune_custom_system_prompt}
+                  id="finetune_custom_thinking_instructions"
+                  bind:value={finetune_custom_thinking_instructions}
                 />
-                {#if data_strategy === "two_message_cot"}
-                  <div class="mt-4"></div>
-                  <FormElement
-                    label="Custom Thinking Instructions"
-                    description="Instructions for the model's 'thinking' stage, before returning the final response."
-                    info_description="When training with intermediate results (reasoning, chain of thought, etc.), this prompt will be used to ask the model to 'think' before returning the final response."
-                    inputType="textarea"
-                    id="finetune_custom_thinking_instructions"
-                    bind:value={finetune_custom_thinking_instructions}
-                  />
-                {/if}
-              </div>
-            {/if}
-          </div>
-          <div class="mt-4">
-            <FormElement
-              label="Reasoning"
-              description="Should the model be trained on reasoning/thinking content?"
-              info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
-              inputType="select"
-              id="data_strategy"
-              select_options={data_strategy_select_options}
-              bind:value={data_strategy}
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div>
+          <FormElement
+            label="Reasoning"
+            description="Should the model be trained on reasoning/thinking content?"
+            info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
+            inputType="select"
+            id="data_strategy"
+            select_options={data_strategy_select_options}
+            bind:value={data_strategy}
+          />
+          {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
+            <Warning
+              warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
+              large_icon={true}
             />
-            {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
-              <Warning
-                warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
-                large_icon={true}
-              />
-            {/if}
-            {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
-              <Warning
-                warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
-                large_icon={true}
-              />
-            {/if}
-          </div>
-          <div class="mt-4">
-            <RunConfigComponent
-              bind:this={run_config_component}
-              bind:tools={selected_tools}
-              {project_id}
-              hide_create_kiln_task_tool_button={true}
-              hide_model_selector={true}
-              hide_prompt_selector={true}
-              {disabled_tools_selector}
+          {/if}
+          {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
+            <Warning
+              warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
+              large_icon={true}
             />
-          </div>
+          {/if}
+        </div>
+        <div>
+          <RunConfigComponent
+            bind:this={run_config_component}
+            bind:tools={selected_tools}
+            {project_id}
+            hide_create_kiln_task_tool_button={true}
+            hide_model_selector={true}
+            hide_prompt_selector={true}
+            {disabled_tools_selector}
+          />
         </div>
 
         {#if step_3_visible}
