@@ -109,7 +109,7 @@ export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type SpecType = components["schemas"]["SpecType"]
 export type SpecStatus = components["schemas"]["SpecStatus"]
-export type SpecPriority = components["schemas"]["SpecPriority"]
+export type Priority = components["schemas"]["Priority"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 

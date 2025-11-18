@@ -2,7 +2,8 @@ from typing import List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.spec import Spec, SpecPriority, SpecStatus, SpecType
+from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.spec import Spec, SpecStatus, SpecType
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
@@ -20,20 +21,11 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
     )
 
 
-class SpecCreateRequest(BaseModel):
+class SpecUpsertRequest(BaseModel):
     name: FilenameString
     definition: str
     type: SpecType
-    priority: SpecPriority
-    status: SpecStatus
-    tags: List[str]
-    eval_id: str | None
-
-
-class SpecUpdateRequest(BaseModel):
-    name: FilenameString
-    definition: str
-    priority: SpecPriority
+    priority: Priority
     status: SpecStatus
     tags: List[str]
     eval_id: str | None
@@ -42,7 +34,7 @@ class SpecUpdateRequest(BaseModel):
 def connect_spec_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/tasks/{task_id}/spec")
     async def create_spec(
-        project_id: str, task_id: str, spec_data: SpecCreateRequest
+        project_id: str, task_id: str, spec_data: SpecUpsertRequest
     ) -> Spec:
         task = task_from_id(project_id, task_id)
         spec = Spec(
@@ -69,16 +61,17 @@ def connect_spec_api(app: FastAPI):
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
     async def update_spec(
-        project_id: str, task_id: str, spec_id: str, spec_updates: SpecUpdateRequest
+        project_id: str, task_id: str, spec_id: str, spec_data: SpecUpsertRequest
     ) -> Spec:
         spec = spec_from_id(project_id, task_id, spec_id)
 
-        spec.name = spec_updates.name
-        spec.definition = spec_updates.definition
-        spec.priority = spec_updates.priority
-        spec.status = spec_updates.status
-        spec.tags = spec_updates.tags
-        spec.eval_id = spec_updates.eval_id
+        spec.name = spec_data.name
+        spec.definition = spec_data.definition
+        spec.type = spec_data.type
+        spec.priority = spec_data.priority
+        spec.status = spec_data.status
+        spec.tags = spec_data.tags
+        spec.eval_id = spec_data.eval_id
 
         spec.save_to_file()
         return spec

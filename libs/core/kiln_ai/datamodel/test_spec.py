@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.spec import Spec, SpecPriority, SpecStatus, SpecType
+from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.spec import Spec, SpecStatus, SpecType
 from kiln_ai.datamodel.task import Task
 
 
@@ -22,7 +23,7 @@ def test_spec_valid_creation(sample_task):
     assert spec.name == "Test Spec"
     assert spec.definition == "The system should behave correctly"
     assert spec.type == SpecType.desired_behaviour
-    assert spec.priority == SpecPriority.high
+    assert spec.priority == Priority.p1
     assert spec.status == SpecStatus.not_started
     assert spec.tags == []
     assert spec.eval_id is None
@@ -34,14 +35,14 @@ def test_spec_with_custom_values(sample_task):
         name="Custom Spec",
         definition="No toxic content should be present",
         type=SpecType.toxicity,
-        priority=SpecPriority.low,
+        priority=Priority.p2,
         status=SpecStatus.in_progress,
         tags=["tag1", "tag2"],
         eval_id="test_eval_id",
         parent=sample_task,
     )
 
-    assert spec.priority == SpecPriority.low
+    assert spec.priority == Priority.p2
     assert spec.status == SpecStatus.in_progress
     assert spec.tags == ["tag1", "tag2"]
     assert spec.eval_id == "test_eval_id"
@@ -136,7 +137,7 @@ def test_spec_all_types(sample_task, spec_type):
 
 @pytest.mark.parametrize(
     "priority",
-    [SpecPriority.low, SpecPriority.medium, SpecPriority.high],
+    [Priority.p0, Priority.p1, Priority.p2, Priority.p3],
 )
 def test_spec_all_priorities(sample_task, priority):
     """Test that all priority levels can be set."""

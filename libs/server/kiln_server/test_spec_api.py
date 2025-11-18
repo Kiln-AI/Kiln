@@ -4,7 +4,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.spec import Spec, SpecPriority, SpecStatus, SpecType
+from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.spec import Spec, SpecStatus, SpecType
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.spec_api import connect_spec_api
@@ -47,9 +48,9 @@ def test_create_spec_success(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": ["test", "important"],
         "eval_id": None,
     }
@@ -65,7 +66,7 @@ def test_create_spec_success(client, project_and_task):
     assert res["name"] == "Test Spec"
     assert res["definition"] == "The system should always respond politely"
     assert res["type"] == "desired_behaviour"
-    assert res["priority"] == "high"
+    assert res["priority"] == 1
     assert res["status"] == "not_started"
     assert res["tags"] == ["test", "important"]
 
@@ -75,7 +76,7 @@ def test_create_spec_success(client, project_and_task):
     assert specs[0].name == "Test Spec"
     assert specs[0].definition == "The system should always respond politely"
     assert specs[0].type == SpecType.desired_behaviour
-    assert specs[0].priority == SpecPriority.high
+    assert specs[0].priority == Priority.p1
     assert specs[0].status == SpecStatus.not_started
 
 
@@ -85,9 +86,9 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
     spec_data = {
         "name": "Minimal Spec",
         "definition": "No toxic content allowed",
-        "type": "toxicity",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.toxicity.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -103,7 +104,7 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
     assert res["name"] == "Minimal Spec"
     assert res["definition"] == "No toxic content allowed"
     assert res["type"] == "toxicity"
-    assert res["priority"] == "high"
+    assert res["priority"] == 1
     assert res["status"] == "not_started"
     assert res["tags"] == []
     assert res["eval_id"] is None
@@ -113,9 +114,9 @@ def test_create_spec_task_not_found(client):
     spec_data = {
         "name": "Test Spec",
         "definition": "System should behave correctly",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -141,7 +142,7 @@ def test_get_specs_success(client, project_and_task):
         name="Spec 2",
         definition="No toxic responses",
         type=SpecType.toxicity,
-        priority=SpecPriority.low,
+        priority=Priority.p3,
         parent=task,
     )
     spec2.save_to_file()
@@ -183,7 +184,7 @@ def test_get_spec_success(client, project_and_task):
         name="Test Spec",
         definition="System should not hallucinate facts",
         type=SpecType.hallucinations,
-        priority=SpecPriority.medium,
+        priority=Priority.p2,
         status=SpecStatus.in_progress,
         tags=["validation", "safety"],
         parent=task,
@@ -201,7 +202,7 @@ def test_get_spec_success(client, project_and_task):
     assert res["name"] == "Test Spec"
     assert res["definition"] == "System should not hallucinate facts"
     assert res["type"] == "hallucinations"
-    assert res["priority"] == "medium"
+    assert res["priority"] == 2
     assert res["status"] == "in_progress"
     assert res["tags"] == ["validation", "safety"]
 
@@ -226,7 +227,7 @@ def test_update_spec_success(client, project_and_task):
         name="Original Name",
         definition="Original definition",
         type=SpecType.desired_behaviour,
-        priority=SpecPriority.low,
+        priority=Priority.p3,
         status=SpecStatus.not_started,
         tags=["old_tag"],
         parent=task,
@@ -236,8 +237,9 @@ def test_update_spec_success(client, project_and_task):
     update_data = {
         "name": "Updated Name",
         "definition": "Updated definition",
-        "priority": "high",
-        "status": "complete",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.complete.value,
         "tags": ["new_tag", "updated"],
         "eval_id": None,
     }
@@ -253,7 +255,7 @@ def test_update_spec_success(client, project_and_task):
     res = response.json()
     assert res["name"] == "Updated Name"
     assert res["definition"] == "Updated definition"
-    assert res["priority"] == "high"
+    assert res["priority"] == 1
     assert res["status"] == "complete"
     assert res["tags"] == ["new_tag", "updated"]
     assert res["type"] == "desired_behaviour"
@@ -263,7 +265,7 @@ def test_update_spec_success(client, project_and_task):
     assert updated_spec is not None
     assert updated_spec.name == "Updated Name"
     assert updated_spec.definition == "Updated definition"
-    assert updated_spec.priority == SpecPriority.high
+    assert updated_spec.priority == Priority.p1
     assert updated_spec.status == SpecStatus.complete
     assert updated_spec.tags == ["new_tag", "updated"]
 
@@ -275,7 +277,7 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
         name="Original Name",
         definition="Original definition",
         type=SpecType.toxicity,
-        priority=SpecPriority.medium,
+        priority=Priority.p2,
         status=SpecStatus.not_started,
         tags=["old_tag"],
         eval_id="original_eval_id",
@@ -286,8 +288,9 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
     update_data = {
         "name": "Original Name",
         "definition": "Original definition",
-        "priority": "medium",
-        "status": "in_progress",
+        "type": SpecType.toxicity.value,
+        "priority": Priority.p2,
+        "status": SpecStatus.in_progress.value,
         "tags": ["old_tag"],
         "eval_id": None,
     }
@@ -304,7 +307,7 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
     assert res["name"] == "Original Name"
     assert res["definition"] == "Original definition"
     assert res["type"] == "toxicity"
-    assert res["priority"] == "medium"
+    assert res["priority"] == 2
     assert res["status"] == "in_progress"
     assert res["eval_id"] is None
 
@@ -315,8 +318,9 @@ def test_update_spec_not_found(client, project_and_task):
     update_data = {
         "name": "Updated Name",
         "definition": "Updated definition",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -338,9 +342,9 @@ def test_create_spec_with_eval_id(client, project_and_task):
     spec_data = {
         "name": "Eval Spec",
         "definition": "Answers must match reference answers",
-        "type": "reference_answer_accuracy",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.reference_answer_accuracy.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": "test_eval_123",
     }
@@ -368,9 +372,9 @@ def test_create_spec_missing_name(client, project_and_task):
 
     spec_data = {
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -395,9 +399,9 @@ def test_create_spec_missing_definition(client, project_and_task):
 
     spec_data = {
         "name": "Test Spec",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -423,8 +427,8 @@ def test_create_spec_missing_type(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "priority": "high",
-        "status": "not_started",
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -450,8 +454,8 @@ def test_create_spec_missing_priority(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -477,8 +481,8 @@ def test_create_spec_missing_status(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
         "tags": [],
         "eval_id": None,
     }
@@ -504,9 +508,9 @@ def test_create_spec_missing_tags(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "eval_id": None,
     }
 
@@ -532,8 +536,8 @@ def test_create_spec_invalid_type_enum(client, project_and_task):
         "name": "Test Spec",
         "definition": "The system should always respond politely",
         "type": "invalid_type_value",
-        "priority": "high",
-        "status": "not_started",
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -559,9 +563,9 @@ def test_create_spec_invalid_priority_enum(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "ultra_high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": "p99",
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -587,8 +591,8 @@ def test_create_spec_invalid_status_enum(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
         "status": "pending",
         "tags": [],
         "eval_id": None,
@@ -615,9 +619,9 @@ def test_create_spec_invalid_name_type(client, project_and_task):
     spec_data = {
         "name": 12345,
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -640,9 +644,9 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
     spec_data = {
         "name": "Test Spec",
         "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": "not_a_list",
         "eval_id": None,
     }
@@ -698,8 +702,9 @@ def test_update_spec_invalid_priority_enum(client, project_and_task):
     update_data = {
         "name": "Test Spec",
         "definition": "System should behave correctly",
+        "type": SpecType.desired_behaviour.value,
         "priority": "critical",
-        "status": "not_started",
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -734,7 +739,8 @@ def test_update_spec_invalid_status_enum(client, project_and_task):
     update_data = {
         "name": "Test Spec",
         "definition": "System should behave correctly",
-        "priority": "high",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
         "status": "finished",
         "tags": [],
         "eval_id": None,
@@ -770,8 +776,9 @@ def test_update_spec_invalid_name_type(client, project_and_task):
     update_data = {
         "name": 12345,
         "definition": "System should behave correctly",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": [],
         "eval_id": None,
     }
@@ -803,8 +810,9 @@ def test_update_spec_invalid_tags_type(client, project_and_task):
     update_data = {
         "name": "Test Spec",
         "definition": "System should behave correctly",
-        "priority": "high",
-        "status": "not_started",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.not_started.value,
         "tags": {"not": "a list"},
         "eval_id": None,
     }
