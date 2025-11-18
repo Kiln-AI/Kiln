@@ -5,6 +5,7 @@ from pydantic import Field, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
+from kiln_ai.datamodel.datamodel_enums import Priority
 
 
 class SpecType(str, Enum):
@@ -40,14 +41,6 @@ class SpecType(str, Enum):
     prompt_leakage = "prompt_leakage"
 
 
-class SpecPriority(str, Enum):
-    """Defines priority levels for specs."""
-
-    low = "low"
-    medium = "medium"
-    high = "high"
-
-
 class SpecStatus(str, Enum):
     """Defines the status of a spec."""
 
@@ -61,17 +54,14 @@ class Spec(KilnParentedModel):
     """A spec for a task."""
 
     name: FilenameString = Field(description="The name of the spec.", min_length=1)
-    description: str = Field(
-        description="A description for your own reference.", min_length=1
-    )
     definition: str = Field(
         description="A detailed definition of the spec.", min_length=1
     )
     type: SpecType = Field(
         description="The type of spec.",
     )
-    priority: SpecPriority = Field(
-        default=SpecPriority.high,
+    priority: Priority = Field(
+        default=Priority.p1,
         description="The priority of the spec.",
     )
     status: SpecStatus = Field(

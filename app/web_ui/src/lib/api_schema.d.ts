@@ -5180,11 +5180,6 @@ export interface components {
              */
             name: string;
             /**
-             * Description
-             * @description A description for your own reference.
-             */
-            description: string;
-            /**
              * Definition
              * @description A detailed definition of the spec.
              */
@@ -5193,9 +5188,9 @@ export interface components {
             type: components["schemas"]["SpecType"];
             /**
              * @description The priority of the spec.
-             * @default high
+             * @default 1
              */
-            priority: components["schemas"]["SpecPriority"];
+            priority: components["schemas"]["Priority"];
             /**
              * @description The status of the spec.
              * @default not_started
@@ -5215,28 +5210,6 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** SpecCreateRequest */
-        SpecCreateRequest: {
-            /** Name */
-            name: string;
-            /** Description */
-            description: string;
-            /** Definition */
-            definition: string;
-            type: components["schemas"]["SpecType"];
-            priority?: components["schemas"]["SpecPriority"] | null;
-            status?: components["schemas"]["SpecStatus"] | null;
-            /** Tags */
-            tags?: string[] | null;
-            /** Eval Id */
-            eval_id?: string | null;
-        };
-        /**
-         * SpecPriority
-         * @description Defines priority levels for specs.
-         * @enum {string}
-         */
-        SpecPriority: "low" | "medium" | "high";
         /**
          * SpecStatus
          * @description Defines the status of a spec.
@@ -5249,20 +5222,19 @@ export interface components {
          * @enum {string}
          */
         SpecType: "desired_behaviour" | "undesired_behaviour" | "appropriate_tool_use" | "intermediate_reasoning" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "tone" | "formatting" | "localization" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
-        /** SpecUpdateRequest */
-        SpecUpdateRequest: {
+        /** SpecUpsertRequest */
+        SpecUpsertRequest: {
             /** Name */
-            name?: string | null;
-            /** Description */
-            description?: string | null;
+            name: string;
             /** Definition */
-            definition?: string | null;
-            priority?: components["schemas"]["SpecPriority"] | null;
-            status?: components["schemas"]["SpecStatus"] | null;
+            definition: string;
+            type: components["schemas"]["SpecType"];
+            priority: components["schemas"]["Priority"];
+            status: components["schemas"]["SpecStatus"];
             /** Tags */
-            tags?: string[] | null;
+            tags: string[];
             /** Eval Id */
-            eval_id?: string | null;
+            eval_id: string | null;
         };
         /**
          * StructuredOutputMode
@@ -6427,7 +6399,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecCreateRequest"];
+                "application/json": components["schemas"]["SpecUpsertRequest"];
             };
         };
         responses: {
@@ -6529,7 +6501,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecUpdateRequest"];
+                "application/json": components["schemas"]["SpecUpsertRequest"];
             };
         };
         responses: {
