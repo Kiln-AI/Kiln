@@ -18,6 +18,7 @@
   import { page } from "$app/stores"
   import { sets_equal } from "$lib/utils/collections"
   import ExistingDatasetButton from "./existing_dataset_button.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   let finetune_dataset_info: FinetuneDatasetInfo | null = null
   let filtered_tags: FinetuneDatasetTagInfo[] = []
@@ -400,12 +401,8 @@
         >
       </div>
 
-      <div class="collapse collapse-arrow bg-base-200 mt-4">
-        <input type="checkbox" class="peer" />
-        <div class="collapse-title font-medium flex items-center">
-          Training Dataset Details
-        </div>
-        <div class="collapse-content flex flex-col gap-4">
+      <div class="mt-4">
+        <Collapse title="Training Dataset Details">
           <div class="text-sm">
             The selected dataset has {selected_dataset.splits?.length}
             {selected_dataset.splits?.length === 1 ? "split" : "splits"}:
@@ -428,7 +425,7 @@
               {/each}
             </ul>
           </div>
-        </div>
+        </Collapse>
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
@@ -486,33 +483,24 @@
             bind:value={filter_to_highly_rated_data}
           />
 
-          <div class="collapse collapse-arrow bg-base-200">
-            <input type="checkbox" class="peer" />
-            <div class="collapse-title font-medium flex items-center">
-              Advanced Options
-            </div>
-            <div class="collapse-content flex flex-col gap-4">
-              <FormElement
-                label="Dataset Splits"
-                description="Select ratios for splitting the data into training, validation, and test."
-                info_description="If in doubt, leave the the recommended value. If you're using an external test set such as Kiln Evals, you don't need a test set here."
-                inputType="select"
-                optional={false}
-                id="dataset_split"
-                select_options={[
-                  ["train_val", "80% Training, 20% Validation (Recommended)"],
-                  ["train_test", "80% Training, 10% Test, 10% Validation"],
-                  ["train_test_val", "60% Training, 20% Test, 20% Validation"],
-                  [
-                    "train_test_val_80",
-                    "80% Training, 10% Test, 10% Validation",
-                  ],
-                  ["all", "100% Training"],
-                ]}
-                bind:value={new_dataset_split}
-              />
-            </div>
-          </div>
+          <Collapse title="Advanced Options">
+            <FormElement
+              label="Dataset Splits"
+              description="Select ratios for splitting the data into training, validation, and test."
+              info_description="If in doubt, leave the the recommended value. If you're using an external test set such as Kiln Evals, you don't need a test set here."
+              inputType="select"
+              optional={false}
+              id="dataset_split"
+              select_options={[
+                ["train_val", "80% Training, 20% Validation (Recommended)"],
+                ["train_test", "80% Training, 10% Test, 10% Validation"],
+                ["train_test_val", "60% Training, 20% Test, 20% Validation"],
+                ["train_test_val_80", "80% Training, 10% Test, 10% Validation"],
+                ["all", "100% Training"],
+              ]}
+              bind:value={new_dataset_split}
+            />
+          </Collapse>
 
           {#if new_dataset_filter_count !== undefined}
             <Warning

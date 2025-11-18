@@ -33,6 +33,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   let finetune_description = ""
   let finetune_name = ""
@@ -690,58 +691,54 @@
         {/if}
 
         {#if step_4_visible}
-          <div>
-            <div class="text-xl font-bold">Step 4: Options</div>
-            {#if !is_download}
-              <div class="collapse collapse-arrow bg-base-200">
-                <input type="checkbox" class="peer" />
-                <div class="collapse-title font-medium">Advanced Options</div>
-                <div class="collapse-content flex flex-col gap-4">
-                  <FormElement
-                    label="Name"
-                    description="A name to identify this fine-tune. Leave blank and we'll generate one for you."
-                    optional={true}
-                    inputType="input"
-                    id="finetune_name"
-                    bind:value={finetune_name}
-                  />
-                  <FormElement
-                    label="Description"
-                    description="An optional description of this fine-tune."
-                    optional={true}
-                    inputType="textarea"
-                    id="finetune_description"
-                    bind:value={finetune_description}
-                  />
-                  {#if hyperparameters_loading}
-                    <div class="w-full flex justify-center items-center">
-                      <div class="loading loading-spinner loading-lg"></div>
-                    </div>
-                  {:else if hyperparameters_error || !hyperparameters}
-                    <div class="text-error text-sm">
-                      {hyperparameters_error?.getMessage() ||
-                        "An unknown error occurred"}
-                    </div>
-                  {:else if hyperparameters.length > 0}
-                    {#each hyperparameters as hyperparameter}
-                      <FormElement
-                        label={hyperparameter.name +
-                          " (" +
-                          type_strings[hyperparameter.type] +
-                          ")"}
-                        description={hyperparameter.description}
-                        info_description="If you aren't sure, leave blank for default/recommended value. Ensure your value is valid for the type (e.g. an integer can't have decimals)."
-                        inputType="input"
-                        optional={hyperparameter.optional}
-                        id={hyperparameter.name}
-                        bind:value={hyperparameter_values[hyperparameter.name]}
-                      />
-                    {/each}
-                  {/if}
-                </div>
-              </div>
-            {/if}
-          </div>
+          <div class="text-xl font-bold">Step 4: Options</div>
+          {#if !is_download}
+            <div>
+              <Collapse title="Advanced Options">
+                <FormElement
+                  label="Name"
+                  description="A name to identify this fine-tune. Leave blank and we'll generate one for you."
+                  optional={true}
+                  inputType="input"
+                  id="finetune_name"
+                  bind:value={finetune_name}
+                />
+                <FormElement
+                  label="Description"
+                  description="An optional description of this fine-tune."
+                  optional={true}
+                  inputType="textarea"
+                  id="finetune_description"
+                  bind:value={finetune_description}
+                />
+                {#if hyperparameters_loading}
+                  <div class="w-full flex justify-center items-center">
+                    <div class="loading loading-spinner loading-lg"></div>
+                  </div>
+                {:else if hyperparameters_error || !hyperparameters}
+                  <div class="text-error text-sm">
+                    {hyperparameters_error?.getMessage() ||
+                      "An unknown error occurred"}
+                  </div>
+                {:else if hyperparameters.length > 0}
+                  {#each hyperparameters as hyperparameter}
+                    <FormElement
+                      label={hyperparameter.name +
+                        " (" +
+                        type_strings[hyperparameter.type] +
+                        ")"}
+                      description={hyperparameter.description}
+                      info_description="If you aren't sure, leave blank for default/recommended value. Ensure your value is valid for the type (e.g. an integer can't have decimals)."
+                      inputType="input"
+                      optional={hyperparameter.optional}
+                      id={hyperparameter.name}
+                      bind:value={hyperparameter_values[hyperparameter.name]}
+                    />
+                  {/each}
+                {/if}
+              </Collapse>
+            </div>
+          {/if}
         {/if}
       </FormContainer>
     {/if}
