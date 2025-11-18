@@ -35,12 +35,18 @@ def client(app):
 def test_read_rate_limits_empty(client, temp_home):
     response = client.get("/api/rate_limits")
     assert response.status_code == 200
-    assert response.json() == {}
+    # Empty file returns empty rate limits model
+    result = response.json()
+    assert result["provider_limits"] == {}
+    assert result["model_limits"] == {}
 
 
 def test_read_rate_limits_existing(client, temp_home):
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
-    test_rate_limits = {"openai": {"gpt_5": 10, "gpt_4o": 5}}
+    test_rate_limits = {
+        "provider_limits": {},
+        "model_limits": {"openai": {"gpt_5": 10, "gpt_4o": 5}},
+    }
     with open(rate_limits_path, "w") as f:
         yaml.dump(test_rate_limits, f)
 
@@ -51,8 +57,11 @@ def test_read_rate_limits_existing(client, temp_home):
 
 def test_update_rate_limits(client, temp_home):
     new_rate_limits = {
-        "openai": {"gpt_5": 10, "gpt_4o": 5},
-        "anthropic": {"claude_opus_4_1": 3},
+        "provider_limits": {},
+        "model_limits": {
+            "openai": {"gpt_5": 10, "gpt_4o": 5},
+            "anthropic": {"claude_opus_4_1": 3},
+        },
     }
     response = client.post("/api/rate_limits", json=new_rate_limits)
     assert response.status_code == 200
@@ -66,11 +75,14 @@ def test_update_rate_limits(client, temp_home):
 
 def test_update_rate_limits_overwrites_existing(client, temp_home):
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
-    initial_rate_limits = {"openai": {"gpt_5": 10}}
+    initial_rate_limits = {"model_limits": {"openai": {"gpt_5": 10}}}
     with open(rate_limits_path, "w") as f:
         yaml.dump(initial_rate_limits, f)
 
-    new_rate_limits = {"anthropic": {"claude_opus_4_1": 5}}
+    new_rate_limits = {
+        "provider_limits": {},
+        "model_limits": {"anthropic": {"claude_opus_4_1": 5}},
+    }
     response = client.post("/api/rate_limits", json=new_rate_limits)
     assert response.status_code == 200
     assert response.json() == new_rate_limits
@@ -82,24 +94,28 @@ def test_update_rate_limits_overwrites_existing(client, temp_home):
 
 def test_update_rate_limits_empty_clears_file(client, temp_home):
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
-    initial_rate_limits = {"openai": {"gpt_5": 10}}
+    initial_rate_limits = {"model_limits": {"openai": {"gpt_5": 10}}}
     with open(rate_limits_path, "w") as f:
         yaml.dump(initial_rate_limits, f)
 
-    response = client.post("/api/rate_limits", json={})
+    empty_limits = {"provider_limits": {}, "model_limits": {}}
+    response = client.post("/api/rate_limits", json=empty_limits)
     assert response.status_code == 200
-    assert response.json() == {}
+    assert response.json() == empty_limits
 
     with open(rate_limits_path, "r") as f:
         saved_rate_limits = yaml.safe_load(f)
-    assert saved_rate_limits is None or saved_rate_limits == {}
+    assert saved_rate_limits == empty_limits
 
 
 def test_rate_limits_roundtrip(client, temp_home):
     test_rate_limits = {
-        "openai": {"gpt_5": 10, "gpt_4o": 5},
-        "anthropic": {"claude_opus_4_1": 3},
-        "gemini_api": {"gemini_2_0_flash_exp": 8},
+        "provider_limits": {},
+        "model_limits": {
+            "openai": {"gpt_5": 10, "gpt_4o": 5},
+            "anthropic": {"claude_opus_4_1": 3},
+            "gemini_api": {"gemini_2_0_flash_exp": 8},
+        },
     }
 
     post_response = client.post("/api/rate_limits", json=test_rate_limits)
@@ -112,11 +128,14 @@ def test_rate_limits_roundtrip(client, temp_home):
 
 def test_rate_limits_nested_structure(client, temp_home):
     test_rate_limits = {
-        "openai": {
-            "gpt_5": 10,
-            "gpt_5_1": 8,
-            "gpt_4o": 5,
-        }
+        "provider_limits": {},
+        "model_limits": {
+            "openai": {
+                "gpt_5": 10,
+                "gpt_5_1": 8,
+                "gpt_4o": 5,
+            }
+        },
     }
 
     response = client.post("/api/rate_limits", json=test_rate_limits)
@@ -125,9 +144,9 @@ def test_rate_limits_nested_structure(client, temp_home):
 
     get_response = client.get("/api/rate_limits")
     assert get_response.status_code == 200
-    assert get_response.json()["openai"]["gpt_5"] == 10
-    assert get_response.json()["openai"]["gpt_5_1"] == 8
-    assert get_response.json()["openai"]["gpt_4o"] == 5
+    assert get_response.json()["model_limits"]["openai"]["gpt_5"] == 10
+    assert get_response.json()["model_limits"]["openai"]["gpt_5_1"] == 8
+    assert get_response.json()["model_limits"]["openai"]["gpt_4o"] == 5
 
 
 def test_provider_limits_new_format(client, temp_home):
@@ -186,20 +205,14 @@ def test_read_rate_limits_with_provider_limits(client, temp_home):
     assert result["model_limits"]["openai"]["gpt_5"] == 5
 
 
-def test_backward_compatibility_old_format_api(client, temp_home):
-    """Test that API works with old format rate limits in file."""
-    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
-    old_format_rate_limits = {
-        "openai": {"gpt_5": 10, "gpt_4o": 5},
-        "anthropic": {"claude_opus_4_1": 3},
+def test_validation_invalid_rate_limits(client, temp_home):
+    """Test that invalid rate limits are rejected with proper validation."""
+    invalid_limits = {
+        "provider_limits": {"openai": "not_a_number"},
+        "model_limits": {},
     }
-    with open(rate_limits_path, "w") as f:
-        yaml.dump(old_format_rate_limits, f)
-
-    response = client.get("/api/rate_limits")
-    assert response.status_code == 200
-    result = response.json()
-    assert result == old_format_rate_limits
+    response = client.post("/api/rate_limits", json=invalid_limits)
+    assert response.status_code == 422  # FastAPI validation error
 
 
 def test_update_to_new_format(client, temp_home):

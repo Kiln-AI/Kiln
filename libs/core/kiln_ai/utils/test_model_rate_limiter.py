@@ -6,7 +6,11 @@ import pytest
 import yaml
 
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, reset_global_rate_limiter
+from kiln_ai.utils.model_rate_limiter import (
+    ModelRateLimiter,
+    RateLimits,
+    reset_global_rate_limiter,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -31,8 +35,11 @@ def rate_limits_file(temp_home):
     """Create a rate limits file with test data."""
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
     rate_limits = {
-        "openai": {"gpt_5": 5, "gpt_4o": 3},
-        "anthropic": {"claude_opus_4_1": 2},
+        "provider_limits": {},
+        "model_limits": {
+            "openai": {"gpt_5": 5, "gpt_4o": 3},
+            "anthropic": {"claude_opus_4_1": 2},
+        },
     }
     with open(rate_limits_path, "w") as f:
         yaml.dump(rate_limits, f)
@@ -41,7 +48,7 @@ def rate_limits_file(temp_home):
 
 def test_init_with_explicit_limits():
     """Test initialization with explicit rate limits."""
-    rate_limits = {"openai": {"gpt_5": 10}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10}})
     limiter = ModelRateLimiter(rate_limits)
     assert limiter.get_limit("openai", "gpt_5") == 10
 
@@ -61,7 +68,7 @@ def test_init_with_no_file(temp_home):
 
 def test_get_limit():
     """Test getting rate limits."""
-    rate_limits = {"openai": {"gpt_5": 10, "gpt_4o": 5}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10, "gpt_4o": 5}})
     limiter = ModelRateLimiter(rate_limits)
 
     assert limiter.get_limit("openai", "gpt_5") == 10
@@ -72,7 +79,7 @@ def test_get_limit():
 
 def test_set_limit():
     """Test setting rate limits."""
-    limiter = ModelRateLimiter({})
+    limiter = ModelRateLimiter(RateLimits())
 
     limiter.set_limit("openai", "gpt_5", 10)
     assert limiter.get_limit("openai", "gpt_5") == 10
@@ -83,7 +90,7 @@ def test_set_limit():
 
 def test_set_limit_to_none_removes_limit():
     """Test that setting limit to None removes it."""
-    rate_limits = {"openai": {"gpt_5": 10}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10}})
     limiter = ModelRateLimiter(rate_limits)
 
     limiter.set_limit("openai", "gpt_5", None)
@@ -92,7 +99,7 @@ def test_set_limit_to_none_removes_limit():
 
 def test_set_limit_to_zero_removes_limit():
     """Test that setting limit to 0 removes it."""
-    rate_limits = {"openai": {"gpt_5": 10}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10}})
     limiter = ModelRateLimiter(rate_limits)
 
     limiter.set_limit("openai", "gpt_5", 0)
@@ -105,7 +112,7 @@ def test_reload(rate_limits_file):
     assert limiter.get_limit("openai", "gpt_5") == 5
 
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
-    new_limits = {"openai": {"gpt_5": 20}}
+    new_limits = {"model_limits": {"openai": {"gpt_5": 20}}}
     with open(rate_limits_path, "w") as f:
         yaml.dump(new_limits, f)
 
@@ -117,7 +124,7 @@ def test_reload(rate_limits_file):
 @pytest.mark.asyncio
 async def test_limit_context_manager_unlimited():
     """Test that unlimited models don't block."""
-    limiter = ModelRateLimiter({})
+    limiter = ModelRateLimiter(RateLimits())
 
     results = []
 
@@ -136,7 +143,7 @@ async def test_limit_context_manager_unlimited():
 @pytest.mark.asyncio
 async def test_limit_context_manager_with_limit():
     """Test that rate limiting actually limits concurrency."""
-    rate_limits = {"openai": {"gpt_5": 2}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 2}})
     limiter = ModelRateLimiter(rate_limits)
 
     active_count = 0
@@ -162,7 +169,7 @@ async def test_limit_context_manager_with_limit():
 @pytest.mark.asyncio
 async def test_different_models_independent_limits():
     """Test that different models have independent rate limits."""
-    rate_limits = {"openai": {"gpt_5": 1, "gpt_4o": 1}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 1, "gpt_4o": 1}})
     limiter = ModelRateLimiter(rate_limits)
 
     gpt5_active = 0
@@ -193,7 +200,7 @@ async def test_different_models_independent_limits():
 @pytest.mark.asyncio
 async def test_limit_enforces_max_concurrent():
     """Test that the semaphore enforces the exact limit."""
-    rate_limits = {"openai": {"gpt_5": 3}}
+    rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 3}})
     limiter = ModelRateLimiter(rate_limits)
 
     concurrent_count = []
@@ -214,7 +221,7 @@ async def test_limit_enforces_max_concurrent():
 @pytest.mark.asyncio
 async def test_set_limit_updates_semaphore():
     """Test that setting a new limit updates the semaphore."""
-    limiter = ModelRateLimiter({"openai": {"gpt_5": 10}})
+    limiter = ModelRateLimiter(RateLimits(model_limits={"openai": {"gpt_5": 10}}))
 
     limiter.set_limit("openai", "gpt_5", 2)
 
@@ -236,7 +243,7 @@ async def test_set_limit_updates_semaphore():
 
 def test_semaphore_key_generation():
     """Test that semaphore keys are generated correctly."""
-    limiter = ModelRateLimiter({})
+    limiter = ModelRateLimiter(RateLimits())
 
     key1 = limiter._get_semaphore_key("openai", "gpt_5")
     key2 = limiter._get_semaphore_key("anthropic", "claude")
@@ -250,11 +257,12 @@ def test_semaphore_key_generation():
 
 def test_provider_limit_basic():
     """Test basic provider-wide rate limiting."""
-    rate_limits = {
-        "provider_limits": {"openai": 10, "anthropic": 5},
-        "model_limits": {},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 10, "anthropic": 5},
+            model_limits={},
+        )
+    )
 
     assert limiter.get_provider_limit("openai") == 10
     assert limiter.get_provider_limit("anthropic") == 5
@@ -263,11 +271,12 @@ def test_provider_limit_basic():
 
 def test_provider_limit_fallback():
     """Test that provider limit is used when no model-specific limit exists."""
-    rate_limits = {
-        "provider_limits": {"openai": 10},
-        "model_limits": {"openai": {"gpt_5": 5}},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 10},
+            model_limits={"openai": {"gpt_5": 5}},
+        )
+    )
 
     assert limiter.get_limit("openai", "gpt_5") == 5
     assert limiter.get_limit("openai", "gpt_4o") == 10
@@ -275,11 +284,12 @@ def test_provider_limit_fallback():
 
 def test_model_limit_precedence():
     """Test that model-specific limit takes precedence over provider limit."""
-    rate_limits = {
-        "provider_limits": {"openai": 10},
-        "model_limits": {"openai": {"gpt_5": 3}},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 10},
+            model_limits={"openai": {"gpt_5": 3}},
+        )
+    )
 
     assert limiter.get_limit("openai", "gpt_5") == 3
     assert limiter.get_provider_limit("openai") == 10
@@ -287,18 +297,19 @@ def test_model_limit_precedence():
 
 def test_unlimited_when_no_limits():
     """Test that None is returned when neither provider nor model limit exists."""
-    rate_limits = {
-        "provider_limits": {"openai": 10},
-        "model_limits": {},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 10},
+            model_limits={},
+        )
+    )
 
     assert limiter.get_limit("anthropic", "claude") is None
 
 
 def test_set_provider_limit():
     """Test setting provider-wide rate limits."""
-    limiter = ModelRateLimiter({})
+    limiter = ModelRateLimiter(RateLimits())
 
     limiter.set_provider_limit("openai", 15)
     assert limiter.get_provider_limit("openai") == 15
@@ -309,11 +320,12 @@ def test_set_provider_limit():
 
 def test_set_provider_limit_to_none_removes_limit():
     """Test that setting provider limit to None removes it."""
-    rate_limits = {
-        "provider_limits": {"openai": 10},
-        "model_limits": {},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 10},
+            model_limits={},
+        )
+    )
 
     limiter.set_provider_limit("openai", None)
     assert limiter.get_provider_limit("openai") is None
@@ -321,11 +333,12 @@ def test_set_provider_limit_to_none_removes_limit():
 
 def test_set_provider_limit_to_zero_removes_limit():
     """Test that setting provider limit to 0 removes it."""
-    rate_limits = {
-        "provider_limits": {"openai": 10},
-        "model_limits": {},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 10},
+            model_limits={},
+        )
+    )
 
     limiter.set_provider_limit("openai", 0)
     assert limiter.get_provider_limit("openai") is None
@@ -334,11 +347,12 @@ def test_set_provider_limit_to_zero_removes_limit():
 @pytest.mark.asyncio
 async def test_provider_limit_enforces_concurrency():
     """Test that provider-wide limit enforces concurrency across models."""
-    rate_limits = {
-        "provider_limits": {"openai": 2},
-        "model_limits": {},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 2},
+            model_limits={},
+        )
+    )
 
     active_count = 0
     max_concurrent = 0
@@ -365,11 +379,12 @@ async def test_provider_limit_enforces_concurrency():
 @pytest.mark.asyncio
 async def test_model_limit_overrides_provider_limit_concurrency():
     """Test that model-specific limit overrides provider limit for concurrency."""
-    rate_limits = {
-        "provider_limits": {"openai": 5},
-        "model_limits": {"openai": {"gpt_5": 1}},
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 5},
+            model_limits={"openai": {"gpt_5": 1}},
+        )
+    )
 
     gpt5_active = 0
     gpt4o_active = 0
@@ -405,13 +420,16 @@ async def test_model_limit_overrides_provider_limit_concurrency():
     assert max_gpt4o_concurrent == 3
 
 
-def test_backward_compatibility_old_format():
-    """Test that old rate limits format is converted to new format."""
-    old_rate_limits = {
-        "openai": {"gpt_5": 10, "gpt_4o": 5},
-        "anthropic": {"claude_opus_4_1": 2},
-    }
-    limiter = ModelRateLimiter(old_rate_limits)
+def test_pydantic_model_initialization():
+    """Test that RateLimits Pydantic model works correctly."""
+    rate_limits = RateLimits(
+        provider_limits={},
+        model_limits={
+            "openai": {"gpt_5": 10, "gpt_4o": 5},
+            "anthropic": {"claude_opus_4_1": 2},
+        },
+    )
+    limiter = ModelRateLimiter(rate_limits)
 
     assert limiter.get_limit("openai", "gpt_5") == 10
     assert limiter.get_limit("openai", "gpt_4o") == 5
@@ -421,14 +439,15 @@ def test_backward_compatibility_old_format():
 
 def test_new_format_with_both_limits():
     """Test new format with both provider and model limits."""
-    rate_limits = {
-        "provider_limits": {"openai": 20, "anthropic": 10},
-        "model_limits": {
-            "openai": {"gpt_5": 5},
-            "anthropic": {"claude_opus_4_1": 3},
-        },
-    }
-    limiter = ModelRateLimiter(rate_limits)
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 20, "anthropic": 10},
+            model_limits={
+                "openai": {"gpt_5": 5},
+                "anthropic": {"claude_opus_4_1": 3},
+            },
+        )
+    )
 
     assert limiter.get_provider_limit("openai") == 20
     assert limiter.get_provider_limit("anthropic") == 10
@@ -439,7 +458,7 @@ def test_new_format_with_both_limits():
 
 def test_empty_rate_limits():
     """Test initialization with empty rate limits."""
-    limiter = ModelRateLimiter({})
+    limiter = ModelRateLimiter(RateLimits())
 
     assert limiter.get_limit("openai", "gpt_5") is None
     assert limiter.get_provider_limit("openai") is None

@@ -1316,10 +1316,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Rate Limits */
+        /**
+         * Read Rate Limits
+         * @description Get the current rate limits configuration.
+         */
         get: operations["read_rate_limits_api_rate_limits_get"];
         put?: never;
-        /** Update Rate Limits */
+        /**
+         * Update Rate Limits
+         * @description Update rate limits configuration and reload the global rate limiter.
+         *
+         *     Args:
+         *         rate_limits: New rate limits configuration
+         *
+         *     Returns:
+         *         The saved rate limits configuration
+         */
         post: operations["update_rate_limits_api_rate_limits_post"];
         delete?: never;
         options?: never;
@@ -4793,6 +4805,31 @@ export interface components {
              * @description The search results
              */
             results: components["schemas"]["SearchResult"][];
+        };
+        /**
+         * RateLimits
+         * @description Rate limits configuration with provider-wide and model-specific limits.
+         *
+         *     provider_limits: Max concurrent requests per provider (applies to all models)
+         *     model_limits: Max concurrent requests per model (takes precedence over provider limits)
+         */
+        RateLimits: {
+            /**
+             * Provider Limits
+             * @description Max concurrent requests per provider (applies to all models from that provider)
+             */
+            provider_limits?: {
+                [key: string]: number;
+            };
+            /**
+             * Model Limits
+             * @description Max concurrent requests per model (takes precedence over provider limits)
+             */
+            model_limits?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
         };
         /** RatingOption */
         RatingOption: {
@@ -8532,9 +8569,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RateLimits"];
                 };
             };
         };
@@ -8548,9 +8583,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["RateLimits"];
             };
         };
         responses: {
@@ -8560,9 +8593,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RateLimits"];
                 };
             };
             /** @description Validation Error */

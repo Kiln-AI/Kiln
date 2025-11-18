@@ -1,11 +1,33 @@
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict
+from typing import AsyncIterator, Dict
 
 import yaml
+from pydantic import BaseModel, Field, ValidationError
 
 from kiln_ai.utils.config import Config
+
+logger = logging.getLogger(__name__)
+
+
+class RateLimits(BaseModel):
+    """
+    Rate limits configuration with provider-wide and model-specific limits.
+
+    provider_limits: Max concurrent requests per provider (applies to all models)
+    model_limits: Max concurrent requests per model (takes precedence over provider limits)
+    """
+
+    provider_limits: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Max concurrent requests per provider (applies to all models from that provider)",
+    )
+    model_limits: Dict[str, Dict[str, int]] = Field(
+        default_factory=dict,
+        description="Max concurrent requests per model (takes precedence over provider limits)",
+    )
 
 
 class ModelRateLimiter:
@@ -26,53 +48,17 @@ class ModelRateLimiter:
             result = await call_model()
     """
 
-    def __init__(self, rate_limits: Dict[str, Any] | None = None):
+    def __init__(self, rate_limits: RateLimits | None = None):
         """
         Initialize the rate limiter.
 
         Args:
-            rate_limits: Optional dict of rate limits. If None, loads from file.
-                        Format: {
-                            "provider_limits": {provider_name: max_concurrent},
-                            "model_limits": {provider_name: {model_name: max_concurrent}}
-                        }
-                        Also supports legacy format: {provider_name: {model_name: max_concurrent}}
+            rate_limits: Optional RateLimits model. If None, loads from file.
         """
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
-        loaded_limits = (
-            rate_limits if rate_limits is not None else self._load_rate_limits()
+        self._rate_limits = (
+            rate_limits if rate_limits is not None else load_rate_limits()
         )
-        self._rate_limits = self._normalize_rate_limits(loaded_limits)
-
-    def _load_rate_limits(self) -> Dict[str, Any]:
-        """Load rate limits from the config file."""
-        rate_limits_path = os.path.join(
-            Config.settings_dir(create=False), "rate_limits.yaml"
-        )
-        if not os.path.isfile(rate_limits_path):
-            return {}
-        try:
-            with open(rate_limits_path, "r") as f:
-                return yaml.safe_load(f.read()) or {}
-        except Exception:
-            return {}
-
-    def _normalize_rate_limits(self, rate_limits: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Normalize rate limits to the new format with provider_limits and model_limits.
-
-        Handles backward compatibility with the old flat format.
-        """
-        if not rate_limits:
-            return {"provider_limits": {}, "model_limits": {}}
-
-        if "provider_limits" in rate_limits or "model_limits" in rate_limits:
-            return {
-                "provider_limits": rate_limits.get("provider_limits", {}),
-                "model_limits": rate_limits.get("model_limits", {}),
-            }
-
-        return {"provider_limits": {}, "model_limits": rate_limits}
 
     def _get_semaphore_key(self, provider: str, model: str | None = None) -> str:
         """
@@ -94,8 +80,7 @@ class ModelRateLimiter:
         Checks model-specific limit first, then falls back to provider-wide limit.
         If using provider-wide limit, all models from that provider share the same semaphore.
         """
-        model_limits = self._rate_limits.get("model_limits", {})
-        model_limit = model_limits.get(provider, {}).get(model)
+        model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
 
         if model_limit is not None and model_limit > 0:
             key = self._get_semaphore_key(provider, model)
@@ -103,8 +88,7 @@ class ModelRateLimiter:
                 self._semaphores[key] = asyncio.Semaphore(model_limit)
             return self._semaphores[key]
 
-        provider_limits = self._rate_limits.get("provider_limits", {})
-        provider_limit = provider_limits.get(provider)
+        provider_limit = self._rate_limits.provider_limits.get(provider)
 
         if provider_limit is not None and provider_limit > 0:
             key = self._get_semaphore_key(provider, None)
@@ -142,14 +126,10 @@ class ModelRateLimiter:
         Returns the model-specific limit if set, otherwise the provider-wide limit.
         Returns None if no limit is configured (unlimited).
         """
-        model_limits = self._rate_limits.get("model_limits", {})
-        model_limit = model_limits.get(provider, {}).get(model)
-
+        model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
         if model_limit is not None:
             return model_limit
-
-        provider_limits = self._rate_limits.get("provider_limits", {})
-        return provider_limits.get(provider)
+        return self._rate_limits.provider_limits.get(provider)
 
     def get_provider_limit(self, provider: str) -> int | None:
         """
@@ -157,8 +137,7 @@ class ModelRateLimiter:
 
         Returns None if no limit is configured (unlimited).
         """
-        provider_limits = self._rate_limits.get("provider_limits", {})
-        return provider_limits.get(provider)
+        return self._rate_limits.provider_limits.get(provider)
 
     def set_limit(self, provider: str, model: str, limit: int | None) -> None:
         """
@@ -169,20 +148,22 @@ class ModelRateLimiter:
             model: The model name
             limit: Max concurrent requests (None or 0 for unlimited)
         """
-        model_limits = self._rate_limits.setdefault("model_limits", {})
-
-        if provider not in model_limits:
-            model_limits[provider] = {}
+        if provider not in self._rate_limits.model_limits:
+            self._rate_limits.model_limits[provider] = {}
 
         if limit is None or limit <= 0:
-            model_limits[provider].pop(model, None)
-            if not model_limits[provider]:
-                model_limits.pop(provider, None)
+            if model in self._rate_limits.model_limits.get(provider, {}):
+                del self._rate_limits.model_limits[provider][model]
+            if (
+                provider in self._rate_limits.model_limits
+                and not self._rate_limits.model_limits[provider]
+            ):
+                del self._rate_limits.model_limits[provider]
 
             key = self._get_semaphore_key(provider, model)
             self._semaphores.pop(key, None)
         else:
-            model_limits[provider][model] = limit
+            self._rate_limits.model_limits[provider][model] = limit
 
             key = self._get_semaphore_key(provider, model)
             self._semaphores[key] = asyncio.Semaphore(limit)
@@ -195,19 +176,17 @@ class ModelRateLimiter:
             provider: The provider name
             limit: Max concurrent requests (None or 0 for unlimited)
         """
-        provider_limits = self._rate_limits.setdefault("provider_limits", {})
-
         if limit is None or limit <= 0:
-            provider_limits.pop(provider, None)
+            if provider in self._rate_limits.provider_limits:
+                del self._rate_limits.provider_limits[provider]
         else:
-            provider_limits[provider] = limit
+            self._rate_limits.provider_limits[provider] = limit
 
         self._semaphores.clear()
 
     def reload(self) -> None:
         """Reload rate limits from the config file and update semaphores."""
-        loaded_limits = self._load_rate_limits()
-        self._rate_limits = self._normalize_rate_limits(loaded_limits)
+        self._rate_limits = load_rate_limits()
         self._semaphores.clear()
 
 
@@ -239,3 +218,34 @@ def reset_global_rate_limiter() -> None:
     """
     global _global_rate_limiter
     _global_rate_limiter = None
+
+
+def get_rate_limits_path() -> str:
+    settings_dir = Config.settings_dir(create=True)
+    return os.path.join(settings_dir, "rate_limits.yaml")
+
+
+def load_rate_limits() -> RateLimits:
+    """
+    Load rate limits from the config file.
+
+    Returns empty RateLimits if file doesn't exist or is invalid.
+    """
+    rate_limits_path = get_rate_limits_path()
+    if not os.path.isfile(rate_limits_path):
+        return RateLimits()
+
+    try:
+        with open(rate_limits_path, "r") as f:
+            data = yaml.safe_load(f.read()) or {}
+        return RateLimits(**data)
+    except ValidationError as e:
+        logger.warning(
+            f"Invalid rate limits configuration in {rate_limits_path}: {e}. Using empty rate limits."
+        )
+        return RateLimits()
+    except Exception as e:
+        logger.warning(
+            f"Failed to load rate limits from {rate_limits_path}: {e}. Using empty rate limits."
+        )
+        return RateLimits()
