@@ -1324,7 +1324,7 @@ export interface paths {
         put?: never;
         /**
          * Update Rate Limits
-         * @description Update rate limits configuration and reload the global rate limiter.
+         * @description Update rate limits configuration on the shared rate limiter.
          *
          *     Args:
          *         rate_limits: New rate limits configuration

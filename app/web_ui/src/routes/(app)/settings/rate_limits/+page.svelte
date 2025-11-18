@@ -395,7 +395,7 @@
                     id="{provider}_provider_limit"
                     label="Provider-wide limit"
                     bind:value={provider_inputs[provider]}
-                    placeholder="Unlimited"
+                    placeholder="Default"
                     optional={true}
                     light_label={true}
                     description="Max concurrent requests for all models from this provider. If no model-specific limit is set for the model, this limit will be used."
@@ -433,7 +433,7 @@
                             id="{provider}_{model.id}"
                             label={model.name}
                             bind:value={model_inputs[inputKey]}
-                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
+                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Default"})`}
                             optional={true}
                             light_label={true}
                           />
@@ -473,7 +473,7 @@
                     id="{provider}_provider_limit_embedding"
                     label="Provider-wide limit"
                     bind:value={provider_inputs[provider]}
-                    placeholder="Unlimited"
+                    placeholder="Default"
                     optional={true}
                     light_label={true}
                     description="Max concurrent requests for all models from this provider. If no model-specific limit is set for the model, this limit will be used."
@@ -511,7 +511,7 @@
                             id="{provider}_{model.id}"
                             label={model.name}
                             bind:value={model_inputs[inputKey]}
-                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
+                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Default"})`}
                             optional={true}
                             light_label={true}
                           />
@@ -550,7 +550,7 @@
                     id="{provider}_provider_limit_reranker"
                     label="Provider-wide limit"
                     bind:value={provider_inputs[provider]}
-                    placeholder="Unlimited"
+                    placeholder="Default"
                     optional={true}
                     light_label={true}
                     description="Max concurrent requests for all models from this provider. If no model-specific limit is set for the model, this limit will be used."
@@ -588,7 +588,7 @@
                             id="{provider}_{model.id}"
                             label={model.name}
                             bind:value={model_inputs[inputKey]}
-                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
+                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Default"})`}
                             optional={true}
                             light_label={true}
                           />

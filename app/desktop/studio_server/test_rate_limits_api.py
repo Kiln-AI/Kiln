@@ -6,10 +6,7 @@ import yaml
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.model_rate_limiter import (
-    get_global_rate_limiter,
-    reset_global_rate_limiter,
-)
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter
 
 from app.desktop.studio_server.rate_limits_api import connect_rate_limits
 
@@ -265,10 +262,9 @@ def test_provider_limits_roundtrip(client, temp_home):
     assert get_response.json() == test_rate_limits
 
 
-def test_update_rate_limits_reloads_global_limiter(client, temp_home):
-    """Test that updating rate limits via API reloads the global rate limiter."""
-    reset_global_rate_limiter()
-    limiter = get_global_rate_limiter()
+def test_update_rate_limits_reloads_shared_limiter(client, temp_home):
+    """Test that updating rate limits via API reloads the shared rate limiter."""
+    limiter = ModelRateLimiter.shared()
 
     initial_limits = {
         "provider_limits": {"openai": 5},
@@ -287,5 +283,3 @@ def test_update_rate_limits_reloads_global_limiter(client, temp_home):
 
     assert limiter.get_provider_limit("openai") == 15
     assert limiter.get_limit("openai", "gpt_5") == 20
-
-    reset_global_rate_limiter()

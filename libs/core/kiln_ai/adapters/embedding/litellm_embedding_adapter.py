@@ -18,7 +18,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter
 
 # litellm enforces a limit, documented here:
 # https://docs.litellm.ai/docs/embedding/supported_embedding
@@ -99,7 +99,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
         self.litellm_core_config = litellm_core_config
         self.rate_limiter = (
-            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+            rate_limiter if rate_limiter is not None else ModelRateLimiter.shared()
         )
 
     async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:

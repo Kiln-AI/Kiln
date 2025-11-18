@@ -15,7 +15,7 @@ from kiln_ai.adapters.rerankers.base_reranker import (
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.reranker import RerankerConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter
 
 
 class LitellmRerankerAdapter(BaseReranker):
@@ -28,7 +28,7 @@ class LitellmRerankerAdapter(BaseReranker):
         super().__init__(reranker_config)
         self.litellm_provider_config = litellm_provider_config
         self.rate_limiter = (
-            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+            rate_limiter if rate_limiter is not None else ModelRateLimiter.shared()
         )
 
     async def rerank(

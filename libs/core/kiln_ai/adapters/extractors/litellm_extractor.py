@@ -24,7 +24,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter
 from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class LitellmExtractor(BaseExtractor):
         self.litellm_core_config = litellm_core_config
         self.default_max_parallel_requests = default_max_parallel_requests
         self.rate_limiter = (
-            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+            rate_limiter if rate_limiter is not None else ModelRateLimiter.shared()
         )
 
     def _cache_prefix_for_file_path(self, file_path: Path) -> str:
@@ -203,6 +203,7 @@ class LitellmExtractor(BaseExtractor):
                 )
 
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
+
             async with self.rate_limiter.limit(
                 self.extractor_config.model_provider_name,
                 self.extractor_config.model_name,

@@ -1,12 +1,15 @@
 import asyncio
 import logging
 import os
+import threading
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
+from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
@@ -42,23 +45,133 @@ class ModelRateLimiter:
     - model_limits: Max concurrent requests for specific models (takes precedence)
 
     Usage:
-        limiter = ModelRateLimiter()
+        limiter = ModelRateLimiter.shared()
         async with limiter.limit("openai", "gpt_5"):
             # Make API call here
             result = await call_model()
     """
 
-    def __init__(self, rate_limits: RateLimits | None = None):
+    _shared_instance: "ModelRateLimiter | None" = None
+
+    def __init__(
+        self,
+        rate_limits: RateLimits | None = None,
+        default_provider_limit: int | None = None,
+    ):
         """
         Initialize the rate limiter.
 
         Args:
             rate_limits: Optional RateLimits model. If None, loads from file.
         """
+        self._lock = threading.Lock()
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
         self._rate_limits = (
-            rate_limits if rate_limits is not None else load_rate_limits()
+            rate_limits if rate_limits is not None else self.load_rate_limits()
         )
+        self._default_provider_limits = self._initialize_default_provider_limits(
+            default_provider_limit if default_provider_limit is not None else 10
+        )
+
+    @classmethod
+    def shared(cls) -> "ModelRateLimiter":
+        """
+        Get the shared singleton instance of the rate limiter.
+
+        This ensures all adapters share the same rate limiter and semaphores,
+        properly enforcing global rate limits across the application.
+
+        Returns:
+            ModelRateLimiter: The shared rate limiter instance
+        """
+        if cls._shared_instance is None:
+            print("Creating new ModelRateLimiter instance")
+            cls._shared_instance = cls()
+        else:
+            print("Using existing ModelRateLimiter instance")
+        return cls._shared_instance
+
+    def _initialize_default_provider_limits(
+        self, default_provider_limit: int
+    ) -> Dict[str, int]:
+        """
+        Initialize default provider limits with lazy import to avoid circular import.
+
+        Returns:
+            Dict mapping provider names to default concurrent request limits
+        """
+
+        limits: Dict[str, int] = defaultdict(lambda: default_provider_limit)
+        limits[ModelProviderName.ollama] = 1
+        return limits
+
+    @classmethod
+    def rate_limits_path(cls) -> str:
+        """
+        Get the path to the rate limits configuration file.
+
+        Returns:
+            str: Path to rate_limits.yaml in the settings directory
+        """
+        settings_dir = Config.settings_dir(create=True)
+        return os.path.join(settings_dir, "rate_limits.yaml")
+
+    @classmethod
+    def load_rate_limits(cls) -> RateLimits:
+        """
+        Load rate limits from the config file.
+
+        Returns empty RateLimits if file doesn't exist or is invalid.
+
+        Returns:
+            RateLimits: The loaded rate limits configuration
+        """
+        rate_limits_path = cls.rate_limits_path()
+        if not os.path.isfile(rate_limits_path):
+            return RateLimits()
+
+        try:
+            with open(rate_limits_path, "r") as f:
+                data = yaml.safe_load(f.read()) or {}
+            return RateLimits(**data)
+        except ValidationError as e:
+            logger.warning(
+                f"Invalid rate limits configuration in {rate_limits_path}: {e}. Using empty rate limits."
+            )
+            return RateLimits()
+        except Exception as e:
+            logger.warning(
+                f"Failed to load rate limits from {rate_limits_path}: {e}. Using empty rate limits."
+            )
+            return RateLimits()
+
+    def save_rate_limits(self) -> None:
+        """
+        Save the current rate limits to the config file.
+
+        Thread-safe operation protected by lock.
+        """
+        with self._lock:
+            rate_limits_path = self.rate_limits_path()
+            with open(rate_limits_path, "w") as f:
+                yaml.dump(self._rate_limits.model_dump(), f)
+
+    def update_rate_limits(self, rate_limits: RateLimits) -> None:
+        """
+        Update rate limits and save to file.
+
+        Thread-safe operation that updates internal state, saves to file,
+        and clears semaphores to pick up new limits.
+
+        Args:
+            rate_limits: New rate limits configuration
+        """
+        with self._lock:
+            self._rate_limits = rate_limits
+            rate_limits_path = self.rate_limits_path()
+            with open(rate_limits_path, "w") as f:
+                yaml.dump(self._rate_limits.model_dump(), f)
+            self._semaphores.clear()
 
     def _get_semaphore_key(self, provider: str, model: str | None = None) -> str:
         """
@@ -81,7 +194,6 @@ class ModelRateLimiter:
         If using provider-wide limit, all models from that provider share the same semaphore.
         """
         model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
-
         if model_limit is not None and model_limit > 0:
             key = self._get_semaphore_key(provider, model)
             if key not in self._semaphores:
@@ -89,14 +201,19 @@ class ModelRateLimiter:
             return self._semaphores[key]
 
         provider_limit = self._rate_limits.provider_limits.get(provider)
-
         if provider_limit is not None and provider_limit > 0:
             key = self._get_semaphore_key(provider, None)
             if key not in self._semaphores:
                 self._semaphores[key] = asyncio.Semaphore(provider_limit)
             return self._semaphores[key]
 
-        return None
+        # if no limit is configured, set a default of 10
+        key = self._get_semaphore_key(provider, model)
+        if key not in self._semaphores:
+            self._semaphores[key] = asyncio.Semaphore(
+                self.get_model_specified_max_concurrent_requests(provider, model)
+            )
+        return self._semaphores[key]
 
     @asynccontextmanager
     async def limit(self, provider: str, model: str) -> AsyncIterator[None]:
@@ -164,7 +281,6 @@ class ModelRateLimiter:
             self._semaphores.pop(key, None)
         else:
             self._rate_limits.model_limits[provider][model] = limit
-
             key = self._get_semaphore_key(provider, model)
             self._semaphores[key] = asyncio.Semaphore(limit)
 
@@ -185,67 +301,33 @@ class ModelRateLimiter:
         self._semaphores.clear()
 
     def reload(self) -> None:
-        """Reload rate limits from the config file and update semaphores."""
-        self._rate_limits = load_rate_limits()
-        self._semaphores.clear()
+        """
+        Reload rate limits from the config file and update semaphores.
 
+        Thread-safe operation that ensures consistency during reload.
+        """
+        with self._lock:
+            self._rate_limits = self.load_rate_limits()
+            self._semaphores.clear()
 
-# Global singleton instance
-_global_rate_limiter: ModelRateLimiter | None = None
+    def get_model_specified_max_concurrent_requests(
+        self, provider: str, model: str
+    ) -> int:
+        """
+        Get the model-specified max concurrent requests for a provider/model.
 
+        Returns the default max concurrent requests if no limit is configured.
+        """
+        from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
+        from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
-def get_global_rate_limiter() -> ModelRateLimiter:
-    """
-    Get the global rate limiter instance (singleton).
-
-    This ensures all adapters share the same rate limiter and semaphores,
-    properly enforcing global rate limits across the application.
-
-    Returns:
-        ModelRateLimiter: The global rate limiter instance
-    """
-    global _global_rate_limiter
-    if _global_rate_limiter is None:
-        _global_rate_limiter = ModelRateLimiter()
-    return _global_rate_limiter
-
-
-def reset_global_rate_limiter() -> None:
-    """
-    Reset the global rate limiter instance.
-
-    This is primarily used for testing to ensure a clean state between tests.
-    """
-    global _global_rate_limiter
-    _global_rate_limiter = None
-
-
-def get_rate_limits_path() -> str:
-    settings_dir = Config.settings_dir(create=True)
-    return os.path.join(settings_dir, "rate_limits.yaml")
-
-
-def load_rate_limits() -> RateLimits:
-    """
-    Load rate limits from the config file.
-
-    Returns empty RateLimits if file doesn't exist or is invalid.
-    """
-    rate_limits_path = get_rate_limits_path()
-    if not os.path.isfile(rate_limits_path):
-        return RateLimits()
-
-    try:
-        with open(rate_limits_path, "r") as f:
-            data = yaml.safe_load(f.read()) or {}
-        return RateLimits(**data)
-    except ValidationError as e:
-        logger.warning(
-            f"Invalid rate limits configuration in {rate_limits_path}: {e}. Using empty rate limits."
+        model_provider = built_in_models_from_provider(
+            ModelProviderName(provider), model
         )
-        return RateLimits()
-    except Exception as e:
-        logger.warning(
-            f"Failed to load rate limits from {rate_limits_path}: {e}. Using empty rate limits."
-        )
-        return RateLimits()
+        if (
+            model_provider is not None
+            and model_provider.max_parallel_requests is not None
+        ):
+            return model_provider.max_parallel_requests
+
+        return self._default_provider_limits[provider]

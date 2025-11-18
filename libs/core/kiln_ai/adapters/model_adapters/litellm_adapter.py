@@ -40,7 +40,7 @@ from kiln_ai.tools.base_tool import (
 from kiln_ai.tools.kiln_task_tool import KilnTaskToolResult
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, get_global_rate_limiter
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
@@ -81,7 +81,7 @@ class LiteLlmAdapter(BaseAdapter):
         self._litellm_model_id: str | None = None
         self._cached_available_tools: list[KilnToolInterface] | None = None
         self.rate_limiter = (
-            rate_limiter if rate_limiter is not None else get_global_rate_limiter()
+            rate_limiter if rate_limiter is not None else ModelRateLimiter.shared()
         )
 
         super().__init__(

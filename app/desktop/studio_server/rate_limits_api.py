@@ -1,27 +1,9 @@
 import logging
 
-import yaml
 from fastapi import FastAPI, HTTPException
-from kiln_ai.utils.model_rate_limiter import (
-    RateLimits,
-    get_global_rate_limiter,
-    get_rate_limits_path,
-    load_rate_limits,
-)
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, RateLimits
 
 logger = logging.getLogger(__name__)
-
-
-def save_rate_limits(rate_limits: RateLimits) -> None:
-    """
-    Save rate limits to the config file.
-
-    Args:
-        rate_limits: Rate limits configuration
-    """
-    rate_limits_path = get_rate_limits_path()
-    with open(rate_limits_path, "w") as f:
-        yaml.dump(rate_limits.model_dump(), f)
 
 
 def connect_rate_limits(app: FastAPI):
@@ -29,7 +11,7 @@ def connect_rate_limits(app: FastAPI):
     def read_rate_limits() -> RateLimits:
         """Get the current rate limits configuration."""
         try:
-            return load_rate_limits()
+            return ModelRateLimiter.load_rate_limits()
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -38,7 +20,7 @@ def connect_rate_limits(app: FastAPI):
         rate_limits: RateLimits,
     ) -> RateLimits:
         """
-        Update rate limits configuration and reload the global rate limiter.
+        Update rate limits configuration on the shared rate limiter.
 
         Args:
             rate_limits: New rate limits configuration
@@ -47,8 +29,8 @@ def connect_rate_limits(app: FastAPI):
             The saved rate limits configuration
         """
         try:
-            save_rate_limits(rate_limits)
-            get_global_rate_limiter().reload()
-            return load_rate_limits()
+            # Update the shared singleton (thread-safe, saves to file, clears semaphores)
+            ModelRateLimiter.shared().update_rate_limits(rate_limits)
+            return ModelRateLimiter.load_rate_limits()
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

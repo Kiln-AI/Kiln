@@ -5,20 +5,9 @@ from unittest.mock import patch
 import pytest
 import yaml
 
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.model_rate_limiter import (
-    ModelRateLimiter,
-    RateLimits,
-    reset_global_rate_limiter,
-)
-
-
-@pytest.fixture(autouse=True)
-def reset_rate_limiter():
-    """Reset global rate limiter before and after each test."""
-    reset_global_rate_limiter()
-    yield
-    reset_global_rate_limiter()
+from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, RateLimits
 
 
 @pytest.fixture
@@ -498,3 +487,203 @@ def test_reload_new_format(new_format_rate_limits_file):
     assert limiter.get_provider_limit("openai") == 50
     assert limiter.get_limit("openai", "gpt_5") == 10
     assert limiter.get_provider_limit("anthropic") is None
+
+
+def test_get_model_specified_max_concurrent_requests_with_model_property():
+    """Test that model-specific max_parallel_requests is returned when set."""
+    from unittest.mock import MagicMock
+
+    limiter = ModelRateLimiter(RateLimits())
+
+    # Create mock model providers with specific max_parallel_requests
+    mock_provider_2 = MagicMock()
+    mock_provider_2.max_parallel_requests = 2
+
+    mock_provider_1 = MagicMock()
+    mock_provider_1.max_parallel_requests = 1
+
+    with patch(
+        "kiln_ai.adapters.ml_model_list.built_in_models_from_provider"
+    ) as mock_built_in:
+        # Test model with max_parallel_requests=2
+        mock_built_in.return_value = mock_provider_2
+        assert (
+            limiter.get_model_specified_max_concurrent_requests(
+                "openai", "test_model_2"
+            )
+            == 2
+        )
+
+        # Test model with max_parallel_requests=1
+        mock_built_in.return_value = mock_provider_1
+        assert (
+            limiter.get_model_specified_max_concurrent_requests(
+                ModelProviderName.ollama, "test_model_1"
+            )
+            == 1
+        )
+
+
+def test_get_model_specified_max_concurrent_requests_default():
+    """Test that default limit is returned when model doesn't specify max_parallel_requests."""
+    limiter = ModelRateLimiter(RateLimits(), default_provider_limit=10)
+
+    # Most models don't have max_parallel_requests set, so should use default
+    assert limiter.get_model_specified_max_concurrent_requests("openai", "gpt_4") == 10
+    assert (
+        limiter.get_model_specified_max_concurrent_requests(
+            "anthropic", "claude_opus_4"
+        )
+        == 10
+    )
+
+
+def test_get_model_specified_max_concurrent_requests_ollama_default():
+    """Test that Ollama provider defaults to 1 concurrent request."""
+    limiter = ModelRateLimiter(RateLimits())
+
+    # Ollama should default to 1
+    assert (
+        limiter.get_model_specified_max_concurrent_requests(
+            ModelProviderName.ollama, "llama2"
+        )
+        == 1
+    )
+
+
+def test_get_model_specified_max_concurrent_requests_unknown_model():
+    """Test that unknown models use provider default."""
+    limiter = ModelRateLimiter(RateLimits(), default_provider_limit=10)
+
+    # Unknown model should use provider default
+    assert (
+        limiter.get_model_specified_max_concurrent_requests(
+            "openai", "nonexistent_model"
+        )
+        == 10
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_semaphore_limits_concurrency():
+    """Test that default semaphore actually limits concurrency when no explicit limit is set."""
+    limiter = ModelRateLimiter(RateLimits(), default_provider_limit=10)
+
+    active_count = 0
+    max_concurrent = 0
+
+    async def task():
+        nonlocal active_count, max_concurrent
+        async with limiter.limit("openai", "gpt_4"):
+            active_count += 1
+            max_concurrent = max(max_concurrent, active_count)
+            await asyncio.sleep(0.02)
+            active_count -= 1
+
+    # Run more tasks than default limit
+    await asyncio.gather(*[task() for _ in range(20)])
+
+    # Should be limited to DEFAULT_PROVIDER_LIMIT (10)
+    assert max_concurrent == 10
+
+
+@pytest.mark.asyncio
+async def test_default_semaphore_ollama_limits_to_one():
+    """Test that Ollama defaults to 1 concurrent request when no explicit limit is set."""
+    limiter = ModelRateLimiter(RateLimits())
+
+    active_count = 0
+    max_concurrent = 0
+
+    async def task():
+        nonlocal active_count, max_concurrent
+        async with limiter.limit(ModelProviderName.ollama, "llama2"):
+            active_count += 1
+            max_concurrent = max(max_concurrent, active_count)
+            await asyncio.sleep(0.02)
+            active_count -= 1
+
+    # Run multiple tasks
+    await asyncio.gather(*[task() for _ in range(5)])
+
+    # Should be limited to 1 for Ollama
+    assert max_concurrent == 1
+
+
+@pytest.mark.asyncio
+async def test_default_semaphore_respects_model_max_parallel_requests():
+    """Test that default semaphore uses model's max_parallel_requests when set."""
+    from unittest.mock import MagicMock
+
+    limiter = ModelRateLimiter(RateLimits())
+
+    # Create mock model provider with max_parallel_requests=2
+    mock_provider = MagicMock()
+    mock_provider.max_parallel_requests = 2
+
+    active_count = 0
+    max_concurrent = 0
+
+    async def task():
+        nonlocal active_count, max_concurrent
+        async with limiter.limit("openai", "test_model"):
+            active_count += 1
+            max_concurrent = max(max_concurrent, active_count)
+            await asyncio.sleep(0.02)
+            active_count -= 1
+
+    with patch(
+        "kiln_ai.adapters.ml_model_list.built_in_models_from_provider",
+        return_value=mock_provider,
+    ):
+        # Run multiple tasks - test_model has max_parallel_requests=2
+        await asyncio.gather(*[task() for _ in range(5)])
+
+    # Should be limited to 2 (test_model's max_parallel_requests)
+    assert max_concurrent == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_limit_overrides_default():
+    """Test that explicitly set rate limits override default behavior."""
+    limiter = ModelRateLimiter(RateLimits(model_limits={"openai": {"gpt_4": 3}}))
+
+    active_count = 0
+    max_concurrent = 0
+
+    async def task():
+        nonlocal active_count, max_concurrent
+        async with limiter.limit("openai", "gpt_4"):
+            active_count += 1
+            max_concurrent = max(max_concurrent, active_count)
+            await asyncio.sleep(0.02)
+            active_count -= 1
+
+    # Run more tasks than explicit limit
+    await asyncio.gather(*[task() for _ in range(10)])
+
+    # Should be limited to explicit limit (3), not default (10)
+    assert max_concurrent == 3
+
+
+@pytest.mark.asyncio
+async def test_provider_limit_overrides_default():
+    """Test that provider-wide limits override default behavior."""
+    limiter = ModelRateLimiter(RateLimits(provider_limits={"openai": 5}))
+
+    active_count = 0
+    max_concurrent = 0
+
+    async def task():
+        nonlocal active_count, max_concurrent
+        async with limiter.limit("openai", "gpt_4"):
+            active_count += 1
+            max_concurrent = max(max_concurrent, active_count)
+            await asyncio.sleep(0.02)
+            active_count -= 1
+
+    # Run more tasks than provider limit
+    await asyncio.gather(*[task() for _ in range(15)])
+
+    # Should be limited to provider limit (5), not default (10)
+    assert max_concurrent == 5
