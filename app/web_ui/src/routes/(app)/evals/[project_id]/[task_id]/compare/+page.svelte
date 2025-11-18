@@ -278,12 +278,7 @@
   // Reactively fetch eval templates for sections
   $: {
     comparisonFeatures.forEach((section) => {
-      if (
-        section.eval_id &&
-        section.eval_id !== "kiln_cost_section" &&
-        eval_templates_cache[section.eval_id] === undefined &&
-        !eval_templates_loading[section.eval_id]
-      ) {
+      if (section.eval_id !== "kiln_cost_section") {
         fetch_eval_template(section.eval_id)
       }
     })
