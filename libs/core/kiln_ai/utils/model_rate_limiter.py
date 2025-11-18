@@ -85,10 +85,7 @@ class ModelRateLimiter:
             ModelRateLimiter: The shared rate limiter instance
         """
         if cls._shared_instance is None:
-            print("Creating new ModelRateLimiter instance")
             cls._shared_instance = cls()
-        else:
-            print("Using existing ModelRateLimiter instance")
         return cls._shared_instance
 
     def _initialize_default_provider_limits(
