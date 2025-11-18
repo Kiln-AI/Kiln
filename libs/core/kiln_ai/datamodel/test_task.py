@@ -346,7 +346,6 @@ def test_task_specs_relationship(tmp_path):
 
     spec = Spec(
         name="Test Spec",
-        description="Test spec description",
         definition="The system should behave correctly",
         type=SpecType.desired_behaviour,
         parent=task,
@@ -357,7 +356,6 @@ def test_task_specs_relationship(tmp_path):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].name == "Test Spec"
-    assert specs[0].description == "Test spec description"
     assert specs[0].definition == "The system should behave correctly"
     assert specs[0].type == SpecType.desired_behaviour
 
@@ -371,7 +369,6 @@ def test_task_specs_readonly(tmp_path):
 
     spec = Spec(
         name="Readonly Spec",
-        description="Testing readonly parameter",
         definition="System should handle readonly correctly",
         type=SpecType.toxicity,
         parent=task,

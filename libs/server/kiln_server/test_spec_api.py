@@ -46,12 +46,12 @@ def test_create_spec_success(client, project_and_task):
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "desired_behaviour",
         "priority": "high",
         "status": "not_started",
         "tags": ["test", "important"],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -63,7 +63,6 @@ def test_create_spec_success(client, project_and_task):
     assert response.status_code == 200
     res = response.json()
     assert res["name"] == "Test Spec"
-    assert res["description"] == "This is a test spec"
     assert res["definition"] == "The system should always respond politely"
     assert res["type"] == "desired_behaviour"
     assert res["priority"] == "high"
@@ -80,14 +79,17 @@ def test_create_spec_success(client, project_and_task):
     assert specs[0].status == SpecStatus.not_started
 
 
-def test_create_spec_with_defaults(client, project_and_task):
+def test_create_spec_with_eval_id_none(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
         "name": "Minimal Spec",
-        "description": "Spec with minimal fields",
         "definition": "No toxic content allowed",
         "type": "toxicity",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -110,9 +112,12 @@ def test_create_spec_with_defaults(client, project_and_task):
 def test_create_spec_task_not_found(client):
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "System should behave correctly",
         "type": "desired_behaviour",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     response = client.post(
@@ -126,7 +131,6 @@ def test_get_specs_success(client, project_and_task):
 
     spec1 = Spec(
         name="Spec 1",
-        description="First spec",
         definition="System should respond appropriately",
         type=SpecType.desired_behaviour,
         parent=task,
@@ -135,7 +139,6 @@ def test_get_specs_success(client, project_and_task):
 
     spec2 = Spec(
         name="Spec 2",
-        description="Second spec",
         definition="No toxic responses",
         type=SpecType.toxicity,
         priority=SpecPriority.low,
@@ -178,7 +181,6 @@ def test_get_spec_success(client, project_and_task):
 
     spec = Spec(
         name="Test Spec",
-        description="This is a test spec",
         definition="System should not hallucinate facts",
         type=SpecType.hallucinations,
         priority=SpecPriority.medium,
@@ -197,7 +199,6 @@ def test_get_spec_success(client, project_and_task):
     assert response.status_code == 200
     res = response.json()
     assert res["name"] == "Test Spec"
-    assert res["description"] == "This is a test spec"
     assert res["definition"] == "System should not hallucinate facts"
     assert res["type"] == "hallucinations"
     assert res["priority"] == "medium"
@@ -223,7 +224,6 @@ def test_update_spec_success(client, project_and_task):
 
     spec = Spec(
         name="Original Name",
-        description="Original description",
         definition="Original definition",
         type=SpecType.desired_behaviour,
         priority=SpecPriority.low,
@@ -235,11 +235,11 @@ def test_update_spec_success(client, project_and_task):
 
     update_data = {
         "name": "Updated Name",
-        "description": "Updated description",
         "definition": "Updated definition",
         "priority": "high",
         "status": "complete",
         "tags": ["new_tag", "updated"],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -252,7 +252,6 @@ def test_update_spec_success(client, project_and_task):
     assert response.status_code == 200
     res = response.json()
     assert res["name"] == "Updated Name"
-    assert res["description"] == "Updated description"
     assert res["definition"] == "Updated definition"
     assert res["priority"] == "high"
     assert res["status"] == "complete"
@@ -263,27 +262,35 @@ def test_update_spec_success(client, project_and_task):
     updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
     assert updated_spec is not None
     assert updated_spec.name == "Updated Name"
-    assert updated_spec.description == "Updated description"
     assert updated_spec.definition == "Updated definition"
     assert updated_spec.priority == SpecPriority.high
     assert updated_spec.status == SpecStatus.complete
     assert updated_spec.tags == ["new_tag", "updated"]
 
 
-def test_update_spec_partial(client, project_and_task):
+def test_update_spec_with_eval_id_none(client, project_and_task):
     project, task = project_and_task
 
     spec = Spec(
         name="Original Name",
-        description="Original description",
         definition="Original definition",
         type=SpecType.toxicity,
         priority=SpecPriority.medium,
+        status=SpecStatus.not_started,
+        tags=["old_tag"],
+        eval_id="original_eval_id",
         parent=task,
     )
     spec.save_to_file()
 
-    update_data = {"status": "in_progress"}
+    update_data = {
+        "name": "Original Name",
+        "definition": "Original definition",
+        "priority": "medium",
+        "status": "in_progress",
+        "tags": ["old_tag"],
+        "eval_id": None,
+    }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
@@ -295,17 +302,24 @@ def test_update_spec_partial(client, project_and_task):
     assert response.status_code == 200
     res = response.json()
     assert res["name"] == "Original Name"
-    assert res["description"] == "Original description"
     assert res["definition"] == "Original definition"
     assert res["type"] == "toxicity"
     assert res["priority"] == "medium"
     assert res["status"] == "in_progress"
+    assert res["eval_id"] is None
 
 
 def test_update_spec_not_found(client, project_and_task):
     project, task = project_and_task
 
-    update_data = {"name": "Updated Name"}
+    update_data = {
+        "name": "Updated Name",
+        "definition": "Updated definition",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
+    }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
@@ -323,9 +337,11 @@ def test_create_spec_with_eval_id(client, project_and_task):
 
     spec_data = {
         "name": "Eval Spec",
-        "description": "Spec linked to an eval",
         "definition": "Answers must match reference answers",
         "type": "reference_answer_accuracy",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
         "eval_id": "test_eval_123",
     }
 
@@ -351,9 +367,12 @@ def test_create_spec_missing_name(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "desired_behaviour",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -371,37 +390,16 @@ def test_create_spec_missing_name(client, project_and_task):
     )
 
 
-def test_create_spec_missing_description(client, project_and_task):
-    project, task = project_and_task
-
-    spec_data = {
-        "name": "Test Spec",
-        "definition": "The system should always respond politely",
-        "type": "desired_behaviour",
-    }
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
-    assert any(
-        error["loc"] == ["body", "description"] and error["type"] == "missing"
-        for error in res["source_errors"]
-    )
-
-
 def test_create_spec_missing_definition(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "type": "desired_behaviour",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -424,8 +422,11 @@ def test_create_spec_missing_type(client, project_and_task):
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -443,14 +444,98 @@ def test_create_spec_missing_type(client, project_and_task):
     )
 
 
+def test_create_spec_missing_priority(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "priority"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_missing_status(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+        "priority": "high",
+        "tags": [],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "status"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_missing_tags(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": "desired_behaviour",
+        "priority": "high",
+        "status": "not_started",
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "tags"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
 def test_create_spec_invalid_type_enum(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "invalid_type_value",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -473,10 +558,12 @@ def test_create_spec_invalid_priority_enum(client, project_and_task):
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "desired_behaviour",
         "priority": "ultra_high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -499,10 +586,12 @@ def test_create_spec_invalid_status_enum(client, project_and_task):
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "desired_behaviour",
+        "priority": "high",
         "status": "pending",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -525,9 +614,12 @@ def test_create_spec_invalid_name_type(client, project_and_task):
 
     spec_data = {
         "name": 12345,
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "desired_behaviour",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -547,10 +639,12 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
 
     spec_data = {
         "name": "Test Spec",
-        "description": "This is a test spec",
         "definition": "The system should always respond politely",
         "type": "desired_behaviour",
+        "priority": "high",
+        "status": "not_started",
         "tags": "not_a_list",
+        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -565,19 +659,50 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
     assert any(error["loc"] == ["body", "tags"] for error in res["source_errors"])
 
 
-def test_update_spec_invalid_priority_enum(client, project_and_task):
+def test_update_spec_missing_required_fields(client, project_and_task):
     project, task = project_and_task
 
     spec = Spec(
         name="Test Spec",
-        description="This is a test spec",
         definition="System should behave correctly",
         type=SpecType.desired_behaviour,
         parent=task,
     )
     spec.save_to_file()
 
-    update_data = {"priority": "critical"}
+    update_data = {"name": "Updated Name"}
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+
+
+def test_update_spec_invalid_priority_enum(client, project_and_task):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        type=SpecType.desired_behaviour,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {
+        "name": "Test Spec",
+        "definition": "System should behave correctly",
+        "priority": "critical",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
+    }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
@@ -600,14 +725,20 @@ def test_update_spec_invalid_status_enum(client, project_and_task):
 
     spec = Spec(
         name="Test Spec",
-        description="This is a test spec",
         definition="System should behave correctly",
         type=SpecType.desired_behaviour,
         parent=task,
     )
     spec.save_to_file()
 
-    update_data = {"status": "finished"}
+    update_data = {
+        "name": "Test Spec",
+        "definition": "System should behave correctly",
+        "priority": "high",
+        "status": "finished",
+        "tags": [],
+        "eval_id": None,
+    }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
@@ -630,14 +761,20 @@ def test_update_spec_invalid_name_type(client, project_and_task):
 
     spec = Spec(
         name="Test Spec",
-        description="This is a test spec",
         definition="System should behave correctly",
         type=SpecType.desired_behaviour,
         parent=task,
     )
     spec.save_to_file()
 
-    update_data = {"name": 12345}
+    update_data = {
+        "name": 12345,
+        "definition": "System should behave correctly",
+        "priority": "high",
+        "status": "not_started",
+        "tags": [],
+        "eval_id": None,
+    }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
@@ -657,14 +794,20 @@ def test_update_spec_invalid_tags_type(client, project_and_task):
 
     spec = Spec(
         name="Test Spec",
-        description="This is a test spec",
         definition="System should behave correctly",
         type=SpecType.desired_behaviour,
         parent=task,
     )
     spec.save_to_file()
 
-    update_data = {"tags": {"not": "a list"}}
+    update_data = {
+        "name": "Test Spec",
+        "definition": "System should behave correctly",
+        "priority": "high",
+        "status": "not_started",
+        "tags": {"not": "a list"},
+        "eval_id": None,
+    }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task

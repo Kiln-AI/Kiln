@@ -5180,11 +5180,6 @@ export interface components {
              */
             name: string;
             /**
-             * Description
-             * @description A description for your own reference.
-             */
-            description: string;
-            /**
              * Definition
              * @description A detailed definition of the spec.
              */
@@ -5219,17 +5214,15 @@ export interface components {
         SpecCreateRequest: {
             /** Name */
             name: string;
-            /** Description */
-            description: string;
             /** Definition */
             definition: string;
             type: components["schemas"]["SpecType"];
-            priority?: components["schemas"]["SpecPriority"] | null;
-            status?: components["schemas"]["SpecStatus"] | null;
+            priority: components["schemas"]["SpecPriority"];
+            status: components["schemas"]["SpecStatus"];
             /** Tags */
-            tags?: string[] | null;
+            tags: string[];
             /** Eval Id */
-            eval_id?: string | null;
+            eval_id: string | null;
         };
         /**
          * SpecPriority
@@ -5252,17 +5245,15 @@ export interface components {
         /** SpecUpdateRequest */
         SpecUpdateRequest: {
             /** Name */
-            name?: string | null;
-            /** Description */
-            description?: string | null;
+            name: string;
             /** Definition */
-            definition?: string | null;
-            priority?: components["schemas"]["SpecPriority"] | null;
-            status?: components["schemas"]["SpecStatus"] | null;
+            definition: string;
+            priority: components["schemas"]["SpecPriority"];
+            status: components["schemas"]["SpecStatus"];
             /** Tags */
-            tags?: string[] | null;
+            tags: string[];
             /** Eval Id */
-            eval_id?: string | null;
+            eval_id: string | null;
         };
         /**
          * StructuredOutputMode
