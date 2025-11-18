@@ -44,10 +44,9 @@ class SpecType(str, Enum):
 class SpecStatus(str, Enum):
     """Defines the status of a spec."""
 
+    active = "active"
+    future = "future"
     deprecated = "deprecated"
-    not_started = "not_started"
-    in_progress = "in_progress"
-    complete = "complete"
 
 
 class Spec(KilnParentedModel):
@@ -65,7 +64,7 @@ class Spec(KilnParentedModel):
         description="The priority of the spec.",
     )
     status: SpecStatus = Field(
-        default=SpecStatus.not_started,
+        default=SpecStatus.active,
         description="The status of the spec.",
     )
     tags: List[str] = Field(
@@ -75,6 +74,10 @@ class Spec(KilnParentedModel):
     eval_id: ID_TYPE | None = Field(
         default=None,
         description="The id of the eval to use for this spec. If None, the spec is not associated with an eval.",
+    )
+    is_archived: bool = Field(
+        default=False,
+        description="Whether the spec is archived.",
     )
 
     @model_validator(mode="after")

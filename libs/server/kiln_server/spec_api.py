@@ -29,6 +29,7 @@ class SpecUpsertRequest(BaseModel):
     status: SpecStatus
     tags: List[str]
     eval_id: str | None
+    is_archived: bool
 
 
 def connect_spec_api(app: FastAPI):
@@ -46,6 +47,7 @@ def connect_spec_api(app: FastAPI):
             status=spec_data.status,
             tags=spec_data.tags,
             eval_id=spec_data.eval_id,
+            is_archived=spec_data.is_archived,
         )
         spec.save_to_file()
         return spec
@@ -72,6 +74,7 @@ def connect_spec_api(app: FastAPI):
         spec.status = spec_data.status
         spec.tags = spec_data.tags
         spec.eval_id = spec_data.eval_id
+        spec.is_archived = spec_data.is_archived
 
         spec.save_to_file()
         return spec
