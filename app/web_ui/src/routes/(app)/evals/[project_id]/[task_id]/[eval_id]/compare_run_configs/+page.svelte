@@ -5,7 +5,9 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
-  import FormElement from "$lib/utils/form_element.svelte"
+  import FormElement, {
+    type InlineAction,
+  } from "$lib/utils/form_element.svelte"
   import type {
     EvalConfig,
     ProviderModels,
@@ -27,6 +29,7 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
+  import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import RunEval from "../run_eval.svelte"
@@ -330,11 +333,19 @@
     })
 
     if (configs && configs.length > 0) {
+      const sortedConfigs = [...configs].sort((a, b) => {
+        if (a.id === evaluator?.current_config_id) return -1
+        if (b.id === evaluator?.current_config_id) return 1
+        return 0
+      })
+
       options.push({
         label: "Judges",
-        options: configs.map((config) => ({
+        options: sortedConfigs.map((config) => ({
           value: config.id,
           label: get_eval_config_name(config, $model_info),
+          badge:
+            config.id === evaluator?.current_config_id ? "Default" : undefined,
         })),
       })
     }
@@ -387,6 +398,44 @@
       ]
     }
   }
+
+  let inline_judge_action: InlineAction | null = null
+  let set_current_eval_config_error: KilnError | null = null
+
+  async function handle_set_current_eval_config() {
+    if (!current_eval_config_id) {
+      return
+    }
+    try {
+      set_current_eval_config_error = null
+      evaluator = await set_current_eval_config(
+        $page.params.project_id,
+        $page.params.task_id,
+        $page.params.eval_id,
+        current_eval_config_id,
+      )
+    } catch (error) {
+      set_current_eval_config_error = createKilnError(error)
+    }
+  }
+
+  $: void (current_eval_config_id,
+  evaluator?.current_config_id,
+  update_inline_judge_action())
+
+  function update_inline_judge_action() {
+    if (
+      evaluator?.template === "rag" &&
+      current_eval_config_id !== evaluator?.current_config_id
+    ) {
+      inline_judge_action = {
+        handler: handle_set_current_eval_config,
+        label: "Set as default",
+      }
+    } else {
+      inline_judge_action = null
+    }
+  }
 </script>
 
 <AppPage
@@ -431,7 +480,7 @@
           action_buttons={[
             {
               label: "Create Judge",
-              href: `/evals/${project_id}/${task_id}/${eval_id}/create_eval_config?next_page=compare_run_configs`,
+              href: `/evals/${project_id}/${task_id}/${eval_id}/create_eval_config?next_page=compare_run_configs&save_as_default=true`,
               is_primary: true,
             },
           ]}
@@ -446,15 +495,20 @@
               Select the judge to use when comparing run configurations.
             </div>
             <FormElement
-              hide_label={true}
               id="eval_config_select"
-              label="Judge"
               inputType="fancy_select"
               bind:value={current_eval_config_id}
               fancy_select_options={get_eval_config_select_options(
                 eval_configs,
               )}
+              inline_action={inline_judge_action}
             />
+            {#if set_current_eval_config_error}
+              <div class="text-error text-sm mt-2">
+                {set_current_eval_config_error.getMessage() ||
+                  "An unknown error occurred"}
+              </div>
+            {/if}
             {#if !has_default_eval_config && evaluator?.template !== "rag"}
               <div class="mt-2">
                 <Warning
@@ -466,7 +520,9 @@
             {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
               <div class="mt-2">
                 <Warning
-                  warning_message="The currently selected judge is not the default. You can change the default in 'Compare Judges'."
+                  warning_message={evaluator.template === "rag"
+                    ? "The currently selected judge is not the default. You can change the default with 'Set as default' above."
+                    : "The currently selected judge is not the default. You can change the default in 'Compare Judges'."}
                   warning_color="warning"
                   tight={true}
                 />
