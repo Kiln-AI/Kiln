@@ -2,99 +2,27 @@
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type {
-    DatasetSplit,
-    FinetuneDatasetInfo,
-    FinetuneDatasetTagInfo,
-  } from "$lib/types"
+  import type { FinetuneDatasetInfo } from "$lib/types"
   import OptionList from "$lib/ui/option_list.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { goto } from "$app/navigation"
+  import type { DatasetSplit } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
-  import { sets_equal } from "$lib/utils/collections"
-  import ExistingDatasetButton from "./existing_dataset_button.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
 
   let finetune_dataset_info: FinetuneDatasetInfo | null = null
-  let filtered_tags: FinetuneDatasetTagInfo[] = []
   let loading = true
   let error: KilnError | null = null
-  let valid_datasets: DatasetSplit[] = []
-  let invalid_datasets: DatasetSplit[] = []
 
   export let project_id: string
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
   export let required_tools: string[] = []
-
-  function is_dataset_valid(
-    dataset: DatasetSplit,
-    required_tool_set: Set<string>,
-    info: FinetuneDatasetInfo,
-  ): boolean {
-    const tool_info = info.tool_info_by_name[dataset.name]
-    if (!tool_info) return true
-
-    const dataset_tool_set = new Set(tool_info.tools || [])
-    return (
-      !tool_info.has_tool_mismatch &&
-      sets_equal(required_tool_set, dataset_tool_set)
-    )
-  }
-
-  function has_associated_finetunes(
-    dataset: DatasetSplit,
-    info: FinetuneDatasetInfo,
-  ): boolean {
-    if (!dataset.id) return false
-
-    return info.existing_finetunes.some(
-      (finetune) => finetune.dataset_split_id === dataset.id,
-    )
-  }
-
-  function compute_disabled_datasets(
-    required_tools: string[],
-    info: FinetuneDatasetInfo | null,
-  ): { valid_datasets: DatasetSplit[]; invalid_datasets: DatasetSplit[] } {
-    if (!info) {
-      return { valid_datasets: [], invalid_datasets: [] }
-    }
-
-    const required_tool_set = new Set(required_tools)
-    const valid_datasets: DatasetSplit[] = []
-    const invalid_datasets: DatasetSplit[] = []
-
-    for (const dataset of info.existing_datasets) {
-      const has_finetunes = has_associated_finetunes(dataset, info)
-      const tools_match =
-        !required_tools?.length ||
-        is_dataset_valid(dataset, required_tool_set, info)
-
-      // dataset without finetune is never shown
-      if (!has_finetunes) {
-        continue
-      }
-
-      if (tools_match) {
-        valid_datasets.push(dataset)
-      } else {
-        invalid_datasets.push(dataset)
-      }
-    }
-
-    return { valid_datasets, invalid_datasets }
-  }
-
-  $: ({ valid_datasets, invalid_datasets } = compute_disabled_datasets(
-    required_tools,
-    finetune_dataset_info,
-  ))
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
@@ -132,7 +60,6 @@
         throw new Error("Invalid response from server")
       }
       finetune_dataset_info = finetune_dataset_info_response
-      filtered_tags = finetune_dataset_info_response.finetune_tags
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError("Could not load fine-tune dataset info.", null)
@@ -144,66 +71,24 @@
     }
   }
 
-  async function load_filtered_tags() {
-    try {
-      if (!project_id || !task_id) {
-        return
-      }
-
-      const { data: filtered_tags_response, error: get_error } =
-        await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags",
-          {
-            params: {
-              path: {
-                project_id,
-                task_id,
-              },
-              query: {
-                tool_names: required_tools.length > 0 ? required_tools : null,
-              },
-            },
-          },
-        )
-      if (get_error) {
-        throw get_error
-      }
-      if (filtered_tags_response) {
-        filtered_tags = filtered_tags_response
-      }
-    } catch (e) {
-      console.error("Error loading filtered tags:", e)
-    }
-  }
-
-  $: if (finetune_dataset_info && required_tools) {
-    load_filtered_tags()
-  }
-
   $: tag_select_options = [
     {
       label: "Dataset Tags",
       options:
-        filtered_tags?.map((tag) => ({
+        finetune_dataset_info?.finetune_tags?.map((tag) => ({
           label: tag.tag,
           value: tag.tag,
-          description: `The tag '${tag.tag}' has ${tag.count} samples${required_tools.length > 0 ? " matching the selected tools" : ""}.`,
+          description: `The tag '${tag.tag}' has ${tag.count} samples.`,
         })) || [],
     },
   ]
 
   $: show_existing_dataset_option =
     finetune_dataset_info?.existing_finetunes.length
-  $: show_new_dataset_option = !!finetune_dataset_info
-  $: new_dataset_disabled = filtered_tags.length === 0
-  $: existing_dataset_disabled = valid_datasets.length === 0
+  $: show_new_dataset_option = finetune_dataset_info?.finetune_tags.length
+  $: can_select_dataset =
+    show_existing_dataset_option || show_new_dataset_option
   $: top_options = [
-    {
-      id: "add",
-      name: "Add Fine-Tuning Data",
-      description:
-        "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
-    },
     ...(show_existing_dataset_option
       ? [
           {
@@ -211,7 +96,6 @@
             name: "Reuse Dataset from an Existing Fine-Tune",
             description:
               "When comparing multiple base models, it's best to use exactly the same fine-tuning dataset.",
-            disabled: existing_dataset_disabled,
           },
         ]
       : []),
@@ -222,16 +106,25 @@
             name: "Create a New Fine-Tuning Dataset",
             description:
               "Create a new fine-tuning dataset by selecting a subset of your data.",
-            disabled: new_dataset_disabled,
+          },
+        ]
+      : []),
+    ...(!can_select_dataset
+      ? [
+          {
+            id: "add",
+            name: "Add Fine-Tuning Data",
+            description:
+              "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
           },
         ]
       : []),
   ]
 
-  async function select_top_option(option: string) {
+  function select_top_option(option: string) {
     if (option === "new_dataset") {
-      if (filtered_tags.length === 1) {
-        dataset_tag = filtered_tags[0].tag
+      if (finetune_dataset_info?.finetune_tags.length === 1) {
+        dataset_tag = finetune_dataset_info?.finetune_tags[0].tag
       }
       create_dataset_dialog?.show()
     } else if (option === "add") {
@@ -247,7 +140,7 @@
 
   let new_dataset_split = "train_val"
   let dataset_tag: string | null = null
-  $: selected_dataset_tag_data = filtered_tags.find(
+  $: selected_dataset_tag_data = finetune_dataset_info?.finetune_tags.find(
     (t) => t.tag === dataset_tag,
   )
   let create_dataset_split_error: KilnError | null = null
@@ -326,16 +219,6 @@
     goto(link)
   }
 
-  function finetune_names_from_dataset(dataset: DatasetSplit) {
-    if (!dataset.id || !finetune_dataset_info) {
-      return []
-    }
-
-    return finetune_dataset_info.existing_finetunes
-      .filter((finetune) => finetune.dataset_split_id === dataset.id)
-      .map((finetune) => finetune.name)
-  }
-
   let new_dataset_filter_count: number | undefined = undefined
   $: if (selected_dataset_tag_data) {
     if (filter_to_reasoning_data && filter_to_highly_rated_data) {
@@ -359,19 +242,6 @@
       return `The dataset will only have ${count} samples. We suggest at least 50 samples for fine-tuning.`
     } else {
       return `The dataset will have ${count} samples.`
-    }
-  }
-
-  // If the selected dataset is disabled, clear it
-  // This handels the case where a dataset is selected, user goes back to select more tools and the dataset is no longer valid
-  $: {
-    const selected_dataset_id = selected_dataset?.id
-
-    if (
-      selected_dataset_id &&
-      invalid_datasets.some((dataset) => dataset.id === selected_dataset_id)
-    ) {
-      selected_dataset = null
     }
   }
 </script>
@@ -429,13 +299,12 @@
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
-      {#if new_dataset_disabled || (existing_dataset_disabled && show_existing_dataset_option)}
-        <div class="mt-4 max-w-[500px]">
-          <Warning
-            warning_message="No existing Fine-Tune datasets or Dataset Filter Tag that match your selected tools. Tool-based fine-tuning requires all runs in a dataset to use the exact same tools as your current selection. Consider adding data or adjusting your tool selection."
-            warning_icon="exclaim"
-            warning_color="primary"
-          />
+      {#if can_select_dataset}
+        <div class="pt-4 font-light">
+          or
+          <button class="link font-normal" on:click={show_add_data}
+            >add additional fine-tuning data</button
+          > before you start.
         </div>
       {/if}
     {/if}
@@ -538,16 +407,35 @@
       this fine-tune.
     </div>
     <div class="flex flex-col gap-4 text-sm max-w-[600px]">
-      {#each valid_datasets as dataset}
-        {@const finetune_names = finetune_names_from_dataset(dataset)}
-        <ExistingDatasetButton
-          {dataset}
-          finetuneNames={finetune_names}
-          on:select={({ detail }) => {
-            selected_dataset = detail
-            existing_dataset_dialog?.close()
-          }}
-        />
+      {#each finetune_dataset_info.existing_datasets as dataset}
+        {@const finetunes = finetune_dataset_info.existing_finetunes.filter(
+          (f) => f.dataset_split_id === dataset.id,
+        )}
+        {#if finetunes.length > 0 && dataset.id}
+          <button
+            class="card card-bordered border-base-300 bg-base-200 shadow-md w-full px-4 py-3 indicator grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 overflow-hidden text-left"
+            on:click={() => {
+              selected_dataset = dataset
+              existing_dataset_dialog?.close()
+            }}
+          >
+            <div class="text-xs text-gray-500">Dataset Name</div>
+            <div class="text-medium">{dataset.name}</div>
+            <div class="text-xs text-gray-500">Created</div>
+            <div>{formatDate(dataset.created_at)}</div>
+
+            <div class="text-xs text-gray-500">Dataset Size</div>
+            <div>
+              {Object.keys(dataset.split_contents)
+                .map((split_type) => {
+                  return `${dataset.split_contents[split_type].length} in '${split_type}'`
+                })
+                .join(", ")}
+            </div>
+            <div class="text-xs text-gray-500">Tunes Using Dataset</div>
+            <div>{finetunes.map((f) => f.name).join(", ")}</div>
+          </button>
+        {/if}
       {/each}
     </div>
   {/if}
