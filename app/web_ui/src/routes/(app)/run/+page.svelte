@@ -67,6 +67,7 @@
           run_config_properties:
             run_config_component.run_options_as_run_config_properties(),
           plaintext_input: input_form.get_plaintext_input_data(),
+          // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
           structured_input: input_form.get_structured_input_data(),
           tags: ["manual_run"],
         },

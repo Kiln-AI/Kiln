@@ -37,6 +37,7 @@ function createMockEval(
     output_scores: [],
     favourite: false,
     template_properties,
+    evaluation_data_type: "final_answer",
     model_type: "Eval",
     path: "/test/eval",
     created_at: "2024-01-01T00:00:00Z",

@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { RagConfigWithSubConfigs } from "$lib/types"
+  import type { RagConfigWithSubConfigs, RerankerConfig } from "$lib/types"
   import RunRagControl from "./run_rag_control.svelte"
   import {
     embedding_model_name,
     model_name,
     provider_name_from_id,
+    reranker_name,
     vector_store_name,
   } from "$lib/stores"
   import {
@@ -81,6 +82,26 @@
   function open() {
     goto(`/docs/rag_configs/${project_id}/${rag_config.id}/rag_config`)
   }
+
+  $: reranker_name_with_provider = (
+    reranker_config: RerankerConfig | null,
+  ): string => {
+    if (!reranker_config) {
+      return "None"
+    }
+
+    const name = reranker_name(
+      reranker_config.model_name,
+      reranker_config.model_provider_name,
+    )
+
+    return (
+      name +
+      " (" +
+      provider_name_from_id(reranker_config.model_provider_name) +
+      ")"
+    )
+  }
 </script>
 
 {#if rag_progress && rag_config}
@@ -121,6 +142,9 @@
             Search Index: {vector_store_name(
               rag_config.vector_store_config.store_type,
             ) || "N/A"}
+          </div>
+          <div>
+            Reranker: {reranker_name_with_provider(rag_config.reranker_config)}
           </div>
           <div class="text-xs text-gray-500 flex flex-row flex-wrap gap-2 w-80">
             {#each rag_config.tags || [] as tag}

@@ -103,29 +103,15 @@ class LitellmExtractor(BaseExtractor):
                 f"LitellmExtractor must be initialized with a litellm extractor_type config. Got {extractor_config.extractor_type}"
             )
 
-        prompt_document = extractor_config.prompt_document()
-        if prompt_document is None or prompt_document == "":
-            raise ValueError(
-                "properties.prompt_document is required for LitellmExtractor"
-            )
-        prompt_video = extractor_config.prompt_video()
-        if prompt_video is None or prompt_video == "":
-            raise ValueError("properties.prompt_video is required for LitellmExtractor")
-        prompt_audio = extractor_config.prompt_audio()
-        if prompt_audio is None or prompt_audio == "":
-            raise ValueError("properties.prompt_audio is required for LitellmExtractor")
-        prompt_image = extractor_config.prompt_image()
-        if prompt_image is None or prompt_image == "":
-            raise ValueError("properties.prompt_image is required for LitellmExtractor")
-
         self.filesystem_cache = filesystem_cache
 
         super().__init__(extractor_config)
-        self.prompt_for_kind = {
-            Kind.DOCUMENT: prompt_document,
-            Kind.VIDEO: prompt_video,
-            Kind.AUDIO: prompt_audio,
-            Kind.IMAGE: prompt_image,
+
+        self.prompt_for_kind: dict[Kind, str] = {
+            Kind.DOCUMENT: extractor_config.litellm_properties["prompt_document"],
+            Kind.VIDEO: extractor_config.litellm_properties["prompt_video"],
+            Kind.AUDIO: extractor_config.litellm_properties["prompt_audio"],
+            Kind.IMAGE: extractor_config.litellm_properties["prompt_image"],
         }
 
         self.litellm_core_config = litellm_core_config

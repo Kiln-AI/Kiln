@@ -1,45 +1,96 @@
 import { KilnError } from "../error_handlers"
 
-export type JsonSchema = {
-  type: "object"
-  properties: Record<string, JsonSchemaProperty>
-  required: string[]
-}
+type JSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JSONValue[]
+  | { [key: string]: JSONValue }
 
+// Definition of a JSON schema: https://json-schema.org/
 export type JsonSchemaProperty = {
-  title: string
-  description: string
+  title?: string
+  description?: string
   type: "number" | "string" | "integer" | "boolean" | "array" | "object"
-  items?: JsonSchemaProperty | JsonSchema
+  items?: JsonSchemaProperty // Format for elements of an array, only set for arrays
+  properties?: Record<string, JsonSchemaProperty> // only set for objects
+  required?: string[] // only set for objects
+  additionalProperties?: boolean // only set for objects
+  enum?: JSONValue[] // only set for enums
 }
 
-// We have our own model type.
+export type SchemaModelType =
+  | "number"
+  | "string"
+  | "integer"
+  | "boolean"
+  | "array"
+  | "object"
+
+// We have our own model type for using in Svelte.
 // Actual JSON schema is too hard to work with in Svelte. It uses dicts, so order would keep moving around as keys change.
 export type SchemaModelProperty = {
   id: string
   title: string
-  description: string
-  type: "number" | "string" | "integer" | "boolean" | "array" | "object"
+  description?: string
+  type: SchemaModelType
   required: boolean
+  items?: SchemaModelProperty // only set for arrays
+  properties?: Array<SchemaModelProperty> // only set for objects
+  additionalProperties?: boolean // only set for objects
+  enum?: JSONValue[] // only set for enums
 }
 
-export type SchemaModel = {
-  properties: SchemaModelProperty[]
+// A stricter type, for when we only want to deal with typed objects.
+export type SchemaModelTypedObject = SchemaModelProperty & {
+  type: "object"
+  properties: Array<SchemaModelProperty>
+  // Some providers including OpenAI require additionalProperties to be false, so we enforce it here.
+  additionalProperties: false
 }
 
-export function model_from_schema(s: JsonSchema): SchemaModel {
-  return {
-    properties: Object.entries(s.properties).map(([id, options]) => ({
-      id,
-      title: options.title || id,
-      description: options.description,
-      type: options.type,
-      required: !!s.required.includes(id),
-    })),
+export function model_from_schema(s: JsonSchemaProperty): SchemaModelProperty {
+  let schema = build_schema_model_property("root", s, s.required ?? [])
+  // Root is always required even though spec doesn't say so
+  schema.required = true
+  return schema
+}
+
+function build_schema_model_property(
+  id: string,
+  options: JsonSchemaProperty,
+  required: string[],
+): SchemaModelProperty {
+  const result: SchemaModelProperty = {
+    id,
+    title: options.title || id,
+    description: options.description,
+    type: options.type,
+    required: !!required.includes(id),
   }
+
+  if (options.type === "array" && options.items) {
+    result.items = build_schema_model_property("items", options.items, [])
+  }
+
+  if (options.type === "object" && options.properties) {
+    const nestedRequired = options.required ?? []
+    result.properties = Object.entries(options.properties).map(
+      ([nestedId, nestedOptions]) =>
+        build_schema_model_property(nestedId, nestedOptions, nestedRequired),
+    )
+  }
+  if (options.additionalProperties !== undefined) {
+    result.additionalProperties = options.additionalProperties
+  }
+  if (options.enum) {
+    result.enum = options.enum
+  }
+  return result
 }
 
-export function model_from_schema_string(s: string): SchemaModel {
+export function model_from_schema_string(s: string): SchemaModelProperty {
   return model_from_schema(JSON.parse(s))
 }
 
@@ -52,59 +103,134 @@ export function string_to_json_key(s: string): string {
 }
 
 export function schema_from_model(
-  m: SchemaModel,
+  m: SchemaModelProperty,
   creating: boolean,
-): JsonSchema {
-  const properties: Record<string, JsonSchemaProperty> = {}
-  const required: string[] = []
-  for (let i = 0; i < m.properties.length; i++) {
-    const title = m.properties[i].title
-    if (!title) {
-      throw new KilnError("Property is empty. Please provide a name.", null)
+): JsonSchemaProperty {
+  let result: JsonSchemaProperty = {
+    type: m.type,
+  }
+
+  if (m.title && m.title !== "root") {
+    result.title = m.title
+  }
+  if (m.description) {
+    result.description = m.description
+  }
+
+  if (m.type === "object" && m.properties) {
+    const properties: Record<string, JsonSchemaProperty> = {}
+    const required: string[] = []
+    for (let i = 0; i < m.properties.length; i++) {
+      const prop = m.properties[i]
+      const key = validate_and_get_key(prop.title, prop.id, creating)
+      properties[key] = build_json_schema_property(prop, creating)
+      if (prop.required) {
+        required.push(key)
+      }
     }
-    const safe_name = string_to_json_key(m.properties[i].title)
-    if (!safe_name) {
-      throw new KilnError(
-        "Property name only contains special characters. Must be alphanumeric. Provided name with issues: " +
-          m.properties[i].title,
-        null,
+    result.properties = properties
+    result.required = required
+    result.additionalProperties = m.additionalProperties
+  }
+  if (m.type === "array" && m.items) {
+    result.items = build_json_schema_property(m.items, creating)
+  }
+
+  if (m.enum) {
+    result.enum = m.enum
+  }
+
+  return result
+}
+
+function validate_and_get_key(
+  title: string,
+  id: string,
+  creating: boolean,
+): string {
+  if (!title) {
+    throw new KilnError("Property is empty. Please provide a name.", null)
+  }
+  const safe_name = string_to_json_key(title)
+  if (!safe_name) {
+    throw new KilnError(
+      "Property name only contains special characters. Must be alphanumeric. Provided name with issues: " +
+        title,
+      null,
+    )
+  }
+  // When creating a new model, we want to infer the id from the title.
+  // When using an existing model, we want to use the id provided, even if title has changed.
+  return creating ? safe_name : id || safe_name
+}
+
+function build_json_schema_property(
+  prop: SchemaModelProperty,
+  creating: boolean,
+): JsonSchemaProperty {
+  const result: JsonSchemaProperty = {
+    title: prop.title,
+    type: prop.type,
+    description: prop.description,
+  }
+
+  if (prop.type === "array" && prop.items) {
+    result.items = build_json_schema_property(prop.items, creating)
+  }
+
+  if (prop.type === "object" && prop.properties) {
+    result.properties = {}
+    result.required = []
+    for (const nestedProp of prop.properties) {
+      const key = validate_and_get_key(
+        nestedProp.title,
+        nestedProp.id,
+        creating,
       )
-    }
-    // When creating a new model, we want to infer the id from the title.
-    // When using an existing model, we want to use the id provided, even if title has changed.
-    const key = creating ? safe_name : m.properties[i].id || safe_name
-    properties[key] = {
-      title: m.properties[i].title,
-      type: m.properties[i].type,
-      description: m.properties[i].description,
-    }
-    if (m.properties[i].required) {
-      required.push(key)
+      result.properties[key] = build_json_schema_property(nestedProp, creating)
+      if (nestedProp.required) {
+        result.required.push(key)
+      }
     }
   }
+
+  if (prop.type === "object") {
+    result.additionalProperties = prop.additionalProperties
+  }
+
+  if (prop.enum) {
+    result.enum = prop.enum
+  }
+
+  return result
+}
+
+export function empty_schema_model(): SchemaModelProperty {
   return {
     type: "object",
-    properties: properties,
-    required: required,
-  }
-}
-
-export function empty_schema_model(): SchemaModel {
-  return {
+    id: "root",
+    title: "root",
+    required: true,
     properties: [],
+    additionalProperties: true,
   }
 }
 
-export const empty_schema: JsonSchema = schema_from_model(
+export const empty_schema: JsonSchemaProperty = schema_from_model(
   empty_schema_model(),
   true,
 )
 
-export function example_schema_model(): SchemaModel {
+export function example_schema_model(): SchemaModelTypedObject {
   return {
+    id: "",
+    title: "",
+    type: "object",
+    required: true,
+    additionalProperties: false,
     properties: [
-      // @ts-expect-error we're not using the id, because we want it to be generated from the title
       {
+        id: "",
         title: "Example Property",
         description: "Replace this with your own property",
         type: "string",
@@ -112,99 +238,4 @@ export function example_schema_model(): SchemaModel {
       },
     ],
   }
-}
-
-export function typed_json_from_schema_model(
-  m: SchemaModel,
-  data: Record<string, string>,
-): Record<string, unknown> {
-  const parsed_data: Record<string, unknown> = {}
-  const errors: string[] = []
-  for (const [prop_id, prop_value] of Object.entries(data)) {
-    const property = m.properties.find((p) => p.id === prop_id)
-    if (!property) {
-      throw new KilnError(
-        "Property not allowed in JSON schema: " + prop_id,
-        null,
-      )
-    }
-    if (property.type === "string") {
-      parsed_data[prop_id] = prop_value
-    } else if (prop_value === "") {
-      // JS parsing is too flexible. Empty string is not always an error.
-      errors.push("Empty string provided for non-string property: " + prop_id)
-    } else if (property.type === "number") {
-      parsed_data[prop_id] = Number(prop_value)
-    } else if (property.type === "boolean") {
-      if (prop_value !== "true" && prop_value !== "false") {
-        errors.push("Boolean property must be 'true' or 'false': " + prop_id)
-      }
-      parsed_data[prop_id] = prop_value === "true"
-    } else if (property.type === "integer") {
-      const parsedValue = Number(prop_value)
-      if (!Number.isInteger(parsedValue)) {
-        errors.push(
-          `Property ${prop_id} must be an integer, got: ${prop_value}`,
-        )
-      }
-      parsed_data[prop_id] = parsedValue
-    } else if (property.type === "array") {
-      try {
-        const parsed_value = JSON.parse(prop_value)
-        if (!Array.isArray(parsed_value)) {
-          errors.push(
-            `Property ${prop_id} must be an array, got: ${prop_value}`,
-          )
-        }
-        parsed_data[prop_id] = parsed_value
-      } catch (e) {
-        errors.push(
-          `Property ${prop_id} must be a valid JSON array, got: ${prop_value}`,
-        )
-      }
-    } else if (property.type === "object") {
-      try {
-        const parsed_value = JSON.parse(prop_value)
-        // Check if it's an object but not an array, null, or other primitive
-        if (
-          typeof parsed_value !== "object" ||
-          parsed_value === null ||
-          Array.isArray(parsed_value)
-        ) {
-          errors.push(
-            `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
-          )
-        }
-        parsed_data[prop_id] = parsed_value
-      } catch (e) {
-        errors.push(
-          `Property ${prop_id} must be a valid JSON object, got: ${prop_value}`,
-        )
-      }
-    } else {
-      errors.push(
-        "Unsupported property type: " +
-          property.type +
-          "for property " +
-          property.id +
-          ". This may be supported by the python framework, but is not yet supported in the UI.",
-      )
-    }
-  }
-  for (const model_prop of m.properties) {
-    if (
-      model_prop.required &&
-      (parsed_data[model_prop.id] === undefined ||
-        parsed_data[model_prop.id] === "")
-    ) {
-      errors.push("Required property not provided: " + model_prop.id)
-    }
-  }
-  if (errors.length > 0) {
-    throw new KilnError(
-      "The data did not match the required JSON schema.",
-      errors,
-    )
-  }
-  return parsed_data
 }

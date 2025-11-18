@@ -12,6 +12,7 @@
   export let empty_state_link: string | null = null
   export let multi_select: boolean = false
   export let disabled: boolean = false
+  export let error_outline: boolean = false
 
   // Add this variable to track scrollability
   let isMenuScrollable = false
@@ -106,13 +107,19 @@
       // Update selected, which is what we expose outside the component
       selected = selected_values
 
-      // Note: we don't close the dropdown for multi-select
+      // Don't close the dropdown for multi select
     } else {
       selected = option
 
       // Delay hiding the dropdown to ensure the click event is fully processed
       setTimeout(() => {
         listVisible = false
+        setTimeout(() => {
+          // Return focus to the main select element so keyboard nav still works
+          if (selectedElement) {
+            selectedElement.focus()
+          }
+        }, 0)
       }, 0)
     }
   }
@@ -316,6 +323,42 @@
     }
   }
 
+  function getFlatOptions() {
+    return filteredOptions.flatMap((group) => group.options)
+  }
+
+  function findNextEnabledOptionIndex(
+    currentIndex: number,
+    flatOptions: Array<{ disabled?: boolean }>,
+  ): number {
+    const originalIndex = currentIndex
+    let nextIndex = currentIndex + 1
+    while (nextIndex < flatOptions.length && flatOptions[nextIndex].disabled) {
+      nextIndex++
+    }
+    // If we couldn't find a next enabled option, stay at the original index
+    if (nextIndex >= flatOptions.length) {
+      return originalIndex
+    }
+    return nextIndex
+  }
+
+  function findPreviousEnabledOptionIndex(
+    currentIndex: number,
+    flatOptions: Array<{ disabled?: boolean }>,
+  ): number {
+    const originalIndex = currentIndex
+    let prevIndex = currentIndex - 1
+    while (prevIndex >= 0 && flatOptions[prevIndex].disabled) {
+      prevIndex--
+    }
+    // If we couldn't find a previous enabled option, stay at the original index
+    if (prevIndex < 0) {
+      return originalIndex
+    }
+    return prevIndex
+  }
+
   // Handle clear search
   function clearSearch() {
     searchText = ""
@@ -376,7 +419,7 @@
   }
 
   // Handle click outside to close dropdown
-  function handleDocumentClick(event: MouseEvent) {
+  function handleCloseElementClick(event: Event) {
     if (
       listVisible &&
       selectedElement &&
@@ -384,16 +427,29 @@
       dropdownElement &&
       !dropdownElement.contains(event.target as Node)
     ) {
+      event.preventDefault()
       listVisible = false
     }
   }
 
+  // The "click away to close" element. Document unless a modal is open.
+  function getClickToCloseElement(): Document | Element {
+    const topModal = [...document.querySelectorAll("dialog[open]")].pop()
+    return topModal ? topModal : document
+  }
+
+  let target_close_element: Document | Element | null = null
   $: if (mounted) {
     if (listVisible) {
-      document.addEventListener("click", handleDocumentClick)
+      // Save the element we're adding event listeners to so we can remove them later
+      target_close_element = getClickToCloseElement()
+      target_close_element.addEventListener("click", handleCloseElementClick)
       document.addEventListener("keydown", handleKeyInput)
     } else {
-      document.removeEventListener("click", handleDocumentClick)
+      target_close_element?.removeEventListener(
+        "click",
+        handleCloseElementClick,
+      )
       document.removeEventListener("keydown", handleKeyInput)
     }
   }
@@ -436,6 +492,58 @@
     )
     return selectedOption ? selectedOption.label : empty_label
   }
+
+  function containerKeyDown(event: KeyboardEvent) {
+    if (disabled) {
+      return
+    }
+    const key_is_alpha_numeric = /^[a-zA-Z0-9]$/.test(event.key)
+    if (
+      !listVisible &&
+      (event.key === "ArrowDown" ||
+        event.key === "ArrowUp" ||
+        event.key === "Enter" ||
+        key_is_alpha_numeric)
+    ) {
+      event.preventDefault()
+      listVisible = true
+      focusedIndex = 0
+      // Typing should start a search
+      if (key_is_alpha_numeric) {
+        searchText = event.key
+        isSearching = true
+        focusedIndex = 0
+        // Focus the search input after it's rendered
+        setTimeout(() => {
+          if (searchInputElement) {
+            searchInputElement.focus()
+          }
+        }, 0)
+      }
+      return
+    }
+    if (event.key === "Escape") {
+      event.preventDefault()
+      listVisible = false
+      return
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      const flatOptions = getFlatOptions()
+      focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
+      scrollToFocusedIndex()
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      const flatOptions = getFlatOptions()
+      focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
+      scrollToFocusedIndex()
+    } else if (event.key === "Enter") {
+      const flatOptions = getFlatOptions()
+      if (flatOptions[focusedIndex]) {
+        selectOption(flatOptions[focusedIndex].value)
+      }
+    }
+  }
 </script>
 
 <div class="dropdown w-full relative">
@@ -444,7 +552,9 @@
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
       ? 'focus:ring-2 focus:ring-offset-2 focus:ring-base-300'
-      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
+      : ''} {disabled ? 'opacity-50 cursor-not-allowed' : ''} {error_outline
+      ? 'border-error'
+      : ''}"
     bind:this={selectedElement}
     on:click={() => {
       if (!disabled) {
@@ -465,43 +575,7 @@
         }
       }, 0)
     }}
-    on:keydown={(event) => {
-      if (disabled) {
-        return
-      }
-      if (
-        !listVisible &&
-        (event.key === "ArrowDown" ||
-          event.key === "ArrowUp" ||
-          event.key === "Enter")
-      ) {
-        event.preventDefault()
-        listVisible = true
-        focusedIndex = 0
-        return
-      }
-      if (event.key === "Escape") {
-        event.preventDefault()
-        listVisible = false
-        return
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault()
-        focusedIndex = Math.min(
-          focusedIndex + 1,
-          filteredOptions.flatMap((group) => group.options).length - 1,
-        )
-        scrollToFocusedIndex()
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault()
-        focusedIndex = Math.max(focusedIndex - 1, 0)
-        scrollToFocusedIndex()
-      } else if (event.key === "Enter") {
-        selectOption(
-          filteredOptions.flatMap((group) => group.options)[focusedIndex].value,
-        )
-      }
-    }}
+    on:keydown={containerKeyDown}
   >
     <span class="truncate">
       {selectedLabel(selected, selected_values, options)}
@@ -535,22 +609,25 @@
                 clearSearch()
               } else if (event.key === "ArrowDown") {
                 event.preventDefault()
-                focusedIndex = Math.min(
-                  focusedIndex + 1,
-                  filteredOptions.flatMap((group) => group.options).length - 1,
+                const flatOptions = getFlatOptions()
+                focusedIndex = findNextEnabledOptionIndex(
+                  focusedIndex,
+                  flatOptions,
                 )
                 scrollToFocusedIndex()
               } else if (event.key === "ArrowUp") {
                 event.preventDefault()
-                focusedIndex = Math.max(focusedIndex - 1, 0)
+                const flatOptions = getFlatOptions()
+                focusedIndex = findPreviousEnabledOptionIndex(
+                  focusedIndex,
+                  flatOptions,
+                )
                 scrollToFocusedIndex()
               } else if (event.key === "Enter") {
                 event.preventDefault()
-                const flatFiltered = filteredOptions.flatMap(
-                  (group) => group.options,
-                )
-                if (flatFiltered[focusedIndex]) {
-                  selectOption(flatFiltered[focusedIndex].value)
+                const flatOptions = getFlatOptions()
+                if (flatOptions[focusedIndex]) {
+                  selectOption(flatOptions[focusedIndex].value)
                 }
               }
             }}
@@ -641,14 +718,21 @@
                   : 'hover:bg-transparent'} {item.disabled
                   ? 'opacity-50 cursor-not-allowed'
                   : ''}"
+                disabled={item.disabled}
                 on:mousedown={(event) => {
+                  if (item.disabled) {
+                    event.preventDefault()
+                    return
+                  }
                   event.stopPropagation()
                   if (!item.disabled) {
                     selectOption(item.value)
                   }
                 }}
                 on:mouseenter={() => {
-                  focusedIndex = overallIndex
+                  if (!item.disabled) {
+                    focusedIndex = overallIndex
+                  }
                 }}
               >
                 <div class="flex flex-row gap-3 items-center flex-1">
@@ -657,6 +741,7 @@
                       type="checkbox"
                       class="checkbox checkbox-sm no-animation"
                       checked={selected_values.includes(item.value)}
+                      disabled={item.disabled}
                     />
                   {/if}
                   <div class="flex-grow flex flex-col text-left gap-[1px]">

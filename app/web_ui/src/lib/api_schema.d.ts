@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Ping */
+        /**
+         * Ping
+         * @description Ping the server 🏓
+         */
         get: operations["ping_ping_get"];
         put?: never;
         post?: never;
@@ -420,6 +423,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Extractions For Extractor Config
+         * @description Return mapping of document id to list of extractions for the given extractor config id.
+         */
+        get: operations["get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/tags": {
         parameters: {
             query?: never;
@@ -747,6 +770,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_reranker_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Reranker Config */
+        post: operations["create_reranker_config_api_projects__project_id__create_reranker_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/reranker_configs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reranker Configs */
+        get: operations["get_reranker_configs_api_projects__project_id__reranker_configs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/embedding_configs/{embedding_config_id}": {
         parameters: {
             query?: never;
@@ -904,6 +961,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/check_library_state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Library State */
+        get: operations["check_library_state_api_projects__project_id__check_library_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ephemeral Split Document
+         * @description Return chunks for a document extraction using FixedWindowChunker without persisting.
+         *
+         *     If chunk_size is None, return a single chunk with the full extraction output.
+         *     chunk_overlap defaults to 0 when not provided.
+         */
+        post: operations["ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -964,6 +1061,40 @@ export interface paths {
         };
         /** Get Available Embedding Models */
         get: operations["get_available_embedding_models_api_available_embedding_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/reranker_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Providers Reranker Models */
+        get: operations["get_providers_reranker_models_api_providers_reranker_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/available_reranker_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Available Reranker Models */
+        get: operations["get_available_reranker_models_api_available_reranker_models_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1243,6 +1374,45 @@ export interface paths {
         put?: never;
         /** Generate Sample */
         post: operations["generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_qna": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Qna Pairs */
+        post: operations["generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Qna Pair
+         * @description Save a single QnA pair as a TaskRun. We store the task's system prompt
+         *     as the system message, the query as the user message, and the answer
+         *     as the assistant message in the trace. The output is the answer.
+         */
+        post: operations["save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1902,6 +2072,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tool Definition
+         * @description Get the actual OpenAI tool definition for a specific tool ID.
+         *
+         *     This returns the real function name and parameters that would be used
+         *     in OpenAI function calls, not the display names from ToolSetApiDescription.
+         *
+         *     Args:
+         *         project_id: The project ID
+         *         task_id: The task ID for tools that require task context
+         *         tool_id: The tool ID to get the definition for
+         */
+        get: operations["get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2268,6 +2466,14 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
+        /** CohereCompatibleProperties */
+        CohereCompatibleProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "cohere_compatible";
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -2300,7 +2506,7 @@ export interface components {
             /** @description The type of the chunker */
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
-            properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
         };
         /**
          * CreateDatasetSplitRequest
@@ -2359,11 +2565,12 @@ export interface components {
             /** Eval Set Filter Id */
             eval_set_filter_id: string;
             /** Eval Configs Filter Id */
-            eval_configs_filter_id: string;
+            eval_configs_filter_id: string | null;
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
             };
+            evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -2391,12 +2598,8 @@ export interface components {
              * @description The mimetypes to pass through to the extractor
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
-            /** Properties */
-            properties?: {
-                [key: string]: string | number | boolean | {
-                    [key: string]: string;
-                } | null;
-            };
+            /** @description The properties of the extractor config, specific to the selected extractor_type. */
+            properties: components["schemas"]["LitellmExtractorConfigProperties"];
         };
         /**
          * CreateFinetuneRequest
@@ -2473,10 +2676,47 @@ export interface components {
              */
             vector_store_config_id: string | null;
             /**
+             * Reranker Config Id
+             * @description The reranker config to use for the RAG workflow.
+             */
+            reranker_config_id?: string | null;
+            /**
              * Tags
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+        };
+        /** CreateRerankerConfigRequest */
+        CreateRerankerConfigRequest: {
+            /**
+             * Name
+             * @description A name for this entity.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description The description of the reranker config
+             */
+            description?: string | null;
+            /**
+             * Top N
+             * @description Number of results to return from the reranker
+             */
+            top_n: number;
+            /** @description The name of the model provider to use for the reranker config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Name
+             * @description The name of the model to use for the reranker config.
+             */
+            model_name: string;
+            /**
+             * @description The properties of the reranker config.
+             * @default {
+             *       "type": "cohere_compatible"
+             *     }
+             */
+            properties: components["schemas"]["CohereCompatibleProperties"];
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -2538,6 +2778,38 @@ export interface components {
             existing_topics?: string[] | null;
             /** @description The run config properties to use for topic generation */
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /** DataGenQnaApiInput */
+        DataGenQnaApiInput: {
+            /**
+             * Document Id
+             * @description Document ID for Q&A generation
+             */
+            document_id: string;
+            /**
+             * Part Text
+             * @description Part text for Q&A generation
+             * @default []
+             */
+            part_text: string[];
+            /**
+             * Num Samples
+             * @description Number of Q&A pairs to generate for this part
+             * @default 10
+             */
+            num_samples: number;
+            /** @description The run config properties to use for the output */
+            run_config_properties: components["schemas"]["RunConfigProperties"];
+            /**
+             * Guidance
+             * @description Optional custom guidance for generation
+             */
+            guidance?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to the sample
+             */
+            tags?: string[] | null;
         };
         /** DataGenSampleApiInput */
         DataGenSampleApiInput: {
@@ -2813,6 +3085,14 @@ export interface components {
             /** Friendly Name */
             readonly friendly_name: string;
         };
+        /** DocumentLibraryState */
+        DocumentLibraryState: {
+            /**
+             * Is Empty
+             * @description Whether the library is empty
+             */
+            is_empty: boolean;
+        };
         /** EmbeddingConfig */
         EmbeddingConfig: {
             /**
@@ -2873,7 +3153,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505";
         /** EmbeddingProperties */
         EmbeddingProperties: {
             /** Dimensions */
@@ -2887,6 +3167,31 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
+        };
+        /** EphemeralSplitChunk */
+        EphemeralSplitChunk: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** EphemeralSplitRequest */
+        EphemeralSplitRequest: {
+            /**
+             * Chunk Size
+             * @description The size of each chunk in tokens. If None, return a single chunk with the full extraction output.
+             */
+            chunk_size?: number | null;
+            /**
+             * Chunk Overlap
+             * @description The overlap between chunks in tokens. If None, use the default overlap for the chunker.
+             */
+            chunk_overlap?: number | null;
+        };
+        /** EphemeralSplitResponse */
+        EphemeralSplitResponse: {
+            /** Chunks */
+            chunks: components["schemas"]["EphemeralSplitChunk"][];
         };
         /** Eval */
         Eval: {
@@ -2932,7 +3237,7 @@ export interface components {
              * Eval Configs Filter Id
              * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
              */
-            eval_configs_filter_id: string;
+            eval_configs_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -2952,6 +3257,11 @@ export interface components {
             template_properties: {
                 [key: string]: string | number | boolean;
             };
+            /**
+             * @description The output of the task run to evaluate. Can be final answer or full trace.
+             * @default final_answer
+             */
+            evaluation_data_type: components["schemas"]["EvalDataType"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3046,6 +3356,11 @@ export interface components {
          * @enum {string}
          */
         EvalConfigType: "g_eval" | "llm_as_judge";
+        /**
+         * EvalDataType
+         * @enum {string}
+         */
+        EvalDataType: "final_answer" | "full_trace" | "reference_answer";
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -3149,12 +3464,22 @@ export interface components {
              */
             output: string;
             /**
+             * Reference Answer
+             * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
+             */
+            reference_answer?: string | null;
+            /**
              * Intermediate Outputs
              * @description The intermediate outputs of the task (example, eval thinking).
              */
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output.
+             */
+            task_run_trace?: string | null;
             /**
              * Scores
              * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).
@@ -3180,7 +3505,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak";
+        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -3364,11 +3689,7 @@ export interface components {
              * Properties
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
-            properties?: {
-                [key: string]: string | number | boolean | {
-                    [key: string]: string;
-                } | null;
-            };
+            properties: components["schemas"]["LitellmExtractorConfigProperties"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -3652,10 +3973,33 @@ export interface components {
         };
         /** FixedWindowChunkerProperties */
         FixedWindowChunkerProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            chunker_type: "fixed_window";
             /** Chunk Overlap */
             chunk_overlap: number;
             /** Chunk Size */
             chunk_size: number;
+        };
+        /** FixedWindowChunkerPropertiesPublic */
+        FixedWindowChunkerPropertiesPublic: {
+            /**
+             * @description The type of the chunker (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            chunker_type: "fixed_window";
+            /**
+             * Chunk Size
+             * @description The chunk size to use for the chunker.
+             */
+            chunk_size: number;
+            /**
+             * Chunk Overlap
+             * @description The chunk overlap to use for the chunker.
+             */
+            chunk_overlap: number;
         };
         /** Function */
         Function: {
@@ -3895,6 +4239,22 @@ export interface components {
              * @description The number of results to return from the vector store.
              */
             similarity_top_k: number;
+        };
+        /** LitellmExtractorConfigProperties */
+        LitellmExtractorConfigProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            extractor_type: "litellm";
+            /** Prompt Document */
+            prompt_document: string;
+            /** Prompt Image */
+            prompt_image: string;
+            /** Prompt Video */
+            prompt_video: string;
+            /** Prompt Audio */
+            prompt_audio: string;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -4257,6 +4617,13 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
         };
+        /** ProviderRerankerModels */
+        ProviderRerankerModels: {
+            /** Models */
+            models: {
+                [key: string]: components["schemas"]["ProviderModel"];
+            };
+        };
         /** RagConfig */
         RagConfig: {
             /**
@@ -4322,6 +4689,11 @@ export interface components {
              */
             vector_store_config_id: string | null;
             /**
+             * Reranker Config Id
+             * @description The ID of the reranker config used to rerank the documents. If None, no reranking will be performed.
+             */
+            reranker_config_id?: string | null;
+            /**
              * Tags
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
@@ -4354,6 +4726,7 @@ export interface components {
             chunker_config: components["schemas"]["ChunkerConfig"];
             embedding_config: components["schemas"]["EmbeddingConfig"];
             vector_store_config: components["schemas"]["VectorStoreConfig"];
+            reranker_config: components["schemas"]["RerankerConfig"] | null;
             /** Tags */
             tags: string[] | null;
         };
@@ -4506,6 +4879,73 @@ export interface components {
             /** @description The type of rating */
             type: components["schemas"]["TaskOutputRatingType"];
         };
+        /** RerankerConfig */
+        RerankerConfig: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description A name for your own reference to identify the reranker config.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description for your own reference.
+             */
+            description?: string | null;
+            /**
+             * Top N
+             * @description The number of results to return from the reranker.
+             */
+            top_n: number;
+            /**
+             * Model Provider Name
+             * @description The name of the model provider to use.
+             */
+            model_provider_name: string;
+            /**
+             * Model Name
+             * @description The name of the model to use.
+             */
+            model_name: string;
+            /**
+             * Properties
+             * @description The properties of the reranker config, specific to the selected type.
+             */
+            properties: components["schemas"]["CohereCompatibleProperties"];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** RerankerModelDetails */
+        RerankerModelDetails: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** RerankerProvider */
+        RerankerProvider: {
+            /** Provider Name */
+            provider_name: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Models */
+            models: components["schemas"]["RerankerModelDetails"][];
+        };
         /** RunConfigEvalResult */
         RunConfigEvalResult: {
             /** Eval Id */
@@ -4594,8 +5034,36 @@ export interface components {
             /** Structured Input */
             structured_input?: {
                 [key: string]: unknown;
-            } | null;
+            } | unknown[] | null;
             /** Tags */
+            tags?: string[] | null;
+        };
+        /** SaveQnaPairInput */
+        SaveQnaPairInput: {
+            /**
+             * Query
+             * @description The synthetic user query
+             */
+            query: string;
+            /**
+             * Answer
+             * @description The synthetic assistant answer/response for the given user query
+             */
+            answer: string;
+            /**
+             * Model Name
+             * @description Model name used to generate the Q&A pair
+             */
+            model_name: string;
+            /**
+             * Model Provider
+             * @description Model provider used to generate the Q&A pair
+             */
+            model_provider: string;
+            /**
+             * Tags
+             * @description Optional tags
+             */
             tags?: string[] | null;
         };
         /** ScoreSummary */
@@ -4639,6 +5107,11 @@ export interface components {
         };
         /** SemanticChunkerProperties */
         SemanticChunkerProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            chunker_type: "semantic";
             /** Embedding Config Id */
             embedding_config_id: string;
             /** Buffer Size */
@@ -4649,6 +5122,29 @@ export interface components {
             include_metadata: boolean;
             /** Include Prev Next Rel */
             include_prev_next_rel: boolean;
+        };
+        /** SemanticChunkerPropertiesPublic */
+        SemanticChunkerPropertiesPublic: {
+            /**
+             * @description The type of the chunker (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            chunker_type: "semantic";
+            /**
+             * Embedding Config Id
+             * @description The embedding config to use for the RAG workflow.
+             */
+            embedding_config_id: string;
+            /**
+             * Buffer Size
+             * @description The buffer size to use for the chunker.
+             */
+            buffer_size: number;
+            /**
+             * Breakpoint Percentile Threshold
+             * @description The breakpoint percentile threshold to use for the chunker.
+             */
+            breakpoint_percentile_threshold: number;
         };
         /**
          * StructuredOutputMode
@@ -5093,6 +5589,23 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /**
+         * ToolDefinitionResponse
+         * @description Response model for tool definition endpoint.
+         *     Provides the OpenAI-compatible tool definition along with extracted fields.
+         */
+        ToolDefinitionResponse: {
+            /** Tool Id */
+            tool_id: string;
+            /** Function Name */
+            function_name: string;
+            /** Description */
+            description: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ToolServerType
@@ -6168,7 +6681,9 @@ export interface operations {
     };
     get_documents_api_projects__project_id__documents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tags?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6184,6 +6699,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["ExtractionSummary"][];
+                    };
                 };
             };
             /** @description Validation Error */
@@ -6538,7 +7087,9 @@ export interface operations {
     };
     run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tags?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -6969,6 +7520,72 @@ export interface operations {
             };
         };
     };
+    create_reranker_config_api_projects__project_id__create_reranker_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRerankerConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reranker_configs_api_projects__project_id__reranker_configs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerConfig"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_embedding_config_api_projects__project_id__embedding_configs__embedding_config_id__get: {
         parameters: {
             query?: never;
@@ -7306,6 +7923,74 @@ export interface operations {
             };
         };
     };
+    check_library_state_api_projects__project_id__check_library_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentLibraryState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ephemeral_split_document_api_projects__project_id__extractor_configs__extractor_config_id__documents__document_id__ephemeral_split_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                extractor_config_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EphemeralSplitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EphemeralSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_providers_models_api_providers_models_get: {
         parameters: {
             query?: never;
@@ -7382,6 +8067,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingProvider"][];
+                };
+            };
+        };
+    };
+    get_providers_reranker_models_api_providers_reranker_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderRerankerModels"];
+                };
+            };
+        };
+    };
+    get_available_reranker_models_api_available_reranker_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerankerProvider"][];
                 };
             };
         };
@@ -7947,6 +8672,82 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DataGenSaveSamplesApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post: {
+        parameters: {
+            query?: {
+                session_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataGenQnaApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveQnaPairInput"];
             };
         };
         responses: {
@@ -9456,6 +10257,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchToolApiDescription"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolDefinitionResponse"];
                 };
             };
             /** @description Validation Error */

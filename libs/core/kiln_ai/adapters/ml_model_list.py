@@ -62,6 +62,7 @@ class ModelName(str, Enum):
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
     gpt_5 = "gpt_5"
+    gpt_5_1 = "gpt_5_1"
     gpt_5_chat = "gpt_5_chat"
     gpt_5_mini = "gpt_5_mini"
     gpt_5_nano = "gpt_5_nano"
@@ -184,6 +185,7 @@ class ModelName(str, Enum):
     qwen_long_l1_32b = "qwen_long_l1_32b"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
+    kimi_k2_thinking = "kimi_k2_thinking"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_6 = "glm_4_6"
     glm_4_5v = "glm_4_5v"
@@ -196,6 +198,7 @@ class ModelName(str, Enum):
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
+    minimax_m2 = "minimax_m2"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     stepfun_step3 = "stepfun_step3"
@@ -312,6 +315,52 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 5.1
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_1,
+        friendly_name="GPT-5.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5
     KilnModel(
         family=ModelFamily.gpt,
@@ -1362,6 +1411,72 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.5-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                thinking_level="medium",
+            ),
+        ],
+    ),
+    # Gemini 2.5 Flash Lite
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_2_5_flash_lite,
+        friendly_name="Gemini 2.5 Flash Lite",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-2.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=False,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-2.5-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                thinking_level="medium",
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=False,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-2.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 thinking_level="medium",
@@ -4651,7 +4766,6 @@ built_in_models: List[KilnModel] = [
                 model_id="z-ai/glm-4.6:exacto",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -4860,6 +4974,30 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Kimi K2 Thinking
+    # Not hosted on Groq, Silliconflow-cn, or Together AI yet
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_thinking,
+        friendly_name="Kimi K2 Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2-thinking",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_dev_72b,
@@ -4990,6 +5128,32 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Minimax M2
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m2,
+        friendly_name="Minimax M2",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="MiniMaxAI/MiniMax-M2",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),

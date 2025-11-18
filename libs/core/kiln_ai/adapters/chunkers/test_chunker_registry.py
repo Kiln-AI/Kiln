@@ -15,6 +15,7 @@ def test_chunker_adapter_from_type():
             chunker_type=ChunkerType.FIXED_WINDOW,
             properties={
                 # do not use these values in production!
+                "chunker_type": ChunkerType.FIXED_WINDOW,
                 "chunk_size": 5555,
                 "chunk_overlap": 1111,
             },
@@ -36,6 +37,7 @@ def test_chunker_registry_semantic_returns_semantic_chunker():
         name="cfg",
         chunker_type=ChunkerType.SEMANTIC,
         properties={
+            "chunker_type": ChunkerType.SEMANTIC,
             "embedding_config_id": "emb-1",
             "buffer_size": 2,
             "breakpoint_percentile_threshold": 90,

@@ -1,4 +1,4 @@
-function is_empty(value: unknown): boolean {
+export function is_empty(value: unknown): boolean {
   if (value === null || value === undefined) {
     return true
   }

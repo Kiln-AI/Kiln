@@ -4,7 +4,7 @@ import random
 import uuid
 from pathlib import Path
 from typing import Callable, List
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from llama_index.core.schema import MetadataMode, NodeRelationship
@@ -540,6 +540,31 @@ async def test_search_with_empty_results_error(
     results = await adapter.search(query)
 
     assert results == []
+
+
+async def test_search_with_uninitialized_table(
+    fts_vector_store_config,
+    embedding_config,
+    create_rag_config_factory,
+):
+    """Test that search raises ValueError when table is not initialized"""
+
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+
+    # Create the adapter normally
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Mock the table property at the class level to return None using PropertyMock
+    # We need to patch at the class level because accessing the property on the instance
+    # raises TableNotFoundError before we can patch it
+    with patch(
+        "llama_index.vector_stores.lancedb.base.LanceDBVectorStore.table",
+        new_callable=PropertyMock,
+        return_value=None,
+    ):
+        query = VectorStoreQuery(query_string="test query")
+        with pytest.raises(ValueError, match="Table is not initialized"):
+            await adapter.search(query)
 
 
 async def test_destroy(

@@ -11,6 +11,7 @@
   export let tooltip_text: string
   export let position: "left" | "right" | "bottom" | "top" = "left"
   export let no_pad = false
+  export let symbol: "exclaim" | "info" = "info"
 
   let triggerElement: HTMLButtonElement
   let tooltipElement: HTMLDivElement
@@ -76,7 +77,10 @@
 >
   <svg
     fill="currentColor"
-    class="w-6 h-6 inline {no_pad ? 'mt-[-3px] ml-[-3px]' : ''}"
+    class="w-6 h-6 inline {no_pad ? 'mt-[-3px] ml-[-3px]' : ''} {symbol ===
+    'exclaim'
+      ? 'rotate-180'
+      : ''}"
     viewBox="0 0 1024 1024"
     version="1"
     xmlns="http://www.w3.org/2000/svg"

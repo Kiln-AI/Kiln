@@ -1,4 +1,8 @@
 from enum import Enum, IntEnum
+from typing import Any, Dict, List, TypeAlias
+
+StructuredInputType: TypeAlias = Dict[str, Any] | List[Any]
+InputType: TypeAlias = StructuredInputType | str
 
 
 class Priority(IntEnum):

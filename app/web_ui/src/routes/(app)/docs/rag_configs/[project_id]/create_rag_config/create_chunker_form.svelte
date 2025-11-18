@@ -111,8 +111,9 @@
         return {
           name: name || null,
           description: description || null,
-          chunker_type: "fixed_window" as ChunkerType,
+          chunker_type: "fixed_window",
           properties: {
+            chunker_type: "fixed_window",
             chunk_size,
             chunk_overlap,
           },
@@ -127,13 +128,12 @@
         return {
           name: name || null,
           description: description || null,
-          chunker_type: "semantic" as ChunkerType,
+          chunker_type: "semantic",
           properties: {
+            chunker_type: "semantic",
             embedding_config_id: selected_embedding_config_id,
             buffer_size,
             breakpoint_percentile_threshold,
-            include_metadata: false,
-            include_prev_next_rel: false,
           },
         }
       default: {

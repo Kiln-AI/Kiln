@@ -146,13 +146,15 @@
     if (eval_progress) {
       golden_dataset_size = " (" + eval_progress.golden_dataset_size + " items)"
     }
-    properties.push({
-      name: "Golden Dataset",
-      value: evaluator.eval_configs_filter_id + golden_dataset_size,
-      tooltip:
-        "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
-      link: link_from_filter_id(evaluator.eval_configs_filter_id),
-    })
+    if (evaluator.eval_configs_filter_id) {
+      properties.push({
+        name: "Golden Dataset",
+        value: evaluator.eval_configs_filter_id + golden_dataset_size,
+        tooltip:
+          "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
+        link: link_from_filter_id(evaluator.eval_configs_filter_id),
+      })
+    }
 
     if (eval_progress?.current_eval_method) {
       properties.push({
@@ -182,30 +184,94 @@
 
   const MIN_DATASET_SIZE = 25
   let current_step: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 0
+  let current_step_id:
+    | "goals"
+    | "eval_data"
+    | "human_ratings"
+    | "compare_judges"
+    | "compare_run_configs"
+    | "unknown" = "unknown"
   let required_more_eval_data = false
   let required_more_golden_data = false
   let goals: string[] = []
   let golden_dataset_explanation = ""
-  const step_titles: string[] = [
-    "Define Goals",
-    "Create Eval Data",
-    "Human Ratings",
-    "Find the Best Judge",
-    "Find the Best Way to Run this Task",
-  ]
-  const step_tooltips: Record<number, string> = {
-    1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
-    2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
-    3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
-    4: "Benchmark various judge methods (model+prompt+algorithm). We'll compare judges to your golden dataset to find the judge which best matches your human preferences.",
-    5: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, or fine-tunes.",
+
+  function number_of_steps(evaluator: Eval | null): number {
+    if (evaluator?.template === "rag") {
+      return 3
+    } else {
+      return 5
+    }
   }
+
+  function step_id_from_title(
+    title: string,
+  ):
+    | "goals"
+    | "eval_data"
+    | "human_ratings"
+    | "compare_judges"
+    | "compare_run_configs"
+    | "unknown" {
+    switch (title) {
+      case "Define Goals":
+        return "goals"
+      case "Create Eval Data":
+        return "eval_data"
+      case "Human Ratings":
+        return "human_ratings"
+      case "Find the Best Judge":
+        return "compare_judges"
+      case "Find the Best Way to Run this Task":
+        return "compare_run_configs"
+      default:
+        return "unknown"
+    }
+  }
+
+  function step_titles(evaluator: Eval | null): string[] {
+    if (evaluator?.template === "rag") {
+      return [
+        "Define Goals",
+        "Create Eval Data",
+        "Find the Best Way to Run this Task",
+      ]
+    } else {
+      return [
+        "Define Goals",
+        "Create Eval Data",
+        "Human Ratings",
+        "Find the Best Judge",
+        "Find the Best Way to Run this Task",
+      ]
+    }
+  }
+
+  function step_tooltips(evaluator: Eval | null): Record<number, string> {
+    if (evaluator?.template === "rag") {
+      return {
+        1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
+        2: "Each eval needs a Q&A dataset to help find the best way of running your task by comparing outputs against reference answers. We'll help you create it with synthetic data!",
+        3: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, tools, or fine-tunes.",
+      }
+    } else {
+      return {
+        1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
+        2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
+        3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
+        4: "Benchmark various judge methods (model+prompt+algorithm). We'll compare judges to your golden dataset to find the judge which best matches your human preferences.",
+        5: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, tools, or fine-tunes.",
+      }
+    }
+  }
+
   function update_eval_progress(
     progress: EvalProgress | null,
     evaluator: Eval | null,
   ) {
     update_golden_dataset_explanation(progress)
     current_step = 1
+    current_step_id = "goals"
     if (!progress || !evaluator) {
       return
     }
@@ -217,24 +283,36 @@
     }
 
     current_step = 2
+    current_step_id = "eval_data"
     required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
-    required_more_golden_data = progress.golden_dataset_size < MIN_DATASET_SIZE
+    required_more_golden_data =
+      evaluator?.template !== "rag" &&
+      progress.golden_dataset_size < MIN_DATASET_SIZE
     if (required_more_eval_data || required_more_golden_data) {
       return
     }
 
-    current_step = 3
-    if (golden_dataset_explanation) {
-      return
-    }
+    if (evaluator?.template === "rag") {
+      // RAG evals don't have a golden dataset or compare judges step. Everything is setup!
+      current_step = 3
+      current_step_id = "compare_run_configs"
+    } else {
+      current_step = 3
+      current_step_id = "human_ratings"
+      if (golden_dataset_explanation) {
+        return
+      }
 
-    current_step = 4
-    if (!has_default_eval_config) {
-      return
-    }
+      current_step = 4
+      current_step_id = "compare_judges"
+      if (!has_default_eval_config) {
+        return
+      }
 
-    // Everything is setup!
-    current_step = 5
+      // Everything is setup!
+      current_step = 5
+      current_step_id = "compare_run_configs"
+    }
   }
   $: update_eval_progress(eval_progress, evaluator)
 
@@ -273,7 +351,10 @@
     return undefined
   }
 
-  function link_from_filter_id(filter_id: string): string | undefined {
+  function link_from_filter_id(filter_id: string | null): string | undefined {
+    if (!filter_id) {
+      return undefined
+    }
     const tag = tag_from_filter_id(filter_id)
     if (tag) {
       return `/dataset/${project_id}/${task_id}?tags=${tag}`
@@ -287,8 +368,11 @@
       return
     }
     const eval_tag = tag_from_filter_id(evaluator?.eval_set_filter_id)
-    const golden_tag = tag_from_filter_id(evaluator?.eval_configs_filter_id)
-    if (!eval_tag || !golden_tag) {
+    let golden_tag: string | undefined = undefined
+    if (evaluator?.eval_configs_filter_id) {
+      golden_tag = tag_from_filter_id(evaluator.eval_configs_filter_id)
+    }
+    if (!eval_tag || (evaluator.template !== "rag" && !golden_tag)) {
       alert(
         "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
       )
@@ -296,13 +380,37 @@
     }
 
     const params = new URLSearchParams()
-    params.set("reason", "eval")
+    if (evaluator.template === "rag") {
+      params.set("reason", "qna")
+    } else {
+      params.set("reason", "eval")
+    }
     if (evaluator.template) {
       params.set("template_id", evaluator.template)
     }
     params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
-    params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
     params.set("eval_link", window.location.pathname)
+
+    if (evaluator.template === "rag") {
+      // No golden set for rag evals
+      if (eval_tag) {
+        params.set("splits", `${eval_tag}:1.0`)
+      }
+    } else {
+      // For other templates, use the default splits approach
+      if (golden_tag) {
+        params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
+      }
+    }
+
+    // Add tool_id for tool call evals
+    if (
+      evaluator.template === "tool_call" &&
+      evaluator.template_properties?.tool
+    ) {
+      params.set("tool_id", String(evaluator.template_properties.tool))
+    }
+
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)
@@ -315,13 +423,13 @@
       link: $page.url.pathname,
       cta: "return to the eval",
       progress: null,
-      step_count: 5,
+      step_count: number_of_steps(evaluator),
       current_step: step,
     })
   }
 
   function show_golden_dataset() {
-    if (!evaluator) {
+    if (!evaluator || !evaluator.eval_configs_filter_id) {
       return
     }
     const url = link_from_filter_id(evaluator.eval_configs_filter_id)
@@ -341,8 +449,14 @@
 
   function compare_run_configs() {
     let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_configs`
-    show_progress_ui("When you're done comparing run configurations, ", 5)
     goto(url)
+  }
+
+  function docs_link(evaluator: Eval | null): string | undefined {
+    if (evaluator?.template === "tool_call") {
+      return "https://docs.kiln.tech/docs/evaluations/evaluate-appropriate-tool-use"
+    }
+    return "https://docs.kiln.tech/docs/evaluations"
   }
 </script>
 
@@ -351,7 +465,7 @@
     title="Eval: {evaluator?.name || ''}"
     subtitle="Follow these steps to find the best way to evaluate and run your task"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+    sub_subtitle_link={docs_link(evaluator)}
     breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
     action_buttons={[
       {
@@ -379,7 +493,9 @@
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
         <div class="grow">
           <ul class="steps steps-vertical ml-4 overflow-x-hidden">
-            {#each [1, 2, 3, 4, 5] as step}
+            {#each Array.from({ length: number_of_steps(evaluator) }, (_, i) => i + 1) as step}
+              {@const step_title = step_titles(evaluator)[step - 1]}
+              {@const step_id = step_id_from_title(step_title)}
               <li
                 class="step {current_step >= step ? 'step-primary' : ''}"
                 data-content={current_step == step
@@ -392,24 +508,32 @@
                   class="text-left py-3 min-h-[100px] flex flex-col place-content-center pl-4"
                 >
                   <div class="font-medium">
-                    {step_titles[step - 1]}
-                    {#if step_tooltips[step]}
+                    {step_title}
+                    {#if step_tooltips(evaluator)[step]}
                       <InfoTooltip
-                        tooltip_text={step_tooltips[step]}
+                        tooltip_text={step_tooltips(evaluator)[step]}
                         position={step < 4 ? "bottom" : "top"}
                         no_pad={true}
                       />
                     {/if}
                   </div>
                   <div class="text-sm text-gray-500">
-                    {#if step == 1 && goals.length > 0}
-                      This eval has {goals.length} goals: {goals.join(", ")}.
-                    {:else if step == 2}
+                    {#if step_id == "goals" && goals.length > 0}
+                      This eval has {goals.length} goal{goals.length == 1
+                        ? ""
+                        : "s"}: {goals.join(", ")}.
+                    {:else if step_id == "eval_data"}
                       <div>
                         <div class="mb-1">
                           {#if eval_progress && !required_more_eval_data && !required_more_golden_data}
-                            You have {eval_progress?.dataset_size} eval items and
-                            {eval_progress?.golden_dataset_size} golden items.
+                            {#if evaluator?.template === "rag"}
+                              You have {eval_progress?.dataset_size} eval items.
+                            {:else}
+                              You have {eval_progress?.dataset_size} eval items and
+                              {eval_progress?.golden_dataset_size} golden items.
+                            {/if}
+                          {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0 && evaluator.template === "rag"}
+                            Create a query & answer dataset for this eval.
                           {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0}
                             Create data for this eval.
                           {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}
@@ -428,7 +552,7 @@
                           {/if}
                         </div>
                         <button
-                          class="btn btn-sm {current_step == 2
+                          class="btn btn-sm {current_step_id == 'eval_data'
                             ? 'btn-primary'
                             : ''}"
                           on:click={add_eval_data}
@@ -436,7 +560,7 @@
                           Add Eval Data
                         </button>
                       </div>
-                    {:else if step == 3}
+                    {:else if step_id == "human_ratings"}
                       <div class="mb-1">
                         {#if golden_dataset_explanation}
                           {golden_dataset_explanation}
@@ -445,9 +569,10 @@
                         {/if}
                       </div>
                       <div>
-                        {#if link_from_filter_id(evaluator.eval_configs_filter_id)}
+                        {#if evaluator.eval_configs_filter_id && link_from_filter_id(evaluator.eval_configs_filter_id)}
                           <button
-                            class="btn btn-sm {current_step == 3
+                            class="btn btn-sm {current_step_id ==
+                            'human_ratings'
                               ? 'btn-primary'
                               : ''}"
                             on:click={show_golden_dataset}
@@ -468,7 +593,7 @@
                           >.
                         {/if}
                       </div>
-                    {:else if step == 4}
+                    {:else if step_id == "compare_judges"}
                       <div class="mb-1">
                         {#if eval_progress?.current_eval_method}
                           You selected the judge '{eval_config_to_ui_name(
@@ -484,7 +609,7 @@
                       </div>
                       <div>
                         <button
-                          class="btn btn-sm {current_step == 4
+                          class="btn btn-sm {current_step_id == 'compare_judges'
                             ? 'btn-primary'
                             : ''}"
                           on:click={compare_eval_methods}
@@ -492,14 +617,15 @@
                           Compare Judges
                         </button>
                       </div>
-                    {:else if step == 5}
+                    {:else if step_id == "compare_run_configs"}
                       <div class="mb-1">
-                        Compare models, prompts and fine-tunes to find the most
-                        effective.
+                        Compare models, prompts, tools and fine-tunes to find
+                        the most effective.
                       </div>
                       <div>
                         <button
-                          class="btn btn-sm {current_step == 5
+                          class="btn btn-sm {current_step_id ==
+                          'compare_run_configs'
                             ? 'btn-primary'
                             : ''}"
                           on:click={compare_run_configs}

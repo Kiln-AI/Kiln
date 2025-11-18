@@ -181,10 +181,11 @@ async def execute_embedding_job(
     job: EmbeddingJob, embedding_adapter: BaseEmbeddingAdapter
 ) -> bool:
     chunks_text = await job.chunked_document.load_chunks_text()
+
+    # we do not raise because no chunks may be the legitimate result of the previous step
+    # e.g. an empty document; a document whose content was intentionally excluded by the extraction prompt
     if chunks_text is None or len(chunks_text) == 0:
-        raise ValueError(
-            f"Failed to load chunks for chunked document: {job.chunked_document.id}"
-        )
+        return True
 
     chunk_embedding_result = await embedding_adapter.generate_embeddings(
         input_texts=chunks_text

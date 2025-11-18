@@ -19,6 +19,7 @@ def semantic_chunker_config() -> ChunkerConfig:
         name="test-semantic-chunker",
         chunker_type=ChunkerType.SEMANTIC,
         properties={
+            "chunker_type": ChunkerType.SEMANTIC,
             "embedding_config_id": "emb-123",
             "buffer_size": 2,
             "breakpoint_percentile_threshold": 90,
@@ -98,7 +99,11 @@ class TestSemanticChunker:
         config = ChunkerConfig(
             name="test",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={"chunk_size": 100, "chunk_overlap": 10},
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": 100,
+                "chunk_overlap": 10,
+            },
         )
 
         with pytest.raises(ValueError, match="Chunker type must be SEMANTIC"):
@@ -111,6 +116,7 @@ class TestSemanticChunker:
                 name="test",
                 chunker_type=ChunkerType.SEMANTIC,
                 properties={
+                    "chunker_type": ChunkerType.SEMANTIC,
                     "buffer_size": 1,
                 },
             )
@@ -260,6 +266,7 @@ async def test_semantic_chunker_real_integration(tmp_path):
         name="paid-test-semantic",
         chunker_type=ChunkerType.SEMANTIC,
         properties={
+            "chunker_type": ChunkerType.SEMANTIC,
             "embedding_config_id": str(embedding_config.id),
             "buffer_size": 2,
             "breakpoint_percentile_threshold": 80,

@@ -48,11 +48,12 @@ class BaseEval:
         return model_name, ModelProviderName(provider)
 
     async def run_task_and_eval(
-        self, input: str
+        self, eval_job_item: TaskRun
     ) -> tuple[TaskRun, EvalScores, Dict[str, str] | None]:
         """
         Runs the task on the provided run_config to generate fresh output, then runs the eval on that output.
         """
+        input = eval_job_item.input
         if self.run_config is None:
             raise ValueError("Run config is required for run_task_and_eval")
 
@@ -70,7 +71,9 @@ class BaseEval:
         # we don't save by default here. We'll save manually after validating the output
         run_output = await run_adapter.invoke(parsed_input)
 
-        eval_output, intermediate_outputs = await self.run_eval(run_output)
+        eval_output, intermediate_outputs = await self.run_eval(
+            run_output, eval_job_item
+        )
 
         validate_schema_with_value_error(
             eval_output, self.score_schema, "Eval output does not match score schema."
@@ -80,7 +83,7 @@ class BaseEval:
 
     @abstractmethod
     async def run_eval(
-        self, task_run: TaskRun
+        self, task_run: TaskRun, eval_job_item: TaskRun | None = None
     ) -> tuple[EvalScores, Dict[str, str] | None]:
         """
         Runs the eval on the given task run.

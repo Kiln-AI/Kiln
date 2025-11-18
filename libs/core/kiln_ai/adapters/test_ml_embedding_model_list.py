@@ -11,6 +11,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     built_in_embedding_models,
     built_in_embedding_models_from_provider,
     get_model_by_name,
+    transform_slug_for_litellm,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
@@ -237,3 +238,60 @@ class TestGenerateEmbedding:
         embedding = await embedding.generate_embeddings(["Hello, world!"])
         assert len(embedding.embeddings) == 1
         assert len(embedding.embeddings[0].vector) == dimensions_target
+
+
+def test_transform_slug_for_litellm():
+    """Test that transform_slug_for_litellm transforms the slug correctly"""
+    # openrouter prefix should be replaced with openai prefix for now - until LiteLLM supports openrouter embeddings natively
+    assert (
+        transform_slug_for_litellm(
+            ModelProviderName.openrouter, "openrouter/test-model"
+        )
+        == "openai/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(
+            ModelProviderName.openrouter, "openrouter/abc/xyz/test-model"
+        )
+        == "openai/abc/xyz/test-model"
+    )
+
+    # other providers should not be affected
+    assert (
+        transform_slug_for_litellm(ModelProviderName.openai, "openai/test-model")
+        == "openai/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(ModelProviderName.gemini_api, "gemini/test-model")
+        == "gemini/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(ModelProviderName.anthropic, "anthropic/test-model")
+        == "anthropic/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(ModelProviderName.ollama, "ollama/test-model")
+        == "ollama/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(
+            ModelProviderName.docker_model_runner, "docker_model_runner/test-model"
+        )
+        == "docker_model_runner/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(
+            ModelProviderName.fireworks_ai, "fireworks_ai/test-model"
+        )
+        == "fireworks_ai/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(
+            ModelProviderName.amazon_bedrock, "amazon_bedrock/test-model"
+        )
+        == "amazon_bedrock/test-model"
+    )
+    assert (
+        transform_slug_for_litellm(ModelProviderName.azure_openai, "azure/test-model")
+        == "azure/test-model"
+    )

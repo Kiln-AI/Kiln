@@ -185,6 +185,10 @@
         goto(
           `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
         )
+      } else if (next_page === "compare_run_configs") {
+        goto(
+          `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+        )
       } else {
         goto(
           `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}?selected_eval_config=${data.id}`,
@@ -303,6 +307,39 @@
         "G-Eval requires logprobs which do not work with this model or provider.",
     }
   }
+
+  type Breadcrumb = {
+    label: string
+    href: string
+  }
+
+  $: breadcrumbs = (() => {
+    const next_page = $page.url.searchParams.get("next_page")
+    const crumbs: Breadcrumb[] = [
+      {
+        label: "Evals",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+      },
+      {
+        label: evaluator?.name || "Eval",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+      },
+    ]
+
+    if (next_page === "eval_configs") {
+      crumbs.push({
+        label: "Compare Judges",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
+      })
+    } else if (next_page === "compare_run_configs") {
+      crumbs.push({
+        label: "Compare Run Configurations",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+      })
+    }
+
+    return crumbs
+  })()
 </script>
 
 <div class="max-w-[1400px]">
@@ -311,6 +348,7 @@
     subtitle="A judge evaluates task outputs with a model, evaluation prompt, and algorithm."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
+    {breadcrumbs}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

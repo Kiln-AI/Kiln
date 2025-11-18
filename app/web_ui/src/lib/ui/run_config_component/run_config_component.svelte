@@ -36,11 +36,13 @@
   export let model_name: string = ""
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
+  export let mandatory_tools: string[] | null = null
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let hide_create_kiln_task_tool_button: boolean = false
   export let hide_prompt_selector: boolean = false
+  export let hide_tools_selector: boolean = false
   export let disabled_tools_selector: boolean = false
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
@@ -274,14 +276,18 @@
     />
   {/if}
   {#if !show_tools_selector_in_advanced}
-    <ToolsSelector
-      bind:tools
-      {project_id}
-      task_id={current_task?.id ?? null}
-      {hide_create_kiln_task_tool_button}
-      disabled={disabled_tools_selector}
-    />
+    {#if !hide_tools_selector}
+      <ToolsSelector
+        bind:tools
+        {project_id}
+        task_id={current_task?.id ?? null}
+        {hide_create_kiln_task_tool_button}
+        disabled={disabled_tools_selector}
+        {mandatory_tools}
+      />
+    {/if}
     <Collapse title="Advanced Options">
+      <slot name="advanced" />
       <AdvancedRunOptions
         bind:temperature
         bind:top_p
@@ -291,21 +297,23 @@
     </Collapse>
   {:else}
     <Collapse title="Advanced Options">
-      <div class="flex flex-col gap-0">
+      <slot name="advanced" />
+      {#if !hide_tools_selector}
         <ToolsSelector
           bind:tools
           {project_id}
           task_id={current_task?.id ?? null}
           {hide_create_kiln_task_tool_button}
           disabled={disabled_tools_selector}
+          {mandatory_tools}
         />
-        <AdvancedRunOptions
-          bind:temperature
-          bind:top_p
-          bind:structured_output_mode
-          has_structured_output={requires_structured_output}
-        />
-      </div>
+      {/if}
+      <AdvancedRunOptions
+        bind:temperature
+        bind:top_p
+        bind:structured_output_mode
+        has_structured_output={requires_structured_output}
+      />
     </Collapse>
   {/if}
 </div>

@@ -17,7 +17,11 @@ def mock_fixed_window_chunker_factory() -> Callable[[int, int], FixedWindowChunk
             ChunkerConfig(
                 name="test-chunker",
                 chunker_type=ChunkerType.FIXED_WINDOW,
-                properties={"chunk_size": chunk_size, "chunk_overlap": chunk_overlap},
+                properties={
+                    "chunker_type": ChunkerType.FIXED_WINDOW,
+                    "chunk_size": chunk_size,
+                    "chunk_overlap": chunk_overlap,
+                },
             )
         )
 

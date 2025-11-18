@@ -30,6 +30,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
@@ -176,7 +177,7 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(self, input: Dict | str) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()

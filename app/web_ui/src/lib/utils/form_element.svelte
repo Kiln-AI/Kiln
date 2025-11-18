@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+  import { onMount, onDestroy, getContext } from "svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -55,6 +56,9 @@
 
   // Export to let parent redefine this. This is a basic "Optional" and max length check
   export let validator: (value: unknown) => string | null = () => {
+    if (inputType === "header_only") {
+      return null
+    }
     if (!optional && is_empty(value)) {
       return '"' + label + '" is required'
     }
@@ -73,7 +77,9 @@
   let inline_error: string | null = null
   let initial_run = true
   $: {
-    if (initial_run) {
+    if (inputType === "header_only") {
+      inline_error = null
+    } else if (initial_run) {
       initial_run = false
     } else if (!optional && is_empty(value)) {
       inline_error = "Required"
@@ -88,10 +94,40 @@
     }
   }
 
-  function run_validator() {
+  export function run_validator() {
     const error = validator(value)
     error_message = error
   }
+
+  // run validator after value change
+  let initialized = false
+  function run_validator_on_change(_: unknown) {
+    if (initialized) {
+      run_validator()
+    }
+  }
+  $: run_validator_on_change(value)
+
+  const formContainer = getContext<{
+    registerFormElement: (validator: {
+      run_validator: () => void
+    }) => () => void
+  } | null>("form_container")
+
+  let unregister: (() => void) | null = null
+
+  onMount(() => {
+    initialized = true
+    if (formContainer) {
+      unregister = formContainer.registerFormElement({ run_validator })
+    }
+  })
+
+  onDestroy(() => {
+    if (unregister) {
+      unregister()
+    }
+  })
 
   // Little dance to keep type checker happy
   function handleCheckboxChange(event: Event) {
@@ -142,15 +178,15 @@
             <InfoTooltip tooltip_text={info_description} />
           </div>
         {/if}
+        {#if error_message}
+          <span class="text-error">
+            <InfoTooltip tooltip_text={error_message} symbol="exclaim" />
+          </span>
+        {/if}
       </div>
-      {#if description || error_message}
+      {#if description}
         <div class="text-xs text-gray-500">
-          {description || ""}
-          {#if error_message}
-            <span class="text-error">
-              <InfoTooltip tooltip_text={error_message} position="bottom" />
-            </span>
-          {/if}
+          {description}
         </div>
       {/if}
     </label>
@@ -165,8 +201,8 @@
         ]} wrap-pre text-left align-top
        {error_message || inline_error ? 'textarea-error' : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
+        data-op-ignore="true"
         {disabled}
       />
     {:else if inputType === "input"}
@@ -179,7 +215,6 @@
           ? 'input-error'
           : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -194,7 +229,6 @@
           ? 'input-error'
           : ''}"
         bind:value
-        on:input={run_validator}
         autocomplete="off"
         data-op-ignore="true"
         {disabled}
@@ -236,6 +270,7 @@
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
+        error_outline={!!error_message}
         {disabled}
         {empty_label}
         {empty_state_message}

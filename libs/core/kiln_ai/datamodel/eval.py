@@ -30,11 +30,13 @@ class EvalTemplateId(str, Enum):
 
     kiln_requirements = "kiln_requirements"
     issue = "kiln_issue"
+    tool_call = "tool_call"
     toxicity = "toxicity"
     bias = "bias"
     maliciousness = "maliciousness"
     factual_correctness = "factual_correctness"
     jailbreak = "jailbreak"
+    rag = "rag"
 
 
 class EvalConfigType(str, Enum):
@@ -105,9 +107,17 @@ class EvalRun(KilnParentedModel):
     output: str = Field(
         description="The output of the task. JSON formatted for structured output, plaintext for unstructured output."
     )
+    reference_answer: str | None = Field(
+        default=None,
+        description="The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
+    )
     intermediate_outputs: Dict[str, str] | None = Field(
         default=None,
         description="The intermediate outputs of the task (example, eval thinking).",
+    )
+    task_run_trace: str | None = Field(
+        default=None,
+        description="The JSON formatted trace of the task run that produced the output.",
     )
     scores: EvalScores = Field(
         description="The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of)."
@@ -121,6 +131,28 @@ class EvalRun(KilnParentedModel):
         if self.parent is not None and self.parent.__class__.__name__ != "EvalConfig":
             raise ValueError("parent must be an EvalConfig")
         return self.parent  # type: ignore
+
+    @model_validator(mode="after")
+    def validate_output_fields(self) -> Self:
+        parent_eval_config = self.parent_eval_config()
+        parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        if not parent_eval:
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+        if (
+            evaluation_data_type == EvalDataType.final_answer
+            and self.task_run_trace is not None
+        ):
+            raise ValueError("final_answer runs should not set trace")
+        elif (
+            not self.eval_config_eval
+            and evaluation_data_type == EvalDataType.full_trace
+            and self.task_run_trace is None
+        ):
+            raise ValueError("full_trace task run eval runs should include trace")
+
+        return self
 
     @model_validator(mode="after")
     def validate_eval_run_types(self) -> Self:
@@ -194,6 +226,24 @@ class EvalRun(KilnParentedModel):
                     raise_exhaustive_enum_error(output_score.type)
         return self
 
+    @model_validator(mode="after")
+    def validate_reference_answer(self) -> Self:
+        parent_eval_config = self.parent_eval_config()
+        parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        if not parent_eval:
+            # Can't validate without the grand-parent eval, allow it to be validated later
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+        if (
+            self.reference_answer is not None
+            and evaluation_data_type != EvalDataType.reference_answer
+        ):
+            raise ValueError(
+                f"reference_answer is only valid for reference answer evals. Got: {evaluation_data_type.value}"
+            )
+        return self
+
 
 class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}):
     """
@@ -256,6 +306,12 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         return self
 
 
+class EvalDataType(str, Enum):
+    final_answer = "final_answer"
+    full_trace = "full_trace"
+    reference_answer = "reference_answer"
+
+
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
     name: FilenameString = Field(description="The name of the eval.")
     description: str | None = Field(
@@ -272,8 +328,9 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     eval_set_filter_id: DatasetFilterId = Field(
         description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
     )
-    eval_configs_filter_id: DatasetFilterId = Field(
-        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id."
+    eval_configs_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -285,6 +342,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     template_properties: dict[str, str | int | bool | float] = Field(
         default={},
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
+    )
+    evaluation_data_type: EvalDataType = Field(
+        default=EvalDataType.final_answer,
+        description="The output of the task run to evaluate. Can be final answer or full trace.",
     )
 
     # Workaround to return typed parent without importing Task
@@ -313,6 +374,15 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     @model_validator(mode="after")
     def validate_template_properties(self) -> Self:
+        # eval_configs_filter_id is required for all templates except "rag"
+        if (
+            self.template is not EvalTemplateId.rag
+            and self.eval_configs_filter_id is None
+        ):
+            raise ValueError(
+                "eval_configs_filter_id is required for all templates except 'rag'"
+            )
+
         # Check for properties that are required for the issue template
         if self.template == EvalTemplateId.issue:
             if "issue_prompt" not in self.template_properties or not isinstance(
@@ -330,5 +400,44 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             ):
                 raise ValueError(
                     "pass_example is optional for issue template, but if provided must be a string"
+                )
+
+        if self.template == EvalTemplateId.tool_call:
+            if self.evaluation_data_type != EvalDataType.full_trace:
+                raise ValueError(
+                    "tool_call template should have evaluation_data_type set to full_trace"
+                )
+            if (
+                "tool" not in self.template_properties
+                or not isinstance(self.template_properties["tool"], str)
+                or not self.template_properties["tool"].strip()
+            ):
+                raise ValueError("tool is required for tool call template")
+            if "tool_function_name" not in self.template_properties or not isinstance(
+                self.template_properties["tool_function_name"], str
+            ):
+                raise ValueError(
+                    "tool_function_name is required for tool call template"
+                )
+            if (
+                "appropriate_tool_use_guidelines" not in self.template_properties
+                or not isinstance(
+                    self.template_properties["appropriate_tool_use_guidelines"], str
+                )
+                or not self.template_properties[
+                    "appropriate_tool_use_guidelines"
+                ].strip()
+            ):
+                raise ValueError(
+                    "appropriate_tool_use_guidelines is required for tool call template"
+                )
+            if (
+                "inappropriate_tool_use_guidelines" in self.template_properties
+                and not isinstance(
+                    self.template_properties["inappropriate_tool_use_guidelines"], str
+                )
+            ):
+                raise ValueError(
+                    "inappropriate_tool_use_guidelines is optional for tool call template, but if provided must be a string"
                 )
         return self

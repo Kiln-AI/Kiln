@@ -1,17 +1,22 @@
 import json
+from typing import Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
+from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore, EvalScores
 from kiln_ai.datamodel.task import (
     RunConfigProperties,
+    StructuredOutputMode,
     Task,
     TaskOutputRatingType,
     TaskRequirement,
     TaskRunConfig,
 )
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.datamodel.task_run import TaskRun
 
 
 def test_score_schema_five_star():
@@ -250,8 +255,10 @@ def test_score_schema_no_scores():
 class EvalTester(BaseEval):
     """Test implementation of BaseEval"""
 
-    async def run_eval(self, task_run):
-        return {"overall_rating": 5, "quality": 4}, None
+    async def run_eval(
+        self, task_run: TaskRun, eval_job_item: TaskRun | None = None
+    ) -> tuple[EvalScores, Dict[str, str] | None]:
+        return {"overall_rating": 5.0, "quality": 4.0}, None
 
 
 @pytest.mark.paid
@@ -298,8 +305,9 @@ async def test_run_method():
         name="Test Run Config",
         run_config_properties=RunConfigProperties(
             model_name="llama_3_1_8b",
-            model_provider_name="groq",
+            model_provider_name=ModelProviderName.groq,
             prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
         ),
         parent=task,
     )
@@ -307,7 +315,12 @@ async def test_run_method():
     evaluator = EvalTester(eval_config, run_config.run_config())
 
     # Run the evaluation
-    task_run, eval_scores, _ = await evaluator.run_task_and_eval("test input")
+    eval_job_item = TaskRun(
+        parent=task,
+        input="test input",
+        output=TaskOutput(output=""),
+    )
+    task_run, eval_scores, _ = await evaluator.run_task_and_eval(eval_job_item)
 
     # Verify task run was created
     assert task_run.input == "test input"
@@ -366,17 +379,21 @@ async def test_run_task_and_eval():
         name="Test Run Config",
         run_config_properties=RunConfigProperties(
             model_name="llama_3_1_8b",
-            model_provider_name="groq",
+            model_provider_name=ModelProviderName.groq,
             prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
+            structured_output_mode=StructuredOutputMode.json_schema,
         ),
         parent=task,
     )
 
     # Create evaluator instance
     class MockEval(BaseEval):
-        async def run_eval(self, task_run):
-            return {"overall_rating": 5, "quality": 4}, {"thinking": "test thinking"}
+        async def run_eval(
+            self, task_run: TaskRun, eval_job_item: TaskRun | None = None
+        ) -> tuple[EvalScores, Dict[str, str] | None]:
+            return {"overall_rating": 5.0, "quality": 4.0}, {
+                "thinking": "test thinking"
+            }
 
     evaluator = MockEval(eval_config, run_config.run_config_properties)
 
@@ -397,8 +414,13 @@ async def test_run_task_and_eval():
     ):
         mock_adapter_for_task.return_value = mock_adapter
 
-        # Test with string input
-        result = await evaluator.run_task_and_eval("test input")
+        # Test with TaskRun input
+        eval_job_item = TaskRun(
+            parent=task,
+            input="test input",
+            output=TaskOutput(output=""),
+        )
+        result = await evaluator.run_task_and_eval(eval_job_item)
 
         # Verify adapter_for_task was called with correct parameters
         mock_adapter_for_task.assert_called_once()
@@ -468,13 +490,20 @@ async def test_run_task_and_eval_no_run_config():
 
     # Create evaluator instance with no run_config
     class MockEval(BaseEval):
-        async def run_eval(self, task_run):
-            return {"quality": 4}, None
+        async def run_eval(
+            self, task_run: TaskRun, eval_job_item: TaskRun | None = None
+        ) -> tuple[EvalScores, Dict[str, str] | None]:
+            return {"quality": 4.0}, None
 
     evaluator = MockEval(eval_config, None)
 
     # Test that it raises ValueError
+    eval_job_item = TaskRun(
+        parent=task,
+        input="test input",
+        output=TaskOutput(output=""),
+    )
     with pytest.raises(
         ValueError, match="Run config is required for run_task_and_eval"
     ):
-        await evaluator.run_task_and_eval("test input")
+        await evaluator.run_task_and_eval(eval_job_item)

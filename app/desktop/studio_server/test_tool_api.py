@@ -4331,3 +4331,140 @@ async def test_edit_kiln_task_tool_validation_run_config_not_found(
         assert (
             "Run config not found for the specified task" in response.json()["detail"]
         )
+
+
+@pytest.mark.asyncio
+async def test_get_tool_definition_success(client, test_project):
+    """Test get_tool_definition returns correct tool definition for valid tool ID"""
+
+    # Create a test task
+    task = Task(
+        name="Test Task",
+        description="Test task for tool definition",
+        instruction="Complete the test task",
+        parent=test_project,
+    )
+    task.save_to_file()
+
+    # Create a run config for the task
+    run_config = TaskRunConfig(
+        name="default",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    # Create a kiln task tool server
+    tool_server = ExternalToolServer(
+        name="test_tool",
+        type=ToolServerType.kiln_task,
+        description="Test tool for definition",
+        properties={
+            "name": "test_tool",
+            "description": "Test tool for definition",
+            "task_id": str(task.id),
+            "run_config_id": str(run_config.id),
+            "is_archived": False,
+        },
+        parent=test_project,
+    )
+    tool_server.save_to_file()
+
+    tool_id = f"{KILN_TASK_TOOL_ID_PREFIX}{tool_server.id}"
+
+    with (
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+        patch("app.desktop.studio_server.tool_api.tool_from_id") as mock_tool_from_id,
+    ):
+        mock_task_from_id.return_value = task
+
+        # Mock the tool and its toolcall_definition method
+        mock_tool = AsyncMock()
+        mock_tool.toolcall_definition.return_value = {
+            "type": "function",
+            "function": {
+                "name": "test_tool_function",
+                "description": "Test tool function description",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "input": {"type": "string", "description": "Input parameter"}
+                    },
+                    "required": ["input"],
+                },
+            },
+        }
+        mock_tool_from_id.return_value = mock_tool
+
+        response = client.get(
+            f"/api/projects/{test_project.id}/tasks/{task.id}/tools/{tool_id}/definition"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+
+        assert result["tool_id"] == tool_id
+        assert result["function_name"] == "test_tool_function"
+        assert result["description"] == "Test tool function description"
+        assert "parameters" in result
+
+        # Verify the tool was instantiated correctly
+        mock_tool_from_id.assert_called_once_with(tool_id, task)
+        mock_tool.toolcall_definition.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_tool_definition_tool_not_found(client, test_project):
+    """Test get_tool_definition returns 404 for invalid tool ID"""
+
+    # Create a test task
+    task = Task(
+        name="Test Task",
+        description="Test task for tool definition",
+        instruction="Complete the test task",
+        parent=test_project,
+    )
+    task.save_to_file()
+
+    invalid_tool_id = "invalid_tool_id"
+
+    with (
+        patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id,
+        patch("app.desktop.studio_server.tool_api.tool_from_id") as mock_tool_from_id,
+    ):
+        mock_task_from_id.return_value = task
+        mock_tool_from_id.side_effect = Exception("Tool not found")
+
+        response = client.get(
+            f"/api/projects/{test_project.id}/tasks/{task.id}/tools/{invalid_tool_id}/definition"
+        )
+
+        assert response.status_code == 404
+        result = response.json()
+        assert "Tool not found or could not be instantiated" in result["detail"]
+        assert invalid_tool_id in result["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_tool_definition_task_not_found(client, test_project):
+    """Test get_tool_definition returns 404 for invalid task ID"""
+
+    invalid_task_id = "invalid_task_id"
+    tool_id = "some_tool_id"
+
+    with patch("app.desktop.studio_server.tool_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.side_effect = HTTPException(
+            status_code=404, detail="Task not found"
+        )
+
+        response = client.get(
+            f"/api/projects/{test_project.id}/tasks/{invalid_task_id}/tools/{tool_id}/definition"
+        )
+
+        assert response.status_code == 404
+        assert "Task not found" in response.json()["detail"]

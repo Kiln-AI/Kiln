@@ -3,13 +3,25 @@ Utilities for working with PDF files.
 """
 
 import asyncio
+import atexit
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
 import pypdfium2
 from pypdf import PdfReader, PdfWriter
+
+_pdf_conversion_executor: ProcessPoolExecutor | None = None
+
+
+# Lazy load for speed, singleton so dev-server reloading doesn't recreate the executor
+def get_pdf_conversion_executor() -> ProcessPoolExecutor:
+    global _pdf_conversion_executor
+    if _pdf_conversion_executor is None:
+        _pdf_conversion_executor = ProcessPoolExecutor(max_workers=1)
+    return _pdf_conversion_executor
 
 
 @asynccontextmanager
@@ -39,7 +51,7 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
         yield page_paths
 
 
-async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
     image_paths = []
 
     # note: doing this in a thread causes a segfault - but this is slow and blocking
@@ -47,7 +59,6 @@ async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
     pdf = pypdfium2.PdfDocument(pdf_path)
     try:
         for idx, page in enumerate(pdf):
-            await asyncio.sleep(0)
             # scale=2 is legible for ~A4 pages (research papers, etc.) - lower than this is blurry
             bitmap = page.render(scale=2).to_pil()
             target_path = output_dir / f"img-{pdf_path.name}-{idx}.png"
@@ -57,3 +68,26 @@ async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
         return image_paths
     finally:
         pdf.close()
+
+
+async def convert_pdf_to_images(pdf_path: Path, output_dir: Path) -> list[Path]:
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        get_pdf_conversion_executor(),
+        _convert_pdf_to_images_sync,
+        pdf_path,
+        output_dir,
+    )
+    return result
+
+
+def _shutdown_pdf_conversion_executor():
+    """Shutdown the PDF conversion executor process."""
+    global _pdf_conversion_executor
+    if _pdf_conversion_executor is not None:
+        _pdf_conversion_executor.shutdown(wait=True)
+        _pdf_conversion_executor = None
+
+
+# Register shutdown function to ensure clean executor termination
+atexit.register(_shutdown_pdf_conversion_executor)

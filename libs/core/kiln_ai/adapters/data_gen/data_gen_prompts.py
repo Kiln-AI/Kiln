@@ -156,3 +156,117 @@ The custom guidance is:
 """
 
     return prompt
+
+
+def generate_qna_generation_prompt(guidance: str | None = None) -> str:
+    """
+    Generate a prompt for generating Q&A samples.
+    """
+
+    prompt = """You are a **Q&A generation assistant**.
+
+## Task Description
+Your goal is to generate high-quality **Query-Answer (Q&A)** pairs from the provided document content. A Q&A pair is a query and an answer to that query.
+
+These Q&A pairs will be used to evaluate a **Retrieval-Augmented Generation (RAG)** system by comparing its output for the same queries with the reference answers you produce.
+
+The queries should reflect **realistic user queries** that someone might ask when searching a RAG corpus containing this document (among many others).
+
+The content you are given is only a part of a document in a broader corpus of documents that may have thousands of related or unrelated documents. The queries you generate should be relevant to the document content, and should be able to be answered by the document content.
+
+### Important Guidelines
+- Each query must have a **clear, objective answer** based on the document.
+  Avoid subjective or opinion-based queries (e.g., *"What is the best food in Pittsburgh?"*).  
+- Avoid **unanswerable queries** (e.g., *"What is the capital of the moon?"*).  
+- Answers must be **factually correct**, **concise**, and **derived strictly from the provided text** — not from general knowledge or assumptions.  
+- Avoid answers that are too vague, too broad, or too detailed.  
+- Queries may use natural phrasing as questions (e.g. "What is the population of Pittsburgh?") or resemble short search-style queries (e.g., *"Pittsburgh population 2020"*, *"weather in Pittsburgh"*, etc.).  
+
+### Input Variables
+You will receive:
+- `kiln_data_gen_document_name`: name of the document  
+- `kiln_data_gen_part_text`: a list of text chunks from the document  
+- `kiln_data_gen_num_samples`: number of Q&A pairs to generate  
+
+### Output Format
+You must output a **single JSON object** with this exact structure:
+```json
+{
+  "generated_qna_pairs": [
+    {
+      "query": "...",
+      "answer": "..."
+    },
+    ...
+  ]
+}
+
+#### Requirements:
+ - Output exactly kiln_data_gen_num_samples Q&A pairs.
+ - Use valid JSON only — no extra commentary, explanations, or markdown.
+ - Field names must be exactly "query" and "answer".
+ - Do not include the document name in the queries unless naturally relevant.
+
+### Example 1
+
+#### Input:
+- kiln_data_gen_document_name: “Pittsburgh”
+- kiln_data_gen_part_text: [“Pittsburgh is a city in Allegheny County, Pennsylvania, United States, and its county seat. [an entire Wikipedia article about Pittsburgh]”]
+- kiln_data_gen_num_samples: 3
+
+#### Output:
+{
+  "generated_qna_pairs": [
+    {
+      "query": "Pittsburgh population",
+      "answer": "The population of Pittsburgh is 302,971 according to the 2020 census."
+    },
+    {
+      "query": "what state is Pittsburgh in",
+      "answer": "Pittsburgh is in the state of Pennsylvania."
+    },
+    {
+      "query": "How cold is winter in Pittsburgh?",
+      "answer": "Winters are cold and snowy, with the coldest month (January) having a 24-hour average temperature of about 28.8 °F (-1.8 °C)."
+    }
+  ]
+}
+
+### Example 2
+
+#### Input:
+ - kiln_data_gen_document_name: “Kiln Tools & MCP”
+ - kiln_data_gen_part_text: ["# Tools & MCP\n\nKiln allows connecting to tools such as Kiln Search Tools (RAG) or third-party tools via Model Context Protocol (MCP). These tools can give your Kiln tasks powerful new capabilities.\n\n## Connecting Tools\nTo connect new tools, open “Settings” > “Manage Tools” > “Add Tools”."]
+ - kiln_data_gen_num_samples: 1
+
+#### Output:
+{
+  "generated_qna_pairs": [
+    {
+      "query": "how to add tools?",
+      "answer": "To connect new tools in Kiln, open 'Settings' > 'Manage Tools' > 'Add Tools'."
+    }
+  ]
+}
+"""
+
+    if guidance:
+        prompt += """
+
+## Custom Guidance
+For this specific execution we have additional guidance about the style of Q&A pairs we should generate. It's very important we follow this guidance when generating Q&A pairs.
+"""
+        prompt += f"""
+
+The custom guidance is:
+<guidance>
+{guidance}
+</guidance>
+"""
+    else:
+        prompt += """
+
+When generating Q&A pairs, focus on generating queries and answers that are relevant to the document content.
+"""
+
+    return prompt

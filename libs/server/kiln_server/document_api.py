@@ -2,11 +2,11 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Annotated, Any, Awaitable, Callable, Dict, List
+from typing import Annotated, Awaitable, Callable, Dict, List, Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
+from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
@@ -28,13 +28,9 @@ from kiln_ai.adapters.rag.rag_runners import (
     RagWorkflowRunner,
     RagWorkflowRunnerConfiguration,
 )
-from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
-    SearchResult,
-    VectorStoreQuery,
-)
-from kiln_ai.adapters.vector_store.vector_store_registry import (
-    vector_store_adapter_for_config,
-)
+from kiln_ai.adapters.reranker_list import built_in_reranker_models_from_provider
+from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
+from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     FilenameString,
@@ -55,11 +51,18 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
     ExtractorType,
     FileInfo,
+    LitellmExtractorConfigProperties,
     OutputFormat,
     get_kind_from_mime_type,
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.reranker import (
+    CohereCompatibleProperties,
+    RerankerConfig,
+    RerankerType,
+)
+from kiln_ai.datamodel.tool_id import RAG_TOOL_ID_PREFIX
 from kiln_ai.datamodel.vector_store import (
     LanceDBConfigFTSProperties,
     LanceDBConfigHybridProperties,
@@ -67,13 +70,15 @@ from kiln_ai.datamodel.vector_store import (
     VectorStoreConfig,
     VectorStoreType,
 )
+from kiln_ai.tools.rag_tools import RagTool
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
 
@@ -85,6 +90,37 @@ background_tasks: set[asyncio.Task] = set()
 class BulkCreateDocumentsResponse(BaseModel):
     created_documents: List[Document]
     failed_files: List[str]
+
+
+class EphemeralSplitRequest(BaseModel):
+    chunk_size: PositiveInt | None = Field(
+        default=None,
+        description="The size of each chunk in tokens. If None, return a single chunk with the full extraction output.",
+    )
+    chunk_overlap: int | None = Field(
+        ge=0,
+        default=None,
+        description="The overlap between chunks in tokens. If None, use the default overlap for the chunker.",
+    )
+
+
+class EphemeralSplitChunk(BaseModel):
+    id: str
+    text: str
+
+
+class EphemeralSplitResponse(BaseModel):
+    chunks: list[EphemeralSplitChunk]
+
+
+def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
+    try:
+        if tags:
+            # split tags by commas
+            return [tag.strip() for tag in tags.split(",") if tag.strip()]
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid tags: {e!s}")
 
 
 def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
@@ -235,6 +271,7 @@ class RagConfigWithSubConfigs(BaseModel):
     chunker_config: ChunkerConfig
     embedding_config: EmbeddingConfig
     vector_store_config: VectorStoreConfig
+    reranker_config: RerankerConfig | None
     tags: list[str] | None
 
 
@@ -265,9 +302,40 @@ class CreateRagConfigRequest(BaseModel):
     vector_store_config_id: ID_TYPE = Field(
         description="The vector store config to use for the RAG workflow.",
     )
+    reranker_config_id: ID_TYPE | None = Field(
+        description="The reranker config to use for the RAG workflow.",
+        default=None,
+    )
     tags: list[str] | None = Field(
         description="List of document tags to filter by. If None, all documents in the project are used.",
         default=None,
+    )
+
+
+class SemanticChunkerPropertiesPublic(BaseModel):
+    chunker_type: Literal[ChunkerType.SEMANTIC] = Field(
+        description="The type of the chunker",
+    )
+    embedding_config_id: str = Field(
+        description="The embedding config to use for the RAG workflow.",
+    )
+    buffer_size: int = Field(
+        description="The buffer size to use for the chunker.",
+    )
+    breakpoint_percentile_threshold: int = Field(
+        description="The breakpoint percentile threshold to use for the chunker.",
+    )
+
+
+class FixedWindowChunkerPropertiesPublic(BaseModel):
+    chunker_type: Literal[ChunkerType.FIXED_WINDOW] = Field(
+        description="The type of the chunker",
+    )
+    chunk_size: int = Field(
+        description="The chunk size to use for the chunker.",
+    )
+    chunk_overlap: int = Field(
+        description="The chunk overlap to use for the chunker.",
     )
 
 
@@ -283,26 +351,33 @@ class CreateChunkerConfigRequest(BaseModel):
     chunker_type: ChunkerType = Field(
         description="The type of the chunker",
     )
-    properties: SemanticChunkerProperties | FixedWindowChunkerProperties = Field()
+    properties: SemanticChunkerPropertiesPublic | FixedWindowChunkerPropertiesPublic = (
+        Field(
+            discriminator="chunker_type",
+        )
+    )
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_semantic_chunker_properties(cls, data: Any) -> Any:
-        chunker_type = data.get("chunker_type")
-
-        properties = data.get("properties") or {}
-        if not isinstance(properties, dict):
-            return data
-
-        if chunker_type == ChunkerType.SEMANTIC:
-            # currently too granular to be exposed to the user in the UI
-            # but we should pass on these fields as part of the config to
-            # make sure the config is stable and complete
-            properties["include_metadata"] = False
-            properties["include_prev_next_rel"] = False
-            data["properties"] = properties
-
-        return data
+    def get_properties_for_chunker_type(
+        self,
+    ) -> SemanticChunkerProperties | FixedWindowChunkerProperties:
+        properties = self.properties
+        match properties.chunker_type:
+            case ChunkerType.SEMANTIC:
+                return SemanticChunkerProperties(
+                    chunker_type=ChunkerType.SEMANTIC,
+                    embedding_config_id=properties.embedding_config_id,
+                    buffer_size=properties.buffer_size,
+                    breakpoint_percentile_threshold=properties.breakpoint_percentile_threshold,
+                    include_metadata=False,
+                    include_prev_next_rel=False,
+                )
+            case ChunkerType.FIXED_WINDOW:
+                return FixedWindowChunkerProperties(
+                    chunker_type=ChunkerType.FIXED_WINDOW,
+                    chunk_size=properties.chunk_size,
+                    chunk_overlap=properties.chunk_overlap,
+                )
+        raise_exhaustive_enum_error(properties.chunker_type)
 
 
 class CreateEmbeddingConfigRequest(BaseModel):
@@ -433,6 +508,59 @@ class CreateVectorStoreConfigRequest(BaseModel):
                 raise_exhaustive_enum_error(self.store_type)
 
 
+class CreateRerankerConfigRequest(BaseModel):
+    name: FilenameString | None = Field(
+        description="A name for this entity.",
+        default_factory=generate_memorable_name,
+    )
+    description: str | None = Field(
+        description="The description of the reranker config",
+        default=None,
+    )
+    top_n: PositiveInt = Field(
+        description="Number of results to return from the reranker"
+    )
+    model_provider_name: ModelProviderName = Field(
+        description="The name of the model provider to use for the reranker config.",
+    )
+    model_name: str = Field(
+        description="The name of the model to use for the reranker config.",
+    )
+    properties: CohereCompatibleProperties = Field(
+        description="The properties of the reranker config.",
+        default=CohereCompatibleProperties(
+            type=RerankerType.COHERE_COMPATIBLE,
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_properties(self):
+        # check the reranker exists
+        model = built_in_reranker_models_from_provider(
+            provider_name=self.model_provider_name,
+            model_name=self.model_name,
+        )
+        if model is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {self.model_name} not found in {self.model_provider_name}",
+            )
+
+        return self
+
+    def get_reranker_config_properties(self) -> CohereCompatibleProperties:
+        # currently only one type is supported, but we may add more in the future
+        match self.properties.get("type"):
+            case RerankerType.COHERE_COMPATIBLE:
+                return CohereCompatibleProperties(
+                    type=RerankerType.COHERE_COMPATIBLE,
+                )
+            case _:
+                raise ValueError(
+                    f"Invalid reranker type: {self.properties.get('type')}"
+                )
+
+
 class CreateExtractorConfigRequest(BaseModel):
     name: FilenameString | None = Field(
         description="A name for this entity.",
@@ -455,8 +583,8 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The mimetypes to pass through to the extractor",
         default_factory=list,
     )
-    properties: dict[str, str | int | float | bool | dict[str, str] | None] = Field(
-        default_factory=dict,
+    properties: LitellmExtractorConfigProperties = Field(
+        description="The properties of the extractor config, specific to the selected extractor_type.",
     )
 
     @model_validator(mode="after")
@@ -473,8 +601,9 @@ class CreateExtractorConfigRequest(BaseModel):
         )
 
         if model is None:
-            raise ValueError(
-                f"Model {self.model_name} not found in {self.model_provider_name}"
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {self.model_name} not found in {self.model_provider_name}",
             )
 
         if not model.supports_doc_extraction:
@@ -483,6 +612,19 @@ class CreateExtractorConfigRequest(BaseModel):
             )
 
         return self
+
+    def get_properties(self) -> LitellmExtractorConfigProperties:
+        match self.properties["extractor_type"]:
+            case ExtractorType.LITELLM:
+                return LitellmExtractorConfigProperties(
+                    extractor_type=ExtractorType.LITELLM,
+                    prompt_document=self.properties["prompt_document"],
+                    prompt_image=self.properties["prompt_image"],
+                    prompt_video=self.properties["prompt_video"],
+                    prompt_audio=self.properties["prompt_audio"],
+                )
+            case _:
+                raise_exhaustive_enum_error(self.properties["extractor_type"])
 
 
 class PatchDocumentRequest(BaseModel):
@@ -585,6 +727,12 @@ class RagSearchRequest(BaseModel):
 class RagSearchResponse(BaseModel):
     results: list[SearchResult] = Field(
         description="The search results",
+    )
+
+
+class DocumentLibraryState(BaseModel):
+    is_empty: bool = Field(
+        description="Whether the library is empty",
     )
 
 
@@ -705,6 +853,33 @@ async def build_rag_workflow_runner(
     return runner
 
 
+def get_documents_filtered(
+    project: Project,
+    exclude_extracted_by_extractor_config_id: str | None = None,
+    target_tags: list[str] | None = None,
+) -> list[Document]:
+    documents: list[Document] = []
+    for document in project.documents(readonly=True):
+        # no tags target every document
+        is_target_document = not target_tags or any(
+            tag in (document.tags or []) for tag in target_tags
+        )
+        if not is_target_document:
+            continue
+
+        if exclude_extracted_by_extractor_config_id:
+            is_document_already_extracted = any(
+                extraction.extractor_config_id
+                == exclude_extracted_by_extractor_config_id
+                for extraction in document.extractions(readonly=True)
+            )
+            if is_document_already_extracted:
+                continue
+
+        documents.append(document)
+    return documents
+
+
 def connect_document_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/documents/bulk")
     async def create_documents_bulk(
@@ -800,9 +975,57 @@ def connect_document_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/documents")
     async def get_documents(
         project_id: str,
+        tags: str | None = None,
     ) -> list[Document]:
         project = project_from_id(project_id)
-        return project.documents(readonly=True)
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
+
+        documents = project.documents(readonly=True)
+        if target_tags:
+            return [
+                document
+                for document in documents
+                if any(tag in document.tags for tag in target_tags)
+            ]
+
+        return documents
+
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions"
+    )
+    async def get_extractions_for_extractor_config(
+        project_id: str, extractor_config_id: str
+    ) -> dict[str, list[ExtractionSummary]]:
+        """Return mapping of document id to list of extractions for the given extractor config id."""
+        project = project_from_id(project_id)
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(status_code=404, detail="Extractor config not found")
+
+        results: dict[str, list[ExtractionSummary]] = {}
+
+        documents = project.documents(readonly=True)
+        for document in documents:
+            matched: list[ExtractionSummary] = []
+            for extraction in document.extractions(readonly=True):
+                if extraction.extractor_config_id == extractor_config_id:
+                    output = await extraction.output_content() or ""
+                    matched.append(
+                        build_extraction_summary(
+                            extraction=extraction,
+                            output_content=output,
+                            extractor_config=extractor_config,
+                        )
+                    )
+            if matched:
+                results[str(document.id)] = matched
+
+        return results
 
     @app.get("/api/projects/{project_id}/documents/tags")
     async def get_document_tags(
@@ -935,6 +1158,8 @@ def connect_document_api(app: FastAPI):
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
 
+        properties = request.get_properties()
+
         extractor_config = ExtractorConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -943,8 +1168,9 @@ def connect_document_api(app: FastAPI):
             model_name=request.model_name,
             output_format=request.output_format,
             passthrough_mimetypes=request.passthrough_mimetypes,
-            extractor_type=ExtractorType.LITELLM,
-            properties=request.properties,
+            extractor_type=properties["extractor_type"],
+            properties=request.get_properties(),
+            is_archived=False,
         )
         extractor_config.save_to_file()
 
@@ -980,7 +1206,11 @@ def connect_document_api(app: FastAPI):
     async def run_extractor_config(
         project_id: str,
         extractor_config_id: str,
+        tags: str | None = None,
     ) -> StreamingResponse:
+        target_tags: list[str] | None = None
+        if tags:
+            target_tags = parse_comma_separated_tags(tags)
         # the extractor may also run as part of a RAG config run, and we cannot have concurrent runs or we risk
         # having duplicate extractions
         async with shared_async_lock_manager.acquire(
@@ -1002,7 +1232,11 @@ def connect_document_api(app: FastAPI):
                     detail="Extractor config is archived. You must unarchive it to use it.",
                 )
 
-            documents = project.documents(readonly=True)
+            documents = get_documents_filtered(
+                project,
+                exclude_extracted_by_extractor_config_id=extractor_config_id,
+                target_tags=target_tags,
+            )
 
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
@@ -1344,21 +1578,14 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
 
         # if semantic, validate that the referenced embedding config exists
-        if request.chunker_type == ChunkerType.SEMANTIC:
-            embedding_config_id = request.properties.get("embedding_config_id")
-            # should already be enforced by request validator, but needed for type checking
-            if not isinstance(embedding_config_id, str):  # pragma: no cover
-                raise HTTPException(
-                    status_code=422,
-                    detail="embedding_config_id must be provided and be a string",
-                )
+        if request.properties.chunker_type == ChunkerType.SEMANTIC:
             embedding_config = EmbeddingConfig.from_id_and_parent_path(
-                embedding_config_id, project.path
+                request.properties.embedding_config_id, project.path
             )
             if not embedding_config:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Embedding config {embedding_config_id} not found",
+                    detail=f"Embedding config {request.properties.embedding_config_id} not found",
                 )
 
         chunker_config = ChunkerConfig(
@@ -1366,7 +1593,7 @@ def connect_document_api(app: FastAPI):
             name=string_to_valid_name(request.name or generate_memorable_name()),
             description=request.description,
             chunker_type=request.chunker_type,
-            properties=request.properties,
+            properties=request.get_properties_for_chunker_type(),
         )
         chunker_config.save_to_file()
 
@@ -1409,6 +1636,33 @@ def connect_document_api(app: FastAPI):
     ) -> list[EmbeddingConfig]:
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
+
+    @app.post("/api/projects/{project_id}/create_reranker_config")
+    async def create_reranker_config(
+        project_id: str,
+        request: CreateRerankerConfigRequest,
+    ) -> RerankerConfig:
+        project = project_from_id(project_id)
+
+        reranker_config = RerankerConfig(
+            parent=project,
+            name=string_to_valid_name(request.name or generate_memorable_name()),
+            description=request.description,
+            top_n=request.top_n,
+            model_provider_name=request.model_provider_name,
+            model_name=request.model_name,
+            properties=request.get_reranker_config_properties(),
+        )
+        reranker_config.save_to_file()
+
+        return reranker_config
+
+    @app.get("/api/projects/{project_id}/reranker_configs")
+    async def get_reranker_configs(
+        project_id: str,
+    ) -> list[RerankerConfig]:
+        project = project_from_id(project_id)
+        return project.reranker_configs(readonly=True)
 
     @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
     async def get_embedding_config(
@@ -1507,6 +1761,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Vector store config {request.vector_store_config_id} not found",
             )
 
+        reranker_config = None
+        has_reranker = request.reranker_config_id is not None
+        if has_reranker:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(request.reranker_config_id), project.path
+            )
+            if not reranker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reranker config {request.reranker_config_id} not found",
+                )
+
         rag_config = RagConfig(
             parent=project,
             name=string_to_valid_name(request.name or generate_memorable_name()),
@@ -1517,6 +1783,7 @@ def connect_document_api(app: FastAPI):
             chunker_config_id=chunker_config.id,
             embedding_config_id=embedding_config.id,
             vector_store_config_id=vector_store_config.id,
+            reranker_config_id=reranker_config.id if reranker_config else None,
             tags=request.tags,
         )
         rag_config.save_to_file()
@@ -1567,6 +1834,18 @@ def connect_document_api(app: FastAPI):
                     detail=f"Vector store config {rag_config.vector_store_config_id} not found",
                 )
 
+            reranker_config = None
+            has_reranker = rag_config.reranker_config_id is not None
+            if has_reranker:
+                reranker_config = RerankerConfig.from_id_and_parent_path(
+                    str(rag_config.reranker_config_id), project.path
+                )
+                if not reranker_config:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                    )
+
             rag_configs.append(
                 RagConfigWithSubConfigs(
                     id=rag_config.id,
@@ -1582,6 +1861,7 @@ def connect_document_api(app: FastAPI):
                     chunker_config=chunker_config,
                     embedding_config=embedding_config,
                     vector_store_config=vector_store_config,
+                    reranker_config=reranker_config,
                 )
             )
 
@@ -1630,6 +1910,18 @@ def connect_document_api(app: FastAPI):
                 detail=f"Vector store config {rag_config.vector_store_config_id} not found",
             )
 
+        reranker_config = None
+        has_reranker = rag_config.reranker_config_id is not None
+        if has_reranker:
+            reranker_config = RerankerConfig.from_id_and_parent_path(
+                str(rag_config.reranker_config_id), project.path
+            )
+            if not reranker_config:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reranker config {rag_config.reranker_config_id} not found",
+                )
+
         return RagConfigWithSubConfigs(
             id=rag_config.id,
             name=rag_config.name,
@@ -1643,6 +1935,7 @@ def connect_document_api(app: FastAPI):
             chunker_config=chunker_config,
             embedding_config=embedding_config,
             vector_store_config=vector_store_config,
+            reranker_config=reranker_config,
             tags=rag_config.tags,
         )
 
@@ -1721,79 +2014,23 @@ def connect_document_api(app: FastAPI):
         if not request.query.strip():
             return RagSearchResponse(results=[])
 
-        # Get the vector store config
-        vector_store_config = VectorStoreConfig.from_id_and_parent_path(
-            str(rag_config.vector_store_config_id), project.path
+        # we do a tool call to have the exact same behavior as during a live LLM tool call
+        rag_tool = tool_from_id(
+            f"{RAG_TOOL_ID_PREFIX}{rag_config_id}",
+            task=Task(
+                name="Fake RAG Search",
+                instruction="This is a dummy task to match the params expected by the tool_from_id factory, but is not a real task.",
+                parent=project,
+            ),
         )
-        if vector_store_config is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Vector store config not found",
-            )
-
-        # Get the embedding config
-        embedding_config = EmbeddingConfig.from_id_and_parent_path(
-            str(rag_config.embedding_config_id), project.path
-        )
-        if not embedding_config:
-            raise HTTPException(
-                status_code=404,
-                detail="Embedding config not found",
-            )
-
-        # Create the vector store adapter
-        vector_store_adapter = await vector_store_adapter_for_config(
-            rag_config, vector_store_config
-        )
-
-        # Prepare the search query based on vector store type
-        search_query: VectorStoreQuery
-
-        if vector_store_config.store_type == VectorStoreType.LANCE_DB_FTS:
-            # For FTS, just use the text query
-            search_query = VectorStoreQuery(
-                query_string=request.query,
-                query_embedding=None,
-            )
-        elif vector_store_config.store_type in [
-            VectorStoreType.LANCE_DB_VECTOR,
-            VectorStoreType.LANCE_DB_HYBRID,
-        ]:
-            # For vector and hybrid search, generate embeddings for the query
-            embedding_adapter = embedding_adapter_from_type(embedding_config)
-            embedding_result = await embedding_adapter.generate_embeddings(
-                [request.query]
-            )
-
-            if not embedding_result.embeddings:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to generate embeddings for search query",
-                )
-
-            query_embedding = embedding_result.embeddings[0].vector
-
-            if vector_store_config.store_type == VectorStoreType.LANCE_DB_VECTOR:
-                # Pure vector search
-                search_query = VectorStoreQuery(
-                    query_string=None,
-                    query_embedding=query_embedding,
-                )
-            else:
-                # Hybrid search
-                search_query = VectorStoreQuery(
-                    query_string=request.query,
-                    query_embedding=query_embedding,
-                )
-        else:
+        if not isinstance(rag_tool, RagTool):
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported vector store type: {vector_store_config.store_type}",
+                detail="Retrieved RAG tool is not a RagTool",
             )
 
-        # Perform the search
         try:
-            search_results = await vector_store_adapter.search(search_query)
+            search_results = await rag_tool.search(query=request.query)
             return RagSearchResponse(results=search_results)
         except Exception as e:
             logger.error(f"Search failed: {e}")
@@ -1801,3 +2038,76 @@ def connect_document_api(app: FastAPI):
                 status_code=500,
                 detail=f"Search failed: {e!s}",
             )
+
+    @app.get("/api/projects/{project_id}/check_library_state")
+    async def check_library_state(
+        project_id: str,
+    ) -> DocumentLibraryState:
+        project = project_from_id(project_id)
+        documents = project.documents(readonly=True)
+        return DocumentLibraryState(is_empty=len(documents) == 0)
+
+    @app.post(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split"
+    )
+    async def ephemeral_split_document(
+        project_id: str,
+        extractor_config_id: str,
+        document_id: str,
+        request: EphemeralSplitRequest,
+    ) -> EphemeralSplitResponse:
+        """Return chunks for a document extraction using FixedWindowChunker without persisting.
+
+        If chunk_size is None, return a single chunk with the full extraction output.
+        chunk_overlap defaults to 0 when not provided.
+        """
+        project = project_from_id(project_id)
+
+        extractor_config = ExtractorConfig.from_id_and_parent_path(
+            extractor_config_id, project.path
+        )
+        if extractor_config is None:
+            raise HTTPException(status_code=404, detail="Extractor config not found")
+
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Find the latest extraction for this extractor config
+        extractions = [
+            e
+            for e in document.extractions(readonly=True)
+            if e.extractor_config_id == extractor_config_id
+        ]
+        if not extractions:
+            raise HTTPException(
+                status_code=404, detail="No extraction found for document and extractor"
+            )
+
+        extraction = sorted(extractions, key=lambda e: e.created_at, reverse=True)[0]
+        output_text = await extraction.output_content() or ""
+
+        # chunk_size is None - return a single chunk with the full extraction output
+        if request.chunk_size is None:
+            return EphemeralSplitResponse(
+                chunks=[EphemeralSplitChunk(id=str(extraction.id), text=output_text)]
+            )
+
+        chunker_config = ChunkerConfig(
+            name="ephemeral-fixed-window",
+            chunker_type=ChunkerType.FIXED_WINDOW,
+            properties={
+                "chunker_type": ChunkerType.FIXED_WINDOW,
+                "chunk_size": request.chunk_size,
+                "chunk_overlap": request.chunk_overlap or 0,
+            },
+        )
+
+        chunker = chunker_adapter_from_type(ChunkerType.FIXED_WINDOW, chunker_config)
+        result = await chunker.chunk(output_text)
+
+        chunks = [
+            EphemeralSplitChunk(id=str(i), text=chunk.text)
+            for i, chunk in enumerate(result.chunks)
+        ]
+        return EphemeralSplitResponse(chunks=chunks)

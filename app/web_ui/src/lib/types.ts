@@ -29,6 +29,7 @@ export type EvalOutputScore = components["schemas"]["EvalOutputScore"]
 export type EvalTemplateId = components["schemas"]["EvalTemplateId"]
 export type Eval = components["schemas"]["Eval"]
 export type EvalConfigType = components["schemas"]["EvalConfigType"]
+export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
 export type RunConfigProperties = components["schemas"]["RunConfigProperties"]
@@ -67,6 +68,11 @@ export type RagConfigWithSubConfigs =
   components["schemas"]["RagConfigWithSubConfigs"]
 export type VectorStoreConfig = components["schemas"]["VectorStoreConfig"]
 export type VectorStoreType = components["schemas"]["VectorStoreType"]
+export type RerankerConfig = components["schemas"]["RerankerConfig"]
+export type RerankerType =
+  components["schemas"]["RerankerConfig"]["properties"]["type"]
+export type RerankerProvider = components["schemas"]["RerankerProvider"]
+export type RerankerModelDetails = components["schemas"]["RerankerModelDetails"]
 export type LogMessage = components["schemas"]["LogMessage"]
 export type BulkCreateDocumentsResponse =
   components["schemas"]["BulkCreateDocumentsResponse"]
@@ -101,6 +107,7 @@ export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 

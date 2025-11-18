@@ -200,3 +200,44 @@ class TestVectorStoreAdapterForConfig:
             await vector_store_adapter_for_config(
                 rag_config, lancedb_fts_vector_store_config
             )
+
+    async def test_vector_store_adapter_for_config_missing_rag_config_id(
+        self,
+        create_rag_config_factory,
+        lancedb_fts_vector_store_config,
+        embedding_config,
+    ):
+        """Test that missing rag_config.id raises ValueError"""
+        rag_config = create_rag_config_factory(
+            lancedb_fts_vector_store_config, embedding_config
+        )
+        rag_config.id = None
+
+        with pytest.raises(ValueError, match="Rag config ID is required"):
+            await vector_store_adapter_for_config(
+                rag_config, lancedb_fts_vector_store_config
+            )
+
+    async def test_vector_store_adapter_for_config_caching(
+        self,
+        create_rag_config_factory,
+        lancedb_fts_vector_store_config,
+        embedding_config,
+    ):
+        """Test that adapters are cached and reused"""
+        rag_config = create_rag_config_factory(
+            lancedb_fts_vector_store_config, embedding_config
+        )
+
+        # First call should create a new adapter
+        adapter1 = await vector_store_adapter_for_config(
+            rag_config, lancedb_fts_vector_store_config
+        )
+
+        # Second call should return the cached adapter
+        adapter2 = await vector_store_adapter_for_config(
+            rag_config, lancedb_fts_vector_store_config
+        )
+
+        # Should be the same instance (cached)
+        assert adapter1 is adapter2

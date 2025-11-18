@@ -5,16 +5,26 @@
   import { goto } from "$app/navigation"
   import DataGenIntro from "./data_gen_intro.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
-  import { writable, type Writable } from "svelte/store"
+  import { get, writable, type Writable } from "svelte/store"
+  import { createQnaStore, type QnaStore } from "./qna/qna_ui_store"
+  import { DEFAULT_QNA_GUIDANCE } from "./qna/guidance"
+
+  // watch out because query param value is not the same as gen_type
+  type SynthReasonQueryParam = "eval" | "fine_tune" | "qna"
 
   let loading = true
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
+  let cachedQnaStore: QnaStore | null = null
+  let cachedQnaProjectId: string | null = null
+  let cachedQnaTaskId: string | null = null
+  let cachedQnaInitialized = false
+
   // we only need gen_type to do the routing, the type-specific data is handled by the
   // mode-specific pages we redirect to
   type SavedDataGenState = {
-    gen_type?: "training" | "eval" | null
+    gen_type?: "training" | "eval" | "qna" | null
   }
 
   let saved_state: Writable<SavedDataGenState> = writable({
@@ -27,7 +37,9 @@
 
   async function handle_routing() {
     loading = true
-    const reason_param = $page.url.searchParams.get("reason")
+    const reason_param = $page.url.searchParams.get(
+      "reason",
+    ) as SynthReasonQueryParam | null
 
     // Eval/Fine-tuning modes redirect to synth page - this is when we explicitly link back
     // to the synth page (e.g. via toast UI)
@@ -36,6 +48,15 @@
       await goto(
         `/generate/${project_id}/${task_id}/synth?${params.toString()}`,
       )
+      return
+    } else if (reason_param === "qna") {
+      const params = $page.url.searchParams
+      await goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
+      return
+    } else if (reason_param) {
+      //typecheck will flag this if we add a new case that we don't handle
+      const _: never = reason_param
+      console.error(`Invalid reason: ${_}`)
       return
     }
 
@@ -49,6 +70,9 @@
           return
         case "eval":
           await goto(`/generate/${project_id}/${task_id}/synth`)
+          return
+        case "qna":
+          await goto(`/generate/${project_id}/${task_id}/qna`)
           return
         case null:
           // no ongoing session, stay on this page and show intro
@@ -68,8 +92,28 @@
   }
 
   async function getCurrentSessionGenType(): Promise<
-    "training" | "eval" | null
+    "training" | "eval" | "qna" | null
   > {
+    // Check for saved Q&A session first
+    if (
+      !cachedQnaStore ||
+      cachedQnaProjectId !== project_id ||
+      cachedQnaTaskId !== task_id
+    ) {
+      cachedQnaStore = createQnaStore(project_id, task_id)
+      cachedQnaProjectId = project_id
+      cachedQnaTaskId = task_id
+      cachedQnaInitialized = false
+    }
+    if (!cachedQnaInitialized) {
+      await cachedQnaStore.init(DEFAULT_QNA_GUIDANCE)
+      cachedQnaInitialized = true
+    }
+    const qna = cachedQnaStore
+    if (get(qna).documents.length > 0) {
+      return "qna"
+    }
+    // Check for saved synthetic data session
     const synth_data_key = `synth_data_${project_id}_${task_id}_v2`
     const { store, initialized } = indexedDBStore(synth_data_key, {
       gen_type: null,
