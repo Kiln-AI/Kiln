@@ -1,5 +1,6 @@
 import json
 import tempfile
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Protocol
 from uuid import uuid4
@@ -12,13 +13,36 @@ from kiln_ai.adapters.chat.chat_formatter import (
     get_chat_formatter,
 )
 from kiln_ai.adapters.chat.chat_utils import build_tool_call_messages
-from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
-from kiln_ai.adapters.fine_tune.vertext_formatter import generate_vertex_gemini
+from kiln_ai.adapters.fine_tune.vertex_formatter import generate_vertex_gemini
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.tools.base_tool import ToolCallDefinition
 from kiln_ai.tools.tool_registry import tool_definitions_from_ids
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+
+class DatasetFormat(str, Enum):
+    """Formats for dataset generation. Both for file format (like JSONL), and internal structure (like chat/toolcall)"""
+
+    """OpenAI chat format with plaintext response"""
+    OPENAI_CHAT_JSONL = "openai_chat_jsonl"
+
+    """OpenAI chat format with json response_format"""
+    OPENAI_CHAT_JSON_SCHEMA_JSONL = "openai_chat_json_schema_jsonl"
+
+    """OpenAI chat format with tool call response"""
+    OPENAI_CHAT_TOOLCALL_JSONL = "openai_chat_toolcall_jsonl"
+
+    """HuggingFace chat template in JSONL"""
+    HUGGINGFACE_CHAT_TEMPLATE_JSONL = "huggingface_chat_template_jsonl"
+
+    """HuggingFace chat template with tool calls in JSONL"""
+    HUGGINGFACE_CHAT_TEMPLATE_TOOLCALL_JSONL = (
+        "huggingface_chat_template_toolcall_jsonl"
+    )
+
+    """Vertex Gemini format"""
+    VERTEX_GEMINI = "vertex_gemini"
 
 
 class FormatGenerator(Protocol):

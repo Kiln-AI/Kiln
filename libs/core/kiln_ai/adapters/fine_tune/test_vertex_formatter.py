@@ -1,13 +1,57 @@
 from unittest.mock import AsyncMock, Mock
 
-from kiln_ai.adapters.fine_tune.dataset_format import DatasetFormat
-from kiln_ai.adapters.fine_tune.trace_based_dataset_formatter import (
-    TraceBasedDatasetFormatter,
+from kiln_ai.adapters.chat.chat_formatter import (
+    BasicChatMessage,
+    ChatMessage,
+    ToolCallMessage,
+    ToolResponseMessage,
+)
+from kiln_ai.adapters.fine_tune.vertex_formatter import (
+    convert_schema_to_vertex_types,
+    generate_vertex_gemini,
 )
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.tool_registry import tool_definitions_from_ids
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+
+
+def trace_to_chat_messages(
+    trace: list[ChatCompletionMessageParam],
+) -> list[ChatMessage]:
+    """Convert a trace (OpenAI format) to ChatMessage objects"""
+    messages: list[ChatMessage] = []
+
+    for msg in trace:
+        role = msg["role"]
+        content = msg.get("content")
+
+        if role in ("system", "user"):
+            messages.append(BasicChatMessage(role=role, content=content or ""))
+        elif role == "assistant":
+            if "tool_calls" in msg:
+                messages.append(
+                    ToolCallMessage(
+                        role="assistant",
+                        tool_calls=msg["tool_calls"],
+                        content=content,
+                    )
+                )
+            else:
+                messages.append(
+                    BasicChatMessage(role="assistant", content=content or "")
+                )
+        elif role == "tool":
+            messages.append(
+                ToolResponseMessage(
+                    role="tool",
+                    content=content or "",
+                    tool_call_id=msg.get("tool_call_id", ""),
+                )
+            )
+
+    return messages
 
 
 def create_mock_task_run(
@@ -16,7 +60,10 @@ def create_mock_task_run(
     """Helper to create a mock TaskRun with proper structure"""
     task = Mock(spec=TaskRun)
     task.trace = trace
+    task.input = "Test input"
+    task.repaired_output = None
     output_mock = Mock()
+    output_mock.output = "Test output"
 
     if tool_ids:
         run_config = RunConfigProperties(
@@ -30,7 +77,7 @@ def create_mock_task_run(
         output_mock.source.run_config = run_config
 
         parent_task_mock = AsyncMock()
-        task.parent_task = Mock(return_value=parent_task_mock)
+        task.parent_task = AsyncMock(return_value=parent_task_mock)
     else:
         output_mock.source = None
 
@@ -115,16 +162,15 @@ def trace_with_tools(jsonOutput: bool = False) -> list[ChatCompletionMessagePara
 class TestVertexFormatter:
     async def test_VERTEX_GEMINI_without_tools(self):
         """Test generate vertex gemini message without tools"""
-        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
-        task = create_mock_task_run(trace_without_tools())
+        trace = trace_without_tools()
+        training_chat = trace_to_chat_messages(trace)
 
-        result = await formatter.build_training_chat_from_trace(
-            task, DatasetFormat.VERTEX_GEMINI
-        )
+        result = generate_vertex_gemini(training_chat, tools=None)
+
         assert result == {
             "systemInstruction": {
                 "role": "system",
-                "parts": [{"text": "Test System Message"}],
+                "parts": [{"text": "You are a helpful assistant."}],
             },
             "contents": [
                 {
@@ -140,23 +186,25 @@ class TestVertexFormatter:
 
     async def test_VERTEX_GEMINI_with_tools(self):
         """Test generate vertex gemini message with multiple tool calls"""
-        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
         tool_ids = [
             KilnBuiltInToolId.ADD_NUMBERS.value,
             KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
             KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
             KilnBuiltInToolId.DIVIDE_NUMBERS.value,
         ]
-        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
+        task_run = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
+        trace = trace_with_tools()
+        training_chat = trace_to_chat_messages(trace)
 
-        result = await formatter.build_training_chat_from_trace(
-            task, DatasetFormat.VERTEX_GEMINI
-        )
+        parent_task = await task_run.parent_task()
+        tool_definitions = await tool_definitions_from_ids(tool_ids, parent_task)
+
+        result = generate_vertex_gemini(training_chat, tools=tool_definitions)
 
         assert result == {
             "systemInstruction": {
                 "role": "system",
-                "parts": [{"text": "Test System Message"}],
+                "parts": [{"text": "You are a calculator"}],
             },
             "contents": [
                 {
@@ -306,16 +354,18 @@ class TestVertexFormatter:
 
     async def test_VERTEX_GEMINI_with_tool_declarations(self):
         """Test generate vertex gemini message with tool declarations"""
-        formatter = TraceBasedDatasetFormatter(system_message="Test System Message")
         tool_ids = [
             KilnBuiltInToolId.ADD_NUMBERS.value,
             KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
         ]
-        task = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
+        task_run = create_mock_task_run(trace_with_tools(), tool_ids=tool_ids)
+        trace = trace_with_tools()
+        training_chat = trace_to_chat_messages(trace)
 
-        result = await formatter.build_training_chat_from_trace(
-            task, DatasetFormat.VERTEX_GEMINI
-        )
+        parent_task = await task_run.parent_task()
+        tool_definitions = await tool_definitions_from_ids(tool_ids, parent_task)
+
+        result = generate_vertex_gemini(training_chat, tools=tool_definitions)
 
         assert "tools" in result
         assert len(result["tools"]) == 1
@@ -335,8 +385,6 @@ class TestVertexFormatter:
 
     def test_convert_schema_to_vertex_types(self):
         """Test schema conversion from OpenAI (lowercase) to Vertex (uppercase) types"""
-        formatter = TraceBasedDatasetFormatter(system_message="Test")
-
         openai_schema = {
             "type": "object",
             "properties": {
@@ -352,7 +400,7 @@ class TestVertexFormatter:
             },
         }
 
-        vertex_schema = formatter._convert_schema_to_vertex_types(openai_schema)
+        vertex_schema = convert_schema_to_vertex_types(openai_schema)
 
         assert vertex_schema["type"] == "OBJECT"
         assert vertex_schema["properties"]["name"]["type"] == "STRING"
@@ -369,8 +417,6 @@ class TestVertexFormatter:
 
     def test_convert_schema_preserves_non_type_fields(self):
         """Test that schema conversion preserves all non-type fields"""
-        formatter = TraceBasedDatasetFormatter(system_message="Test")
-
         openai_schema = {
             "type": "object",
             "properties": {
@@ -383,7 +429,7 @@ class TestVertexFormatter:
             "required": ["product"],
         }
 
-        vertex_schema = formatter._convert_schema_to_vertex_types(openai_schema)
+        vertex_schema = convert_schema_to_vertex_types(openai_schema)
 
         expected_schema = {
             "type": "OBJECT",

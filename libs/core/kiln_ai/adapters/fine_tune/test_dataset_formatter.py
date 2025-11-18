@@ -23,7 +23,7 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_huggingface_chat_template_toolcall,
     serialize_r1_style_message,
 )
-from kiln_ai.adapters.fine_tune.vertext_formatter import (
+from kiln_ai.adapters.fine_tune.vertex_formatter import (
     VERTEX_GEMINI_ROLE_MAP,
     generate_vertex_gemini,
 )
