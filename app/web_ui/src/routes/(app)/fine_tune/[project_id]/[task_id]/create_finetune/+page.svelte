@@ -10,7 +10,10 @@
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
-  import { fine_tune_target_model as model_provider } from "$lib/stores"
+  import {
+    fine_tune_target_model as model_provider,
+    fine_tuning_tools,
+  } from "$lib/stores"
   import {
     available_tuning_models,
     available_models_error,
@@ -82,6 +85,13 @@
     selected_model && !selected_model.model.supports_function_calling
 
   let selected_tools: string[] = []
+
+  onMount(() => {
+    // Restore tools from localStorage if returning from SDG
+    if ($fine_tuning_tools.length > 0) {
+      selected_tools = [...$fine_tuning_tools]
+    }
+  })
 
   let available_model_select: OptionGroup[] = []
 
@@ -367,6 +377,8 @@
         prompt_method: system_prompt_method,
       })
       created_finetune = create_finetune_response
+      // Clear the fine_tuning_tools store now that fine-tune is created
+      fine_tuning_tools.set([])
       progress_ui_state.set({
         title: "Creating Fine-Tune",
         body: "In progress,  ",

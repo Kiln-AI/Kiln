@@ -37,6 +37,7 @@
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
   export let mandatory_tools: string[] | null = null
+  export let frozen_fine_tuning_tools: string[] | null = null
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
@@ -284,6 +285,10 @@
         {hide_create_kiln_task_tool_button}
         disabled={disabled_tools_selector}
         {mandatory_tools}
+        frozen={!!(
+          frozen_fine_tuning_tools && frozen_fine_tuning_tools.length > 0
+        )}
+        {frozen_fine_tuning_tools}
       />
     {/if}
     <Collapse title="Advanced Options">
@@ -306,6 +311,10 @@
           {hide_create_kiln_task_tool_button}
           disabled={disabled_tools_selector}
           {mandatory_tools}
+          frozen={!!(
+            frozen_fine_tuning_tools && frozen_fine_tuning_tools.length > 0
+          )}
+          {frozen_fine_tuning_tools}
         />
       {/if}
       <AdvancedRunOptions

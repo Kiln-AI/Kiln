@@ -6,6 +6,7 @@
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
+  import { arrays_equal } from "$lib/utils/collections"
 
   export let project_id: string
   export let task_id: string | null = null
@@ -25,6 +26,19 @@
   export let single_select: boolean = false
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
 
+  // When frozen=true, the dropdown is disabled and locked to frozen_fine_tuning_tools.
+  export let frozen: boolean = false
+  export let frozen_fine_tuning_tools: string[] | null = null
+
+  // When frozen, set tools to frozen_fine_tuning_tools
+  $: if (
+    frozen &&
+    frozen_fine_tuning_tools &&
+    !arrays_equal(tools, frozen_fine_tuning_tools)
+  ) {
+    tools = [...frozen_fine_tuning_tools]
+  }
+
   let tools_store_loaded_task_id: string | null = null
 
   onMount(async () => {
@@ -37,6 +51,11 @@
   async function load_tools(project_id: string, task_id: string | null) {
     // Load available tools
     load_available_tools(project_id)
+
+    // If frozen, don't load from store - frozen tools override everything
+    if (frozen) {
+      return
+    }
 
     if (!task_id) {
       tools = mandatory_tools || []
@@ -165,7 +184,17 @@
 </script>
 
 <div>
-  {#if single_select}
+  {#if frozen}
+    <FormElement
+      id="tools"
+      {label}
+      description="You must use the set of tools you are fine-tuning for."
+      inputType="multi_select"
+      bind:value={tools}
+      fancy_select_options={get_tool_options($available_tools[project_id])}
+      disabled={true}
+    />
+  {:else if single_select}
     <FormElement
       id="tools"
       {label}

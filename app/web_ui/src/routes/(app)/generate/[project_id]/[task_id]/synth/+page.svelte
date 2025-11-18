@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import { current_task } from "$lib/stores"
+  import { current_task, fine_tuning_tools } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -62,6 +62,7 @@
     splits: Record<string, number>
     root_node: SampleDataNode
     session_id: string | null
+    fine_tuning_tools: string[] | null
   }
   // Empty to start but will be populated from IndexedDB after task is loaded
   // Note: load the state vars into the guidance_data model and use that, this is just for the initial load/persistence
@@ -73,6 +74,7 @@
     splits: {},
     root_node: { topic: "", samples: [], sub_topics: [] },
     session_id: null,
+    fine_tuning_tools: null,
   })
   // Reactivity: update state in indexedDB when splits is modified
   // Only update if we're not in the middle of loading initial state
@@ -117,6 +119,7 @@
       tool_id: null,
       splits: {},
       session_id: null,
+      fine_tuning_tools: null,
     }))
   }
 
@@ -165,6 +168,7 @@
         splits: {},
         root_node: { topic: "", samples: [], sub_topics: [] },
         session_id: null,
+        fine_tuning_tools: null,
       })
       // Wait for the store to be initialized, then set the state
       await initialized
@@ -220,6 +224,11 @@
         tool_id_param && tool_id_param.length > 0 ? tool_id_param : null
       const splitsParam = $page.url.searchParams.get("splits")
       const splits = get_splits_from_url_param(splitsParam)
+      const fine_tuning_tools_param =
+        $page.url.searchParams.get("fine_tuning_tools")
+      const fine_tuning_tools_list: string[] | null = fine_tuning_tools_param
+        ? fine_tuning_tools_param.split(",").filter((t) => t.length > 0)
+        : null
 
       const has_saved_state = $saved_state.gen_type !== null
       if (!has_saved_state) {
@@ -233,6 +242,7 @@
           task_id,
           splits,
           new_session_id,
+          fine_tuning_tools_list,
         )
         return
       } else {
@@ -252,6 +262,7 @@
             task_id,
             $saved_state.splits,
             $saved_state.session_id ?? new_session_id,
+            $saved_state.fine_tuning_tools,
           )
           return
         } else {
@@ -272,6 +283,7 @@
         task_id,
         $saved_state.splits,
         $saved_state.session_id ?? new_session_id,
+        $saved_state.fine_tuning_tools,
       )
       // Only show the dialog if we haven't already continued the session from eval -> synth
       const session_continued =
@@ -318,6 +330,7 @@
     task_id: string,
     splits: Record<string, number>,
     session_id: string | null,
+    fine_tuning_tools_list: string[] | null,
   ) {
     if (!gen_type || !task) {
       return
@@ -346,7 +359,13 @@
       tool_id,
       splits,
       session_id,
+      fine_tuning_tools: fine_tuning_tools_list,
     }))
+
+    // Store fine_tuning_tools
+    if (fine_tuning_tools_list && fine_tuning_tools_list.length > 0) {
+      $fine_tuning_tools = fine_tuning_tools_list
+    }
 
     posthog.capture("setup_data_gen", {
       gen_type,
@@ -1134,6 +1153,10 @@
             requires_structured_output={!!task.output_json_schema}
             mandatory_tools={$saved_state.tool_id
               ? [$saved_state.tool_id]
+              : null}
+            frozen_fine_tuning_tools={$saved_state.fine_tuning_tools &&
+            $saved_state.fine_tuning_tools.length > 0
+              ? $saved_state.fine_tuning_tools
               : null}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema

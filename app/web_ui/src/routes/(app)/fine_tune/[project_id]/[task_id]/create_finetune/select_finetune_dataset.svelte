@@ -213,9 +213,16 @@
       step_count: 4,
       current_step: 2,
     })
-    let link = `/dataset/${project_id}/${task_id}/add_data?reason=fine_tune&template_id=fine_tuning&splits=fine_tune_data:1.0&finetune_link=${encodeURIComponent(
-      `/fine_tune/${project_id}/${task_id}/create_finetune`,
-    )}`
+    const params = new URLSearchParams({
+      reason: "fine_tune",
+      template_id: "fine_tuning",
+      splits: "fine_tune_data:1.0",
+      finetune_link: `/fine_tune/${project_id}/${task_id}/create_finetune`,
+    })
+    if (required_tools.length > 0) {
+      params.set("fine_tuning_tools", required_tools.join(","))
+    }
+    let link = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     goto(link)
   }
 
