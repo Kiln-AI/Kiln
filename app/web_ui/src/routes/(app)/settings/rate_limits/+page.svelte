@@ -23,6 +23,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import { number_validator } from "$lib/utils/input_validators"
 
   type RateLimits = {
     provider_limits?: { [provider: string]: number }
@@ -398,7 +399,13 @@
                     placeholder="Default"
                     optional={true}
                     light_label={true}
-                    description="Max concurrent requests for all models from this provider. If no model-specific limit is set for the model, this limit will be used."
+                    description="The default max concurrent requests for each model from this provider. This limit is used if no model-specific limit is set for the model."
+                    validator={number_validator({
+                      min: 1,
+                      integer: true,
+                      label: `LLM ${provider_name_from_id(provider)} provider limit`,
+                      optional: true,
+                    })}
                   />
 
                   <div class="border-l-2 pl-4">
@@ -408,7 +415,7 @@
                       inputType="header_only"
                       value=""
                       light_label={true}
-                      description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
+                      description="The maximum concurrent requests for a specific model. This limit takes precedence over the provider-wide limit."
                     />
                     {#if models.length === 0}
                       <div class="text-sm text-gray-500 mt-4">
@@ -436,6 +443,12 @@
                             placeholder={`Use provider limit (${provider_inputs[provider] ?? "Default"})`}
                             optional={true}
                             light_label={true}
+                            validator={number_validator({
+                              min: 1,
+                              integer: true,
+                              label: `${model.name} limit`,
+                              optional: true,
+                            })}
                           />
                         {/each}
                       </div>
@@ -476,7 +489,13 @@
                     placeholder="Default"
                     optional={true}
                     light_label={true}
-                    description="Max concurrent requests for all models from this provider. If no model-specific limit is set for the model, this limit will be used."
+                    description="The default max concurrent requests for each model from this provider. This limit is used if no model-specific limit is set for the model."
+                    validator={number_validator({
+                      min: 1,
+                      integer: true,
+                      label: `Embedding ${provider_name_from_id(provider)} provider limit`,
+                      optional: true,
+                    })}
                   />
 
                   <div class="border-l-2 pl-4">
@@ -486,7 +505,7 @@
                       inputType="header_only"
                       value=""
                       light_label={true}
-                      description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
+                      description="The maximum concurrent requests for a specific model. This limit takes precedence over the provider-wide limit."
                     />
                     {#if models.length === 0}
                       <div class="text-sm text-gray-500 mt-4">
@@ -514,6 +533,12 @@
                             placeholder={`Use provider limit (${provider_inputs[provider] ?? "Default"})`}
                             optional={true}
                             light_label={true}
+                            validator={number_validator({
+                              min: 1,
+                              integer: true,
+                              label: `${model.name} limit`,
+                              optional: true,
+                            })}
                           />
                         {/each}
                       </div>
@@ -553,7 +578,13 @@
                     placeholder="Default"
                     optional={true}
                     light_label={true}
-                    description="Max concurrent requests for all models from this provider. If no model-specific limit is set for the model, this limit will be used."
+                    description="The default max concurrent requests for each model from this provider. This limit is used if no model-specific limit is set for the model."
+                    validator={number_validator({
+                      min: 1,
+                      integer: true,
+                      label: `Reranker ${provider_name_from_id(provider)} provider limit`,
+                      optional: true,
+                    })}
                   />
 
                   <div class="border-l-2 pl-4">
@@ -563,7 +594,7 @@
                       inputType="header_only"
                       value=""
                       light_label={true}
-                      description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
+                      description="The maximum concurrent requests for a specific model. This limit takes precedence over the provider-wide limit."
                     />
                     {#if models.length === 0}
                       <div class="text-sm text-gray-500 mt-4">
@@ -591,6 +622,12 @@
                             placeholder={`Use provider limit (${provider_inputs[provider] ?? "Default"})`}
                             optional={true}
                             light_label={true}
+                            validator={number_validator({
+                              min: 1,
+                              integer: true,
+                              label: `${model.name} limit`,
+                              optional: true,
+                            })}
                           />
                         {/each}
                       </div>

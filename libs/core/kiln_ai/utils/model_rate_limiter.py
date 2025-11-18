@@ -9,7 +9,7 @@ from typing import AsyncIterator, Dict
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
-from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
@@ -208,7 +208,7 @@ class ModelRateLimiter:
         key = self._get_semaphore_key(provider, model)
         if key not in self._semaphores:
             self._semaphores[key] = asyncio.Semaphore(
-                self.get_model_specified_max_concurrent_requests(provider, model)
+                self.get_model_default_max_concurrent_requests(provider, model)
             )
         return self._semaphores[key]
 
@@ -307,16 +307,17 @@ class ModelRateLimiter:
             self._rate_limits = self.load_rate_limits()
             self._semaphores.clear()
 
-    def get_model_specified_max_concurrent_requests(
+    def get_model_default_max_concurrent_requests(
         self, provider: str, model: str
     ) -> int:
         """
         Get the model-specified max concurrent requests for a provider/model.
 
-        Returns the default max concurrent requests if no limit is configured.
+        Returns the default max concurrent requests if no limit is configured
+        or the provider-wide limit. Whichever is lower.
         """
+        # necessary to avoid circular import with ml_model_list
         from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
-        from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
         model_provider = built_in_models_from_provider(
             ModelProviderName(provider), model
@@ -325,6 +326,9 @@ class ModelRateLimiter:
             model_provider is not None
             and model_provider.max_parallel_requests is not None
         ):
-            return model_provider.max_parallel_requests
+            return min(
+                model_provider.max_parallel_requests,
+                self._default_provider_limits[provider],
+            )
 
         return self._default_provider_limits[provider]

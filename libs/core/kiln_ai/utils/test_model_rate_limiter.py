@@ -489,7 +489,7 @@ def test_reload_new_format(new_format_rate_limits_file):
     assert limiter.get_provider_limit("anthropic") is None
 
 
-def test_get_model_specified_max_concurrent_requests_with_model_property():
+def test_get_model_default_max_concurrent_requests_with_model_property():
     """Test that model-specific max_parallel_requests is returned when set."""
     from unittest.mock import MagicMock
 
@@ -508,58 +508,52 @@ def test_get_model_specified_max_concurrent_requests_with_model_property():
         # Test model with max_parallel_requests=2
         mock_built_in.return_value = mock_provider_2
         assert (
-            limiter.get_model_specified_max_concurrent_requests(
-                "openai", "test_model_2"
-            )
+            limiter.get_model_default_max_concurrent_requests("openai", "test_model_2")
             == 2
         )
 
         # Test model with max_parallel_requests=1
         mock_built_in.return_value = mock_provider_1
         assert (
-            limiter.get_model_specified_max_concurrent_requests(
+            limiter.get_model_default_max_concurrent_requests(
                 ModelProviderName.ollama, "test_model_1"
             )
             == 1
         )
 
 
-def test_get_model_specified_max_concurrent_requests_default():
+def test_get_model_default_max_concurrent_requests_default():
     """Test that default limit is returned when model doesn't specify max_parallel_requests."""
     limiter = ModelRateLimiter(RateLimits(), default_provider_limit=10)
 
     # Most models don't have max_parallel_requests set, so should use default
-    assert limiter.get_model_specified_max_concurrent_requests("openai", "gpt_4") == 10
+    assert limiter.get_model_default_max_concurrent_requests("openai", "gpt_4") == 10
     assert (
-        limiter.get_model_specified_max_concurrent_requests(
-            "anthropic", "claude_opus_4"
-        )
+        limiter.get_model_default_max_concurrent_requests("anthropic", "claude_opus_4")
         == 10
     )
 
 
-def test_get_model_specified_max_concurrent_requests_ollama_default():
+def test_get_model_default_max_concurrent_requests_ollama_default():
     """Test that Ollama provider defaults to 1 concurrent request."""
     limiter = ModelRateLimiter(RateLimits())
 
     # Ollama should default to 1
     assert (
-        limiter.get_model_specified_max_concurrent_requests(
+        limiter.get_model_default_max_concurrent_requests(
             ModelProviderName.ollama, "llama2"
         )
         == 1
     )
 
 
-def test_get_model_specified_max_concurrent_requests_unknown_model():
+def test_get_model_default_max_concurrent_requests_unknown_model():
     """Test that unknown models use provider default."""
     limiter = ModelRateLimiter(RateLimits(), default_provider_limit=10)
 
     # Unknown model should use provider default
     assert (
-        limiter.get_model_specified_max_concurrent_requests(
-            "openai", "nonexistent_model"
-        )
+        limiter.get_model_default_max_concurrent_requests("openai", "nonexistent_model")
         == 10
     )
 
@@ -687,3 +681,65 @@ async def test_provider_limit_overrides_default():
 
     # Should be limited to provider limit (5), not default (10)
     assert max_concurrent == 5
+
+
+def test_load_rate_limits_with_validation_error(temp_home):
+    """Test that ValidationError during load returns empty RateLimits."""
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    invalid_data = {
+        "provider_limits": {"openai": "not_a_number"},
+        "model_limits": {},
+    }
+    with open(rate_limits_path, "w") as f:
+        yaml.dump(invalid_data, f)
+
+    limiter = ModelRateLimiter()
+    assert limiter.get_provider_limit("openai") is None
+    assert limiter._rate_limits.provider_limits == {}
+    assert limiter._rate_limits.model_limits == {}
+
+
+def test_load_rate_limits_with_generic_exception(temp_home):
+    """Test that generic Exception during load returns empty RateLimits."""
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    with open(rate_limits_path, "w") as f:
+        f.write("invalid: yaml: content: [[[")
+
+    limiter = ModelRateLimiter()
+    assert limiter._rate_limits.provider_limits == {}
+    assert limiter._rate_limits.model_limits == {}
+
+
+def test_save_rate_limits(temp_home):
+    """Test saving rate limits to file."""
+    limiter = ModelRateLimiter(
+        RateLimits(
+            provider_limits={"openai": 20},
+            model_limits={"anthropic": {"claude_opus_4_1": 5}},
+        )
+    )
+
+    limiter.save_rate_limits()
+
+    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
+    with open(rate_limits_path, "r") as f:
+        saved_data = yaml.safe_load(f)
+
+    assert saved_data["provider_limits"]["openai"] == 20
+    assert saved_data["model_limits"]["anthropic"]["claude_opus_4_1"] == 5
+
+
+@pytest.mark.asyncio
+async def test_limit_with_none_semaphore():
+    """Test limit context manager when semaphore is None (unlimited)."""
+    limiter = ModelRateLimiter(RateLimits())
+
+    executed = False
+
+    async def task():
+        nonlocal executed
+        async with limiter.limit("openai", "gpt_5"):
+            executed = True
+
+    await task()
+    assert executed

@@ -283,3 +283,32 @@ def test_update_rate_limits_reloads_shared_limiter(client, temp_home):
 
     assert limiter.get_provider_limit("openai") == 15
     assert limiter.get_limit("openai", "gpt_5") == 20
+
+
+def test_read_rate_limits_handles_exception(client, temp_home):
+    """Test that read_rate_limits handles exceptions properly."""
+    with patch(
+        "app.desktop.studio_server.rate_limits_api.ModelRateLimiter.load_rate_limits",
+        side_effect=Exception("Unexpected error"),
+    ):
+        response = client.get("/api/rate_limits")
+        assert response.status_code == 500
+        assert "Unexpected error" in response.json()["detail"]
+
+
+def test_update_rate_limits_handles_exception(client, temp_home):
+    """Test that update_rate_limits handles exceptions properly."""
+    test_limits = {
+        "provider_limits": {"openai": 10},
+        "model_limits": {},
+    }
+
+    with patch(
+        "app.desktop.studio_server.rate_limits_api.ModelRateLimiter.shared"
+    ) as mock_shared:
+        mock_limiter = mock_shared.return_value
+        mock_limiter.update_rate_limits.side_effect = Exception("Update failed")
+
+        response = client.post("/api/rate_limits", json=test_limits)
+        assert response.status_code == 500
+        assert "Update failed" in response.json()["detail"]
