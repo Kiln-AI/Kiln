@@ -32,10 +32,10 @@
   }
 
   function add_tag() {
-    if (tag === null || tag.length === 0) {
+    if (tag === null || tag.trim().length === 0) {
       error = "Tags cannot be empty"
     } else {
-      const cleaned_tag = tag.replace(/\s+/g, "_")
+      const cleaned_tag = tag.trim().replace(/\s+/g, "_")
       increment_tag_set(cleaned_tag)
       on_select(cleaned_tag)
       error = null
