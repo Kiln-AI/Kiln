@@ -120,7 +120,7 @@ def test_data_gen_categories_task_schemas(test_project):
 @pytest.mark.ollama
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
 async def test_data_gen_all_models_providers(
-    tmp_path, model_name, provider_name, base_task
+    tmp_path, model_name, provider_name, base_task, test_project
 ):
     _, provider = get_model_and_provider(model_name, provider_name)
     if not provider.supports_data_gen:
@@ -129,7 +129,9 @@ async def test_data_gen_all_models_providers(
             f"Skipping {model_name} {provider_name} because it does not support data gen"
         )
 
-    data_gen_task = DataGenCategoriesTask(gen_type="training", guidance=None)
+    data_gen_task = DataGenCategoriesTask(
+        gen_type="training", guidance=None, parent_project=test_project
+    )
     data_gen_input = DataGenCategoriesTaskInput.from_task(base_task, num_subtopics=6)
 
     adapter = adapter_for_task(
@@ -271,7 +273,7 @@ def test_list_json_schema_for_task_without_input_schema(base_task):
 @pytest.mark.ollama
 @pytest.mark.parametrize("model_name,provider_name", get_all_models_and_providers())
 async def test_data_gen_sample_all_models_providers(
-    tmp_path, model_name, provider_name, base_task
+    tmp_path, model_name, provider_name, base_task, test_project
 ):
     _, provider = get_model_and_provider(model_name, provider_name)
     if provider is None or not provider.supports_data_gen:
@@ -281,7 +283,10 @@ async def test_data_gen_sample_all_models_providers(
         )
 
     data_gen_task = DataGenSampleTask(
-        target_task=base_task, gen_type="training", guidance=None
+        target_task=base_task,
+        gen_type="training",
+        guidance=None,
+        parent_project=test_project,
     )
     data_gen_input = DataGenSampleTaskInput.from_task(
         base_task, topic=["riding horses"], num_samples=4
@@ -339,7 +344,7 @@ async def test_data_gen_sample_all_models_providers_with_structured_output(
         )
 
     data_gen_task = DataGenSampleTask(
-        target_task=task, gen_type="training", guidance=None
+        target_task=task, gen_type="training", guidance=None, parent_project=project
     )
     data_gen_input = DataGenSampleTaskInput.from_task(
         task, topic=["Food"], num_samples=4
