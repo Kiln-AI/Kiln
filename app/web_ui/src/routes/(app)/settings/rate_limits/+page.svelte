@@ -3,7 +3,15 @@
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
-  import { provider_name_from_id } from "$lib/stores"
+  import {
+    available_models as available_models_store,
+    available_embedding_models as available_embedding_models_store,
+    available_reranker_models as available_reranker_models_store,
+    load_available_embedding_models,
+    load_available_models,
+    load_available_reranker_models,
+    provider_name_from_id,
+  } from "$lib/stores"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -46,8 +54,6 @@
   let embedding_models_by_provider: ModelsByProvider = {}
   let reranker_models_by_provider: ModelsByProvider = {}
 
-  let rate_limits_version = 0
-
   let model_inputs: { [key: string]: number | null } = {}
   let provider_inputs: { [provider: string]: number | null } = {}
 
@@ -67,30 +73,25 @@
       loading = true
       load_error = null
 
-      const models_response = (await client.GET(
-        "/api/available_models",
-      )) as unknown as { data?: ProviderModels[]; error?: Error }
-      const embedding_response = (await client.GET(
-        "/api/available_embedding_models",
-      )) as unknown as { data?: ProviderModels[]; error?: Error }
-      const reranker_response = (await client.GET(
-        "/api/available_reranker_models",
-      )) as unknown as { data?: ProviderModels[]; error?: Error }
-      const limits_response = (await client.GET(
-        "/api/rate_limits",
-      )) as unknown as {
+      await Promise.all([
+        load_available_models(),
+        load_available_embedding_models(),
+        load_available_reranker_models(),
+      ])
+
+      available_models = $available_models_store
+      available_embedding_models = $available_embedding_models_store
+      available_reranker_models = $available_reranker_models_store
+
+      const limits_response = (await client.GET("/api/rate_limits")) as {
         data?: Record<string, unknown>
         error?: Error
       }
 
-      if (models_response.error) throw models_response.error
-      if (embedding_response.error) throw embedding_response.error
-      if (reranker_response.error) throw reranker_response.error
-      if (limits_response.error) throw limits_response.error
+      if (limits_response.error) {
+        throw limits_response.error
+      }
 
-      available_models = models_response.data || []
-      available_embedding_models = embedding_response.data || []
-      available_reranker_models = reranker_response.data || []
       rate_limits = normalize_rate_limits(limits_response.data)
 
       group_models_by_provider()
@@ -143,6 +144,9 @@
     provider_inputs = {}
 
     for (const provider_group of available_models) {
+      if (provider_group.models.length === 0) {
+        continue
+      }
       all_providers.add(provider_group.provider_id)
       for (const model of provider_group.models) {
         const key = getModelInputKey(provider_group.provider_id, model.id)
@@ -154,6 +158,9 @@
     }
 
     for (const provider_group of available_embedding_models) {
+      if (provider_group.models.length === 0) {
+        continue
+      }
       all_providers.add(provider_group.provider_id)
       for (const model of provider_group.models) {
         const key = getModelInputKey(provider_group.provider_id, model.id)
@@ -165,6 +172,9 @@
     }
 
     for (const provider_group of available_reranker_models) {
+      if (provider_group.models.length === 0) {
+        continue
+      }
       all_providers.add(provider_group.provider_id)
       for (const model of provider_group.models) {
         const key = getModelInputKey(provider_group.provider_id, model.id)
@@ -185,6 +195,9 @@
   ): ModelsByProvider {
     const grouped: ModelsByProvider = {}
     for (const provider_group of provider_list) {
+      if (provider_group.models.length === 0) {
+        continue
+      }
       if (!grouped[provider_group.provider_id]) {
         grouped[provider_group.provider_id] = []
       }
@@ -302,6 +315,10 @@
     }
   }
 
+  function is_custom_model_provider(provider: string): boolean {
+    return provider === "kiln_custom_registry" || provider === "kiln_fine_tune"
+  }
+
   onMount(async () => {
     await load_data()
   })
@@ -334,10 +351,14 @@
         focus_on_mount={false}
       >
         <!-- LLMs -->
-        {#if Object.keys(normal_models_by_provider).length > 0}
-          <div class="space-y-4">
-            <h2 class="text-xl font-semibold text-gray-800">LLMs</h2>
-            {#each Object.keys(normal_models_by_provider).sort() as provider}
+        <div class="space-y-4">
+          <h2 class="text-xl font-semibold text-gray-800">LLMs</h2>
+          {#if Object.keys(normal_models_by_provider).length > 0}
+            {#each Object.keys(normal_models_by_provider).sort((a, b) => {
+              if (is_custom_model_provider(a)) return 1
+              if (is_custom_model_provider(b)) return -1
+              return a.localeCompare(b)
+            }) as provider}
               {@const models = normal_models_by_provider[provider]}
               <Collapse title={provider_name_from_id(provider)}>
                 <div class="space-y-4 mt-4">
@@ -361,41 +382,61 @@
                       light_label={true}
                       description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
                     />
-                    <div class="space-y-3 mt-4">
-                      {#each models as model (model.id + rate_limits_version)}
-                        {@const inputKey = getModelInputKey(provider, model.id)}
-                        {@const modelLimit = get_model_limit(
-                          provider,
-                          model.id,
-                        )}
-                        {#if model_inputs[inputKey] === undefined}
-                          {((model_inputs[inputKey] = modelLimit), "")}
-                        {/if}
-                        <FormElement
-                          inputType="input_number"
-                          id="{provider}_{model.id}"
-                          label={model.name}
-                          bind:value={model_inputs[inputKey]}
-                          placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
-                          optional={true}
-                          light_label={true}
-                        />
-                      {/each}
-                    </div>
+                    {#if models.length === 0}
+                      <div class="text-sm text-gray-500 mt-4">
+                        No models available for this provider.
+                      </div>
+                    {:else}
+                      <div class="space-y-3 mt-4">
+                        {#each models as model (model.id)}
+                          {@const inputKey = getModelInputKey(
+                            provider,
+                            model.id,
+                          )}
+                          {@const modelLimit = get_model_limit(
+                            provider,
+                            model.id,
+                          )}
+                          {#if model_inputs[inputKey] === undefined}
+                            {((model_inputs[inputKey] = modelLimit), "")}
+                          {/if}
+                          <FormElement
+                            inputType="input_number"
+                            id="{provider}_{model.id}"
+                            label={model.name}
+                            bind:value={model_inputs[inputKey]}
+                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
+                            optional={true}
+                            light_label={true}
+                          />
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 </div>
               </Collapse>
             {/each}
-          </div>
-        {/if}
+          {:else}
+            <div class="space-y-4">
+              <div class="text-sm text-gray-500 mt-4">
+                No LLMs available. <a href="/settings/providers"
+                  >Connect an AI provider</a
+                > to get started.
+              </div>
+            </div>
+          {/if}
+        </div>
 
         <!-- Embedding Models -->
-        {#if Object.keys(embedding_models_by_provider).length > 0}
-          <div class="space-y-4">
-            <h2 class="text-xl font-semibold text-gray-800">
-              Embedding Models
-            </h2>
-            {#each Object.keys(embedding_models_by_provider).sort() as provider}
+        <div class="space-y-4">
+          <h2 class="text-xl font-semibold text-gray-800">Embedding Models</h2>
+
+          {#if Object.keys(embedding_models_by_provider).length > 0}
+            {#each Object.keys(embedding_models_by_provider).sort((a, b) => {
+              if (is_custom_model_provider(a)) return 1
+              if (is_custom_model_provider(b)) return -1
+              return a.localeCompare(b)
+            }) as provider}
               {@const models = embedding_models_by_provider[provider]}
               <Collapse title={provider_name_from_id(provider)}>
                 <div class="space-y-4 mt-4">
@@ -419,39 +460,60 @@
                       light_label={true}
                       description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
                     />
-                    <div class="space-y-3 mt-4">
-                      {#each models as model (model.id + rate_limits_version)}
-                        {@const inputKey = getModelInputKey(provider, model.id)}
-                        {@const modelLimit = get_model_limit(
-                          provider,
-                          model.id,
-                        )}
-                        {#if model_inputs[inputKey] === undefined}
-                          {((model_inputs[inputKey] = modelLimit), "")}
-                        {/if}
-                        <FormElement
-                          inputType="input_number"
-                          id="{provider}_{model.id}"
-                          label={model.name}
-                          bind:value={model_inputs[inputKey]}
-                          placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
-                          optional={true}
-                          light_label={true}
-                        />
-                      {/each}
-                    </div>
+                    {#if models.length === 0}
+                      <div class="text-sm text-gray-500 mt-4">
+                        No models available for this provider.
+                      </div>
+                    {:else}
+                      <div class="space-y-3 mt-4">
+                        {#each models as model (model.id)}
+                          {@const inputKey = getModelInputKey(
+                            provider,
+                            model.id,
+                          )}
+                          {@const modelLimit = get_model_limit(
+                            provider,
+                            model.id,
+                          )}
+                          {#if model_inputs[inputKey] === undefined}
+                            {((model_inputs[inputKey] = modelLimit), "")}
+                          {/if}
+                          <FormElement
+                            inputType="input_number"
+                            id="{provider}_{model.id}"
+                            label={model.name}
+                            bind:value={model_inputs[inputKey]}
+                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
+                            optional={true}
+                            light_label={true}
+                          />
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 </div>
               </Collapse>
             {/each}
-          </div>
-        {/if}
+          {:else}
+            <div class="space-y-4">
+              <div class="text-sm text-gray-500 mt-4">
+                No embedding models available. <a href="/settings/providers"
+                  >Connect an AI provider</a
+                > to get started.
+              </div>
+            </div>
+          {/if}
+        </div>
 
         <!-- Reranker Models -->
-        {#if Object.keys(reranker_models_by_provider).length > 0}
-          <div class="space-y-4">
-            <h2 class="text-xl font-semibold text-gray-800">Reranker Models</h2>
-            {#each Object.keys(reranker_models_by_provider).sort() as provider}
+        <div class="space-y-4">
+          <h2 class="text-xl font-semibold text-gray-800">Reranker Models</h2>
+          {#if Object.keys(reranker_models_by_provider).length > 0}
+            {#each Object.keys(reranker_models_by_provider).sort((a, b) => {
+              if (is_custom_model_provider(a)) return 1
+              if (is_custom_model_provider(b)) return -1
+              return a.localeCompare(b)
+            }) as provider}
               {@const models = reranker_models_by_provider[provider]}
               <Collapse title={provider_name_from_id(provider)}>
                 <div class="space-y-4 mt-4">
@@ -475,33 +537,50 @@
                       light_label={true}
                       description="Max concurrent requests for individual models from this provider. If no model-specific limit is set for the model, the provider-wide limit will be used."
                     />
-                    <div class="space-y-3 mt-4">
-                      {#each models as model (model.id + rate_limits_version)}
-                        {@const inputKey = getModelInputKey(provider, model.id)}
-                        {@const modelLimit = get_model_limit(
-                          provider,
-                          model.id,
-                        )}
-                        {#if model_inputs[inputKey] === undefined}
-                          {((model_inputs[inputKey] = modelLimit), "")}
-                        {/if}
-                        <FormElement
-                          inputType="input_number"
-                          id="{provider}_{model.id}"
-                          label={model.name}
-                          bind:value={model_inputs[inputKey]}
-                          placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
-                          optional={true}
-                          light_label={true}
-                        />
-                      {/each}
-                    </div>
+                    {#if models.length === 0}
+                      <div class="text-sm text-gray-500 mt-4">
+                        No models available for this provider.
+                      </div>
+                    {:else}
+                      <div class="space-y-3 mt-4">
+                        {#each models as model (model.id)}
+                          {@const inputKey = getModelInputKey(
+                            provider,
+                            model.id,
+                          )}
+                          {@const modelLimit = get_model_limit(
+                            provider,
+                            model.id,
+                          )}
+                          {#if model_inputs[inputKey] === undefined}
+                            {((model_inputs[inputKey] = modelLimit), "")}
+                          {/if}
+                          <FormElement
+                            inputType="input_number"
+                            id="{provider}_{model.id}"
+                            label={model.name}
+                            bind:value={model_inputs[inputKey]}
+                            placeholder={`Use provider limit (${provider_inputs[provider] ?? "Unlimited"})`}
+                            optional={true}
+                            light_label={true}
+                          />
+                        {/each}
+                      </div>
+                    {/if}
                   </div>
                 </div>
               </Collapse>
             {/each}
-          </div>
-        {/if}
+          {:else}
+            <div class="space-y-4">
+              <div class="text-sm text-gray-500 mt-4">
+                No reranker models available. <a href="/settings/providers"
+                  >Connect an AI provider</a
+                > to get started.
+              </div>
+            </div>
+          {/if}
+        </div>
       </FormContainer>
     {/if}
   </AppPage>
