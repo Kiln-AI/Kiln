@@ -20,8 +20,7 @@
 
   let show_dropdown = initial_expanded
   let current_tag = ""
-
-  $: show_dropdown = initial_expanded
+  let user_opened_dropdown = false
 
   function tags_are_equal(tags1: string[], tags2: string[]): boolean {
     return (
@@ -49,12 +48,14 @@
     current_tag = ""
     if (hide_dropdown_after_select) {
       show_dropdown = false
+      user_opened_dropdown = false
     }
   }
 
   function handle_escape() {
     if (!initial_expanded) {
       show_dropdown = false
+      user_opened_dropdown = false
     }
     current_tag = ""
   }
@@ -69,12 +70,16 @@
   function toggle_dropdown() {
     if (!disabled) {
       show_dropdown = !show_dropdown
+      if (show_dropdown) {
+        user_opened_dropdown = true
+      }
     }
   }
 
   function handle_close_dropdown() {
     show_dropdown = false
     current_tag = ""
+    user_opened_dropdown = false
   }
 </script>
 
@@ -111,7 +116,7 @@
         example_tag_set={tag_type}
         on_select={handle_tag_select}
         on_escape={handle_escape}
-        focus_on_mount={true}
+        focus_on_mount={user_opened_dropdown}
       />
       {#if show_close_button}
         <div class="flex-none">

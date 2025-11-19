@@ -6,6 +6,7 @@
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import type { Spec } from "$lib/types"
   import { client } from "$lib/api_client"
+  import TagPicker from "$lib/ui/tag_picker.svelte"
   import {
     capitalize,
     formatPriority,
@@ -19,6 +20,12 @@
   let spec: Spec | null = null
   let spec_error: KilnError | null = null
   let spec_loading = true
+  let tags_error: KilnError | null = null
+  let current_tags: string[] = []
+
+  $: if (spec) {
+    current_tags = spec.tags || []
+  }
 
   onMount(async () => {
     await load_spec()
@@ -40,10 +47,42 @@
         throw error
       }
       spec = data
+      current_tags = spec.tags || []
     } catch (error) {
       spec_error = createKilnError(error)
     } finally {
       spec_loading = false
+    }
+  }
+
+  async function save_tags(tags: string[]) {
+    try {
+      if (!spec?.id) return
+      tags_error = null
+      const { data, error } = await client.PATCH(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: { project_id, task_id, spec_id: spec.id },
+          },
+          body: {
+            name: spec.name,
+            definition: spec.definition,
+            type: spec.type,
+            priority: spec.priority,
+            status: spec.status,
+            tags: tags,
+            eval_id: spec.eval_id || null,
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      spec = data
+      current_tags = spec.tags || []
+    } catch (err) {
+      tags_error = createKilnError(err)
     }
   }
 </script>
@@ -83,6 +122,7 @@
 
       <div class="flex flex-col gap-4">
         <PropertyList
+          title="Properties"
           properties={[
             {
               name: "ID",
@@ -101,14 +141,25 @@
               value: capitalize(spec.status),
             },
             {
-              name: "Tags",
-              value: spec.tags.length > 0 ? spec.tags.join(", ") : "None",
-            },
-            {
               name: "Eval ID",
               value: spec.eval_id || "None",
             },
           ]}
+        />
+        <div class="text-xl font-bold mt-8">Tags</div>
+        {#if tags_error}
+          <div class="text-error text-sm mb-2">
+            {tags_error.getMessage() || "An unknown error occurred"}
+          </div>
+        {/if}
+        <TagPicker
+          tags={current_tags}
+          tag_type="task_run"
+          {project_id}
+          {task_id}
+          on:tags_changed={(event) => {
+            save_tags(event.detail.current)
+          }}
         />
       </div>
     </div>
