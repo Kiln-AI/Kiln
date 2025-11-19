@@ -50,9 +50,10 @@ def test_create_spec_success(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": ["test", "important"],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -67,8 +68,9 @@ def test_create_spec_success(client, project_and_task):
     assert res["definition"] == "The system should always respond politely"
     assert res["type"] == "desired_behaviour"
     assert res["priority"] == 1
-    assert res["status"] == "not_started"
+    assert res["status"] == "active"
     assert res["tags"] == ["test", "important"]
+    assert res["is_archived"] is False
 
     # Check that the spec was saved to the task/file
     specs = task.specs()
@@ -77,7 +79,8 @@ def test_create_spec_success(client, project_and_task):
     assert specs[0].definition == "The system should always respond politely"
     assert specs[0].type == SpecType.desired_behaviour
     assert specs[0].priority == Priority.p1
-    assert specs[0].status == SpecStatus.not_started
+    assert specs[0].status == SpecStatus.active
+    assert specs[0].is_archived is False
 
 
 def test_create_spec_with_eval_id_none(client, project_and_task):
@@ -88,9 +91,10 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
         "definition": "No toxic content allowed",
         "type": SpecType.toxicity.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -105,7 +109,7 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
     assert res["definition"] == "No toxic content allowed"
     assert res["type"] == "toxicity"
     assert res["priority"] == 1
-    assert res["status"] == "not_started"
+    assert res["status"] == "active"
     assert res["tags"] == []
     assert res["eval_id"] is None
 
@@ -116,9 +120,10 @@ def test_create_spec_task_not_found(client):
         "definition": "System should behave correctly",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     response = client.post(
@@ -185,7 +190,7 @@ def test_get_spec_success(client, project_and_task):
         definition="System should not hallucinate facts",
         type=SpecType.hallucinations,
         priority=Priority.p2,
-        status=SpecStatus.in_progress,
+        status=SpecStatus.active,
         tags=["validation", "safety"],
         parent=task,
     )
@@ -203,8 +208,9 @@ def test_get_spec_success(client, project_and_task):
     assert res["definition"] == "System should not hallucinate facts"
     assert res["type"] == "hallucinations"
     assert res["priority"] == 2
-    assert res["status"] == "in_progress"
+    assert res["status"] == "active"
     assert res["tags"] == ["validation", "safety"]
+    assert res["is_archived"] is False
 
 
 def test_get_spec_not_found(client, project_and_task):
@@ -228,7 +234,7 @@ def test_update_spec_success(client, project_and_task):
         definition="Original definition",
         type=SpecType.desired_behaviour,
         priority=Priority.p3,
-        status=SpecStatus.not_started,
+        status=SpecStatus.active,
         tags=["old_tag"],
         parent=task,
     )
@@ -239,9 +245,10 @@ def test_update_spec_success(client, project_and_task):
         "definition": "Updated definition",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.complete.value,
+        "status": SpecStatus.active.value,
         "tags": ["new_tag", "updated"],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -256,7 +263,7 @@ def test_update_spec_success(client, project_and_task):
     assert res["name"] == "Updated Name"
     assert res["definition"] == "Updated definition"
     assert res["priority"] == 1
-    assert res["status"] == "complete"
+    assert res["status"] == "active"
     assert res["tags"] == ["new_tag", "updated"]
     assert res["type"] == "desired_behaviour"
 
@@ -266,8 +273,9 @@ def test_update_spec_success(client, project_and_task):
     assert updated_spec.name == "Updated Name"
     assert updated_spec.definition == "Updated definition"
     assert updated_spec.priority == Priority.p1
-    assert updated_spec.status == SpecStatus.complete
+    assert updated_spec.status == SpecStatus.active
     assert updated_spec.tags == ["new_tag", "updated"]
+    assert updated_spec.is_archived is False
 
 
 def test_update_spec_with_eval_id_none(client, project_and_task):
@@ -278,7 +286,7 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
         definition="Original definition",
         type=SpecType.toxicity,
         priority=Priority.p2,
-        status=SpecStatus.not_started,
+        status=SpecStatus.active,
         tags=["old_tag"],
         eval_id="original_eval_id",
         parent=task,
@@ -290,9 +298,10 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
         "definition": "Original definition",
         "type": SpecType.toxicity.value,
         "priority": Priority.p2,
-        "status": SpecStatus.in_progress.value,
+        "status": SpecStatus.active.value,
         "tags": ["old_tag"],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -308,7 +317,7 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
     assert res["definition"] == "Original definition"
     assert res["type"] == "toxicity"
     assert res["priority"] == 2
-    assert res["status"] == "in_progress"
+    assert res["status"] == "active"
     assert res["eval_id"] is None
 
 
@@ -320,9 +329,10 @@ def test_update_spec_not_found(client, project_and_task):
         "definition": "Updated definition",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -344,9 +354,10 @@ def test_create_spec_with_eval_id(client, project_and_task):
         "definition": "Answers must match reference answers",
         "type": SpecType.reference_answer_accuracy.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": "test_eval_123",
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -362,6 +373,7 @@ def test_create_spec_with_eval_id(client, project_and_task):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].eval_id == "test_eval_123"
+    assert specs[0].is_archived is False
 
 
 # Validation error tests (422 responses)
@@ -374,9 +386,10 @@ def test_create_spec_missing_name(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -401,9 +414,10 @@ def test_create_spec_missing_definition(client, project_and_task):
         "name": "Test Spec",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -428,9 +442,10 @@ def test_create_spec_missing_type(client, project_and_task):
         "name": "Test Spec",
         "definition": "The system should always respond politely",
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -455,9 +470,10 @@ def test_create_spec_missing_priority(client, project_and_task):
         "name": "Test Spec",
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -485,6 +501,7 @@ def test_create_spec_missing_status(client, project_and_task):
         "priority": Priority.p1,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -502,6 +519,34 @@ def test_create_spec_missing_status(client, project_and_task):
     )
 
 
+def test_create_spec_missing_is_archived(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        error["loc"] == ["body", "is_archived"] and error["type"] == "missing"
+        for error in res["source_errors"]
+    )
+
+
 def test_create_spec_missing_tags(client, project_and_task):
     project, task = project_and_task
 
@@ -510,8 +555,9 @@ def test_create_spec_missing_tags(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -537,9 +583,10 @@ def test_create_spec_invalid_type_enum(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": "invalid_type_value",
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -565,9 +612,10 @@ def test_create_spec_invalid_priority_enum(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
         "priority": "p99",
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -596,6 +644,7 @@ def test_create_spec_invalid_status_enum(client, project_and_task):
         "status": "pending",
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -621,9 +670,10 @@ def test_create_spec_invalid_name_type(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -646,9 +696,10 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
         "definition": "The system should always respond politely",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": "not_a_list",
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -704,9 +755,10 @@ def test_update_spec_invalid_priority_enum(client, project_and_task):
         "definition": "System should behave correctly",
         "type": SpecType.desired_behaviour.value,
         "priority": "critical",
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -744,6 +796,7 @@ def test_update_spec_invalid_status_enum(client, project_and_task):
         "status": "finished",
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -778,9 +831,10 @@ def test_update_spec_invalid_name_type(client, project_and_task):
         "definition": "System should behave correctly",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -812,9 +866,10 @@ def test_update_spec_invalid_tags_type(client, project_and_task):
         "definition": "System should behave correctly",
         "type": SpecType.desired_behaviour.value,
         "priority": Priority.p1,
-        "status": SpecStatus.not_started.value,
+        "status": SpecStatus.active.value,
         "tags": {"not": "a list"},
         "eval_id": None,
+        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
