@@ -6,7 +6,12 @@
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
   import type { Spec } from "$lib/types"
-  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import {
+    formatDate,
+    capitalize,
+    formatPriority,
+    formatSpecType,
+  } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
 
   $: project_id = $page.params.project_id
@@ -43,10 +48,6 @@
     } finally {
       specs_loading = false
     }
-  }
-
-  function formatPriority(priority: number): string {
-    return `P${priority}`
   }
 </script>
 
@@ -115,21 +116,11 @@
                 <td class="font-medium">{spec.name}</td>
                 <td class="max-w-md truncate">{spec.definition}</td>
                 <td>
-                  {spec.type
-                    .replace(/_/g, " ")
-                    .split(" ")
-                    .map((word) => capitalize(word))
-                    .join(" ")}
+                  {formatSpecType(spec.type)}
                 </td>
                 <td>{formatPriority(spec.priority)}</td>
                 <td>
-                  {spec.status === "active"
-                    ? "Active"
-                    : spec.status === "future"
-                      ? "Future"
-                      : spec.status === "deprecated"
-                        ? "Deprecated"
-                        : capitalize(spec.status)}
+                  {capitalize(spec.status)}
                 </td>
                 <td class="text-sm text-gray-500">
                   {formatDate(spec.created_at)}
