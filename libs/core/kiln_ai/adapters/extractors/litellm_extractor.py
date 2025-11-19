@@ -204,9 +204,15 @@ class LitellmExtractor(BaseExtractor):
 
             completion_kwargs = self._build_completion_kwargs(prompt, page_input)
 
+            random_key = hashlib.md5(
+                str(completion_kwargs).encode("utf-8")
+                + str(page_number).encode("utf-8")
+            ).hexdigest()[:4]
+
             async with self.rate_limiter.limit(
                 self.extractor_config.model_provider_name,
                 self.extractor_config.model_name,
+                random_key,
             ):
                 response = await litellm.acompletion(**completion_kwargs)
         except Exception as e:
@@ -371,9 +377,12 @@ class LitellmExtractor(BaseExtractor):
 
         completion_kwargs = self._build_completion_kwargs(prompt, extraction_input)
 
+        random_key = hashlib.md5(str(completion_kwargs).encode("utf-8")).hexdigest()[:4]
+
         async with self.rate_limiter.limit(
             self.extractor_config.model_provider_name,
             self.extractor_config.model_name,
+            random_key,
         ):
             response = await litellm.acompletion(**completion_kwargs)
 

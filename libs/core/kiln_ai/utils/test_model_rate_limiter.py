@@ -198,6 +198,7 @@ async def test_limit_enforces_max_concurrent():
         async with limiter.limit("openai", "gpt_5"):
             semaphore = limiter._get_semaphore("openai", "gpt_5")
             if semaphore:
+                semaphore, _ = semaphore
                 concurrent_count.append(3 - semaphore._value)
             await asyncio.sleep(0.02)
 

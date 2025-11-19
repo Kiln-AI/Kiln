@@ -182,7 +182,15 @@ class ModelRateLimiter:
             return f"{provider}::__provider__"
         return f"{provider}::{model}"
 
-    def _get_semaphore(self, provider: str, model: str) -> asyncio.Semaphore | None:
+    def _get_semaphore(
+        self, provider: str, model: str
+    ) -> (
+        tuple[
+            asyncio.Semaphore,
+            int,
+        ]
+        | None
+    ):
         """
         Get or create a semaphore for the given provider/model.
 
@@ -190,30 +198,35 @@ class ModelRateLimiter:
         Checks model-specific limit first, then falls back to provider-wide limit.
         If using provider-wide limit, all models from that provider share the same semaphore.
         """
+        print(f"Retrieving semaphore for {provider}::{model}")
         model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
         if model_limit is not None and model_limit > 0:
+            print(f"Model limit found for {provider}::{model}: {model_limit}")
             key = self._get_semaphore_key(provider, model)
             if key not in self._semaphores:
                 self._semaphores[key] = asyncio.Semaphore(model_limit)
-            return self._semaphores[key]
+            return self._semaphores[key], model_limit
 
         provider_limit = self._rate_limits.provider_limits.get(provider)
         if provider_limit is not None and provider_limit > 0:
+            print(f"Provider limit found for {provider}: {provider_limit}")
             key = self._get_semaphore_key(provider, None)
             if key not in self._semaphores:
                 self._semaphores[key] = asyncio.Semaphore(provider_limit)
-            return self._semaphores[key]
+            return self._semaphores[key], provider_limit
 
         # if no limit is configured, set a default of 10
+        print(f"No limit found for {provider}::{model}, setting default")
         key = self._get_semaphore_key(provider, model)
+        fallback_limit = self.get_model_default_max_concurrent_requests(provider, model)
         if key not in self._semaphores:
-            self._semaphores[key] = asyncio.Semaphore(
-                self.get_model_default_max_concurrent_requests(provider, model)
-            )
-        return self._semaphores[key]
+            self._semaphores[key] = asyncio.Semaphore(fallback_limit)
+        return self._semaphores[key], fallback_limit
 
     @asynccontextmanager
-    async def limit(self, provider: str, model: str) -> AsyncIterator[None]:
+    async def limit(
+        self, provider: str, model: str, random_key: str | None = None
+    ) -> AsyncIterator[None]:
         """
         Context manager to limit concurrent requests to a model.
 
@@ -225,13 +238,20 @@ class ModelRateLimiter:
             async with limiter.limit("openai", "gpt_5"):
                 result = await make_api_call()
         """
-        semaphore = self._get_semaphore(provider, model)
+        semaphore_wrapper = self._get_semaphore(provider, model)
+        semaphore = semaphore_wrapper[0] if semaphore_wrapper is not None else None
+        limit = semaphore_wrapper[1] if semaphore_wrapper is not None else None
 
+        print(f"#[{random_key}] LIMIT({limit}) -> ACQUIRE {provider}::{model}")
         if semaphore is None:
+            print(f"#[{random_key}] LIMIT({limit}) -> NO SEMAPHORE {provider}::{model}")
             yield
+            print(f"#[{random_key}] LIMIT({limit}) -> RELEASE {provider}::{model}")
         else:
             async with semaphore:
+                print(f"#[{random_key}] LIMIT({limit}) -> RUNNING {provider}::{model}")
                 yield
+                print(f"#[{random_key}] LIMIT({limit}) -> RELEASE {provider}::{model}")
 
     def get_limit(self, provider: str, model: str) -> int | None:
         """
