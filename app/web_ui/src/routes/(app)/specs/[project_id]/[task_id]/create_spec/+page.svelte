@@ -38,7 +38,6 @@
             status: "active",
             tags: [],
             eval_id: null,
-            is_archived: false,
           },
         },
       )

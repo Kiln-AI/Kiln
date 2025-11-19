@@ -47,6 +47,7 @@ class SpecStatus(str, Enum):
     active = "active"
     future = "future"
     deprecated = "deprecated"
+    archived = "archived"
 
 
 class Spec(KilnParentedModel):
@@ -74,10 +75,6 @@ class Spec(KilnParentedModel):
     eval_id: ID_TYPE | None = Field(
         default=None,
         description="The id of the eval to use for this spec. If None, the spec is not associated with an eval.",
-    )
-    is_archived: bool = Field(
-        default=False,
-        description="Whether the spec is archived.",
     )
 
     @model_validator(mode="after")
