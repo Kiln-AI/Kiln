@@ -53,7 +53,6 @@ def test_create_spec_success(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": ["test", "important"],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -70,7 +69,6 @@ def test_create_spec_success(client, project_and_task):
     assert res["priority"] == 1
     assert res["status"] == "active"
     assert res["tags"] == ["test", "important"]
-    assert res["is_archived"] is False
 
     # Check that the spec was saved to the task/file
     specs = task.specs()
@@ -80,7 +78,6 @@ def test_create_spec_success(client, project_and_task):
     assert specs[0].type == SpecType.desired_behaviour
     assert specs[0].priority == Priority.p1
     assert specs[0].status == SpecStatus.active
-    assert specs[0].is_archived is False
 
 
 def test_create_spec_with_eval_id_none(client, project_and_task):
@@ -94,7 +91,6 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -123,7 +119,6 @@ def test_create_spec_task_not_found(client):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     response = client.post(
@@ -210,7 +205,6 @@ def test_get_spec_success(client, project_and_task):
     assert res["priority"] == 2
     assert res["status"] == "active"
     assert res["tags"] == ["validation", "safety"]
-    assert res["is_archived"] is False
 
 
 def test_get_spec_not_found(client, project_and_task):
@@ -248,7 +242,6 @@ def test_update_spec_success(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": ["new_tag", "updated"],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -275,7 +268,6 @@ def test_update_spec_success(client, project_and_task):
     assert updated_spec.priority == Priority.p1
     assert updated_spec.status == SpecStatus.active
     assert updated_spec.tags == ["new_tag", "updated"]
-    assert updated_spec.is_archived is False
 
 
 def test_update_spec_with_eval_id_none(client, project_and_task):
@@ -301,7 +293,6 @@ def test_update_spec_with_eval_id_none(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": ["old_tag"],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -332,7 +323,6 @@ def test_update_spec_not_found(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -357,7 +347,6 @@ def test_create_spec_with_eval_id(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": "test_eval_123",
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -373,7 +362,100 @@ def test_create_spec_with_eval_id(client, project_and_task):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].eval_id == "test_eval_123"
-    assert specs[0].is_archived is False
+
+
+def test_create_spec_with_archived_status(client, project_and_task):
+    """Test creating a spec with archived status."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Archived Spec",
+        "definition": "This spec is archived",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.archived.value,
+        "tags": [],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["name"] == "Archived Spec"
+    assert res["status"] == "archived"
+
+    specs = task.specs()
+    assert len(specs) == 1
+    assert specs[0].status == SpecStatus.archived
+
+
+def test_update_spec_to_archived_status(client, project_and_task):
+    """Test updating a spec to archived status."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Active Spec",
+        definition="This spec is active",
+        type=SpecType.desired_behaviour,
+        status=SpecStatus.active,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {
+        "name": "Active Spec",
+        "definition": "This spec is active",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.archived.value,
+        "tags": [],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["status"] == "archived"
+
+    updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
+    assert updated_spec is not None
+    assert updated_spec.status == SpecStatus.archived
+
+
+def test_get_spec_with_archived_status(client, project_and_task):
+    """Test getting a spec with archived status."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Archived Spec",
+        definition="This spec is archived",
+        type=SpecType.desired_behaviour,
+        status=SpecStatus.archived,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["name"] == "Archived Spec"
+    assert res["status"] == "archived"
 
 
 # Validation error tests (422 responses)
@@ -389,7 +471,6 @@ def test_create_spec_missing_name(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -417,7 +498,6 @@ def test_create_spec_missing_definition(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -445,7 +525,6 @@ def test_create_spec_missing_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -473,7 +552,6 @@ def test_create_spec_missing_priority(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -501,7 +579,6 @@ def test_create_spec_missing_status(client, project_and_task):
         "priority": Priority.p1,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -519,34 +596,6 @@ def test_create_spec_missing_status(client, project_and_task):
     )
 
 
-def test_create_spec_missing_is_archived(client, project_and_task):
-    project, task = project_and_task
-
-    spec_data = {
-        "name": "Test Spec",
-        "definition": "The system should always respond politely",
-        "type": SpecType.desired_behaviour.value,
-        "priority": Priority.p1,
-        "status": SpecStatus.active.value,
-        "tags": [],
-        "eval_id": None,
-    }
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
-    assert any(
-        error["loc"] == ["body", "is_archived"] and error["type"] == "missing"
-        for error in res["source_errors"]
-    )
-
-
 def test_create_spec_missing_tags(client, project_and_task):
     project, task = project_and_task
 
@@ -557,7 +606,6 @@ def test_create_spec_missing_tags(client, project_and_task):
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -586,7 +634,6 @@ def test_create_spec_invalid_type_enum(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -615,7 +662,6 @@ def test_create_spec_invalid_priority_enum(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -644,7 +690,6 @@ def test_create_spec_invalid_status_enum(client, project_and_task):
         "status": "pending",
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -673,7 +718,6 @@ def test_create_spec_invalid_name_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -699,7 +743,6 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": "not_a_list",
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -758,7 +801,6 @@ def test_update_spec_invalid_priority_enum(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -796,7 +838,6 @@ def test_update_spec_invalid_status_enum(client, project_and_task):
         "status": "finished",
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -834,7 +875,6 @@ def test_update_spec_invalid_name_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -869,7 +909,6 @@ def test_update_spec_invalid_tags_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": {"not": "a list"},
         "eval_id": None,
-        "is_archived": False,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:

@@ -27,7 +27,6 @@ def test_spec_valid_creation(sample_task):
     assert spec.status == SpecStatus.active
     assert spec.tags == []
     assert spec.eval_id is None
-    assert spec.is_archived is False
 
 
 def test_spec_with_custom_values(sample_task):
@@ -47,7 +46,6 @@ def test_spec_with_custom_values(sample_task):
     assert spec.status == SpecStatus.active
     assert spec.tags == ["tag1", "tag2"]
     assert spec.eval_id == "test_eval_id"
-    assert spec.is_archived is False
 
 
 def test_spec_missing_required_fields(sample_task):
@@ -159,6 +157,7 @@ def test_spec_all_priorities(sample_task, priority):
         SpecStatus.active,
         SpecStatus.future,
         SpecStatus.deprecated,
+        SpecStatus.archived,
     ],
 )
 def test_spec_all_statuses(sample_task, status):
@@ -211,22 +210,22 @@ def test_spec_tags_valid(sample_task):
     assert spec.tags == ["tag1", "tag_2", "tag-3", "TAG4"]
 
 
-def test_spec_is_archived(sample_task):
-    """Test that is_archived field works correctly."""
+def test_spec_archived_status(sample_task):
+    """Test that archived status works correctly."""
     spec = Spec(
         name="Test Spec",
         definition="Test definition",
         type=SpecType.desired_behaviour,
-        is_archived=True,
+        status=SpecStatus.archived,
         parent=sample_task,
     )
-    assert spec.is_archived is True
+    assert spec.status == SpecStatus.archived
 
     spec2 = Spec(
         name="Test Spec 2",
         definition="Test definition",
         type=SpecType.desired_behaviour,
-        is_archived=False,
+        status=SpecStatus.active,
         parent=sample_task,
     )
-    assert spec2.is_archived is False
+    assert spec2.status == SpecStatus.active
