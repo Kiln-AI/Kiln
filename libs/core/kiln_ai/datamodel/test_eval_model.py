@@ -1573,3 +1573,155 @@ def test_validate_output_fields_parametrized(
     else:
         run = EvalRun(**run_data)
         assert run.task_run_trace == trace
+
+
+@pytest.mark.parametrize(
+    "evaluation_data_type,reference_answer,should_raise,expected_error",
+    [
+        # reference_answer eval type - valid cases
+        (EvalDataType.reference_answer, "answer text", False, None),
+        (EvalDataType.reference_answer, None, False, None),
+        # final_answer eval type
+        (EvalDataType.final_answer, None, False, None),
+        (
+            EvalDataType.final_answer,
+            "answer text",
+            True,
+            r"reference_answer is only valid for reference answer evals\. Got: final_answer",
+        ),
+        # full_trace eval type
+        (EvalDataType.full_trace, None, False, None),
+        (
+            EvalDataType.full_trace,
+            "answer text",
+            True,
+            r"reference_answer is only valid for reference answer evals\. Got: full_trace",
+        ),
+    ],
+)
+def test_validate_reference_answer_parametrized(
+    mock_task,
+    valid_eval_config_data,
+    evaluation_data_type,
+    reference_answer,
+    should_raise,
+    expected_error,
+):
+    """Test validate_reference_answer with parametrized test cases"""
+    eval = Eval(
+        name="Test Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+        evaluation_data_type=evaluation_data_type,
+    )
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+
+    run_data = {
+        "parent": config,
+        "dataset_id": "dataset123",
+        "task_run_config_id": "config456",
+        "input": "test input",
+        "output": "test output",
+        "scores": {"accuracy": 0.95},
+    }
+
+    if reference_answer is not None:
+        run_data["reference_answer"] = reference_answer
+
+    if evaluation_data_type == EvalDataType.full_trace:
+        run_data["task_run_trace"] = (
+            '{"messages": [{"role": "user", "content": "test"}]}'
+        )
+
+    if should_raise:
+        with pytest.raises(ValueError, match=expected_error):
+            EvalRun(**run_data)
+    else:
+        run = EvalRun(**run_data)
+        assert run.reference_answer == reference_answer
+
+
+def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
+    """Test that reference answer evals with no current_config_id get the first config set as default."""
+    # Create an eval with reference_answer type and save to disk
+    task = mock_task
+    task.path = tmp_path / "task.kiln"
+    task.save_to_file()
+
+    eval = Eval(
+        name="Test Eval",
+        parent=task,
+        evaluation_data_type=EvalDataType.reference_answer,
+        eval_set_filter_id="all",
+        eval_configs_filter_id="high_rating",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    # Create two configs with different created_at times
+    from datetime import datetime, timedelta
+
+    config1 = EvalConfig(
+        parent=eval,
+        name="First Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+    )
+    config1.created_at = datetime.now()
+    config1.save_to_file()
+
+    config2 = EvalConfig(
+        parent=eval,
+        name="Second Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+    )
+    config2.created_at = datetime.now() + timedelta(seconds=1)
+    config2.save_to_file()
+
+    # Load from file - should set the first (oldest) config as default
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.current_config_id == config1.id  # First by created_at
+
+    # Test with current_config_id already set - should not change it
+    eval.current_config_id = config2.id
+    eval.save_to_file()
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.current_config_id == config2.id  # Should keep existing value
+
+    # Test with non-reference_answer type - should not set current_config_id
+    eval.evaluation_data_type = EvalDataType.final_answer
+    eval.current_config_id = None
+    eval.save_to_file()
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert (
+        loaded_eval.current_config_id is None
+    )  # Should not set for non-reference_answer
+
+    # Test with no configs - should not error
+    eval.evaluation_data_type = EvalDataType.reference_answer
+    eval.current_config_id = None
+    eval.save_to_file()
+    # Delete config files
+    if config1.path is not None:
+        config1.path.unlink()
+    if config2.path is not None:
+        config2.path.unlink()
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.current_config_id is None  # No configs to set

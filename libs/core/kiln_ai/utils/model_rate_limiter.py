@@ -25,7 +25,7 @@ class RateLimits(BaseModel):
 
     provider_limits: Dict[str, int] = Field(
         default_factory=dict,
-        description="Max concurrent requests per provider (applies to all models from that provider)",
+        description="Max concurrent requests per provider (applies to all models from that provider unless overridden by a model-specific limit)",
     )
     model_limits: Dict[str, Dict[str, int]] = Field(
         default_factory=dict,
@@ -38,7 +38,7 @@ class ModelRateLimiter:
     Rate limiter for AI model API calls using asyncio.Semaphore.
 
     Limits concurrent requests per model/provider combination based on
-    rate limits defined in ~/.kiln_ai/rate_limits.yaml.
+    rate limits defined in the rate limits file.
 
     The rate limits file supports two levels of limits:
     - provider_limits: Max concurrent requests for all models from a provider
@@ -59,10 +59,7 @@ class ModelRateLimiter:
         default_provider_limit: int | None = None,
     ):
         """
-        Initialize the rate limiter.
-
-        Args:
-            rate_limits: Optional RateLimits model. If None, loads from file.
+        Initialize the rate limiter. If no rate limits are provided, loads from file.
         """
         self._lock = threading.Lock()
         self._semaphores: Dict[str, asyncio.Semaphore] = {}
@@ -92,12 +89,8 @@ class ModelRateLimiter:
         self, default_provider_limit: int
     ) -> Dict[str, int]:
         """
-        Initialize default provider limits with lazy import to avoid circular import.
-
-        Returns:
-            Dict mapping provider names to default concurrent request limits
+        Set the default concurrent request limits for each provider.
         """
-
         limits: Dict[str, int] = defaultdict(lambda: default_provider_limit)
         limits[ModelProviderName.ollama] = 1
         return limits
@@ -106,9 +99,6 @@ class ModelRateLimiter:
     def rate_limits_path(cls) -> str:
         """
         Get the path to the rate limits configuration file.
-
-        Returns:
-            str: Path to rate_limits.yaml in the settings directory
         """
         settings_dir = Config.settings_dir(create=True)
         return os.path.join(settings_dir, "rate_limits.yaml")
@@ -119,9 +109,6 @@ class ModelRateLimiter:
         Load rate limits from the config file.
 
         Returns empty RateLimits if file doesn't exist or is invalid.
-
-        Returns:
-            RateLimits: The loaded rate limits configuration
         """
         rate_limits_path = cls.rate_limits_path()
         if not os.path.isfile(rate_limits_path):
@@ -142,26 +129,9 @@ class ModelRateLimiter:
             )
             return RateLimits()
 
-    def save_rate_limits(self) -> None:
-        """
-        Save the current rate limits to the config file.
-
-        Thread-safe operation protected by lock.
-        """
-        with self._lock:
-            rate_limits_path = self.rate_limits_path()
-            with open(rate_limits_path, "w") as f:
-                yaml.dump(self._rate_limits.model_dump(), f)
-
     def update_rate_limits(self, rate_limits: RateLimits) -> None:
         """
-        Update rate limits and save to file.
-
-        Thread-safe operation that updates internal state, saves to file,
-        and clears semaphores to pick up new limits.
-
-        Args:
-            rate_limits: New rate limits configuration
+        Update rate limits and save to file. Thread-safe operation.
         """
         with self._lock:
             self._rate_limits = rate_limits
@@ -184,19 +154,14 @@ class ModelRateLimiter:
 
     def _get_semaphore(
         self, provider: str, model: str
-    ) -> (
-        tuple[
-            asyncio.Semaphore,
-            int,
-        ]
-        | None
-    ):
+    ) -> tuple[asyncio.Semaphore, int]:
         """
         Get or create a semaphore for the given provider/model.
 
-        Returns None if no rate limit is configured (unlimited concurrency).
         Checks model-specific limit first, then falls back to provider-wide limit.
         If using provider-wide limit, all models from that provider share the same semaphore.
+        If no limit is configured, uses a default value or the model's max_parallel_requests
+        defined in the model list.
         """
         model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
         if model_limit is not None and model_limit > 0:
@@ -214,7 +179,9 @@ class ModelRateLimiter:
 
         # if no limit is configured, set a default of 10
         key = self._get_semaphore_key(provider, model)
-        fallback_limit = self.get_model_default_max_concurrent_requests(provider, model)
+        fallback_limit = self._get_model_default_max_concurrent_requests(
+            provider, model
+        )
         if key not in self._semaphores:
             self._semaphores[key] = asyncio.Semaphore(fallback_limit)
         return self._semaphores[key], fallback_limit
@@ -225,10 +192,6 @@ class ModelRateLimiter:
     ) -> AsyncIterator[None]:
         """
         Context manager to limit concurrent requests to a model.
-
-        Args:
-            provider: The provider name (e.g., "openai", "anthropic")
-            model: The model name (e.g., "gpt_5", "claude_opus_4_1")
 
         Usage:
             async with limiter.limit("openai", "gpt_5"):
@@ -242,14 +205,13 @@ class ModelRateLimiter:
         if semaphore is None:
             print(f"#[{random_key}] LIMIT({limit}) -> NO SEMAPHORE {provider}::{model}")
             yield
-            print(f"#[{random_key}] LIMIT({limit}) -> RELEASE {provider}::{model}")
         else:
             async with semaphore:
                 print(f"#[{random_key}] LIMIT({limit}) -> RUNNING {provider}::{model}")
                 yield
                 print(f"#[{random_key}] LIMIT({limit}) -> RELEASE {provider}::{model}")
 
-    def get_limit(self, provider: str, model: str) -> int | None:
+    def _get_model_limit(self, provider: str, model: str) -> int | None:
         """
         Get the configured rate limit for a provider/model.
 
@@ -261,7 +223,7 @@ class ModelRateLimiter:
             return model_limit
         return self._rate_limits.provider_limits.get(provider)
 
-    def get_provider_limit(self, provider: str) -> int | None:
+    def _get_provider_limit(self, provider: str) -> int | None:
         """
         Get the configured provider-wide rate limit.
 
@@ -269,14 +231,9 @@ class ModelRateLimiter:
         """
         return self._rate_limits.provider_limits.get(provider)
 
-    def set_limit(self, provider: str, model: str, limit: int | None) -> None:
+    def _set_model_limit(self, provider: str, model: str, limit: int | None) -> None:
         """
         Set or update the rate limit for a provider/model.
-
-        Args:
-            provider: The provider name
-            model: The model name
-            limit: Max concurrent requests (None or 0 for unlimited)
         """
         if provider not in self._rate_limits.model_limits:
             self._rate_limits.model_limits[provider] = {}
@@ -297,22 +254,6 @@ class ModelRateLimiter:
             key = self._get_semaphore_key(provider, model)
             self._semaphores[key] = asyncio.Semaphore(limit)
 
-    def set_provider_limit(self, provider: str, limit: int | None) -> None:
-        """
-        Set or update the provider-wide rate limit.
-
-        Args:
-            provider: The provider name
-            limit: Max concurrent requests (None or 0 for unlimited)
-        """
-        if limit is None or limit <= 0:
-            if provider in self._rate_limits.provider_limits:
-                del self._rate_limits.provider_limits[provider]
-        else:
-            self._rate_limits.provider_limits[provider] = limit
-
-        self._semaphores.clear()
-
     def reload(self) -> None:
         """
         Reload rate limits from the config file and update semaphores.
@@ -323,7 +264,7 @@ class ModelRateLimiter:
             self._rate_limits = self.load_rate_limits()
             self._semaphores.clear()
 
-    def get_model_default_max_concurrent_requests(
+    def _get_model_default_max_concurrent_requests(
         self, provider: str, model: str
     ) -> int:
         """
@@ -342,6 +283,7 @@ class ModelRateLimiter:
             model_provider is not None
             and model_provider.max_parallel_requests is not None
         ):
+            # use the lower of the model-specific limit or the provider-wide limit
             return min(
                 model_provider.max_parallel_requests,
                 self._default_provider_limits[provider],

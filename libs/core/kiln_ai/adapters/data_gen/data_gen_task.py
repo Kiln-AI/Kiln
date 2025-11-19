@@ -76,15 +76,17 @@ class DataGenCategoriesTask(Task, parent_of={}):
     training data for model learning.
     """
 
-    def __init__(self, gen_type: Literal["training", "eval"], guidance: str | None):
-        # Keep the typechecker happy. We should make this optional.
-        tmp_project = Project(name="DataGen")
-
+    def __init__(
+        self,
+        gen_type: Literal["training", "eval"],
+        parent_project: Project,
+        guidance: str | None,
+    ):
         instruction = generate_topic_tree_prompt(gen_type=gen_type, guidance=guidance)
 
         super().__init__(
             name="DataGen",
-            parent=tmp_project,
+            parent=parent_project,
             description="A task which generates synthetic data categories, which in turn are used to generate training data for a model to learn from.",
             instruction=instruction,
             input_json_schema=json.dumps(
@@ -179,18 +181,16 @@ class DataGenSampleTask(Task, parent_of={}):
         self,
         target_task: Task,
         gen_type: Literal["training", "eval"],
+        parent_project: Project,
         guidance: str | None,
     ):
-        # Keep the typechecker happy. We should make this optional.
-        tmp_project = Project(name="DataGenSample")
-
         instruction = generate_sample_generation_prompt(
             gen_type=gen_type, guidance=guidance
         )
 
         super().__init__(
             name="DataGenSample",
-            parent=tmp_project,
+            parent=parent_project,
             description="A task which generates synthetic data samples for a given topic (and optional subtopic).",
             instruction=instruction,
             input_json_schema=json.dumps(DataGenSampleTaskInput.model_json_schema()),

@@ -272,8 +272,8 @@ def test_update_rate_limits_reloads_shared_limiter(client, temp_home):
     }
     client.post("/api/rate_limits", json=initial_limits)
 
-    assert limiter.get_provider_limit("openai") == 5
-    assert limiter.get_limit("openai", "gpt_5") == 10
+    assert limiter._get_provider_limit("openai") == 5
+    assert limiter._get_model_limit("openai", "gpt_5") == 10
 
     updated_limits = {
         "provider_limits": {"openai": 15},
@@ -281,8 +281,8 @@ def test_update_rate_limits_reloads_shared_limiter(client, temp_home):
     }
     client.post("/api/rate_limits", json=updated_limits)
 
-    assert limiter.get_provider_limit("openai") == 15
-    assert limiter.get_limit("openai", "gpt_5") == 20
+    assert limiter._get_provider_limit("openai") == 15
+    assert limiter._get_model_limit("openai", "gpt_5") == 20
 
 
 def test_read_rate_limits_handles_exception(client, temp_home):

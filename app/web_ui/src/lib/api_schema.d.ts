@@ -3460,6 +3460,11 @@ export interface components {
              */
             output: string;
             /**
+             * Reference Answer
+             * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
+             */
+            reference_answer?: string | null;
+            /**
              * Intermediate Outputs
              * @description The intermediate outputs of the task (example, eval thinking).
              */
@@ -4816,7 +4821,7 @@ export interface components {
         RateLimits: {
             /**
              * Provider Limits
-             * @description Max concurrent requests per provider (applies to all models from that provider)
+             * @description Max concurrent requests per provider (applies to all models from that provider unless overridden by a model-specific limit)
              */
             provider_limits?: {
                 [key: string]: number;

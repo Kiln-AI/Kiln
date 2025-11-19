@@ -1,5 +1,6 @@
 import json
 from enum import Enum
+from threading import Lock
 from typing import TYPE_CHECKING, Any, Dict, List, Union
 
 from pydantic import BaseModel, Field, model_validator
@@ -21,6 +22,11 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
 EvalScores = Dict[str, float]
+
+# Module-level set to track evals currently being migrated (to prevent recursion)
+# Protected by _migration_lock to ensure thread-safe access
+_migration_lock = Lock()
+_currently_migrating_eval_ids: set[ID_TYPE] = set()
 
 
 class EvalTemplateId(str, Enum):
@@ -106,6 +112,10 @@ class EvalRun(KilnParentedModel):
     )
     output: str = Field(
         description="The output of the task. JSON formatted for structured output, plaintext for unstructured output."
+    )
+    reference_answer: str | None = Field(
+        default=None,
+        description="The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
     )
     intermediate_outputs: Dict[str, str] | None = Field(
         default=None,
@@ -222,6 +232,24 @@ class EvalRun(KilnParentedModel):
                     raise_exhaustive_enum_error(output_score.type)
         return self
 
+    @model_validator(mode="after")
+    def validate_reference_answer(self) -> Self:
+        parent_eval_config = self.parent_eval_config()
+        parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
+        if not parent_eval:
+            # Can't validate without the grand-parent eval, allow it to be validated later
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+        if (
+            self.reference_answer is not None
+            and evaluation_data_type != EvalDataType.reference_answer
+        ):
+            raise ValueError(
+                f"reference_answer is only valid for reference answer evals. Got: {evaluation_data_type.value}"
+            )
+        return self
+
 
 class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}):
     """
@@ -334,6 +362,50 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     def configs(self, readonly: bool = False) -> list[EvalConfig]:
         return super().configs(readonly=readonly)  # type: ignore
+
+    @model_validator(mode="after")
+    def upgrade_old_reference_answer_eval_config(self) -> Self:
+        """
+        Migration: Set the first judge config as the default for existing reference answer evals that don't have a current_config_id set.
+
+        For reference_answer evals that don't have a current_config_id set, this migration
+        will set the first config (by created_at) as the default.
+        """
+        if self.id is None:
+            return self
+
+        # Only run during file loading
+        if not self._loaded_from_file:
+            return self
+
+        # Skip if already migrated (has a current_config_id set)
+        if self.current_config_id is not None:
+            return self
+
+        # Only migrate reference_answer evals
+        if self.evaluation_data_type != EvalDataType.reference_answer:
+            return self
+
+        # Prevent recursion: self.configs() loads child files, which re-loads this parent
+        # (see basemodel.py where we iterate_children_paths_of_parent_path calls load_from_file)
+        # This causes the validator to run again, creating an infinite loop without this guard.
+        with _migration_lock:
+            if self.id in _currently_migrating_eval_ids:
+                return self
+            _currently_migrating_eval_ids.add(self.id)
+
+        try:
+            # Get the configs - these are loaded from child files
+            configs_list = self.configs(readonly=True)
+            if configs_list and len(configs_list) > 0:
+                # Sort by created_at to get the oldest (first created) config
+                sorted_configs = sorted(configs_list, key=lambda c: c.created_at)
+                self.current_config_id = sorted_configs[0].id
+        finally:
+            with _migration_lock:
+                _currently_migrating_eval_ids.discard(self.id)
+
+        return self
 
     @model_validator(mode="after")
     def validate_scores(self) -> Self:

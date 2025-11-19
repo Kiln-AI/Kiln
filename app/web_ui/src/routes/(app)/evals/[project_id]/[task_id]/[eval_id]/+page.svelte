@@ -449,10 +449,6 @@
 
   function compare_run_configs() {
     let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_configs`
-    show_progress_ui(
-      "When you're done comparing run configurations, ",
-      evaluator?.template === "rag" ? 3 : 5,
-    )
     goto(url)
   }
 

@@ -188,7 +188,7 @@ Why? We’re aiming to make Kiln fair and sustainable:
 
 - Kiln is always free for personal use.
 - Larger for-profit companies using Kiln Desktop may require a license in the future, but it is currently free.
-- This is based on the [fair code model](https://faircode.io), with the goal of making Kiln sustainable.
+- This is based on the concept of the [fair code model](https://faircode.io) with the goal of making Kiln sustainable (adapted since Kiln is an app, not a service). 
 
 Open Library and Data Format:
 
