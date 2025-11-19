@@ -4821,7 +4821,7 @@ export interface components {
         RateLimits: {
             /**
              * Provider Limits
-             * @description Max concurrent requests per provider (applies to all models from that provider)
+             * @description Max concurrent requests per provider (applies to all models from that provider unless overridden by a model-specific limit)
              */
             provider_limits?: {
                 [key: string]: number;
