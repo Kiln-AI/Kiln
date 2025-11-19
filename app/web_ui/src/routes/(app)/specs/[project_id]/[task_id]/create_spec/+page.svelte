@@ -7,6 +7,7 @@
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
   import FormElement from "$lib/utils/form_element.svelte"
+  import { formatSpecTypeName } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -18,6 +19,13 @@
   let spec_name = ""
   let spec_definition = ""
   let spec_type: SpecType = "desired_behaviour"
+  $: {
+    const type_param = $page.url.searchParams.get("type")
+    if (type_param) {
+      spec_type = type_param as SpecType
+    }
+  }
+  $: spec_description = $page.url.searchParams.get("description") || undefined
 
   async function create_spec() {
     try {
@@ -58,8 +66,8 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Define a Spec"
-    subtitle="Define how you want your task to behave"
+    title="Create New Spec: {formatSpecTypeName(spec_type)}"
+    subtitle={spec_description}
     breadcrumbs={[
       {
         label: "Specs",
