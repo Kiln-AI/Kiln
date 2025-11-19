@@ -198,6 +198,12 @@
                 <div>
                   {result.input}
                 </div>
+                {#if result.reference_answer}
+                  <div class="font-medium mt-4">Reference Answer:</div>
+                  <div>
+                    {result.reference_answer}
+                  </div>
+                {/if}
                 <div class="font-medium mt-4">Output:</div>
                 <div>
                   {result.output}
