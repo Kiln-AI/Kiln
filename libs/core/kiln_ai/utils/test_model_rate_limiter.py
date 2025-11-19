@@ -39,66 +39,66 @@ def test_init_with_explicit_limits():
     """Test initialization with explicit rate limits."""
     rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10}})
     limiter = ModelRateLimiter(rate_limits)
-    assert limiter.get_limit("openai", "gpt_5") == 10
+    assert limiter._get_model_limit("openai", "gpt_5") == 10
 
 
 def test_init_loads_from_file(rate_limits_file):
     """Test initialization loads rate limits from file."""
     limiter = ModelRateLimiter()
-    assert limiter.get_limit("openai", "gpt_5") == 5
-    assert limiter.get_limit("anthropic", "claude_opus_4_1") == 2
+    assert limiter._get_model_limit("openai", "gpt_5") == 5
+    assert limiter._get_model_limit("anthropic", "claude_opus_4_1") == 2
 
 
 def test_init_with_no_file(temp_home):
     """Test initialization when no rate limits file exists."""
     limiter = ModelRateLimiter()
-    assert limiter.get_limit("openai", "gpt_5") is None
+    assert limiter._get_model_limit("openai", "gpt_5") is None
 
 
-def test_get_limit():
+def test__get_model_limit():
     """Test getting rate limits."""
     rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10, "gpt_4o": 5}})
     limiter = ModelRateLimiter(rate_limits)
 
-    assert limiter.get_limit("openai", "gpt_5") == 10
-    assert limiter.get_limit("openai", "gpt_4o") == 5
-    assert limiter.get_limit("openai", "nonexistent") is None
-    assert limiter.get_limit("anthropic", "claude") is None
+    assert limiter._get_model_limit("openai", "gpt_5") == 10
+    assert limiter._get_model_limit("openai", "gpt_4o") == 5
+    assert limiter._get_model_limit("openai", "nonexistent") is None
+    assert limiter._get_model_limit("anthropic", "claude") is None
 
 
-def test_set_limit():
+def test__set_model_limit():
     """Test setting rate limits."""
     limiter = ModelRateLimiter(RateLimits())
 
-    limiter.set_limit("openai", "gpt_5", 10)
-    assert limiter.get_limit("openai", "gpt_5") == 10
+    limiter._set_model_limit("openai", "gpt_5", 10)
+    assert limiter._get_model_limit("openai", "gpt_5") == 10
 
-    limiter.set_limit("openai", "gpt_4o", 5)
-    assert limiter.get_limit("openai", "gpt_4o") == 5
+    limiter._set_model_limit("openai", "gpt_4o", 5)
+    assert limiter._get_model_limit("openai", "gpt_4o") == 5
 
 
-def test_set_limit_to_none_removes_limit():
+def test__set_limit_to_none_removes_limit():
     """Test that setting limit to None removes it."""
     rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10}})
     limiter = ModelRateLimiter(rate_limits)
 
-    limiter.set_limit("openai", "gpt_5", None)
-    assert limiter.get_limit("openai", "gpt_5") is None
+    limiter._set_model_limit("openai", "gpt_5", None)
+    assert limiter._get_model_limit("openai", "gpt_5") is None
 
 
-def test_set_limit_to_zero_removes_limit():
+def test__set_limit_to_zero_removes_limit():
     """Test that setting limit to 0 removes it."""
     rate_limits = RateLimits(model_limits={"openai": {"gpt_5": 10}})
     limiter = ModelRateLimiter(rate_limits)
 
-    limiter.set_limit("openai", "gpt_5", 0)
-    assert limiter.get_limit("openai", "gpt_5") is None
+    limiter._set_model_limit("openai", "gpt_5", 0)
+    assert limiter._get_model_limit("openai", "gpt_5") is None
 
 
 def test_reload(rate_limits_file):
     """Test reloading rate limits from file."""
     limiter = ModelRateLimiter()
-    assert limiter.get_limit("openai", "gpt_5") == 5
+    assert limiter._get_model_limit("openai", "gpt_5") == 5
 
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
     new_limits = {"model_limits": {"openai": {"gpt_5": 20}}}
@@ -106,8 +106,8 @@ def test_reload(rate_limits_file):
         yaml.dump(new_limits, f)
 
     limiter.reload()
-    assert limiter.get_limit("openai", "gpt_5") == 20
-    assert limiter.get_limit("anthropic", "claude_opus_4_1") is None
+    assert limiter._get_model_limit("openai", "gpt_5") == 20
+    assert limiter._get_model_limit("anthropic", "claude_opus_4_1") is None
 
 
 @pytest.mark.asyncio
@@ -208,11 +208,11 @@ async def test_limit_enforces_max_concurrent():
 
 
 @pytest.mark.asyncio
-async def test_set_limit_updates_semaphore():
+async def test__set_limit_updates_semaphore():
     """Test that setting a new limit updates the semaphore."""
     limiter = ModelRateLimiter(RateLimits(model_limits={"openai": {"gpt_5": 10}}))
 
-    limiter.set_limit("openai", "gpt_5", 2)
+    limiter._set_model_limit("openai", "gpt_5", 2)
 
     active_count = 0
     max_concurrent = 0
@@ -253,9 +253,9 @@ def test_provider_limit_basic():
         )
     )
 
-    assert limiter.get_provider_limit("openai") == 10
-    assert limiter.get_provider_limit("anthropic") == 5
-    assert limiter.get_provider_limit("nonexistent") is None
+    assert limiter._get_provider_limit("openai") == 10
+    assert limiter._get_provider_limit("anthropic") == 5
+    assert limiter._get_provider_limit("nonexistent") is None
 
 
 def test_provider_limit_fallback():
@@ -267,8 +267,8 @@ def test_provider_limit_fallback():
         )
     )
 
-    assert limiter.get_limit("openai", "gpt_5") == 5
-    assert limiter.get_limit("openai", "gpt_4o") == 10
+    assert limiter._get_model_limit("openai", "gpt_5") == 5
+    assert limiter._get_model_limit("openai", "gpt_4o") == 10
 
 
 def test_model_limit_precedence():
@@ -280,8 +280,8 @@ def test_model_limit_precedence():
         )
     )
 
-    assert limiter.get_limit("openai", "gpt_5") == 3
-    assert limiter.get_provider_limit("openai") == 10
+    assert limiter._get_model_limit("openai", "gpt_5") == 3
+    assert limiter._get_provider_limit("openai") == 10
 
 
 def test_unlimited_when_no_limits():
@@ -293,44 +293,7 @@ def test_unlimited_when_no_limits():
         )
     )
 
-    assert limiter.get_limit("anthropic", "claude") is None
-
-
-def test_set_provider_limit():
-    """Test setting provider-wide rate limits."""
-    limiter = ModelRateLimiter(RateLimits())
-
-    limiter.set_provider_limit("openai", 15)
-    assert limiter.get_provider_limit("openai") == 15
-
-    limiter.set_provider_limit("anthropic", 8)
-    assert limiter.get_provider_limit("anthropic") == 8
-
-
-def test_set_provider_limit_to_none_removes_limit():
-    """Test that setting provider limit to None removes it."""
-    limiter = ModelRateLimiter(
-        RateLimits(
-            provider_limits={"openai": 10},
-            model_limits={},
-        )
-    )
-
-    limiter.set_provider_limit("openai", None)
-    assert limiter.get_provider_limit("openai") is None
-
-
-def test_set_provider_limit_to_zero_removes_limit():
-    """Test that setting provider limit to 0 removes it."""
-    limiter = ModelRateLimiter(
-        RateLimits(
-            provider_limits={"openai": 10},
-            model_limits={},
-        )
-    )
-
-    limiter.set_provider_limit("openai", 0)
-    assert limiter.get_provider_limit("openai") is None
+    assert limiter._get_model_limit("anthropic", "claude") is None
 
 
 @pytest.mark.asyncio
@@ -420,10 +383,10 @@ def test_pydantic_model_initialization():
     )
     limiter = ModelRateLimiter(rate_limits)
 
-    assert limiter.get_limit("openai", "gpt_5") == 10
-    assert limiter.get_limit("openai", "gpt_4o") == 5
-    assert limiter.get_limit("anthropic", "claude_opus_4_1") == 2
-    assert limiter.get_provider_limit("openai") is None
+    assert limiter._get_model_limit("openai", "gpt_5") == 10
+    assert limiter._get_model_limit("openai", "gpt_4o") == 5
+    assert limiter._get_model_limit("anthropic", "claude_opus_4_1") == 2
+    assert limiter._get_provider_limit("openai") is None
 
 
 def test_new_format_with_both_limits():
@@ -438,19 +401,19 @@ def test_new_format_with_both_limits():
         )
     )
 
-    assert limiter.get_provider_limit("openai") == 20
-    assert limiter.get_provider_limit("anthropic") == 10
-    assert limiter.get_limit("openai", "gpt_5") == 5
-    assert limiter.get_limit("openai", "gpt_4o") == 20
-    assert limiter.get_limit("anthropic", "claude_opus_4_1") == 3
+    assert limiter._get_provider_limit("openai") == 20
+    assert limiter._get_provider_limit("anthropic") == 10
+    assert limiter._get_model_limit("openai", "gpt_5") == 5
+    assert limiter._get_model_limit("openai", "gpt_4o") == 20
+    assert limiter._get_model_limit("anthropic", "claude_opus_4_1") == 3
 
 
 def test_empty_rate_limits():
     """Test initialization with empty rate limits."""
     limiter = ModelRateLimiter(RateLimits())
 
-    assert limiter.get_limit("openai", "gpt_5") is None
-    assert limiter.get_provider_limit("openai") is None
+    assert limiter._get_model_limit("openai", "gpt_5") is None
+    assert limiter._get_provider_limit("openai") is None
 
 
 @pytest.fixture
@@ -472,8 +435,8 @@ def new_format_rate_limits_file(temp_home):
 def test_reload_new_format(new_format_rate_limits_file):
     """Test reloading rate limits from file with new format."""
     limiter = ModelRateLimiter()
-    assert limiter.get_provider_limit("openai") == 20
-    assert limiter.get_limit("openai", "gpt_5") == 5
+    assert limiter._get_provider_limit("openai") == 20
+    assert limiter._get_model_limit("openai", "gpt_5") == 5
 
     rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
     new_limits = {
@@ -484,9 +447,9 @@ def test_reload_new_format(new_format_rate_limits_file):
         yaml.dump(new_limits, f)
 
     limiter.reload()
-    assert limiter.get_provider_limit("openai") == 50
-    assert limiter.get_limit("openai", "gpt_5") == 10
-    assert limiter.get_provider_limit("anthropic") is None
+    assert limiter._get_provider_limit("openai") == 50
+    assert limiter._get_model_limit("openai", "gpt_5") == 10
+    assert limiter._get_provider_limit("anthropic") is None
 
 
 def test_get_model_default_max_concurrent_requests_with_model_property():
@@ -508,14 +471,14 @@ def test_get_model_default_max_concurrent_requests_with_model_property():
         # Test model with max_parallel_requests=2
         mock_built_in.return_value = mock_provider_2
         assert (
-            limiter.get_model_default_max_concurrent_requests("openai", "test_model_2")
+            limiter._get_model_default_max_concurrent_requests("openai", "test_model_2")
             == 2
         )
 
         # Test model with max_parallel_requests=1
         mock_built_in.return_value = mock_provider_1
         assert (
-            limiter.get_model_default_max_concurrent_requests(
+            limiter._get_model_default_max_concurrent_requests(
                 ModelProviderName.ollama, "test_model_1"
             )
             == 1
@@ -527,9 +490,9 @@ def test_get_model_default_max_concurrent_requests_default():
     limiter = ModelRateLimiter(RateLimits(), default_provider_limit=10)
 
     # Most models don't have max_parallel_requests set, so should use default
-    assert limiter.get_model_default_max_concurrent_requests("openai", "gpt_4") == 10
+    assert limiter._get_model_default_max_concurrent_requests("openai", "gpt_4") == 10
     assert (
-        limiter.get_model_default_max_concurrent_requests("anthropic", "claude_opus_4")
+        limiter._get_model_default_max_concurrent_requests("anthropic", "claude_opus_4")
         == 10
     )
 
@@ -540,7 +503,7 @@ def test_get_model_default_max_concurrent_requests_ollama_default():
 
     # Ollama should default to 1
     assert (
-        limiter.get_model_default_max_concurrent_requests(
+        limiter._get_model_default_max_concurrent_requests(
             ModelProviderName.ollama, "llama2"
         )
         == 1
@@ -553,7 +516,9 @@ def test_get_model_default_max_concurrent_requests_unknown_model():
 
     # Unknown model should use provider default
     assert (
-        limiter.get_model_default_max_concurrent_requests("openai", "nonexistent_model")
+        limiter._get_model_default_max_concurrent_requests(
+            "openai", "nonexistent_model"
+        )
         == 10
     )
 
@@ -694,7 +659,7 @@ def test_load_rate_limits_with_validation_error(temp_home):
         yaml.dump(invalid_data, f)
 
     limiter = ModelRateLimiter()
-    assert limiter.get_provider_limit("openai") is None
+    assert limiter._get_provider_limit("openai") is None
     assert limiter._rate_limits.provider_limits == {}
     assert limiter._rate_limits.model_limits == {}
 
@@ -708,25 +673,6 @@ def test_load_rate_limits_with_generic_exception(temp_home):
     limiter = ModelRateLimiter()
     assert limiter._rate_limits.provider_limits == {}
     assert limiter._rate_limits.model_limits == {}
-
-
-def test_save_rate_limits(temp_home):
-    """Test saving rate limits to file."""
-    limiter = ModelRateLimiter(
-        RateLimits(
-            provider_limits={"openai": 20},
-            model_limits={"anthropic": {"claude_opus_4_1": 5}},
-        )
-    )
-
-    limiter.save_rate_limits()
-
-    rate_limits_path = os.path.join(Config.settings_dir(), "rate_limits.yaml")
-    with open(rate_limits_path, "r") as f:
-        saved_data = yaml.safe_load(f)
-
-    assert saved_data["provider_limits"]["openai"] == 20
-    assert saved_data["model_limits"]["anthropic"]["claude_opus_4_1"] == 5
 
 
 @pytest.mark.asyncio
