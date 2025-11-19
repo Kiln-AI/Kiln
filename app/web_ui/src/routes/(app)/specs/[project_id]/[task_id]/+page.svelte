@@ -123,11 +123,13 @@
                 </td>
                 <td>{formatPriority(spec.priority)}</td>
                 <td>
-                  {spec.status === "not_started"
-                    ? "Not Started"
-                    : spec.status === "in_progress"
-                      ? "In Progress"
-                      : capitalize(spec.status)}
+                  {spec.status === "active"
+                    ? "Active"
+                    : spec.status === "future"
+                      ? "Future"
+                      : spec.status === "deprecated"
+                        ? "Deprecated"
+                        : capitalize(spec.status)}
                 </td>
                 <td class="text-sm text-gray-500">
                   {formatDate(spec.created_at)}
