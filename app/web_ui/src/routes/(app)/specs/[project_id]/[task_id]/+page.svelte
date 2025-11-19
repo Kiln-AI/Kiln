@@ -5,8 +5,13 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec } from "$lib/types"
-  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import type { Spec, SpecStatus } from "$lib/types"
+  import {
+    formatDate,
+    capitalize,
+    formatPriority,
+    formatSpecType,
+  } from "$lib/utils/formatters"
   import { goto } from "$app/navigation"
 
   $: project_id = $page.params.project_id
@@ -56,15 +61,21 @@
     }
   }
 
-  function formatPriority(priority: number): string {
-    return `P${priority}`
-  }
-
-  function getStatusSortOrder(status: string): number {
-    if (status === "active") return 0
-    if (status === "future") return 1
-    if (status === "deprecated") return 2
-    return 3 // should never happen, but just in case
+  function getStatusSortOrder(status: SpecStatus): number {
+    switch (status) {
+      case "active":
+        return 0
+      case "future":
+        return 1
+      case "deprecated":
+        return 2
+      case "archived":
+        return 3
+      default: {
+        const _: never = status
+        return 4
+      }
+    }
   }
 
   function sortFunction(a: Spec, b: Spec) {
@@ -241,21 +252,11 @@
                 <td class="font-medium">{spec.name}</td>
                 <td class="max-w-md truncate">{spec.definition}</td>
                 <td>
-                  {spec.type
-                    .replace(/_/g, " ")
-                    .split(" ")
-                    .map((word) => capitalize(word))
-                    .join(" ")}
+                  {formatSpecType(spec.type)}
                 </td>
                 <td>{formatPriority(spec.priority)}</td>
                 <td>
-                  {spec.status === "active"
-                    ? "Active"
-                    : spec.status === "future"
-                      ? "Future"
-                      : spec.status === "deprecated"
-                        ? "Deprecated"
-                        : capitalize(spec.status)}
+                  {capitalize(spec.status)}
                 </td>
                 <td class="text-sm text-gray-500">
                   {formatDate(spec.created_at)}
