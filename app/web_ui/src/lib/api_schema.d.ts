@@ -5193,7 +5193,7 @@ export interface components {
             priority: components["schemas"]["Priority"];
             /**
              * @description The status of the spec.
-             * @default not_started
+             * @default active
              */
             status: components["schemas"]["SpecStatus"];
             /**
@@ -5207,6 +5207,12 @@ export interface components {
              * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
              */
             eval_id?: string | null;
+            /**
+             * Is Archived
+             * @description Whether the spec is archived.
+             * @default false
+             */
+            is_archived: boolean;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5215,7 +5221,7 @@ export interface components {
          * @description Defines the status of a spec.
          * @enum {string}
          */
-        SpecStatus: "deprecated" | "not_started" | "in_progress" | "complete";
+        SpecStatus: "active" | "future" | "deprecated";
         /**
          * SpecType
          * @description Defines the type of spec.
@@ -5235,6 +5241,8 @@ export interface components {
             tags: string[];
             /** Eval Id */
             eval_id: string | null;
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * StructuredOutputMode
