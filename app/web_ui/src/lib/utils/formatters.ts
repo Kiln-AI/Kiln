@@ -3,6 +3,7 @@ import {
   type ChunkerType,
   type EvalConfigType,
   type OutputFormat,
+  type SpecType,
   type StructuredOutputMode,
   type ToolServerType,
 } from "$lib/types"
@@ -190,6 +191,23 @@ export function format_chunker_config_overview(config: ChunkerConfig) {
       return "unknown"
     }
   }
+}
+
+export function formatSpecType(type: SpecType): string {
+  if (type === "nsfw") {
+    return "NSFW"
+  }
+  if (type === "reference_answer_accuracy") {
+    return "Reference Answer Accuracy (RAG)"
+  }
+  return type
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+}
+
+export function formatPriority(priority: number): string {
+  return `P${priority}`
 }
 
 export function capitalize(str: string | undefined | null): string {

@@ -5,14 +5,19 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec } from "$lib/types"
-  import { formatDate, capitalize } from "$lib/utils/formatters"
+  import type { Spec, SpecStatus } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
   import TableToolbar from "$lib/ui/table_toolbar.svelte"
   import AddTagsDialog from "$lib/ui/add_tags_dialog.svelte"
   import RemoveTagsDialog from "$lib/ui/remove_tags_dialog.svelte"
+  import {
+    capitalize,
+    formatDate,
+    formatPriority,
+    formatSpecType,
+  } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -148,16 +153,21 @@
     filtered_specs = all_specs_to_show
   }
 
-  function formatPriority(priority: number): string {
-    return `P${priority}`
-  }
-
-  function getStatusSortOrder(status: string): number {
-    if (status === "active") return 0
-    if (status === "future") return 1
-    if (status === "deprecated") return 2
-    if (status === "archived") return 3
-    return 4 // should never happen, but just in case
+  function getStatusSortOrder(status: SpecStatus): number {
+    switch (status) {
+      case "active":
+        return 0
+      case "future":
+        return 1
+      case "deprecated":
+        return 2
+      case "archived":
+        return 3
+      default: {
+        const _: never = status
+        return 4
+      }
+    }
   }
 
   function sortFunction(a: Spec, b: Spec) {
@@ -665,23 +675,11 @@
                   <td class="font-medium">{spec.name}</td>
                   <td class="max-w-md truncate">{spec.definition}</td>
                   <td>
-                    {spec.type
-                      .replace(/_/g, " ")
-                      .split(" ")
-                      .map((word) => capitalize(word))
-                      .join(" ")}
+                    {formatSpecType(spec.type)}
                   </td>
                   <td>{formatPriority(spec.priority)}</td>
                   <td>
-                    {spec.status === "active"
-                      ? "Active"
-                      : spec.status === "future"
-                        ? "Future"
-                        : spec.status === "deprecated"
-                          ? "Deprecated"
-                          : spec.status === "archived"
-                            ? "Archived"
-                            : capitalize(spec.status)}
+                    {capitalize(spec.status)}
                   </td>
                   <td>
                     {#if spec.tags && spec.tags.length > 0}

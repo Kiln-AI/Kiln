@@ -7,6 +7,11 @@
   import type { Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import TagPicker from "$lib/ui/tag_picker.svelte"
+  import {
+    capitalize,
+    formatPriority,
+    formatSpecType,
+  } from "$lib/utils/formatters"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -80,22 +85,11 @@
       tags_error = createKilnError(err)
     }
   }
-
-  function formatValue(value: string): string {
-    return value
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(" ")
-  }
-
-  function formatPriority(priority: number): string {
-    return `P${priority}`
-  }
 </script>
 
 <AppPage
   title="Spec{spec?.name ? `: ${spec.name}` : ''}"
-  subtitle={spec?.type ? `Type: ${formatValue(spec.type)}` : ""}
+  subtitle={spec?.type ? `Type: ${formatSpecType(spec.type)}` : ""}
   breadcrumbs={[
     {
       label: "Specs",
@@ -136,7 +130,7 @@
             },
             {
               name: "Type",
-              value: formatValue(spec.type),
+              value: formatSpecType(spec.type),
             },
             {
               name: "Priority",
@@ -144,7 +138,7 @@
             },
             {
               name: "Status",
-              value: formatValue(spec.status),
+              value: capitalize(spec.status),
             },
             {
               name: "Eval ID",
