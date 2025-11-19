@@ -757,6 +757,65 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
     assert any(error["loc"] == ["body", "tags"] for error in res["source_errors"])
 
 
+def test_create_spec_empty_string_in_tags(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [""],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        "empty strings" in error.get("msg", "").lower()
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_tag_with_space(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "type": SpecType.desired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": ["tag with space"],
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        (
+            "spaces" in error.get("msg", "").lower()
+            or "underscores" in error.get("msg", "").lower()
+        )
+        for error in res["source_errors"]
+    )
+
+
 def test_update_spec_missing_required_fields(client, project_and_task):
     project, task = project_and_task
 
