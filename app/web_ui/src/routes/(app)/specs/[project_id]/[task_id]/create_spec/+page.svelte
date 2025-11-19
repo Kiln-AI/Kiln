@@ -73,6 +73,10 @@
         label: "Specs",
         href: `/specs/${project_id}/${task_id}`,
       },
+      {
+        label: "Spec Templates",
+        href: `/specs/${project_id}/${task_id}/create_spec/template_select`,
+      },
     ]}
   >
     <FormContainer
