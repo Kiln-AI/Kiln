@@ -88,12 +88,12 @@
     ? "Tool calling not supported on this model"
     : undefined
 
-  let selected_tools: string[] = []
+  let selected_tool_ids: string[] = []
 
   onMount(() => {
     // Restore tools from localStorage if returning from SDG
     if ($fine_tuning_tools.length > 0) {
-      selected_tools = [...$fine_tuning_tools]
+      selected_tool_ids = [...$fine_tuning_tools]
     }
   })
 
@@ -380,7 +380,7 @@
         provider: provider_id,
         prompt_method: system_prompt_method,
         supports_tools: disabled_tools_selector ? "no" : "yes",
-        tool_count: selected_tools.length,
+        tool_count: selected_tool_ids.length,
       })
       created_finetune = create_finetune_response
       // Clear the fine_tuning_tools store now that fine-tune is created
@@ -677,7 +677,7 @@
         <div>
           <RunConfigComponent
             bind:this={run_config_component}
-            bind:tools={selected_tools}
+            bind:tools={selected_tool_ids}
             {project_id}
             hide_create_kiln_task_tool_button={true}
             hide_model_selector={true}
@@ -704,7 +704,7 @@
           <SelectFinetuneDataset
             {project_id}
             {task_id}
-            required_tools={selected_tools}
+            required_tool_ids={selected_tool_ids}
             bind:selected_dataset
           />
         {/if}

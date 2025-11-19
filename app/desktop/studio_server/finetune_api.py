@@ -37,7 +37,6 @@ from kiln_ai.datamodel.dataset_filters import (
 )
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
-    DatasetToolInfo,
     Train60Test20Val20SplitDefinition,
     Train80Test10Val10SplitDefinition,
     Train80Test20SplitDefinition,
@@ -91,8 +90,10 @@ class FinetuneDatasetInfo(BaseModel):
     existing_datasets: list[DatasetSplit]
     existing_finetunes: list[Finetune]
     finetune_tags: list[FinetuneDatasetTagInfo]
-    # tool info for each dataset split
-    tool_info_by_name: dict[str, DatasetToolInfo]
+
+    # eligible finetune data based on tool selection
+    eligible_datasets: list[DatasetSplit]
+    eligible_finetune_tags: list[FinetuneDatasetTagInfo]
 
 
 class DatasetSplitType(Enum):
@@ -360,34 +361,33 @@ def connect_fine_tune_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info")
     async def finetune_dataset_info(
-        project_id: str, task_id: str
+        project_id: str,
+        task_id: str,
+        tool_ids: Annotated[list[str] | None, Query()] = None,
     ) -> FinetuneDatasetInfo:
         task = task_from_id(project_id, task_id)
         existing_datasets = task.dataset_splits()
         existing_finetunes = task.finetunes()
 
-        finetune_tags = compute_finetune_tag_info(task)
+        finetune_tags = compute_finetune_tag_info(task, tool_filter=None)
+        eligible_finetune_tags = compute_finetune_tag_info(task, tool_filter=tool_ids)
 
-        # compute tool info for each dataset split
-        tool_info_by_name = {}
-        for dataset in existing_datasets:
-            tool_info_by_name[dataset.name] = dataset.tool_info()
+        eligible_datasets = existing_datasets
+        if tool_ids:
+            required_tools_set = set(tool_ids)
+            eligible_datasets = [
+                dataset
+                for dataset in existing_datasets
+                if set(dataset.tool_info().tools) == required_tools_set
+            ]
 
         return FinetuneDatasetInfo(
             existing_datasets=existing_datasets,
             existing_finetunes=existing_finetunes,
             finetune_tags=finetune_tags,
-            tool_info_by_name=tool_info_by_name,
+            eligible_datasets=eligible_datasets,
+            eligible_finetune_tags=eligible_finetune_tags,
         )
-
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_tags")
-    async def finetune_dataset_tags(
-        project_id: str,
-        task_id: str,
-        tool_names: Annotated[list[str] | None, Query()] = None,
-    ) -> list[FinetuneDatasetTagInfo]:
-        task = task_from_id(project_id, task_id)
-        return compute_finetune_tag_info(task, tool_filter=tool_names)
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
     async def create_dataset_split(

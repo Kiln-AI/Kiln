@@ -22,7 +22,7 @@
   export let project_id: string
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
-  export let required_tools: string[] = []
+  export let required_tool_ids: string[] = []
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
@@ -33,6 +33,11 @@
   onMount(async () => {
     load_finetune_dataset_info()
   })
+
+  $: if (project_id && task_id && required_tool_ids !== undefined) {
+    load_finetune_dataset_info()
+    selected_dataset = null
+  }
 
   async function load_finetune_dataset_info() {
     try {
@@ -50,6 +55,12 @@
                 project_id,
                 task_id,
               },
+              query:
+                required_tool_ids.length > 0
+                  ? {
+                      tool_ids: required_tool_ids,
+                    }
+                  : undefined,
             },
           },
         )
@@ -75,7 +86,7 @@
     {
       label: "Dataset Tags",
       options:
-        finetune_dataset_info?.finetune_tags?.map((tag) => ({
+        finetune_dataset_info?.eligible_finetune_tags?.map((tag) => ({
           label: tag.tag,
           value: tag.tag,
           description: `The tag '${tag.tag}' has ${tag.count} samples.`,
@@ -84,8 +95,9 @@
   ]
 
   $: show_existing_dataset_option =
-    finetune_dataset_info?.existing_finetunes.length
-  $: show_new_dataset_option = finetune_dataset_info?.finetune_tags.length
+    finetune_dataset_info?.eligible_datasets?.length
+  $: show_new_dataset_option =
+    finetune_dataset_info?.eligible_finetune_tags?.length
   $: can_select_dataset =
     show_existing_dataset_option || show_new_dataset_option
   $: top_options = [
@@ -123,8 +135,8 @@
 
   function select_top_option(option: string) {
     if (option === "new_dataset") {
-      if (finetune_dataset_info?.finetune_tags.length === 1) {
-        dataset_tag = finetune_dataset_info?.finetune_tags[0].tag
+      if (finetune_dataset_info?.eligible_finetune_tags.length === 1) {
+        dataset_tag = finetune_dataset_info?.eligible_finetune_tags[0].tag
       }
       create_dataset_dialog?.show()
     } else if (option === "add") {
@@ -140,9 +152,10 @@
 
   let new_dataset_split = "train_val"
   let dataset_tag: string | null = null
-  $: selected_dataset_tag_data = finetune_dataset_info?.finetune_tags.find(
-    (t) => t.tag === dataset_tag,
-  )
+  $: selected_dataset_tag_data =
+    finetune_dataset_info?.eligible_finetune_tags.find(
+      (t) => t.tag === dataset_tag,
+    )
   let create_dataset_split_error: KilnError | null = null
   let create_dataset_split_loading = false
   async function create_dataset() {
@@ -219,8 +232,8 @@
       splits: "fine_tune_data:1.0",
       finetune_link: `/fine_tune/${project_id}/${task_id}/create_finetune`,
     })
-    if (required_tools.length > 0) {
-      params.set("fine_tuning_tools", required_tools.join(","))
+    if (required_tool_ids.length > 0) {
+      params.set("fine_tuning_tools", required_tool_ids.join(","))
     }
     let link = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     goto(link)
@@ -414,7 +427,7 @@
       this fine-tune.
     </div>
     <div class="flex flex-col gap-4 text-sm max-w-[600px]">
-      {#each finetune_dataset_info.existing_datasets as dataset}
+      {#each finetune_dataset_info.eligible_datasets as dataset}
         {@const finetunes = finetune_dataset_info.existing_finetunes.filter(
           (f) => f.dataset_split_id === dataset.id,
         )}

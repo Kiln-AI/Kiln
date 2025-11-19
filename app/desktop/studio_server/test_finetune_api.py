@@ -1634,18 +1634,15 @@ def test_finetune_dataset_info(client, mock_task_from_id_disk_backed, test_task)
     assert tag2["high_quality_count"] == 0
     assert tag2["reasoning_and_high_quality_count"] == 0
 
-    # Verify tool_info_by_name
-    assert "tool_info_by_name" in data
-    tool_info_by_name = data["tool_info_by_name"]
-    assert isinstance(tool_info_by_name, dict)
-    assert len(tool_info_by_name) == 2
-    assert "Split 1" in tool_info_by_name
-    assert "Split 2" in tool_info_by_name
-    for dataset_name, tool_info in tool_info_by_name.items():
-        assert "has_tool_mismatch" in tool_info
-        assert "tools" in tool_info
-        assert isinstance(tool_info["has_tool_mismatch"], bool)
-        assert isinstance(tool_info["tools"], list)
+    # Verify eligible_datasets (without tool filter, should be same as existing_datasets)
+    assert "eligible_datasets" in data
+    assert len(data["eligible_datasets"]) == 2
+    eligible_dataset_ids = {ds["id"] for ds in data["eligible_datasets"]}
+    assert eligible_dataset_ids == {"split1", "split2"}
+
+    # Verify eligible_finetune_tags (without tool filter, should be same as finetune_tags)
+    assert "eligible_finetune_tags" in data
+    assert len(data["eligible_finetune_tags"]) == 2
 
     # Verify task_from_id was called correctly
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
@@ -1671,9 +1668,11 @@ def test_finetune_dataset_info_no_tags(
     # Verify no fine_tune tags
     assert len(data["finetune_tags"]) == 0
 
-    # Verify tool_info_by_name still present
-    assert "tool_info_by_name" in data
-    assert len(data["tool_info_by_name"]) == 2
+    # Verify eligible properties still present
+    assert "eligible_datasets" in data
+    assert len(data["eligible_datasets"]) == 2
+    assert "eligible_finetune_tags" in data
+    assert len(data["eligible_finetune_tags"]) == 0
 
 
 def test_finetune_dataset_info_no_datasets_or_finetunes(
@@ -1705,9 +1704,11 @@ def test_finetune_dataset_info_no_datasets_or_finetunes(
     assert len(data["existing_finetunes"]) == 0
     assert len(data["finetune_tags"]) == 0
 
-    # Verify empty tool_info_by_name
-    assert "tool_info_by_name" in data
-    assert len(data["tool_info_by_name"]) == 0
+    # Verify empty eligible properties
+    assert "eligible_datasets" in data
+    assert len(data["eligible_datasets"]) == 0
+    assert "eligible_finetune_tags" in data
+    assert len(data["eligible_finetune_tags"]) == 0
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
@@ -1833,46 +1834,3 @@ def test_compute_finetune_tag_info(task_with_tools, tool_filter, expected_count)
         assert len(result) == 1
         assert result[0].tag == "fine_tune_tools"
         assert result[0].count == expected_count
-
-
-def test_finetune_dataset_tags_api(client, mock_task_from_id_disk_backed):
-    with patch(
-        "app.desktop.studio_server.finetune_api.compute_finetune_tag_info"
-    ) as mock_compute:
-        mock_compute.return_value = []
-
-        response = client.get(
-            "/api/projects/project1/tasks/task1/finetune_dataset_tags"
-        )
-
-        assert response.status_code == 200
-        tags = response.json()
-        assert isinstance(tags, list)
-
-        mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
-        mock_compute.assert_called_once_with(
-            mock_task_from_id_disk_backed.return_value, tool_filter=None
-        )
-
-
-def test_finetune_dataset_tags_api_with_tool_filter(
-    client, mock_task_from_id_disk_backed
-):
-    with patch(
-        "app.desktop.studio_server.finetune_api.compute_finetune_tag_info"
-    ) as mock_compute:
-        mock_compute.return_value = []
-
-        response = client.get(
-            "/api/projects/project1/tasks/task1/finetune_dataset_tags",
-            params={"tool_names": ["tool1", "tool2"]},
-        )
-
-        assert response.status_code == 200
-        tags = response.json()
-        assert isinstance(tags, list)
-
-        mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
-        mock_compute.assert_called_once_with(
-            mock_task_from_id_disk_backed.return_value, tool_filter=["tool1", "tool2"]
-        )
