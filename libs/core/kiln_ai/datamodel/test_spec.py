@@ -112,6 +112,8 @@ def test_spec_empty_definition(sample_task):
         SpecType.reference_answer_accuracy,
         SpecType.factual_correctness,
         SpecType.hallucinations,
+        SpecType.completeness,
+        SpecType.consistency,
         SpecType.tone,
         SpecType.formatting,
         SpecType.localization,
