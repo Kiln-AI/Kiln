@@ -29,6 +29,14 @@ def client(app):
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset the shared ModelRateLimiter instance between tests."""
+    ModelRateLimiter._shared_instance = None
+    yield
+    ModelRateLimiter._shared_instance = None
+
+
 def test_read_rate_limits_empty(client, temp_home):
     response = client.get("/api/rate_limits")
     assert response.status_code == 200

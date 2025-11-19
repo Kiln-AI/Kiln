@@ -10,6 +10,14 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.model_rate_limiter import ModelRateLimiter, RateLimits
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset the shared ModelRateLimiter instance between tests."""
+    ModelRateLimiter._shared_instance = None
+    yield
+    ModelRateLimiter._shared_instance = None
+
+
 @pytest.fixture
 def temp_home(tmp_path):
     with (
