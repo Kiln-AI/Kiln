@@ -22,7 +22,7 @@
   export let project_id: string
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
-  export let required_tool_ids: string[] = []
+  export let required_tool_ids: string[] | undefined = undefined
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
@@ -56,7 +56,7 @@
                 task_id,
               },
               query:
-                required_tool_ids.length > 0
+                required_tool_ids && required_tool_ids.length > 0
                   ? {
                       tool_ids: required_tool_ids,
                     }
@@ -108,6 +108,7 @@
 
   // Case where there are tools selected with eligible tags but no eligible datasets
   $: has_eligible_tags_but_no_eligible_datasets =
+    required_tool_ids &&
     required_tool_ids.length > 0 &&
     show_new_dataset_option &&
     (finetune_dataset_info?.existing_datasets?.length || 0) > 0 &&
@@ -245,7 +246,7 @@
       splits: "fine_tune_data:1.0",
       finetune_link: `/fine_tune/${project_id}/${task_id}/create_finetune`,
     })
-    if (required_tool_ids.length > 0) {
+    if (required_tool_ids && required_tool_ids.length > 0) {
       params.set("fine_tuning_tools", required_tool_ids.join(","))
     }
     let link = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`

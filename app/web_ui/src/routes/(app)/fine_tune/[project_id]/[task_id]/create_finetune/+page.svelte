@@ -704,7 +704,9 @@
           <SelectFinetuneDataset
             {project_id}
             {task_id}
-            required_tool_ids={selected_tool_ids}
+            required_tool_ids={selected_tool_ids.length > 0
+              ? selected_tool_ids
+              : undefined}
             bind:selected_dataset
           />
         {/if}
