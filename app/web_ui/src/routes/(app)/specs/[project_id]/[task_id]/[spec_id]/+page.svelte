@@ -68,7 +68,6 @@
             status: spec.status,
             tags: tags,
             eval_id: spec.eval_id || null,
-            is_archived: spec.is_archived,
           },
         },
       )

@@ -50,9 +50,11 @@
     )
     if (selected_spec_objects.length === 0) return null
 
-    const all_archived = selected_spec_objects.every((spec) => spec.is_archived)
+    const all_archived = selected_spec_objects.every(
+      (spec) => spec.status === "archived",
+    )
     const all_unarchived = selected_spec_objects.every(
-      (spec) => !spec.is_archived,
+      (spec) => spec.status !== "archived",
     )
 
     if (all_archived) return "unarchive"
@@ -96,7 +98,7 @@
       }
       specs = data
       if (specs && specs.length > 0) {
-        const all_archived = specs.every((spec) => spec.is_archived)
+        const all_archived = specs.every((spec) => spec.status === "archived")
         if (all_archived) {
           show_archived = true
         }
@@ -116,8 +118,8 @@
       return
     }
 
-    let active_specs = specs.filter((spec) => !spec.is_archived)
-    let archived_specs = specs.filter((spec) => spec.is_archived)
+    let active_specs = specs.filter((spec) => spec.status !== "archived")
+    let archived_specs = specs.filter((spec) => spec.status === "archived")
 
     let filtered_active =
       filter_tags.length > 0
@@ -154,7 +156,8 @@
     if (status === "active") return 0
     if (status === "future") return 1
     if (status === "deprecated") return 2
-    return 3 // should never happen, but just in case
+    if (status === "archived") return 3
+    return 4 // should never happen, but just in case
   }
 
   function sortFunction(a: Spec, b: Spec) {
@@ -376,7 +379,6 @@
               status: spec.status,
               tags: updated_tags,
               eval_id: spec.eval_id || null,
-              is_archived: spec.is_archived,
             },
           },
         )
@@ -439,6 +441,8 @@
       for (const spec of specs_to_update) {
         if (!spec.id) continue
 
+        const new_status = should_archive ? "archived" : "active"
+
         const { error } = await client.PATCH(
           "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
           {
@@ -450,10 +454,9 @@
               definition: spec.definition,
               type: spec.type,
               priority: spec.priority,
-              status: spec.status,
+              status: new_status,
               tags: spec.tags,
               eval_id: spec.eval_id || null,
-              is_archived: should_archive,
             },
           },
         )
@@ -640,7 +643,7 @@
                   spec.id &&
                   selected_specs.has(spec.id)
                     ? 'bg-base-200'
-                    : ''} {spec.is_archived ? 'opacity-60' : ''}"
+                    : ''} {spec.status === 'archived' ? 'opacity-60' : ''}"
                   on:click={() => {
                     if (select_mode) {
                       toggle_selection(spec.id || "")
@@ -676,7 +679,9 @@
                         ? "Future"
                         : spec.status === "deprecated"
                           ? "Deprecated"
-                          : capitalize(spec.status)}
+                          : spec.status === "archived"
+                            ? "Archived"
+                            : capitalize(spec.status)}
                   </td>
                   <td>
                     {#if spec.tags && spec.tags.length > 0}
