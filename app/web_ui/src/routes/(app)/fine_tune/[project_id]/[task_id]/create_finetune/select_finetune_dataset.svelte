@@ -100,6 +100,19 @@
     finetune_dataset_info?.eligible_finetune_tags?.length
   $: can_select_dataset =
     show_existing_dataset_option || show_new_dataset_option
+
+  // Case where there are tags but none are eligible
+  $: has_only_ineligible_tags =
+    (finetune_dataset_info?.finetune_tags?.length || 0) > 0 &&
+    !show_new_dataset_option
+
+  // Case where there are tools selected with eligible tags but no eligible datasets
+  $: has_eligible_tags_but_no_eligible_datasets =
+    required_tool_ids.length > 0 &&
+    show_new_dataset_option &&
+    (finetune_dataset_info?.existing_datasets?.length || 0) > 0 &&
+    finetune_dataset_info?.eligible_datasets?.length === 0
+
   $: top_options = [
     ...(show_existing_dataset_option
       ? [
@@ -319,7 +332,20 @@
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
-      {#if can_select_dataset}
+      {#if has_only_ineligible_tags}
+        <div class="pt-4 font-light">
+          Existing tuning data does not match your selected tools. Please add
+          new fine-tuning data.
+        </div>
+      {:else if has_eligible_tags_but_no_eligible_datasets}
+        <div class="pt-4 font-light">
+          Existing tuning datasets do not match your selected tools. Please
+          create new dataset for training with tool calls or <button
+            class="link font-normal"
+            on:click={show_add_data}>add additional fine-tuning data</button
+          > before you start.
+        </div>
+      {:else if can_select_dataset}
         <div class="pt-4 font-light">
           or
           <button class="link font-normal" on:click={show_add_data}
