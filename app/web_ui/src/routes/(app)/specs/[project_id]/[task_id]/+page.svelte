@@ -5,7 +5,7 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec } from "$lib/types"
+  import type { Spec, SpecStatus } from "$lib/types"
   import {
     formatDate,
     capitalize,
@@ -20,8 +20,19 @@
   let specs: Spec[] | null = null
   let specs_error: KilnError | null = null
   let specs_loading = true
+  let sortColumn: "name" | "type" | "priority" | "status" | "created_at" =
+    "created_at"
+  let sortDirection: "asc" | "desc" = "desc"
+  let sorted_specs: Spec[] | null = null
 
   $: is_empty = !specs || specs.length == 0
+  $: {
+    if (specs && sortColumn && sortDirection) {
+      sorted_specs = [...specs].sort(sortFunction)
+    } else {
+      sorted_specs = null
+    }
+  }
 
   onMount(async () => {
     await load_specs()
@@ -47,6 +58,71 @@
       specs_error = createKilnError(error)
     } finally {
       specs_loading = false
+    }
+  }
+
+  function getStatusSortOrder(status: SpecStatus): number {
+    switch (status) {
+      case "active":
+        return 0
+      case "future":
+        return 1
+      case "deprecated":
+        return 2
+      case "archived":
+        return 3
+      default: {
+        const _: never = status
+        return 4
+      }
+    }
+  }
+
+  function sortFunction(a: Spec, b: Spec) {
+    let aValue: string | number | Date | null | undefined
+    let bValue: string | number | Date | null | undefined
+
+    switch (sortColumn) {
+      case "name":
+        aValue = a.name.toLowerCase()
+        bValue = b.name.toLowerCase()
+        break
+      case "type":
+        aValue = a.type
+        bValue = b.type
+        break
+      case "priority":
+        aValue = a.priority
+        bValue = b.priority
+        break
+      case "status":
+        aValue = getStatusSortOrder(a.status)
+        bValue = getStatusSortOrder(b.status)
+        break
+      case "created_at":
+        aValue = a.created_at ? new Date(a.created_at).getTime() : 0
+        bValue = b.created_at ? new Date(b.created_at).getTime() : 0
+        break
+      default:
+        return 0
+    }
+
+    if (!aValue && aValue !== 0) return sortDirection === "asc" ? 1 : -1
+    if (!bValue && bValue !== 0) return sortDirection === "asc" ? -1 : 1
+
+    if (aValue < bValue) return sortDirection === "asc" ? -1 : 1
+    if (aValue > bValue) return sortDirection === "asc" ? 1 : -1
+    return 0
+  }
+
+  function handleSort(
+    column: "name" | "type" | "priority" | "status" | "created_at",
+  ) {
+    if (sortColumn === column) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc"
+    } else {
+      sortColumn = column
+      sortDirection = "desc"
     }
   }
 </script>
@@ -92,21 +168,81 @@
           ]}
         />
       </div>
-    {:else if specs}
+    {:else if sorted_specs}
       <div class="overflow-x-auto rounded-lg border">
         <table class="table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th
+                on:click={() => handleSort("name")}
+                class="hover:bg-base-200 cursor-pointer"
+              >
+                Name
+                <span class="inline-block w-3 text-center">
+                  {sortColumn === "name"
+                    ? sortDirection === "asc"
+                      ? "▲"
+                      : "▼"
+                    : "\u200B"}
+                </span>
+              </th>
               <th>Definition</th>
-              <th>Type</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Created At</th>
+              <th
+                on:click={() => handleSort("type")}
+                class="hover:bg-base-200 cursor-pointer"
+              >
+                Type
+                <span class="inline-block w-3 text-center">
+                  {sortColumn === "type"
+                    ? sortDirection === "asc"
+                      ? "▲"
+                      : "▼"
+                    : "\u200B"}
+                </span>
+              </th>
+              <th
+                on:click={() => handleSort("priority")}
+                class="hover:bg-base-200 cursor-pointer"
+              >
+                Priority
+                <span class="inline-block w-3 text-center">
+                  {sortColumn === "priority"
+                    ? sortDirection === "asc"
+                      ? "▲"
+                      : "▼"
+                    : "\u200B"}
+                </span>
+              </th>
+              <th
+                on:click={() => handleSort("status")}
+                class="hover:bg-base-200 cursor-pointer"
+              >
+                Status
+                <span class="inline-block w-3 text-center">
+                  {sortColumn === "status"
+                    ? sortDirection === "asc"
+                      ? "▲"
+                      : "▼"
+                    : "\u200B"}
+                </span>
+              </th>
+              <th
+                on:click={() => handleSort("created_at")}
+                class="hover:bg-base-200 cursor-pointer"
+              >
+                Created At
+                <span class="inline-block w-3 text-center">
+                  {sortColumn === "created_at"
+                    ? sortDirection === "asc"
+                      ? "▲"
+                      : "▼"
+                    : "\u200B"}
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {#each specs as spec}
+            {#each sorted_specs as spec}
               <tr
                 class="hover cursor-pointer"
                 on:click={() => {
