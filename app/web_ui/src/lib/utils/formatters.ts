@@ -203,6 +203,9 @@ export function formatSpecTypeName(spec_type: string): string {
   if (spec_type === "nsfw") {
     return "NSFW"
   }
+  if (spec_type === "reference_answer_accuracy") {
+    return "Reference Answer Accuracy (RAG)"
+  }
   return spec_type
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
