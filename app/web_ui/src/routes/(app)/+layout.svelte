@@ -27,6 +27,7 @@
     Settings,
     Prompts,
     Evals,
+    Specs,
     Generate,
     Run,
     FineTune,
@@ -63,6 +64,8 @@
       section = Section.Documents
     } else if (path_start("/models", $page.url.pathname)) {
       section = Section.Models
+    } else if (path_start("/specs", $page.url.pathname)) {
+      section = Section.Specs
     } else {
       section = Section.None
     }
@@ -211,6 +214,19 @@
             />
           </svg>
           Dataset</a
+        >
+      </li>
+
+      <li class="menu-md">
+        <a
+          href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+          class={section == Section.Specs ? "active" : ""}
+        >
+          <div class="h-6 w-6 mr-2">
+            <EvalIcon />
+          </div>
+
+          Specs</a
         >
       </li>
 
