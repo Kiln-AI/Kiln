@@ -25,6 +25,7 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task_run import TaskRun
 
 if TYPE_CHECKING:
@@ -108,6 +109,7 @@ class Task(
         "finetunes": Finetune,
         "prompts": Prompt,
         "evals": Eval,
+        "specs": Spec,
         "run_configs": TaskRunConfig,
     },
 ):
@@ -171,6 +173,9 @@ class Task(
 
     def run_configs(self, readonly: bool = False) -> list[TaskRunConfig]:
         return super().run_configs(readonly=readonly)  # type: ignore
+
+    def specs(self, readonly: bool = False) -> list[Spec]:
+        return super().specs(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:

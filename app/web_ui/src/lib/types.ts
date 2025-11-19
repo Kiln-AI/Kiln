@@ -106,6 +106,10 @@ export type ToolCallMessageParam =
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
+export type Spec = components["schemas"]["Spec"]
+export type SpecType = components["schemas"]["SpecType"]
+export type SpecStatus = components["schemas"]["SpecStatus"]
+export type Priority = components["schemas"]["Priority"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 
