@@ -198,10 +198,8 @@ class ModelRateLimiter:
         Checks model-specific limit first, then falls back to provider-wide limit.
         If using provider-wide limit, all models from that provider share the same semaphore.
         """
-        print(f"Retrieving semaphore for {provider}::{model}")
         model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
         if model_limit is not None and model_limit > 0:
-            print(f"Model limit found for {provider}::{model}: {model_limit}")
             key = self._get_semaphore_key(provider, model)
             if key not in self._semaphores:
                 self._semaphores[key] = asyncio.Semaphore(model_limit)
@@ -209,14 +207,12 @@ class ModelRateLimiter:
 
         provider_limit = self._rate_limits.provider_limits.get(provider)
         if provider_limit is not None and provider_limit > 0:
-            print(f"Provider limit found for {provider}: {provider_limit}")
             key = self._get_semaphore_key(provider, None)
             if key not in self._semaphores:
                 self._semaphores[key] = asyncio.Semaphore(provider_limit)
             return self._semaphores[key], provider_limit
 
         # if no limit is configured, set a default of 10
-        print(f"No limit found for {provider}::{model}, setting default")
         key = self._get_semaphore_key(provider, model)
         fallback_limit = self.get_model_default_max_concurrent_requests(provider, model)
         if key not in self._semaphores:
