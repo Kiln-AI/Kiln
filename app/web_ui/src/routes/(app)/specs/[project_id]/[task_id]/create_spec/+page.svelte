@@ -35,9 +35,10 @@
             definition: spec_definition,
             type: spec_type,
             priority: 1,
-            status: "not_started",
+            status: "active",
             tags: [],
             eval_id: null,
+            is_archived: false,
           },
         },
       )

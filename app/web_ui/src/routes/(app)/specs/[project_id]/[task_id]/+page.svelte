@@ -48,6 +48,7 @@
   let add_tags_dialog: AddTagsDialog | null = null
   let remove_tags_dialog: RemoveTagsDialog | null = null
   let removeable_tags: Record<string, number> = {}
+  let show_archived = false
 
   $: {
     const url = new URL(window.location.href)
@@ -55,7 +56,7 @@
     filterAndSortSpecs()
   }
 
-  $: is_empty = !specs || specs.length == 0
+  $: is_empty = !specs || specs.filter((spec) => !spec.is_archived).length === 0
 
   onMount(async () => {
     await load_specs()
@@ -92,18 +93,34 @@
       return
     }
 
-    filtered_specs =
+    let active_specs = specs.filter((spec) => !spec.is_archived)
+    let archived_specs = specs.filter((spec) => spec.is_archived)
+
+    let filtered_active =
       filter_tags.length > 0
-        ? specs.filter((spec) =>
+        ? active_specs.filter((spec) =>
             filter_tags.every((tag) => spec.tags?.includes(tag)),
           )
-        : specs
+        : active_specs
+
+    let filtered_archived =
+      filter_tags.length > 0
+        ? archived_specs.filter((spec) =>
+            filter_tags.every((tag) => spec.tags?.includes(tag)),
+          )
+        : archived_specs
+
+    let all_specs_to_show = show_archived
+      ? [...filtered_active, ...filtered_archived]
+      : filtered_active
 
     if (sortColumn && sortDirection) {
-      sorted_specs = [...filtered_specs].sort(sortFunction)
+      sorted_specs = [...all_specs_to_show].sort(sortFunction)
     } else {
-      sorted_specs = filtered_specs
+      sorted_specs = all_specs_to_show
     }
+
+    filtered_specs = all_specs_to_show
   }
 
   function formatPriority(priority: number): string {
@@ -111,10 +128,10 @@
   }
 
   function getStatusSortOrder(status: string): number {
-    if (status === "complete") return 0
-    if (status === "in_progress") return 1
-    if (status === "not_started") return 2
-    return 3 // status === "deprecated"
+    if (status === "active") return 0
+    if (status === "future") return 1
+    if (status === "deprecated") return 2
+    return 3 // should never happen, but just in case
   }
 
   function sortFunction(a: Spec, b: Spec) {
@@ -336,6 +353,7 @@
               status: spec.status,
               tags: updated_tags,
               eval_id: spec.eval_id || null,
+              is_archived: spec.is_archived,
             },
           },
         )
@@ -359,6 +377,74 @@
       }
     }
   }
+
+  function handle_tags_changed(tags: string[]) {
+    add_tags = tags
+  }
+
+  function handle_remove_tag(tag: string) {
+    remove_tags.delete(tag)
+    remove_tags = remove_tags
+    update_removeable_tags()
+  }
+
+  function handle_add_tag_to_remove(tag: string) {
+    remove_tags.add(tag)
+    remove_tags = remove_tags
+    update_removeable_tags()
+  }
+
+  function show_archive_modal() {
+    archive_dialog?.show()
+  }
+
+  async function archive_selected_specs(): Promise<boolean> {
+    let success = false
+    try {
+      const spec_ids = Array.from(selected_specs)
+      const specs_to_update = (filtered_specs || []).filter(
+        (spec) => spec.id && spec_ids.includes(spec.id),
+      )
+
+      for (const spec of specs_to_update) {
+        if (!spec.id) continue
+
+        const { error } = await client.PATCH(
+          "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+          {
+            params: {
+              path: { project_id, task_id, spec_id: spec.id },
+            },
+            body: {
+              name: spec.name,
+              definition: spec.definition,
+              type: spec.type,
+              priority: spec.priority,
+              status: spec.status,
+              tags: spec.tags,
+              eval_id: spec.eval_id || null,
+              is_archived: true,
+            },
+          },
+        )
+
+        if (error) {
+          throw error
+        }
+      }
+
+      success = true
+      return true
+    } finally {
+      if (success) {
+        selected_specs = new Set()
+        select_mode = false
+        await load_specs()
+      }
+    }
+  }
+
+  let archive_dialog: Dialog | null = null
 </script>
 
 <AppPage
@@ -415,8 +501,15 @@
               selected_specs = new Set()
             }}
             onShowFilterDialog={() => filter_tags_dialog?.show()}
+            onShowArchived={() => {
+              show_archived = !show_archived
+              filterAndSortSpecs()
+            }}
+            {show_archived}
             onShowAddTags={show_add_tags_modal}
             onShowRemoveTags={show_remove_tags_modal}
+            onShowDelete={show_archive_modal}
+            action_type="archive"
           />
         </div>
         <div class="overflow-x-auto rounded-lg border">
@@ -506,7 +599,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each sorted_specs as spec}
+              {#each sorted_specs || [] as spec}
                 <tr
                   class="{select_mode
                     ? ''
@@ -514,7 +607,7 @@
                   spec.id &&
                   selected_specs.has(spec.id)
                     ? 'bg-base-200'
-                    : ''}"
+                    : ''} {spec.is_archived ? 'opacity-60' : ''}"
                   on:click={() => {
                     if (select_mode) {
                       toggle_selection(spec.id || "")
@@ -544,11 +637,13 @@
                   </td>
                   <td>{formatPriority(spec.priority)}</td>
                   <td>
-                    {spec.status === "not_started"
-                      ? "Not Started"
-                      : spec.status === "in_progress"
-                        ? "In Progress"
-                        : capitalize(spec.status)}
+                    {spec.status === "active"
+                      ? "Active"
+                      : spec.status === "future"
+                        ? "Future"
+                        : spec.status === "deprecated"
+                          ? "Deprecated"
+                          : capitalize(spec.status)}
                   </td>
                   <td>
                     {#if spec.tags && spec.tags.length > 0}
@@ -627,9 +722,7 @@
   {task_id}
   tag_type="task_run"
   bind:add_tags
-  onTagsChanged={(tags) => {
-    add_tags = tags
-  }}
+  onTagsChanged={handle_tags_changed}
   onAddTags={add_selected_tags}
 />
 
@@ -640,15 +733,29 @@
     : "Remove Tags from Spec"}
   bind:remove_tags
   available_tags={removeable_tags}
-  onRemoveTag={(tag) => {
-    remove_tags.delete(tag)
-    remove_tags = remove_tags
-    update_removeable_tags()
-  }}
-  onAddTagToRemove={(tag) => {
-    remove_tags.add(tag)
-    remove_tags = remove_tags
-    update_removeable_tags()
-  }}
+  onRemoveTag={handle_remove_tag}
+  onAddTagToRemove={handle_add_tag_to_remove}
   onRemoveTags={remove_selected_tags}
 />
+
+<Dialog
+  bind:this={archive_dialog}
+  title={selected_specs.size > 1
+    ? `Archive ${selected_specs.size} Specs`
+    : "Archive Spec"}
+  action_buttons={[
+    { label: "Cancel", isCancel: true },
+    {
+      label: "Archive",
+      asyncAction: archive_selected_specs,
+      isError: true,
+    },
+  ]}
+>
+  <div class="mt-6">
+    <p class="text-sm text-gray-500 mt-2">
+      Archived specs will be hidden from this list but can be restored later by
+      unarchiving them.
+    </p>
+  </div>
+</Dialog>
