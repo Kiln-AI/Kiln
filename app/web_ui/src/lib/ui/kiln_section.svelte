@@ -23,7 +23,7 @@
 
   {#if use_carousel_for_spec_templates && spec_template_items.length > 0}
     <div
-      class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 auto-rows-fr gap-4 max-w-full"
+      class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 auto-rows-fr gap-4 max-w-7xl"
     >
       {#each spec_template_items as item}
         <div
