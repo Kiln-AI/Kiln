@@ -379,6 +379,8 @@
         base_model: base_model_id,
         provider: provider_id,
         prompt_method: system_prompt_method,
+        supports_tools: disabled_tools_selector ? "no" : "yes",
+        tool_count: selected_tools.length,
       })
       created_finetune = create_finetune_response
       // Clear the fine_tuning_tools store now that fine-tune is created
