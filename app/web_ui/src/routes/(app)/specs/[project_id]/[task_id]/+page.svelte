@@ -61,10 +61,10 @@
   }
 
   function getStatusSortOrder(status: string): number {
-    if (status === "complete") return 0
-    if (status === "in_progress") return 1
-    if (status === "not_started") return 2
-    return 3 // status === "deprecated"
+    if (status === "active") return 0
+    if (status === "future") return 1
+    if (status === "deprecated") return 2
+    return 3 // should never happen, but just in case
   }
 
   function sortFunction(a: Spec, b: Spec) {
