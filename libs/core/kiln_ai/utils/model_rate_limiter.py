@@ -156,9 +156,10 @@ class ModelRateLimiter:
         """
         Get or create a semaphore for the given provider/model.
 
-        Returns None if no rate limit is configured (unlimited concurrency).
         Checks model-specific limit first, then falls back to provider-wide limit.
         If using provider-wide limit, all models from that provider share the same semaphore.
+        If no limit is configured, uses a default value or the model's max_parallel_requests
+        defined in the model list.
         """
         model_limit = self._rate_limits.model_limits.get(provider, {}).get(model)
         if model_limit is not None and model_limit > 0:
@@ -266,6 +267,7 @@ class ModelRateLimiter:
             model_provider is not None
             and model_provider.max_parallel_requests is not None
         ):
+            # use the lower of the model-specific limit or the provider-wide limit
             return min(
                 model_provider.max_parallel_requests,
                 self._default_provider_limits[provider],
