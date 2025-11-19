@@ -43,6 +43,23 @@
     }
   }
 
+  $: archive_action_state = (() => {
+    if (selected_specs.size === 0) return null
+    const selected_spec_objects = (filtered_specs || []).filter(
+      (spec) => spec.id && selected_specs.has(spec.id),
+    )
+    if (selected_spec_objects.length === 0) return null
+
+    const all_archived = selected_spec_objects.every((spec) => spec.is_archived)
+    const all_unarchived = selected_spec_objects.every(
+      (spec) => !spec.is_archived,
+    )
+
+    if (all_archived) return "unarchive"
+    if (all_unarchived) return "archive"
+    return "mixed"
+  })()
+
   let add_tags: string[] = []
   let remove_tags: Set<string> = new Set()
   let add_tags_dialog: AddTagsDialog | null = null
@@ -56,7 +73,7 @@
     filterAndSortSpecs()
   }
 
-  $: is_empty = !specs || specs.filter((spec) => !spec.is_archived).length === 0
+  $: is_empty = !specs || specs.length === 0
 
   onMount(async () => {
     await load_specs()
@@ -78,6 +95,12 @@
         throw error
       }
       specs = data
+      if (specs && specs.length > 0) {
+        const all_archived = specs.every((spec) => spec.is_archived)
+        if (all_archived) {
+          show_archived = true
+        }
+      }
       filterAndSortSpecs()
     } catch (error) {
       specs_error = createKilnError(error)
@@ -406,6 +429,13 @@
         (spec) => spec.id && spec_ids.includes(spec.id),
       )
 
+      const should_archive = archive_action_state === "archive"
+      const should_unarchive = archive_action_state === "unarchive"
+
+      if (!should_archive && !should_unarchive) {
+        return false
+      }
+
       for (const spec of specs_to_update) {
         if (!spec.id) continue
 
@@ -423,7 +453,7 @@
               status: spec.status,
               tags: spec.tags,
               eval_id: spec.eval_id || null,
-              is_archived: true,
+              is_archived: should_archive,
             },
           },
         )
@@ -508,7 +538,10 @@
             {show_archived}
             onShowAddTags={show_add_tags_modal}
             onShowRemoveTags={show_remove_tags_modal}
-            onShowDelete={show_archive_modal}
+            onShowDelete={archive_action_state === "archive" ||
+            archive_action_state === "unarchive"
+              ? show_archive_modal
+              : undefined}
             action_type="archive"
           />
         </div>
@@ -740,13 +773,17 @@
 
 <Dialog
   bind:this={archive_dialog}
-  title={selected_specs.size > 1
-    ? `Archive ${selected_specs.size} Specs`
-    : "Archive Spec"}
+  title={archive_action_state === "unarchive"
+    ? selected_specs.size > 1
+      ? `Unarchive ${selected_specs.size} Specs`
+      : "Unarchive Spec"
+    : selected_specs.size > 1
+      ? `Archive ${selected_specs.size} Specs`
+      : "Archive Spec"}
   action_buttons={[
     { label: "Cancel", isCancel: true },
     {
-      label: "Archive",
+      label: archive_action_state === "unarchive" ? "Unarchive" : "Archive",
       asyncAction: archive_selected_specs,
       isError: true,
     },
@@ -754,8 +791,9 @@
 >
   <div class="mt-6">
     <p class="text-sm text-gray-500 mt-2">
-      Archived specs will be hidden from this list but can be restored later by
-      unarchiving them.
+      {archive_action_state === "unarchive"
+        ? "Unarchived specs will be set back to an active state."
+        : "Archived specs will be hidden from this list but can be restored later by unarchiving them."}
     </p>
   </div>
 </Dialog>
