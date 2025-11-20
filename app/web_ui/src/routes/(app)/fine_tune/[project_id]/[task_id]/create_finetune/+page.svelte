@@ -645,7 +645,7 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<div class="max-w-[900px]">
   <AppPage
     title="Create a New Fine Tune"
     subtitle="Fine-tuned models learn from your dataset."
@@ -810,7 +810,7 @@
         {/if}
 
         {#if step_4_visible}
-          <div class="text-xl font-bold">Step 4: Options</div>
+          <div class="text-xl font-bold">Step 4: Advanced Options</div>
           {#if !is_download}
             <div>
               <Collapse title="Advanced Options">
