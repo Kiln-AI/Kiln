@@ -361,6 +361,16 @@
     intermediate_step = api_key_provider != null
   }
 
+  $: {
+    if (initial_providers_loaded) {
+      const provider_snapshot: Record<string, boolean> = {}
+      for (const provider_id in status) {
+        provider_snapshot[provider_id] = status[provider_id].connected
+      }
+      posthog.capture("connect_providers_per_user", provider_snapshot)
+    }
+  }
+
   const disconnect_provider = async (provider: Provider) => {
     if (provider.id === "ollama") {
       alert(
@@ -662,6 +672,7 @@
 
   let loading_initial_providers = true
   let initial_load_failure = false
+  let initial_providers_loaded = false
   type CustomOpenAICompatibleProvider = {
     name: string
     base_url: string
@@ -738,15 +749,16 @@
   onMount(async () => {
     await check_existing_providers()
     // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
-    connect_ollama(false).then(() => {
+    await connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null
     })
     // Check Docker Model Runner every load, as it can be closed. More ephemeral (and local/cheap/fast)
-    connect_docker_model_runner(false).then(() => {
+    await connect_docker_model_runner(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["docker_model_runner"].error = null
     })
+    initial_providers_loaded = true
   })
 
   function show_custom_ollama_url_dialog() {
