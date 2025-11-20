@@ -4,6 +4,7 @@
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
+  export let aria_label: string | null = null
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
@@ -100,13 +101,19 @@
       // Update selected, which is what we expose outside the component
       selected = selected_values
 
-      // Note: we don't close the dropdown for multi-select
+      // Don't close the dropdown for multi select
     } else {
       selected = option
 
       // Delay hiding the dropdown to ensure the click event is fully processed
       setTimeout(() => {
         listVisible = false
+        setTimeout(() => {
+          // Return focus to the main select element so keyboard nav still works
+          if (selectedElement) {
+            selectedElement.focus()
+          }
+        }, 0)
       }, 0)
     }
   }
@@ -406,7 +413,7 @@
   }
 
   // Handle click outside to close dropdown
-  function handleDocumentClick(event: MouseEvent) {
+  function handleCloseElementClick(event: Event) {
     if (
       listVisible &&
       selectedElement &&
@@ -414,16 +421,29 @@
       dropdownElement &&
       !dropdownElement.contains(event.target as Node)
     ) {
+      event.preventDefault()
       listVisible = false
     }
   }
 
+  // The "click away to close" element. Document unless a modal is open.
+  function getClickToCloseElement(): Document | Element {
+    const topModal = [...document.querySelectorAll("dialog[open]")].pop()
+    return topModal ? topModal : document
+  }
+
+  let target_close_element: Document | Element | null = null
   $: if (mounted) {
     if (listVisible) {
-      document.addEventListener("click", handleDocumentClick)
+      // Save the element we're adding event listeners to so we can remove them later
+      target_close_element = getClickToCloseElement()
+      target_close_element.addEventListener("click", handleCloseElementClick)
       document.addEventListener("keydown", handleKeyInput)
     } else {
-      document.removeEventListener("click", handleDocumentClick)
+      target_close_element?.removeEventListener(
+        "click",
+        handleCloseElementClick,
+      )
       document.removeEventListener("keydown", handleKeyInput)
     }
   }
@@ -466,10 +486,63 @@
     )
     return selectedOption ? selectedOption.label : empty_label
   }
+
+  function containerKeyDown(event: KeyboardEvent) {
+    if (disabled) {
+      return
+    }
+    const key_is_alpha_numeric = /^[a-zA-Z0-9]$/.test(event.key)
+    if (
+      !listVisible &&
+      (event.key === "ArrowDown" ||
+        event.key === "ArrowUp" ||
+        event.key === "Enter" ||
+        key_is_alpha_numeric)
+    ) {
+      event.preventDefault()
+      listVisible = true
+      focusedIndex = 0
+      // Typing should start a search
+      if (key_is_alpha_numeric) {
+        searchText = event.key
+        isSearching = true
+        focusedIndex = 0
+        // Focus the search input after it's rendered
+        setTimeout(() => {
+          if (searchInputElement) {
+            searchInputElement.focus()
+          }
+        }, 0)
+      }
+      return
+    }
+    if (event.key === "Escape") {
+      event.preventDefault()
+      listVisible = false
+      return
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      const flatOptions = getFlatOptions()
+      focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
+      scrollToFocusedIndex()
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      const flatOptions = getFlatOptions()
+      focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
+      scrollToFocusedIndex()
+    } else if (event.key === "Enter") {
+      const flatOptions = getFlatOptions()
+      if (flatOptions[focusedIndex]) {
+        selectOption(flatOptions[focusedIndex].value)
+      }
+    }
+  }
 </script>
 
 <div class="dropdown w-full relative">
   <div
+    aria-label={aria_label}
     tabindex={disabled ? -1 : 0}
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible
@@ -497,43 +570,7 @@
         }
       }, 0)
     }}
-    on:keydown={(event) => {
-      if (disabled) {
-        return
-      }
-      if (
-        !listVisible &&
-        (event.key === "ArrowDown" ||
-          event.key === "ArrowUp" ||
-          event.key === "Enter")
-      ) {
-        event.preventDefault()
-        listVisible = true
-        focusedIndex = 0
-        return
-      }
-      if (event.key === "Escape") {
-        event.preventDefault()
-        listVisible = false
-        return
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault()
-        const flatOptions = getFlatOptions()
-        focusedIndex = findNextEnabledOptionIndex(focusedIndex, flatOptions)
-        scrollToFocusedIndex()
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault()
-        const flatOptions = getFlatOptions()
-        focusedIndex = findPreviousEnabledOptionIndex(focusedIndex, flatOptions)
-        scrollToFocusedIndex()
-      } else if (event.key === "Enter") {
-        const flatOptions = getFlatOptions()
-        if (flatOptions[focusedIndex]) {
-          selectOption(flatOptions[focusedIndex].value)
-        }
-      }
-    }}
+    on:keydown={containerKeyDown}
   >
     <span class="truncate">
       {selectedLabel(selected, selected_values, options)}

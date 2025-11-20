@@ -19,6 +19,7 @@
   import { available_models, load_available_models } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
+  import { set_current_eval_config } from "$lib/stores/evals_store"
 
   let combined_model_name: string | undefined = undefined
   let model_name: string | undefined = undefined
@@ -179,6 +180,21 @@
         model_name: model_name,
         provider_name: provider_name,
       })
+
+      const save_as_default = $page.url.searchParams.get("save_as_default")
+      if (data.id && save_as_default === "true") {
+        try {
+          evaluator = await set_current_eval_config(
+            $page.params.project_id,
+            $page.params.task_id,
+            $page.params.eval_id,
+            data.id,
+          )
+        } catch (e) {
+          console.error("Failed to set as default:", e)
+        }
+      }
+
       complete = true
       const next_page = $page.url.searchParams.get("next_page")
       if (next_page === "eval_configs") {
@@ -307,6 +323,39 @@
         "G-Eval requires logprobs which do not work with this model or provider.",
     }
   }
+
+  type Breadcrumb = {
+    label: string
+    href: string
+  }
+
+  $: breadcrumbs = (() => {
+    const next_page = $page.url.searchParams.get("next_page")
+    const crumbs: Breadcrumb[] = [
+      {
+        label: "Evals",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+      },
+      {
+        label: evaluator?.name || "Eval",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+      },
+    ]
+
+    if (next_page === "eval_configs") {
+      crumbs.push({
+        label: "Compare Judges",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
+      })
+    } else if (next_page === "compare_run_configs") {
+      crumbs.push({
+        label: "Compare Run Configurations",
+        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+      })
+    }
+
+    return crumbs
+  })()
 </script>
 
 <div class="max-w-[1400px]">
@@ -315,6 +364,7 @@
     subtitle="A judge evaluates task outputs with a model, evaluation prompt, and algorithm."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
+    {breadcrumbs}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -502,10 +552,10 @@
               let:item_index
             >
               <FormElement
-                label="Model Instructions"
+                label=""
+                aria_label="Model Instructions"
                 inputType="textarea"
                 id="eval_step_{item_index}"
-                hide_label={true}
                 bind:value={eval_steps[item_index]}
               />
             </FormList>

@@ -102,6 +102,39 @@ for task in tasks:
     print("Total dataset size:", len(task.runs()))
 ```
 
+### Run a Kiln Task from Python
+
+If you've already created a task in the Kiln UI and want to run it as part of a python app you can follow this example.
+
+Before running you should:
+
+- Already have a Kiln Task created and saved to disk at TASK_PATH
+- Set a default run configuration in the Kiln UI (model, provider, etc). Alternatively you can hardcode a RunConfigProperties inline.
+- Have setup API Keys for the needed providers in the app on this machine (the library will load them from `~/.kiln/settings.yml`). Alternatively you can set the correct environment vars (see `libs/core/kiln_ai/utils/config.py` for a list)
+- If you require tools, have set those tools up in the Kiln UI on this machine
+- If your task uses a RAG, have run indexing on this machine in the Kiln UI
+
+```python
+async def run_kiln_task(input: str) -> dict[str, Any] | str:
+    # Load your task from it's path on the filesystem
+    task = Task.load_from_file(TASK_PATH)
+    # Here we get the default run config from the task, which you can set in the UI. Alternatively you could pass a RunConfigProperties object with parameters like the model, temperature, etc.
+    run_config = next(c for c in task.run_configs() if c.id == task.default_run_config_id)
+
+    # An adapter can run a task
+    adapter = adapter_for_task(
+        task,
+        run_config_properties=run_config.run_config_properties,
+    )
+
+    task_run, run_output = await adapter.invoke_returning_run_output(input)
+
+    # Optional: can inspect the task run to see usage data (cost, tokens, etc.)
+    #print(f"Task run cost: {task_run.usage.cost}")
+
+    return run_output.output
+```
+
 ### Load an Existing Dataset into a Kiln Task Dataset
 
 If you already have a dataset in a file, you can load it into a Kiln project.

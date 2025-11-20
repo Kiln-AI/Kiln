@@ -209,6 +209,7 @@
           },
         },
         required: ["joke_topic"],
+        additionalProperties: false,
       }),
       output_json_schema: JSON.stringify({
         type: "object",
@@ -225,6 +226,7 @@
           },
         },
         required: ["setup", "punchline"],
+        additionalProperties: false,
       }),
     }
   }

@@ -20,7 +20,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
 )
-from kiln_ai.utils.project_utils import project_from_id
+from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
@@ -125,10 +125,13 @@ def connect_data_gen_api(app: FastAPI):
     async def generate_categories(
         project_id: str, task_id: str, input: DataGenCategoriesApiInput
     ) -> TaskRun:
+        project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
         categories_task = DataGenCategoriesTask(
-            gen_type=input.gen_type, guidance=input.guidance
+            gen_type=input.gen_type,
+            parent_project=project,
+            guidance=input.guidance,
         )
 
         task_input = DataGenCategoriesTaskInput.from_task(
@@ -153,10 +156,12 @@ def connect_data_gen_api(app: FastAPI):
     async def generate_samples(
         project_id: str, task_id: str, input: DataGenSampleApiInput
     ) -> TaskRun:
+        project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type=input.gen_type,
+            parent_project=project,
             guidance=input.guidance,
         )
 
