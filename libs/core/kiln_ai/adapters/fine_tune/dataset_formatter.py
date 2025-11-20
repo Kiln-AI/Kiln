@@ -157,7 +157,9 @@ def generate_chat_message_list(
             messages.append(
                 {
                     "role": msg.role,
-                    "content": msg.content,
+                    "content": msg.content
+                    if msg.content is not None
+                    else "",  # fireworks is more forgiving of empty strings than "null" in jsonl
                     "tool_calls": msg.tool_calls,
                 }
             )
