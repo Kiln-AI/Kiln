@@ -36,4 +36,6 @@ export interface SpecTemplateItem {
   on_select: () => void
 }
 
-export type KilnSectionItem = SettingsItem | EvalTemplateItem | SpecTemplateItem
+export type KilnSectionItem = SettingsItem | EvalTemplateItem
+
+export type CarouselSectionItem = SpecTemplateItem

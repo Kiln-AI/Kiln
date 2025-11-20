@@ -1,10 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
-  import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
+  import type { CarouselSectionItem } from "$lib/ui/kiln_section_types"
   import type { SpecType } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import KilnSection from "$lib/ui/kiln_section.svelte"
+  import CarouselSection from "$lib/ui/carousel_section.svelte"
   import AppPage from "../../../../../app_page.svelte"
   import { formatSpecTypeName } from "$lib/utils/formatters"
 
@@ -18,7 +18,7 @@
   }
 
   type SpecTemplateData = {
-    spec_type: SpecType | null
+    spec_type: SpecType
     description: string
   }
 
@@ -44,6 +44,11 @@
         {
           spec_type: "tone",
           description: "Evaluate the tone and style of the model's output.",
+        },
+        {
+          spec_type: "formatting",
+          description:
+            "Evaluate the formatting and structure of the model's output.",
         },
         {
           spec_type: "localization",
@@ -172,11 +177,9 @@
   $: spec_sections = spec_categories.map((category) => ({
     category: category.category,
     items: category.templates.map(
-      (template): KilnSectionItem => ({
+      (template): CarouselSectionItem => ({
         type: "spec_template",
-        name: template.spec_type
-          ? formatSpecTypeName(template.spec_type)
-          : "Unknown",
+        name: formatSpecTypeName(template.spec_type),
         description: template.description,
         on_select: get_on_select(template.spec_type, template.description),
       }),
@@ -215,12 +218,8 @@
 
     <div class="space-y-8">
       {#each spec_sections as section}
-        <KilnSection
-          title={section.category}
-          items={section.items}
-          {use_carousel_for_spec_templates}
-        />
+        <CarouselSection title={section.category} items={section.items} />
       {/each}
     </div>
-  </div>
-</AppPage>
+  </div></AppPage
+>
