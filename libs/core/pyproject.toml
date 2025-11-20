@@ -41,7 +41,7 @@ dependencies = [
     "pillow>=11.1.0",
     "litellm>=1.79.3",
     "llama-index-vector-stores-lancedb>=0.4.2",
-    "mcp>=1.10.1",
+    "mcp[cli]>=1.10.1",
 ]
 
 [dependency-groups]
