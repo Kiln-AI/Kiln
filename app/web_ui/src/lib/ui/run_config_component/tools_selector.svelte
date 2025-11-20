@@ -19,6 +19,7 @@
   export let hide_create_kiln_task_tool_button: boolean = false
   export let disabled: boolean = false
   export let disabled_reason: string | undefined = undefined
+  export let disable_tools_store: boolean = false
 
   $: if (disabled && tools.length > 0) {
     tools = []
@@ -58,6 +59,11 @@
       return
     }
 
+    // Don't load from store when disable_tools_store is set
+    if (disable_tools_store) {
+      return
+    }
+
     if (!task_id) {
       tools = mandatory_tools || []
       tools_store_loaded_task_id = null
@@ -77,7 +83,12 @@
   }
 
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
-  $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
+  $: if (
+    task_id &&
+    tools &&
+    tools_store_loaded_task_id === task_id &&
+    !disable_tools_store
+  ) {
     tools_store.update((state) => ({
       ...state,
       selected_tool_ids_by_task_id: {

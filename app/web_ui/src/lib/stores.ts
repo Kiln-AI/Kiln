@@ -65,10 +65,6 @@ export const current_task_prompts = writable<PromptResponse | null>(null)
 // UI Stores we want persisted across page loads
 export const fine_tune_target_model: Writable<string | null> =
   localStorageStore("fine_tune_target_model", null)
-export const fine_tuning_tools: Writable<string[]> = localStorageStore(
-  "fine_tuning_tools",
-  [],
-)
 
 // Rating options for the current task
 export const current_task_rating_options =

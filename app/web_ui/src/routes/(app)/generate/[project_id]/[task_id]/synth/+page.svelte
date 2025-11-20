@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import { current_task, fine_tuning_tools } from "$lib/stores"
+  import { current_task } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -361,11 +361,6 @@
       session_id,
       fine_tuning_tools: fine_tuning_tools_list,
     }))
-
-    // Store fine_tuning_tools
-    if (fine_tuning_tools_list && fine_tuning_tools_list.length > 0) {
-      $fine_tuning_tools = fine_tuning_tools_list
-    }
 
     posthog.capture("setup_data_gen", {
       gen_type,

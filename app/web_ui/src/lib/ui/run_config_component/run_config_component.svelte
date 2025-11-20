@@ -49,6 +49,7 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  export let disable_tools_store: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -291,6 +292,7 @@
           frozen_fine_tuning_tools && frozen_fine_tuning_tools.length > 0
         )}
         {frozen_fine_tuning_tools}
+        {disable_tools_store}
       />
     {/if}
     <Collapse title="Advanced Options">
@@ -318,6 +320,7 @@
             frozen_fine_tuning_tools && frozen_fine_tuning_tools.length > 0
           )}
           {frozen_fine_tuning_tools}
+          {disable_tools_store}
         />
       {/if}
       <AdvancedRunOptions

@@ -23,20 +23,46 @@
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
   export let required_tool_ids: string[] | undefined = undefined
+  export let saved_dataset_id: string | null = null
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
 
   let filter_to_reasoning_data = false
   let filter_to_highly_rated_data = false
+  let last_restored_dataset_id: string | null = null
 
   onMount(async () => {
     load_finetune_dataset_info()
   })
 
-  $: if (project_id && task_id && required_tool_ids !== undefined) {
+  // Watch for saved_dataset_id changes and restore dataset.
+  // create_finetune page tracks the saved_dataset_id in the IndexedDB-backed store.
+  $: if (
+    saved_dataset_id &&
+    finetune_dataset_info &&
+    !selected_dataset &&
+    saved_dataset_id !== last_restored_dataset_id
+  ) {
+    const matching_dataset = finetune_dataset_info.eligible_datasets?.find(
+      (dataset) => dataset.id === saved_dataset_id,
+    )
+    if (matching_dataset) {
+      selected_dataset = matching_dataset
+      last_restored_dataset_id = saved_dataset_id
+    }
+  }
+
+  let previous_tool_ids_key = ""
+  $: tool_ids_key = required_tool_ids?.join(",") || ""
+  $: if (project_id && task_id && tool_ids_key !== previous_tool_ids_key) {
+    previous_tool_ids_key = tool_ids_key
+    const current_dataset_id = selected_dataset?.id
     load_finetune_dataset_info()
-    selected_dataset = null
+    // Clear selected_dataset if it's not the saved dataset (tools changed)
+    if (current_dataset_id && current_dataset_id !== saved_dataset_id) {
+      selected_dataset = null
+    }
   }
 
   async function load_finetune_dataset_info() {
@@ -71,6 +97,18 @@
         throw new Error("Invalid response from server")
       }
       finetune_dataset_info = finetune_dataset_info_response
+
+      // Clear the selected dataset if the tools have changed and it's no longer eligible
+      if (selected_dataset) {
+        const current_id = selected_dataset.id
+        const matching_dataset =
+          finetune_dataset_info_response.eligible_datasets?.find(
+            (dataset) => dataset.id === current_id,
+          )
+        if (!matching_dataset) {
+          selected_dataset = null
+        }
+      }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError("Could not load fine-tune dataset info.", null)

@@ -10,10 +10,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
-  import {
-    fine_tune_target_model as model_provider,
-    fine_tuning_tools,
-  } from "$lib/stores"
+  import { fine_tune_target_model as model_provider } from "$lib/stores"
   import {
     available_tuning_models,
     available_models_error,
@@ -37,6 +34,8 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import Collapse from "$lib/ui/collapse.svelte"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import { writable, type Writable } from "svelte/store"
 
   let finetune_description = ""
   let finetune_name = ""
@@ -90,16 +89,92 @@
 
   let selected_tool_ids: string[] = []
 
-  onMount(() => {
-    // Restore tools from localStorage if returning from SDG
-    if ($fine_tuning_tools.length > 0) {
-      selected_tool_ids = [...$fine_tuning_tools]
-    }
-  })
-
   let available_model_select: OptionGroup[] = []
 
   let selected_dataset: DatasetSplit | null = null
+
+  interface SavedFinetuneState {
+    name?: string
+    description?: string
+    provider?: string
+    base_model_id?: string
+    dataset_split_id?: string
+    parameters?: Record<string, string>
+    system_message?: string
+    thinking_instructions?: string
+    data_strategy?: ChatStrategy
+    system_prompt_method?: string
+    tools?: string[]
+  }
+
+  // IndexedDB-backed store for persisting form state
+  let saved_state: Writable<SavedFinetuneState> = writable({})
+  let state_initialized = false
+  let saved_dataset_id: string | null = null
+
+  // Track saved dataset ID reactively, this is used to restore the selected dataset when user leaves the page.
+  $: saved_dataset_id = $saved_state.dataset_split_id || null
+
+  // Initialize form from saved state
+  export function initialize_from_finetune(state: SavedFinetuneState) {
+    // Model selection (via store)
+    if (state.provider && state.base_model_id) {
+      $model_provider = `${state.provider}/${state.base_model_id}`
+    }
+
+    // Name and description
+    finetune_name = state.name || ""
+    finetune_description = state.description || ""
+
+    // System prompt - restore the method that was selected
+    if (state.system_prompt_method) {
+      system_prompt_method = state.system_prompt_method
+    }
+    if (state.system_message) {
+      finetune_custom_system_prompt = state.system_message
+    }
+    if (state.thinking_instructions) {
+      finetune_custom_thinking_instructions = state.thinking_instructions
+    }
+
+    // Data strategy
+    data_strategy = state.data_strategy || "final_only"
+
+    // Hyperparameters
+    hyperparameter_values = {}
+    if (state.parameters) {
+      for (const [key, value] of Object.entries(state.parameters)) {
+        hyperparameter_values[key] = String(value)
+      }
+    }
+
+    // Tools
+    selected_tool_ids = state.tools || []
+  }
+
+  // Reactively update saved_state when form values change
+  $: if (state_initialized) {
+    saved_state.set({
+      name: finetune_name || undefined,
+      description: finetune_description || undefined,
+      provider: provider_id || undefined,
+      base_model_id: base_model_id || undefined,
+      dataset_split_id: selected_dataset?.id || undefined,
+      parameters:
+        Object.keys(hyperparameter_values).length > 0
+          ? hyperparameter_values
+          : undefined,
+      system_message: finetune_custom_system_prompt || undefined,
+      thinking_instructions: finetune_custom_thinking_instructions || undefined,
+      system_prompt_method: system_prompt_method,
+      data_strategy: data_strategy,
+      tools: selected_tool_ids.length > 0 ? selected_tool_ids : undefined,
+    })
+  }
+
+  function clear_saved_state() {
+    saved_state.set({})
+  }
   $: selecting_thinking_dataset =
     selected_dataset?.filter?.includes("thinking_model")
   $: selected_dataset_has_val = selected_dataset?.splits?.find(
@@ -113,7 +188,10 @@
       ? "all"
       : null
 
-  $: step_3_visible = $model_provider && $model_provider !== disabled_header
+  $: step_3_visible =
+    ($model_provider && $model_provider !== disabled_header) ||
+    !!selected_dataset ||
+    !!saved_dataset_id
   $: step_4_visible =
     $model_provider && $model_provider !== disabled_header && !!selected_dataset
   $: is_download = !!$model_provider?.startsWith("download_")
@@ -122,6 +200,22 @@
 
   onMount(async () => {
     get_available_models()
+
+    // Initialize IndexedDB-backed store for state persistence
+    const state_key = `create_finetune_state_${project_id}_${task_id}`
+    const { store, initialized } = indexedDBStore<SavedFinetuneState>(
+      state_key,
+      {},
+    )
+    await initialized
+    saved_state = store
+
+    // Load saved state if it exists
+    if ($saved_state && Object.keys($saved_state).length > 0) {
+      initialize_from_finetune($saved_state)
+    }
+
+    state_initialized = true
   })
 
   $: build_available_model_select($available_tuning_models)
@@ -383,8 +477,8 @@
         tool_count: selected_tool_ids.length,
       })
       created_finetune = create_finetune_response
-      // Clear the fine_tuning_tools store now that fine-tune is created
-      fine_tuning_tools.set([])
+      // Clear the saved state now that fine-tune is created
+      clear_saved_state()
       progress_ui_state.set({
         title: "Creating Fine-Tune",
         body: "In progress,  ",
@@ -684,6 +778,7 @@
             hide_prompt_selector={true}
             {disabled_tools_selector}
             {disabled_tools_selector_reason}
+            disable_tools_store={true}
           />
         </div>
 
@@ -701,14 +796,17 @@
               />
             </div>
           </div>
-          <SelectFinetuneDataset
-            {project_id}
-            {task_id}
-            required_tool_ids={selected_tool_ids.length > 0
-              ? selected_tool_ids
-              : undefined}
-            bind:selected_dataset
-          />
+          {#if state_initialized}
+            <SelectFinetuneDataset
+              {project_id}
+              {task_id}
+              required_tool_ids={selected_tool_ids.length > 0
+                ? selected_tool_ids
+                : undefined}
+              {saved_dataset_id}
+              bind:selected_dataset
+            />
+          {/if}
         {/if}
 
         {#if step_4_visible}
