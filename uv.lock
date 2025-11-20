@@ -1314,6 +1314,7 @@ dependencies = [
     { name = "litellm" },
     { name = "llama-index" },
     { name = "llama-index-vector-stores-lancedb" },
+    { name = "mcp", extra = ["cli"] },
     { name = "openai" },
     { name = "pdoc" },
     { name = "pillow" },
@@ -1351,6 +1352,7 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.79.3" },
     { name = "llama-index", specifier = ">=0.13.3" },
     { name = "llama-index-vector-stores-lancedb", specifier = ">=0.4.2" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.10.1" },
     { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
     { name = "pillow", specifier = ">=11.1.0" },
@@ -1384,7 +1386,6 @@ dependencies = [
     { name = "kiln-ai" },
     { name = "kiln-server" },
     { name = "kiln-studio-desktop" },
-    { name = "mcp", extra = ["cli"] },
 ]
 
 [package.dev-dependencies]
@@ -1407,7 +1408,6 @@ requires-dist = [
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "kiln-studio-desktop", editable = "app/desktop" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.10.1" },
 ]
 
 [package.metadata.requires-dev]
