@@ -53,14 +53,15 @@
     }
   }
 
+  // comma separated string of tool ids, used for tracking changes in tools
   let previous_tool_ids_key = ""
+  // comma separated string for the current selected tools
   $: tool_ids_key = required_tool_ids?.join(",") || ""
+  // if tool ids have changed, reload the dataset info
   $: if (project_id && task_id && tool_ids_key !== previous_tool_ids_key) {
     previous_tool_ids_key = tool_ids_key
-    const current_dataset_id = selected_dataset?.id
     load_finetune_dataset_info()
-    // Clear selected_dataset if it's not the saved dataset (tools changed)
-    if (current_dataset_id && current_dataset_id !== saved_dataset_id) {
+    if (selected_dataset) {
       selected_dataset = null
     }
   }
