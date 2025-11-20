@@ -115,6 +115,9 @@ Before running you should:
 - If your task uses a RAG, have run indexing on this machine in the Kiln UI
 
 ```python
+from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.datamodel.task import Task
+
 async def run_kiln_task(input: str) -> dict[str, Any] | str:
     # Load your task from it's path on the filesystem
     task = Task.load_from_file(TASK_PATH)
