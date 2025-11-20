@@ -1146,13 +1146,19 @@
             {project_id}
             current_task={task}
             requires_structured_output={!!task.output_json_schema}
-            mandatory_tools={$saved_state.tool_id
-              ? [$saved_state.tool_id]
-              : null}
-            frozen_fine_tuning_tools={$saved_state.fine_tuning_tools &&
-            $saved_state.fine_tuning_tools.length > 0
-              ? $saved_state.fine_tuning_tools
-              : null}
+            tools_selector_settings={{
+              mandatory_tools: $saved_state.tool_id
+                ? [$saved_state.tool_id]
+                : $saved_state.fine_tuning_tools &&
+                    $saved_state.fine_tuning_tools.length > 0
+                  ? $saved_state.fine_tuning_tools
+                  : null,
+              disabled:
+                $saved_state.fine_tuning_tools &&
+                $saved_state.fine_tuning_tools.length > 0
+                  ? true
+                  : false,
+            }}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema
                 ? true

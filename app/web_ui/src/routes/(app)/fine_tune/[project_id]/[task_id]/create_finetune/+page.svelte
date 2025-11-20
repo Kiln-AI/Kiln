@@ -773,12 +773,16 @@
             bind:this={run_config_component}
             bind:tools={selected_tool_ids}
             {project_id}
-            hide_create_kiln_task_tool_button={true}
+            tools_selector_settings={{
+              hide_create_kiln_task_tool_button: true,
+              hide_info_description: true,
+              disabled: disabled_tools_selector,
+              empty_label: disabled_tools_selector_reason,
+              description:
+                "Choose which tools the model should learn to call during fine-tuning.",
+            }}
             hide_model_selector={true}
             hide_prompt_selector={true}
-            {disabled_tools_selector}
-            {disabled_tools_selector_reason}
-            disable_tools_store={true}
           />
         </div>
 

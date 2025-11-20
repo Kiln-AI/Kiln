@@ -6,40 +6,16 @@
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
-  import { arrays_equal } from "$lib/utils/collections"
+  import type { ToolsSelectorSettings } from "./tools_selector_settings"
 
   export let project_id: string
   export let task_id: string | null = null
   export let label: string = "Tools & Search"
-  export let description: string | undefined = undefined
   export let info_description: string | undefined =
     "Select the tools available to the model. The model may or may not choose to use them."
+  export let settings: Partial<ToolsSelectorSettings> = {}
   export let tools: string[] = []
-  export let mandatory_tools: string[] | null = null
-  export let hide_create_kiln_task_tool_button: boolean = false
-  export let disabled: boolean = false
-  export let disabled_reason: string | undefined = undefined
-  export let disable_tools_store: boolean = false
-
-  $: if (disabled && tools.length > 0) {
-    tools = []
-  }
-
-  export let single_select: boolean = false
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
-
-  // When frozen=true, the dropdown is disabled and locked to frozen_fine_tuning_tools.
-  export let frozen: boolean = false
-  export let frozen_fine_tuning_tools: string[] | null = null
-
-  // When frozen, set tools to frozen_fine_tuning_tools
-  $: if (
-    frozen &&
-    frozen_fine_tuning_tools &&
-    !arrays_equal(tools, frozen_fine_tuning_tools)
-  ) {
-    tools = [...frozen_fine_tuning_tools]
-  }
 
   let tools_store_loaded_task_id: string | null = null
 
@@ -54,18 +30,8 @@
     // Load available tools
     load_available_tools(project_id)
 
-    // If frozen, don't load from store - frozen tools override everything
-    if (frozen) {
-      return
-    }
-
-    // Don't load from store when disable_tools_store is set
-    if (disable_tools_store) {
-      return
-    }
-
     if (!task_id) {
-      tools = mandatory_tools || []
+      tools = settings.mandatory_tools || []
       tools_store_loaded_task_id = null
     } else if (task_id !== tools_store_loaded_task_id) {
       // load selected tools for this task from tools_store
@@ -74,7 +40,10 @@
         $tools_store.selected_tool_ids_by_task_id[task_id] || []
 
       // Combine mandatory tools with existing selected tools
-      const combined_tools = [...(mandatory_tools || []), ...existing_tools]
+      const combined_tools = [
+        ...(settings.mandatory_tools || []),
+        ...existing_tools,
+      ]
       // Remove duplicates while preserving order (mandatory tools first)
       tools = [...new Set(combined_tools)]
 
@@ -83,12 +52,7 @@
   }
 
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
-  $: if (
-    task_id &&
-    tools &&
-    tools_store_loaded_task_id === task_id &&
-    !disable_tools_store
-  ) {
+  $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
     tools_store.update((state) => ({
       ...state,
       selected_tool_ids_by_task_id: {
@@ -147,7 +111,8 @@
       let action_handler: (() => void) | undefined = undefined
 
       const add_create_kiln_task_tool_action =
-        tool_set_type === "kiln_task" && !hide_create_kiln_task_tool_button
+        tool_set_type === "kiln_task" &&
+        !settings.hide_create_kiln_task_tool_button
       if (add_create_kiln_task_tool_action) {
         action_label = "Create New"
         action_handler = () => {
@@ -168,8 +133,8 @@
             value: tool.id,
             label: tool.name,
             description: tool.description ? tool.description.trim() : undefined,
-            disabled: mandatory_tools
-              ? mandatory_tools.includes(tool.id)
+            disabled: settings.mandatory_tools
+              ? settings.mandatory_tools.includes(tool.id)
               : false,
           }))
 
@@ -193,56 +158,38 @@
     })
     return option_groups
   }
+
+  $: common_props = {
+    id: "tools",
+    label,
+    description: settings.description,
+    info_description: settings.hide_info_description
+      ? undefined
+      : info_description,
+    fancy_select_options: get_tool_options($available_tools[project_id]),
+    empty_label: settings.empty_label ?? "Select an option",
+    empty_state_message:
+      $available_tools[project_id] === undefined
+        ? "Loading tools..."
+        : "No Tools Available",
+    empty_state_subtitle: "Add Tools",
+    empty_state_link: `/settings/manage_tools/${project_id}/add_tools`,
+    disabled: settings.disabled,
+  }
 </script>
 
 <div>
-  {#if frozen}
+  {#if settings.single_select}
     <FormElement
-      id="tools"
-      {label}
-      description="You must use the set of tools you are fine-tuning for."
-      inputType="multi_select"
-      bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
-      disabled={true}
-    />
-  {:else if single_select}
-    <FormElement
-      id="tools"
-      {label}
-      {description}
+      {...common_props}
       inputType="fancy_select"
-      {info_description}
       bind:value={single_select_selected_tool}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
-      empty_label={disabled && disabled_reason
-        ? disabled_reason
-        : "Select an option"}
-      empty_state_message={$available_tools[project_id] === undefined
-        ? "Loading tools..."
-        : "No Tools Available"}
-      empty_state_subtitle="Add Tools"
-      empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
-      {disabled}
     />
   {:else}
     <FormElement
-      id="tools"
-      {label}
-      {description}
+      {...common_props}
       inputType="multi_select"
-      {info_description}
       bind:value={tools}
-      fancy_select_options={get_tool_options($available_tools[project_id])}
-      empty_label={disabled && disabled_reason
-        ? disabled_reason
-        : "Select an option"}
-      empty_state_message={$available_tools[project_id] === undefined
-        ? "Loading tools..."
-        : "No Tools Available"}
-      empty_state_subtitle="Add Tools"
-      empty_state_link={`/settings/manage_tools/${project_id}/add_tools`}
-      {disabled}
     />
   {/if}
 </div>

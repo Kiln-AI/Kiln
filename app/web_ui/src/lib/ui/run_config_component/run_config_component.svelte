@@ -29,6 +29,7 @@
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
   import { arrays_equal } from "$lib/utils/collections"
+  import type { ToolsSelectorSettings } from "./tools_selector_settings"
 
   // Props
   export let project_id: string
@@ -36,20 +37,15 @@
   export let model_name: string = ""
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
-  export let mandatory_tools: string[] | null = null
-  export let frozen_fine_tuning_tools: string[] | null = null
+  export let tools_selector_settings: Partial<ToolsSelectorSettings> = {}
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
-  export let hide_create_kiln_task_tool_button: boolean = false
   export let hide_prompt_selector: boolean = false
   export let hide_tools_selector: boolean = false
-  export let disabled_tools_selector: boolean = false
-  export let disabled_tools_selector_reason: string | undefined = undefined
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
-  export let disable_tools_store: boolean = false
 
   let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -284,15 +280,7 @@
         bind:tools
         {project_id}
         task_id={current_task?.id ?? null}
-        {hide_create_kiln_task_tool_button}
-        disabled={disabled_tools_selector}
-        disabled_reason={disabled_tools_selector_reason}
-        {mandatory_tools}
-        frozen={!!(
-          frozen_fine_tuning_tools && frozen_fine_tuning_tools.length > 0
-        )}
-        {frozen_fine_tuning_tools}
-        {disable_tools_store}
+        settings={tools_selector_settings}
       />
     {/if}
     <Collapse title="Advanced Options">
@@ -312,15 +300,7 @@
           bind:tools
           {project_id}
           task_id={current_task?.id ?? null}
-          {hide_create_kiln_task_tool_button}
-          disabled={disabled_tools_selector}
-          disabled_reason={disabled_tools_selector_reason}
-          {mandatory_tools}
-          frozen={!!(
-            frozen_fine_tuning_tools && frozen_fine_tuning_tools.length > 0
-          )}
-          {frozen_fine_tuning_tools}
-          {disable_tools_store}
+          settings={tools_selector_settings}
         />
       {/if}
       <AdvancedRunOptions
