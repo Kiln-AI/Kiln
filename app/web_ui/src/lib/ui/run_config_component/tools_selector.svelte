@@ -19,6 +19,20 @@
 
   let tools_store_loaded_task_id: string | null = null
 
+  let default_tools_selector_settings: ToolsSelectorSettings = {
+    mandatory_tools: [],
+    description: undefined,
+    hide_info_description: false,
+    hide_create_kiln_task_tool_button: false,
+    disabled: false,
+    empty_label: "Select an option",
+    single_select: false,
+  }
+  $: tools_selector_settings = {
+    ...default_tools_selector_settings,
+    ...settings,
+  }
+
   onMount(async () => {
     await load_tools(project_id, task_id)
   })
@@ -31,7 +45,7 @@
     load_available_tools(project_id)
 
     if (!task_id) {
-      tools = settings.mandatory_tools || []
+      tools = tools_selector_settings.mandatory_tools || []
       tools_store_loaded_task_id = null
     } else if (task_id !== tools_store_loaded_task_id) {
       // load selected tools for this task from tools_store
@@ -41,7 +55,7 @@
 
       // Combine mandatory tools with existing selected tools
       const combined_tools = [
-        ...(settings.mandatory_tools || []),
+        ...(tools_selector_settings.mandatory_tools || []),
         ...existing_tools,
       ]
       // Remove duplicates while preserving order (mandatory tools first)
@@ -112,7 +126,7 @@
 
       const add_create_kiln_task_tool_action =
         tool_set_type === "kiln_task" &&
-        !settings.hide_create_kiln_task_tool_button
+        !tools_selector_settings.hide_create_kiln_task_tool_button
       if (add_create_kiln_task_tool_action) {
         action_label = "Create New"
         action_handler = () => {
@@ -133,8 +147,8 @@
             value: tool.id,
             label: tool.name,
             description: tool.description ? tool.description.trim() : undefined,
-            disabled: settings.mandatory_tools
-              ? settings.mandatory_tools.includes(tool.id)
+            disabled: tools_selector_settings.mandatory_tools
+              ? tools_selector_settings.mandatory_tools.includes(tool.id)
               : false,
           }))
 
@@ -162,24 +176,24 @@
   $: common_props = {
     id: "tools",
     label,
-    description: settings.description,
-    info_description: settings.hide_info_description
+    description: tools_selector_settings.description,
+    info_description: tools_selector_settings.hide_info_description
       ? undefined
       : info_description,
     fancy_select_options: get_tool_options($available_tools[project_id]),
-    empty_label: settings.empty_label ?? "Select an option",
+    empty_label: tools_selector_settings.empty_label,
     empty_state_message:
       $available_tools[project_id] === undefined
         ? "Loading tools..."
         : "No Tools Available",
     empty_state_subtitle: "Add Tools",
     empty_state_link: `/settings/manage_tools/${project_id}/add_tools`,
-    disabled: settings.disabled,
+    disabled: tools_selector_settings.disabled,
   }
 </script>
 
 <div>
-  {#if settings.single_select}
+  {#if tools_selector_settings.single_select}
     <FormElement
       {...common_props}
       inputType="fancy_select"
