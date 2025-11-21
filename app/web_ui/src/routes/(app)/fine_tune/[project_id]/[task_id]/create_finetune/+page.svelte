@@ -83,10 +83,6 @@
   $: disabled_tools_selector =
     selected_model && !selected_model.model.supports_function_calling
 
-  $: disabled_tools_selector_reason = disabled_tools_selector
-    ? "Tool calling not supported on this model"
-    : undefined
-
   let selected_tool_ids: string[] = []
 
   let available_model_select: OptionGroup[] = []
@@ -777,7 +773,9 @@
               hide_create_kiln_task_tool_button: true,
               hide_info_description: true,
               disabled: disabled_tools_selector,
-              empty_label: disabled_tools_selector_reason,
+              empty_label: disabled_tools_selector
+                ? "Tool calling not supported on this model"
+                : undefined,
               description:
                 "Choose which tools the model should learn to call during fine-tuning.",
             }}

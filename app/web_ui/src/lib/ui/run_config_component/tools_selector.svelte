@@ -181,7 +181,9 @@
       ? undefined
       : info_description,
     fancy_select_options: get_tool_options($available_tools[project_id]),
-    empty_label: tools_selector_settings.empty_label,
+    empty_label:
+      tools_selector_settings.empty_label ??
+      default_tools_selector_settings.empty_label,
     empty_state_message:
       $available_tools[project_id] === undefined
         ? "Loading tools..."
