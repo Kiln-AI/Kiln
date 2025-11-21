@@ -110,6 +110,9 @@ export type Spec = components["schemas"]["Spec"]
 export type SpecType = components["schemas"]["SpecType"]
 export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
+export type SpecProperties =
+  | components["schemas"]["AppropriateToolUseProperties"]
+  | components["schemas"]["UndesiredBehaviourProperties"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 
