@@ -67,7 +67,8 @@
           },
           body: {
             name: spec.name,
-            definition: spec.definition,
+            description: spec.description,
+            properties: spec.properties || null,
             type: spec.type,
             priority: spec.priority,
             status: spec.status,
@@ -88,8 +89,10 @@
 </script>
 
 <AppPage
-  title="Spec{spec?.name ? `: ${spec.name}` : ''}"
-  subtitle={spec?.type ? `Type: ${formatSpecType(spec.type)}` : ""}
+  title="{spec?.type ? `${formatSpecType(spec.type)}: ` : ''}{spec?.name
+    ? `${spec.name}`
+    : ''}"
+  subtitle={spec?.description}
   breadcrumbs={[
     {
       label: "Specs",
@@ -111,15 +114,6 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 lg:grid-cols-[900px,500px] gap-12">
-      <div class="flex flex-col gap-4">
-        <div class="bg-base-200 rounded-lg p-6">
-          <h3 class="text-lg font-medium mb-4">Definition</h3>
-          <div class="prose prose-sm max-w-none whitespace-pre-wrap">
-            {spec.definition}
-          </div>
-        </div>
-      </div>
-
       <div class="flex flex-col gap-4">
         <PropertyList
           title="Properties"

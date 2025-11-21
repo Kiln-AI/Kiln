@@ -2173,6 +2173,20 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
+        /** AppropriateToolUseProperties */
+        AppropriateToolUseProperties: {
+            /**
+             * Spec Type
+             * @constant
+             */
+            spec_type: "appropriate_tool_use";
+            /** Tool Id */
+            tool_id: string;
+            /** Appropriate Tool Use Guidelines */
+            appropriate_tool_use_guidelines: string;
+            /** Inappropriate Tool Use Guidelines */
+            inappropriate_tool_use_guidelines: string | null;
+        };
         /** Audio */
         Audio: {
             /** Id */
@@ -5180,10 +5194,15 @@ export interface components {
              */
             name: string;
             /**
-             * Definition
-             * @description A detailed definition of the spec.
+             * Description
+             * @description A description of the spec.
              */
-            definition: string;
+            description: string;
+            /**
+             * Properties
+             * @description The properties of the spec.
+             */
+            properties?: components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"] | null;
             /** @description The type of spec. */
             type: components["schemas"]["SpecType"];
             /**
@@ -5226,8 +5245,10 @@ export interface components {
         SpecUpsertRequest: {
             /** Name */
             name: string;
-            /** Definition */
-            definition: string;
+            /** Description */
+            description: string;
+            /** Properties */
+            properties: components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"] | null;
             type: components["schemas"]["SpecType"];
             priority: components["schemas"]["Priority"];
             status: components["schemas"]["SpecStatus"];
@@ -5726,6 +5747,18 @@ export interface components {
              * @description The IDs of the tools available to the task.
              */
             tools: string[];
+        };
+        /** UndesiredBehaviourProperties */
+        UndesiredBehaviourProperties: {
+            /**
+             * Spec Type
+             * @constant
+             */
+            spec_type: "undesired_behaviour";
+            /** Undesired Behaviour Guidelines */
+            undesired_behaviour_guidelines: string;
+            /** Examples */
+            examples: string;
         };
         /** UpdateEvalRequest */
         UpdateEvalRequest: {

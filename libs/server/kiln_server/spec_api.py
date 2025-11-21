@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec import Spec, SpecStatus, SpecType
+from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
@@ -23,7 +24,8 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 
 class SpecUpsertRequest(BaseModel):
     name: FilenameString
-    definition: str
+    description: str
+    properties: SpecProperties | None
     type: SpecType
     priority: Priority
     status: SpecStatus
@@ -40,7 +42,8 @@ def connect_spec_api(app: FastAPI):
         spec = Spec(
             parent=task,
             name=spec_data.name,
-            definition=spec_data.definition,
+            description=spec_data.description,
+            properties=spec_data.properties,
             type=spec_data.type,
             priority=spec_data.priority,
             status=spec_data.status,
@@ -66,8 +69,9 @@ def connect_spec_api(app: FastAPI):
         spec = spec_from_id(project_id, task_id, spec_id)
 
         spec.name = spec_data.name
-        spec.definition = spec_data.definition
+        spec.description = spec_data.description
         spec.type = spec_data.type
+        spec.properties = spec_data.properties
         spec.priority = spec_data.priority
         spec.status = spec_data.status
         spec.tags = spec_data.tags

@@ -386,12 +386,13 @@
             },
             body: {
               name: spec.name,
-              definition: spec.definition,
+              description: spec.description,
+              properties: spec.properties ?? null,
               type: spec.type,
               priority: spec.priority,
               status: spec.status,
               tags: updated_tags,
-              eval_id: spec.eval_id || null,
+              eval_id: spec.eval_id ?? null,
             },
           },
         )
@@ -464,12 +465,13 @@
             },
             body: {
               name: spec.name,
-              definition: spec.definition,
+              description: spec.description,
+              properties: spec.properties ?? null,
               type: spec.type,
               priority: spec.priority,
               status: new_status,
               tags: spec.tags,
-              eval_id: spec.eval_id || null,
+              eval_id: spec.eval_id ?? null,
             },
           },
         )
@@ -593,7 +595,7 @@
                       : "\u200B"}
                   </span>
                 </th>
-                <th>Definition</th>
+                <th>Description</th>
                 <th
                   on:click={() => handleSort("type")}
                   class="hover:bg-base-200 cursor-pointer"
@@ -678,7 +680,7 @@
                     </td>
                   {/if}
                   <td class="font-medium">{spec.name}</td>
-                  <td class="max-w-md truncate">{spec.definition}</td>
+                  <td class="max-w-md truncate">{spec.description}</td>
                   <td>
                     {formatSpecType(spec.type)}
                   </td>

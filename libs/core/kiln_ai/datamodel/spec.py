@@ -6,6 +6,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.spec_properties import SpecProperties
 
 
 class SpecType(str, Enum):
@@ -56,8 +57,10 @@ class Spec(KilnParentedModel):
     """A spec for a task."""
 
     name: FilenameString = Field(description="The name of the spec.", min_length=1)
-    definition: str = Field(
-        description="A detailed definition of the spec.", min_length=1
+    description: str = Field(description="A description of the spec.", min_length=1)
+    properties: SpecProperties | None = Field(
+        default=None,
+        description="The properties of the spec.",
     )
     type: SpecType = Field(
         description="The type of spec.",
@@ -78,6 +81,50 @@ class Spec(KilnParentedModel):
         default=None,
         description="The id of the eval to use for this spec. If None, the spec is not associated with an eval.",
     )
+
+    @model_validator(mode="after")
+    def validate_properties(self) -> Self:
+        """Validate that properties match the spec type when provided."""
+        if self.properties is None:
+            return self
+
+        if self.type.value != self.properties["spec_type"]:
+            raise ValueError(
+                f"Spec type mismatch: {self.type.value} != {self.properties['spec_type']}."
+            )
+
+        if self.properties["spec_type"] == "appropriate_tool_use":
+            tool_id = self.properties.get("tool_id", "")
+            if not tool_id:
+                raise ValueError(
+                    "tool_id cannot be empty for appropriate_tool_use specs"
+                )
+            appropriate_tool_use_guidelines = self.properties.get(
+                "appropriate_tool_use_guidelines", ""
+            )
+            if not appropriate_tool_use_guidelines:
+                raise ValueError(
+                    "appropriate_tool_use_guidelines cannot be empty for appropriate_tool_use specs"
+                )
+        elif self.properties["spec_type"] == "undesired_behaviour":
+            undesired_behaviour_guidelines = self.properties.get(
+                "undesired_behaviour_guidelines", ""
+            )
+            if not undesired_behaviour_guidelines:
+                raise ValueError(
+                    "undesired_behaviour_guidelines cannot be empty for undesired_behaviour specs"
+                )
+            examples = self.properties.get("examples", "")
+            if not examples:
+                raise ValueError(
+                    "examples cannot be empty for undesired_behaviour specs"
+                )
+        else:
+            raise ValueError(
+                f"invalid spec type for properties: {self.properties['spec_type']}"
+            )
+
+        return self
 
     @model_validator(mode="after")
     def validate_tags(self) -> Self:
