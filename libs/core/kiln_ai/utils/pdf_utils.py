@@ -8,10 +8,18 @@ import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
-import pypdfium2
-from pypdf import PdfReader, PdfWriter
+from kiln_ai.core.dependencies import optional_import
+
+if TYPE_CHECKING:
+    import pypdfium2
+    from pypdf import PdfReader, PdfWriter
+else:
+    pypdfium2 = optional_import("pypdfium2", "rag")
+    pypdf = optional_import("pypdf", "rag")
+    PdfReader = pypdf.PdfReader
+    PdfWriter = pypdf.PdfWriter
 
 _pdf_conversion_executor: ProcessPoolExecutor | None = None
 

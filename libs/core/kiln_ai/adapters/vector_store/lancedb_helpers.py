@@ -1,11 +1,21 @@
-from typing import Any, Dict, List, Literal
+from typing import TYPE_CHECKING, Any, Dict, List, Literal
 
-from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-
+from kiln_ai.core.dependencies import optional_import
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.uuid import string_to_uuid
+
+if TYPE_CHECKING:
+    from llama_index.core.schema import NodeRelationship, RelatedNodeInfo, TextNode
+    from llama_index.vector_stores.lancedb import LanceDBVectorStore
+else:
+    llama_index = optional_import("llama_index.core", "rag")
+    NodeRelationship = llama_index.schema.NodeRelationship
+    RelatedNodeInfo = llama_index.schema.RelatedNodeInfo
+    TextNode = llama_index.schema.TextNode
+
+    lancedb_vector_store = optional_import("llama_index.vector_stores.lancedb", "rag")
+    LanceDBVectorStore = lancedb_vector_store.LanceDBVectorStore
 
 
 def store_type_to_lancedb_query_type(

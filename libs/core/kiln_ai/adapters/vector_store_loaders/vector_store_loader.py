@@ -1,7 +1,5 @@
 import asyncio
-from typing import AsyncGenerator, List
-
-from llama_index.core.schema import TextNode
+from typing import TYPE_CHECKING, AsyncGenerator, List
 
 from kiln_ai.adapters.rag.deduplication import (
     deduplicate_chunk_embeddings,
@@ -12,9 +10,16 @@ from kiln_ai.adapters.vector_store.lancedb_helpers import (
     convert_to_llama_index_node,
     deterministic_chunk_id,
 )
+from kiln_ai.core.dependencies import optional_import
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+
+if TYPE_CHECKING:
+    from llama_index.core.schema import TextNode
+else:
+    llama_index = optional_import("llama_index.core", "rag")
+    TextNode = llama_index.schema.TextNode
 
 
 class VectorStoreLoader:

@@ -31,7 +31,7 @@ dev = [
 override-dependencies = []
 
 [tool.uv.workspace]
-members = ["libs/core", "libs/server", "app/desktop"]
+members = ["libs/core","libs/server","app/desktop"]
 
 [tool.uv.sources]
 kiln-server = { workspace = true }

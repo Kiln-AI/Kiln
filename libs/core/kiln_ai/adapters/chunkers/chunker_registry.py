@@ -1,6 +1,4 @@
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
-from kiln_ai.adapters.chunkers.fixed_window_chunker import FixedWindowChunker
-from kiln_ai.adapters.chunkers.semantic_chunker import SemanticChunker
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
@@ -11,8 +9,14 @@ def chunker_adapter_from_type(
 ) -> BaseChunker:
     match chunker_type:
         case ChunkerType.FIXED_WINDOW:
+            from kiln_ai.adapters.chunkers.fixed_window_chunker import (
+                FixedWindowChunker,
+            )
+
             return FixedWindowChunker(chunker_config)
         case ChunkerType.SEMANTIC:
+            from kiln_ai.adapters.chunkers.semantic_chunker import SemanticChunker
+
             return SemanticChunker(chunker_config)
         case _:
             # type checking will catch missing cases
