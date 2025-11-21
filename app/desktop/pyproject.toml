@@ -8,9 +8,6 @@ version = "0.1.0"
 description = "The Kiln Desktop App. Download from https://kiln.tech"
 requires-python = ">=3.10"
 dependencies = [
-    "kiln-ai",
-    "kiln-ai[google_vertex]",
-    "kiln-ai[rag]",
     "kiln-server",
     "pillow>=11.0.0",
     "pystray>=0.19.5",

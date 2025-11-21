@@ -1479,7 +1479,7 @@ source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "kiln-ai" },
+    { name = "kiln-ai", extra = ["google-vertex", "rag"] },
     { name = "mcp" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -1502,6 +1502,8 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.4" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "kiln-ai", editable = "libs/core" },
+    { name = "kiln-ai", extras = ["google-vertex"], editable = "libs/core" },
+    { name = "kiln-ai", extras = ["rag"], editable = "libs/core" },
     { name = "mcp", specifier = ">=1.10.1" },
     { name = "pydantic", specifier = ">=2.9.2" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
@@ -1524,7 +1526,6 @@ name = "kiln-studio-desktop"
 version = "0.1.0"
 source = { editable = "app/desktop" }
 dependencies = [
-    { name = "kiln-ai", extra = ["google-vertex", "rag"] },
     { name = "kiln-server" },
     { name = "pillow" },
     { name = "pyinstaller" },
@@ -1534,9 +1535,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "kiln-ai", editable = "libs/core" },
-    { name = "kiln-ai", extras = ["google-vertex"], editable = "libs/core" },
-    { name = "kiln-ai", extras = ["rag"], editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "pyinstaller", specifier = "==6.15.0" },
