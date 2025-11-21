@@ -17,7 +17,7 @@ from kiln_ai.adapters.fine_tune.vertex_formatter import generate_vertex_gemini
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.tools.base_tool import ToolCallDefinition
-from kiln_ai.tools.tool_registry import tool_definitions_from_ids
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -329,6 +329,7 @@ class DatasetFormatter:
         self.dataset = dataset
         self.system_message = system_message
         self.thinking_instructions = thinking_instructions
+        self._tool_cache: dict[str, ToolCallDefinition] = {}
 
         task = dataset.parent_task()
         if task is None:
@@ -410,7 +411,7 @@ class DatasetFormatter:
         self,
         task_run: TaskRun,
     ) -> list[ToolCallDefinition] | None:
-        """Extract tool definitions from task run config"""
+        """Extract tool definitions from task run config, using cache to avoid repeated MCP server calls"""
         if not task_run.output.source:
             return None
 
@@ -425,9 +426,25 @@ class DatasetFormatter:
         task = task_run.parent_task()
         if task is None:
             return None
-        tool_definitions = None
-        try:
-            tool_definitions = await tool_definitions_from_ids(tools_config.tools, task)
-        except Exception as e:
-            raise RuntimeError(f"Failed to get tool definitions from config: {e}")
-        return tool_definitions
+
+        tool_definitions: list[ToolCallDefinition] = []
+        for tool_id in tools_config.tools:
+            # Check if tool definition is already cached
+            if tool_id in self._tool_cache:
+                tool_definitions.append(self._tool_cache[tool_id])
+                print(f"hitting cache for {tool_id}")
+                continue
+
+            try:
+                tool = tool_from_id(tool_id, task)
+                tool_def = await tool.toolcall_definition()
+
+                # cache the definition
+                self._tool_cache[tool_id] = tool_def
+                tool_definitions.append(tool_def)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to get tool definition for tool ID '{tool_id}': {e}"
+                )
+
+        return tool_definitions if tool_definitions else None
