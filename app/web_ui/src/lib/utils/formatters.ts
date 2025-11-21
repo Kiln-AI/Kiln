@@ -216,6 +216,20 @@ export function capitalize(str: string | undefined | null): string {
   }
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
+
+export function formatSpecTypeName(spec_type: string): string {
+  if (spec_type === "nsfw") {
+    return "NSFW"
+  }
+  if (spec_type === "reference_answer_accuracy") {
+    return "Reference Answer Accuracy (RAG)"
+  }
+  return spec_type
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+}
+
 /**
  * Converts StructuredOutputMode to a human-readable string.
  * This function uses exhaustive case checking - if you add a new case to StructuredOutputMode,

@@ -81,6 +81,9 @@
   }
 
   $: is_empty = !specs || specs.length === 0
+  $: has_archived_specs = specs
+    ? specs.some((spec) => spec.status === "archived")
+    : false
 
   onMount(async () => {
     await load_specs()
@@ -501,7 +504,7 @@
     : [
         {
           label: "New Spec",
-          href: `/specs/${project_id}/${task_id}/create_spec`,
+          href: `/specs/${project_id}/${task_id}/create_spec/template_select`,
           primary: true,
         },
       ]}
@@ -544,10 +547,12 @@
               selected_specs = new Set()
             }}
             onShowFilterDialog={() => filter_tags_dialog?.show()}
-            onShowArchived={() => {
-              show_archived = !show_archived
-              filterAndSortSpecs()
-            }}
+            onShowArchived={has_archived_specs
+              ? () => {
+                  show_archived = !show_archived
+                  filterAndSortSpecs()
+                }
+              : undefined}
             {show_archived}
             onShowAddTags={show_add_tags_modal}
             onShowRemoveTags={show_remove_tags_modal}

@@ -23,6 +23,8 @@ class SpecType(str, Enum):
     reference_answer_accuracy = "reference_answer_accuracy"
     factual_correctness = "factual_correctness"
     hallucinations = "hallucinations"
+    completeness = "completeness"
+    consistency = "consistency"
 
     # Style
     tone = "tone"
