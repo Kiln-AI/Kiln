@@ -20,4 +20,5 @@ dependencies = [
 only-include = ["__init__.py"]
 
 [tool.uv.sources]
+kiln-ai = {workspace = true}
 kiln-server = { workspace = true }

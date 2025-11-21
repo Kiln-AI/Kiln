@@ -1,9 +1,14 @@
 import asyncio
-from typing import List
-
-from llama_index.core.embeddings import BaseEmbedding
+from typing import TYPE_CHECKING, List
 
 from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
+from kiln_ai.core.dependencies import optional_import
+
+if TYPE_CHECKING:
+    from llama_index.core.embeddings import BaseEmbedding
+else:
+    llama_index = optional_import("llama_index.core", "rag")
+    BaseEmbedding = llama_index.embeddings.BaseEmbedding
 
 
 class KilnEmbeddingWrapper(BaseEmbedding):
