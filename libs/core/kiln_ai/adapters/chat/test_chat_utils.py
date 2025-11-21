@@ -1,7 +1,10 @@
 import pytest
 
 from kiln_ai.adapters.chat.chat_formatter import ToolCallMessage, ToolResponseMessage
-from kiln_ai.adapters.chat.chat_utils import build_tool_call_messages
+from kiln_ai.adapters.chat.chat_utils import (
+    build_tool_call_messages,
+    extract_text_from_content,
+)
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -225,3 +228,35 @@ def test_build_tool_call_messages_raises_on_missing_content():
 
     with pytest.raises(ValueError, match="Content is required"):
         build_tool_call_messages(trace)
+
+
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        # string remains string
+        ("Hello world", "Hello world"),
+        (None, None),
+        # Empty list becomes None
+        ([], None),
+        (
+            [
+                {"type": "text", "text": "The quick brown fox"},
+                {
+                    "type": "image",
+                    "url": "should_be_ignored.jpg",
+                },  # not text type, ignore
+                {"type": "text", "text": " jumps over the lazy dog"},
+            ],
+            "The quick brown fox jumps over the lazy dog",
+        ),
+        (
+            [
+                {"type": "text"},  # no text value, ignored
+                {"type": "text", "text": "Only this should appear"},
+            ],
+            "Only this should appear",
+        ),
+    ],
+)
+def test_extract_text_from_content(content, expected):
+    assert extract_text_from_content(content) == expected

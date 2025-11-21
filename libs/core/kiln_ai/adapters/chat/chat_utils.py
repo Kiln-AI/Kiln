@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Any, Union
 
 from kiln_ai.adapters.chat.chat_formatter import (
     ToolCallMessage,
@@ -35,7 +35,7 @@ def build_tool_call_messages(
                     ToolCallMessage(
                         role="assistant",
                         tool_calls=tool_calls,
-                        content=content if isinstance(content, str) else None,
+                        content=extract_text_from_content(content),
                     )
                 )
         elif role == "tool":
@@ -59,3 +59,31 @@ def build_tool_call_messages(
             )
 
     return tool_messages
+
+
+def extract_text_from_content(
+    content: Any,
+) -> str | None:
+    """
+    Extract text content from OpenAI message content.
+    """
+    if content is None:
+        return None
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_parts = []
+        for part in content:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
+            ):
+                text_parts.append(part["text"])
+
+        if text_parts:
+            return "".join(text_parts)
+
+    return None
