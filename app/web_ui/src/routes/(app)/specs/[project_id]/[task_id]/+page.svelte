@@ -530,7 +530,7 @@
           action_buttons={[
             {
               label: "Define a Spec",
-              href: `/specs/${project_id}/${task_id}/create_spec`,
+              href: `/specs/${project_id}/${task_id}/create_spec/template_select`,
               is_primary: true,
             },
           ]}
@@ -595,7 +595,7 @@
                       : "\u200B"}
                   </span>
                 </th>
-                <th>Definition</th>
+                <th>Description</th>
                 <th
                   on:click={() => handleSort("type")}
                   class="hover:bg-base-200 cursor-pointer"
