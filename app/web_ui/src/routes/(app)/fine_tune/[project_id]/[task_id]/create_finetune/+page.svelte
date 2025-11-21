@@ -168,11 +168,38 @@
     })
   }
 
+  function clear_and_reload() {
+    let msg =
+      "Are you sure you want to clear current selections? This cannot be undone."
+
+    if (confirm(msg)) {
+      clear_saved_state()
+      // reload the window keeping the same URL
+      window.location.reload()
+    }
+  }
+
   function clear_saved_state() {
     // Prevent the reactive block from immediately repopulating the store
     state_initialized = false
-    saved_state.set({})
+
+    // Clear the saved state in IndexedDB by saving the defaults
+    saved_state.update((s) => ({
+      ...s,
+      name: undefined,
+      description: undefined,
+      provider: undefined,
+      base_model_id: undefined,
+      dataset_split_id: undefined,
+      parameters: undefined,
+      system_message: undefined,
+      thinking_instructions: undefined,
+      data_strategy: "final_only",
+      system_prompt_method: "simple_prompt_builder",
+      tools: undefined,
+    }))
   }
+
   $: selecting_thinking_dataset =
     selected_dataset?.filter?.includes("thinking_model")
   $: selected_dataset_has_val = selected_dataset?.splits?.find(
@@ -651,6 +678,16 @@
     sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
     breadcrumbs={[
       { label: "Fine Tunes", href: `/fine_tune/${project_id}/${task_id}` },
+    ]}
+    action_buttons={[
+      {
+        label: "Reset",
+        handler: clear_and_reload,
+      },
+      {
+        label: "Docs & Guide",
+        href: "https://docs.kiln.tech/docs/fine-tuning-guide",
+      },
     ]}
   >
     {#if $available_models_loading}
