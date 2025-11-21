@@ -595,7 +595,7 @@
                       : "\u200B"}
                   </span>
                 </th>
-                <th>Definition</th>
+                <th>Description</th>
                 <th
                   on:click={() => handleSort("type")}
                   class="hover:bg-base-200 cursor-pointer"
