@@ -10,7 +10,7 @@
 
   export let project_id: string
   export let task_id: string | null = null
-  export let label: string = "Tools & Search (Optional)"
+  export let label: string = "Tools & Search"
   export let info_description: string | undefined =
     "Select the tools available to the model. The model may or may not choose to use them."
   export let settings: Partial<ToolsSelectorSettings> = {}
@@ -199,12 +199,14 @@
     <FormElement
       {...common_props}
       inputType="fancy_select"
+      optional={true}
       bind:value={single_select_selected_tool}
     />
   {:else}
     <FormElement
       {...common_props}
       inputType="multi_select"
+      optional={true}
       bind:value={tools}
     />
   {/if}
