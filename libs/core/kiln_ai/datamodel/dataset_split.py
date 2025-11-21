@@ -231,7 +231,7 @@ class DatasetSplit(KilnParentedModel):
         for run in runs:
             # Extract tools from run config, treating missing source/run_config/tools_config as empty tools
             run_tools: set[str] = set()
-            source = run.output.source
+            source = run.output and run.output.source
             if source is not None and source.run_config is not None:
                 tools_config = source.run_config.tools_config
                 if tools_config is not None:

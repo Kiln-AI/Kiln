@@ -169,6 +169,8 @@
   }
 
   function clear_saved_state() {
+    // Prevent the reactive block from immediately repopulating the store
+    state_initialized = false
     saved_state.set({})
   }
   $: selecting_thinking_dataset =

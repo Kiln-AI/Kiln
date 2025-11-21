@@ -372,9 +372,9 @@ def mock_run_with_tools():
         run = Mock()
         if tools is None:
             run.output.source.run_config.tools_config = None
-        elif isinstance(tools, list) and len(tools) == 0:
-            run.output.source.run_config.tools_config.tools = []
         else:
+            tools_config = Mock()
+            tools_config.tools = tools if tools else []
             run.output.source.run_config.tools_config.tools = tools
         return run
 

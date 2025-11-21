@@ -22,6 +22,9 @@ def generate_vertex_gemini(
     """Generate Vertex Gemini format (flash and pro)"""
     # See https://cloud.google.com/vertex-ai/generative-ai/docs/models/tune-function-calling
 
+    if not training_chat:
+        raise ValueError("Training chat cannot be empty")
+
     # System message get's it's own entry in top level UI
     system_instruction = training_chat[0].content
 
@@ -250,8 +253,11 @@ def convert_schema_to_vertex_types(schema: dict[str, Any]) -> dict[str, Any]:
     for key, value in schema.items():
         if key == "type" and isinstance(value, str):
             vertex_type = supported_vertex_types.get(value.lower())
-            if vertex_type:
-                result[key] = vertex_type
+            if not vertex_type:
+                raise ValueError(
+                    f"Unsupported type '{value}' in schema. Supported types: {list(supported_vertex_types.keys())}"
+                )
+            result[key] = vertex_type
         elif isinstance(value, dict):
             result[key] = convert_schema_to_vertex_types(value)
         elif isinstance(value, list):

@@ -200,6 +200,10 @@ def compute_finetune_tag_info(
     for sample in task.runs(readonly=True):
         # filter by tools if provided
         if required_tools_set is not None:
+            if sample.output is None:
+                # A few places in code guards against this though the field isn't optional. Just be defensive.
+                continue
+
             run_tools_set: set[str] = set()
             if (
                 sample.output.source

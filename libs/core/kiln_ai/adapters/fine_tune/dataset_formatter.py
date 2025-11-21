@@ -425,6 +425,9 @@ class DatasetFormatter:
         task = task_run.parent_task()
         if task is None:
             return None
-
-        tool_definitions = await tool_definitions_from_ids(tools_config.tools, task)
+        tool_definitions = None
+        try:
+            tool_definitions = await tool_definitions_from_ids(tools_config.tools, task)
+        except Exception as e:
+            raise RuntimeError(f"Failed to get tool definitions from config: {e}")
         return tool_definitions
