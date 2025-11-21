@@ -10,7 +10,7 @@
 
   export let project_id: string
   export let task_id: string | null = null
-  export let label: string = "Tools & Search"
+  export let label: string = "Tools & Search (Optional)"
   export let info_description: string | undefined =
     "Select the tools available to the model. The model may or may not choose to use them."
   export let settings: Partial<ToolsSelectorSettings> = {}
@@ -25,7 +25,7 @@
     hide_info_description: false,
     hide_create_kiln_task_tool_button: false,
     disabled: false,
-    empty_label: "Select an option",
+    empty_label: "None",
     single_select: false,
   }
   $: tools_selector_settings = {

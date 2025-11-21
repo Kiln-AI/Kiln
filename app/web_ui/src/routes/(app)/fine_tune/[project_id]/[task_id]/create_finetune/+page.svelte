@@ -727,7 +727,6 @@
           <FormElement
             label="Model & Provider"
             description="Select which model to fine-tune. Alternatively, download a JSONL file to fine-tune using any infrastructure."
-            info_description="Connect providers in settings for 1-click fine-tuning. Alternatively, download a JSONL file to fine-tune using any infrastructure, like Unsloth or Axolotl."
             inputType="fancy_select"
             id="provider"
             fancy_select_options={available_model_select}
@@ -751,8 +750,8 @@
         <div>
           <PromptTypeSelector
             bind:prompt_method={system_prompt_method}
-            description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+            description={`The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model. <a class="link" href="https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts" target="_blank" rel="noreferrer noopener">Read more.</a>`}
+            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning."
             exclude_cot={true}
             custom_prompt_name="Custom Fine Tuning Prompt"
           />
