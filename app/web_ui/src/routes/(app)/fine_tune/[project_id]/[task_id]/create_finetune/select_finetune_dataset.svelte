@@ -134,7 +134,7 @@
   ]
 
   $: show_existing_dataset_option =
-    finetune_dataset_info?.eligible_datasets?.length
+    finetune_dataset_info?.existing_finetunes?.length
   $: show_new_dataset_option =
     finetune_dataset_info?.eligible_finetune_tags?.length
   $: can_select_dataset =
