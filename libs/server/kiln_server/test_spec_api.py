@@ -1051,3 +1051,139 @@ def test_update_spec_invalid_tags_type(client, project_and_task):
     res = response.json()
     assert "source_errors" in res
     assert any(error["loc"] == ["body", "tags"] for error in res["source_errors"])
+
+
+def test_create_spec_with_empty_tool_id(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Tool Use Spec",
+        "description": "Tool use validation test",
+        "type": SpecType.appropriate_tool_use.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": {
+            "spec_type": "appropriate_tool_use",
+            "tool_id": "",
+            "appropriate_tool_use_guidelines": "Use this tool when needed",
+            "inappropriate_tool_use_guidelines": None,
+        },
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        "tool_id" in error.get("msg", "").lower() for error in res["source_errors"]
+    )
+
+
+def test_create_spec_with_empty_appropriate_tool_use_guidelines(
+    client, project_and_task
+):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Tool Use Spec",
+        "description": "Tool use validation test",
+        "type": SpecType.appropriate_tool_use.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": {
+            "spec_type": "appropriate_tool_use",
+            "tool_id": "test_tool_id",
+            "appropriate_tool_use_guidelines": "",
+            "inappropriate_tool_use_guidelines": None,
+        },
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        "appropriate_tool_use_guidelines" in error.get("msg", "").lower()
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_with_empty_undesired_behaviour_guidelines(
+    client, project_and_task
+):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Undesired Behaviour Spec",
+        "description": "Undesired behaviour validation test",
+        "type": SpecType.undesired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": {
+            "spec_type": "undesired_behaviour",
+            "undesired_behaviour_guidelines": "",
+            "examples": "Example 1: Don't do this",
+        },
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        "undesired_behaviour_guidelines" in error.get("msg", "").lower()
+        for error in res["source_errors"]
+    )
+
+
+def test_create_spec_with_empty_examples(client, project_and_task):
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Undesired Behaviour Spec",
+        "description": "Undesired behaviour validation test",
+        "type": SpecType.undesired_behaviour.value,
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": {
+            "spec_type": "undesired_behaviour",
+            "undesired_behaviour_guidelines": "Avoid toxic content",
+            "examples": "",
+        },
+        "eval_id": None,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 422
+    res = response.json()
+    assert "source_errors" in res
+    assert any(
+        "examples" in error.get("msg", "").lower() for error in res["source_errors"]
+    )

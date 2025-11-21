@@ -93,6 +93,37 @@ class Spec(KilnParentedModel):
                 f"Spec type mismatch: {self.type.value} != {self.properties['spec_type']}."
             )
 
+        if self.properties["spec_type"] == "appropriate_tool_use":
+            tool_id = self.properties.get("tool_id", "")
+            if not tool_id:
+                raise ValueError(
+                    "tool_id cannot be empty for appropriate_tool_use specs"
+                )
+            appropriate_tool_use_guidelines = self.properties.get(
+                "appropriate_tool_use_guidelines", ""
+            )
+            if not appropriate_tool_use_guidelines:
+                raise ValueError(
+                    "appropriate_tool_use_guidelines cannot be empty for appropriate_tool_use specs"
+                )
+        elif self.properties["spec_type"] == "undesired_behaviour":
+            undesired_behaviour_guidelines = self.properties.get(
+                "undesired_behaviour_guidelines", ""
+            )
+            if not undesired_behaviour_guidelines:
+                raise ValueError(
+                    "undesired_behaviour_guidelines cannot be empty for undesired_behaviour specs"
+                )
+            examples = self.properties.get("examples", "")
+            if not examples:
+                raise ValueError(
+                    "examples cannot be empty for undesired_behaviour specs"
+                )
+        else:
+            raise ValueError(
+                f"invalid spec type for properties: {self.properties['spec_type']}"
+            )
+
         return self
 
     @model_validator(mode="after")
