@@ -60,7 +60,6 @@ def build_training_chat(
     system_message: str,
     data_strategy: ChatStrategy,
     thinking_instructions: str | None = None,
-    tool_definitions: list[ToolCallDefinition] | None = None,
 ) -> list[ChatMessage]:
     """
     Generate chat message list for training.
@@ -395,7 +394,6 @@ class DatasetFormatter:
                     system_message=self.system_message,
                     data_strategy=data_strategy,
                     thinking_instructions=self.thinking_instructions,
-                    tool_definitions=tools,
                 )
                 example = generator(training_chat, tools=tools)
 
