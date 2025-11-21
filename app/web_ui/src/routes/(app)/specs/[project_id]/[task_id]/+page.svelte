@@ -530,7 +530,7 @@
           action_buttons={[
             {
               label: "Define a Spec",
-              href: `/specs/${project_id}/${task_id}/create_spec`,
+              href: `/specs/${project_id}/${task_id}/create_spec/template_select`,
               is_primary: true,
             },
           ]}

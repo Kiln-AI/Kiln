@@ -67,7 +67,9 @@
   function first_error() {
     const form = document.getElementById(id)
     if (form) {
-      const errorElement = form.querySelector(".input-error, .textarea-error")
+      const errorElement = form.querySelector(
+        ".input-error, .textarea-error, .select-error, .select.border-error",
+      )
       if (errorElement instanceof HTMLElement) {
         return errorElement
       }
