@@ -432,7 +432,6 @@ class DatasetFormatter:
             # Check if tool definition is already cached
             if tool_id in self._tool_cache:
                 tool_definitions.append(self._tool_cache[tool_id])
-                print(f"hitting cache for {tool_id}")
                 continue
 
             try:
