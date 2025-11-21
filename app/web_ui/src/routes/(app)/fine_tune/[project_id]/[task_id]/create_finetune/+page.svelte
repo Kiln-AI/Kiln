@@ -789,18 +789,6 @@
             select_options={data_strategy_select_options}
             bind:value={data_strategy}
           />
-          {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
-            <Warning
-              warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
-              large_icon={true}
-            />
-          {/if}
-          {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
-            <Warning
-              warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
-              large_icon={true}
-            />
-          {/if}
         </div>
         <div>
           <RunConfigComponent
@@ -846,6 +834,18 @@
               {saved_dataset_id}
               bind:selected_dataset
             />
+            {#if selected_dataset && data_strategy === "two_message_cot" && !selecting_thinking_dataset}
+              <Warning
+                warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
+                large_icon={true}
+              />
+            {/if}
+            {#if selected_dataset && data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
+              <Warning
+                warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
+                large_icon={true}
+              />
+            {/if}
           {/if}
         {/if}
 
