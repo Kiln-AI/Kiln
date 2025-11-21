@@ -67,7 +67,9 @@
           {project_id}
           current_task={task}
           requires_structured_output={!!task.output_json_schema}
-          hide_create_kiln_task_tool_button={true}
+          tools_selector_settings={{
+            hide_create_kiln_task_tool_button: true,
+          }}
         />
       {/if}
 

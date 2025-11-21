@@ -2614,6 +2614,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -3861,6 +3862,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -3875,6 +3878,10 @@ export interface components {
             existing_finetunes: components["schemas"]["Finetune"][];
             /** Finetune Tags */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+            /** Eligible Datasets */
+            eligible_datasets: components["schemas"]["DatasetSplit"][];
+            /** Eligible Finetune Tags */
+            eligible_finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
         };
         /**
          * FinetuneDatasetTagInfo
@@ -3917,6 +3924,11 @@ export interface components {
             id: string;
             /** Data Strategies Supported */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
+            /**
+             * Supports Function Calling
+             * @default true
+             */
+            supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus
@@ -8987,7 +8999,9 @@ export interface operations {
     };
     finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tool_ids?: string[] | null;
+            };
             header?: never;
             path: {
                 project_id: string;

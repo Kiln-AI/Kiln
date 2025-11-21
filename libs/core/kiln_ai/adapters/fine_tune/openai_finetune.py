@@ -175,7 +175,9 @@ class OpenAIFinetune(BaseFinetuneAdapter):
         formatter = DatasetFormatter(
             dataset, self.datamodel.system_message, self.datamodel.thinking_instructions
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         oai_client = _get_openai_client()
         response = await oai_client.files.create(

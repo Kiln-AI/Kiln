@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from kiln_ai.datamodel import DatasetSplit, FineTuneStatusType, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 
 
@@ -63,6 +64,7 @@ class BaseFinetuneAdapter(ABC):
         name: str | None = None,
         description: str | None = None,
         validation_split_name: str | None = None,
+        run_config: RunConfigProperties | None = None,
     ) -> tuple["BaseFinetuneAdapter", FinetuneModel]:
         """
         Create and start a fine-tune.
@@ -104,6 +106,7 @@ class BaseFinetuneAdapter(ABC):
             thinking_instructions=thinking_instructions,
             parent=parent_task,
             data_strategy=data_strategy,
+            run_config=run_config,
         )
 
         adapter = cls(datamodel)
