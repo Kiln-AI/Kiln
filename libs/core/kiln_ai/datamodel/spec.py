@@ -6,42 +6,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.spec_properties import SpecProperties
-
-
-class SpecType(str, Enum):
-    """Defines the type of spec."""
-
-    # Functionality
-    desired_behaviour = "desired_behaviour"
-    undesired_behaviour = "undesired_behaviour"
-
-    # Reasoning & Execution
-    appropriate_tool_use = "appropriate_tool_use"
-    intermediate_reasoning = "intermediate_reasoning"
-
-    # Correctness
-    reference_answer_accuracy = "reference_answer_accuracy"
-    factual_correctness = "factual_correctness"
-    hallucinations = "hallucinations"
-    completeness = "completeness"
-    consistency = "consistency"
-
-    # Style
-    tone = "tone"
-    formatting = "formatting"
-    localization = "localization"
-
-    # Safety
-    toxicity = "toxicity"
-    bias = "bias"
-    maliciousness = "maliciousness"
-    nsfw = "nsfw"
-    taboo = "taboo"
-
-    # System Constraints
-    jailbreak = "jailbreak"
-    prompt_leakage = "prompt_leakage"
+from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
 
 
 class SpecStatus(str, Enum):
@@ -58,12 +23,13 @@ class Spec(KilnParentedModel):
 
     name: FilenameString = Field(description="The name of the spec.", min_length=1)
     description: str = Field(description="A description of the spec.", min_length=1)
+    type: SpecType = Field(
+        description="The type of spec.",
+    )
     properties: SpecProperties | None = Field(
         default=None,
         description="The properties of the spec.",
-    )
-    type: SpecType = Field(
-        description="The type of spec.",
+        discriminator="spec_type",
     )
     priority: Priority = Field(
         default=Priority.p1,
@@ -83,50 +49,6 @@ class Spec(KilnParentedModel):
     )
 
     @model_validator(mode="after")
-    def validate_properties(self) -> Self:
-        """Validate that properties match the spec type when provided."""
-        if self.properties is None:
-            return self
-
-        if self.type.value != self.properties["spec_type"]:
-            raise ValueError(
-                f"Spec type mismatch: {self.type.value} != {self.properties['spec_type']}."
-            )
-
-        if self.properties["spec_type"] == "appropriate_tool_use":
-            tool_id = self.properties.get("tool_id", "")
-            if not tool_id:
-                raise ValueError(
-                    "tool_id cannot be empty for appropriate_tool_use specs"
-                )
-            appropriate_tool_use_guidelines = self.properties.get(
-                "appropriate_tool_use_guidelines", ""
-            )
-            if not appropriate_tool_use_guidelines:
-                raise ValueError(
-                    "appropriate_tool_use_guidelines cannot be empty for appropriate_tool_use specs"
-                )
-        elif self.properties["spec_type"] == "undesired_behaviour":
-            undesired_behaviour_guidelines = self.properties.get(
-                "undesired_behaviour_guidelines", ""
-            )
-            if not undesired_behaviour_guidelines:
-                raise ValueError(
-                    "undesired_behaviour_guidelines cannot be empty for undesired_behaviour specs"
-                )
-            examples = self.properties.get("examples", "")
-            if not examples:
-                raise ValueError(
-                    "examples cannot be empty for undesired_behaviour specs"
-                )
-        else:
-            raise ValueError(
-                f"invalid spec type for properties: {self.properties['spec_type']}"
-            )
-
-        return self
-
-    @model_validator(mode="after")
     def validate_tags(self) -> Self:
         for tag in self.tags:
             if not tag:
@@ -134,4 +56,14 @@ class Spec(KilnParentedModel):
             if " " in tag:
                 raise ValueError("tags cannot contain spaces. Try underscores.")
 
+        return self
+
+    @model_validator(mode="after")
+    def validate_type_matches_properties(self) -> Self:
+        if self.properties is not None:
+            properties_type = self.properties.get("spec_type")
+            if properties_type != self.type:
+                raise ValueError(
+                    f"Spec type mismatch: spec.type is '{self.type}' but properties.spec_type is '{properties_type}'"
+                )
         return self

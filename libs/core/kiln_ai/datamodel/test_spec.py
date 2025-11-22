@@ -252,7 +252,7 @@ def test_spec_with_none_properties(sample_task):
 def test_spec_with_appropriate_tool_use_properties(sample_task):
     """Test creating a spec with AppropriateToolUseProperties."""
     properties = AppropriateToolUseProperties(
-        spec_type="appropriate_tool_use",
+        spec_type=SpecType.appropriate_tool_use,
         tool_id="tool-123",
         appropriate_tool_use_guidelines="Use the tool when needed",
         inappropriate_tool_use_guidelines="Don't use for simple queries",
@@ -267,7 +267,7 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
 
     assert spec.properties is not None
     assert isinstance(spec.properties, dict)
-    assert spec.properties["spec_type"] == "appropriate_tool_use"
+    assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
     assert spec.properties["tool_id"] == "tool-123"
     assert (
         spec.properties["appropriate_tool_use_guidelines"] == "Use the tool when needed"
@@ -281,7 +281,7 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
 def test_spec_with_appropriate_tool_use_properties_optional_field(sample_task):
     """Test creating a spec with AppropriateToolUseProperties without optional field."""
     properties = AppropriateToolUseProperties(
-        spec_type="appropriate_tool_use",
+        spec_type=SpecType.appropriate_tool_use,
         tool_id="tool-456",
         appropriate_tool_use_guidelines="Use the tool when needed",
         inappropriate_tool_use_guidelines=None,
@@ -302,7 +302,7 @@ def test_spec_with_appropriate_tool_use_properties_optional_field(sample_task):
 def test_spec_with_undesired_behaviour_properties(sample_task):
     """Test creating a spec with UndesiredBehaviourProperties."""
     properties = UndesiredBehaviourProperties(
-        spec_type="undesired_behaviour",
+        spec_type=SpecType.undesired_behaviour,
         undesired_behaviour_guidelines="Avoid toxic language",
         examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
     )
@@ -316,7 +316,7 @@ def test_spec_with_undesired_behaviour_properties(sample_task):
 
     assert spec.properties is not None
     assert isinstance(spec.properties, dict)
-    assert spec.properties["spec_type"] == "undesired_behaviour"
+    assert spec.properties["spec_type"] == SpecType.undesired_behaviour
     assert spec.properties["undesired_behaviour_guidelines"] == "Avoid toxic language"
     assert (
         spec.properties["examples"]
@@ -327,7 +327,7 @@ def test_spec_with_undesired_behaviour_properties(sample_task):
 def test_spec_type_matches_properties_appropriate_tool_use(sample_task):
     """Test that the validator ensures type matches properties for appropriate_tool_use."""
     properties = AppropriateToolUseProperties(
-        spec_type="appropriate_tool_use",
+        spec_type=SpecType.appropriate_tool_use,
         tool_id="tool-123",
         appropriate_tool_use_guidelines="Use the tool when needed",
         inappropriate_tool_use_guidelines=None,
@@ -342,13 +342,13 @@ def test_spec_type_matches_properties_appropriate_tool_use(sample_task):
 
     assert spec.type == SpecType.appropriate_tool_use
     assert spec.properties is not None
-    assert spec.properties["spec_type"] == "appropriate_tool_use"
+    assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
 
 
 def test_spec_type_matches_properties_undesired_behaviour(sample_task):
     """Test that the validator ensures type matches properties for undesired_behaviour."""
     properties = UndesiredBehaviourProperties(
-        spec_type="undesired_behaviour",
+        spec_type=SpecType.undesired_behaviour,
         undesired_behaviour_guidelines="Avoid toxic language",
         examples="Example text",
     )
@@ -362,19 +362,19 @@ def test_spec_type_matches_properties_undesired_behaviour(sample_task):
 
     assert spec.type == SpecType.undesired_behaviour
     assert spec.properties is not None
-    assert spec.properties["spec_type"] == "undesired_behaviour"
+    assert spec.properties["spec_type"] == SpecType.undesired_behaviour
 
 
 def test_spec_type_mismatch_with_properties_raises_error(sample_task):
     """Test that creating a spec with mismatched type and properties raises an error."""
     properties = AppropriateToolUseProperties(
-        spec_type="appropriate_tool_use",
+        spec_type=SpecType.appropriate_tool_use,
         tool_id="tool-123",
         appropriate_tool_use_guidelines="Use the tool when needed",
         inappropriate_tool_use_guidelines=None,
     )
 
-    with pytest.raises(ValueError, match="Spec type mismatch"):
+    with pytest.raises(ValidationError, match="Spec type mismatch"):
         Spec(
             name="Mismatched Spec",
             description="Test spec with mismatched type",
@@ -387,12 +387,12 @@ def test_spec_type_mismatch_with_properties_raises_error(sample_task):
 def test_spec_type_mismatch_with_properties_reverse(sample_task):
     """Test that creating a spec with mismatched type and properties raises an error (reverse)."""
     properties = UndesiredBehaviourProperties(
-        spec_type="undesired_behaviour",
+        spec_type=SpecType.undesired_behaviour,
         undesired_behaviour_guidelines="Avoid toxic language",
         examples="Example text",
     )
 
-    with pytest.raises(ValueError, match="Spec type mismatch"):
+    with pytest.raises(ValidationError, match="Spec type mismatch"):
         Spec(
             name="Mismatched Spec",
             description="Test spec with mismatched type",
@@ -407,7 +407,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         # Intentionally missing required field to test validation
         properties = {
-            "spec_type": "appropriate_tool_use",
+            "spec_type": SpecType.appropriate_tool_use,
             "tool_id": "tool-123",
         }
         Spec(
@@ -422,7 +422,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         # Intentionally missing required field to test validation
         properties = {
-            "spec_type": "undesired_behaviour",
+            "spec_type": SpecType.undesired_behaviour,
             "undesired_behaviour_guidelines": "Avoid toxic language",
         }
         Spec(
@@ -484,7 +484,7 @@ def test_spec_rejects_empty_dict_properties(sample_task):
 def test_spec_with_properties_and_description(sample_task):
     """Test that description field works correctly with properties."""
     properties = AppropriateToolUseProperties(
-        spec_type="appropriate_tool_use",
+        spec_type=SpecType.appropriate_tool_use,
         tool_id="tool-123",
         appropriate_tool_use_guidelines="Use the tool when needed",
         inappropriate_tool_use_guidelines=None,
@@ -499,6 +499,6 @@ def test_spec_with_properties_and_description(sample_task):
 
     assert spec.description == "This spec defines when to use tools appropriately"
     assert spec.properties is not None
-    assert spec.properties["spec_type"] == "appropriate_tool_use"
+    assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
     # Type checker doesn't know which variant of the union this is, but we verified spec_type above
     assert spec.properties["tool_id"] == "tool-123"  # type: ignore[literal-required]
