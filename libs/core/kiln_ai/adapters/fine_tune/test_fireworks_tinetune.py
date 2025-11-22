@@ -428,6 +428,27 @@ async def test_start_api_error(
             await fireworks_finetune._start(mock_dataset)
 
 
+async def test_start_wandb_missing_entity(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = None
+
+    fireworks_finetune.datamodel.parent = mock_task
+    mock_dataset_id = "dataset-123"
+
+    with patch.object(
+        fireworks_finetune,
+        "generate_and_upload_jsonl",
+        return_value=mock_dataset_id,
+    ):
+        with pytest.raises(
+            ValueError,
+            match=r"Weights & Biases is connected but missing \"entity\". Please reconnect Weights & Biases in Settings → Manage Providers.",
+        ):
+            await fireworks_finetune._start(mock_dataset)
+
+
 def test_available_parameters(fireworks_finetune):
     parameters = fireworks_finetune.available_parameters()
     assert len(parameters) == 4

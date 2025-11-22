@@ -154,6 +154,13 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
         }
+
+        # Existing user will not have entity set, need to reconnect
+        if Config.shared().wandb_api_key and not Config.shared().wandb_entity:
+            raise ValueError(
+                'Weights & Biases is connected but missing "entity". Please reconnect Weights & Biases in Settings → Manage Providers.'
+            )
+
         # Add W&B config if API key and entity are set
         if Config.shared().wandb_api_key and Config.shared().wandb_entity:
             payload["wandbConfig"] = {
