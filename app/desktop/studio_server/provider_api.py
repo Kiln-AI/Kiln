@@ -482,12 +482,16 @@ def connect_provider_api(app: FastAPI):
 
         # Wandb is not a typical AI provider, but it's a provider you can connect through this UI/API
         if provider == "wandb":
-            # Load optional base URL
+            # Load optional base URL and entity
             base_url = None
             if "Base URL" in key_data:
                 base_url = parse_url(key_data, "Base URL")
+            entity = None
+            if "Entity" in key_data:
+                entity = key_data["Entity"].strip()
             return await connect_wandb(
                 parse_api_key(key_data),
+                entity,
                 base_url,
             )
 
@@ -549,6 +553,7 @@ def connect_provider_api(app: FastAPI):
         if provider_id == "wandb":
             # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API
             Config.shared().wandb_api_key = None
+            Config.shared().wandb_entity = None
             Config.shared().wandb_base_url = None
         else:
             if provider_id not in ModelProviderName.__members__:
@@ -963,7 +968,9 @@ async def connect_anthropic(key: str):
         )
 
 
-async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
+async def connect_wandb(
+    key: str, entity: str | None, base_url: str | None
+) -> JSONResponse:
     try:
         api_url = base_url or "https://api.wandb.ai"
         headers = {
@@ -1008,6 +1015,7 @@ async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
         ):
             # Save the credentials if valid
             Config.shared().wandb_api_key = key
+            Config.shared().wandb_entity = entity
             Config.shared().wandb_base_url = base_url
 
             return JSONResponse(

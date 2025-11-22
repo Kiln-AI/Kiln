@@ -2774,7 +2774,7 @@ async def test_connect_wandb_success(mock_config_shared, mock_requests_post):
     mock_requests_post.return_value = mock_response
 
     # Test
-    result = await connect_wandb("test-api-key", None)
+    result = await connect_wandb("test-api-key", None, None)
 
     # Assertions
     assert result.status_code == 200
@@ -2810,7 +2810,7 @@ async def test_connect_wandb_custom_base_url(mock_config_shared, mock_requests_p
     custom_url = "https://custom-wandb.example.com"
 
     # Test
-    result = await connect_wandb("test-api-key", custom_url)
+    result = await connect_wandb("test-api-key", None, custom_url)
 
     # Assertions
     assert result.status_code == 200
@@ -2843,7 +2843,7 @@ async def test_connect_wandb_invalid_api_key(mock_config_shared, mock_requests_p
     mock_requests_post.return_value = mock_response
 
     # Test
-    result = await connect_wandb("invalid-api-key", None)
+    result = await connect_wandb("invalid-api-key", None, None)
 
     # Assertions
     assert result.status_code == 401
@@ -2871,7 +2871,7 @@ async def test_connect_wandb_null_viewer(mock_config_shared, mock_requests_post)
     mock_requests_post.return_value = mock_response
 
     # Test
-    result = await connect_wandb("invalid-api-key", None)
+    result = await connect_wandb("invalid-api-key", None, None)
 
     # Assertions
     assert result.status_code == 401
@@ -2902,7 +2902,7 @@ async def test_connect_wandb_unexpected_response(
     mock_requests_post.return_value = mock_response
 
     # Test
-    result = await connect_wandb("test-api-key", None)
+    result = await connect_wandb("test-api-key", None, None)
 
     # Assertions
     assert result.status_code == 400
@@ -2927,7 +2927,7 @@ async def test_connect_wandb_request_exception(mock_config_shared, mock_requests
     mock_requests_post.side_effect = Exception("Network error")
 
     # Test
-    result = await connect_wandb("test-api-key", None)
+    result = await connect_wandb("test-api-key", None, None)
 
     # Assertions
     assert result.status_code == 400

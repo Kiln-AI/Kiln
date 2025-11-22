@@ -154,11 +154,12 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
         }
-        # Add W&B config if API key is set
-        if Config.shared().wandb_api_key:
+        # Add W&B config if API key and entity are set
+        if Config.shared().wandb_api_key and Config.shared().wandb_entity:
             payload["wandbConfig"] = {
                 "enabled": True,
-                "project": "Kiln_AI",
+                "project": "kiln_ai",
+                "entity": Config.shared().wandb_entity,
                 "apiKey": Config.shared().wandb_api_key,
             }
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
