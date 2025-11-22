@@ -223,12 +223,13 @@
       description: "Track and visualize your experiments.",
       featured: false,
       api_key_steps: [
-        "Create a Weights & Biases account at https://wandb.ai, or host your own instance.",
+        "Create a Weights & Biases account at https://wandb.ai , or host your own instance.",
         "If you host your own instance, set the base URL below. Then create an API key and entering it below.",
         "If you use the hosted version, go to https://wandb.ai/settings#api, get your API key, and paste it below.",
+        "Enter your wandb entity. This is your user name or team name, more details in https://docs.wandb.ai/models/runs",
         "Click 'Connect'",
       ],
-      api_key_fields: ["API Key", "Base URL"],
+      api_key_fields: ["API Key", "Entity", "Base URL"],
       optional_fields: ["Base URL"],
     },
     {
