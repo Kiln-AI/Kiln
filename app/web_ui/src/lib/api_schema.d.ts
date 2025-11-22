@@ -2176,8 +2176,8 @@ export interface components {
         /** AppropriateToolUseProperties */
         AppropriateToolUseProperties: {
             /**
-             * Spec Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             spec_type: "appropriate_tool_use";
             /** Tool Id */
@@ -5198,13 +5198,13 @@ export interface components {
              * @description A description of the spec.
              */
             description: string;
+            /** @description The type of spec. */
+            type: components["schemas"]["SpecType"];
             /**
              * Properties
              * @description The properties of the spec.
              */
-            properties?: components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"] | null;
-            /** @description The type of spec. */
-            type: components["schemas"]["SpecType"];
+            properties?: (components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"]) | null;
             /**
              * @description The priority of the spec.
              * @default 1
@@ -5248,7 +5248,7 @@ export interface components {
             /** Description */
             description: string;
             /** Properties */
-            properties: components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"] | null;
+            properties: (components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"]) | null;
             type: components["schemas"]["SpecType"];
             priority: components["schemas"]["Priority"];
             status: components["schemas"]["SpecStatus"];
@@ -5751,8 +5751,8 @@ export interface components {
         /** UndesiredBehaviourProperties */
         UndesiredBehaviourProperties: {
             /**
-             * Spec Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             spec_type: "undesired_behaviour";
             /** Undesired Behaviour Guidelines */

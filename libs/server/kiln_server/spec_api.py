@@ -5,7 +5,7 @@ from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec import Spec, SpecStatus, SpecType
 from kiln_ai.datamodel.spec_properties import SpecProperties
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
 
@@ -25,7 +25,9 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 class SpecUpsertRequest(BaseModel):
     name: FilenameString
     description: str
-    properties: SpecProperties | None
+    properties: SpecProperties | None = Field(
+        discriminator="spec_type",
+    )
     type: SpecType
     priority: Priority
     status: SpecStatus
