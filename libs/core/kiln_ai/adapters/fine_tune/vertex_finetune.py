@@ -1,10 +1,6 @@
 import logging
 import time
-
-import vertexai
-from google.cloud import storage
-from google.cloud.aiplatform_v1beta1 import types as gca_types
-from vertexai.tuning import sft
+from typing import TYPE_CHECKING
 
 from kiln_ai.adapters.fine_tune.base_finetune import (
     BaseFinetuneAdapter,
@@ -13,8 +9,25 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
     FineTuneStatusType,
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
+from kiln_ai.core.dependencies import optional_import
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
+
+if TYPE_CHECKING:
+    import vertexai
+    from google.cloud import storage
+    from google.cloud.aiplatform_v1beta1 import types as gca_types
+    from vertexai.tuning import sft
+else:
+    google_cloud_storage = optional_import(
+        "google.cloud", "google_vertex", "google-cloud-storage"
+    )
+    storage = google_cloud_storage.storage
+    gca_types = optional_import(
+        "google.cloud.aiplatform_v1beta1", "google_vertex", "google-cloud-aiplatform"
+    )
+    vertexai = optional_import("vertexai", "google_vertex")
+    sft = vertexai.tuning.sft
 
 logger = logging.getLogger(__name__)
 

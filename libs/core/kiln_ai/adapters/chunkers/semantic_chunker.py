@@ -1,8 +1,4 @@
-from typing import List
-
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.core.node_parser import SemanticSplitterNodeParser
-from llama_index.core.schema import Document
+from typing import TYPE_CHECKING, List
 
 from kiln_ai.adapters.chunkers.base_chunker import (
     BaseChunker,
@@ -11,8 +7,21 @@ from kiln_ai.adapters.chunkers.base_chunker import (
 )
 from kiln_ai.adapters.chunkers.embedding_wrapper import KilnEmbeddingWrapper
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
+from kiln_ai.core.dependencies import optional_import
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.embedding import EmbeddingConfig
+
+if TYPE_CHECKING:
+    from llama_index.core.embeddings import (
+        BaseEmbedding,
+    )
+    from llama_index.core.node_parser import SemanticSplitterNodeParser
+    from llama_index.core.schema import Document
+else:
+    llama_index = optional_import("llama_index.core", "rag")
+    BaseEmbedding = llama_index.embeddings.BaseEmbedding
+    SemanticSplitterNodeParser = llama_index.node_parser.SemanticSplitterNodeParser
+    Document = llama_index.schema.Document
 
 
 class SemanticChunker(BaseChunker):

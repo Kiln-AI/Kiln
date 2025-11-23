@@ -2,16 +2,7 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Literal, Optional, Set, TypedDict
-
-from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.core.schema import BaseNode, TextNode
-from llama_index.core.vector_stores.types import (
-    VectorStoreQuery as LlamaIndexVectorStoreQuery,
-)
-from llama_index.core.vector_stores.types import VectorStoreQueryResult
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
+from typing import TYPE_CHECKING, List, Literal, Optional, Set, TypedDict
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -25,12 +16,36 @@ from kiln_ai.adapters.vector_store.lancedb_helpers import (
     lancedb_construct_from_config,
     store_type_to_lancedb_query_type,
 )
+from kiln_ai.core.dependencies import optional_import
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.env import temporary_env
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.lock import AsyncLockManager
+
+if TYPE_CHECKING:
+    from llama_index.core import StorageContext, VectorStoreIndex
+    from llama_index.core.schema import BaseNode, TextNode
+    from llama_index.core.vector_stores.types import (
+        VectorStoreQuery as LlamaIndexVectorStoreQuery,
+    )
+    from llama_index.core.vector_stores.types import VectorStoreQueryResult
+    from llama_index.vector_stores.lancedb import LanceDBVectorStore
+    from llama_index.vector_stores.lancedb.base import TableNotFoundError
+else:
+    llama_index = optional_import("llama_index.core", "rag")
+    StorageContext = llama_index.StorageContext
+    VectorStoreIndex = llama_index.VectorStoreIndex
+    BaseNode = llama_index.schema.BaseNode
+    TextNode = llama_index.schema.TextNode
+    VectorStoreQuery = llama_index.core.vector_stores.types.VectorStoreQuery
+    LlamaIndexVectorStoreQuery = VectorStoreQuery
+    VectorStoreQueryResult = llama_index.core.vector_stores.types.VectorStoreQueryResult
+
+    lancedb_vector_store = optional_import("llama_index.vector_stores.lancedb", "rag")
+    LanceDBVectorStore = lancedb_vector_store.LanceDBVectorStore
+    TableNotFoundError = lancedb_vector_store.base.TableNotFoundError
 
 table_lock_manager = AsyncLockManager()
 

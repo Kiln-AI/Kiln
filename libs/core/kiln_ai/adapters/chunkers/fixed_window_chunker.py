@@ -1,13 +1,18 @@
-from typing import List
-
-from llama_index.core.text_splitter import SentenceSplitter
+from typing import TYPE_CHECKING, List
 
 from kiln_ai.adapters.chunkers.base_chunker import (
     BaseChunker,
     ChunkingResult,
     TextChunk,
 )
+from kiln_ai.core.dependencies import optional_import
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+
+if TYPE_CHECKING:
+    from llama_index.core.text_splitter import SentenceSplitter
+else:
+    llama_index = optional_import("llama_index.core", "rag")
+    SentenceSplitter = llama_index.text_splitter.SentenceSplitter
 
 
 class FixedWindowChunker(BaseChunker):
