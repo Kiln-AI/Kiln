@@ -113,10 +113,22 @@ class LiteLlmAdapter(BaseAdapter):
             )
 
             # Make the completion call
+            print("--------------------------------")
+            print("Completion kwargs: ")
+            try:
+                print(json.dumps(completion_kwargs, indent=2, ensure_ascii=False))
+            except Exception as e:
+                print(f"Error dumping completion kwargs: {e}")
+                print(completion_kwargs)
+
             model_response, response_choice = await self.acompletion_checking_response(
-                **completion_kwargs
+                **completion_kwargs,
             )
 
+            print("~~~")
+            print("Model response: ")
+            print(json.dumps(model_response.model_dump(), indent=2, ensure_ascii=False))
+            print("--------------------------------")
             # count the usage
             usage += self.usage_from_response(model_response)
 
@@ -131,18 +143,20 @@ class LiteLlmAdapter(BaseAdapter):
                 )
 
             # Add message to messages, so it can be used in the next turn
-            if getattr(response_choice.message, "provider_specific_fields", None):
-                # We dump to dict because LiteLLMMessage object validation can be strict/buggy with extra fields
-                # like provider_specific_fields which are required for some providers (e.g. Gemini on OpenRouter)
-                msg_dict = response_choice.message.model_dump(exclude_none=True)
-                if "provider_specific_fields" in msg_dict:
-                    provider_specific_fields = msg_dict.pop("provider_specific_fields")
-                    # Flatten ALL provider fields (includes reasoning_details, reasoning, etc.)
-                    msg_dict.update(provider_specific_fields)
-
-                messages.append(LiteLLMMessage(**msg_dict))
-            else:
-                messages.append(response_choice.message)
+            msg_dict = response_choice.message.model_dump()
+            if (
+                "provider_specific_fields" in msg_dict
+                and msg_dict["provider_specific_fields"] is not None
+                and msg_dict["provider_specific_fields"]["reasoning_details"]
+                is not None
+            ):
+                msg_dict["reasoning_details"] = msg_dict["provider_specific_fields"][
+                    "reasoning_details"
+                ]
+                del msg_dict["provider_specific_fields"]
+            # remove keys not in response.choices[0].message.model_dump() except for reasoning_details
+            messages.append(msg_dict)  # pyright: ignore[reportArgumentType]
+            # messages.append(response_choice.message)  # pyright: ignore[reportArgumentType]
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
@@ -223,8 +237,6 @@ class LiteLlmAdapter(BaseAdapter):
                     {  # pyright: ignore[reportArgumentType]
                         "role": message.role,
                         "content": message.content,
-                        "reasoning_content": message.reasoning_content,
-                        "thinking_blocks": message.thinking_blocks,
                     }
                 )
 
