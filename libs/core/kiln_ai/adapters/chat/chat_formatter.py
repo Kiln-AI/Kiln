@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -15,6 +15,8 @@ COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
 class ChatMessage:
     role: Literal["system", "assistant", "user"]
     content: Optional[str]
+    reasoning_content: Optional[str] = None
+    thinking_blocks: Optional[List[Any]] = None
 
 
 @dataclass

@@ -1330,7 +1330,7 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 # Disabled as the API doesn't always return reasoning. Would be good to re-enable when it does.
-                # reasoning_capable=True,
+                reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 max_parallel_requests=2,
                 thinking_level="medium",

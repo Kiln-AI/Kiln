@@ -131,7 +131,18 @@ class LiteLlmAdapter(BaseAdapter):
                 )
 
             # Add message to messages, so it can be used in the next turn
-            messages.append(response_choice.message)
+            if getattr(response_choice.message, "provider_specific_fields", None):
+                # We dump to dict because LiteLLMMessage object validation can be strict/buggy with extra fields
+                # like provider_specific_fields which are required for some providers (e.g. Gemini on OpenRouter)
+                msg_dict = response_choice.message.model_dump(exclude_none=True)
+                if "provider_specific_fields" in msg_dict:
+                    provider_specific_fields = msg_dict.pop("provider_specific_fields")
+                    # Flatten ALL provider fields (includes reasoning_details, reasoning, etc.)
+                    msg_dict.update(provider_specific_fields)
+
+                messages.append(LiteLLMMessage(**msg_dict))
+            else:
+                messages.append(response_choice.message)
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
@@ -208,7 +219,14 @@ class LiteLlmAdapter(BaseAdapter):
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
                 # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
-                messages.append({"role": message.role, "content": message.content})  # type: ignore
+                messages.append(
+                    {  # pyright: ignore[reportArgumentType]
+                        "role": message.role,
+                        "content": message.content,
+                        "reasoning_content": message.reasoning_content,
+                        "thinking_blocks": message.thinking_blocks,
+                    }
+                )
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(
