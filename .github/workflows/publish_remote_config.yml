@@ -3,7 +3,7 @@ name: Publish Remote Config
 on:
   push:
     branches:
-      - cf_remote_config
+      - scosman/cf_remote_config
       - remote_config
 
 permissions:
