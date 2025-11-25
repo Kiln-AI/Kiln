@@ -81,6 +81,13 @@
     current_tag = ""
     user_opened_dropdown = false
   }
+
+  export function flush_pending_tag() {
+    if (current_tag && current_tag.trim().length > 0) {
+      const cleaned_tag = current_tag.trim().replace(/\s+/g, "_")
+      handle_tag_select(cleaned_tag)
+    }
+  }
 </script>
 
 <div class="w-full">
@@ -108,7 +115,7 @@
   </div>
 
   {#if show_dropdown}
-    <div class="flex flex-row gap-2 items-center">
+    <div class="flex flex-row gap-2 items-start">
       <TagDropdown
         bind:tag={current_tag}
         {project_id}
@@ -119,7 +126,7 @@
         focus_on_mount={user_opened_dropdown}
       />
       {#if show_close_button}
-        <div class="flex-none">
+        <div class="flex-none mt-2">
           <button
             class="btn btn-sm btn-circle text-xl font-medium"
             on:click={handle_close_dropdown}>✕</button

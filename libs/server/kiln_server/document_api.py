@@ -256,6 +256,7 @@ class ExtractionSummary(BaseModel):
     source: str
     output_content: str
     extractor: ExtractorSummary
+    output_content_truncated: bool
 
 
 class RagConfigWithSubConfigs(BaseModel):
@@ -689,17 +690,31 @@ class UpdateRagConfigRequest(BaseModel):
     is_archived: bool | None = None
 
 
+def truncate_output_content(
+    output_content: str | None, max_length: int = 100_000
+) -> str:
+    if output_content is None:
+        return ""
+    if len(output_content) > max_length:
+        return output_content[:max_length]
+    return output_content
+
+
 def build_extraction_summary(
     extraction: Extraction,
     output_content: str | None,
     extractor_config: ExtractorConfig,
+    max_length: int = 100_000,
 ) -> ExtractionSummary:
+    # we truncate the output content to avoid crashing the UI with large amounts of text
+    truncated_output_content = truncate_output_content(output_content, max_length)
+
     return ExtractionSummary(
         id=str(extraction.id),
         created_at=extraction.created_at,
         created_by=extraction.created_by,
         source=extraction.source,
-        output_content=output_content or "",
+        output_content=truncated_output_content,
         extractor=ExtractorSummary(
             id=str(extractor_config.id),
             name=extractor_config.name,
@@ -708,6 +723,7 @@ def build_extraction_summary(
             passthrough_mimetypes=extractor_config.passthrough_mimetypes,
             extractor_type=extractor_config.extractor_type,
         ),
+        output_content_truncated=len(output_content or "") > max_length,
     )
 
 
@@ -1339,6 +1355,43 @@ def connect_document_api(app: FastAPI):
         ).resolve()
 
         return FileResponse(path=path, filename=document.original_file.filename)
+
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}"
+    )
+    async def download_extraction(
+        project_id: str,
+        document_id: str,
+        extraction_id: str,
+    ) -> FileResponse:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+        extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
+        if not extraction:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extraction {extraction_id} not found",
+            )
+        if not extraction.output.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Extraction output path not found",
+            )
+        if not extraction.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Extraction path not found",
+            )
+        path = extraction.output.resolve_path(extraction.path.parent).resolve()
+        return FileResponse(
+            path=path,
+            filename=extraction.output.path.name,
+        )
 
     @app.post(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder"

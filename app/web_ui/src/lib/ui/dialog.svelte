@@ -40,8 +40,11 @@
     // Clear the error, so the dialog can be used again
     error = null
     dispatch("show")
+    const dialogElement = document.getElementById(id)
     // @ts-expect-error showModal is not a method on HTMLElement
-    document.getElementById(id)?.showModal()
+    dialogElement?.showModal()
+    // Focus the dialog itself to prevent auto-focus on the first link
+    dialogElement?.focus()
   }
 
   export function close() {
@@ -73,7 +76,7 @@
   }
 </script>
 
-<dialog {id} class="modal" on:close={() => dispatch("close")}>
+<dialog {id} class="modal" tabindex="-1" on:close={() => dispatch("close")}>
   <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
