@@ -63,7 +63,7 @@
       })
 
       // Success! Reload then navigate to the new prompt
-      await load_available_prompts()
+      await load_available_prompts(true)
       goto(`/prompts/${project_id}/${task_id}/saved/id::${data.id}`)
     } catch (e) {
       create_error = createKilnError(e)
