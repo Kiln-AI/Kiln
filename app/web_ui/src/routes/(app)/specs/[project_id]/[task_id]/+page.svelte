@@ -74,6 +74,28 @@
   let removeable_tags: Record<string, number> = {}
   let show_archived = false
 
+  type SortableColumn = "name" | "type" | "priority" | "status" | "created_at"
+  type TableColumn = {
+    key: string
+    label: string
+    sortable: boolean
+    sortKey?: SortableColumn
+  }
+  const tableColumns: TableColumn[] = [
+    { key: "name", label: "Name", sortable: true, sortKey: "name" },
+    { key: "description", label: "Description", sortable: false },
+    { key: "type", label: "Type", sortable: true, sortKey: "type" },
+    { key: "priority", label: "Priority", sortable: true, sortKey: "priority" },
+    { key: "status", label: "Status", sortable: true, sortKey: "status" },
+    { key: "tags", label: "Tags", sortable: false },
+    {
+      key: "created_at",
+      label: "Created At",
+      sortable: true,
+      sortKey: "created_at",
+    },
+  ]
+
   $: {
     const url = new URL(window.location.href)
     filter_tags = url.searchParams.getAll("tags") as string[]
@@ -210,9 +232,7 @@
     return 0
   }
 
-  function handleSort(
-    column: "name" | "type" | "priority" | "status" | "created_at",
-  ) {
+  function handleSort(column: SortableColumn) {
     let newDirection: "asc" | "desc" = "desc"
     if (sortColumn === column) {
       newDirection = sortDirection === "asc" ? "desc" : "asc"
@@ -220,6 +240,12 @@
     sortColumn = column
     sortDirection = newDirection
     filterAndSortSpecs()
+  }
+
+  function handleColumnClick(sortKey?: string) {
+    if (sortKey) {
+      handleSort(sortKey as SortableColumn)
+    }
   }
 
   function remove_filter_tag(tag: string) {
@@ -582,73 +608,27 @@
                     {/key}
                   </th>
                 {/if}
-                <th
-                  on:click={() => handleSort("name")}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  Name
-                  <span class="inline-block w-3 text-center">
-                    {sortColumn === "name"
-                      ? sortDirection === "asc"
-                        ? "▲"
-                        : "▼"
-                      : "\u200B"}
-                  </span>
-                </th>
-                <th>Description</th>
-                <th
-                  on:click={() => handleSort("type")}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  Type
-                  <span class="inline-block w-3 text-center">
-                    {sortColumn === "type"
-                      ? sortDirection === "asc"
-                        ? "▲"
-                        : "▼"
-                      : "\u200B"}
-                  </span>
-                </th>
-                <th
-                  on:click={() => handleSort("priority")}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  Priority
-                  <span class="inline-block w-3 text-center">
-                    {sortColumn === "priority"
-                      ? sortDirection === "asc"
-                        ? "▲"
-                        : "▼"
-                      : "\u200B"}
-                  </span>
-                </th>
-                <th
-                  on:click={() => handleSort("status")}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  Status
-                  <span class="inline-block w-3 text-center">
-                    {sortColumn === "status"
-                      ? sortDirection === "asc"
-                        ? "▲"
-                        : "▼"
-                      : "\u200B"}
-                  </span>
-                </th>
-                <th>Tags</th>
-                <th
-                  on:click={() => handleSort("created_at")}
-                  class="hover:bg-base-200 cursor-pointer"
-                >
-                  Created At
-                  <span class="inline-block w-3 text-center">
-                    {sortColumn === "created_at"
-                      ? sortDirection === "asc"
-                        ? "▲"
-                        : "▼"
-                      : "\u200B"}
-                  </span>
-                </th>
+                {#each tableColumns as column}
+                  {#if column.sortable && column.sortKey}
+                    <th
+                      on:click={() => handleColumnClick(column.sortKey)}
+                      class="hover:bg-base-200 cursor-pointer"
+                    >
+                      {column.label}
+                      <span class="inline-block w-3 text-center">
+                        {sortColumn === column.sortKey
+                          ? sortDirection === "asc"
+                            ? "▲"
+                            : "▼"
+                          : "\u200B"}
+                      </span>
+                    </th>
+                  {:else}
+                    <th>
+                      {column.label}
+                    </th>
+                  {/if}
+                {/each}
               </tr>
             </thead>
             <tbody>

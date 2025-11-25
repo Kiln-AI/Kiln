@@ -7,11 +7,14 @@
   import CarouselSection from "$lib/ui/carousel_section.svelte"
   import AppPage from "../../../../../app_page.svelte"
   import { formatSpecTypeName } from "$lib/utils/formatters"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
   let not_implemented_dialog: Dialog | null = null
+  let new_spec_dialog: Dialog | null = null
 
   function show_not_implemented() {
     not_implemented_dialog?.show()
@@ -154,20 +157,25 @@
     "jailbreak",
   ])
 
+  let current_params = new URLSearchParams()
+
   function get_on_select(
     spec_type: SpecType | null,
-    description: string,
+    template_description: string,
   ): () => void {
     if (!spec_type) {
       return show_not_implemented
     }
     if (existing_spec_types.has(spec_type)) {
       return () => {
-        const params = new URLSearchParams({
+        current_params = new URLSearchParams({
           type: spec_type,
-          description: description,
+          template_description: template_description,
         })
-        goto(`/specs/${project_id}/${task_id}/create_spec?${params.toString()}`)
+        // new_spec_dialog?.show()
+        goto(
+          `/specs/${project_id}/${task_id}/create_spec?${current_params.toString()}`,
+        )
       }
     } else {
       return show_not_implemented
@@ -187,6 +195,9 @@
   }))
 
   const use_carousel_for_spec_templates = true
+
+  // let name = ""
+  // let description = ""
 </script>
 
 <AppPage
@@ -223,3 +234,29 @@
     </div>
   </div></AppPage
 >
+
+<!-- <Dialog bind:this={new_spec_dialog} title="New Spec">
+  <FormContainer
+    submit_label="Next"
+    on:submit={() => {
+      current_params.set("name", name)
+      current_params.set("description", description)
+      goto(
+        `/specs/${project_id}/${task_id}/create_spec?${current_params.toString()}`,
+      )
+    }}
+  >
+    <FormElement
+      label="Spec Name"
+      description="A short name for your own reference."
+      id="spec_name"
+      bind:value={name}
+    />
+    <FormElement
+      label="Spec Description"
+      description="A short description for your own reference."
+      id="spec_description"
+      bind:value={description}
+    />
+  </FormContainer>
+</Dialog> -->
