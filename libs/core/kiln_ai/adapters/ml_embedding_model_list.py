@@ -43,6 +43,7 @@ class KilnEmbeddingModelFamily(str, Enum):
     mixedbread = "mixedbread"
     netease = "netease"
     mistral = "mistral"
+    sentence_transformers = "sentence_transformers"
 
 
 class EmbeddingModelName(str, Enum):
@@ -65,9 +66,12 @@ class EmbeddingModelName(str, Enum):
     baai_bge_small_1_5 = "baai_bge_small_1_5"
     baai_bge_base_1_5 = "baai_bge_base_1_5"
     baai_bge_large_1_5 = "baai_bge_large_1_5"
+    baai_bge_m3 = "baai_bge_m3"
     m2_bert_retrieval_32k = "m2_bert_retrieval_32k"
     gte_modernbert_base = "gte_modernbert_base"
     multilingual_e5_large_instruct = "multilingual_e5_large_instruct"
+    e5_base_v2 = "e5_base_v2"
+    e5_large_v2 = "e5_large_v2"
     thenlper_gte_large = "thenlper_gte_large"
     thenlper_gte_base = "thenlper_gte_base"
     where_is_ai_uae_large_v1 = "where_is_ai_uae_large_v1"
@@ -76,6 +80,15 @@ class EmbeddingModelName(str, Enum):
     openai_text_embedding_ada_002 = "openai_text_embedding_ada_002"
     mistral_embed_text_2312 = "mistral_embed_text_2312"
     mistral_codestral_embed_2505 = "mistral_codestral_embed_2505"
+    sentence_transformers_all_minilm_l6_v2 = "sentence_transformers_all_minilm_l6_v2"
+    sentence_transformers_all_mpnet_base_v2 = "sentence_transformers_all_mpnet_base_v2"
+    sentence_transformers_multi_qa_mpnet_base_dot_v1 = (
+        "sentence_transformers_multi_qa_mpnet_base_dot_v1"
+    )
+    sentence_transformers_all_minilm_l12_v2 = "sentence_transformers_all_minilm_l12_v2"
+    sentence_transformers_paraphrase_minilm_l6_v2 = (
+        "sentence_transformers_paraphrase_minilm_l6_v2"
+    )
 
 
 class KilnEmbeddingModelProvider(BaseModel):
@@ -405,6 +418,13 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="baai/bge-large-en-v1.5",
+                n_dimensions=1024,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # BAAI-Bge-Base-1.5
@@ -427,6 +447,13 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="baai/bge-base-en-v1.5",
+                n_dimensions=768,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # BAAI-Bge-Small-1.5
@@ -438,6 +465,96 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="BAAI/bge-small-en-v1.5",
+                n_dimensions=384,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # BAAI-Bge-M3
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.baai,
+        name=EmbeddingModelName.baai_bge_m3,
+        friendly_name="BAAI Bge M3",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="baai/bge-m3",
+                n_dimensions=1024,
+                max_input_tokens=8192,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Sentence Transformers all-MiniLM-L6-v2
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.sentence_transformers,
+        name=EmbeddingModelName.sentence_transformers_all_minilm_l6_v2,
+        friendly_name="Sentence Transformers All MiniLM L6 V2",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sentence-transformers/all-minilm-l6-v2",
+                n_dimensions=384,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Sentence Transformers all-mpnet-base-v2
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.sentence_transformers,
+        name=EmbeddingModelName.sentence_transformers_all_mpnet_base_v2,
+        friendly_name="Sentence Transformers All MPNet Base V2",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sentence-transformers/all-mpnet-base-v2",
+                n_dimensions=768,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Sentence Transformers multi-qa-mpnet-base-dot-v1
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.sentence_transformers,
+        name=EmbeddingModelName.sentence_transformers_multi_qa_mpnet_base_dot_v1,
+        friendly_name="Sentence Transformers Multi QA MPNet Base Dot V1",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sentence-transformers/multi-qa-mpnet-base-dot-v1",
+                n_dimensions=768,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Sentence Transformers all-MiniLM-L12-v2
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.sentence_transformers,
+        name=EmbeddingModelName.sentence_transformers_all_minilm_l12_v2,
+        friendly_name="Sentence Transformers All MiniLM L12 V2",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sentence-transformers/all-minilm-l12-v2",
+                n_dimensions=384,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # Sentence Transformers paraphrase-MiniLM-L6-v2
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.sentence_transformers,
+        name=EmbeddingModelName.sentence_transformers_paraphrase_minilm_l6_v2,
+        friendly_name="Sentence Transformers Paraphrase MiniLM L6 V2",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="sentence-transformers/paraphrase-minilm-l6-v2",
                 n_dimensions=384,
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
@@ -487,6 +604,43 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="intfloat/multilingual-e5-large",
+                n_dimensions=1024,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # E5 Base v2
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.intfloat,
+        name=EmbeddingModelName.e5_base_v2,
+        friendly_name="E5 Base v2",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="intfloat/e5-base-v2",
+                n_dimensions=768,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+        ],
+    ),
+    # E5 Large v2
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.intfloat,
+        name=EmbeddingModelName.e5_large_v2,
+        friendly_name="E5 Large v2",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="intfloat/e5-large-v2",
+                n_dimensions=1024,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # Thenlper Gte Large
@@ -502,6 +656,13 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="thenlper/gte-large",
+                n_dimensions=1024,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
         ],
     ),
     # Thenlper Gte Base
@@ -512,6 +673,13 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
         providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.fireworks_ai,
+                model_id="thenlper/gte-base",
+                n_dimensions=768,
+                max_input_tokens=512,
+                supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
                 model_id="thenlper/gte-base",
                 n_dimensions=768,
                 max_input_tokens=512,
