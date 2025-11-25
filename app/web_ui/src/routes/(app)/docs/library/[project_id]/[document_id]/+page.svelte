@@ -18,6 +18,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -398,13 +399,43 @@
       label: "Close",
       isCancel: true,
     },
+    {
+      label: "Download",
+      isPrimary: true,
+      action: () => {
+        if (!dialog_extraction) {
+          return false
+        }
+        window.open(
+          `${base_url}/api/projects/${project_id}/documents/${document_id}/download_extraction/${dialog_extraction.id}`,
+          "_blank",
+        )
+        return false
+      },
+    },
   ]}
 >
   {#if dialog_extraction}
+    {#if dialog_extraction.output_content_truncated}
+      <div class="mb-4 flex flex-row gap-2">
+        <Warning
+          warning_message="The extraction output cannot be displayed in full because it is too long. To view the full output, please download the document."
+          warning_color="warning"
+          tight={true}
+          large_icon={false}
+          warning_icon="exclaim"
+        />
+      </div>
+    {/if}
     <div class="mb-2 text-sm text-gray-500">
       The extractor produced the following output:
     </div>
-    <Output raw_output={dialog_extraction.output_content} />
+    <Output
+      raw_output={dialog_extraction.output_content +
+        (dialog_extraction.output_content_truncated
+          ? "\n\n[EXTRACTION IS TOO LONG TO DISPLAY - DOWNLOAD TO VIEW FULL OUTPUT]"
+          : "")}
+    />
   {:else}
     <div class="text-sm text-gray-500">No extraction output found.</div>
   {/if}

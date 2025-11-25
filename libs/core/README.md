@@ -37,6 +37,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Understanding the Kiln Data Model](#understanding-the-kiln-data-model)
   - [Datamodel Overview](#datamodel-overview)
   - [Load a Project](#load-a-project)
+  - [Run a Kiln Task from Python](#run-a-kiln-task-from-python)
   - [Load an Existing Dataset into a Kiln Task Dataset](#load-an-existing-dataset-into-a-kiln-task-dataset)
   - [Using your Kiln Dataset in a Notebook or Project](#using-your-kiln-dataset-in-a-notebook-or-project)
   - [Using Kiln Dataset in Pandas](#using-kiln-dataset-in-pandas)
@@ -57,7 +58,7 @@ pip install kiln-ai
 
 ## Connecting AI Providers (OpenAI, OpenRouter, Ollama, etc)
 
-The easiest way to connect AI providers is to use the Kiln app UI. Once connected in the UI, credentials will be stored to `~/.kiln_ai/settings.yml`, which will be available to the library.
+The easiest way to connect AI providers is to use the Kiln app UI. Once connected in the UI, credentials will be stored to `~/.kiln_ai/settings.yaml`, which will be available to the library.
 
 For configuring credentials from code or connecting custom servers/model, see [Adding Custom Model or AI Provider from Code](#adding-custom-model-or-ai-provider-from-code).
 
@@ -100,6 +101,41 @@ tasks = project.tasks()
 for task in tasks:
     print("Task: ", task.name, " - ", task.description)
     print("Total dataset size:", len(task.runs()))
+```
+
+### Run a Kiln Task from Python
+
+If you've already created a Kiln task and want to run it as part of a Python app you can follow this example.
+
+Prerequisites:
+
+- Already have a Kiln Task created and saved to disk at `TASK_PATH`. It doesn't matter if you created it using the Kiln app or the library.
+- Set a default run configuration in the Kiln UI specifying how to run the task: model, AI provider, etc. Alternatively you can create a RunConfigProperties instance in code.
+- Set up any API keys required for the task. If running on the same machine as the Kiln app, these will already be saved in `~/.kiln_ai/settings.yaml` and will be loaded automatically. If running on a server, you can set the required environment variables (see `libs/core/kiln_ai/utils/config.py` for a list).
+- If your task uses RAG, ensure you have run search indexing on this machine with the Kiln UI or via the library.
+
+```python
+from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.datamodel.task import Task
+
+async def run_kiln_task(input: str) -> dict[str, Any] | str:
+    # Load your task from it's path on the filesystem
+    task = Task.load_from_file(TASK_PATH)
+    # Here we get the default run config from the task, which you can set in the UI. Alternatively you could pass a RunConfigProperties object with parameters like the model, temperature, etc.
+    run_config = next(c for c in task.run_configs() if c.id == task.default_run_config_id)
+
+    # An adapter can run a task
+    adapter = adapter_for_task(
+        task,
+        run_config_properties=run_config.run_config_properties,
+    )
+
+    task_run, run_output = await adapter.invoke_returning_run_output(input)
+
+    # Optional: can inspect the task run to see usage data (cost, tokens, etc.)
+    #print(f"Task run cost: {task_run.usage.cost}")
+
+    return run_output.output
 ```
 
 ### Load an Existing Dataset into a Kiln Task Dataset
@@ -280,7 +316,7 @@ See our docs for more information, including how to add these from the UI:
 - [Custom Models From Existing Providers](https://docs.kiln.tech/docs/models-and-ai-providers#custom-models-from-existing-providers)
 - [Custom OpenAI Compatible Servers](https://docs.kiln.tech/docs/models-and-ai-providers#custom-openai-compatible-servers)
 
-You can also add these from code. The kiln_ai.utils.Config class helps you manage the Kiln config file (stored at `~/.kiln_settings/config.yaml`):
+You can also add these from code. The kiln_ai.utils.Config class helps you manage the Kiln config file (stored at `~/.kiln_ai/settings.yaml`):
 
 ```python
 # Addding an OpenAI compatible provider
