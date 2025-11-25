@@ -70,6 +70,7 @@ class EmbeddingModelName(str, Enum):
     m2_bert_retrieval_32k = "m2_bert_retrieval_32k"
     gte_modernbert_base = "gte_modernbert_base"
     multilingual_e5_large_instruct = "multilingual_e5_large_instruct"
+    multilingual_e5_large = "multilingual_e5_large"
     e5_base_v2 = "e5_base_v2"
     e5_large_v2 = "e5_large_v2"
     thenlper_gte_large = "thenlper_gte_large"
@@ -592,6 +593,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
         ],
     ),
     # Multilingual E5 Large Instruct
+    # https://huggingface.co/intfloat/multilingual-e5-large-instruct
     KilnEmbeddingModel(
         family=KilnEmbeddingModelFamily.intfloat,
         name=EmbeddingModelName.multilingual_e5_large_instruct,
@@ -604,6 +606,15 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=512,
                 supports_custom_dimensions=False,
             ),
+        ],
+    ),
+    # Multilingual E5 Large
+    # https://huggingface.co/intfloat/multilingual-e5-large
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.intfloat,
+        name=EmbeddingModelName.multilingual_e5_large,
+        friendly_name="Multilingual E5 Large",
+        providers=[
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="intfloat/multilingual-e5-large",
