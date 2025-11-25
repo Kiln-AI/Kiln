@@ -58,6 +58,12 @@ def pytest_addoption(parser):
         help="run tests that make paid API calls",
     )
     parser.addoption(
+        "--runslow",
+        action="store_true",
+        default=False,
+        help="run slow tests",
+    )
+    parser.addoption(
         "--runsinglewithoutchecks",
         action="store_true",
         default=False,
