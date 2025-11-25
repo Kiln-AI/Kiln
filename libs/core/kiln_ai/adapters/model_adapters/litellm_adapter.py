@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import logging
@@ -595,6 +596,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         assistant_output_from_toolcall: str | None = None
         tool_call_response_messages: list[ChatCompletionToolMessageParamWrapper] = []
+        tool_run_coroutines = []
 
         for tool_call in tool_calls:
             # Kiln "task_response" tool is used for returning structured output via tool calls.
@@ -635,18 +637,24 @@ class LiteLlmAdapter(BaseAdapter):
             context = ToolCallContext(
                 allow_saving=self.base_adapter_config.allow_saving
             )
-            result = await tool.run(context, **parsed_args)
 
-            tool_call_response_messages.append(
-                ChatCompletionToolMessageParamWrapper(
+            async def run_tool_and_format(
+                t=tool, c=context, args=parsed_args, tc_id=tool_call.id
+            ):
+                result = await t.run(c, **args)
+                return ChatCompletionToolMessageParamWrapper(
                     role="tool",
-                    tool_call_id=tool_call.id,
+                    tool_call_id=tc_id,
                     content=result.output,
                     kiln_task_tool_data=result.kiln_task_tool_data
                     if isinstance(result, KilnTaskToolResult)
                     else None,
                 )
-            )
+
+            tool_run_coroutines.append(run_tool_and_format())
+
+        if tool_run_coroutines:
+            tool_call_response_messages = await asyncio.gather(*tool_run_coroutines)
 
         if (
             assistant_output_from_toolcall is not None
