@@ -108,6 +108,13 @@ def pytest_collection_modifyitems(config, items):
             if "paid" in item.keywords:
                 item.add_marker(skip_paid)
 
+    # Mark tests that use slow services as skipped unless --runslow is passed
+    if not config.getoption("--runslow"):
+        skip_slow = pytest.mark.skip(reason="need --runslow option to run")
+        for item in items:
+            if "slow" in item.keywords:
+                item.add_marker(skip_slow)
+
     # Mark tests that use ollama server as skipped unless --ollama is passed
     if not config.getoption("--ollama"):
         skip_ollama = pytest.mark.skip(reason="need --ollama option to run")
