@@ -3,7 +3,7 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.spec import Spec, SpecStatus, SpecType
+from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
@@ -25,10 +25,9 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 class SpecUpsertRequest(BaseModel):
     name: FilenameString
     description: str
-    properties: SpecProperties | None = Field(
+    properties: SpecProperties = Field(
         discriminator="spec_type",
     )
-    type: SpecType
     priority: Priority
     status: SpecStatus
     tags: List[str]
@@ -46,7 +45,6 @@ def connect_spec_api(app: FastAPI):
             name=spec_data.name,
             description=spec_data.description,
             properties=spec_data.properties,
-            type=spec_data.type,
             priority=spec_data.priority,
             status=spec_data.status,
             tags=spec_data.tags,
@@ -72,7 +70,6 @@ def connect_spec_api(app: FastAPI):
 
         spec.name = spec_data.name
         spec.description = spec_data.description
-        spec.type = spec_data.type
         spec.properties = spec_data.properties
         spec.priority = spec_data.priority
         spec.status = spec_data.status

@@ -89,9 +89,9 @@
 </script>
 
 <AppPage
-  title="{spec?.type ? `${formatSpecType(spec.type)}: ` : ''}{spec?.name
-    ? `${spec.name}`
-    : ''}"
+  title="{spec?.properties?.spec_type
+    ? `${formatSpecType(spec.properties.spec_type)}: `
+    : ''}{spec?.name ? `${spec.name}` : ''}"
   subtitle={spec?.description}
   breadcrumbs={[
     {

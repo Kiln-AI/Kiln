@@ -18,7 +18,7 @@
 
   let name = ""
   let description = ""
-  let spec_type: SpecType = "desired_behaviour"
+  let spec_type: SpecType = SpecType.desired_behaviour
   $: {
     const type_param = $page.url.searchParams.get("type")
     if (type_param) {
@@ -41,8 +41,7 @@
           body: {
             name,
             description,
-            properties: null,
-            type: spec_type,
+            properties: { spec_type: spec_type },
             priority: 1,
             status: "active",
             tags: [],

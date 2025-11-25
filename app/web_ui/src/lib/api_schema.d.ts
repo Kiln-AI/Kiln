@@ -2251,6 +2251,14 @@ export interface components {
              */
             chain_of_thought_instructions?: string | null;
         };
+        /** BiasProperties */
+        BiasProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "bias";
+        };
         /** Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post */
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
@@ -2539,6 +2547,22 @@ export interface components {
              * @enum {string}
              */
             type: "cohere_compatible";
+        };
+        /** CompletenessProperties */
+        CompletenessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "completeness";
+        };
+        /** ConsistencyProperties */
+        ConsistencyProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "consistency";
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -3076,6 +3100,14 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DesiredBehaviourProperties */
+        DesiredBehaviourProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "desired_behaviour";
+        };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
             /** Message */
@@ -3762,6 +3794,14 @@ export interface components {
          * @enum {string}
          */
         ExtractorType: "litellm";
+        /** FactualCorrectnessProperties */
+        FactualCorrectnessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "factual_correctness";
+        };
         /** File */
         File: {
             file: components["schemas"]["FileFile"];
@@ -4041,6 +4081,14 @@ export interface components {
              */
             chunk_overlap: number;
         };
+        /** FormattingProperties */
+        FormattingProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "formatting";
+        };
         /** Function */
         Function: {
             /** Arguments */
@@ -4068,6 +4116,14 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HallucinationsProperties */
+        HallucinationsProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "hallucinations";
+        };
         /** ImageURL */
         ImageURL: {
             /** Url */
@@ -4087,6 +4143,22 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** IntermediateReasoningProperties */
+        IntermediateReasoningProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "intermediate_reasoning";
+        };
+        /** JailbreakProperties */
+        JailbreakProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "jailbreak";
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -4330,6 +4402,14 @@ export interface components {
             /** Is Archived */
             is_archived: boolean;
         };
+        /** LocalizationProperties */
+        LocalizationProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "localization";
+        };
         /** LogMessage */
         LogMessage: {
             /**
@@ -4343,6 +4423,14 @@ export interface components {
              * @description The message to display to the user
              */
             message: string;
+        };
+        /** MaliciousnessProperties */
+        MaliciousnessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "maliciousness";
         };
         /** MeanUsage */
         MeanUsage: {
@@ -4405,6 +4493,14 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        /** NsfwProperties */
+        NsfwProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "nsfw";
+        };
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -4621,6 +4717,14 @@ export interface components {
             name: string;
             /** Chain Of Thought */
             chain_of_thought: boolean;
+        };
+        /** PromptLeakageProperties */
+        PromptLeakageProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "prompt_leakage";
         };
         /** PromptResponse */
         PromptResponse: {
@@ -4878,6 +4982,14 @@ export interface components {
         RatingOptionResponse: {
             /** Options */
             options: components["schemas"]["RatingOption"][];
+        };
+        /** ReferenceAnswerAccuracyProperties */
+        ReferenceAnswerAccuracyProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "reference_answer_accuracy";
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5217,13 +5329,11 @@ export interface components {
              * @description A description of the spec.
              */
             description: string;
-            /** @description The type of spec. */
-            type: components["schemas"]["SpecType"];
             /**
              * Properties
              * @description The properties of the spec.
              */
-            properties?: (components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"]) | null;
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["UndesiredBehaviourProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["IntermediateReasoningProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ConsistencyProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             /**
              * @description The priority of the spec.
              * @default 1
@@ -5254,12 +5364,6 @@ export interface components {
          * @enum {string}
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
-        /**
-         * SpecType
-         * @description Defines the type of spec.
-         * @enum {string}
-         */
-        SpecType: "desired_behaviour" | "undesired_behaviour" | "appropriate_tool_use" | "intermediate_reasoning" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "consistency" | "tone" | "formatting" | "localization" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /** SpecUpsertRequest */
         SpecUpsertRequest: {
             /** Name */
@@ -5267,8 +5371,7 @@ export interface components {
             /** Description */
             description: string;
             /** Properties */
-            properties: (components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["UndesiredBehaviourProperties"]) | null;
-            type: components["schemas"]["SpecType"];
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["UndesiredBehaviourProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["IntermediateReasoningProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ConsistencyProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             priority: components["schemas"]["Priority"];
             status: components["schemas"]["SpecStatus"];
             /** Tags */
@@ -5291,6 +5394,14 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /** TabooProperties */
+        TabooProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "taboo";
+        };
         /**
          * Task
          * @description Represents a specific task to be performed, with associated requirements and validation rules.
@@ -5711,6 +5822,14 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** ToneProperties */
+        ToneProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "tone";
+        };
         /** ToolApiDescription */
         ToolApiDescription: {
             /** Id */
@@ -5766,6 +5885,14 @@ export interface components {
              * @description The IDs of the tools available to the task.
              */
             tools: string[];
+        };
+        /** ToxicityProperties */
+        ToxicityProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "toxicity";
         };
         /** UndesiredBehaviourProperties */
         UndesiredBehaviourProperties: {

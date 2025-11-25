@@ -7,7 +7,12 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.spec import Spec, SpecType
+from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec_properties import (
+    DesiredBehaviourProperties,
+    SpecType,
+    ToxicityProperties,
+)
 from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 
@@ -344,10 +349,11 @@ def test_task_specs_relationship(tmp_path):
     )
     task.save_to_file()
 
+    properties = DesiredBehaviourProperties(spec_type=SpecType.desired_behaviour)
     spec = Spec(
         name="Test Spec",
         description="The system should behave correctly",
-        type=SpecType.desired_behaviour,
+        properties=properties,
         parent=task,
     )
     spec.save_to_file()
@@ -357,7 +363,7 @@ def test_task_specs_relationship(tmp_path):
     assert len(specs) == 1
     assert specs[0].name == "Test Spec"
     assert specs[0].description == "The system should behave correctly"
-    assert specs[0].type == SpecType.desired_behaviour
+    assert specs[0].properties["spec_type"] == SpecType.desired_behaviour
 
 
 def test_task_specs_readonly(tmp_path):
@@ -367,10 +373,11 @@ def test_task_specs_readonly(tmp_path):
     )
     task.save_to_file()
 
+    properties = ToxicityProperties(spec_type=SpecType.toxicity)
     spec = Spec(
         name="Readonly Spec",
         description="System should handle readonly correctly",
-        type=SpecType.toxicity,
+        properties=properties,
         parent=task,
     )
     spec.save_to_file()

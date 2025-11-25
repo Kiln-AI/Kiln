@@ -40,6 +40,74 @@ class SpecType(str, Enum):
     prompt_leakage = "prompt_leakage"
 
 
+class DesiredBehaviourProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.desired_behaviour]
+
+
+class IntermediateReasoningProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.intermediate_reasoning]
+
+
+class ReferenceAnswerAccuracyProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.reference_answer_accuracy]
+
+
+class FactualCorrectnessProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.factual_correctness]
+
+
+class HallucinationsProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.hallucinations]
+
+
+class CompletenessProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.completeness]
+
+
+class ConsistencyProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.consistency]
+
+
+class ToneProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.tone]
+
+
+class FormattingProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.formatting]
+
+
+class LocalizationProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.localization]
+
+
+class ToxicityProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.toxicity]
+
+
+class BiasProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.bias]
+
+
+class MaliciousnessProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.maliciousness]
+
+
+class NsfwProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.nsfw]
+
+
+class TabooProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.taboo]
+
+
+class JailbreakProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.jailbreak]
+
+
+class PromptLeakageProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.prompt_leakage]
+
+
 class AppropriateToolUseProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.appropriate_tool_use]
     tool_id: str
@@ -106,5 +174,23 @@ UndesiredBehaviourPropertiesValidator = Annotated[
 ]
 
 SpecProperties = (
-    AppropriateToolUsePropertiesValidator | UndesiredBehaviourPropertiesValidator
+    DesiredBehaviourProperties
+    | UndesiredBehaviourPropertiesValidator
+    | AppropriateToolUsePropertiesValidator
+    | IntermediateReasoningProperties
+    | ReferenceAnswerAccuracyProperties
+    | FactualCorrectnessProperties
+    | HallucinationsProperties
+    | CompletenessProperties
+    | ConsistencyProperties
+    | ToneProperties
+    | FormattingProperties
+    | LocalizationProperties
+    | ToxicityProperties
+    | BiasProperties
+    | MaliciousnessProperties
+    | NsfwProperties
+    | TabooProperties
+    | JailbreakProperties
+    | PromptLeakageProperties
 )

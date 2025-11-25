@@ -6,7 +6,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
+from kiln_ai.datamodel.spec_properties import SpecProperties
 
 
 class SpecStatus(str, Enum):
@@ -23,11 +23,7 @@ class Spec(KilnParentedModel):
 
     name: FilenameString = Field(description="The name of the spec.", min_length=1)
     description: str = Field(description="A description of the spec.", min_length=1)
-    type: SpecType = Field(
-        description="The type of spec.",
-    )
-    properties: SpecProperties | None = Field(
-        default=None,
+    properties: SpecProperties = Field(
         description="The properties of the spec.",
         discriminator="spec_type",
     )
@@ -56,14 +52,4 @@ class Spec(KilnParentedModel):
             if " " in tag:
                 raise ValueError("tags cannot contain spaces. Try underscores.")
 
-        return self
-
-    @model_validator(mode="after")
-    def validate_type_matches_properties(self) -> Self:
-        if self.properties is not None:
-            properties_type = self.properties.get("spec_type")
-            if properties_type != self.type:
-                raise ValueError(
-                    f"Spec type mismatch: spec.type is '{self.type}' but properties.spec_type is '{properties_type}'"
-                )
         return self
