@@ -15,10 +15,12 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  let spec_type: SpecType = "desired_behaviour"
+  let spec_type: SpecType = "behaviour"
   let spec_template: string | undefined = undefined
   let spec_definition: string | undefined = undefined
   let name = ""
+
+  let tool_function_name: string | undefined = undefined
 
   onMount(() => {
     const spec_type_param = $page.url.searchParams.get("type")
@@ -28,6 +30,8 @@
     name = formatSpecTypeName(spec_type)
     spec_template = $page.url.searchParams.get("template") || undefined
     spec_definition = spec_template
+    tool_function_name =
+      $page.url.searchParams.get("tool_function_name") || undefined
   })
 
   let create_error: KilnError | null = null
@@ -96,6 +100,12 @@
       bind:submitting
       warn_before_unload={!!(!complete && (spec_definition || name))}
     >
+      {#if tool_function_name}
+        <!-- TODO: Display tool name somehow -->
+        <span class="text-sm text-gray-500"
+          >Tool Function Name: {tool_function_name}</span
+        >
+      {/if}
       <FormElement
         label="Spec Name"
         description="A short name for your own reference."

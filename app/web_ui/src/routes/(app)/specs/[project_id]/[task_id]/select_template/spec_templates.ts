@@ -1,6 +1,6 @@
 import type { SpecType } from "$lib/types"
 
-type SpecTemplateData = {
+export type SpecTemplateData = {
   spec_type: SpecType
   description: string
   template: string
@@ -85,7 +85,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "appropriate_tool_use",
         description: "Specify when and how the model should invoke a tool.",
-        template: `The model must appropriately invoke the specified tool. This means it should call the tool with correct parameters at the appropriate time, following the tool usage guidelines.
+        template: `The model must appropriately invoke the specified tool: <tool_function_name>. This means it should call the tool with correct parameters at the appropriate time, following the tool usage guidelines.
 
 ## Guidelines
 - [Describe when to use the tool, e.g., "Questions asking for recipes, dish suggestions, or what to cook with specific ingredients"]
