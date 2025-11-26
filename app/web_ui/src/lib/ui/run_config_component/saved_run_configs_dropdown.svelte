@@ -29,6 +29,7 @@
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import { provider_name_from_id } from "$lib/stores"
 
   export let title: string = "Run Configuration"
   export let project_id: string
@@ -148,11 +149,16 @@
       }
     }
 
+    // Exlcude finetune run configs
     const other_task_run_configs = (
       run_configs_by_task_composite_id[
         get_task_composite_id(project_id, current_task.id ?? "")
       ] ?? []
-    ).filter((config) => config.id !== default_run_config_id)
+    ).filter(
+      (config) =>
+        config.id !== default_run_config_id &&
+        !config.id?.startsWith("finetune_run_config::"),
+    )
     if (other_task_run_configs.length > 0) {
       saved_configuration_options.push(
         ...other_task_run_configs.map((config) => ({
@@ -168,6 +174,25 @@
       options.push({
         label: "Saved Configurations",
         options: saved_configuration_options,
+      })
+    }
+
+    // Add finetune run configs only if selected_finetune_id is set
+    const finetune_run_configs = (
+      run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id ?? "")
+      ] ?? []
+    ).filter((config) => config.id?.startsWith("finetune_run_config::"))
+
+    if (finetune_run_configs.length > 0) {
+      options.push({
+        label: "Fine-Tune Configuration",
+        options: finetune_run_configs.map((config) => ({
+          value: config.id ?? "",
+          label: `${config.name} (${provider_name_from_id(config.run_config_properties.model_provider_name)})`,
+          description: `Base Model: ${config.run_config_properties.model_name},
+            Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
+        })),
       })
     }
 

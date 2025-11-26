@@ -58,6 +58,8 @@
 
   let structured_output_mode: StructuredOutputMode = "default"
 
+  let is_updating_from_saved_config: boolean = false
+
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
@@ -111,11 +113,29 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-    model =
-      selected_run_config.run_config_properties.model_provider_name +
-      "/" +
-      selected_run_config.run_config_properties.model_name
-    prompt_method = selected_run_config.run_config_properties.prompt_id
+
+    is_updating_from_saved_config = true
+
+    const is_finetune_run_config = selected_run_config.id?.startsWith(
+      "finetune_run_config::",
+    )
+    if (is_finetune_run_config) {
+      // finetune_run_config::finetune_id
+      const finetune_id = selected_run_config.id?.split("::").pop()
+      // Finetune model ids are in this syntax: kiln_fine_tune/project_id::task_id::finetune_id
+      if (finetune_id && project_id && current_task?.id) {
+        model = `kiln_fine_tune/${project_id}::${current_task.id}::${finetune_id}`
+        // Finetune prompt ids are in this syntax: fine_tune_prompt::project_id::task_id::finetune_id
+        prompt_method = `fine_tune_prompt::${project_id}::${current_task.id}::${finetune_id}`
+      }
+      provider = selected_run_config.run_config_properties.model_provider_name
+    } else {
+      model =
+        selected_run_config.run_config_properties.model_provider_name +
+        "/" +
+        selected_run_config.run_config_properties.model_name
+      prompt_method = selected_run_config.run_config_properties.prompt_id
+    }
     tools = [
       ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
     ]
@@ -123,6 +143,9 @@
     top_p = selected_run_config.run_config_properties.top_p
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
+
+    await tick()
+    is_updating_from_saved_config = false
   }
 
   // Check for manual changes when options change when on a saved config to set back to custom
@@ -135,6 +158,11 @@
   reset_to_custom_options_if_needed())
 
   async function reset_to_custom_options_if_needed() {
+    // If we are updating from a saved config don't reset back to custom
+    if (is_updating_from_saved_config) {
+      return
+    }
+
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
@@ -144,13 +172,37 @@
 
     const config_properties = selected_run_config.run_config_properties
 
+    const is_finetune_run_config = selected_run_config.id?.startsWith(
+      "finetune_run_config::",
+    )
+
     // Check if any values have changed from the saved config properties
-    const current_model_name = model ? model.split("/").slice(1).join("/") : ""
-    const current_provider_name = model ? model.split("/")[0] : ""
+    let model_changed = false
+    let provider_changed = false
+    let prompt_changed = false
+
+    if (is_finetune_run_config) {
+      const finetune_id = selected_run_config.id?.split("::").pop()
+      const expected_model = `kiln_fine_tune/${project_id}::${current_task?.id}::${finetune_id}`
+      const expected_prompt = `fine_tune_prompt::${project_id}::${current_task?.id}::${finetune_id}`
+      model_changed = model !== expected_model
+      prompt_changed = prompt_method !== expected_prompt
+      provider_changed = provider !== "kiln_fine_tune"
+    } else {
+      const current_model_name = model
+        ? model.split("/").slice(1).join("/")
+        : ""
+      const current_provider_name = model ? model.split("/")[0] : ""
+      model_changed = config_properties.model_name !== current_model_name
+      provider_changed =
+        config_properties.model_provider_name !== current_provider_name
+      prompt_changed = config_properties.prompt_id !== prompt_method
+    }
+
     if (
-      config_properties.model_name !== current_model_name ||
-      config_properties.model_provider_name !== current_provider_name ||
-      config_properties.prompt_id !== prompt_method ||
+      model_changed ||
+      provider_changed ||
+      prompt_changed ||
       config_properties.temperature !== temperature ||
       config_properties.top_p !== top_p ||
       config_properties.structured_output_mode !== structured_output_mode ||

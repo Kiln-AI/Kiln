@@ -57,7 +57,7 @@ export async function load_task_run_configs(
 
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/",
         {
           params: {
             path: {

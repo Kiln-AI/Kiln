@@ -322,6 +322,27 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         return task.run_configs()
 
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/run_configs/")
+    async def get_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
+        # Returns all run configs of a given task.
+        task = task_from_id(project_id, task_id)
+        configs = task.run_configs()
+
+        # Get run configs from finetunes
+        finetunes = task.finetunes()
+        for finetune in finetunes:
+            if finetune.run_config is not None:
+                configs.append(
+                    TaskRunConfig(
+                        id=f"finetune_run_config::{finetune.id}",  # this id is not persisted
+                        name=finetune.name,
+                        description=finetune.description,
+                        run_config_properties=finetune.run_config,
+                    )
+                )
+
+        return configs
+
     @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
