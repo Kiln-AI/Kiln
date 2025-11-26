@@ -4,6 +4,7 @@
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
+  export let aria_label: string | null = null
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
@@ -549,6 +550,7 @@
 
 <div class="dropdown w-full relative">
   <div
+    aria-label={aria_label}
     tabindex={disabled ? -1 : 0}
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible

@@ -104,8 +104,11 @@
 
   // tags
   let selected_tags: string[] = []
+  let tag_picker: TagPicker | null = null
 
   async function handleUpload(): Promise<boolean> {
+    tag_picker?.flush_pending_tag()
+
     upload_error = null
     upload_in_progress = true
     upload_progress = 0
@@ -414,6 +417,7 @@
             value=""
           />
           <TagPicker
+            bind:this={tag_picker}
             tags={selected_tags}
             tag_type="doc"
             {project_id}
@@ -473,7 +477,7 @@
                   </div>
                   <button
                     type="button"
-                    class="ml-2 text-red-500 hover:text-red-700 h-4 w-4 flex-shrink-0"
+                    class="ml-2 text-gray-500 hover:text-gray-700 h-4 w-4 flex-shrink-0"
                     on:click={() => removeFile(index)}
                   >
                     <TrashIcon />
