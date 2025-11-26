@@ -524,7 +524,7 @@
 <AppPage
   limit_max_width={true}
   title="Specs"
-  subtitle="Define the specs you want your task to follow"
+  subtitle="Define the specs your task should follow and be judged against"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
