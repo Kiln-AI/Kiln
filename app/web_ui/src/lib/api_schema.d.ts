@@ -5240,7 +5240,7 @@ export interface components {
          * @description Defines the type of spec.
          * @enum {string}
          */
-        SpecType: "desired_behaviour" | "undesired_behaviour" | "appropriate_tool_use" | "intermediate_reasoning" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "consistency" | "tone" | "formatting" | "localization" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
+        SpecType: "desired_behaviour" | "undesired_behaviour" | "appropriate_tool_use" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "tone" | "formatting" | "localization" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /** SpecUpsertRequest */
         SpecUpsertRequest: {
             /** Name */

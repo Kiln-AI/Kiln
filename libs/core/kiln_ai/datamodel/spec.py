@@ -14,22 +14,18 @@ class SpecType(str, Enum):
     # Functionality
     desired_behaviour = "desired_behaviour"
     undesired_behaviour = "undesired_behaviour"
-
-    # Reasoning & Execution
-    appropriate_tool_use = "appropriate_tool_use"
-    intermediate_reasoning = "intermediate_reasoning"
-
-    # Correctness
-    reference_answer_accuracy = "reference_answer_accuracy"
-    factual_correctness = "factual_correctness"
-    hallucinations = "hallucinations"
-    completeness = "completeness"
-    consistency = "consistency"
-
-    # Style
     tone = "tone"
     formatting = "formatting"
     localization = "localization"
+
+    # Task Performance
+    appropriate_tool_use = "appropriate_tool_use"
+    reference_answer_accuracy = "reference_answer_accuracy"
+
+    # Accuracy
+    factual_correctness = "factual_correctness"
+    hallucinations = "hallucinations"
+    completeness = "completeness"
 
     # Safety
     toxicity = "toxicity"

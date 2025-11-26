@@ -532,7 +532,7 @@
     : [
         {
           label: "New Spec",
-          href: `/specs/${project_id}/${task_id}/template_select`,
+          href: `/specs/${project_id}/${task_id}/select_template`,
           primary: true,
         },
       ]}
@@ -556,7 +556,7 @@
           action_buttons={[
             {
               label: "Define a Spec",
-              href: `/specs/${project_id}/${task_id}/template_select`,
+              href: `/specs/${project_id}/${task_id}/select_template`,
               is_primary: true,
             },
           ]}

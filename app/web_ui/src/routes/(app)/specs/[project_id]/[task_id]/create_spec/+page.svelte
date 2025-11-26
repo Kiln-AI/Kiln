@@ -19,13 +19,13 @@
   let spec_template: string | undefined = undefined
   let spec_definition: string | undefined = undefined
   let name = ""
-  let description = ""
 
   onMount(() => {
     const spec_type_param = $page.url.searchParams.get("type")
     if (spec_type_param) {
       spec_type = spec_type_param as SpecType
     }
+    name = formatSpecTypeName(spec_type)
     spec_template = $page.url.searchParams.get("template") || undefined
     spec_definition = spec_template
   })
@@ -85,7 +85,7 @@
       },
       {
         label: "Spec Templates",
-        href: `/specs/${project_id}/${task_id}/template_select`,
+        href: `/specs/${project_id}/${task_id}/select_template`,
       },
     ]}
   >
@@ -94,7 +94,7 @@
       on:submit={create_spec}
       bind:error={create_error}
       bind:submitting
-      warn_before_unload={!!(!complete && spec_definition)}
+      warn_before_unload={!!(!complete && (spec_definition || name))}
     >
       <FormElement
         label="Spec Name"
@@ -103,17 +103,11 @@
         bind:value={name}
       />
       <FormElement
-        label="Spec Description"
-        description="A short description for your own reference."
-        id="spec_description"
-        bind:value={description}
-      />
-      <FormElement
         label="Spec Definition"
         description="A detailed definition of the spec. This will be used by AI when evaluating if your model meets the spec requirements."
         id="definition"
         inputType="textarea"
-        height="large"
+        height="xl"
         bind:value={spec_definition}
         inline_action={{
           handler: () => {
