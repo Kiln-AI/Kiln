@@ -12,8 +12,7 @@ class SpecType(str, Enum):
     """Defines the type of spec."""
 
     # Functionality
-    desired_behaviour = "desired_behaviour"
-    undesired_behaviour = "undesired_behaviour"
+    behaviour = "behaviour"
     tone = "tone"
     formatting = "formatting"
     localization = "localization"
