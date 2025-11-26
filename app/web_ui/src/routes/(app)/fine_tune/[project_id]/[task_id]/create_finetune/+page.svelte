@@ -36,7 +36,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
-
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
   let finetune_description = ""
   let finetune_name = ""
   const disabled_header = "disabled_header"
@@ -502,6 +502,15 @@
         tool_count: selected_tool_ids.length,
       })
       created_finetune = create_finetune_response
+
+      // Reload run configs to include the new finetune run config
+      load_task_run_configs(project_id, task_id, true).catch((err) => {
+        console.warn(
+          "Failed to reload run configs store after finetune creation",
+          err,
+        )
+      })
+
       // Clear the saved state now that fine-tune is created
       clear_saved_state()
       progress_ui_state.set({
