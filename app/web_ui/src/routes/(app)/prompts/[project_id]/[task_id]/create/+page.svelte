@@ -63,11 +63,7 @@
       })
 
       // Success! Reload then navigate to the new prompt
-      await load_available_prompts(true)
-
-      // we don't need to show the unsaved changes warning since the prompt
-      // was just created
-      warn_before_unload = false
+      await load_available_prompts()
       goto(`/prompts/${project_id}/${task_id}/saved/id::${data.id}`)
     } catch (e) {
       create_error = createKilnError(e)
