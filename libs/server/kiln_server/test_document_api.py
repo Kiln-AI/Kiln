@@ -7,7 +7,10 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from kiln_ai.adapters.ml_embedding_model_list import EmbeddingModelName
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    KilnEmbeddingModelProvider,
+)
 from kiln_ai.adapters.rag.progress import LogMessage, RagProgress
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import SearchResult
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
@@ -1100,6 +1103,55 @@ async def test_create_embedding_config_success(
     assert result["description"] == "Test Embedding Config description"
     assert result["model_provider_name"] == model_provider_name
     assert result["model_name"] == model_name
+    assert result["properties"] == {}
+
+
+async def test_create_embedding_config_success_new_model_from_remote_config(
+    client,
+    mock_project,
+):
+    """
+    Some of the models available to users in the UI are not present in the ModelProviderName enum.
+    However, these models are included in the dynamically updated in-memory model list that comes from
+    the remote_config (over the internet) update.
+
+    If we use an enum type in the API request models, Pydantic will reject any request that uses a model
+    name not present in the enum, even if that model is present in the dynamically fetched model list.
+    So we must avoid using an enum for these model fields.
+    """
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+        patch(
+            "kiln_server.document_api.built_in_embedding_models_from_provider"
+        ) as mock_built_in_embedding_models_from_provider,
+    ):
+        mock_project_from_id.return_value = mock_project
+        mock_built_in_embedding_models_from_provider.return_value = KilnEmbeddingModelProvider(
+            name=ModelProviderName.openai,
+            model_id="model_not_in_enum_but_now_in_model_list_because_of_remote_config_update_ota",
+            n_dimensions=1536,
+        )
+        response = client.post(
+            f"/api/projects/{mock_project.id}/create_embedding_config",
+            json={
+                "name": "Test Embedding Config",
+                "description": "Test Embedding Config description",
+                "model_provider_name": ModelProviderName.openai,
+                "model_name": "model_not_in_enum_but_now_in_model_list_because_of_remote_config_update_ota",
+                "properties": {},
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["id"] is not None
+    assert result["name"] == "Test Embedding Config"
+    assert result["description"] == "Test Embedding Config description"
+    assert result["model_provider_name"] == "openai"
+    assert (
+        result["model_name"]
+        == "model_not_in_enum_but_now_in_model_list_because_of_remote_config_update_ota"
+    )
     assert result["properties"] == {}
 
 

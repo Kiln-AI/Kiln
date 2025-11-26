@@ -10,7 +10,6 @@ from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
-    EmbeddingModelName,
     built_in_embedding_models_from_provider,
 )
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
@@ -393,7 +392,7 @@ class CreateEmbeddingConfigRequest(BaseModel):
     model_provider_name: ModelProviderName = Field(
         description="The provider of the embedding model",
     )
-    model_name: EmbeddingModelName = Field(
+    model_name: str = Field(
         description="The name of the embedding model",
     )
     properties: EmbeddingProperties = Field(
