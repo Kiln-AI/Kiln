@@ -477,7 +477,7 @@
                   </div>
                   <button
                     type="button"
-                    class="ml-2 text-red-500 hover:text-red-700 h-4 w-4 flex-shrink-0"
+                    class="ml-2 text-gray-500 hover:text-gray-700 h-4 w-4 flex-shrink-0"
                     on:click={() => removeFile(index)}
                   >
                     <TrashIcon />
