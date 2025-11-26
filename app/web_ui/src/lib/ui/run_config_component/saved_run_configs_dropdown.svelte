@@ -149,7 +149,7 @@
       }
     }
 
-    // Exlcude finetune run configs
+    // Exclude finetune run configs
     const other_task_run_configs = (
       run_configs_by_task_composite_id[
         get_task_composite_id(project_id, current_task.id ?? "")
