@@ -39,9 +39,9 @@ dependencies = [
     "anyio>=4.10.0",
     "pypdfium2>=4.30.0",
     "pillow>=11.1.0",
+    "litellm>=1.79.3",
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
-    "litellm>=1.80.5",
 ]
 
 [dependency-groups]

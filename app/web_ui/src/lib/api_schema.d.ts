@@ -634,23 +634,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download Extraction */
-        get: operations["download_extraction_api_projects__project_id__documents__document_id__download_extraction__extraction_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder": {
         parameters: {
             query?: never;
@@ -3136,7 +3119,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "baai_bge_m3" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "multilingual_e5_large" | "e5_base_v2" | "e5_large_v2" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505" | "sentence_transformers_all_minilm_l6_v2" | "sentence_transformers_all_mpnet_base_v2" | "sentence_transformers_multi_qa_mpnet_base_dot_v1" | "sentence_transformers_all_minilm_l12_v2" | "sentence_transformers_paraphrase_minilm_l6_v2";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505";
         /** EmbeddingProperties */
         EmbeddingProperties: {
             /** Dimensions */
@@ -3611,8 +3594,6 @@ export interface components {
             /** Output Content */
             output_content: string;
             extractor: components["schemas"]["ExtractorSummary"];
-            /** Output Content Truncated */
-            output_content_truncated: boolean;
         };
         /** ExtractorConfig */
         ExtractorConfig: {
@@ -7200,39 +7181,6 @@ export interface operations {
             path: {
                 project_id: string;
                 document_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    download_extraction_api_projects__project_id__documents__document_id__download_extraction__extraction_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                document_id: string;
-                extraction_id: string;
             };
             cookie?: never;
         };

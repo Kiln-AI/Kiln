@@ -596,14 +596,11 @@ export function prompt_name_from_id(
 
 // Available prompts for the current task. Lock to avoid parallel requests.
 let is_loading_prompts = false
-export async function load_available_prompts(force: boolean = false) {
+export async function load_available_prompts() {
   const project = get(current_project)
   const task = get(current_task)
   if (!project || !task || !project.id || !task.id) {
     current_task_prompts.set(null)
-    return
-  }
-  if (!force && get(current_task_prompts)) {
     return
   }
 
