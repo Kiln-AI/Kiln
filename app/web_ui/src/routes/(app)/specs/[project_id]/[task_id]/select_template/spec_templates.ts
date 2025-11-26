@@ -18,7 +18,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "behaviour",
         description:
-          "Define a specific behaviour for your model. You can describe a behaviour it should follow, or a behaviour it must avoid to prevent recurring issues.",
+          "Specify a behaviour the model should follow or avoid to prevent recurring issues.",
         template: `The model must follow the specified behaviour requirements.
 
 ## Description
@@ -32,7 +32,8 @@ export const spec_categories: SpecCategoryData[] = [
       },
       {
         spec_type: "tone",
-        description: "Evaluate the tone and style of the model's output.",
+        description:
+          "Specify the desired tone and style of the model's output.",
         template: `The model's tone must match the specified tone requirements throughout its response. It should reflect the style and attitude expected.
 
 ## Requirements
@@ -47,7 +48,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "formatting",
         description:
-          "Evaluate the formatting and structure of the model's output.",
+          "Specify the desired formatting and structure of the model's output.",
         template: `The model must follow the specified formatting and structure.
 
 ## Requirements
@@ -62,7 +63,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "localization",
         description:
-          "Evaluate the localization and language appropriateness of the model's output.",
+          "Specify how the model should adapt its output for the target language, region, and culture.",
         template: `The model must generate content appropriate for the specified locale, culture, and language. It should adapt terminology, spelling, units, idioms, and references to the target audience.
 
 ## Requirements
@@ -83,8 +84,7 @@ export const spec_categories: SpecCategoryData[] = [
     templates: [
       {
         spec_type: "appropriate_tool_use",
-        description:
-          "Evaluate your model's ability to appropriately invoke a tool.",
+        description: "Specify when and how the model should invoke a tool.",
         template: `The model must appropriately invoke the specified tool. This means it should call the tool with correct parameters at the appropriate time, following the tool usage guidelines.
 
 ## Guidelines
@@ -103,8 +103,18 @@ export const spec_categories: SpecCategoryData[] = [
       },
       {
         spec_type: "reference_answer_accuracy",
-        description: "Evaluate model accuracy against ground-truth Q&A pairs.",
-        template: "Not Implemented Yet",
+        description:
+          "Specify the documents that will be used to generate reference Q&A pairs and what constitutes an accurate answer for queries based on the documents.",
+        template: `The model must provide answers that match the reference Q&A pairs generated from the source documents. This ensures outputs are accurate and grounded in the specified content.
+
+## Accurate Examples
+- The model's answer matches the reference answer exactly or within an acceptable tolerance.
+- Rewording is allowed if the meaning is preserved and factual content is correct.
+
+## Inaccurate Examples
+- The model provides incorrect information or omits critical details from the reference answer.
+- The model introduces unrelated or fabricated content.
+- The model misinterprets the question and provides a different answer than the reference.`,
       },
     ],
   },
@@ -114,7 +124,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "factual_correctness",
         description:
-          "Evaluate the model's output for factual correctness and critical omissions.",
+          "Define what is considered factual correctness and critical omissions for the model's output.",
         template: `The model must be factually correct. It should provide correct data (e.g., dates, names, facts, historical events and other information that is known to be true) and not generate any factual errors or critical omissions that affect the overall result.
 
 ## Factually Inaccurate Examples
@@ -127,7 +137,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "hallucinations",
         description:
-          "Evaluate the model's output for hallucinations and fabricated information.",
+          "Define what is considered hallucinations and fabricated information for the model's output.",
         template: `The model must not hallucinate. It should avoid producing content that has no basis in reality or indicate uncertainty when information is unknown.
 
 ## Hallucination Examples
@@ -138,7 +148,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "completeness",
         description:
-          "Evaluate the completeness of the model's output and whether it addresses all aspects of the request.",
+          "Define what is considered complete the completeness of the model's output and whether it addresses all aspects of the request.",
         template: `The model's output must be complete and address all parts of the user's request.
 
 ## Complete Examples
