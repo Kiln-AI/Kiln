@@ -8,7 +8,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
     FineTuneStatus,
     FineTuneStatusType,
 )
-from kiln_ai.datamodel import DatasetSplit, Task
+from kiln_ai.datamodel import DatasetSplit, Project, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -46,12 +46,15 @@ class MockFinetune(BaseFinetuneAdapter):
 
 @pytest.fixture
 def sample_task(tmp_path):
-    task_path = tmp_path / "task.kiln"
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
     task = Task(
         name="Test Task",
-        path=task_path,
         description="Test task for fine-tuning",
         instruction="Test instruction",
+        parent=project,
     )
     task.save_to_file()
     return task
@@ -238,10 +241,22 @@ async def test_create_and_start_with_run_config(mock_dataset):
         run_config=run_config,
     )
 
-    assert datamodel.run_config == run_config
+    assert datamodel.run_config is not None
+    assert datamodel.run_config.model_provider_name == ModelProviderName.kiln_fine_tune
+    assert datamodel.run_config.model_name == datamodel.model_id()
+
+    assert datamodel.run_config.prompt_id == "simple_prompt_builder"
+    assert datamodel.run_config.temperature == 0.7
+    assert datamodel.run_config.top_p == 0.9
 
     loaded_datamodel = FinetuneModel.load_from_file(datamodel.path)
-    assert loaded_datamodel.run_config == run_config
+    assert loaded_datamodel.run_config is not None
+    assert (
+        loaded_datamodel.run_config.model_provider_name
+        == ModelProviderName.kiln_fine_tune
+    )
+    assert loaded_datamodel.run_config.model_name == datamodel.model_id()
+    assert loaded_datamodel.run_config.prompt_id == "simple_prompt_builder"
 
 
 async def test_create_and_start_invalid_parameters(mock_dataset):

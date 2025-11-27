@@ -1449,7 +1449,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                 if fine_tune.fine_tune_model_id:
                     models.append(
                         ModelDetails(
-                            id=f"{project.id}::{task.id}::{fine_tune.id}",
+                            id=fine_tune.model_id(),
                             name=fine_tune.name
                             + f" ({provider_name_from_id(fine_tune.provider)})",
                             # YMMV, but we'll assume all fine tuned models support structured output, data gen, and tools as they may have been trained with them

@@ -1270,12 +1270,14 @@ def test_all_fine_tuned_models(mock_all_projects):
     mock_fine_tune1.name = "Fine Tune 1"
     mock_fine_tune1.fine_tune_model_id = "model1"
     mock_fine_tune1.provider = ModelProviderName.openai
+    mock_fine_tune1.model_id.return_value = "proj1::task1::ft1"
 
     mock_fine_tune2 = Mock()
     mock_fine_tune2.id = "ft2"
     mock_fine_tune2.name = "Fine Tune 2"
     mock_fine_tune2.fine_tune_model_id = "model2"
     mock_fine_tune2.provider = ModelProviderName.openai
+    mock_fine_tune2.model_id.return_value = "proj2::task2::ft2"
 
     mock_fine_tune3 = Mock()
     mock_fine_tune3.id = "ft3"

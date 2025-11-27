@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel import DatasetSplit, FineTuneStatusType, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 
@@ -111,6 +111,11 @@ class BaseFinetuneAdapter(ABC):
 
         adapter = cls(datamodel)
         await adapter._start(dataset)
+
+        # Update the run config properties for fine-tuning
+        if run_config is not None:
+            run_config.model_provider_name = ModelProviderName.kiln_fine_tune
+            run_config.model_name = datamodel.model_id()
 
         datamodel.save_to_file()
 
