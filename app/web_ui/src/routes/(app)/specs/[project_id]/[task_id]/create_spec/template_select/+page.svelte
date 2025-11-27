@@ -32,14 +32,9 @@
       category: "Behavioral",
       templates: [
         {
-          spec_type: "desired_behaviour",
+          spec_type: "behaviour",
           description:
-            "Define a specific desired behaviour you want your task to follow.",
-        },
-        {
-          spec_type: "undesired_behaviour",
-          description:
-            "Build a spec to catch a specific issue you've encountered and prevent it from recurring.",
+            "Define a specific behaviour you want your task to follow or avoid.",
         },
         {
           spec_type: "tone",
@@ -71,11 +66,6 @@
             "Evaluate model accuracy against ground-truth Q&A pairs.",
         },
         {
-          spec_type: "intermediate_reasoning",
-          description:
-            "Evaluate the model's intermediate reasoning steps and thought process.",
-        },
-        {
           spec_type: "jailbreak",
           description:
             "Evaluate the user's ability to break out of the prompt, using tactics such as 'ignore previous instructions'.",
@@ -104,11 +94,6 @@
           spec_type: "completeness",
           description:
             "Evaluate the completeness of the model's output and whether it addresses all aspects of the request.",
-        },
-        {
-          spec_type: "consistency",
-          description:
-            "Evaluate the consistency of the model's output across different inputs and contexts.",
         },
       ],
     },
@@ -144,7 +129,7 @@
   ]
 
   const existing_spec_types: Set<SpecType> = new Set([
-    "undesired_behaviour",
+    "behaviour",
     "appropriate_tool_use",
     "reference_answer_accuracy",
     "factual_correctness",

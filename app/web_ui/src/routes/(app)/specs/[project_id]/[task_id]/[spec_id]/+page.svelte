@@ -67,9 +67,8 @@
           },
           body: {
             name: spec.name,
-            description: spec.description,
-            properties: spec.properties || null,
-            type: spec.type,
+            definition: spec.definition,
+            properties: spec.properties,
             priority: spec.priority,
             status: spec.status,
             tags: tags,
@@ -89,10 +88,9 @@
 </script>
 
 <AppPage
-  title="{spec?.properties?.spec_type
+  title="{spec?.properties.spec_type
     ? `${formatSpecType(spec.properties.spec_type)}: `
     : ''}{spec?.name ? `${spec.name}` : ''}"
-  subtitle={spec?.description}
   breadcrumbs={[
     {
       label: "Specs",
@@ -124,7 +122,7 @@
             },
             {
               name: "Type",
-              value: formatSpecType(spec.type),
+              value: formatSpecType(spec.properties.spec_type),
             },
             {
               name: "Priority",

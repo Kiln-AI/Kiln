@@ -17,8 +17,8 @@
   let complete = false
 
   let name = ""
-  let description = ""
-  let spec_type: SpecType = SpecType.desired_behaviour
+  let definition = ""
+  let spec_type: SpecType = "behaviour"
   $: {
     const type_param = $page.url.searchParams.get("type")
     if (type_param) {
@@ -32,6 +32,9 @@
       create_error = null
       create_loading = true
       complete = false
+      if (spec_type !== "behaviour") {
+        throw createKilnError("Not implemented yet")
+      }
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec",
         {
@@ -40,8 +43,15 @@
           },
           body: {
             name,
-            description,
-            properties: { spec_type: spec_type },
+            definition,
+            properties: {
+              spec_type: spec_type,
+              base_instruction:
+                "The model must follow the specified behaviour requirements.",
+              behavior_description: definition,
+              correct_behavior_examples: null,
+              incorrect_behavior_examples: null,
+            },
             priority: 1,
             status: "active",
             tags: [],
@@ -84,7 +94,7 @@
       on:submit={create_spec}
       bind:error={create_error}
       bind:submitting={create_loading}
-      warn_before_unload={!!(!complete && (name || description))}
+      warn_before_unload={!!(!complete && (name || definition))}
     >
       <FormElement
         label="Spec Name"
@@ -93,11 +103,11 @@
         bind:value={name}
       />
       <FormElement
-        label="Spec Description"
-        description="A short description for your own reference."
+        label="Spec Definition"
+        description="A detailed definition of the spec."
         id="spec_description"
         inputType="textarea"
-        bind:value={description}
+        bind:value={definition}
       />
     </FormContainer>
   </AppPage>

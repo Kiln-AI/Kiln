@@ -5,14 +5,12 @@ from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import (
     AppropriateToolUseProperties,
+    BehaviourProperties,
     BiasProperties,
     CompletenessProperties,
-    ConsistencyProperties,
-    DesiredBehaviourProperties,
     FactualCorrectnessProperties,
     FormattingProperties,
     HallucinationsProperties,
-    IntermediateReasoningProperties,
     JailbreakProperties,
     LocalizationProperties,
     MaliciousnessProperties,
@@ -23,7 +21,6 @@ from kiln_ai.datamodel.spec_properties import (
     TabooProperties,
     ToneProperties,
     ToxicityProperties,
-    UndesiredBehaviourProperties,
 )
 from kiln_ai.datamodel.task import Task
 
@@ -33,21 +30,36 @@ def sample_task():
     return Task(name="Test Task", instruction="Test instruction")
 
 
+@pytest.fixture
+def sample_tone_properties():
+    return ToneProperties(
+        spec_type=SpecType.tone,
+        base_instruction="Test instruction",
+        tone_description="Professional and friendly",
+        acceptable_examples=None,
+        unacceptable_examples=None,
+    )
+
+
 def test_spec_valid_creation(sample_task):
     """Test creating a spec with all required fields."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
+    properties = ToneProperties(
+        spec_type=SpecType.tone,
+        base_instruction="Test instruction",
+        tone_description="Professional and friendly",
+        acceptable_examples=None,
+        unacceptable_examples=None,
     )
     spec = Spec(
         name="Test Spec",
-        description="The system should behave correctly",
+        definition="The system should behave correctly",
         properties=properties,
         parent=sample_task,
     )
 
     assert spec.name == "Test Spec"
-    assert spec.description == "The system should behave correctly"
-    assert spec.properties["spec_type"] == SpecType.desired_behaviour
+    assert spec.definition == "The system should behave correctly"
+    assert spec.properties["spec_type"] == SpecType.tone
     assert spec.priority == Priority.p1
     assert spec.status == SpecStatus.active
     assert spec.tags == []
@@ -58,10 +70,12 @@ def test_spec_with_custom_values(sample_task):
     """Test creating a spec with custom priority, status, and tags."""
     properties = ToxicityProperties(
         spec_type=SpecType.toxicity,
+        base_instruction="Test instruction",
+        toxicity_examples=None,
     )
     spec = Spec(
         name="Custom Spec",
-        description="No toxic content should be present",
+        definition="No toxic content should be present",
         properties=properties,
         priority=Priority.p2,
         status=SpecStatus.active,
@@ -76,26 +90,22 @@ def test_spec_with_custom_values(sample_task):
     assert spec.eval_id == "test_eval_id"
 
 
-def test_spec_missing_required_fields(sample_task):
+def test_spec_missing_required_fields(sample_task, sample_tone_properties):
     """Test that spec creation fails without required fields."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
-
     # Missing name
     with pytest.raises(ValidationError) as exc_info:
         Spec(
-            description="Test description",
-            properties=properties,
+            definition="Test definition",
+            properties=sample_tone_properties,
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
 
-    # Missing description
+    # Missing definition
     with pytest.raises(ValidationError) as exc_info:
         Spec(
             name="Test",
-            properties=properties,
+            properties=sample_tone_properties,
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
@@ -104,75 +114,180 @@ def test_spec_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         Spec(
             name="Test",
-            description="Test description",
+            definition="Test definition",
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
 
 
-def test_spec_empty_name(sample_task):
+def test_spec_empty_name(sample_task, sample_tone_properties):
     """Test that spec creation fails with empty name."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     with pytest.raises(ValidationError) as exc_info:
         Spec(
             name="",
-            description="Test description",
-            properties=properties,
+            definition="Test definition",
+            properties=sample_tone_properties,
             parent=sample_task,
         )
     assert "Name is too short" in str(exc_info.value)
 
 
-def test_spec_empty_description(sample_task):
-    """Test that spec creation fails with empty description."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
+def test_spec_empty_definition(sample_task, sample_tone_properties):
+    """Test that spec creation fails with empty definition."""
     with pytest.raises(ValidationError) as exc_info:
         Spec(
             name="Test",
-            description="",
-            properties=properties,
+            definition="",
+            properties=sample_tone_properties,
             parent=sample_task,
         )
     assert "String should have at least 1 character" in str(exc_info.value)
 
 
+def create_sample_properties(spec_type: SpecType):
+    """Helper to create sample properties for testing."""
+    base_instruction = "Test instruction"
+
+    if spec_type == SpecType.behaviour:
+        return BehaviourProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            behavior_description="Test behavior",
+            correct_behavior_examples=None,
+            incorrect_behavior_examples=None,
+        )
+    elif spec_type == SpecType.tone:
+        return ToneProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            tone_description="Professional",
+            acceptable_examples=None,
+            unacceptable_examples=None,
+        )
+    elif spec_type == SpecType.formatting:
+        return FormattingProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            formatting_requirements="Use markdown",
+            proper_formatting_examples=None,
+            improper_formatting_examples=None,
+        )
+    elif spec_type == SpecType.localization:
+        return LocalizationProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            localization_requirements="Support en-US",
+            violation_examples=None,
+        )
+    elif spec_type == SpecType.appropriate_tool_use:
+        return AppropriateToolUseProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            tool_function_name="test_tool",
+            tool_use_guidelines="Use when needed",
+            appropriate_tool_use_examples=None,
+            inappropriate_tool_use_examples=None,
+        )
+    elif spec_type == SpecType.reference_answer_accuracy:
+        return ReferenceAnswerAccuracyProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            reference_answer_accuracy_description="Must match reference",
+            accurate_examples=None,
+            inaccurate_examples=None,
+        )
+    elif spec_type == SpecType.factual_correctness:
+        return FactualCorrectnessProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            factually_inaccurate_examples=None,
+        )
+    elif spec_type == SpecType.hallucinations:
+        return HallucinationsProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            hallucinations_examples=None,
+        )
+    elif spec_type == SpecType.completeness:
+        return CompletenessProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            complete_examples=None,
+            incomplete_examples=None,
+        )
+    elif spec_type == SpecType.toxicity:
+        return ToxicityProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            toxicity_examples=None,
+        )
+    elif spec_type == SpecType.bias:
+        return BiasProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            bias_examples=None,
+        )
+    elif spec_type == SpecType.maliciousness:
+        return MaliciousnessProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            malicious_examples=None,
+        )
+    elif spec_type == SpecType.nsfw:
+        return NsfwProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            nsfw_examples=None,
+        )
+    elif spec_type == SpecType.taboo:
+        return TabooProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            taboo_examples=None,
+        )
+    elif spec_type == SpecType.jailbreak:
+        return JailbreakProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            jailbroken_examples=None,
+        )
+    elif spec_type == SpecType.prompt_leakage:
+        return PromptLeakageProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            leakage_examples=None,
+        )
+    else:
+        raise ValueError(f"Unknown spec type: {spec_type}")
+
+
 @pytest.mark.parametrize(
-    "spec_type,properties_class",
+    "spec_type",
     [
-        (SpecType.desired_behaviour, DesiredBehaviourProperties),
-        (SpecType.undesired_behaviour, None),
-        (SpecType.appropriate_tool_use, None),
-        (SpecType.intermediate_reasoning, IntermediateReasoningProperties),
-        (SpecType.reference_answer_accuracy, ReferenceAnswerAccuracyProperties),
-        (SpecType.factual_correctness, FactualCorrectnessProperties),
-        (SpecType.hallucinations, HallucinationsProperties),
-        (SpecType.completeness, CompletenessProperties),
-        (SpecType.consistency, ConsistencyProperties),
-        (SpecType.tone, ToneProperties),
-        (SpecType.formatting, FormattingProperties),
-        (SpecType.localization, LocalizationProperties),
-        (SpecType.toxicity, ToxicityProperties),
-        (SpecType.bias, BiasProperties),
-        (SpecType.maliciousness, MaliciousnessProperties),
-        (SpecType.nsfw, NsfwProperties),
-        (SpecType.taboo, TabooProperties),
-        (SpecType.jailbreak, JailbreakProperties),
-        (SpecType.prompt_leakage, PromptLeakageProperties),
+        SpecType.behaviour,
+        SpecType.tone,
+        SpecType.formatting,
+        SpecType.localization,
+        SpecType.appropriate_tool_use,
+        SpecType.reference_answer_accuracy,
+        SpecType.factual_correctness,
+        SpecType.hallucinations,
+        SpecType.completeness,
+        SpecType.toxicity,
+        SpecType.bias,
+        SpecType.maliciousness,
+        SpecType.nsfw,
+        SpecType.taboo,
+        SpecType.jailbreak,
+        SpecType.prompt_leakage,
     ],
 )
-def test_spec_all_types(sample_task, spec_type, properties_class):
+def test_spec_all_types(sample_task, spec_type):
     """Test that all spec types can be created."""
-    if properties_class is None:
-        pytest.skip(f"Skipping {spec_type} - requires additional fields")
-
-    properties = properties_class(spec_type=spec_type)
+    properties = create_sample_properties(spec_type)
     spec = Spec(
         name="Test Spec",
-        description="Test description",
+        definition="Test definition",
         properties=properties,
         parent=sample_task,
     )
@@ -183,15 +298,12 @@ def test_spec_all_types(sample_task, spec_type, properties_class):
     "priority",
     [Priority.p0, Priority.p1, Priority.p2, Priority.p3],
 )
-def test_spec_all_priorities(sample_task, priority):
+def test_spec_all_priorities(sample_task, sample_tone_properties, priority):
     """Test that all priority levels can be set."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     spec = Spec(
         name="Test Spec",
-        description="Test description",
-        properties=properties,
+        definition="Test definition",
+        properties=sample_tone_properties,
         priority=priority,
         parent=sample_task,
     )
@@ -207,77 +319,62 @@ def test_spec_all_priorities(sample_task, priority):
         SpecStatus.archived,
     ],
 )
-def test_spec_all_statuses(sample_task, status):
+def test_spec_all_statuses(sample_task, sample_tone_properties, status):
     """Test that all status values can be set."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     spec = Spec(
         name="Test Spec",
-        description="Test description",
-        properties=properties,
+        definition="Test definition",
+        properties=sample_tone_properties,
         status=status,
         parent=sample_task,
     )
     assert spec.status == status
 
 
-def test_spec_tags_validation_empty_string(sample_task):
+def test_spec_tags_validation_empty_string(sample_task, sample_tone_properties):
     """Test that tags cannot be empty strings."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     with pytest.raises(ValidationError, match="tags cannot be empty strings"):
         Spec(
             name="Test Spec",
-            description="Test description",
-            properties=properties,
+            definition="Test definition",
+            properties=sample_tone_properties,
             tags=["valid_tag", ""],
             parent=sample_task,
         )
 
 
-def test_spec_tags_validation_spaces(sample_task):
+def test_spec_tags_validation_spaces(sample_task, sample_tone_properties):
     """Test that tags cannot contain spaces."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     with pytest.raises(
         ValidationError, match=r"tags cannot contain spaces\. Try underscores\."
     ):
         Spec(
             name="Test Spec",
-            description="Test description",
-            properties=properties,
+            definition="Test definition",
+            properties=sample_tone_properties,
             tags=["valid_tag", "invalid tag"],
             parent=sample_task,
         )
 
 
-def test_spec_tags_valid(sample_task):
+def test_spec_tags_valid(sample_task, sample_tone_properties):
     """Test that valid tags work correctly."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     spec = Spec(
         name="Test Spec",
-        description="Test description",
-        properties=properties,
+        definition="Test definition",
+        properties=sample_tone_properties,
         tags=["tag1", "tag_2", "tag-3", "TAG4"],
         parent=sample_task,
     )
     assert spec.tags == ["tag1", "tag_2", "tag-3", "TAG4"]
 
 
-def test_spec_archived_status(sample_task):
+def test_spec_archived_status(sample_task, sample_tone_properties):
     """Test that archived status works correctly."""
-    properties = DesiredBehaviourProperties(
-        spec_type=SpecType.desired_behaviour,
-    )
     spec = Spec(
         name="Test Spec",
-        description="Test description",
-        properties=properties,
+        definition="Test definition",
+        properties=sample_tone_properties,
         status=SpecStatus.archived,
         parent=sample_task,
     )
@@ -285,8 +382,8 @@ def test_spec_archived_status(sample_task):
 
     spec2 = Spec(
         name="Test Spec 2",
-        description="Test description",
-        properties=properties,
+        definition="Test definition",
+        properties=sample_tone_properties,
         status=SpecStatus.active,
         parent=sample_task,
     )
@@ -297,13 +394,15 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
     """Test creating a spec with AppropriateToolUseProperties."""
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
-        tool_id="tool-123",
-        appropriate_tool_use_guidelines="Use the tool when needed",
-        inappropriate_tool_use_guidelines="Don't use for simple queries",
+        base_instruction="Test instruction",
+        tool_function_name="tool_function_123",
+        tool_use_guidelines="Use the tool when needed",
+        appropriate_tool_use_examples="Example: search queries",
+        inappropriate_tool_use_examples="Example: simple math",
     )
     spec = Spec(
         name="Tool Use Spec",
-        description="Test tool use spec",
+        definition="Test tool use spec",
         properties=properties,
         parent=sample_task,
     )
@@ -311,56 +410,61 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
     assert spec.properties is not None
     assert isinstance(spec.properties, dict)
     assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
-    assert spec.properties["tool_id"] == "tool-123"
-    assert (
-        spec.properties["appropriate_tool_use_guidelines"] == "Use the tool when needed"
-    )
-    assert (
-        spec.properties["inappropriate_tool_use_guidelines"]
-        == "Don't use for simple queries"
-    )
+    assert spec.properties["tool_function_name"] == "tool_function_123"
+    assert spec.properties["tool_use_guidelines"] == "Use the tool when needed"
+    assert spec.properties["appropriate_tool_use_examples"] == "Example: search queries"
+    assert spec.properties["inappropriate_tool_use_examples"] == "Example: simple math"
 
 
 def test_spec_with_appropriate_tool_use_properties_optional_field(sample_task):
     """Test creating a spec with AppropriateToolUseProperties without optional field."""
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
-        tool_id="tool-456",
-        appropriate_tool_use_guidelines="Use the tool when needed",
-        inappropriate_tool_use_guidelines=None,
+        base_instruction="Test instruction",
+        tool_function_name="tool_function_456",
+        tool_use_guidelines="Use the tool when needed",
+        appropriate_tool_use_examples=None,
+        inappropriate_tool_use_examples=None,
     )
     spec = Spec(
         name="Tool Use Spec",
-        description="Test tool use spec",
+        definition="Test tool use spec",
         properties=properties,
         parent=sample_task,
     )
 
     assert spec.properties is not None
     assert isinstance(spec.properties, dict)
-    assert spec.properties.get("inappropriate_tool_use_guidelines") is None
+    assert spec.properties.get("appropriate_tool_use_examples") is None
+    assert spec.properties.get("inappropriate_tool_use_examples") is None
 
 
-def test_spec_with_undesired_behaviour_properties(sample_task):
-    """Test creating a spec with UndesiredBehaviourProperties."""
-    properties = UndesiredBehaviourProperties(
-        spec_type=SpecType.undesired_behaviour,
-        undesired_behaviour_guidelines="Avoid toxic language",
-        examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
+def test_spec_with_behaviour_properties(sample_task):
+    """Test creating a spec with BehaviourProperties."""
+    properties = BehaviourProperties(
+        spec_type=SpecType.behaviour,
+        base_instruction="Test instruction",
+        behavior_description="Avoid toxic language",
+        correct_behavior_examples="Example 1: Be polite and respectful",
+        incorrect_behavior_examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
     )
     spec = Spec(
-        name="Undesired Behaviour Spec",
-        description="Test undesired behaviour spec",
+        name="Behaviour Spec",
+        definition="Test behaviour spec",
         properties=properties,
         parent=sample_task,
     )
 
     assert spec.properties is not None
     assert isinstance(spec.properties, dict)
-    assert spec.properties["spec_type"] == SpecType.undesired_behaviour
-    assert spec.properties["undesired_behaviour_guidelines"] == "Avoid toxic language"
+    assert spec.properties["spec_type"] == SpecType.behaviour
+    assert spec.properties["behavior_description"] == "Avoid toxic language"
     assert (
-        spec.properties["examples"]
+        spec.properties["correct_behavior_examples"]
+        == "Example 1: Be polite and respectful"
+    )
+    assert (
+        spec.properties["incorrect_behavior_examples"]
         == "Example 1: Don't use slurs\nExample 2: Don't be rude"
     )
 
@@ -370,11 +474,12 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         properties = {
             "spec_type": SpecType.appropriate_tool_use,
-            "tool_id": "tool-123",
+            "base_instruction": "Test instruction",
+            "tool_function_name": "tool_function_123",
         }
         Spec(
             name="Test Spec",
-            description="Test description",
+            definition="Test definition",
             properties=properties,  # type: ignore[arg-type]
             parent=sample_task,
         )
@@ -382,12 +487,12 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
 
     with pytest.raises(ValidationError) as exc_info:
         properties = {
-            "spec_type": SpecType.undesired_behaviour,
-            "undesired_behaviour_guidelines": "Avoid toxic language",
+            "spec_type": SpecType.behaviour,
+            "base_instruction": "Test instruction",
         }
         Spec(
             name="Test Spec",
-            description="Test description",
+            definition="Test definition",
             properties=properties,  # type: ignore[arg-type]
             parent=sample_task,
         )
@@ -399,26 +504,30 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
     with pytest.raises(ValidationError):
         properties = AppropriateToolUseProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
-            tool_id="tool-123",
-            appropriate_tool_use_guidelines="Use the tool when needed",
-            inappropriate_tool_use_guidelines=None,
+            base_instruction="Test instruction",
+            tool_function_name="tool_function_123",
+            tool_use_guidelines="Use the tool when needed",
+            appropriate_tool_use_examples=None,
+            inappropriate_tool_use_examples=None,
         )
         Spec(
             name="Test Spec",
-            description="Test description",
+            definition="Test definition",
             properties=properties,
             parent=sample_task,
         )
 
     with pytest.raises(ValidationError):
-        properties = UndesiredBehaviourProperties(
+        properties = BehaviourProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
-            undesired_behaviour_guidelines="Avoid toxic language",
-            examples="Example text",
+            base_instruction="Test instruction",
+            behavior_description="Avoid toxic language",
+            correct_behavior_examples=None,
+            incorrect_behavior_examples=None,
         )
         Spec(
             name="Test Spec",
-            description="Test description",
+            definition="Test definition",
             properties=properties,
             parent=sample_task,
         )
@@ -426,31 +535,33 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
 
 def test_spec_rejects_empty_dict_properties(sample_task):
     """Test that empty dict for properties is rejected by Pydantic validation."""
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError) as _exc_info:
         Spec(
             name="Test Spec",
-            description="Test description",
+            definition="Test definition",
             properties={},  # type: ignore[arg-type]
             parent=sample_task,
         )
 
 
-def test_spec_with_properties_and_description(sample_task):
-    """Test that description field works correctly with properties."""
+def test_spec_with_properties_and_definition(sample_task):
+    """Test that definition field works correctly with properties."""
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
-        tool_id="tool-123",
-        appropriate_tool_use_guidelines="Use the tool when needed",
-        inappropriate_tool_use_guidelines=None,
+        base_instruction="Test instruction",
+        tool_function_name="tool_function_123",
+        tool_use_guidelines="Use the tool when needed",
+        appropriate_tool_use_examples=None,
+        inappropriate_tool_use_examples=None,
     )
     spec = Spec(
         name="Tool Use Spec",
-        description="This spec defines when to use tools appropriately",
+        definition="This spec defines when to use tools appropriately",
         properties=properties,
         parent=sample_task,
     )
 
-    assert spec.description == "This spec defines when to use tools appropriately"
+    assert spec.definition == "This spec defines when to use tools appropriately"
     assert spec.properties is not None
     assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
-    assert spec.properties["tool_id"] == "tool-123"  # type: ignore[literal-required]
+    assert spec.properties["tool_function_name"] == "tool_function_123"  # type: ignore[literal-required]

@@ -9,7 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import (
-    DesiredBehaviourProperties,
+    BehaviourProperties,
     SpecType,
     ToxicityProperties,
 )
@@ -349,10 +349,16 @@ def test_task_specs_relationship(tmp_path):
     )
     task.save_to_file()
 
-    properties = DesiredBehaviourProperties(spec_type=SpecType.desired_behaviour)
+    properties = BehaviourProperties(
+        spec_type=SpecType.behaviour,
+        base_instruction="Test instruction",
+        behavior_description="The system should behave correctly",
+        correct_behavior_examples="Example 1",
+        incorrect_behavior_examples="Example 1",
+    )
     spec = Spec(
         name="Test Spec",
-        description="The system should behave correctly",
+        definition="The system should behave correctly",
         properties=properties,
         parent=task,
     )
@@ -362,8 +368,8 @@ def test_task_specs_relationship(tmp_path):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].name == "Test Spec"
-    assert specs[0].description == "The system should behave correctly"
-    assert specs[0].properties["spec_type"] == SpecType.desired_behaviour
+    assert specs[0].definition == "The system should behave correctly"
+    assert specs[0].properties["spec_type"] == SpecType.behaviour
 
 
 def test_task_specs_readonly(tmp_path):
@@ -373,10 +379,14 @@ def test_task_specs_readonly(tmp_path):
     )
     task.save_to_file()
 
-    properties = ToxicityProperties(spec_type=SpecType.toxicity)
+    properties = ToxicityProperties(
+        spec_type=SpecType.toxicity,
+        base_instruction="The system should avoid toxic language",
+        toxicity_examples="Example 1",
+    )
     spec = Spec(
         name="Readonly Spec",
-        description="System should handle readonly correctly",
+        definition="System should handle readonly correctly",
         properties=properties,
         parent=task,
     )

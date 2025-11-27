@@ -24,7 +24,7 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 
 class SpecUpsertRequest(BaseModel):
     name: FilenameString
-    description: str
+    definition: str
     properties: SpecProperties = Field(
         discriminator="spec_type",
     )
@@ -43,7 +43,7 @@ def connect_spec_api(app: FastAPI):
         spec = Spec(
             parent=task,
             name=spec_data.name,
-            description=spec_data.description,
+            definition=spec_data.definition,
             properties=spec_data.properties,
             priority=spec_data.priority,
             status=spec_data.status,
@@ -69,7 +69,7 @@ def connect_spec_api(app: FastAPI):
         spec = spec_from_id(project_id, task_id, spec_id)
 
         spec.name = spec_data.name
-        spec.description = spec_data.description
+        spec.definition = spec_data.definition
         spec.properties = spec_data.properties
         spec.priority = spec_data.priority
         spec.status = spec_data.status

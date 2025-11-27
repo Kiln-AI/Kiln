@@ -183,8 +183,8 @@
         bValue = b.name.toLowerCase()
         break
       case "type":
-        aValue = a.type
-        bValue = b.type
+        aValue = a.properties.spec_type
+        bValue = b.properties.spec_type
         break
       case "priority":
         aValue = a.priority
@@ -386,9 +386,8 @@
             },
             body: {
               name: spec.name,
-              description: spec.description,
-              properties: spec.properties ?? null,
-              type: spec.type,
+              definition: spec.definition,
+              properties: spec.properties,
               priority: spec.priority,
               status: spec.status,
               tags: updated_tags,
@@ -465,9 +464,8 @@
             },
             body: {
               name: spec.name,
-              description: spec.description,
-              properties: spec.properties ?? null,
-              type: spec.type,
+              definition: spec.definition,
+              properties: spec.properties,
               priority: spec.priority,
               status: new_status,
               tags: spec.tags,
@@ -595,7 +593,7 @@
                       : "\u200B"}
                   </span>
                 </th>
-                <th>Description</th>
+                <th>Definition</th>
                 <th
                   on:click={() => handleSort("type")}
                   class="hover:bg-base-200 cursor-pointer"
@@ -680,9 +678,9 @@
                     </td>
                   {/if}
                   <td class="font-medium">{spec.name}</td>
-                  <td class="max-w-md truncate">{spec.description}</td>
+                  <td class="max-w-md truncate">{spec.definition}</td>
                   <td>
-                    {formatSpecType(spec.type)}
+                    {formatSpecType(spec.properties.spec_type)}
                   </td>
                   <td>{formatPriority(spec.priority)}</td>
                   <td>
