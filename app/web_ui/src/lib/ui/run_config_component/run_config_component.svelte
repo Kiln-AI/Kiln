@@ -58,8 +58,6 @@
 
   let structured_output_mode: StructuredOutputMode = "default"
 
-  let instance_id: string = Math.random().toString(36).substring(2, 15)
-
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
@@ -82,6 +80,7 @@
   }
 
   // If requires_structured_output, update structured_output_mode when model changes
+  // We test each model in our known model list, so a smart default is selected automatically.
   function update_structured_output_mode_if_needed(
     model_name: string,
     provider: string,
@@ -106,26 +105,25 @@
     return false
   }
 
-  //let is_updating_from_saved_config: boolean = false
+  // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
-  async function update_current_run_options_if_needed(): Promise<boolean> {
-    // Only run if the selected run config id has changed
+  async function update_current_run_options_for_selected_run_config(): Promise<boolean> {
+    // Only run once immediately after a run config selection, not every reactive update
     if (prior_selected_run_config_id === selected_run_config_id) {
       return false
     }
     prior_selected_run_config_id = selected_run_config_id
-    //is_updating_from_saved_config = true
 
     const selected_run_config = await get_selected_run_config()
     if (selected_run_config === "custom") {
+      // No need to update
       return false
     }
     if (selected_run_config === null) {
       // We couldn't find the selected run config -- likely still loading the run configs
+      // Block progressing. If we run "reset_to_custom_options_if_needed" before setting it up, we'll lose the selection.
       return true
     }
-
-    //is_updating_from_saved_config = true
 
     model =
       selected_run_config.run_config_properties.model_provider_name +
@@ -140,11 +138,13 @@
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
 
-    //is_updating_from_saved_config = false
     return true
   }
 
-  // Main reactive statement
+  // Main reactive statement. This class is a bit wild, as many changes are circular.
+  // Example: changing the run config will update model, but selecting model will jump back to "custom" run config (or finetune run config).
+  // These are legit desired behaviour: respect the user's last selection, and make the rest consistent. But it makes updating the state a bit tricky.
+  // Make 1 big reactive statement to update the state. Then we debounce it to avoid excessive updates.
   $: void (model,
   prompt_method,
   temperature,
@@ -155,6 +155,9 @@
   selected_run_config_id,
   debounce_update_for_state_changes())
 
+  // Since some changes can make many other fields change (eg run config), we debounce the updates to avoid excessive updates.
+  // Just mark as dirty, and run again only once, after the update is once.
+  // Knowning only 1 is called in parallel also makes it simpler to reason about.
   let running: boolean = false
   let run_again: boolean = false
   async function debounce_update_for_state_changes() {
@@ -175,57 +178,58 @@
     }
   }
 
-  // Progress step by step, stopping if any step fails
+  // Progress step by step, stopping if any step asks to (could be missing data, and the reamining steps aren't valid)
   async function update_for_state_changes() {
+    // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
     await process_model_change()
-    const structured_output_mode_changed =
-      update_structured_output_mode_if_needed(
-        model_name,
-        provider,
-        $available_models,
-      )
-    if (structured_output_mode_changed) {
+
+    // Update the structured output mode to match the selected model, if needed
+    let should_stop = update_structured_output_mode_if_needed(
+      model_name,
+      provider,
+      $available_models,
+    )
+    if (should_stop) {
       run_again = true
       return
     }
-    const run_options_changed = await update_current_run_options_if_needed()
-    if (run_options_changed) {
+
+    // Update all the run options if they have changed the run config
+    should_stop = await update_current_run_options_for_selected_run_config()
+    if (should_stop) {
       run_again = true
       return
     }
+
+    // deselect the run config if they have changed any run options to not match the selected run config
     await reset_to_custom_options_if_needed()
   }
 
   let prior_model: string | null = null
   async function process_model_change() {
-    //
+    // only run once immediately after a model change, not every reactive update
     if (prior_model === model) {
       return
     }
     prior_model = model
 
     // Special case on model change
-    // if only the model changed and it changed to a finetune, select that run config
+    // if only the model and it changed to a finetune, select
+    // 1) if that fine_tune has a run_config based in, select that run config
+    // 2) if the fine_tune has no run_config based in, select it's prompt only - TODO P0 done in another class now
     const FINETUNE_MODEL_PREFIX = "kiln_fine_tune/"
     const is_finetune_model = model.startsWith(FINETUNE_MODEL_PREFIX)
     // Special case:
     if (is_finetune_model) {
       const finetune_id = model.substring(FINETUNE_MODEL_PREFIX.length)
       // TODO P0 handle legacy case
+      // TODO P0 handle if FT does not include a run_config based in, select it's prompt only
       const finetune_run_config_id = `finetune_run_config::${finetune_id}`
       selected_run_config_id = finetune_run_config_id
     }
   }
 
   async function reset_to_custom_options_if_needed() {
-    /*if (is_updating_from_saved_config) {
-      return
-    }*/
-    // If we are updating from a saved config don't reset back to custom
-    /*if (is_updating_from_saved_config) {
-      return
-    }*/
-
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
@@ -237,7 +241,6 @@
     let model_changed = false
     let provider_changed = false
     let prompt_changed = false
-
     const current_model_name = model ? model.split("/").slice(1).join("/") : ""
     const current_provider_name = model ? model.split("/")[0] : ""
     model_changed = config_properties.model_name !== current_model_name
@@ -249,6 +252,7 @@
     const output_mode_mismatch =
       config_properties.structured_output_mode !== "unknown" &&
       config_properties.structured_output_mode !== structured_output_mode
+
     if (
       model_changed ||
       provider_changed ||
@@ -258,6 +262,7 @@
       output_mode_mismatch ||
       !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
     ) {
+      // The user has changed something, so deselect the run config - it no longer matches the selected run config
       selected_run_config_id = "custom"
     }
   }
@@ -321,7 +326,6 @@
         $run_configs_by_task_composite_id[
           get_task_composite_id(project_id, current_task.id)
         ]
-      // TODO P0 - is this change correct?
       if (!all_configs) {
         return null
       }
