@@ -131,6 +131,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
             # This formatter will check it's valid JSON, and normalize the output (chat format just uses exact string).
             format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
             # Fireworks doesn't support function calls or json schema, so we'll use json mode at call time
+            # TODO P0 - this is setting the legacy field. Should be setting run_config.structured_output_mode
             self.datamodel.structured_output_mode = StructuredOutputMode.json_mode
 
         train_file_id = await self.generate_and_upload_jsonl(

@@ -47,7 +47,7 @@
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
 
-  let model: string = $ui_state.selected_model
+  export let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
@@ -57,8 +57,6 @@
   let top_p: number = 1.0
 
   let structured_output_mode: StructuredOutputMode = "default"
-
-  let is_updating_from_saved_config: boolean = false
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
@@ -81,12 +79,6 @@
     load_task_prompts(project_id, current_task.id)
   }
 
-  $: update_structured_output_mode_if_needed(
-    model_name,
-    provider,
-    $available_models,
-  )
-
   // If requires_structured_output, update structured_output_mode when model changes
   function update_structured_output_mode_if_needed(
     model_name: string,
@@ -103,39 +95,33 @@
     }
   }
 
-  // Update form values from saved config change if needed
-  $: if (selected_run_config_id !== null) {
-    update_current_run_options_if_needed()
-  }
-
+  let is_updating_from_saved_config: boolean = false
+  let prior_selected_run_config_id: string | null = null
   async function update_current_run_options_if_needed() {
+    console.log(
+      "update_current_run_options_if_needed",
+      prior_selected_run_config_id,
+      selected_run_config_id,
+    )
+    // Only run if the selected run config id has changed
+    if (prior_selected_run_config_id === selected_run_config_id) {
+      //return
+    }
+    prior_selected_run_config_id = selected_run_config_id
+    is_updating_from_saved_config = true
+
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
 
-    is_updating_from_saved_config = true
+    //is_updating_from_saved_config = true
 
-    const is_finetune_run_config = selected_run_config.id?.startsWith(
-      "finetune_run_config::",
-    )
-    if (is_finetune_run_config) {
-      // finetune_run_config::finetune_id
-      const finetune_id = selected_run_config.id?.split("::").pop()
-      // Finetune model ids are in this syntax: kiln_fine_tune/project_id::task_id::finetune_id
-      if (finetune_id && project_id && current_task?.id) {
-        model = `kiln_fine_tune/${project_id}::${current_task.id}::${finetune_id}`
-        // Finetune prompt ids are in this syntax: fine_tune_prompt::project_id::task_id::finetune_id
-        prompt_method = `fine_tune_prompt::${project_id}::${current_task.id}::${finetune_id}`
-      }
-      provider = selected_run_config.run_config_properties.model_provider_name
-    } else {
-      model =
-        selected_run_config.run_config_properties.model_provider_name +
-        "/" +
-        selected_run_config.run_config_properties.model_name
-      prompt_method = selected_run_config.run_config_properties.prompt_id
-    }
+    model =
+      selected_run_config.run_config_properties.model_provider_name +
+      "/" +
+      selected_run_config.run_config_properties.model_name
+    prompt_method = selected_run_config.run_config_properties.prompt_id
     tools = [
       ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
     ]
@@ -144,24 +130,90 @@
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
 
-    await tick()
     is_updating_from_saved_config = false
   }
 
-  // Check for manual changes when options change when on a saved config to set back to custom
+  // Main reactive statement
   $: void (model,
   prompt_method,
   temperature,
   top_p,
   structured_output_mode,
   tools,
-  reset_to_custom_options_if_needed())
+  $available_models,
+  selected_run_config_id,
+  debounce_update_for_state_changes())
+
+  let running: boolean = false
+  let run_again: boolean = false
+  async function debounce_update_for_state_changes() {
+    if (running) {
+      run_again = true
+      return
+    }
+    await tick()
+    try {
+      running = true
+      await update_for_state_changes()
+    } finally {
+      running = false
+      if (run_again) {
+        run_again = false
+        debounce_update_for_state_changes()
+      }
+    }
+  }
+
+  async function update_for_state_changes() {
+    await process_model_change()
+    await update_structured_output_mode_if_needed(
+      model_name,
+      provider,
+      $available_models,
+    )
+    await update_current_run_options_if_needed()
+    await reset_to_custom_options_if_needed()
+  }
+
+  let prior_model: string | null = null
+  async function process_model_change() {
+    //
+    if (prior_model === model) {
+      return
+    }
+    prior_model = model
+
+    console.log("process_model_change", prior_model, model)
+
+    // Special case on model change
+    // if only the model changed and it changed to a finetune, select that run config
+    const FINETUNE_MODEL_PREFIX = "kiln_fine_tune/"
+    const is_finetune_model = model.startsWith(FINETUNE_MODEL_PREFIX)
+    console.log("is_finetune_model", is_finetune_model, model)
+    // Special case:
+    if (is_finetune_model) {
+      const finetune_id = model.substring(FINETUNE_MODEL_PREFIX.length)
+      // TODO P0 handle legacy case
+      const finetune_run_config_id = `finetune_run_config::${finetune_id}`
+      selected_run_config_id = finetune_run_config_id
+      console.log(
+        "selected_run_config_id set to finetune run config in RunConfigComponent",
+        selected_run_config_id,
+        finetune_id,
+        finetune_run_config_id,
+      )
+    }
+  }
 
   async function reset_to_custom_options_if_needed() {
-    // If we are updating from a saved config don't reset back to custom
     if (is_updating_from_saved_config) {
       return
     }
+    console.log("reset_to_custom_options_if_needed", model)
+    // If we are updating from a saved config don't reset back to custom
+    /*if (is_updating_from_saved_config) {
+      return
+    }*/
 
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
@@ -182,12 +234,15 @@
     let prompt_changed = false
 
     if (is_finetune_run_config) {
+      // TODO P0 deelte special case
       const finetune_id = selected_run_config.id?.split("::").pop()
       const expected_model = `kiln_fine_tune/${project_id}::${current_task?.id}::${finetune_id}`
       const expected_prompt = `fine_tune_prompt::${project_id}::${current_task?.id}::${finetune_id}`
       model_changed = model !== expected_model
       prompt_changed = prompt_method !== expected_prompt
       provider_changed = provider !== "kiln_fine_tune"
+      // TODO P0
+      provider_changed = false
     } else {
       const current_model_name = model
         ? model.split("/").slice(1).join("/")
@@ -199,16 +254,45 @@
       prompt_changed = config_properties.prompt_id !== prompt_method
     }
 
+    console.log("model_changed", model_changed)
+    console.log("provider_changed", provider_changed)
+    console.log("prompt_changed", prompt_changed)
+    console.log("temperature", temperature)
+    console.log("top_p", top_p)
+    console.log("structured_output_mode", structured_output_mode)
+    console.log("tools", tools)
+    console.log("config_properties.temperature", config_properties.temperature)
+    console.log("config_properties.top_p", config_properties.top_p)
+    console.log(
+      "config_properties.structured_output_mode",
+      config_properties.structured_output_mode,
+    )
+    console.log(
+      "config_properties.tools_config?.tools",
+      config_properties.tools_config?.tools,
+    )
+    console.log(
+      "arrays_equal(config_properties.tools_config?.tools ?? [], tools)",
+      arrays_equal(config_properties.tools_config?.tools ?? [], tools),
+    )
+    // Legacy models can be "unknown". Don't consider those as mismatches.
+    const output_mode_mismatch =
+      config_properties.structured_output_mode !== "unknown" &&
+      config_properties.structured_output_mode !== structured_output_mode
     if (
       model_changed ||
       provider_changed ||
       prompt_changed ||
       config_properties.temperature !== temperature ||
       config_properties.top_p !== top_p ||
-      config_properties.structured_output_mode !== structured_output_mode ||
+      output_mode_mismatch ||
       !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
     ) {
       selected_run_config_id = "custom"
+      console.log(
+        "selected_run_config_id set to custom in RunConfigComponent",
+        selected_run_config_id,
+      )
     }
   }
 
@@ -270,7 +354,11 @@
       const all_configs =
         $run_configs_by_task_composite_id[
           get_task_composite_id(project_id, current_task.id)
-        ] ?? []
+        ]
+      // TODO P0 - is this change correct?
+      if (!all_configs) {
+        return null
+      }
       let run_config = all_configs.find(
         (config) => config.id === selected_run_config_id,
       )

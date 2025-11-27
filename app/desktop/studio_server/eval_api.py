@@ -340,7 +340,7 @@ def connect_evals_api(app: FastAPI):
             ):
                 configs.append(
                     TaskRunConfig(
-                        id=f"finetune_run_config::{finetune.id}",  # this id is not persisted
+                        id=f"finetune_run_config::{project_id}::{task_id}::{finetune.id}",
                         name=finetune.name,
                         description=finetune.description,
                         run_config_properties=finetune.run_config,
