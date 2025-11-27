@@ -158,7 +158,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # Existing user will not have entity set, need to reconnect
         if Config.shared().wandb_api_key and not Config.shared().wandb_entity:
             raise ValueError(
-                'Weights & Biases is connected but missing "entity". Please reconnect Weights & Biases in Settings → Manage Providers.'
+                "Weights & Biases was previously connected but is missing a required field. Please disconnect and reconnect Weights & Biases in Kiln Settings -> Manage Providers."
             )
 
         # Add W&B config if API key and entity are set

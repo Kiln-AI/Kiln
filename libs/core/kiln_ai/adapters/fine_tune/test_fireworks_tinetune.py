@@ -444,7 +444,7 @@ async def test_start_wandb_missing_entity(
     ):
         with pytest.raises(
             ValueError,
-            match=r"Weights & Biases is connected but missing \"entity\". Please reconnect Weights & Biases in Settings → Manage Providers.",
+            match=r"Weights & Biases was previously connected but is missing a required field. Please disconnect and reconnect Weights & Biases in Kiln Settings -> Manage Providers.",
         ):
             await fireworks_finetune._start(mock_dataset)
 
