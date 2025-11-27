@@ -8,6 +8,7 @@
     Task,
     RequirementRating,
     TaskRequirement,
+    Trace,
   } from "$lib/types"
   import { client } from "$lib/api_client"
   import Output from "./output.svelte"
@@ -27,6 +28,92 @@
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+
+  type SubtaskReference = {
+    project_id: string
+    task_id: string
+    run_id: string
+  }
+
+  function extract_subtask_references(trace: Trace): SubtaskReference[] {
+    const references: SubtaskReference[] = []
+    for (const message of trace) {
+      if (
+        "kiln_task_tool_data" in message &&
+        message.kiln_task_tool_data &&
+        typeof message.kiln_task_tool_data === "string"
+      ) {
+        const [project_id, , task_id, run_id] =
+          message.kiln_task_tool_data.split(":::")
+        if (project_id && task_id && run_id) {
+          references.push({ project_id, task_id, run_id })
+        }
+      }
+    }
+    return references
+  }
+
+  async function calculate_subtask_cost(
+    trace: Trace | null | undefined,
+    visited: Set<string> = new Set(),
+  ): Promise<number> {
+    if (!trace) return 0
+
+    const references = extract_subtask_references(trace)
+    let total_cost = 0
+
+    for (const ref of references) {
+      const key = `${ref.project_id}:${ref.task_id}:${ref.run_id}`
+      if (visited.has(key)) continue
+      visited.add(key)
+
+      try {
+        const response = await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+          {
+            params: {
+              path: {
+                project_id: ref.project_id,
+                task_id: ref.task_id,
+                run_id: ref.run_id,
+              },
+            },
+          },
+        )
+
+        if (!response.error && response.data) {
+          total_cost += response.data.usage?.cost ?? 0
+          total_cost += await calculate_subtask_cost(
+            response.data.trace,
+            visited,
+          )
+        }
+      } catch {
+        // Continue on error - subtask run may have been deleted
+      }
+    }
+
+    return total_cost
+  }
+
+  let subtask_cost: number | null = null
+  let subtask_cost_loading = false
+
+  async function load_subtask_cost(trace: Trace | null | undefined) {
+    if (!trace || extract_subtask_references(trace).length === 0) {
+      subtask_cost = null
+      return
+    }
+
+    subtask_cost_loading = true
+    try {
+      subtask_cost = await calculate_subtask_cost(trace)
+    } catch {
+      subtask_cost = null
+    } finally {
+      subtask_cost_loading = false
+    }
+  }
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -367,13 +454,29 @@
     repair_run = null
   }
 
-  function get_usage_properties(run: TaskRun | null) {
+  function get_usage_properties(
+    run: TaskRun | null,
+    subtask_cost: number | null,
+    subtask_cost_loading: boolean,
+  ) {
     let properties = []
 
     if (run?.usage?.cost) {
       properties.push({
         name: "Cost",
         value: `$${run.usage.cost.toFixed(6)}`,
+      })
+    }
+
+    if (subtask_cost_loading) {
+      properties.push({
+        name: "Subtasks Cost",
+        value: "Loading...",
+      })
+    } else if (subtask_cost && subtask_cost > 0) {
+      properties.push({
+        name: "Subtasks Cost",
+        value: `$${subtask_cost.toFixed(6)}`,
       })
     }
 
@@ -386,7 +489,13 @@
 
     return properties
   }
-  $: usage_properties = get_usage_properties(run)
+
+  $: load_subtask_cost(run?.trace)
+  $: usage_properties = get_usage_properties(
+    run,
+    subtask_cost,
+    subtask_cost_loading,
+  )
 </script>
 
 <div>
