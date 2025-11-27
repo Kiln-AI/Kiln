@@ -5,7 +5,11 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel import DatasetSplit, FineTuneStatusType, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
+from kiln_ai.datamodel.datamodel_enums import (
+    ChatStrategy,
+    ModelProviderName,
+    StructuredOutputMode,
+)
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 
@@ -116,6 +120,21 @@ class BaseFinetuneAdapter(ABC):
         if run_config is not None:
             run_config.model_provider_name = ModelProviderName.kiln_fine_tune
             run_config.model_name = datamodel.model_id()
+            # Build the fine-tune prompt ID
+            task = datamodel.parent_task()
+            if task is None:
+                raise ValueError("Finetune must have a parent task")
+            project = task.parent_project()
+            if project is None:
+                raise ValueError("Task must have a parent project")
+            run_config.prompt_id = (
+                f"fine_tune_prompt::{project.id}::{task.id}::{datamodel.id}"
+            )
+            # follow the same behavior as provider_api where json_instructions is the default for fine-tuned models
+            run_config.structured_output_mode = (
+                datamodel.structured_output_mode
+                or StructuredOutputMode.json_instructions
+            )
 
         datamodel.save_to_file()
 
