@@ -85,44 +85,34 @@
     model_name: string,
     provider: string,
     available_models: AvailableModels[],
-  ): boolean {
+  ) {
     if (requires_structured_output) {
       const model_details = available_model_details(
         model_name,
         provider,
         available_models,
       )
-      if (available_models.length === 0) {
-        // Not loaded yet. Don't progress until it is.
-        return false
-      }
       const new_mode = model_details?.structured_output_mode || "default"
       if (new_mode !== structured_output_mode) {
         structured_output_mode = new_mode
         return true
       }
     }
-    return false
   }
 
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
-  async function update_current_run_options_for_selected_run_config(): Promise<boolean> {
+  async function update_current_run_options_for_selected_run_config() {
     // Only run once immediately after a run config selection, not every reactive update
     if (prior_selected_run_config_id === selected_run_config_id) {
-      return false
+      return
     }
     prior_selected_run_config_id = selected_run_config_id
 
     const selected_run_config = await get_selected_run_config()
-    if (selected_run_config === "custom") {
-      // No need to update
-      return false
-    }
-    if (selected_run_config === null) {
-      // We couldn't find the selected run config -- likely still loading the run configs
-      // Block progressing. If we run "reset_to_custom_options_if_needed" before setting it up, we'll lose the selection.
-      return true
+    if (!selected_run_config || selected_run_config === "custom") {
+      // No need to update selected_run_config_id, it's already custom or unset
+      return
     }
 
     model =
@@ -137,8 +127,6 @@
     top_p = selected_run_config.run_config_properties.top_p
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
-
-    return true
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
@@ -178,45 +166,47 @@
     }
   }
 
-  // Progress step by step, stopping if any step asks to (could be missing data, and the reamining steps aren't valid)
+  // Progress step by step, stopping if any step asks to. It could be missing data, and the reamining steps aren't valid.
   async function update_for_state_changes() {
+    // all setps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
+    if (!$available_models) {
+      return
+    }
+
     // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
-    await process_model_change()
+    process_model_change()
 
     // Update the structured output mode to match the selected model, if needed
-    let should_stop = update_structured_output_mode_if_needed(
+    update_structured_output_mode_if_needed(
       model_name,
       provider,
       $available_models,
     )
-    if (should_stop) {
-      run_again = true
-      return
-    }
 
     // Update all the run options if they have changed the run config
-    should_stop = await update_current_run_options_for_selected_run_config()
-    if (should_stop) {
-      run_again = true
-      return
-    }
+    await update_current_run_options_for_selected_run_config()
 
     // deselect the run config if they have changed any run options to not match the selected run config
     await reset_to_custom_options_if_needed()
   }
 
   let prior_model: string | null = null
-  async function process_model_change() {
+  async function process_model_change(): Promise<boolean> {
+    // only run once we have available_models. We need it to check if the model is a finetune and has a run_config based in.
+    if (!$available_models) {
+      return true
+    }
+
     // only run once immediately after a model change, not every reactive update
     if (prior_model === model) {
-      return
+      return false
     }
     prior_model = model
 
     // Special case on model change
     // if only the model and it changed to a finetune, select
     // 1) if that fine_tune has a run_config based in, select that run config
-    // 2) if the fine_tune has no run_config based in, select it's prompt only - TODO P0 done in another class now
+    // 2) if the fine_tune has no run_config based in, select it's prompt (done in prompt_type_selector.svelte, just documented here)
     const FINETUNE_MODEL_PREFIX = "kiln_fine_tune/"
     const is_finetune_model = model.startsWith(FINETUNE_MODEL_PREFIX)
     // Special case:
@@ -227,6 +217,7 @@
       const finetune_run_config_id = `finetune_run_config::${finetune_id}`
       selected_run_config_id = finetune_run_config_id
     }
+    return false
   }
 
   async function reset_to_custom_options_if_needed() {
@@ -326,9 +317,6 @@
         $run_configs_by_task_composite_id[
           get_task_composite_id(project_id, current_task.id)
         ]
-      if (!all_configs) {
-        return null
-      }
       let run_config = all_configs.find(
         (config) => config.id === selected_run_config_id,
       )
