@@ -671,7 +671,9 @@
   let root_node_component: GeneratedDataNode | null = null
 
   function get_random_split_tag() {
-    const splits = get(guidance_data.splits)
+    // Read splits from saved_state (the persisted source of truth) instead of
+    // guidance_data.splits to avoid sync issues between the two stores
+    const splits = get(saved_state).splits
     if (Object.keys(splits).length === 0) return undefined
 
     const random = Math.random()
