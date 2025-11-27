@@ -2535,8 +2535,11 @@ export interface components {
             description?: string | null;
             /** @description The provider of the embedding model */
             model_provider_name: components["schemas"]["ModelProviderName"];
-            /** @description The name of the embedding model */
-            model_name: components["schemas"]["EmbeddingModelName"];
+            /**
+             * Model Name
+             * @description The name of the embedding model
+             */
+            model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
         };
