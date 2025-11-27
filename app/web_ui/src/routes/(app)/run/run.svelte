@@ -98,20 +98,33 @@
 
   let subtask_cost: number | null = null
   let subtask_cost_loading = false
+  let subtask_cost_request_id = 0
 
   async function load_subtask_cost(trace: Trace | null | undefined) {
+    const request_id = ++subtask_cost_request_id
+
     if (!trace || extract_subtask_references(trace).length === 0) {
-      subtask_cost = null
+      if (request_id === subtask_cost_request_id) {
+        subtask_cost = null
+        subtask_cost_loading = false
+      }
       return
     }
 
     subtask_cost_loading = true
     try {
-      subtask_cost = await calculate_subtask_cost(trace)
+      const cost = await calculate_subtask_cost(trace)
+      if (request_id === subtask_cost_request_id) {
+        subtask_cost = cost
+      }
     } catch {
-      subtask_cost = null
+      if (request_id === subtask_cost_request_id) {
+        subtask_cost = null
+      }
     } finally {
-      subtask_cost_loading = false
+      if (request_id === subtask_cost_request_id) {
+        subtask_cost_loading = false
+      }
     }
   }
 
