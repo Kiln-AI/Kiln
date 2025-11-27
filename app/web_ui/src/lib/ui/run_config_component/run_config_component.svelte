@@ -58,6 +58,8 @@
 
   let structured_output_mode: StructuredOutputMode = "default"
 
+  let instance_id: string = Math.random().toString(36).substring(2, 15)
+
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
   $: requires_tool_support = tools.length > 0
@@ -84,35 +86,43 @@
     model_name: string,
     provider: string,
     available_models: AvailableModels[],
-  ) {
+  ): boolean {
     if (requires_structured_output) {
-      const new_mode =
-        available_model_details(model_name, provider, available_models)
-          ?.structured_output_mode || "default"
+      const model_details = available_model_details(
+        model_name,
+        provider,
+        available_models,
+      )
+      if (available_models.length === 0) {
+        // Not loaded yet. Don't progress until it is.
+        return false
+      }
+      const new_mode = model_details?.structured_output_mode || "default"
       if (new_mode !== structured_output_mode) {
         structured_output_mode = new_mode
+        return true
       }
     }
+    return false
   }
 
-  let is_updating_from_saved_config: boolean = false
+  //let is_updating_from_saved_config: boolean = false
   let prior_selected_run_config_id: string | null = null
-  async function update_current_run_options_if_needed() {
-    console.log(
-      "update_current_run_options_if_needed",
-      prior_selected_run_config_id,
-      selected_run_config_id,
-    )
+  async function update_current_run_options_if_needed(): Promise<boolean> {
     // Only run if the selected run config id has changed
     if (prior_selected_run_config_id === selected_run_config_id) {
-      //return
+      return false
     }
     prior_selected_run_config_id = selected_run_config_id
-    is_updating_from_saved_config = true
+    //is_updating_from_saved_config = true
 
     const selected_run_config = await get_selected_run_config()
-    if (!selected_run_config || selected_run_config === "custom") {
-      return
+    if (selected_run_config === "custom") {
+      return false
+    }
+    if (selected_run_config === null) {
+      // We couldn't find the selected run config -- likely still loading the run configs
+      return true
     }
 
     //is_updating_from_saved_config = true
@@ -130,7 +140,8 @@
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
 
-    is_updating_from_saved_config = false
+    //is_updating_from_saved_config = false
+    return true
   }
 
   // Main reactive statement
@@ -151,9 +162,9 @@
       run_again = true
       return
     }
+    running = true
     await tick()
     try {
-      running = true
       await update_for_state_changes()
     } finally {
       running = false
@@ -164,14 +175,24 @@
     }
   }
 
+  // Progress step by step, stopping if any step fails
   async function update_for_state_changes() {
     await process_model_change()
-    await update_structured_output_mode_if_needed(
-      model_name,
-      provider,
-      $available_models,
-    )
-    await update_current_run_options_if_needed()
+    const structured_output_mode_changed =
+      update_structured_output_mode_if_needed(
+        model_name,
+        provider,
+        $available_models,
+      )
+    if (structured_output_mode_changed) {
+      run_again = true
+      return
+    }
+    const run_options_changed = await update_current_run_options_if_needed()
+    if (run_options_changed) {
+      run_again = true
+      return
+    }
     await reset_to_custom_options_if_needed()
   }
 
@@ -183,33 +204,23 @@
     }
     prior_model = model
 
-    console.log("process_model_change", prior_model, model)
-
     // Special case on model change
     // if only the model changed and it changed to a finetune, select that run config
     const FINETUNE_MODEL_PREFIX = "kiln_fine_tune/"
     const is_finetune_model = model.startsWith(FINETUNE_MODEL_PREFIX)
-    console.log("is_finetune_model", is_finetune_model, model)
     // Special case:
     if (is_finetune_model) {
       const finetune_id = model.substring(FINETUNE_MODEL_PREFIX.length)
       // TODO P0 handle legacy case
       const finetune_run_config_id = `finetune_run_config::${finetune_id}`
       selected_run_config_id = finetune_run_config_id
-      console.log(
-        "selected_run_config_id set to finetune run config in RunConfigComponent",
-        selected_run_config_id,
-        finetune_id,
-        finetune_run_config_id,
-      )
     }
   }
 
   async function reset_to_custom_options_if_needed() {
-    if (is_updating_from_saved_config) {
+    /*if (is_updating_from_saved_config) {
       return
-    }
-    console.log("reset_to_custom_options_if_needed", model)
+    }*/
     // If we are updating from a saved config don't reset back to custom
     /*if (is_updating_from_saved_config) {
       return
@@ -219,62 +230,21 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-    // Wait for all reactive statements to complete
-    await tick()
 
     const config_properties = selected_run_config.run_config_properties
-
-    const is_finetune_run_config = selected_run_config.id?.startsWith(
-      "finetune_run_config::",
-    )
 
     // Check if any values have changed from the saved config properties
     let model_changed = false
     let provider_changed = false
     let prompt_changed = false
 
-    if (is_finetune_run_config) {
-      // TODO P0 deelte special case
-      const finetune_id = selected_run_config.id?.split("::").pop()
-      const expected_model = `kiln_fine_tune/${project_id}::${current_task?.id}::${finetune_id}`
-      const expected_prompt = `fine_tune_prompt::${project_id}::${current_task?.id}::${finetune_id}`
-      model_changed = model !== expected_model
-      prompt_changed = prompt_method !== expected_prompt
-      provider_changed = provider !== "kiln_fine_tune"
-      // TODO P0
-      provider_changed = false
-    } else {
-      const current_model_name = model
-        ? model.split("/").slice(1).join("/")
-        : ""
-      const current_provider_name = model ? model.split("/")[0] : ""
-      model_changed = config_properties.model_name !== current_model_name
-      provider_changed =
-        config_properties.model_provider_name !== current_provider_name
-      prompt_changed = config_properties.prompt_id !== prompt_method
-    }
+    const current_model_name = model ? model.split("/").slice(1).join("/") : ""
+    const current_provider_name = model ? model.split("/")[0] : ""
+    model_changed = config_properties.model_name !== current_model_name
+    provider_changed =
+      config_properties.model_provider_name !== current_provider_name
+    prompt_changed = config_properties.prompt_id !== prompt_method
 
-    console.log("model_changed", model_changed)
-    console.log("provider_changed", provider_changed)
-    console.log("prompt_changed", prompt_changed)
-    console.log("temperature", temperature)
-    console.log("top_p", top_p)
-    console.log("structured_output_mode", structured_output_mode)
-    console.log("tools", tools)
-    console.log("config_properties.temperature", config_properties.temperature)
-    console.log("config_properties.top_p", config_properties.top_p)
-    console.log(
-      "config_properties.structured_output_mode",
-      config_properties.structured_output_mode,
-    )
-    console.log(
-      "config_properties.tools_config?.tools",
-      config_properties.tools_config?.tools,
-    )
-    console.log(
-      "arrays_equal(config_properties.tools_config?.tools ?? [], tools)",
-      arrays_equal(config_properties.tools_config?.tools ?? [], tools),
-    )
     // Legacy models can be "unknown". Don't consider those as mismatches.
     const output_mode_mismatch =
       config_properties.structured_output_mode !== "unknown" &&
@@ -289,10 +259,6 @@
       !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
     ) {
       selected_run_config_id = "custom"
-      console.log(
-        "selected_run_config_id set to custom in RunConfigComponent",
-        selected_run_config_id,
-      )
     }
   }
 
