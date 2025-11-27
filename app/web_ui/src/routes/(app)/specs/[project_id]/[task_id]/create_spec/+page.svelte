@@ -16,9 +16,9 @@
   let create_loading = false
   let complete = false
 
-  let spec_name = ""
-  let spec_definition = ""
-  let spec_type: SpecType = "desired_behaviour"
+  let name = ""
+  let definition = ""
+  let spec_type: SpecType = "behaviour"
   $: {
     const type_param = $page.url.searchParams.get("type")
     if (type_param) {
@@ -32,6 +32,9 @@
       create_error = null
       create_loading = true
       complete = false
+      if (spec_type !== "behaviour") {
+        throw createKilnError("Not implemented yet")
+      }
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec",
         {
@@ -39,9 +42,16 @@
             path: { project_id, task_id },
           },
           body: {
-            name: spec_name,
-            definition: spec_definition,
-            type: spec_type,
+            name,
+            definition,
+            properties: {
+              spec_type: spec_type,
+              base_instruction:
+                "The model must follow the specified behaviour requirements.",
+              behavior_description: definition,
+              correct_behavior_examples: null,
+              incorrect_behavior_examples: null,
+            },
             priority: 1,
             status: "active",
             tags: [],
@@ -84,20 +94,20 @@
       on:submit={create_spec}
       bind:error={create_error}
       bind:submitting={create_loading}
-      warn_before_unload={!!(!complete && (spec_name || spec_definition))}
+      warn_before_unload={!!(!complete && (name || definition))}
     >
       <FormElement
         label="Spec Name"
         description="A short name for your own reference."
         id="spec_name"
-        bind:value={spec_name}
+        bind:value={name}
       />
       <FormElement
         label="Spec Definition"
-        description="A detailed definition of the spec. This will be used by AI to understand the spec."
-        id="spec_definition"
+        description="A detailed definition of the spec."
+        id="spec_description"
         inputType="textarea"
-        bind:value={spec_definition}
+        bind:value={definition}
       />
     </FormContainer>
   </AppPage>
