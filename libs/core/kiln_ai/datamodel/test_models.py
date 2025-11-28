@@ -331,6 +331,52 @@ def test_finetune_parent_task():
     assert finetune_no_parent.parent_task() is None
 
 
+def test_finetune_model_id(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    finetune = Finetune(
+        name="test-finetune",
+        provider="openai",
+        base_model_id="gpt-3.5-turbo",
+        parent=task,
+        dataset_split_id="dataset-123",
+        train_split_name="train",
+        system_message="Test system message",
+    )
+
+    expected_id = f"{project.id}::{task.id}::{finetune.id}"
+    assert finetune.model_id() == expected_id
+
+    finetune_no_task = Finetune(
+        name="test-finetune",
+        provider="openai",
+        base_model_id="gpt-3.5-turbo",
+        dataset_split_id="dataset-123",
+        train_split_name="train",
+        system_message="Test system message",
+    )
+    with pytest.raises(ValueError, match="Finetune must have a parent task"):
+        finetune_no_task.model_id()
+
+    task_no_project = Task(name="Test Task", instruction="Test instruction")
+    finetune_no_project = Finetune(
+        name="test-finetune",
+        provider="openai",
+        base_model_id="gpt-3.5-turbo",
+        parent=task_no_project,
+        dataset_split_id="dataset-123",
+        train_split_name="train",
+        system_message="Test system message",
+    )
+    with pytest.raises(ValueError, match="Finetune must have a parent project"):
+        finetune_no_project.model_id()
+
+
 def test_finetune_parameters_validation():
     # Test that parameters only accept valid types
     with pytest.raises(ValidationError):

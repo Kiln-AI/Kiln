@@ -96,6 +96,18 @@ class Finetune(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
+    def model_id(self) -> str:
+        """
+        Build the full model ID for this finetune in the format: project_id::task_id::finetune_id
+        """
+        task = self.parent_task()
+        if task is None:
+            raise ValueError("Finetune must have a parent task")
+        project = task.parent_project()
+        if project is None:
+            raise ValueError("Finetune must have a parent project")
+        return f"{project.id}::{task.id}::{self.id}"
+
     @model_validator(mode="after")
     def validate_thinking_instructions(self) -> Self:
         if (
