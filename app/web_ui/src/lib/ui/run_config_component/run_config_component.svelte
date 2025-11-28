@@ -46,7 +46,7 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
-  // -specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
+  // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
 
   export let model: string = $ui_state.selected_model
@@ -175,7 +175,7 @@
 
   // Progress step by step, stopping if any step asks to. It could be missing data, and the remaining steps aren't valid.
   async function update_for_state_changes() {
-    // all setps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
+    // All steps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
     if ($available_models.length === 0) {
       return
     }
