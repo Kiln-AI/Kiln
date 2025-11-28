@@ -317,7 +317,7 @@
       const all_configs =
         $run_configs_by_task_composite_id[
           get_task_composite_id(project_id, current_task.id)
-        ]
+        ] ?? []
       let run_config = all_configs.find(
         (config) => config.id === selected_run_config_id,
       )
