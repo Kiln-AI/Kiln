@@ -120,7 +120,6 @@ class TogetherFinetune(BaseFinetuneAdapter):
             self.datamodel.structured_output_mode = (
                 StructuredOutputMode.json_custom_instructions
             )
-            # TODO P0 - this is setting the legacy field. Should be setting run_config.structured_output_mode
 
         train_file_id = await self.generate_and_upload_jsonl(
             dataset, self.datamodel.train_split_name, task, format
