@@ -34,7 +34,7 @@ class Finetune(KilnParentedModel):
     )
     structured_output_mode: StructuredOutputMode | None = Field(
         default=None,
-        description="The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode.",
+        description="Legacy field -- replaced by run_config.structured_output_mode. The mode to use to train the model for structured output, if it was trained with structured output. We should call the tuned model with this mode if set.",
     )
     provider: str = Field(
         description="The provider to use for the fine-tune (e.g. 'openai')."

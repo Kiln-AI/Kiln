@@ -8,7 +8,6 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.datamodel_enums import FineTuneStatusType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -332,15 +331,10 @@ def connect_evals_api(app: FastAPI):
         # Get run configs from finetunes
         finetunes = task.finetunes()
         for finetune in finetunes:
-            # Only include if the finetune is not unknown or failed
-            if (
-                finetune.latest_status != FineTuneStatusType.unknown
-                and finetune.latest_status != FineTuneStatusType.failed
-                and finetune.run_config is not None
-            ):
+            if finetune.run_config is not None:
                 configs.append(
                     TaskRunConfig(
-                        id=f"finetune_run_config::{finetune.id}",  # this id is not persisted
+                        id=f"finetune_run_config::{project_id}::{task_id}::{finetune.id}",
                         name=finetune.name,
                         description=finetune.description,
                         run_config_properties=finetune.run_config,

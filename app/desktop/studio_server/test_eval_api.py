@@ -1968,8 +1968,8 @@ async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
 
     config_ids = [config["id"] for config in configs]
 
-    assert "finetune_run_config::ft_completed" in config_ids
-    assert "finetune_run_config::ft_running" in config_ids
-    assert "finetune_run_config::ft_unknown" not in config_ids
-    assert "finetune_run_config::ft_failed" not in config_ids
-    assert "finetune_run_config::ft_no_run_config" not in config_ids
+    assert "finetune_run_config::project1::task1::ft_completed" in config_ids
+    assert "finetune_run_config::project1::task1::ft_running" in config_ids
+    assert "finetune_run_config::project1::task1::ft_failed" in config_ids
+    assert "finetune_run_config::project1::task1::ft_unknown" in config_ids
+    assert "finetune_run_config::project1::task1::ft_no_run_config" not in config_ids

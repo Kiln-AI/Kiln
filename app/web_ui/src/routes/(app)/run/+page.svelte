@@ -22,6 +22,8 @@
   let model_name: string = ""
   let provider: string = ""
   let selected_run_config_id: string | null = null
+  // Some models have a model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
+  let selected_model_specific_run_config_id: string | null = null
 
   let run_config_component: RunConfigComponent
   let save_config_error: KilnError | null = null
@@ -198,6 +200,7 @@
             bind:save_config_error
             bind:set_default_error
             save_new_run_config={handle_save_new_run_config}
+            {selected_model_specific_run_config_id}
           />
           <RunConfigComponent
             bind:this={run_config_component}
@@ -207,6 +210,7 @@
             bind:selected_run_config_id
             bind:save_config_error
             bind:set_default_error
+            bind:selected_model_specific_run_config_id
           />
         </div>
       {/if}
