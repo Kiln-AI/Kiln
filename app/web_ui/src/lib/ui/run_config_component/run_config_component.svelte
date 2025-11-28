@@ -46,6 +46,8 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  // -specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
+  export let selected_model_specific_run_config_id: string | null = null
 
   export let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
@@ -212,6 +214,10 @@
     )
     if (model_details?.model_specific_run_config) {
       selected_run_config_id = model_details.model_specific_run_config
+      selected_model_specific_run_config_id =
+        model_details.model_specific_run_config
+    } else {
+      selected_model_specific_run_config_id = null
     }
   }
 
