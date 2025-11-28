@@ -156,6 +156,8 @@ class ModelDetails(BaseModel):
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
+    # if the model has a model-specific run config which should be used when running the model (like a fine-tune model's baked in run config)
+    model_specific_run_config: str | None = Field(default=None)
 
 
 class AvailableModels(BaseModel):
@@ -1464,6 +1466,11 @@ def all_fine_tuned_models() -> AvailableModels | None:
             for fine_tune in task.finetunes():
                 # check if the fine tune is completed
                 if fine_tune.fine_tune_model_id:
+                    model_specific_run_config = (
+                        f"finetune_run_config::{project.id}::{task.id}::{fine_tune.id}"
+                        if fine_tune.run_config is not None
+                        else None
+                    )
                     models.append(
                         ModelDetails(
                             id=f"{project.id}::{task.id}::{fine_tune.id}",
@@ -1482,6 +1489,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             structured_output_mode=fine_tune_model_structured_output_mode(
                                 fine_tune
                             ),
+                            model_specific_run_config=model_specific_run_config,
                             supports_vision=False,
                             supports_doc_extraction=False,
                             suggested_for_doc_extraction=False,

@@ -133,6 +133,11 @@
   // Example: changing the run config will update model, but selecting model will jump back to "custom" run config (or finetune run config).
   // These are legit desired behaviour: respect the user's last selection, and make the rest consistent. But it makes updating the state a bit tricky.
   // Make 1 big reactive statement to update the state. Then we debounce it to avoid excessive updates.
+  // Test cases if you edit (including a page reload version of each test):
+  // 1. Select a fine-tune model, it's run config shoudl be automatically selected and the RC's values filled
+  // 2. Select a legacy fine-tune model (no run config baked in), it's prompt should be selected and RC stays custom
+  // 3. Select a saved run config, should set all fields to the saved config's values
+  // 4. Change any field after setting a run config, should deselect the run config to "custom"
   $: void (model,
   prompt_method,
   temperature,
@@ -169,7 +174,7 @@
   // Progress step by step, stopping if any step asks to. It could be missing data, and the reamining steps aren't valid.
   async function update_for_state_changes() {
     // all setps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
-    if (!$available_models) {
+    if ($available_models.length === 0) {
       return
     }
 
@@ -191,33 +196,23 @@
   }
 
   let prior_model: string | null = null
-  async function process_model_change(): Promise<boolean> {
-    // only run once we have available_models. We need it to check if the model is a finetune and has a run_config based in.
-    if (!$available_models) {
-      return true
-    }
-
+  async function process_model_change() {
     // only run once immediately after a model change, not every reactive update
     if (prior_model === model) {
-      return false
+      return
     }
     prior_model = model
 
-    // Special case on model change
-    // if only the model and it changed to a finetune, select
-    // 1) if that fine_tune has a run_config based in, select that run config
-    // 2) if the fine_tune has no run_config based in, select it's prompt (done in prompt_type_selector.svelte, just documented here)
-    const FINETUNE_MODEL_PREFIX = "kiln_fine_tune/"
-    const is_finetune_model = model.startsWith(FINETUNE_MODEL_PREFIX)
-    // Special case:
-    if (is_finetune_model) {
-      const finetune_id = model.substring(FINETUNE_MODEL_PREFIX.length)
-      // TODO P0 handle legacy case
-      // TODO P0 handle if FT does not include a run_config based in, select it's prompt only
-      const finetune_run_config_id = `finetune_run_config::${finetune_id}`
-      selected_run_config_id = finetune_run_config_id
+    // Special case on model change: if the model says it has a model-specific run config, select that run config.
+    // Currently used by fine-tuned models which need to be called like they are trained.
+    const model_details = available_model_details(
+      model_name,
+      provider,
+      $available_models,
+    )
+    if (model_details?.model_specific_run_config) {
+      selected_run_config_id = model_details.model_specific_run_config
     }
-    return false
   }
 
   async function reset_to_custom_options_if_needed() {
