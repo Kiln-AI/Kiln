@@ -46,8 +46,10 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
+  export let selected_model_specific_run_config_id: string | null = null
 
-  let model: string = $ui_state.selected_model
+  export let model: string = $ui_state.selected_model
   let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
@@ -57,8 +59,6 @@
   let top_p: number = 1.0
 
   let structured_output_mode: StructuredOutputMode = "default"
-
-  let is_updating_from_saved_config: boolean = false
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
@@ -81,61 +81,47 @@
     load_task_prompts(project_id, current_task.id)
   }
 
-  $: update_structured_output_mode_if_needed(
-    model_name,
-    provider,
-    $available_models,
-  )
-
   // If requires_structured_output, update structured_output_mode when model changes
+  // We test each model in our known model list, so a smart default is selected automatically.
   function update_structured_output_mode_if_needed(
     model_name: string,
     provider: string,
     available_models: AvailableModels[],
   ) {
     if (requires_structured_output) {
-      const new_mode =
-        available_model_details(model_name, provider, available_models)
-          ?.structured_output_mode || "default"
+      const model_details = available_model_details(
+        model_name,
+        provider,
+        available_models,
+      )
+      const new_mode = model_details?.structured_output_mode || "default"
       if (new_mode !== structured_output_mode) {
         structured_output_mode = new_mode
+        return true
       }
     }
   }
 
-  // Update form values from saved config change if needed
-  $: if (selected_run_config_id !== null) {
-    update_current_run_options_if_needed()
-  }
+  // When a run config is selected, update the current run options to match the selected config
+  let prior_selected_run_config_id: string | null = null
+  async function update_current_run_options_for_selected_run_config() {
+    // Only run once immediately after a run config selection, not every reactive update
+    if (prior_selected_run_config_id === selected_run_config_id) {
+      return
+    }
+    prior_selected_run_config_id = selected_run_config_id
 
-  async function update_current_run_options_if_needed() {
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
+      // No need to update selected_run_config_id, it's already custom or unset
       return
     }
 
-    is_updating_from_saved_config = true
-
-    const is_finetune_run_config = selected_run_config.id?.startsWith(
-      "finetune_run_config::",
-    )
-    if (is_finetune_run_config) {
-      // finetune_run_config::finetune_id
-      const finetune_id = selected_run_config.id?.split("::").pop()
-      // Finetune model ids are in this syntax: kiln_fine_tune/project_id::task_id::finetune_id
-      if (finetune_id && project_id && current_task?.id) {
-        model = `kiln_fine_tune/${project_id}::${current_task.id}::${finetune_id}`
-        // Finetune prompt ids are in this syntax: fine_tune_prompt::project_id::task_id::finetune_id
-        prompt_method = `fine_tune_prompt::${project_id}::${current_task.id}::${finetune_id}`
-      }
-      provider = selected_run_config.run_config_properties.model_provider_name
-    } else {
-      model =
-        selected_run_config.run_config_properties.model_provider_name +
-        "/" +
-        selected_run_config.run_config_properties.model_name
-      prompt_method = selected_run_config.run_config_properties.prompt_id
-    }
+    model =
+      selected_run_config.run_config_properties.model_provider_name +
+      "/" +
+      selected_run_config.run_config_properties.model_name
+    prompt_method = selected_run_config.run_config_properties.prompt_id
     tools = [
       ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
     ]
@@ -143,61 +129,121 @@
     top_p = selected_run_config.run_config_properties.top_p
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
-
-    await tick()
-    is_updating_from_saved_config = false
   }
 
-  // Check for manual changes when options change when on a saved config to set back to custom
+  // Main reactive statement. This class is a bit wild, as many changes are circular.
+  // Example: changing the run config will update model, but selecting model will jump back to "custom" run config (or finetune run config).
+  // These are legit desired behaviour: respect the user's last selection, and make the rest consistent. But it makes updating the state a bit tricky.
+  // Make 1 big reactive statement to update the state. Then we debounce it to avoid excessive updates.
+  // Test cases if you edit (including a page reload version of each test):
+  // 1. Select a fine-tune model, it's run config should be automatically selected and the RC's values filled
+  // 2. Select a legacy fine-tune model (no run config baked in), it's prompt should be selected and RC stays custom
+  // 3. Select a saved run config, should set all fields to the saved config's values
+  // 4. Change any field after setting a run config, should deselect the run config to "custom"
   $: void (model,
   prompt_method,
   temperature,
   top_p,
   structured_output_mode,
   tools,
-  reset_to_custom_options_if_needed())
+  $available_models,
+  selected_run_config_id,
+  debounce_update_for_state_changes())
 
-  async function reset_to_custom_options_if_needed() {
-    // If we are updating from a saved config don't reset back to custom
-    if (is_updating_from_saved_config) {
+  // Since some changes can make many other fields change (eg run config), we debounce the updates to avoid excessive updates.
+  // Just mark as dirty, and run again only once, after the update is once.
+  // Knowning only 1 is called in parallel also makes it simpler to reason about.
+  let running: boolean = false
+  let run_again: boolean = false
+  async function debounce_update_for_state_changes() {
+    if (running) {
+      run_again = true
+      return
+    }
+    running = true
+    await tick()
+    try {
+      await update_for_state_changes()
+    } finally {
+      running = false
+      if (run_again) {
+        run_again = false
+        debounce_update_for_state_changes()
+      }
+    }
+  }
+
+  // Progress step by step, stopping if any step asks to. It could be missing data, and the remaining steps aren't valid.
+  async function update_for_state_changes() {
+    // All steps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
+    if ($available_models.length === 0) {
       return
     }
 
+    // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
+    process_model_change()
+
+    // Update the structured output mode to match the selected model, if needed
+    update_structured_output_mode_if_needed(
+      model_name,
+      provider,
+      $available_models,
+    )
+
+    // Update all the run options if they have changed the run config
+    await update_current_run_options_for_selected_run_config()
+
+    // deselect the run config if they have changed any run options to not match the selected run config
+    await reset_to_custom_options_if_needed()
+  }
+
+  let prior_model: string | null = null
+  async function process_model_change() {
+    // only run once immediately after a model change, not every reactive update
+    if (prior_model === model) {
+      return
+    }
+    prior_model = model
+
+    // Special case on model change: if the model says it has a model-specific run config, select that run config.
+    // Currently used by fine-tuned models which need to be called like they are trained.
+    const model_details = available_model_details(
+      model_name,
+      provider,
+      $available_models,
+    )
+    if (model_details?.model_specific_run_config) {
+      selected_run_config_id = model_details.model_specific_run_config
+      selected_model_specific_run_config_id =
+        model_details.model_specific_run_config
+    } else {
+      selected_model_specific_run_config_id = null
+    }
+  }
+
+  async function reset_to_custom_options_if_needed() {
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-    // Wait for all reactive statements to complete
-    await tick()
 
     const config_properties = selected_run_config.run_config_properties
-
-    const is_finetune_run_config = selected_run_config.id?.startsWith(
-      "finetune_run_config::",
-    )
 
     // Check if any values have changed from the saved config properties
     let model_changed = false
     let provider_changed = false
     let prompt_changed = false
+    const current_model_name = model ? model.split("/").slice(1).join("/") : ""
+    const current_provider_name = model ? model.split("/")[0] : ""
+    model_changed = config_properties.model_name !== current_model_name
+    provider_changed =
+      config_properties.model_provider_name !== current_provider_name
+    prompt_changed = config_properties.prompt_id !== prompt_method
 
-    if (is_finetune_run_config) {
-      const finetune_id = selected_run_config.id?.split("::").pop()
-      const expected_model = `kiln_fine_tune/${project_id}::${current_task?.id}::${finetune_id}`
-      const expected_prompt = `fine_tune_prompt::${project_id}::${current_task?.id}::${finetune_id}`
-      model_changed = model !== expected_model
-      prompt_changed = prompt_method !== expected_prompt
-      provider_changed = provider !== "kiln_fine_tune"
-    } else {
-      const current_model_name = model
-        ? model.split("/").slice(1).join("/")
-        : ""
-      const current_provider_name = model ? model.split("/")[0] : ""
-      model_changed = config_properties.model_name !== current_model_name
-      provider_changed =
-        config_properties.model_provider_name !== current_provider_name
-      prompt_changed = config_properties.prompt_id !== prompt_method
-    }
+    // Legacy models can be "unknown". Don't consider those as mismatches.
+    const output_mode_mismatch =
+      config_properties.structured_output_mode !== "unknown" &&
+      config_properties.structured_output_mode !== structured_output_mode
 
     if (
       model_changed ||
@@ -205,9 +251,10 @@
       prompt_changed ||
       config_properties.temperature !== temperature ||
       config_properties.top_p !== top_p ||
-      config_properties.structured_output_mode !== structured_output_mode ||
+      output_mode_mismatch ||
       !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
     ) {
+      // The user has changed something, so deselect the run config - it no longer matches the selected run config
       selected_run_config_id = "custom"
     }
   }

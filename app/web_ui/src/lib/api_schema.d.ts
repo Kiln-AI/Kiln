@@ -3824,7 +3824,7 @@ export interface components {
              * @description A description of the fine-tune for you and your team. Not used in training.
              */
             description?: string | null;
-            /** @description The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode. */
+            /** @description Legacy field -- replaced by run_config.structured_output_mode. The mode to use to train the model for structured output, if it was trained with structured output. We should call the tuned model with this mode if set. */
             structured_output_mode?: components["schemas"]["StructuredOutputMode"] | null;
             /**
              * Provider
@@ -4361,6 +4361,8 @@ export interface components {
             untested_model: boolean;
             /** Task Filter */
             task_filter?: string[] | null;
+            /** Model Specific Run Config */
+            model_specific_run_config?: string | null;
         };
         /**
          * ModelProviderName

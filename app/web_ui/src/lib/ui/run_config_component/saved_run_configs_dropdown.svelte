@@ -29,7 +29,7 @@
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import { provider_name_from_id } from "$lib/stores"
+  import Warning from "$lib/ui/warning.svelte"
 
   export let title: string = "Run Configuration"
   export let project_id: string
@@ -43,6 +43,7 @@
   export let description: string = ""
   export let run_page: boolean = true
   export let auto_select_default: boolean = true
+  export let selected_model_specific_run_config_id: string | null = null
 
   $: show_save_button = run_page && selected_run_config_id === "custom"
   $: show_set_default_button =
@@ -90,6 +91,7 @@
       get_task_composite_id(project_id, current_task.id ?? "")
     ] ?? { generators: [], prompts: [] },
     run_page,
+    selected_model_specific_run_config_id,
   )
 
   // Build the options for the dropdown
@@ -99,6 +101,7 @@
     model_info: ProviderModels | null,
     current_task_prompts: PromptResponse | null,
     run_page: boolean,
+    selected_model_specific_run_config_id: string | null,
   ): OptionGroup[] {
     const options: OptionGroup[] = []
 
@@ -128,16 +131,55 @@
       })
     }
 
+    const all_run_configs =
+      run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id ?? "")
+      ] ?? []
+
+    // Add model-specific run config first if it is specified and exists
+    if (selected_model_specific_run_config_id) {
+      const model_specific_run_config = all_run_configs.find(
+        (config) => config.id === selected_model_specific_run_config_id,
+      )
+
+      if (model_specific_run_config) {
+        const is_finetune_run_config =
+          selected_model_specific_run_config_id.startsWith(
+            "finetune_run_config::",
+          )
+        const model_specific_section_label = is_finetune_run_config
+          ? "Fine-Tune Configurations"
+          : "Model Specific Configurations"
+        const model_specific_config_label = is_finetune_run_config
+          ? "Fine-Tune Config"
+          : "Model Specific Run Config"
+        const model_specific_config_description = is_finetune_run_config
+          ? "The run configuration used to fine-tune the selected model."
+          : "The run configuration suggested for the selected model."
+
+        options.push({
+          label: model_specific_section_label,
+          options: [
+            {
+              value: model_specific_run_config.id,
+              label: model_specific_config_label,
+              description: model_specific_config_description,
+              badge: "Recommended",
+              badge_color: "primary",
+            },
+          ],
+        })
+      }
+    }
+
     // Add saved configurations if they exist
     let saved_configuration_options: Option[] = []
 
     // Add default configuration first if it exists
     if (default_run_config_id) {
-      const default_config = (
-        run_configs_by_task_composite_id[
-          get_task_composite_id(project_id, current_task.id ?? "")
-        ] ?? []
-      ).find((config) => config.id === default_run_config_id)
+      const default_config = all_run_configs.find(
+        (config) => config.id === default_run_config_id,
+      )
 
       if (default_config) {
         saved_configuration_options.push({
@@ -174,25 +216,6 @@
       options.push({
         label: "Saved Configurations",
         options: saved_configuration_options,
-      })
-    }
-
-    // Add finetune run configs only if selected_finetune_id is set
-    const finetune_run_configs = (
-      run_configs_by_task_composite_id[
-        get_task_composite_id(project_id, current_task.id ?? "")
-      ] ?? []
-    ).filter((config) => config.id?.startsWith("finetune_run_config::"))
-
-    if (finetune_run_configs.length > 0) {
-      options.push({
-        label: "Fine-Tune Configuration",
-        options: finetune_run_configs.map((config) => ({
-          value: config.id ?? "",
-          label: `${config.name} (${provider_name_from_id(config.run_config_properties.model_provider_name)})`,
-          description: `Base Model: ${config.run_config_properties.model_name},
-            Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
-        })),
       })
     }
 
@@ -273,5 +296,12 @@
     <div class="text-error text-sm text-right mt-2">
       {set_default_error.getMessage() || "An unknown error occurred"}
     </div>
+  {/if}
+  {#if selected_model_specific_run_config_id && selected_model_specific_run_config_id !== selected_run_config_id}
+    <Warning
+      warning_icon="exclaim"
+      warning_color="warning"
+      warning_message="You are not using the run configuration recommended for the selected model."
+    />
   {/if}
 </div>
