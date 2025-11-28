@@ -60,17 +60,6 @@
     load_task_prompts(project_id, current_task.id)
   }
 
-  // Ensure model-specific run configs are present when a recommended config is provided
-  $: if (
-    project_id &&
-    current_task.id &&
-    selected_model_specific_run_config_id
-  ) {
-    // Force refresh to ensure the model-specific run config is present
-    // Once loaded, the model-specific run config will trigger a reactive update
-    load_task_run_configs(project_id, current_task.id, true)
-  }
-
   // Initialization of selected_run_config_id
   $: if (auto_select_default && selected_run_config_id === null) {
     if (default_run_config_id) {
