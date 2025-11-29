@@ -15,6 +15,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { generate_eval_tag } from "./eval_utils"
+  import { buildReferenceAnswerAccuracyTemplate } from "./eval_template"
   import KilnSection from "$lib/ui/kiln_section.svelte"
   import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -86,24 +87,7 @@
               "Evaluate model accuracy against ground-truth Q&A pairs.",
             recommended: false,
             on_select: () =>
-              select_template("rag", {
-                template_id: "rag",
-                name: "Reference Answer Accuracy",
-                description:
-                  "Evaluate how well your task retrieves and answers queries using a Q&A dataset built from your documents.",
-                output_scores: [
-                  {
-                    name: "Reference Answer Accuracy",
-                    type: "pass_fail",
-                    instruction:
-                      "Evaluate if the model's output is accurate as per the reference answer.",
-                  },
-                ],
-                default_eval_tag: "qna_set_" + generate_eval_tag(""),
-                default_golden_tag: null,
-                template_properties: {},
-                evaluation_data_type: "reference_answer",
-              }),
+              select_template("rag", buildReferenceAnswerAccuracyTemplate()),
           },
         ],
       },
