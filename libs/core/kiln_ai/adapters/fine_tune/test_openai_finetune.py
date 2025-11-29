@@ -1,7 +1,7 @@
 import time
 from pathlib import Path
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import openai
 import pytest
@@ -224,7 +224,7 @@ async def test_generate_and_upload_jsonl_success(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the file response
     mock_file_response = MagicMock()
@@ -273,7 +273,7 @@ async def test_generate_and_upload_jsonl_schema_success(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the file response
     mock_file_response = MagicMock()
@@ -319,7 +319,7 @@ async def test_generate_and_upload_jsonl_upload_failure(
     mock_path = Path("mock_path.jsonl")
 
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock response with no ID
     mock_file_response = MagicMock()
@@ -345,7 +345,7 @@ async def test_generate_and_upload_jsonl_api_error(
     mock_path = Path("mock_path.jsonl")
 
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
     mock_openai_client.files.create.side_effect = openai.APIError(
         message="API error", request=MagicMock(), body={}
     )
@@ -575,7 +575,7 @@ async def test_generate_and_upload_jsonl_with_data_strategy(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the file response
     mock_file_response = MagicMock()
@@ -591,8 +591,6 @@ async def test_generate_and_upload_jsonl_with_data_strategy(
         ) as mock_get_client,
         patch("builtins.open"),
     ):
-        from unittest.mock import AsyncMock
-
         mock_client = MagicMock()
         mock_client.files.create = AsyncMock(return_value=mock_file_response)
         mock_get_client.return_value = mock_client

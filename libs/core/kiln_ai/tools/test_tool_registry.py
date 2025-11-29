@@ -27,7 +27,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
-from kiln_ai.tools.tool_registry import tool_from_id
+from kiln_ai.tools.tool_registry import tool_definitions_from_ids, tool_from_id
 
 
 class TestToolRegistry:
@@ -292,6 +292,26 @@ class TestToolRegistry:
         assert tool1 is not tool2  # Different instances
         assert type(tool1) is type(tool2)  # Same type
         assert await tool1.id() == await tool2.id()  # Same id
+
+    async def test_tool_definitions_for_math_tools(self):
+        """Test sync helper returns the same definitions as direct async calls."""
+        tool_ids = [
+            KilnBuiltInToolId.ADD_NUMBERS.value,
+            KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+            KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+            KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+        ]
+
+        definitions = await tool_definitions_from_ids(tool_ids)
+
+        assert len(definitions) == 4
+        assert all(definition["type"] == "function" for definition in definitions)
+
+        tool_names = [definition["function"]["name"] for definition in definitions]
+        assert "add" in tool_names
+        assert "subtract" in tool_names
+        assert "multiply" in tool_names
+        assert "divide" in tool_names
 
     async def test_check_tool_id_valid_built_in_tools(self):
         """Test that _check_tool_id accepts valid built-in tool IDs."""

@@ -5,6 +5,7 @@
     description: string
     recommended?: boolean
     highlight_title?: string
+    disabled?: boolean
   }[]
 
   export let select_option: (id: string) => void
@@ -17,9 +18,12 @@
       on:click={() => {
         select_option(option.id)
       }}
+      disabled={option.disabled}
     >
       <div
         class="card card-bordered border-base-300 bg-base-200 shadow-md w-full p-6 indicator"
+        class:opacity-50={option.disabled}
+        class:cursor-not-allowed={option.disabled}
       >
         {#if option.recommended}
           <div class="indicator-item indicator-center badge badge-primary">

@@ -168,7 +168,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, json=payload, headers=headers, timeout=30.0
+            )
         if response.status_code != 200:
             raise ValueError(
                 f"Failed to create fine-tuning job: [{response.status_code}] {response.text}"
@@ -198,7 +200,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             system_message=self.datamodel.system_message,
             thinking_instructions=self.datamodel.thinking_instructions,
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         # First call creates the dataset
         api_key = Config.shared().fireworks_api_key
@@ -221,7 +225,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         }
         async with httpx.AsyncClient() as client:
             create_dataset_response = await client.post(
-                url, json=payload, headers=headers
+                url, json=payload, headers=headers, timeout=30.0
             )
         if create_dataset_response.status_code != 200:
             raise ValueError(
@@ -240,6 +244,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
                     url,
                     headers=headers,
                     files=files,
+                    timeout=60.0,
                 )
         if upload_dataset_response.status_code != 200:
             raise ValueError(
@@ -249,7 +254,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # Third call checks it's "READY"
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}"
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers)
+            response = await client.get(url, headers=headers, timeout=15.0)
         if response.status_code != 200:
             raise ValueError(
                 f"Failed to check dataset status: [{response.status_code}] {response.text}"
@@ -357,7 +362,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, json=payload, headers=headers, timeout=60.0
+            )
 
         # Fresh deploy worked (200) or already deployed (code=9)
         if response.status_code == 200 or response.json().get("code") == 9:
@@ -429,7 +436,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, json=payload, headers=headers, timeout=60.0
+            )
 
         if response.status_code == 200:
             basemodel = response.json().get("baseModel")
@@ -465,7 +474,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # Paginate through all deployments
         async with httpx.AsyncClient() as client:
             while True:
-                response = await client.get(url, params=params, headers=headers)
+                response = await client.get(
+                    url, params=params, headers=headers, timeout=15.0
+                )
                 json = response.json()
                 if "deployments" not in json or not isinstance(
                     json["deployments"], list

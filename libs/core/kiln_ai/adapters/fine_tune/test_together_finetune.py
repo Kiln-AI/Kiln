@@ -231,7 +231,7 @@ async def test_generate_and_upload_jsonl_success(
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
     mock_path = Path("mock_path.jsonl")
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the files.upload response
     mock_file = MagicMock()
@@ -266,7 +266,7 @@ async def test_generate_and_upload_jsonl_error(
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
     mock_path = Path("mock_path.jsonl")
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the files.upload to raise an exception
     mock_together_client.files.upload.side_effect = Exception("Upload failed")

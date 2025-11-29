@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.cloud import storage
@@ -280,7 +280,7 @@ async def test_generate_and_upload_jsonl(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock storage client and bucket operations
     mock_bucket = MagicMock()
@@ -341,7 +341,7 @@ async def test_generate_and_upload_jsonl_create_bucket(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock storage client and bucket operations - bucket doesn't exist
     mock_bucket = MagicMock()
