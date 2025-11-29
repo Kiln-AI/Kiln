@@ -342,6 +342,7 @@ async def test_start_success(
     expected_format,
 ):
     Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = "test-entity"
     mock_task.output_json_schema = output_schema
 
     fireworks_finetune.datamodel.parent = mock_task
@@ -385,8 +386,9 @@ async def test_start_success(
         submit_call_values = mock_client.post.call_args[1]
         assert submit_call_values["json"]["wandbConfig"] == {
             "enabled": True,
-            "project": "Kiln_AI",
+            "project": "kiln_ai",
             "apiKey": "test-api-key",
+            "entity": "test-entity",
         }
         assert submit_call_values["json"]["baseModel"] == "llama-v2-7b"
         assert (
@@ -423,6 +425,27 @@ async def test_start_api_error(
         mock_client_class.return_value.__aenter__.return_value = mock_client
 
         with pytest.raises(ValueError, match="Failed to create fine-tuning job"):
+            await fireworks_finetune._start(mock_dataset)
+
+
+async def test_start_wandb_missing_entity(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = None
+
+    fireworks_finetune.datamodel.parent = mock_task
+    mock_dataset_id = "dataset-123"
+
+    with patch.object(
+        fireworks_finetune,
+        "generate_and_upload_jsonl",
+        return_value=mock_dataset_id,
+    ):
+        with pytest.raises(
+            ValueError,
+            match=r"Weights & Biases was previously connected but is missing a required field. Please disconnect and reconnect Weights & Biases in Kiln Settings -> Manage Providers.",
+        ):
             await fireworks_finetune._start(mock_dataset)
 
 
