@@ -40,14 +40,7 @@
         project_id,
         task_id,
       )
-      const modified_template = template_data.template.replace(
-        "<tool_function_name>",
-        tool_function_name,
-      )
       current_params.set("tool_function_name", tool_function_name)
-      current_params.set("template", modified_template)
-    } else {
-      current_params.set("template", template_data.template)
     }
     goto(
       `/specs/${project_id}/${task_id}/create_spec?${current_params.toString()}`,

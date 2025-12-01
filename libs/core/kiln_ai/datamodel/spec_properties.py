@@ -142,7 +142,7 @@ class LocalizationProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.localization]
     base_instruction: str
     localization_requirements: str
-    violation_examples: str | None
+    violation_examples: str
 
 
 def validate_localization_properties(
@@ -150,8 +150,11 @@ def validate_localization_properties(
 ) -> LocalizationProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "localization_requirements"],
-        optional_fields=["violation_examples"],
+        required_fields=[
+            "base_instruction",
+            "localization_requirements",
+            "violation_examples",
+        ],
     )
 
 
@@ -166,8 +169,8 @@ class AppropriateToolUseProperties(TypedDict, total=True):
     base_instruction: str
     tool_function_name: str
     tool_use_guidelines: str
-    appropriate_tool_use_examples: str | None
-    inappropriate_tool_use_examples: str | None
+    appropriate_tool_use_examples: str
+    inappropriate_tool_use_examples: str
 
 
 def validate_appropriate_tool_use_properties(
@@ -179,8 +182,6 @@ def validate_appropriate_tool_use_properties(
             "base_instruction",
             "tool_function_name",
             "tool_use_guidelines",
-        ],
-        optional_fields=[
             "appropriate_tool_use_examples",
             "inappropriate_tool_use_examples",
         ],
@@ -197,8 +198,8 @@ class ReferenceAnswerAccuracyProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.reference_answer_accuracy]
     base_instruction: str
     reference_answer_accuracy_description: str
-    accurate_examples: str | None
-    inaccurate_examples: str | None
+    accurate_examples: str
+    inaccurate_examples: str
 
 
 def validate_reference_answer_accuracy_properties(
@@ -206,8 +207,12 @@ def validate_reference_answer_accuracy_properties(
 ) -> ReferenceAnswerAccuracyProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "reference_answer_accuracy_description"],
-        optional_fields=["accurate_examples", "inaccurate_examples"],
+        required_fields=[
+            "base_instruction",
+            "reference_answer_accuracy_description",
+            "accurate_examples",
+            "inaccurate_examples",
+        ],
     )
 
 
@@ -220,7 +225,7 @@ ReferenceAnswerAccuracyPropertiesValidator = Annotated[
 class FactualCorrectnessProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.factual_correctness]
     base_instruction: str
-    factually_inaccurate_examples: str | None
+    factually_inaccurate_examples: str
 
 
 def validate_factual_correctness_properties(
@@ -228,8 +233,7 @@ def validate_factual_correctness_properties(
 ) -> FactualCorrectnessProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["factually_inaccurate_examples"],
+        required_fields=["base_instruction", "factually_inaccurate_examples"],
     )
 
 
@@ -242,7 +246,7 @@ FactualCorrectnessPropertiesValidator = Annotated[
 class HallucinationsProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.hallucinations]
     base_instruction: str
-    hallucinations_examples: str | None
+    hallucinations_examples: str
 
 
 def validate_hallucinations_properties(
@@ -250,8 +254,7 @@ def validate_hallucinations_properties(
 ) -> HallucinationsProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["hallucinations_examples"],
+        required_fields=["base_instruction", "hallucinations_examples"],
     )
 
 
@@ -264,8 +267,8 @@ HallucinationsPropertiesValidator = Annotated[
 class CompletenessProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.completeness]
     base_instruction: str
-    complete_examples: str | None
-    incomplete_examples: str | None
+    complete_examples: str
+    incomplete_examples: str
 
 
 def validate_completeness_properties(
@@ -273,8 +276,11 @@ def validate_completeness_properties(
 ) -> CompletenessProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["complete_examples", "incomplete_examples"],
+        required_fields=[
+            "base_instruction",
+            "complete_examples",
+            "incomplete_examples",
+        ],
     )
 
 
@@ -287,7 +293,7 @@ CompletenessPropertiesValidator = Annotated[
 class ToxicityProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.toxicity]
     base_instruction: str
-    toxicity_examples: str | None
+    toxicity_examples: str
 
 
 def validate_toxicity_properties(
@@ -295,8 +301,7 @@ def validate_toxicity_properties(
 ) -> ToxicityProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["toxicity_examples"],
+        required_fields=["base_instruction", "toxicity_examples"],
     )
 
 
@@ -309,14 +314,13 @@ ToxicityPropertiesValidator = Annotated[
 class BiasProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.bias]
     base_instruction: str
-    bias_examples: str | None
+    bias_examples: str
 
 
 def validate_bias_properties(properties: BiasProperties) -> BiasProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["bias_examples"],
+        required_fields=["base_instruction", "bias_examples"],
     )
 
 
@@ -329,7 +333,7 @@ BiasPropertiesValidator = Annotated[
 class MaliciousnessProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.maliciousness]
     base_instruction: str
-    malicious_examples: str | None
+    malicious_examples: str
 
 
 def validate_maliciousness_properties(
@@ -337,8 +341,7 @@ def validate_maliciousness_properties(
 ) -> MaliciousnessProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["malicious_examples"],
+        required_fields=["base_instruction", "malicious_examples"],
     )
 
 
@@ -351,14 +354,13 @@ MaliciousnessPropertiesValidator = Annotated[
 class NsfwProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.nsfw]
     base_instruction: str
-    nsfw_examples: str | None
+    nsfw_examples: str
 
 
 def validate_nsfw_properties(properties: NsfwProperties) -> NsfwProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["nsfw_examples"],
+        required_fields=["base_instruction", "nsfw_examples"],
     )
 
 
@@ -371,14 +373,13 @@ NsfwPropertiesValidator = Annotated[
 class TabooProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.taboo]
     base_instruction: str
-    taboo_examples: str | None
+    taboo_examples: str
 
 
 def validate_taboo_properties(properties: TabooProperties) -> TabooProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["taboo_examples"],
+        required_fields=["base_instruction", "taboo_examples"],
     )
 
 
@@ -391,7 +392,7 @@ TabooPropertiesValidator = Annotated[
 class JailbreakProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.jailbreak]
     base_instruction: str
-    jailbroken_examples: str | None
+    jailbroken_examples: str
 
 
 def validate_jailbreak_properties(
@@ -399,8 +400,7 @@ def validate_jailbreak_properties(
 ) -> JailbreakProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["jailbroken_examples"],
+        required_fields=["base_instruction", "jailbroken_examples"],
     )
 
 
@@ -413,7 +413,7 @@ JailbreakPropertiesValidator = Annotated[
 class PromptLeakageProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.prompt_leakage]
     base_instruction: str
-    leakage_examples: str | None
+    leakage_examples: str
 
 
 def validate_prompt_leakage_properties(
@@ -421,8 +421,7 @@ def validate_prompt_leakage_properties(
 ) -> PromptLeakageProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction"],
-        optional_fields=["leakage_examples"],
+        required_fields=["base_instruction", "leakage_examples"],
     )
 
 

@@ -2204,9 +2204,9 @@ export interface components {
             /** Tool Use Guidelines */
             tool_use_guidelines: string;
             /** Appropriate Tool Use Examples */
-            appropriate_tool_use_examples: string | null;
+            appropriate_tool_use_examples: string;
             /** Inappropriate Tool Use Examples */
-            inappropriate_tool_use_examples: string | null;
+            inappropriate_tool_use_examples: string;
         };
         /** Audio */
         Audio: {
@@ -2281,7 +2281,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Bias Examples */
-            bias_examples: string | null;
+            bias_examples: string;
         };
         /** Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post */
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
@@ -2582,9 +2582,9 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Complete Examples */
-            complete_examples: string | null;
+            complete_examples: string;
             /** Incomplete Examples */
-            incomplete_examples: string | null;
+            incomplete_examples: string;
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -3821,7 +3821,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Factually Inaccurate Examples */
-            factually_inaccurate_examples: string | null;
+            factually_inaccurate_examples: string;
         };
         /** File */
         File: {
@@ -4155,7 +4155,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Hallucinations Examples */
-            hallucinations_examples: string | null;
+            hallucinations_examples: string;
         };
         /** ImageURL */
         ImageURL: {
@@ -4187,7 +4187,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Jailbroken Examples */
-            jailbroken_examples: string | null;
+            jailbroken_examples: string;
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -4443,7 +4443,7 @@ export interface components {
             /** Localization Requirements */
             localization_requirements: string;
             /** Violation Examples */
-            violation_examples: string | null;
+            violation_examples: string;
         };
         /** LogMessage */
         LogMessage: {
@@ -4469,7 +4469,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Malicious Examples */
-            malicious_examples: string | null;
+            malicious_examples: string;
         };
         /** MeanUsage */
         MeanUsage: {
@@ -4542,7 +4542,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Nsfw Examples */
-            nsfw_examples: string | null;
+            nsfw_examples: string;
         };
         /** OllamaConnection */
         OllamaConnection: {
@@ -4771,7 +4771,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Leakage Examples */
-            leakage_examples: string | null;
+            leakage_examples: string;
         };
         /** PromptResponse */
         PromptResponse: {
@@ -5042,9 +5042,9 @@ export interface components {
             /** Reference Answer Accuracy Description */
             reference_answer_accuracy_description: string;
             /** Accurate Examples */
-            accurate_examples: string | null;
+            accurate_examples: string;
             /** Inaccurate Examples */
-            inaccurate_examples: string | null;
+            inaccurate_examples: string;
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5459,7 +5459,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Taboo Examples */
-            taboo_examples: string | null;
+            taboo_examples: string;
         };
         /**
          * Task
@@ -5963,7 +5963,7 @@ export interface components {
             /** Base Instruction */
             base_instruction: string;
             /** Toxicity Examples */
-            toxicity_examples: string | null;
+            toxicity_examples: string;
         };
         /** UpdateEvalRequest */
         UpdateEvalRequest: {

@@ -27,6 +27,7 @@
   export let info_description: string = ""
   export let placeholder: string | null = null
   export let optional: boolean = false
+  export let hide_optional_label: boolean = false
   export let max_length: number | null = null
   export let error_message: string | null = null // start null because they haven't had a chance to edit it yet
   export let light_label: boolean = false // styling
@@ -168,7 +169,8 @@
                 >{label}</span
               >
               <span class="pl-1 text-xs text-gray-500 flex-none"
-                >{info_msg || (optional ? "Optional" : "")}</span
+                >{info_msg ||
+                  (optional && !hide_optional_label ? "Optional" : "")}</span
               >
             {:else}
               <span class="grow"></span>
