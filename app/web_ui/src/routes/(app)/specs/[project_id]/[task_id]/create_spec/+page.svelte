@@ -67,8 +67,47 @@
 
   let analyze_dialog: Dialog | null = null
   async function analyze_spec() {
-    analyze_dialog?.show()
-    submitting = false
+    try {
+      create_error = null
+      submitting = true
+
+      // Validate required fields
+      for (const field of field_configs) {
+        if (field.required) {
+          const value = property_values[field.key]
+          if (!value || !value.trim()) {
+            throw createKilnError(`${field.label} is required`)
+          }
+        }
+      }
+
+      // Reset submitting state so button doesn't show spinner
+      submitting = false
+
+      // Show analyzing dialog
+      analyze_dialog?.show()
+
+      // Wait 2 seconds
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Store form data in sessionStorage to pass to refine page
+      const formData = {
+        name,
+        spec_type,
+        property_values,
+      }
+      sessionStorage.setItem(
+        `spec_refine_${project_id}_${task_id}`,
+        JSON.stringify(formData),
+      )
+
+      // Navigate to refine_spec page
+      goto(`/specs/${project_id}/${task_id}/refine_spec`)
+    } catch (error) {
+      create_error = createKilnError(error)
+      analyze_dialog?.hide()
+      submitting = false
+    }
   }
 
   function reset_field(key: string) {
