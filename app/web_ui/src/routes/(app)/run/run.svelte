@@ -53,14 +53,15 @@
     return references
   }
 
-  async function calculate_subtask_cost(
+  async function calculate_subtask_usage(
     trace: Trace | null | undefined,
     visited: Set<string> = new Set(),
-  ): Promise<number> {
-    if (!trace) return 0
+  ): Promise<{ cost: number; tokens: number }> {
+    if (!trace) return { cost: 0, tokens: 0 }
 
     const references = extract_subtask_references(trace)
     let total_cost = 0
+    let total_tokens = 0
 
     for (const ref of references) {
       const key = `${ref.project_id}:${ref.task_id}:${ref.run_id}`
@@ -83,14 +84,17 @@
 
         if (!response.error && response.data) {
           total_cost += response.data.usage?.cost ?? 0
-          total_cost += await calculate_subtask_cost(
+          total_tokens += response.data.usage?.total_tokens ?? 0
+          const subtask_usage = await calculate_subtask_usage(
             response.data.trace,
             visited,
           )
+          total_cost += subtask_usage.cost
+          total_tokens += subtask_usage.tokens
         }
       } catch (error) {
         console.warn(
-          "Failed to fetch subtask cost, continuing on error as subtask run may have been deleted.",
+          "Failed to fetch subtask usage, continuing on error as subtask run may have been deleted.",
           {
             project_id: ref.project_id,
             task_id: ref.task_id,
@@ -101,39 +105,44 @@
       }
     }
 
-    return total_cost
+    return { cost: total_cost, tokens: total_tokens }
   }
 
   let subtask_cost: number | null = null
-  let subtask_cost_loading = false
+  let subtask_tokens: number | null = null
+  let subtask_usage_loading = false
   // Counter to prevent race conditions: when run changes rapidly, multiple async requests
   // may be in flight. We only update state if this request is still the latest one.
-  let subtask_cost_request_id = 0
 
-  async function load_subtask_cost(trace: Trace | null | undefined) {
-    const request_id = ++subtask_cost_request_id
+  let subtask_usage_request_id = 0
+
+  async function load_subtask_usage(trace: Trace | null | undefined) {
+    const request_id = ++subtask_usage_request_id
 
     if (!trace || extract_subtask_references(trace).length === 0) {
-      if (request_id === subtask_cost_request_id) {
+      if (request_id === subtask_usage_request_id) {
         subtask_cost = null
-        subtask_cost_loading = false
+        subtask_tokens = null
+        subtask_usage_loading = false
       }
       return
     }
 
-    subtask_cost_loading = true
+    subtask_usage_loading = true
     try {
-      const cost = await calculate_subtask_cost(trace)
-      if (request_id === subtask_cost_request_id) {
-        subtask_cost = cost
+      const usage = await calculate_subtask_usage(trace)
+      if (request_id === subtask_usage_request_id) {
+        subtask_cost = usage.cost
+        subtask_tokens = usage.tokens
       }
     } catch {
-      if (request_id === subtask_cost_request_id) {
+      if (request_id === subtask_usage_request_id) {
         subtask_cost = null
+        subtask_tokens = null
       }
     } finally {
-      if (request_id === subtask_cost_request_id) {
-        subtask_cost_loading = false
+      if (request_id === subtask_usage_request_id) {
+        subtask_usage_loading = false
       }
     }
   }
@@ -480,18 +489,30 @@
   function get_usage_properties(
     run: TaskRun | null,
     subtask_cost: number | null,
-    subtask_cost_loading: boolean,
+    subtask_usage_loading: boolean,
+    subtask_tokens: number | null,
   ) {
     let properties = []
 
-    if (run?.usage?.cost) {
+    const run_cost = run?.usage?.cost ?? 0
+    const run_tokens = run?.usage?.total_tokens ?? 0
+
+    if (subtask_usage_loading) {
       properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
+        name: "Total Cost",
+        value: "Loading...",
       })
+    } else {
+      const total_cost = run_cost + (subtask_cost ?? 0)
+      if (total_cost > 0) {
+        properties.push({
+          name: "Total Cost",
+          value: `$${total_cost.toFixed(6)}`,
+        })
+      }
     }
 
-    if (subtask_cost_loading) {
+    if (subtask_usage_loading) {
       properties.push({
         name: "Subtasks Cost",
         value: "Loading...",
@@ -503,21 +524,42 @@
       })
     }
 
-    if (run?.usage?.total_tokens) {
+    if (subtask_usage_loading) {
       properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
+        name: "Total Tokens",
+        value: "Loading...",
+      })
+    } else {
+      const total_tokens = run_tokens + (subtask_tokens ?? 0)
+      if (total_tokens > 0) {
+        properties.push({
+          name: "Total Tokens",
+          value: total_tokens,
+        })
+      }
+    }
+
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Subtasks Tokens",
+        value: "Loading...",
+      })
+    } else if (subtask_tokens && subtask_tokens > 0) {
+      properties.push({
+        name: "Subtasks Tokens",
+        value: subtask_tokens,
       })
     }
 
     return properties
   }
 
-  $: load_subtask_cost(run?.trace)
+  $: load_subtask_usage(run?.trace)
   $: usage_properties = get_usage_properties(
     run,
     subtask_cost,
-    subtask_cost_loading,
+    subtask_usage_loading,
+    subtask_tokens,
   )
 </script>
 
