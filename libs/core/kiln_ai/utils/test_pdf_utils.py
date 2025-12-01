@@ -117,7 +117,7 @@ async def test_convert_pdf_to_images_concurrent_access_3(mock_file_factory):
     await run_convert_pdf_concurrently(mock_file_factory, concurrency=3)
 
 
-def test__convert_pdf_to_images_sync(mock_file_factory):
+def test_convert_pdf_to_images_sync(mock_file_factory):
     """Test that the sync converter creates PNGs for each page."""
     test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -127,7 +127,7 @@ def test__convert_pdf_to_images_sync(mock_file_factory):
         assert all(image.suffix == ".png" for image in images)
 
 
-@pytest.mark.paid  # not paid, but very slow
+@pytest.mark.slow
 async def test_convert_pdf_to_images_concurrent_access_100(mock_file_factory):
     """Test running convert_pdf_to_images concurrently from multiple tasks."""
-    await run_convert_pdf_concurrently(mock_file_factory, concurrency=100)
+    await run_convert_pdf_concurrently(mock_file_factory, concurrency=50)

@@ -34,7 +34,7 @@ jobs:
         run: mkdir -p ./app/web_ui/build && echo "test" > ./app/web_ui/build/index.html
 
       - name: Test All Python
-        run: uv run python3 -m pytest .
+        run: uv run python3 -m pytest --runslow .
 
       - name: Check Python Types
         run: uv run pyright .
