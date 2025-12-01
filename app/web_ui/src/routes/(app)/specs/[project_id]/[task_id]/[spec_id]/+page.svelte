@@ -112,9 +112,9 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 lg:grid-cols-[900px,500px] gap-12">
-      <div class="flex flex-col gap-4">
+      <div class="grow">
+        <div class="text-xl font-bold mb-4">Definition</div>
         <div class="bg-base-200 rounded-lg p-6">
-          <h3 class="text-lg font-medium mb-4">Definition</h3>
           <div class="prose prose-sm max-w-none whitespace-pre-wrap">
             {spec.definition}
           </div>
