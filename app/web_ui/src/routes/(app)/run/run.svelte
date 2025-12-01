@@ -88,8 +88,16 @@
             visited,
           )
         }
-      } catch {
-        // Continue on error - subtask run may have been deleted
+      } catch (error) {
+        console.warn(
+          "Failed to fetch subtask cost, continuing on error as subtask run may have been deleted.",
+          {
+            project_id: ref.project_id,
+            task_id: ref.task_id,
+            run_id: ref.run_id,
+            error,
+          },
+        )
       }
     }
 
@@ -98,6 +106,8 @@
 
   let subtask_cost: number | null = null
   let subtask_cost_loading = false
+  // Counter to prevent race conditions: when run changes rapidly, multiple async requests
+  // may be in flight. We only update state if this request is still the latest one.
   let subtask_cost_request_id = 0
 
   async function load_subtask_cost(trace: Trace | null | undefined) {
