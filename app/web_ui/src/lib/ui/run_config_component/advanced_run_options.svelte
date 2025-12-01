@@ -113,7 +113,7 @@
   ]
 </script>
 
-<div>
+<div class="flex flex-col gap-4">
   <FormElement
     id="temperature"
     label="Temperature"

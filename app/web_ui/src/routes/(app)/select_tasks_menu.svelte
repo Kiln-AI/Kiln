@@ -16,6 +16,7 @@
   let tasks_loading = false
   let tasks_loading_error: string | null = null
   let selected_project_tasks: Task[] = []
+  let last_loaded_project_id: string | null = null
 
   $: selected_project =
     manually_selected_project === null
@@ -35,14 +36,25 @@
   $: load_tasks(selected_project)
 
   // Reload when the current task changes. Sometimes the task is deleted or a new one is created.
-  current_task.subscribe(() => {
-    load_tasks(selected_project)
+  current_task.subscribe((task) => {
+    // this fires multiple times during initial load, only reload if the task actually changed
+    if (task?.id && task.id === $current_task?.id) {
+      return
+    }
+    load_tasks(selected_project, { force: true })
   })
 
-  async function load_tasks(project: Project | null) {
+  async function load_tasks(
+    project: Project | null,
+    { force = false }: { force?: boolean } = {},
+  ) {
     if (project == null || !project.id) {
       tasks_loading = false
       tasks_loading_error = "No project selected"
+      last_loaded_project_id = null
+      return
+    }
+    if ((!force && project.id === last_loaded_project_id) || tasks_loading) {
       return
     }
     try {
@@ -62,9 +74,11 @@
         throw fetch_error
       }
       selected_project_tasks = tasks_data
+      last_loaded_project_id = project.id
     } catch (error) {
       tasks_loading_error = "Tasks failed to load: " + error
       selected_project_tasks = []
+      last_loaded_project_id = null
     } finally {
       tasks_loading = false
     }
