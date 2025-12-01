@@ -10,7 +10,6 @@
   import { client } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import Warning from "$lib/ui/warning.svelte"
   import {
     spec_field_configs,
     buildDefinitionFromProperties,

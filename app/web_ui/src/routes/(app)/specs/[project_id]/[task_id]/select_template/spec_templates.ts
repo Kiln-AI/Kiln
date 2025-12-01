@@ -12,8 +12,6 @@ export type FieldConfig = {
 }
 
 // Per-spec-type field configurations (excludes spec_type since it's auto-set)
-// Fields with default_value are pre-filled and get a reset button
-// Fields without default_value show placeholder as hint text
 export const spec_field_configs: Record<SpecType, FieldConfig[]> = {
   behaviour: [
     {
