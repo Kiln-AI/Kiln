@@ -2190,6 +2190,24 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
+        /** AppropriateToolUseProperties */
+        AppropriateToolUseProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "appropriate_tool_use";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Use Guidelines */
+            tool_use_guidelines: string;
+            /** Appropriate Tool Use Examples */
+            appropriate_tool_use_examples: string | null;
+            /** Inappropriate Tool Use Examples */
+            inappropriate_tool_use_examples: string | null;
+        };
         /** Audio */
         Audio: {
             /** Id */
@@ -2236,6 +2254,34 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
+        };
+        /** BehaviourProperties */
+        BehaviourProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "behaviour";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Behavior Description */
+            behavior_description: string;
+            /** Correct Behavior Examples */
+            correct_behavior_examples: string | null;
+            /** Incorrect Behavior Examples */
+            incorrect_behavior_examples: string | null;
+        };
+        /** BiasProperties */
+        BiasProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "bias";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Bias Examples */
+            bias_examples: string | null;
         };
         /** Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post */
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
@@ -2526,6 +2572,20 @@ export interface components {
              */
             type: "cohere_compatible";
         };
+        /** CompletenessProperties */
+        CompletenessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "completeness";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Complete Examples */
+            complete_examples: string | null;
+            /** Incomplete Examples */
+            incomplete_examples: string | null;
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -2587,8 +2647,11 @@ export interface components {
             description?: string | null;
             /** @description The provider of the embedding model */
             model_provider_name: components["schemas"]["ModelProviderName"];
-            /** @description The name of the embedding model */
-            model_name: components["schemas"]["EmbeddingModelName"];
+            /**
+             * Model Name
+             * @description The name of the embedding model
+             */
+            model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
         };
@@ -3188,7 +3251,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "baai_bge_m3" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "multilingual_e5_large" | "e5_base_v2" | "e5_large_v2" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505" | "sentence_transformers_all_minilm_l6_v2" | "sentence_transformers_all_mpnet_base_v2" | "sentence_transformers_multi_qa_mpnet_base_dot_v1" | "sentence_transformers_all_minilm_l12_v2" | "sentence_transformers_paraphrase_minilm_l6_v2";
         /** EmbeddingProperties */
         EmbeddingProperties: {
             /** Dimensions */
@@ -3748,6 +3811,18 @@ export interface components {
          * @enum {string}
          */
         ExtractorType: "litellm";
+        /** FactualCorrectnessProperties */
+        FactualCorrectnessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "factual_correctness";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Factually Inaccurate Examples */
+            factually_inaccurate_examples: string | null;
+        };
         /** File */
         File: {
             file: components["schemas"]["FileFile"];
@@ -4027,6 +4102,22 @@ export interface components {
              */
             chunk_overlap: number;
         };
+        /** FormattingProperties */
+        FormattingProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "formatting";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Formatting Requirements */
+            formatting_requirements: string;
+            /** Proper Formatting Examples */
+            proper_formatting_examples: string | null;
+            /** Improper Formatting Examples */
+            improper_formatting_examples: string | null;
+        };
         /** Function */
         Function: {
             /** Arguments */
@@ -4054,6 +4145,18 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HallucinationsProperties */
+        HallucinationsProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "hallucinations";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Hallucinations Examples */
+            hallucinations_examples: string | null;
+        };
         /** ImageURL */
         ImageURL: {
             /** Url */
@@ -4073,6 +4176,18 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** JailbreakProperties */
+        JailbreakProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "jailbreak";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Jailbroken Examples */
+            jailbroken_examples: string | null;
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -4316,6 +4431,20 @@ export interface components {
             /** Is Archived */
             is_archived: boolean;
         };
+        /** LocalizationProperties */
+        LocalizationProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "localization";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Localization Requirements */
+            localization_requirements: string;
+            /** Violation Examples */
+            violation_examples: string | null;
+        };
         /** LogMessage */
         LogMessage: {
             /**
@@ -4329,6 +4458,18 @@ export interface components {
              * @description The message to display to the user
              */
             message: string;
+        };
+        /** MaliciousnessProperties */
+        MaliciousnessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "maliciousness";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Malicious Examples */
+            malicious_examples: string | null;
         };
         /** MeanUsage */
         MeanUsage: {
@@ -4391,6 +4532,18 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        /** NsfwProperties */
+        NsfwProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "nsfw";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Nsfw Examples */
+            nsfw_examples: string | null;
+        };
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -4607,6 +4760,18 @@ export interface components {
             name: string;
             /** Chain Of Thought */
             chain_of_thought: boolean;
+        };
+        /** PromptLeakageProperties */
+        PromptLeakageProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "prompt_leakage";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Leakage Examples */
+            leakage_examples: string | null;
         };
         /** PromptResponse */
         PromptResponse: {
@@ -4864,6 +5029,22 @@ export interface components {
         RatingOptionResponse: {
             /** Options */
             options: components["schemas"]["RatingOption"][];
+        };
+        /** ReferenceAnswerAccuracyProperties */
+        ReferenceAnswerAccuracyProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "reference_answer_accuracy";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Reference Answer Accuracy Description */
+            reference_answer_accuracy_description: string;
+            /** Accurate Examples */
+            accurate_examples: string | null;
+            /** Inaccurate Examples */
+            inaccurate_examples: string | null;
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5203,8 +5384,11 @@ export interface components {
              * @description A detailed definition of the spec.
              */
             definition: string;
-            /** @description The type of spec. */
-            type: components["schemas"]["SpecType"];
+            /**
+             * Properties
+             * @description The properties of the spec.
+             */
+            properties: components["schemas"]["BehaviourProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             /**
              * @description The priority of the spec.
              * @default 1
@@ -5235,19 +5419,14 @@ export interface components {
          * @enum {string}
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
-        /**
-         * SpecType
-         * @description Defines the type of spec.
-         * @enum {string}
-         */
-        SpecType: "behaviour" | "tone" | "formatting" | "localization" | "appropriate_tool_use" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /** SpecUpsertRequest */
         SpecUpsertRequest: {
             /** Name */
             name: string;
             /** Definition */
             definition: string;
-            type: components["schemas"]["SpecType"];
+            /** Properties */
+            properties: components["schemas"]["BehaviourProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             priority: components["schemas"]["Priority"];
             status: components["schemas"]["SpecStatus"];
             /** Tags */
@@ -5270,6 +5449,18 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /** TabooProperties */
+        TabooProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "taboo";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Taboo Examples */
+            taboo_examples: string | null;
+        };
         /**
          * Task
          * @description Represents a specific task to be performed, with associated requirements and validation rules.
@@ -5690,6 +5881,22 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** ToneProperties */
+        ToneProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "tone";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Tone Description */
+            tone_description: string;
+            /** Acceptable Examples */
+            acceptable_examples: string | null;
+            /** Unacceptable Examples */
+            unacceptable_examples: string | null;
+        };
         /** ToolApiDescription */
         ToolApiDescription: {
             /** Id */
@@ -5745,6 +5952,18 @@ export interface components {
              * @description The IDs of the tools available to the task.
              */
             tools: string[];
+        };
+        /** ToxicityProperties */
+        ToxicityProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "toxicity";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Toxicity Examples */
+            toxicity_examples: string | null;
         };
         /** UpdateEvalRequest */
         UpdateEvalRequest: {

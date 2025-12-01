@@ -63,7 +63,14 @@
           body: {
             name,
             definition: spec_definition,
-            type: spec_type,
+            properties: {
+              spec_type: spec_type,
+              base_instruction:
+                "The model must follow the specified behaviour requirements.",
+              behavior_description: "Test instruction",
+              correct_behavior_examples: null,
+              incorrect_behavior_examples: null,
+            },
             priority: 1,
             status: "active",
             tags: [],

@@ -70,7 +70,7 @@
           body: {
             name: spec.name,
             definition: spec.definition,
-            type: spec.type,
+            properties: spec.properties,
             priority: spec.priority,
             status: spec.status,
             tags: tags,
@@ -91,7 +91,6 @@
 
 <AppPage
   title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
-  subtitle=""
   breadcrumbs={[
     {
       label: "Specs",
@@ -131,7 +130,7 @@
             },
             {
               name: "Template",
-              value: formatSpecType(spec.type),
+              value: formatSpecType(spec.properties.spec_type),
             },
             {
               name: "Priority",

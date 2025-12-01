@@ -207,8 +207,8 @@
         bValue = b.name.toLowerCase()
         break
       case "type":
-        aValue = a.type
-        bValue = b.type
+        aValue = a.properties.spec_type
+        bValue = b.properties.spec_type
         break
       case "priority":
         aValue = a.priority
@@ -415,7 +415,7 @@
             body: {
               name: spec.name,
               definition: spec.definition,
-              type: spec.type,
+              properties: spec.properties,
               priority: spec.priority,
               status: spec.status,
               tags: updated_tags,
@@ -493,7 +493,7 @@
             body: {
               name: spec.name,
               definition: spec.definition,
-              type: spec.type,
+              properties: spec.properties,
               priority: spec.priority,
               status: new_status,
               tags: spec.tags,
@@ -662,7 +662,7 @@
                   <td class="font-medium">{spec.name}</td>
                   <td class="max-w-md truncate">{spec.definition}</td>
                   <td>
-                    {formatSpecType(spec.type)}
+                    {formatSpecType(spec.properties.spec_type)}
                   </td>
                   <td>{formatPriority(spec.priority)}</td>
                   <td>

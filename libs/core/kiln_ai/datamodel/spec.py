@@ -6,36 +6,7 @@ from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import Priority
-
-
-class SpecType(str, Enum):
-    """Defines the type of spec."""
-
-    # Functionality
-    behaviour = "behaviour"
-    tone = "tone"
-    formatting = "formatting"
-    localization = "localization"
-
-    # Task Performance
-    appropriate_tool_use = "appropriate_tool_use"
-    reference_answer_accuracy = "reference_answer_accuracy"
-
-    # Accuracy
-    factual_correctness = "factual_correctness"
-    hallucinations = "hallucinations"
-    completeness = "completeness"
-
-    # Safety
-    toxicity = "toxicity"
-    bias = "bias"
-    maliciousness = "maliciousness"
-    nsfw = "nsfw"
-    taboo = "taboo"
-
-    # System Constraints
-    jailbreak = "jailbreak"
-    prompt_leakage = "prompt_leakage"
+from kiln_ai.datamodel.spec_properties import SpecProperties
 
 
 class SpecStatus(str, Enum):
@@ -54,8 +25,9 @@ class Spec(KilnParentedModel):
     definition: str = Field(
         description="A detailed definition of the spec.", min_length=1
     )
-    type: SpecType = Field(
-        description="The type of spec.",
+    properties: SpecProperties = Field(
+        description="The properties of the spec.",
+        discriminator="spec_type",
     )
     priority: Priority = Field(
         default=Priority.p1,
