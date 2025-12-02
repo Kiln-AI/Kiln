@@ -12,12 +12,9 @@
   import TableToolbar from "$lib/ui/table_toolbar.svelte"
   import AddTagsDialog from "$lib/ui/add_tags_dialog.svelte"
   import RemoveTagsDialog from "$lib/ui/remove_tags_dialog.svelte"
-  import {
-    capitalize,
-    formatDate,
-    formatPriority,
-    formatSpecType,
-  } from "$lib/utils/formatters"
+  import { formatDate, formatSpecType } from "$lib/utils/formatters"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import EditableSpecField from "./editable_spec_field.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -491,6 +488,123 @@
   }
 
   let archive_dialog: Dialog | null = null
+  let updating_priorities: Set<string> = new Set()
+  let updating_statuses: Set<string> = new Set()
+
+  function getPriorityOptions(): OptionGroup[] {
+    return [
+      {
+        options: [
+          { label: "P0", value: 0 },
+          { label: "P1", value: 1 },
+          { label: "P2", value: 2 },
+          { label: "P3", value: 3 },
+        ],
+      },
+    ]
+  }
+
+  function getStatusOptions(): OptionGroup[] {
+    return [
+      {
+        options: [
+          { label: "Active", value: "active" },
+          { label: "Future", value: "future" },
+          { label: "Deprecated", value: "deprecated" },
+        ],
+      },
+    ]
+  }
+
+  async function updateSpecPriority(spec: Spec, newPriority: number) {
+    if (
+      !spec.id ||
+      spec.priority === newPriority ||
+      updating_priorities.has(spec.id)
+    ) {
+      return
+    }
+
+    updating_priorities.add(spec.id)
+    try {
+      const { error } = await client.PATCH(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: { project_id, task_id, spec_id: spec.id },
+          },
+          body: {
+            name: spec.name,
+            definition: spec.definition,
+            properties: spec.properties,
+            priority: newPriority as 0 | 1 | 2 | 3,
+            status: spec.status,
+            tags: spec.tags,
+            eval_id: spec.eval_id ?? null,
+          },
+        },
+      )
+
+      if (error) {
+        throw error
+      }
+
+      await load_specs()
+    } catch (error) {
+      specs_error = createKilnError(error)
+    } finally {
+      updating_priorities.delete(spec.id)
+    }
+  }
+
+  async function updateSpecStatus(spec: Spec, newStatus: SpecStatus) {
+    if (
+      !spec.id ||
+      spec.status === newStatus ||
+      updating_statuses.has(spec.id)
+    ) {
+      return
+    }
+
+    updating_statuses.add(spec.id)
+    try {
+      const { error } = await client.PATCH(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: { project_id, task_id, spec_id: spec.id },
+          },
+          body: {
+            name: spec.name,
+            definition: spec.definition,
+            properties: spec.properties,
+            priority: spec.priority,
+            status: newStatus,
+            tags: spec.tags,
+            eval_id: spec.eval_id ?? null,
+          },
+        },
+      )
+
+      if (error) {
+        throw error
+      }
+
+      await load_specs()
+    } catch (error) {
+      specs_error = createKilnError(error)
+    } finally {
+      updating_statuses.delete(spec.id)
+    }
+  }
+
+  function handlePriorityUpdate(spec: Spec, value: number | SpecStatus) {
+    updateSpecPriority(spec, value as number)
+  }
+
+  function handleStatusUpdate(spec: Spec, value: number | SpecStatus) {
+    updateSpecStatus(spec, value as SpecStatus)
+  }
 </script>
 
 <AppPage
@@ -682,9 +796,23 @@
                   <td>
                     {formatSpecType(spec.properties.spec_type)}
                   </td>
-                  <td>{formatPriority(spec.priority)}</td>
                   <td>
-                    {capitalize(spec.status)}
+                    <EditableSpecField
+                      {spec}
+                      field="priority"
+                      options={getPriorityOptions()}
+                      aria_label="Priority"
+                      onUpdate={handlePriorityUpdate}
+                    />
+                  </td>
+                  <td>
+                    <EditableSpecField
+                      {spec}
+                      field="status"
+                      options={getStatusOptions()}
+                      aria_label="Status"
+                      onUpdate={handleStatusUpdate}
+                    />
                   </td>
                   <td>
                     {#if spec.tags && spec.tags.length > 0}
