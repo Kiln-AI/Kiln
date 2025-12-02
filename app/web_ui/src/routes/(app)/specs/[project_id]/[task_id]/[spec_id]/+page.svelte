@@ -10,6 +10,8 @@
   import EditableSpecField from "../editable_spec_field.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
+  // ### Spec Details Page ###
+
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
   $: spec_id = $page.params.spec_id
@@ -21,6 +23,8 @@
   let current_tags: string[] = []
   let updating_priorities = false
   let updating_statuses = false
+  let priorityField: EditableSpecField | null = null
+  let statusField: EditableSpecField | null = null
 
   $: if (spec) {
     current_tags = spec.tags || []
@@ -195,9 +199,7 @@
 </script>
 
 <AppPage
-  title="{spec?.properties.spec_type
-    ? `${formatSpecType(spec.properties.spec_type)}: `
-    : ''}{spec?.name ? `${spec.name}` : ''}"
+  title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
   breadcrumbs={[
     {
       label: "Specs",
@@ -219,6 +221,14 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 lg:grid-cols-[900px,500px] gap-12">
+      <div class="grow">
+        <div class="text-xl font-bold mb-4">Definition</div>
+        <div class="bg-base-200 rounded-lg p-6">
+          <div class="prose prose-sm max-w-none whitespace-pre-wrap">
+            {spec.definition}
+          </div>
+        </div>
+      </div>
       <div class="flex flex-col gap-4">
         <div>
           <div class="text-xl font-bold mb-4">Properties</div>
@@ -236,23 +246,31 @@
             <div class="flex items-center">Priority</div>
             <div class="flex items-center overflow-x-hidden text-gray-500 px-1">
               <EditableSpecField
+                bind:this={priorityField}
                 {spec}
                 field="priority"
                 options={getPriorityOptions()}
                 aria_label="Priority"
                 onUpdate={handlePriorityUpdate}
                 compact={true}
+                onOpen={() => {
+                  statusField?.close()
+                }}
               />
             </div>
             <div class="flex items-center">Status</div>
             <div class="flex items-center overflow-x-hidden text-gray-500 px-1">
               <EditableSpecField
+                bind:this={statusField}
                 {spec}
                 field="status"
                 options={getStatusOptions()}
                 aria_label="Status"
                 onUpdate={handleStatusUpdate}
                 compact={true}
+                onOpen={() => {
+                  priorityField?.close()
+                }}
               />
             </div>
             <div class="flex items-center">Eval ID</div>

@@ -12,6 +12,7 @@
   export let aria_label: string = ""
   export let onUpdate: (spec: Spec, value: number | SpecStatus) => void
   export let compact: boolean = false
+  export let onOpen: (() => void) | undefined = undefined
 
   let currentValue: number | SpecStatus =
     field === "priority" ? spec.priority : spec.status
@@ -63,10 +64,15 @@
 
   function startEditing() {
     isEditing = true
+    onOpen?.()
   }
 
   function stopEditing() {
     isEditing = false
+  }
+
+  export function close() {
+    stopEditing()
   }
 
   function getFlatOptions(): Option[] {
