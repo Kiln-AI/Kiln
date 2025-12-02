@@ -550,6 +550,47 @@ async def test_task_run_config_from_id(
 
 
 @pytest.mark.asyncio
+async def test_task_run_config_from_id_finetune(mock_task_from_id, mock_task):
+    mock_task_from_id.return_value = mock_task
+
+    run_config_props = RunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_chain_of_thought_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    mock_finetune = Finetune(
+        id="ft_test",
+        name="Test Finetune",
+        description="Test finetune description",
+        provider="openai",
+        base_model_id="model1",
+        dataset_split_id="split1",
+        system_message="System message",
+        latest_status=FineTuneStatusType.completed,
+        run_config=run_config_props,
+        fine_tune_model_id="ft_model_123",
+        parent=mock_task,
+    )
+
+    with patch(
+        "app.desktop.studio_server.eval_api.finetune_from_finetune_run_config_id"
+    ) as mock_finetune_from_id:
+        mock_finetune_from_id.return_value = mock_finetune
+
+        run_config = task_run_config_from_id(
+            "project1", "task1", "finetune_run_config::project1::task1::ft_test"
+        )
+
+        assert run_config.id == "finetune_run_config::project1::task1::ft_test"
+        assert run_config.name == "Test Finetune"
+        assert run_config.description == "Test finetune description"
+        assert run_config.run_config_properties == run_config_props
+        assert run_config.parent == mock_task
+
+
+@pytest.mark.asyncio
 async def test_get_all_run_configs(mock_task_from_id, mock_task):
     """Test that get_all_run_configs returns regular run configs and completed finetune run configs."""
     mock_task_from_id.return_value = mock_task
