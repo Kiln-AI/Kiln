@@ -24,6 +24,7 @@ from kiln_ai.adapters.provider_tools import (
     lite_llm_core_config_for_provider,
     lite_llm_provider_model,
     parse_custom_model_id,
+    parser_from_finetune,
     provider_enabled,
     provider_name_from_id,
     provider_warnings,
@@ -69,6 +70,7 @@ def mock_finetune():
     with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
         finetune = Mock(spec=Finetune)
         finetune.provider = ModelProviderName.openai
+        finetune.base_model_id = "gpt_4o"
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
         finetune.data_strategy = ChatStrategy.single_turn
@@ -81,6 +83,7 @@ def mock_finetune_final_and_intermediate():
     with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
         finetune = Mock(spec=Finetune)
         finetune.provider = ModelProviderName.openai
+        finetune.base_model_id = "gpt_4o"
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
         finetune.data_strategy = ChatStrategy.two_message_cot
@@ -93,6 +96,7 @@ def mock_finetune_r1_compatible():
     with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
         finetune = Mock(spec=Finetune)
         finetune.provider = ModelProviderName.ollama
+        finetune.base_model_id = "deepseek_r1"
         finetune.fine_tune_model_id = "ft:deepseek-r1:671b:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
         finetune.data_strategy = ChatStrategy.single_turn_r1_thinking
@@ -460,8 +464,11 @@ async def test_builtin_model_from_provider_warning_check(mock_config):
     assert provider_warnings[ModelProviderName.groq].message in str(exc_info.value)
 
 
-def test_finetune_provider_model_success(mock_project, mock_task, mock_finetune):
+def test_finetune_provider_model_success(
+    mock_project, mock_task, mock_finetune, mock_config
+):
     """Test successful creation of a fine-tuned model provider"""
+    mock_config.return_value = "fake-api-key"
     model_id = "project-123::task-456::finetune-789"
 
     provider = finetune_provider_model(model_id)
@@ -474,9 +481,10 @@ def test_finetune_provider_model_success(mock_project, mock_task, mock_finetune)
 
 
 def test_finetune_provider_model_success_final_and_intermediate(
-    mock_project, mock_task, mock_finetune_final_and_intermediate
+    mock_project, mock_task, mock_finetune_final_and_intermediate, mock_config
 ):
     """Test successful creation of a fine-tuned model provider"""
+    mock_config.return_value = "fake-api-key"
     model_id = "project-123::task-456::finetune-789"
 
     provider = finetune_provider_model(model_id)
@@ -581,13 +589,17 @@ def test_finetune_provider_model_structured_mode(
     mock_project,
     mock_task,
     mock_finetune,
+    mock_config,
     structured_output_mode,
     provider_name,
     expected_mode,
 ):
     """Test creation of provider with different structured output modes"""
+    mock_config.return_value = "fake-api-key"
+
     finetune = Mock(spec=Finetune)
     finetune.provider = provider_name
+    finetune.base_model_id = "gpt_4o"
     finetune.fine_tune_model_id = "fireworks-model-123"
     finetune.structured_output_mode = structured_output_mode
     finetune.data_strategy = ChatStrategy.single_turn
@@ -923,6 +935,7 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     """Test creation of provider for Vertex AI with endpoint ID transformation"""
     finetune = Mock(spec=Finetune)
     finetune.provider = ModelProviderName.vertex
+    finetune.base_model_id = "gemini_1.5_flash"
     finetune.fine_tune_model_id = "projects/123/locations/us-central1/endpoints/456"
     finetune.structured_output_mode = StructuredOutputMode.json_mode
     finetune.data_strategy = ChatStrategy.single_turn
@@ -1177,3 +1190,59 @@ def test_provider_name_from_id_docker_model_runner():
     """Test provider_name_from_id for Docker Model Runner"""
     result = provider_name_from_id(ModelProviderName.docker_model_runner)
     assert result == "Docker Model Runner"
+
+
+def test_parser_from_finetune_model_parser_takes_precedence():
+    """Test that parser from ml_model_list takes precedence over data_strategy"""
+    finetune = Finetune(
+        name="test-finetune",
+        provider=ModelProviderName.ollama,
+        base_model_id="deepseek_r1",
+        fine_tune_model_id="ft:deepseek-r1:custom:model-123",
+        dataset_split_id="test-split",
+        system_message="You are a helpful assistant.",
+        data_strategy=ChatStrategy.single_turn,
+    )
+
+    parser = parser_from_finetune(finetune)
+
+    # deepseek_r1 has ModelParserID.r1_thinking set in ml_model_list
+    assert parser == ModelParserID.r1_thinking
+
+
+def test_parser_from_finetune_fallback_to_data_strategy(mock_config):
+    """Test that parser falls back to data_strategy when model has no parser"""
+    mock_config.return_value = "fake-api-key"
+
+    finetune = Finetune(
+        name="test-finetune",
+        provider=ModelProviderName.openai,
+        base_model_id="gpt_4o",
+        fine_tune_model_id="ft:gpt-4o:custom:model-123",
+        dataset_split_id="test-split",
+        system_message="You are a helpful assistant.",
+        data_strategy=ChatStrategy.single_turn_r1_thinking,
+    )
+
+    parser = parser_from_finetune(finetune)
+
+    assert parser == ModelParserID.r1_thinking
+
+
+def test_parser_from_finetune_no_parser(mock_config):
+    """Test that None is returned when neither model nor data_strategy has parser"""
+    mock_config.return_value = "fake-api-key"
+
+    finetune = Finetune(
+        name="test-finetune",
+        provider=ModelProviderName.openai,
+        base_model_id="gpt_4o",
+        fine_tune_model_id="ft:gpt-4o:custom:model-123",
+        dataset_split_id="test-split",
+        system_message="You are a helpful assistant.",
+        data_strategy=ChatStrategy.single_turn,
+    )
+
+    parser = parser_from_finetune(finetune)
+
+    assert parser is None

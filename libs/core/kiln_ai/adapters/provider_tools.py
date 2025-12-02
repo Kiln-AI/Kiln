@@ -234,6 +234,26 @@ def finetune_from_id(model_id: str) -> Finetune:
     return fine_tune
 
 
+def parser_from_finetune(
+    fine_tune: Finetune,
+) -> ModelParserID | None:
+    """
+    Use the finetune's base model to look for parser information. This is to cover the case where a R1 model is fine-tuned without thinking data.
+    The model would still output thinking data despite the data_strategy being single_turn.
+    """
+
+    # Look up the base model provider and check if there is a parser set
+    base_model_provider = builtin_model_from(
+        fine_tune.base_model_id, fine_tune.provider
+    )
+
+    if base_model_provider and base_model_provider.parser:
+        return base_model_provider.parser
+
+    # Otherwise, use the data strategy to determine the parser
+    return parser_from_data_strategy(fine_tune.data_strategy)
+
+
 def parser_from_data_strategy(
     data_strategy: ChatStrategy,
 ) -> ModelParserID | None:
@@ -251,7 +271,7 @@ def finetune_provider_model(
     model_provider = KilnModelProvider(
         name=provider,
         model_id=fine_tune.fine_tune_model_id,
-        parser=parser_from_data_strategy(fine_tune.data_strategy),
+        parser=parser_from_finetune(fine_tune),
         reasoning_capable=(
             fine_tune.data_strategy
             in [
