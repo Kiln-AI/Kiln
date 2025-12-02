@@ -65,7 +65,7 @@ def create_toxicity_properties_dict():
     return {
         "spec_type": SpecType.toxicity.value,
         "base_instruction": "Test instruction",
-        "toxicity_examples": None,
+        "toxicity_examples": "Example toxicity content",
     }
 
 
@@ -75,8 +75,8 @@ def create_reference_answer_accuracy_properties_dict():
         "spec_type": SpecType.reference_answer_accuracy.value,
         "base_instruction": "Test instruction",
         "reference_answer_accuracy_description": "Must match reference",
-        "accurate_examples": None,
-        "inaccurate_examples": None,
+        "accurate_examples": "Accurate example",
+        "inaccurate_examples": "Inaccurate example",
     }
 
 
@@ -98,7 +98,7 @@ def sample_hallucinations_properties():
     return HallucinationsProperties(
         spec_type=SpecType.hallucinations,
         base_instruction="Test instruction",
-        hallucinations_examples=None,
+        hallucinations_examples="Example hallucination",
     )
 
 
@@ -108,7 +108,7 @@ def sample_toxicity_properties():
     return ToxicityProperties(
         spec_type=SpecType.toxicity,
         base_instruction="Test instruction",
-        toxicity_examples=None,
+        toxicity_examples="Example toxicity",
     )
 
 
@@ -1140,8 +1140,8 @@ def test_create_spec_with_empty_tool_function_name(client, project_and_task):
             "base_instruction": "Test instruction",
             "tool_function_name": "",
             "tool_use_guidelines": "Use this tool when needed",
-            "appropriate_tool_use_examples": None,
-            "inappropriate_tool_use_examples": None,
+            "appropriate_tool_use_examples": "examples",
+            "inappropriate_tool_use_examples": "examples",
         },
         "eval_id": None,
     }
@@ -1175,8 +1175,8 @@ def test_create_spec_with_empty_tool_use_guidelines(client, project_and_task):
             "base_instruction": "Test instruction",
             "tool_function_name": "test_tool_function",
             "tool_use_guidelines": "",
-            "appropriate_tool_use_examples": None,
-            "inappropriate_tool_use_examples": None,
+            "appropriate_tool_use_examples": "examples",
+            "inappropriate_tool_use_examples": "examples",
         },
         "eval_id": None,
     }
