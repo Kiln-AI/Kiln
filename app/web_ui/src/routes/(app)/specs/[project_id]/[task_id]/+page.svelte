@@ -755,7 +755,9 @@
                   spec.id &&
                   selected_specs.has(spec.id)
                     ? 'bg-base-200'
-                    : ''} {spec.status === 'archived' ? 'opacity-60' : ''}"
+                    : ''} {spec.status === 'archived'
+                    ? 'text-base-content/60'
+                    : ''}"
                   on:click={() => {
                     if (select_mode) {
                       toggle_selection(spec.id || "")
