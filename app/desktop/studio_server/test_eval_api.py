@@ -44,6 +44,7 @@ from app.desktop.studio_server.eval_api import (
     CreateEvaluatorRequest,
     connect_evals_api,
     eval_config_from_id,
+    get_all_run_configs,
     task_run_config_from_id,
 )
 
@@ -548,6 +549,63 @@ async def test_task_run_config_from_id(
         task_run_config_from_id("project1", "task1", "non_existent")
 
 
+@pytest.mark.asyncio
+async def test_get_all_run_configs(mock_task_from_id, mock_task):
+    """Test that get_all_run_configs returns regular run configs and completed finetune run configs."""
+    mock_task_from_id.return_value = mock_task
+
+    run_config_props = RunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_chain_of_thought_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    regular_run_config = TaskRunConfig(
+        id="regular_run_config1",
+        name="Regular Run Config",
+        description="A regular run config",
+        run_config_properties=run_config_props,
+        parent=mock_task,
+    )
+    regular_run_config.save_to_file()
+
+    completed_finetune = Finetune(
+        id="ft_completed",
+        name="Completed Finetune",
+        provider="openai",
+        base_model_id="model1",
+        dataset_split_id="split1",
+        system_message="System message",
+        latest_status=FineTuneStatusType.completed,
+        run_config=run_config_props,
+        fine_tune_model_id="ft_model_123",
+        parent=mock_task,
+    )
+    completed_finetune.save_to_file()
+
+    incomplete_finetune = Finetune(
+        id="ft_incomplete",
+        name="Incomplete Finetune",
+        provider="openai",
+        base_model_id="model2",
+        dataset_split_id="split2",
+        system_message="System message",
+        latest_status=FineTuneStatusType.running,
+        run_config=run_config_props,
+        fine_tune_model_id=None,
+        parent=mock_task,
+    )
+    incomplete_finetune.save_to_file()
+
+    configs = get_all_run_configs("project1", "task1")
+
+    config_ids = [config.id for config in configs]
+    assert "regular_run_config1" in config_ids
+    assert "finetune_run_config::project1::task1::ft_completed" in config_ids
+    assert "finetune_run_config::project1::task1::ft_incomplete" not in config_ids
+
+
 @pytest.fixture
 def mock_eval_for_score_summary():
     eval = Mock(spec=Eval)
@@ -635,6 +693,7 @@ async def test_get_eval_config_score_summary(
             Mock(spec=TaskRunConfig, id="run4"),
             Mock(spec=TaskRunConfig, id="run5"),
         ]
+        mock_task.finetunes.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -1910,6 +1969,7 @@ async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
             system_message="System message",
             latest_status=FineTuneStatusType.completed,
             run_config=run_config_props,
+            fine_tune_model_id="ft_model_123",
             parent=mock_task,
         ),
         Finetune(
@@ -1921,6 +1981,7 @@ async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
             system_message="System message",
             latest_status=FineTuneStatusType.running,
             run_config=run_config_props,
+            fine_tune_model_id=None,
             parent=mock_task,
         ),
         Finetune(
@@ -1932,6 +1993,7 @@ async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
             system_message="System message",
             latest_status=FineTuneStatusType.unknown,
             run_config=run_config_props,
+            fine_tune_model_id=None,
             parent=mock_task,
         ),
         Finetune(
@@ -1943,6 +2005,7 @@ async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
             system_message="System message",
             latest_status=FineTuneStatusType.failed,
             run_config=run_config_props,
+            fine_tune_model_id=None,
             parent=mock_task,
         ),
         Finetune(
@@ -1969,7 +2032,7 @@ async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
     config_ids = [config["id"] for config in configs]
 
     assert "finetune_run_config::project1::task1::ft_completed" in config_ids
-    assert "finetune_run_config::project1::task1::ft_running" in config_ids
-    assert "finetune_run_config::project1::task1::ft_failed" in config_ids
-    assert "finetune_run_config::project1::task1::ft_unknown" in config_ids
+    assert "finetune_run_config::project1::task1::ft_running" not in config_ids
+    assert "finetune_run_config::project1::task1::ft_failed" not in config_ids
+    assert "finetune_run_config::project1::task1::ft_unknown" not in config_ids
     assert "finetune_run_config::project1::task1::ft_no_run_config" not in config_ids
