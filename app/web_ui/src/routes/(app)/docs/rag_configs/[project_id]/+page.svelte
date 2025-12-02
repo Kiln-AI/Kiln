@@ -17,6 +17,7 @@
     sortRagConfigs,
     getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
+  import { ui_state } from "$lib/stores"
 
   $: projectStateStore = getProjectRagStateStore($page.params.project_id)
   $: progressState = $projectStateStore
@@ -35,6 +36,10 @@
   }
 
   $: project_id = $page.params.project_id
+  $: current_task_id = $ui_state.current_task_id
+  $: evals_href = current_task_id
+    ? `/evals/${project_id}/${current_task_id}/create_evaluator?template_id=rag`
+    : undefined
 
   onMount(async () => {
     // need to ensure the store is populated for friendly name resolution
@@ -102,6 +107,11 @@
     action_buttons={all_rag_configs && all_rag_configs.length == 0
       ? []
       : [
+          {
+            label: "Evaluate Search Tools",
+            href: evals_href,
+            disabled: !evals_href,
+          },
           {
             label: "Add Search Tool",
             primary: true,

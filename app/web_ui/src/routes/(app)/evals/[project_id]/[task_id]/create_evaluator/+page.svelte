@@ -6,7 +6,10 @@
     EvalTemplateId,
     EvalDataType,
   } from "$lib/types"
-  import { type EvalTemplateResult } from "./eval_template"
+  import {
+    type EvalTemplateResult,
+    buildReferenceAnswerAccuracyTemplate,
+  } from "./eval_template"
   import FormContainer from "$lib/utils/form_container.svelte"
   import type { Task } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
@@ -79,6 +82,11 @@
   let create_evaluator_loading: boolean = false
   // Used to not block the navigation once the evaluator is created
   let complete = false
+
+  $: template_id_param = $page.url.searchParams.get("template_id")
+  $: if (!selected_template && template_id_param === "rag") {
+    on_selected_template(buildReferenceAnswerAccuracyTemplate())
+  }
 
   async function create_evaluator() {
     create_evaluator_error = undefined
