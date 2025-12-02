@@ -8,6 +8,7 @@
     Task,
     RequirementRating,
     TaskRequirement,
+    Trace,
   } from "$lib/types"
   import { client } from "$lib/api_client"
   import Output from "./output.svelte"
@@ -27,6 +28,124 @@
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+
+  type SubtaskReference = {
+    project_id: string
+    task_id: string
+    run_id: string
+  }
+
+  function extract_subtask_references(trace: Trace): SubtaskReference[] {
+    const references: SubtaskReference[] = []
+    for (const message of trace) {
+      if (
+        "kiln_task_tool_data" in message &&
+        message.kiln_task_tool_data &&
+        typeof message.kiln_task_tool_data === "string"
+      ) {
+        const [project_id, , task_id, run_id] =
+          message.kiln_task_tool_data.split(":::")
+        if (project_id && task_id && run_id) {
+          references.push({ project_id, task_id, run_id })
+        }
+      }
+    }
+    return references
+  }
+
+  async function calculate_subtask_usage(
+    trace: Trace | null | undefined,
+    visited: Set<string> = new Set(),
+  ): Promise<{ cost: number; tokens: number }> {
+    if (!trace) return { cost: 0, tokens: 0 }
+
+    const references = extract_subtask_references(trace)
+    let total_cost = 0
+    let total_tokens = 0
+
+    for (const ref of references) {
+      const key = `${ref.project_id}:${ref.task_id}:${ref.run_id}`
+      if (visited.has(key)) continue
+      visited.add(key)
+
+      try {
+        const response = await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+          {
+            params: {
+              path: {
+                project_id: ref.project_id,
+                task_id: ref.task_id,
+                run_id: ref.run_id,
+              },
+            },
+          },
+        )
+
+        if (!response.error && response.data) {
+          total_cost += response.data.usage?.cost ?? 0
+          total_tokens += response.data.usage?.total_tokens ?? 0
+          const subtask_usage = await calculate_subtask_usage(
+            response.data.trace,
+            visited,
+          )
+          total_cost += subtask_usage.cost
+          total_tokens += subtask_usage.tokens
+        }
+      } catch (error) {
+        console.warn(
+          "Failed to fetch subtask usage, continuing on error as subtask run may have been deleted.",
+          {
+            project_id: ref.project_id,
+            task_id: ref.task_id,
+            run_id: ref.run_id,
+            error,
+          },
+        )
+      }
+    }
+
+    return { cost: total_cost, tokens: total_tokens }
+  }
+
+  let subtask_cost: number | null = null
+  let subtask_tokens: number | null = null
+  let subtask_usage_loading = false
+  // Counter to prevent race conditions: when run changes rapidly, multiple async requests
+  // may be in flight. We only update state if this request is still the latest one.
+
+  let subtask_usage_request_id = 0
+
+  async function load_subtask_usage(trace: Trace | null | undefined) {
+    const request_id = ++subtask_usage_request_id
+
+    if (!trace || extract_subtask_references(trace).length === 0) {
+      if (request_id === subtask_usage_request_id) {
+        subtask_cost = null
+        subtask_tokens = null
+        subtask_usage_loading = false
+      }
+      return
+    }
+
+    subtask_usage_loading = true
+    try {
+      const usage = await calculate_subtask_usage(trace)
+      if (request_id === subtask_usage_request_id) {
+        subtask_cost = usage.cost
+        subtask_tokens = usage.tokens
+      }
+    } catch {
+      if (request_id === subtask_usage_request_id) {
+        subtask_cost = null
+        subtask_tokens = null
+      }
+    } finally {
+      if (request_id === subtask_usage_request_id) {
+        subtask_usage_loading = false
+      }
+    }
+  }
 
   const REPAIR_ENABLED_FOR_SOURCES: Array<
     components["schemas"]["DataSourceType"]
@@ -367,26 +486,81 @@
     repair_run = null
   }
 
-  function get_usage_properties(run: TaskRun | null) {
+  function get_usage_properties(
+    run: TaskRun | null,
+    subtask_cost: number | null,
+    subtask_usage_loading: boolean,
+    subtask_tokens: number | null,
+  ) {
     let properties = []
 
-    if (run?.usage?.cost) {
+    const run_cost = run?.usage?.cost ?? 0
+    const run_tokens = run?.usage?.total_tokens ?? 0
+
+    if (subtask_usage_loading) {
       properties.push({
-        name: "Cost",
-        value: `$${run.usage.cost.toFixed(6)}`,
+        name: "Total Cost",
+        value: "Loading...",
+      })
+    } else {
+      const total_cost = run_cost + (subtask_cost ?? 0)
+      if (total_cost > 0) {
+        properties.push({
+          name: "Total Cost",
+          value: `$${total_cost.toFixed(6)}`,
+        })
+      }
+    }
+
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Subtasks Cost",
+        value: "Loading...",
+      })
+    } else if (subtask_cost && subtask_cost > 0) {
+      properties.push({
+        name: "Subtasks Cost",
+        value: `$${subtask_cost.toFixed(6)}`,
       })
     }
 
-    if (run?.usage?.total_tokens) {
+    if (subtask_usage_loading) {
       properties.push({
-        name: "Tokens",
-        value: run.usage.total_tokens,
+        name: "Total Tokens",
+        value: "Loading...",
+      })
+    } else {
+      const total_tokens = run_tokens + (subtask_tokens ?? 0)
+      if (total_tokens > 0) {
+        properties.push({
+          name: "Total Tokens",
+          value: total_tokens,
+        })
+      }
+    }
+
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Subtasks Tokens",
+        value: "Loading...",
+      })
+    } else if (subtask_tokens && subtask_tokens > 0) {
+      properties.push({
+        name: "Subtasks Tokens",
+        value: subtask_tokens,
       })
     }
 
     return properties
   }
-  $: usage_properties = get_usage_properties(run)
+
+  $: load_subtask_usage(run?.trace)
+  $: usage_properties = get_usage_properties(
+    run,
+    subtask_cost,
+    subtask_usage_loading,
+    subtask_tokens,
+  )
 </script>
 
 <div>
