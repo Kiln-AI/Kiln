@@ -23,21 +23,21 @@ export const spec_field_configs: Record<SpecType, FieldConfig[]> = {
       required: true,
     },
     {
-      key: "behaviour_description",
+      key: "behavior_description",
       label: "Behaviour Description",
       description:
         "Describe the behaviour in detail. You can specify what the model should do, what it must avoid, or both.",
       required: true,
     },
     {
-      key: "correct_behaviour_examples",
+      key: "correct_behavior_examples",
       label: "Correct Behaviour Examples",
       description:
         "Provide one or more examples demonstrating the correct behaviour",
       required: false,
     },
     {
-      key: "incorrect_behaviour_examples",
+      key: "incorrect_behavior_examples",
       label: "Incorrect Behaviour Examples",
       description:
         "Provide examples that fail to meet the behaviour requirements",
