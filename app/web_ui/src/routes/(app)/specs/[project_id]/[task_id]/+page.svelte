@@ -539,6 +539,7 @@
           { label: "Active", value: "active" },
           { label: "Future", value: "future" },
           { label: "Deprecated", value: "deprecated" },
+          { label: "Archived", value: "archived" },
         ],
       },
     ]
