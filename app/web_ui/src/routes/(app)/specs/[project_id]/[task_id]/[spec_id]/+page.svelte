@@ -13,6 +13,8 @@
     formatSpecType,
   } from "$lib/utils/formatters"
 
+  // ### Spec Details Page ###
+
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
   $: spec_id = $page.params.spec_id
@@ -88,9 +90,7 @@
 </script>
 
 <AppPage
-  title="{spec?.properties.spec_type
-    ? `${formatSpecType(spec.properties.spec_type)}: `
-    : ''}{spec?.name ? `${spec.name}` : ''}"
+  title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
   breadcrumbs={[
     {
       label: "Specs",
@@ -112,6 +112,14 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 lg:grid-cols-[900px,500px] gap-12">
+      <div class="grow">
+        <div class="text-xl font-bold mb-4">Definition</div>
+        <div class="bg-base-200 rounded-lg p-6">
+          <div class="prose prose-sm max-w-none whitespace-pre-wrap">
+            {spec.definition}
+          </div>
+        </div>
+      </div>
       <div class="flex flex-col gap-4">
         <PropertyList
           title="Properties"
@@ -121,7 +129,7 @@
               value: spec.id ?? "None",
             },
             {
-              name: "Type",
+              name: "Template",
               value: formatSpecType(spec.properties.spec_type),
             },
             {

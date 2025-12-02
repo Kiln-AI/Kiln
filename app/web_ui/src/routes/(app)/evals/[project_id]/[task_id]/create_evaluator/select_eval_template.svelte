@@ -666,7 +666,7 @@
       {task_id}
       label="Tool to Evaluate"
       description="Select the tool you want to evaluate for appropriate use."
-      info_description={undefined}
+      info_description=""
       single_select={true}
       bind:single_select_selected_tool={selected_tool}
     />
