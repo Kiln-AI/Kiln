@@ -4,6 +4,10 @@ from typing import Annotated, Any, Dict, List, Set, Tuple
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.fine_tune.finetune_run_config import (
+    finetune_from_finetune_run_config_id,
+    finetune_run_config_id,
+)
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
@@ -59,6 +63,31 @@ def eval_config_from_id(
     )
 
 
+def get_all_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
+    """
+    Returns all run configs for a task, including completed fine-tune run configs.
+    Only includes fine-tunes that have a fine_tune_model_id (are completed and usable).
+    """
+    task = task_from_id(project_id, task_id)
+    configs = task.run_configs()
+
+    # Get run configs from finetunes and only include completed fine-tunes
+    finetunes = task.finetunes()
+    for finetune in finetunes:
+        if finetune.run_config is not None and finetune.fine_tune_model_id is not None:
+            configs.append(
+                TaskRunConfig(
+                    id=finetune_run_config_id(project_id, task_id, str(finetune.id)),
+                    name=finetune.name,
+                    description=finetune.description,
+                    run_config_properties=finetune.run_config,
+                    parent=task,  # special case, we need to reference the task model
+                )
+            )
+
+    return configs
+
+
 def task_run_config_from_id(
     project_id: str, task_id: str, run_config_id: str
 ) -> TaskRunConfig:
@@ -66,6 +95,18 @@ def task_run_config_from_id(
     for run_config in task.run_configs():
         if run_config.id == run_config_id:
             return run_config
+
+    # special case for finetune run configs, it's inside the finetune model
+    if run_config_id.startswith("finetune_run_config::"):
+        finetune = finetune_from_finetune_run_config_id(run_config_id)
+        if finetune.run_config is not None:
+            return TaskRunConfig(
+                id=finetune_run_config_id(project_id, task_id, str(finetune.id)),
+                name=finetune.name,
+                description=finetune.description,
+                run_config_properties=finetune.run_config,
+                parent=task,  # special case, we need to reference the task model
+            )
 
     raise HTTPException(
         status_code=404,
@@ -324,24 +365,7 @@ def connect_evals_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/run_configs/")
     async def get_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
-        # Returns all run configs of a given task.
-        task = task_from_id(project_id, task_id)
-        configs = task.run_configs()
-
-        # Get run configs from finetunes
-        finetunes = task.finetunes()
-        for finetune in finetunes:
-            if finetune.run_config is not None:
-                configs.append(
-                    TaskRunConfig(
-                        id=f"finetune_run_config::{project_id}::{task_id}::{finetune.id}",
-                        name=finetune.name,
-                        description=finetune.description,
-                        run_config_properties=finetune.run_config,
-                    )
-                )
-
-        return configs
+        return get_all_run_configs(project_id, task_id)
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
@@ -480,7 +504,8 @@ def connect_evals_api(app: FastAPI):
         # Load the list of run configs to use. Two options:
         run_configs: list[TaskRunConfig] = []
         if all_run_configs:
-            run_configs = task_from_id(project_id, task_id).run_configs()
+            # special case, we cannot directly lod task.run_configs(), we need to also get all finetune run configs which lives inside the finetune model
+            run_configs = get_all_run_configs(project_id, task_id)
         else:
             if len(run_config_ids) == 0:
                 raise HTTPException(
@@ -633,7 +658,8 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
-        task_runs_configs = task.run_configs()
+        # special case, we cannot directly lod task.run_configs(), we need to also get all finetune run configs which lives inside the finetune model
+        task_runs_configs = get_all_run_configs(project_id, task_id)
 
         # Build a set of all the dataset items IDs we expect to have scores for
         expected_dataset_ids = dataset_ids_in_filter(
