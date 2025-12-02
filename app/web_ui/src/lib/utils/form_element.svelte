@@ -163,10 +163,11 @@
         {#if label || inline_action || info_description || error_message}
           <div class="flex flex-row items-center">
             {#if label}
-              <span
-                class="grow {light_label ? 'text-xs text-gray-500 h-4' : ''}"
+              <span class={light_label ? "text-xs text-gray-500 h-4" : ""}
                 >{label}</span
               >
+              <slot name="label_suffix" />
+              <span class="grow"></span>
               <span class="pl-1 text-xs text-gray-500 flex-none"
                 >{info_msg || (optional ? "Optional" : "")}</span
               >
