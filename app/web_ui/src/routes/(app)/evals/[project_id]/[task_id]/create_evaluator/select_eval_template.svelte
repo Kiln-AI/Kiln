@@ -397,6 +397,7 @@
   let issue_eval_create_complete = false
 
   function create_issue_eval() {
+    issue_eval_name = issue_eval_name.trim()
     issue_eval_create_complete = true
     const eval_tag = generate_eval_tag(issue_eval_name)
 
@@ -444,6 +445,7 @@
         return
       }
 
+      tool_call_eval_name = tool_call_eval_name.trim()
       if (is_empty(tool_call_eval_name)) {
         tool_call_eval_error = createKilnError({
           message: "Please enter a name for this eval.",
