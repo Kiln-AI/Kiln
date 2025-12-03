@@ -92,6 +92,21 @@
   let create_error: KilnError | null = null
   let submitting = false
   let complete = false
+  let warn_before_unload = false
+
+  $: void (name, property_values, initialized, update_warn_before_unload())
+
+  function update_warn_before_unload() {
+    if (!initialized) {
+      warn_before_unload = false
+      return
+    }
+    if (complete) {
+      warn_before_unload = false
+      return
+    }
+    warn_before_unload = has_form_changes()
+  }
 
   let analyze_dialog: Dialog | null = null
   async function analyze_spec() {
@@ -117,6 +132,9 @@
 
       // Wait 2 seconds
       await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Don't warn before unloading since we're intentionally navigating
+      warn_before_unload = false
 
       // Navigate to review_spec page
       await navigateToReviewSpec(
@@ -202,7 +220,7 @@
       on:submit={analyze_spec}
       bind:error={create_error}
       bind:submitting
-      warn_before_unload={!complete && has_form_changes()}
+      {warn_before_unload}
     >
       <FormElement
         label="Spec Name"
