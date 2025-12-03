@@ -31,6 +31,9 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.formatting import snake_case
 from kiln_ai.utils.mime_type import guess_extension
 
+from .stores.datamodel_store import DatamodelStore
+from .stores.datastore_registry import DatastoreRegistry
+
 
 def generate_model_id() -> str:
     return str(uuid.uuid4().int)[:12]
@@ -289,6 +292,10 @@ class KilnBaseModel(BaseModel):
     _loaded_from_file: bool = False
     _readonly: bool = False
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._store = DatastoreRegistry.shared().get_store()
+
     @computed_field()
     def model_type(self) -> str:
         return self.type_name()
@@ -371,16 +378,17 @@ class KilnBaseModel(BaseModel):
         cached_model = ModelCache.shared().get_model(path, cls, readonly=readonly)
         if cached_model is not None:
             return cached_model
-        with open(path, "r", encoding="utf-8") as file:
-            # modified time of file for cache invalidation. From file descriptor so it's atomic w read.
-            mtime_ns = os.fstat(file.fileno()).st_mtime_ns
-            file_data = file.read()
-            parsed_json = json.loads(file_data)
-            m = cls.model_validate(parsed_json, context={"loading_from_file": True})
-            if not isinstance(m, cls):
-                raise ValueError(f"Loaded model is not of type {cls.__name__}")
-            m._loaded_from_file = True
-            file_data = None
+
+        store = DatastoreRegistry.shared().get_store()
+        file_data, cache_id = store.load_model_data(path)
+
+        parsed_json = json.loads(file_data)
+        m = cls.model_validate(parsed_json, context={"loading_from_file": True})
+        if not isinstance(m, cls):
+            raise ValueError(f"Loaded model is not of type {cls.__name__}")
+        m._loaded_from_file = True
+        file_data = None
+
         m.path = path
         if m.v > m.max_schema_version():
             raise ValueError(
@@ -398,7 +406,7 @@ class KilnBaseModel(BaseModel):
         if readonly:
             m.mark_as_readonly()
             # Cache, but only if readonly. Mutable models should not be cached.
-            ModelCache.shared().set_model(path, m, mtime_ns)
+            ModelCache.shared().set_model(path, m, cache_id)
 
         return m
 
@@ -427,13 +435,13 @@ class KilnBaseModel(BaseModel):
         Raises:
             ValueError: If the path is not set
         """
+        # TODO: build path should be in store.
         path = self.build_path()
         if path is None:
             raise ValueError(
                 f"Cannot save to file because 'path' is not set. Class: {self.__class__.__name__}, "
                 f"id: {getattr(self, 'id', None)}, path: {path}"
             )
-        path.parent.mkdir(parents=True, exist_ok=True)
 
         json_data = self.model_dump_json(
             indent=2,
@@ -445,10 +453,12 @@ class KilnBaseModel(BaseModel):
                 "dest_path": path.parent,
             },
         )
-        with open(path, "w", encoding="utf-8") as file:
-            file.write(json_data)
+
+        self._store.save_model_data(path, json_data)
+
         # save the path so even if something like name changes, the file doesn't move
         self.path = path
+
         # We could save, but invalidating will trigger load on next use.
         # This ensures everything in cache is loaded from disk, and the cache perfectly reflects what's on disk
         ModelCache.shared().invalidate(path)
@@ -456,10 +466,9 @@ class KilnBaseModel(BaseModel):
     def delete(self) -> None:
         if self.path is None:
             raise ValueError("Cannot delete model because path is not set")
-        dir_path = self.path.parent if self.path.is_file() else self.path
-        if dir_path is None:
-            raise ValueError("Cannot delete model because path is not set")
-        shutil.rmtree(dir_path)
+
+        self._store.delete_model(self.path)
+
         ModelCache.shared().invalidate(self.path)
         self.path = None
 
@@ -508,6 +517,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         # lazy load parent from path
         if self.path is None:
             return None
+        # TODO: no extension
         # Note: this only works with base_filename. If we every support custom names, we need to change this.
         parent_path = (
             self.path.parent.parent.parent
@@ -515,8 +525,10 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         )
         if parent_path is None:
             return None
-        if not parent_path.exists():
-            return None
+
+        # TODO: we previously returned None, how return exception
+        # if not parent_path.exists():
+        #    return None
         loaded_parent = self.__class__.parent_type().load_from_file(parent_path)
         self.parent = loaded_parent
         return loaded_parent
@@ -543,14 +555,14 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         return self
 
     def build_child_dirname(self) -> Path:
-        # Default implementation for readable folder names.
-        # {id} - {name}/{type}.kiln
+        # Default implementation for readable folder names. `/{id} - {name}/`
+        # If descriptive path names are disabled, just use `/{id}/`
         if self.id is None:
             # consider generating an ID here. But if it's been cleared, we've already used this without one so raise for now.
             raise ValueError("ID is not set - can not save or build path")
         path = self.id
         name = getattr(self, "name", None)
-        if name is not None:
+        if name is not None and self._store.descriptive_path_names():
             path = f"{path} - {name[:32]}"
         return Path(path)
 
@@ -578,6 +590,14 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
     @classmethod
     def iterate_children_paths_of_parent_path(cls: Type[PT], parent_path: Path | None):
+        base_filename = cls.base_filename()
+        store = DatastoreRegistry.shared().get_store()
+
+        for child_path in store.iterate_child_models(
+            parent_path, cls.relationship_name(), base_filename
+        ):
+            yield child_path
+
         if parent_path is None:
             # children are disk based. If not saved, they don't exist
             return []
