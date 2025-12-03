@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { is_empty } from "$lib/utils/input_validators"
+  import {
+    is_empty,
+    filename_string_short_validator,
+  } from "$lib/utils/input_validators"
   import type { EvalTemplateResult } from "./eval_template"
   import type { Task, EvalTemplateId } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -398,6 +401,18 @@
 
   function create_issue_eval() {
     issue_eval_name = issue_eval_name.trim()
+
+    // Validate the issue eval name (it will be used as a score name)
+    const name_validation_error =
+      filename_string_short_validator(issue_eval_name)
+    if (name_validation_error) {
+      tool_call_eval_error = createKilnError({
+        message: `Please correct the issue eval name: ${name_validation_error}`,
+        status: 400,
+      })
+      return
+    }
+
     issue_eval_create_complete = true
     const eval_tag = generate_eval_tag(issue_eval_name)
 
@@ -445,10 +460,22 @@
         return
       }
 
-      tool_call_eval_name = tool_call_eval_name.trim()
       if (is_empty(tool_call_eval_name)) {
         tool_call_eval_error = createKilnError({
           message: "Please enter a name for this eval.",
+          status: 400,
+        })
+        return
+      }
+
+      tool_call_eval_name = tool_call_eval_name.trim()
+
+      // Validate the tool call eval name (it will be used as a score name)
+      const name_validation_error =
+        filename_string_short_validator(tool_call_eval_name)
+      if (name_validation_error) {
+        tool_call_eval_error = createKilnError({
+          message: `Please correct the eval name: ${name_validation_error}`,
           status: 400,
         })
         return
