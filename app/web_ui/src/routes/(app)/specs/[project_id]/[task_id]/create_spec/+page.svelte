@@ -10,7 +10,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { createSpec } from "../spec_utils"
+  import { createSpec, navigateToReviewSpec } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -27,7 +27,38 @@
   $: field_configs = spec_field_configs[spec_type] || []
 
   onMount(() => {
+    // Check for URL params first (fresh navigation from select_template)
     const spec_type_param = $page.url.searchParams.get("type")
+    const has_url_params = spec_type_param !== null
+
+    // Check if we have saved form data from a back navigation
+    const formDataKey = `spec_refine_${project_id}_${task_id}`
+    const storedData = sessionStorage.getItem(formDataKey)
+
+    if (storedData && !has_url_params) {
+      try {
+        const formData = JSON.parse(storedData)
+        // Restore form state
+        spec_type = formData.spec_type || "behaviour"
+        name = formData.name || ""
+        property_values = { ...formData.property_values }
+        initial_property_values = { ...formData.property_values }
+        initialized = true
+        return
+      } catch (error) {
+        // If parsing fails, continue with normal initialization
+        console.error("Failed to restore form data:", error)
+      }
+    }
+
+    // If no stored data and no URL params, redirect to specs list
+    // This happens when user navigates back after creating a spec
+    if (!storedData && !has_url_params) {
+      goto(`/specs/${project_id}/${task_id}`)
+      return
+    }
+
+    // Normal initialization with URL params
     if (spec_type_param) {
       spec_type = spec_type_param as SpecType
     }
@@ -87,19 +118,14 @@
       // Wait 2 seconds
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
-      // Store form data in sessionStorage to pass to refine page
-      const formData = {
+      // Navigate to review_spec page
+      await navigateToReviewSpec(
+        project_id,
+        task_id,
         name,
         spec_type,
         property_values,
-      }
-      sessionStorage.setItem(
-        `spec_refine_${project_id}_${task_id}`,
-        JSON.stringify(formData),
       )
-
-      // Navigate to review_spec page
-      goto(`/specs/${project_id}/${task_id}/review_spec`)
     } catch (error) {
       create_error = createKilnError(error)
       analyze_dialog?.hide()

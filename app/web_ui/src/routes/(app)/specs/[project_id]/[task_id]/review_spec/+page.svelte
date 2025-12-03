@@ -92,10 +92,14 @@
             feedback: "",
           },
         ]
+
+        // Don't clear the stored data - keep it for back navigation
+        // It will be cleared when the spec is successfully created
       } else {
-        throw createKilnError(
-          "No form data found. Please go back and try again.",
-        )
+        // No form data found - redirect back to specs list
+        // This happens when user navigates back after creating a spec
+        goto(`/specs/${project_id}/${task_id}`)
+        return
       }
     } catch (error) {
       spec_error = createKilnError(error)

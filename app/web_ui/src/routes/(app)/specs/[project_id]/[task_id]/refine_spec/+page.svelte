@@ -7,8 +7,9 @@
   import type { SpecType } from "$lib/types"
   import { goto } from "$app/navigation"
   import FormElement from "$lib/utils/form_element.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { createSpec } from "../spec_utils"
+  import { createSpec, navigateToReviewSpec } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -78,12 +79,13 @@
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
 
-        // Clear the stored data
-        sessionStorage.removeItem(formDataKey)
+        // Don't clear the stored data - keep it for back navigation
+        // It will be cleared when the spec is successfully created
       } else {
-        throw createKilnError(
-          "No form data found. Please go back and try again.",
-        )
+        // No form data found - redirect back to specs list
+        // This happens when user navigates back after creating a spec
+        goto(`/specs/${project_id}/${task_id}`)
+        return
       }
     } catch (error) {
       spec_error = createKilnError(error)
@@ -94,6 +96,46 @@
 
   let submit_error: KilnError | null = null
   let submitting = false
+
+  let analyze_dialog: Dialog | null = null
+  async function analyze_spec() {
+    try {
+      submit_error = null
+      submitting = true
+
+      // Validate required fields
+      for (const field of field_configs) {
+        if (field.required) {
+          const value = suggested_property_values[field.key]
+          if (!value || !value.trim()) {
+            throw createKilnError(`${field.label} is required`)
+          }
+        }
+      }
+
+      // Reset submitting state so button doesn't show spinner
+      submitting = false
+
+      // Show analyzing dialog
+      analyze_dialog?.show()
+
+      // Wait 2 seconds
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Navigate to review_spec page
+      await navigateToReviewSpec(
+        project_id,
+        task_id,
+        current_name,
+        spec_type,
+        suggested_property_values,
+      )
+    } catch (error) {
+      submit_error = createKilnError(error)
+      analyze_dialog?.hide()
+      submitting = false
+    }
+  }
 
   async function create_spec() {
     try {
@@ -153,7 +195,8 @@
     </div>
   {:else}
     <FormContainer
-      submit_label="Analyze Changes"
+      submit_label="Next"
+      on:submit={analyze_spec}
       bind:error={submit_error}
       bind:submitting
     >
@@ -260,3 +303,9 @@
     </div>
   {/if}
 </AppPage>
+
+<Dialog bind:this={analyze_dialog} title="Analyzing Spec">
+  <div class="flex flex-col items-center justify-center min-h-[100px]">
+    <div class="loading loading-spinner loading-lg"></div>
+  </div>
+</Dialog>
