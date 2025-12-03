@@ -63,51 +63,53 @@
   let selected_tool: string | null = null
 </script>
 
-<AppPage
-  title="Select a Spec Template"
-  subtitle="Start by choosing the template that best fits the spec you want to create."
-  breadcrumbs={[
-    {
-      label: "Specs",
-      href: `/specs/${project_id}/${task_id}`,
-    },
-  ]}
->
-  <div class="space-y-8">
-    {#each spec_sections as section}
-      <CarouselSection title={section.category} items={section.items} />
-    {/each}
-  </div>
-</AppPage>
-
-<Dialog
-  bind:this={tool_selection_dialog}
-  title="Tool for this Spec"
-  action_buttons={[
-    {
-      label: "Next",
-      isPrimary: true,
-      asyncAction: async () => {
-        if (!current_template_data) {
-          return false
-        }
-        await go_to_create_spec(current_template_data)
-        return true
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Select a Spec Template"
+    subtitle="Start by choosing the template that best fits the spec you want to create."
+    breadcrumbs={[
+      {
+        label: "Specs",
+        href: `/specs/${project_id}/${task_id}`,
       },
-    },
-  ]}
-  on:close={() => {
-    current_template_data = undefined
-    selected_tool = null
-  }}
->
-  <ToolsSelector
-    {project_id}
-    {task_id}
-    label="Tool to Use"
-    description="Select the tool you want to use for this spec."
-    info_description=""
-    single_select={true}
-    bind:single_select_selected_tool={selected_tool}
-  />
-</Dialog>
+    ]}
+  >
+    <div class="space-y-8">
+      {#each spec_sections as section}
+        <CarouselSection title={section.category} items={section.items} />
+      {/each}
+    </div>
+  </AppPage>
+
+  <Dialog
+    bind:this={tool_selection_dialog}
+    title="Tool for this Spec"
+    action_buttons={[
+      {
+        label: "Next",
+        isPrimary: true,
+        asyncAction: async () => {
+          if (!current_template_data) {
+            return false
+          }
+          await go_to_create_spec(current_template_data)
+          return true
+        },
+      },
+    ]}
+    on:close={() => {
+      current_template_data = undefined
+      selected_tool = null
+    }}
+  >
+    <ToolsSelector
+      {project_id}
+      {task_id}
+      label="Tool to Use"
+      description="Select the tool you want to use for this spec."
+      info_description=""
+      single_select={true}
+      bind:single_select_selected_tool={selected_tool}
+    />
+  </Dialog>
+</div>

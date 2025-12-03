@@ -4,14 +4,11 @@
   import { onMount } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { SpecProperties, SpecType } from "$lib/types"
+  import type { SpecType } from "$lib/types"
   import { goto } from "$app/navigation"
-  import { client } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
-  import {
-    spec_field_configs,
-    buildDefinitionFromProperties,
-  } from "../select_template/spec_templates"
+  import { spec_field_configs } from "../select_template/spec_templates"
+  import { createSpec } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -113,41 +110,16 @@
         }
       }
 
-      // Build the properties object with spec_type
-      const properties = {
-        spec_type: spec_type,
-        ...suggested_property_values,
-      } as SpecProperties
-
-      // Create new spec
-      const definition = buildDefinitionFromProperties(
+      const spec_id = await createSpec(
+        project_id,
+        task_id,
+        current_name,
         spec_type,
         suggested_property_values,
       )
 
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/spec",
-        {
-          params: {
-            path: { project_id, task_id },
-          },
-          body: {
-            name: current_name,
-            definition,
-            properties,
-            priority: 1,
-            status: "active",
-            tags: [],
-            eval_id: null,
-          },
-        },
-      )
-
-      if (error) {
-        throw error
-      }
-      if (data?.id) {
-        goto(`/specs/${project_id}/${task_id}/${data.id}`)
+      if (spec_id) {
+        goto(`/specs/${project_id}/${task_id}/${spec_id}`)
       }
     } catch (error) {
       submit_error = createKilnError(error)

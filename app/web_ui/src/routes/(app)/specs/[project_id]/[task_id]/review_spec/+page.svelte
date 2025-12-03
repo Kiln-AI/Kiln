@@ -6,6 +6,7 @@
   import { goto } from "$app/navigation"
   import type { SpecType } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
+  import { createSpec } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -16,6 +17,9 @@
   let spec_type: SpecType = "behaviour"
   let name = ""
   let property_values: Record<string, string | null> = {}
+
+  let create_error: KilnError | null = null
+  let submitting = false
 
   type ReviewRow = {
     id: string
@@ -173,7 +177,26 @@
   }
 
   async function create_spec() {
-    // TODO: Implement this
+    try {
+      create_error = null
+      submitting = true
+
+      const spec_id = await createSpec(
+        project_id,
+        task_id,
+        name,
+        spec_type,
+        property_values,
+      )
+
+      if (spec_id) {
+        goto(`/specs/${project_id}/${task_id}/${spec_id}`)
+      }
+    } catch (error) {
+      create_error = createKilnError(error)
+    } finally {
+      submitting = false
+    }
   }
 </script>
 
@@ -276,18 +299,27 @@
         </div>
 
         <div class="flex flex-col gap-2 items-end">
+          {#if create_error}
+            <div class="text-error text-sm">
+              {create_error.getMessage() || "An error occurred"}
+            </div>
+          {/if}
           {#if all_feedback_aligned}
             <button
               class="btn btn-primary"
-              disabled={!all_feedback_aligned}
+              disabled={!all_feedback_aligned || submitting}
               on:click={create_spec}
             >
-              Create Spec
+              {#if submitting}
+                <span class="loading loading-spinner loading-sm"></span>
+              {:else}
+                Create Spec
+              {/if}
             </button>
           {:else}
             <button
               class="btn btn-primary"
-              disabled={!all_feedback_provided}
+              disabled={!all_feedback_provided || submitting}
               on:click={continue_to_refine}
             >
               Refine Spec with Feedback
@@ -296,9 +328,15 @@
               <span class="text-xs text-gray-500">or</span>
               <button
                 class="link underline text-xs text-gray-500"
+                disabled={submitting}
                 on:click={create_spec}
-                >Create Spec Without Refining Further</button
               >
+                {#if submitting}
+                  <span class="loading loading-spinner loading-xs"></span>
+                {:else}
+                  Create Spec Without Refining Further
+                {/if}
+              </button>
             </div>
           {/if}
         </div>
