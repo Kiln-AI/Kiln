@@ -5,15 +5,12 @@
   import { onMount } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { SpecProperties, SpecType } from "$lib/types"
+  import type { SpecType } from "$lib/types"
   import { goto } from "$app/navigation"
-  import { client } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import {
-    spec_field_configs,
-    buildDefinitionFromProperties,
-  } from "../select_template/spec_templates"
+  import { spec_field_configs } from "../select_template/spec_templates"
+  import { createSpec, navigateToReviewSpec } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -30,7 +27,38 @@
   $: field_configs = spec_field_configs[spec_type] || []
 
   onMount(() => {
+    // Check for URL params first (fresh navigation from select_template)
     const spec_type_param = $page.url.searchParams.get("type")
+    const has_url_params = spec_type_param !== null
+
+    // Check if we have saved form data from a back navigation
+    const formDataKey = `spec_refine_${project_id}_${task_id}`
+    const storedData = sessionStorage.getItem(formDataKey)
+
+    if (storedData && !has_url_params) {
+      try {
+        const formData = JSON.parse(storedData)
+        // Restore form state
+        spec_type = formData.spec_type || "behaviour"
+        name = formData.name || ""
+        property_values = { ...formData.property_values }
+        initial_property_values = { ...formData.property_values }
+        initialized = true
+        return
+      } catch (error) {
+        // If parsing fails, continue with normal initialization
+        console.error("Failed to restore form data:", error)
+      }
+    }
+
+    // If no stored data and no URL params, redirect to specs list
+    // This happens when user navigates back after creating a spec
+    if (!storedData && !has_url_params) {
+      goto(`/specs/${project_id}/${task_id}`)
+      return
+    }
+
+    // Normal initialization with URL params
     if (spec_type_param) {
       spec_type = spec_type_param as SpecType
     }
@@ -64,6 +92,21 @@
   let create_error: KilnError | null = null
   let submitting = false
   let complete = false
+  let warn_before_unload = false
+
+  $: void (name, property_values, initialized, update_warn_before_unload())
+
+  function update_warn_before_unload() {
+    if (!initialized) {
+      warn_before_unload = false
+      return
+    }
+    if (complete) {
+      warn_before_unload = false
+      return
+    }
+    warn_before_unload = has_form_changes()
+  }
 
   let analyze_dialog: Dialog | null = null
   async function analyze_spec() {
@@ -90,19 +133,17 @@
       // Wait 2 seconds
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
-      // Store form data in sessionStorage to pass to refine page
-      const formData = {
+      // Don't warn before unloading since we're intentionally navigating
+      warn_before_unload = false
+
+      // Navigate to review_spec page
+      await navigateToReviewSpec(
+        project_id,
+        task_id,
         name,
         spec_type,
         property_values,
-      }
-      sessionStorage.setItem(
-        `spec_refine_${project_id}_${task_id}`,
-        JSON.stringify(formData),
       )
-
-      // Navigate to refine_spec page
-      goto(`/specs/${project_id}/${task_id}/refine_spec`)
     } catch (error) {
       create_error = createKilnError(error)
       analyze_dialog?.hide()
@@ -139,41 +180,17 @@
         }
       }
 
-      // Build definition from properties
-      const definition = buildDefinitionFromProperties(
+      const spec_id = await createSpec(
+        project_id,
+        task_id,
+        name,
         spec_type,
         property_values,
       )
 
-      // Build the properties object with spec_type
-      const properties = {
-        spec_type: spec_type,
-        ...property_values,
-      } as SpecProperties
-
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/spec",
-        {
-          params: {
-            path: { project_id, task_id },
-          },
-          body: {
-            name,
-            definition,
-            properties,
-            priority: 1,
-            status: "active",
-            tags: [],
-            eval_id: null,
-          },
-        },
-      )
-      if (error) {
-        throw error
-      }
-      if (data?.id) {
+      if (spec_id) {
         complete = true
-        goto(`/specs/${project_id}/${task_id}/${data.id}`)
+        goto(`/specs/${project_id}/${task_id}/${spec_id}`)
       }
     } catch (error) {
       create_error = createKilnError(error)
@@ -203,7 +220,7 @@
       on:submit={analyze_spec}
       bind:error={create_error}
       bind:submitting
-      warn_before_unload={!complete && has_form_changes()}
+      {warn_before_unload}
     >
       <FormElement
         label="Spec Name"
