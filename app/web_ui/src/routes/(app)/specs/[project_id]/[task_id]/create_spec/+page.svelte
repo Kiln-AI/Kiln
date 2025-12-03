@@ -101,8 +101,8 @@
         JSON.stringify(formData),
       )
 
-      // Navigate to refine_spec page
-      goto(`/specs/${project_id}/${task_id}/refine_spec`)
+      // Navigate to review_spec page
+      goto(`/specs/${project_id}/${task_id}/review_spec`)
     } catch (error) {
       create_error = createKilnError(error)
       analyze_dialog?.hide()
