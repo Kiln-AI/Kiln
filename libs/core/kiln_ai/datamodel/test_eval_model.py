@@ -432,6 +432,12 @@ def test_eval_output_score_name_validation():
     )
     assert valid_score.name == "Valid Name With Spaces"
 
+    max_length_score = EvalOutputScore(
+        name="a" * 32,
+        type=TaskOutputRatingType.five_star,
+    )
+    assert max_length_score.name == "a" * 32
+
 
 @pytest.fixture
 def valid_eval_run_data():
