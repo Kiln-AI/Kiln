@@ -64,8 +64,9 @@ class EvalOutputScore(BaseModel):
         default=None,
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
     )
-    type: TaskOutputRatingType = Field(
-        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical')."
+    type: TaskOutputRatingType | None = Field(
+        default=None,
+        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
     )
 
     def json_key(self) -> str:

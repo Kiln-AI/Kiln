@@ -185,7 +185,9 @@
             {#each results.eval.output_scores as score}
               <th class="text-center">
                 {score.name}
-                <OutputTypeTablePreview output_score_type={score.type} />
+                {#if score.type}
+                  <OutputTypeTablePreview output_score_type={score.type} />
+                {/if}
               </th>
             {/each}
           </tr>

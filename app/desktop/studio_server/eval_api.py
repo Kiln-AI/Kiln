@@ -205,6 +205,7 @@ class RunConfigEvalScoresSummary(BaseModel):
 class UpdateEvalRequest(BaseModel):
     name: str
     description: str | None = None
+    output_scores: List[EvalOutputScore] | None = None
 
 
 def dataset_ids_in_filter(
@@ -333,6 +334,8 @@ def connect_evals_api(app: FastAPI):
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.name = request.name
         eval.description = request.description
+        if request.output_scores is not None:
+            eval.output_scores = request.output_scores
         eval.save_to_file()
         return eval
 

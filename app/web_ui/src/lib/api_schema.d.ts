@@ -3477,7 +3477,7 @@ export interface components {
              */
             instruction?: string | null;
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
-            type: components["schemas"]["TaskOutputRatingType"];
+            type?: components["schemas"]["TaskOutputRatingType"] | null;
         };
         /** EvalProgress */
         EvalProgress: {
@@ -5971,6 +5971,8 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+            /** Output Scores */
+            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
         };
         /** UpdateFavouriteRequest */
         UpdateFavouriteRequest: {

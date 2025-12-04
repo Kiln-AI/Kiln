@@ -303,10 +303,10 @@
   {:else if evals.length > 0}
     <div class="flex items-center mt-4">
       <a
-        href={`/evals/${project_id}/${task_id}/create_evaluator`}
+        href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-outline mx-auto my-4"
       >
-        Create a New Eval
+        Create a New Spec
       </a>
     </div>
     <div class="flex items-center mt-4">
@@ -341,10 +341,10 @@
     </div>
     <div class="flex items-center mt-4">
       <a
-        href={`/evals/${project_id}/${task_id}/create_evaluator`}
+        href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-primary mx-auto my-4"
       >
-        Create a New Eval
+        Create a New Spec
       </a>
     </div>
   {/if}

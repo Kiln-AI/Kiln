@@ -553,13 +553,15 @@
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
-                    <InfoTooltip
-                      tooltip_text={info_tooltip_text(
-                        output_score.type,
-                        score_type,
-                      )}
-                      no_pad={true}
-                    />
+                    {#if output_score.type}
+                      <InfoTooltip
+                        tooltip_text={info_tooltip_text(
+                          output_score.type,
+                          score_type,
+                        )}
+                        no_pad={true}
+                      />
+                    {/if}
                   </th>
                 {/each}
               </tr>

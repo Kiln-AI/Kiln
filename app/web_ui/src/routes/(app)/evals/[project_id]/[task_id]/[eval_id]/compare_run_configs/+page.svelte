@@ -625,9 +625,11 @@
                   {#each evaluator.output_scores as output_score}
                     <th class="text-center">
                       {output_score.name}
-                      <OutputTypeTablePreview
-                        output_score_type={output_score.type}
-                      />
+                      {#if output_score.type}
+                        <OutputTypeTablePreview
+                          output_score_type={output_score.type}
+                        />
+                      {/if}
                     </th>
                   {/each}
                 </tr>
