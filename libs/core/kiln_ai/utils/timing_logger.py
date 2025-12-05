@@ -7,6 +7,8 @@ from typing import Generator, Optional
 
 logger = logging.getLogger(__name__)
 
+_show_timing = os.getenv("KILN_SHOW_TIMING", "false") == "true"
+
 
 class TimingLogger:
     """A utility for timing code execution with context manager support."""
@@ -36,8 +38,7 @@ class TimingLogger:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager and print timing results."""
         if self.start_time is not None:
-            show_time = os.getenv("KILN_SHOW_TIMING", "false")
-            if show_time != "true":
+            if not _show_timing:
                 return
 
             duration = time.time() - self.start_time
