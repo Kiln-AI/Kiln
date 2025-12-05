@@ -628,6 +628,7 @@
       inputType="input"
       id="name"
       bind:value={issue_eval_name}
+      max_length={32}
     />
     <FormElement
       label="Issue Prompt / Description"
