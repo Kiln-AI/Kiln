@@ -232,6 +232,12 @@
       optional_fields: ["Base URL"],
     },
     {
+      name: "Kiln Copliot",
+      id: "kiln_copliot",
+      description: "Kiln Copilot, AI for AI.",
+      featured: false,
+    },
+    {
       name: "Custom API",
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
@@ -343,6 +349,12 @@
       custom_description: null,
     },
     cerebras: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    kiln_copliot: {
       connected: false,
       connecting: false,
       error: null,
