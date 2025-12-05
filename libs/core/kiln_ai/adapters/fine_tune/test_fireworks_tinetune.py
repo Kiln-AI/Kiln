@@ -343,6 +343,7 @@ async def test_start_success(
 ):
     Config.shared().wandb_api_key = "test-api-key"
     Config.shared().wandb_entity = "test-entity"
+    Config.shared().wandb_base_url = None
     mock_task.output_json_schema = output_schema
 
     fireworks_finetune.datamodel.parent = mock_task
@@ -428,25 +429,52 @@ async def test_start_api_error(
             await fireworks_finetune._start(mock_dataset)
 
 
-async def test_start_wandb_missing_entity(
+async def test_start_wandb_missing_entity_no_default(
     fireworks_finetune, mock_dataset, mock_task, mock_api_key
 ):
     Config.shared().wandb_api_key = "test-api-key"
     Config.shared().wandb_entity = None
+    Config.shared().wandb_base_url = None
 
-    fireworks_finetune.datamodel.parent = mock_task
-    mock_dataset_id = "dataset-123"
-
-    with patch.object(
-        fireworks_finetune,
-        "generate_and_upload_jsonl",
-        return_value=mock_dataset_id,
+    with patch(
+        "kiln_ai.adapters.fine_tune.fireworks_finetune.get_wandb_default_entity",
+        new=AsyncMock(return_value=None),
     ):
-        with pytest.raises(
-            ValueError,
-            match=r"Weights & Biases was previously connected but is missing a required field. Please disconnect and reconnect Weights & Biases in Kiln Settings -> Manage Providers.",
+        fireworks_finetune.datamodel.parent = mock_task
+        mock_dataset_id = "dataset-123"
+
+        with patch.object(
+            fireworks_finetune,
+            "generate_and_upload_jsonl",
+            return_value=mock_dataset_id,
         ):
-            await fireworks_finetune._start(mock_dataset)
+            with pytest.raises(
+                ValueError, match=r"Weights & Biases entity not found and is required"
+            ):
+                await fireworks_finetune._start(mock_dataset)
+
+
+async def test_start_wandb_missing_entity_gets_default(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = "test-entity"
+    Config.shared().wandb_base_url = None
+
+    with patch(
+        "kiln_ai.adapters.fine_tune.fireworks_finetune.get_wandb_default_entity",
+        new=AsyncMock(return_value=None),
+    ):
+        fireworks_finetune.datamodel.parent = mock_task
+        mock_dataset_id = "dataset-123"
+
+        with patch.object(
+            fireworks_finetune,
+            "generate_and_upload_jsonl",
+            return_value=mock_dataset_id,
+        ):
+            # Not raising an exception is good!
+            pass
 
 
 def test_available_parameters(fireworks_finetune):
