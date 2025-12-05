@@ -33,6 +33,14 @@ def load_env():
     load_dotenv()
 
 
+# Reset Config singleton between tests to prevent state leakage
+@pytest.fixture(autouse=True)
+def reset_config():
+    Config._shared_instance = None
+    yield
+    Config._shared_instance = None
+
+
 # mock out the settings path so we don't clobber the user's actual settings during tests
 @pytest.fixture(autouse=True)
 def use_temp_settings_dir(tmp_path):
