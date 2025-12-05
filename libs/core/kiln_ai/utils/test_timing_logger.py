@@ -46,7 +46,8 @@ class TestTimingLogger:
     def test_timing_calculation(self, mock_time, caplog):
         """Test that timing calculation is accurate."""
         # Mock time.time() to return predictable values
-        mock_time.side_effect = [1000.0, 1002.5]  # 2.5 second difference
+        # Need 3 values: __enter__, __exit__, and logging internal call
+        mock_time.side_effect = [1000.0, 1002.5, 1003.0]  # 2.5 second difference
 
         with patch.dict(os.environ, {"KILN_SHOW_TIMING": "true"}):
             with caplog.at_level(logging.WARNING):
