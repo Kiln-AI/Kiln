@@ -134,11 +134,9 @@
   ]
 
   $: show_existing_dataset_option =
-    finetune_dataset_info?.existing_finetunes?.length
+    finetune_dataset_info?.eligible_datasets?.length
   $: show_new_dataset_option =
     finetune_dataset_info?.eligible_finetune_tags?.length
-  $: can_select_dataset =
-    show_existing_dataset_option || show_new_dataset_option
 
   // Case where there are tags but none are eligible
   $: has_only_ineligible_tags =
@@ -174,16 +172,14 @@
           },
         ]
       : []),
-    ...(!can_select_dataset
-      ? [
-          {
-            id: "add",
-            name: "Add Fine-Tuning Data",
-            description:
-              "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
-          },
-        ]
-      : []),
+    ...[
+      {
+        id: "add",
+        name: "Add Fine-Tuning Data",
+        description:
+          "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
+      },
+    ],
   ]
 
   function select_top_option(option: string) {
@@ -373,24 +369,25 @@
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
       {#if has_only_ineligible_tags}
-        <div class="pt-4 font-light">
-          Existing tuning data does not match your selected tools. Please add
-          new fine-tuning data.
+        <div class="pt-4">
+          <Warning
+            warning_message="Existing tuning data won't work as it wasn't generated with the tools you've selected. Please generate new fine-tuning data with these tools."
+            tight={true}
+            warning_color="gray"
+            warning_icon="info"
+            large_icon={true}
+          />
         </div>
       {:else if has_eligible_tags_but_no_eligible_datasets}
-        <div class="pt-4 font-light">
-          Existing tuning datasets do not match your selected tools. Please
-          create new dataset for training with tool calls or <button
-            class="link font-normal"
-            on:click={show_add_data}>add additional fine-tuning data</button
-          > before you start.
-        </div>
-      {:else if can_select_dataset}
-        <div class="pt-4 font-light">
-          or
-          <button class="link font-normal" on:click={show_add_data}
-            >add additional fine-tuning data</button
-          > before you start.
+        <div class="pt-4">
+          <Warning
+            warning_message="Existing tuning datasets do not match your selected tools. Please
+          create new dataset for training with tool calls or add additional fine-tuning data before you start."
+            tight={true}
+            warning_color="gray"
+            warning_icon="info"
+            large_icon={true}
+          />
         </div>
       {/if}
     {/if}
