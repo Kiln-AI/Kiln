@@ -1,4 +1,4 @@
-import type { EvalTemplateId, Task, Eval } from "$lib/types"
+import type { EvalTemplateId, Task, Eval, Spec } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
@@ -43,6 +43,7 @@ export function get_eval_steps(
   template: EvalTemplateId | null | undefined,
   task: Task,
   evaluator: Eval,
+  spec: Spec | null = null,
 ): string[] {
   if (!template) {
     return []
@@ -66,6 +67,7 @@ export function get_eval_steps(
   }
 
   if (template === "kiln_issue") {
+    // kiln_issue only exists in legacy evals (no corresponding spec type)
     const issue_prompt = evaluator.template_properties.issue_prompt
     if (!issue_prompt) {
       throw new Error("Issue prompt is required for kiln_issue template")
@@ -99,7 +101,15 @@ export function get_eval_steps(
   }
 
   if (template === "tool_call") {
-    const tool_function_name = evaluator.template_properties.tool_function_name
+    // Both spec and legacy eval use tool_function_name
+    const spec_properties = spec?.properties
+    let tool_function_name: string | undefined = undefined
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      tool_function_name = spec_properties?.tool_function_name
+    } else {
+      tool_function_name = evaluator.template_properties
+        .tool_function_name as string
+    }
     if (!tool_function_name) {
       throw new Error(
         "Tool function name is required for Appropriate Tool Use template",

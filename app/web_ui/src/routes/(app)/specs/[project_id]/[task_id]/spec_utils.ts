@@ -199,3 +199,31 @@ function specEvalTag(spec_name: string): string {
   }
   return tag
 }
+
+async function get_eval_progress() {
+  eval_progress = null
+  eval_progress_loading = true
+  try {
+    eval_progress = null
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+      {
+        params: {
+          path: {
+            project_id,
+            task_id,
+            eval_id,
+          },
+        },
+      },
+    )
+    if (error) {
+      throw error
+    }
+    eval_progress = data
+  } catch (error) {
+    eval_progress_error = createKilnError(error)
+  } finally {
+    eval_progress_loading = false
+  }
+}

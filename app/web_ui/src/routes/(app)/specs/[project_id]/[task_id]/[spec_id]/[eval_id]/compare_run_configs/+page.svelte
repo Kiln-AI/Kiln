@@ -3,7 +3,7 @@
   import type { Eval, Task, Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount, tick, getContext } from "svelte"
+  import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import FormElement, {
     type InlineAction,
@@ -34,7 +34,6 @@
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import RunEval from "../run_eval.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
-  import OutputTypeTablePreview from "../output_type_table_preview.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -42,7 +41,7 @@
   import type { ActionButton } from "../../../../../../types"
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import RunConfigSummary from "$lib/ui/run_config_component/run_config_summary.svelte"
+  import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -277,7 +276,7 @@
       const params = new URLSearchParams()
       params.set("next_page", "compare_run_configs")
       goto(
-        `/specs/${project_id}/${task_id}/${spec_id}/eval/create_eval_config?${params.toString()}`,
+        `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/create_eval_config?${params.toString()}`,
       )
       return
     }
@@ -400,21 +399,6 @@
     | "complete"
     | "complete_with_errors" = "not_started"
 
-  function show_incomplete_warning(
-    score_summary: EvalResultSummary | null,
-  ): boolean {
-    if (!score_summary?.run_config_percent_complete) {
-      return false
-    }
-
-    const values = Object.values(score_summary.run_config_percent_complete)
-    const minComplete =
-      values.length > 0
-        ? values.reduce((min, val) => Math.min(min, val), 1.0)
-        : 1.0
-    return minComplete < 1.0
-  }
-
   $: has_default_eval_config = evaluator && evaluator.current_config_id
 
   function action_buttons(evaluator: Eval | null): ActionButton[] {
@@ -425,7 +409,7 @@
       return [
         {
           label: "Compare Judges",
-          href: `/specs/${project_id}/${task_id}/${spec_id}/eval/eval_configs`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/eval_configs`,
           primary: !has_default_eval_config,
         },
       ]
@@ -433,7 +417,7 @@
       return [
         {
           label: "Add Judge",
-          href: `/specs/${project_id}/${task_id}/${spec_id}/eval/create_eval_config?next_page=compare_run_configs`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/create_eval_config?next_page=compare_run_configs`,
           primary: false,
         },
       ]
@@ -479,294 +463,174 @@
   }
 </script>
 
-<AppPage
-  title="Compare Run Configurations"
-  subtitle="Find the best configuration for running your task."
-  sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
-  breadcrumbs={[
-    {
-      label: "Specs",
-      href: `/specs/${project_id}/${task_id}`,
-    },
-    {
-      label: spec?.name || "Spec",
-      href: `/specs/${project_id}/${task_id}/${spec_id}`,
-    },
-    {
-      label: "Eval",
-      href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
-    },
-  ]}
-  action_buttons={action_buttons(evaluator)}
->
-  {#if loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Evaluator</div>
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Compare Run Configurations"
+    subtitle="Find the best configuration for running your task."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
+    breadcrumbs={[
+      {
+        label: "Specs",
+        href: `/specs/${project_id}/${task_id}`,
+      },
+      {
+        label: spec?.name || "Spec",
+        href: `/specs/${project_id}/${task_id}/${spec_id}`,
+      },
+      {
+        label: "Eval",
+        href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
+      },
+    ]}
+    action_buttons={action_buttons(evaluator)}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-    </div>
-  {:else if evaluator}
-    {#if evaluator.template === "rag" && eval_configs !== null && eval_configs.length === 0}
-      <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
-        <Intro
-          title="Create a Judge to Get Started"
-          description_paragraphs={[
-            "Create a judge to use when comparing run configurations.",
-            "A judge specifies how an eval is run (algorithm, model, instructions, etc).",
-          ]}
-          action_buttons={[
-            {
-              label: "Create Judge",
-              href: `/specs/${project_id}/${task_id}/${spec_id}/eval/create_eval_config?next_page=compare_run_configs&save_as_default=true`,
-              is_primary: true,
-            },
-          ]}
-        />
-      </div>
-    {:else}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
-        <div class="grow flex flex-col gap-4">
-          <div>
-            <div class="text-xl font-bold">Judge</div>
-            <div class="text-sm text-gray-500 mb-2">
-              Select the judge to use when comparing run configurations.
-            </div>
-            <FormElement
-              id="eval_config_select"
-              inputType="fancy_select"
-              bind:value={current_eval_config_id}
-              fancy_select_options={get_eval_config_select_options(
-                eval_configs,
-              )}
-              inline_action={inline_judge_action}
-            />
-            {#if set_current_eval_config_error}
-              <div class="text-error text-sm mt-2">
-                {set_current_eval_config_error.getMessage() ||
-                  "An unknown error occurred"}
-              </div>
-            {/if}
-            {#if !has_default_eval_config && evaluator?.template !== "rag"}
-              <div class="mt-2">
-                <Warning
-                  warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
-                  warning_color="warning"
-                  tight={true}
-                />
-              </div>
-            {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
-              <div class="mt-2">
-                <Warning
-                  warning_message={evaluator.template === "rag"
-                    ? "The currently selected judge is not the default. You can change the default with 'Set as default' above."
-                    : "The currently selected judge is not the default. You can change the default in 'Compare Judges'."}
-                  warning_color="warning"
-                  tight={true}
-                />
-              </div>
-            {/if}
-          </div>
-          {#if current_eval_config_id && evaluator}
-            {#if evaluator.template === "rag"}
-              <button
-                class="flex link text-gray-500 text-sm 2xl:text-base"
-                on:click={() => {
-                  judge_instructions_dialog?.show()
-                }}
-              >
-                Judge Instructions
-              </button>
-            {:else}
-              <div class="flex gap-x-4 text-sm 2xl:text-base items-center">
-                <span>Judge Quality</span>
-                <a
-                  href={`/specs/${project_id}/${task_id}/${spec_id}/eval/eval_configs`}
-                  class="link text-gray-500"
-                >
-                  Compare and optimize
-                </a>
-              </div>
-            {/if}
-          {/if}
+    {:else if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Evaluator</div>
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
         </div>
       </div>
-      <div class="mt-16">
-        {#if current_task_run_configs?.length}
-          <div class="flex flex-col lg:flex-row gap-4 lg:gap-8 mb-6">
-            <div class="grow">
-              <div class="text-xl font-bold">Run Configurations</div>
-              <div class="text-xs text-gray-500">
-                Find the best method of running your task comparing various
-                prompts, models, fine-tunes, and more.
-                <InfoTooltip
-                  tooltip_text={`Scores are generated by running each 'run config' on each item of your eval dataset, generating task outputs. Then those outputs are evaluated with the selected judge (${current_eval_config?.name || "select above"}).`}
-                  position="left"
-                  no_pad={true}
-                />
+    {:else if evaluator}
+      {#if evaluator.template === "rag" && eval_configs !== null && eval_configs.length === 0}
+        <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
+          <Intro
+            title="Create a Judge to Get Started"
+            description_paragraphs={[
+              "Create a judge to use when comparing run configurations.",
+              "A judge specifies how an eval is run (algorithm, model, instructions, etc).",
+            ]}
+            action_buttons={[
+              {
+                label: "Create Judge",
+                href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/create_eval_config?next_page=compare_run_configs&save_as_default=true`,
+                is_primary: true,
+              },
+            ]}
+          />
+        </div>
+      {:else}
+        <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
+          <div class="grow flex flex-col gap-4">
+            <div>
+              <div class="text-xl font-bold">Judge</div>
+              <div class="text-sm text-gray-500 mb-2">
+                Select the judge to use when comparing run configurations.
               </div>
-              {#if score_summary_error}
-                <div class="text-error text-sm">
-                  {score_summary_error.getMessage() ||
-                    "An unknown error occurred fetching scores."}
+              <FormElement
+                id="eval_config_select"
+                inputType="fancy_select"
+                bind:value={current_eval_config_id}
+                fancy_select_options={get_eval_config_select_options(
+                  eval_configs,
+                )}
+                inline_action={inline_judge_action}
+              />
+              {#if set_current_eval_config_error}
+                <div class="text-error text-sm mt-2">
+                  {set_current_eval_config_error.getMessage() ||
+                    "An unknown error occurred"}
+                </div>
+              {/if}
+              {#if !has_default_eval_config && evaluator?.template !== "rag"}
+                <div class="mt-2">
+                  <Warning
+                    warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
+                    warning_color="warning"
+                    tight={true}
+                  />
+                </div>
+              {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
+                <div class="mt-2">
+                  <Warning
+                    warning_message={evaluator.template === "rag"
+                      ? "The currently selected judge is not the default. You can change the default with 'Set as default' above."
+                      : "The currently selected judge is not the default. You can change the default in 'Compare Judges'."}
+                    warning_color="warning"
+                    tight={true}
+                  />
                 </div>
               {/if}
             </div>
-            <div class="shrink-0">
-              <button
-                class="btn btn-mid mr-2"
-                on:click={() => {
-                  create_new_run_config_dialog?.show()
-                }}>Add Run Configuration</button
-              >
-
-              <RunEval
-                bind:eval_state
-                {project_id}
-                {task_id}
-                {eval_id}
-                {current_eval_config_id}
-                run_all={true}
-                btn_primary={focus_run_all}
-                eval_type="run_config"
-                on_run_complete={() => {
-                  get_score_summary()
-                }}
-              />
-            </div>
+            {#if current_eval_config_id && evaluator}
+              {#if evaluator.template === "rag"}
+                <button
+                  class="flex link text-gray-500 text-sm 2xl:text-base"
+                  on:click={() => {
+                    judge_instructions_dialog?.show()
+                  }}
+                >
+                  Judge Instructions
+                </button>
+              {:else}
+                <div class="flex gap-x-4 text-sm 2xl:text-base items-center">
+                  <span>Judge Quality</span>
+                  <a
+                    href={`/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/eval_configs`}
+                    class="link text-gray-500"
+                  >
+                    Compare and optimize
+                  </a>
+                </div>
+              {/if}
+            {/if}
           </div>
-
-          <!-- Warn the user if some evals are incomplete -->
-          {#if show_incomplete_warning(score_summary)}
-            <div class="mt-6 mb-4">
-              <button
-                class="tooltip tooltip-top cursor-pointer"
-                data-tip="Running evals will update any missing dataset items, without re-running complete items. If some evals consistently fail, check the logs for error details."
-              >
-                <Warning
-                  warning_message={`Some evals are incomplete and should be excluded from analysis. Click 'Run All Evals' to generate missing results.`}
-                  tight={true}
-                />
-              </button>
+        </div>
+        <div class="mt-16">
+          {#if current_task_run_configs?.length}
+            <RunConfigComparisonTable
+              {project_id}
+              {task_id}
+              {spec_id}
+              {eval_id}
+              {evaluator}
+              {task}
+              {sorted_task_run_configs}
+              {score_summary}
+              {score_summary_error}
+              {current_eval_config_id}
+              bind:eval_state
+              interactive={true}
+              current_eval_config_name={current_eval_config?.name ||
+                "select above"}
+              on_add_run_config={() => {
+                create_new_run_config_dialog?.show()
+              }}
+              on_eval_complete={() => {
+                get_score_summary()
+              }}
+            />
+          {:else}
+            <div class="text-xl font-bold">Compare Run Configurations</div>
+            <div class="text-sm text-gray-500">
+              Find the best way of running your task comparing various prompts,
+              models, tools, fine-tunes, and more. Add one or more task run
+              configurations to get started.
             </div>
+
+            <button
+              class="btn min-w-[200px] mt-4 {has_default_eval_config
+                ? 'btn-primary'
+                : ''}"
+              on:click={() => {
+                create_new_run_config_dialog?.show()
+              }}
+            >
+              Add Run Configuration
+            </button>
           {/if}
-
-          <div class="overflow-x-auto rounded-lg border">
-            <table class="table table-fixed">
-              <thead>
-                <tr>
-                  <th class="max-w-[400px]">
-                    <div>Run Configuration</div>
-                    <div class="font-normal">How task output is generated</div>
-                  </th>
-                  <th class="text-center">Status</th>
-                  {#each evaluator.output_scores as output_score}
-                    <th class="text-center">
-                      {output_score.name}
-                      {#if output_score.type}
-                        <OutputTypeTablePreview
-                          output_score_type={output_score.type}
-                        />
-                      {/if}
-                    </th>
-                  {/each}
-                </tr>
-              </thead>
-              <tbody>
-                {#each sorted_task_run_configs as task_run_config}
-                  {@const percent_complete =
-                    score_summary?.run_config_percent_complete?.[
-                      "" + task_run_config.id
-                    ] || 0.0}
-                  <tr class="max-w-[400px]">
-                    <td>
-                      <RunConfigSummary
-                        {task_run_config}
-                        is_default={task_run_config.id ===
-                          task?.default_run_config_id}
-                        {project_id}
-                        {task_id}
-                      />
-                    </td>
-                    <td class="text-sm text-center">
-                      {#if percent_complete < 1.0}
-                        <div class="text-error">
-                          {(percent_complete * 100.0).toFixed(0)}% Complete
-                        </div>
-                        <div class="mt-1">
-                          <RunEval
-                            {project_id}
-                            {task_id}
-                            {eval_id}
-                            {current_eval_config_id}
-                            run_config_ids={[task_run_config.id || ""]}
-                            eval_type="run_config"
-                            btn_size="xs"
-                            btn_primary={false}
-                            btn_class="min-w-[120px]"
-                            on_run_complete={() => {
-                              get_score_summary()
-                            }}
-                          />
-                        </div>
-                      {:else}
-                        <div>Complete</div>
-                      {/if}
-                      {#if percent_complete > 0}
-                        <div class="mt-1">
-                          <a
-                            href={`/specs/${project_id}/${task_id}/${spec_id}/eval/${current_eval_config_id}/${task_run_config.id}/run_result`}
-                            class="btn btn-xs btn-outline rounded-full min-w-[120px]"
-                          >
-                            View Data
-                          </a>
-                        </div>
-                      {/if}
-                    </td>
-                    {#each evaluator.output_scores as output_score}
-                      {@const score =
-                        score_summary?.results?.["" + task_run_config.id]?.[
-                          string_to_json_key(output_score.name)
-                        ]?.mean_score}
-                      <td class="text-center">
-                        {score != null ? score.toFixed(2) : "unknown"}
-                      </td>
-                    {/each}
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {:else}
-          <div class="text-xl font-bold">Compare Run Configurations</div>
-          <div class="text-sm text-gray-500">
-            Find the best way of running your task comparing various prompts,
-            models, tools, fine-tunes, and more. Add one or more task run
-            configurations to get started.
-          </div>
-
-          <button
-            class="btn min-w-[200px] mt-4 {has_default_eval_config
-              ? 'btn-primary'
-              : ''}"
-            on:click={() => {
-              create_new_run_config_dialog?.show()
-            }}
-          >
-            Add Run Configuration
-          </button>
-        {/if}
-      </div>
+        </div>
+      {/if}
     {/if}
-  {/if}
-</AppPage>
+  </AppPage>
+</div>
 
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}

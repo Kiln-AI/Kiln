@@ -455,7 +455,7 @@
         },
         {
           label: "Add Judge",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval/create_eval_config?next_page=eval_configs`,
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
         },
       ]
     : []}
@@ -752,7 +752,7 @@
           action_buttons={[
             {
               label: "Add Judge",
-              href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval/create_eval_config?next_page=eval_configs`,
+              href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
               is_primary: true,
             },
           ]}

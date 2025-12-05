@@ -84,14 +84,14 @@
   }
 
   async function load_task_local() {
-    if (!evaluator) {
-      loading_error = createKilnError(
-        new Error("Evaluator not loaded, can not load task"),
-      )
-      return
-    }
     try {
       loading_task = true
+      if (!evaluator) {
+        loading_task_error = createKilnError(
+          new Error("Evaluator not loaded, can not load task"),
+        )
+        return
+      }
       task = await load_task($page.params.project_id, $page.params.task_id)
       if (!task) {
         throw new Error("Task not found")
@@ -109,7 +109,7 @@
           "Given prior thinking and priorities, what would be an appropriate overall score for this task, from 1 to 5, with 1 being the worst and 5 being the best?",
         )
       }
-      eval_steps = get_eval_steps(evaluator?.template, task, evaluator)
+      eval_steps = get_eval_steps(evaluator?.template, task, evaluator, spec)
 
       // Use the task instruction as the task description starter point
       task_description = task.instruction
@@ -233,11 +233,11 @@
       const next_page = $page.url.searchParams.get("next_page")
       if (next_page === "eval_configs") {
         goto(
-          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval/eval_configs`,
+          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/eval_configs`,
         )
       } else if (next_page === "compare_run_configs") {
         goto(
-          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval/compare_run_configs`,
+          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/compare_run_configs`,
         )
       } else {
         goto(

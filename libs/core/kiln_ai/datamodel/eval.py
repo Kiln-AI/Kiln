@@ -19,6 +19,7 @@ from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
+    from kiln_ai.datamodel.spec import Spec
     from kiln_ai.datamodel.task import Task
 
 EvalScores = Dict[str, float]
@@ -363,6 +364,23 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     def configs(self, readonly: bool = False) -> list[EvalConfig]:
         return super().configs(readonly=readonly)  # type: ignore
+
+    # Workaround to return typed parent without importing Spec
+    def associated_spec(self, readonly: bool = False) -> Union["Spec", None]:
+        """
+        Get the spec associated with this eval, if any.
+        Returns None for legacy evals that are not associated with a spec.
+        """
+
+        task = self.parent_task()
+        if not task or not self.id:
+            return None
+
+        specs = task.specs(readonly=readonly)
+        for spec in specs:
+            if spec.eval_id == self.id:
+                return spec
+        return None
 
     @model_validator(mode="after")
     def upgrade_old_reference_answer_eval_config(self) -> Self:

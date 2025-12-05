@@ -52,6 +52,10 @@
   })
 
   async function get_spec() {
+    if (spec_id === "legacy") {
+      spec_loading = false
+      return
+    }
     try {
       spec_loading = true
       const { data, error } = await client.GET(
@@ -430,11 +434,19 @@
     }
 
     // Add tool_id for tool call evals
-    if (
-      evaluator.template === "tool_call" &&
-      evaluator.template_properties?.tool
-    ) {
-      params.set("tool_id", String(evaluator.template_properties.tool))
+    // Spec uses different keys than legacy eval template_properties
+    // Spec: tool_function_name, Legacy: tool
+    if (evaluator.template === "tool_call") {
+      const spec_properties = spec?.properties
+      let tool_id: string | undefined = undefined
+      if (spec_properties?.spec_type === "appropriate_tool_use") {
+        tool_id = spec_properties?.tool_id
+      } else {
+        tool_id = evaluator.template_properties.tool_id as string
+      }
+      if (tool_id) {
+        params.set("tool_id", String(tool_id))
+      }
     }
 
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
@@ -492,13 +504,15 @@
     subtitle="Follow these steps to find the best way to evaluate and run your task"
     sub_subtitle="Read the Docs"
     sub_subtitle_link={docs_link(evaluator)}
-    breadcrumbs={[
-      { label: "Specs", href: `/specs/${project_id}/${task_id}` },
-      {
-        label: spec?.name || "Spec",
-        href: `/specs/${project_id}/${task_id}/${spec_id}`,
-      },
-    ]}
+    breadcrumbs={spec_id === "legacy"
+      ? [{ label: "Specs", href: `/specs/${project_id}/${task_id}` }]
+      : [
+          { label: "Specs", href: `/specs/${project_id}/${task_id}` },
+          {
+            label: spec?.name || "Spec",
+            href: `/specs/${project_id}/${task_id}/${spec_id}`,
+          },
+        ]}
     action_buttons={[
       {
         label: "Edit",

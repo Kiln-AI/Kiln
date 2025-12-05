@@ -153,20 +153,36 @@ This is the reference answer:
 <user_input>{eval_input}</user_input>
 </eval_data>
 """
-        appropriate_tool_use_guidelines = str(
-            self.eval.template_properties.get("appropriate_tool_use_guidelines") or ""
-        )
-        description += """The model was given the following <appropriate_tool_use_guidelines> guidelines:"""
-        description += f""" 
+        # Get properties from spec if available, otherwise from eval.template_properties (for legacy evals)
+        spec = self.eval.associated_spec(readonly=True)
+
+        # Spec uses different keys than legacy eval template_properties
+        if spec:
+            # Spec: tool_use_guidelines, appropriate_tool_use_examples, inappropriate_tool_use_examples
+            appropriate_tool_use_guidelines = str(
+                spec.properties.get("tool_use_guidelines") or ""
+            )
+            inappropriate_tool_use_guidelines = str(
+                spec.properties.get("inappropriate_tool_use_examples") or ""
+            )
+        else:
+            # Legacy eval: appropriate_tool_use_guidelines, inappropriate_tool_use_guidelines
+            appropriate_tool_use_guidelines = str(
+                self.eval.template_properties.get("appropriate_tool_use_guidelines")
+                or ""
+            )
+            inappropriate_tool_use_guidelines = str(
+                self.eval.template_properties.get("inappropriate_tool_use_guidelines")
+                or ""
+            )
+
+        description += f"""The model was given the following <appropriate_tool_use_guidelines> guidelines:
 <eval_data>
 <appropriate_tool_use_guidelines>
 {appropriate_tool_use_guidelines}
 </appropriate_tool_use_guidelines>
 </eval_data>
 """
-        inappropriate_tool_use_guidelines = str(
-            self.eval.template_properties.get("inappropriate_tool_use_guidelines") or ""
-        )
         # Only include if it has content since it is optional
         if inappropriate_tool_use_guidelines:
             description += """The model was given the following <inappropriate_tool_use_guidelines> guidelines:"""

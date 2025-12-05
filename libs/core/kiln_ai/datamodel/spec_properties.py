@@ -167,6 +167,7 @@ LocalizationPropertiesValidator = Annotated[
 class AppropriateToolUseProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.appropriate_tool_use]
     base_instruction: str
+    tool_id: str
     tool_function_name: str
     tool_use_guidelines: str
     appropriate_tool_use_examples: str
@@ -180,6 +181,7 @@ def validate_appropriate_tool_use_properties(
         properties,
         required_fields=[
             "base_instruction",
+            "tool_id",
             "tool_function_name",
             "tool_use_guidelines",
             "appropriate_tool_use_examples",

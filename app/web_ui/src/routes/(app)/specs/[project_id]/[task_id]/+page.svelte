@@ -5,7 +5,7 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec, SpecStatus } from "$lib/types"
+  import type { Spec, SpecStatus, Eval } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
@@ -27,12 +27,20 @@
   let specs: Spec[] | null = null
   let specs_error: KilnError | null = null
   let specs_loading = true
+  let evals: Eval[] | null = null
+  let evals_error: KilnError | null = null
+  let evals_loading = true
+
+  type TableRow =
+    | { type: "spec"; data: Spec }
+    | { type: "legacy_eval"; data: Eval }
+
   let sortColumn: "name" | "template" | "priority" | "status" | "created_at" =
     "created_at"
   let sortDirection: "asc" | "desc" = "desc"
   let filter_tags = ($page.url.searchParams.getAll("tags") || []) as string[]
   let filtered_specs: Spec[] | null = null
-  let sorted_specs: Spec[] | null = null
+  let sorted_specs: TableRow[] | null = null
   let tags_dialog: Dialog | null = null
   let selected_spec_tags: string[] = []
   let filter_tags_dialog: FilterTagsDialog | null = null
@@ -115,7 +123,7 @@
     : false
 
   onMount(async () => {
-    await load_specs()
+    await Promise.all([load_specs(), load_evals()])
   })
 
   async function load_specs() {
@@ -148,6 +156,30 @@
     }
   }
 
+  async function load_evals() {
+    try {
+      evals_loading = true
+      evals_error = null
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/evals",
+        {
+          params: {
+            path: { project_id, task_id },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      evals = data
+      filterAndSortSpecs()
+    } catch (error) {
+      evals_error = createKilnError(error)
+    } finally {
+      evals_loading = false
+    }
+  }
+
   function filterAndSortSpecs() {
     if (!specs) {
       filtered_specs = null
@@ -176,10 +208,28 @@
       ? [...filtered_active, ...filtered_archived]
       : filtered_active
 
+    const spec_eval_ids = new Set(
+      specs.map((spec) => spec.eval_id).filter((id) => id != null),
+    )
+    const legacy_evals = (evals || []).filter(
+      (e) => e.id && !spec_eval_ids.has(e.id),
+    )
+
+    const spec_rows: TableRow[] = all_specs_to_show.map((spec) => ({
+      type: "spec" as const,
+      data: spec,
+    }))
+    const legacy_eval_rows: TableRow[] = legacy_evals.map((e) => ({
+      type: "legacy_eval" as const,
+      data: e,
+    }))
+
+    let all_rows: TableRow[] = [...spec_rows, ...legacy_eval_rows]
+
     if (sortColumn && sortDirection) {
-      sorted_specs = [...all_specs_to_show].sort(sortFunction)
+      sorted_specs = [...all_rows].sort(sortFunction)
     } else {
-      sorted_specs = all_specs_to_show
+      sorted_specs = all_rows
     }
 
     filtered_specs = all_specs_to_show
@@ -202,30 +252,52 @@
     }
   }
 
-  function sortFunction(a: Spec, b: Spec) {
+  function sortFunction(a: TableRow, b: TableRow) {
     let aValue: string | number | Date | null | undefined
     let bValue: string | number | Date | null | undefined
 
+    const aData = a.type === "spec" ? a.data : null
+    const bData = b.type === "spec" ? b.data : null
+    const aEval = a.type === "legacy_eval" ? a.data : null
+    const bEval = b.type === "legacy_eval" ? b.data : null
+
+    const aIsNA =
+      a.type === "legacy_eval" &&
+      (sortColumn === "priority" || sortColumn === "status")
+    const bIsNA =
+      b.type === "legacy_eval" &&
+      (sortColumn === "priority" || sortColumn === "status")
+
+    if (aIsNA && !bIsNA) return 1
+    if (!aIsNA && bIsNA) return -1
+    if (aIsNA && bIsNA) return 0
+
     switch (sortColumn) {
       case "name":
-        aValue = a.name.toLowerCase()
-        bValue = b.name.toLowerCase()
+        aValue = (aData?.name || aEval?.name || "").toLowerCase()
+        bValue = (bData?.name || bEval?.name || "").toLowerCase()
         break
       case "template":
-        aValue = a.properties.spec_type
-        bValue = b.properties.spec_type
+        aValue = aData?.properties.spec_type || (aEval ? "legacy_eval" : "")
+        bValue = bData?.properties.spec_type || (bEval ? "legacy_eval" : "")
         break
       case "priority":
-        aValue = a.priority
-        bValue = b.priority
+        aValue = aData?.priority ?? null
+        bValue = bData?.priority ?? null
         break
       case "status":
-        aValue = getStatusSortOrder(a.status)
-        bValue = getStatusSortOrder(b.status)
+        aValue = aData ? getStatusSortOrder(aData.status) : null
+        bValue = bData ? getStatusSortOrder(bData.status) : null
         break
       case "created_at":
-        aValue = a.created_at ? new Date(a.created_at).getTime() : 0
-        bValue = b.created_at ? new Date(b.created_at).getTime() : 0
+        aValue =
+          aData?.created_at || aEval?.created_at
+            ? new Date((aData?.created_at || aEval?.created_at)!).getTime()
+            : 0
+        bValue =
+          bData?.created_at || bEval?.created_at
+            ? new Date((bData?.created_at || bEval?.created_at)!).getTime()
+            : 0
         break
       default:
         return 0
@@ -543,13 +615,14 @@
       ]}
 >
   <div class="flex flex-col gap-4">
-    {#if specs_loading}
+    {#if specs_loading || evals_loading}
       <div class="flex justify-center items-center h-full">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if specs_error}
+    {:else if specs_error || evals_error}
       <div class="text-error text-sm">
-        {specs_error.getMessage() || "An unknown error occurred"}
+        {(specs_error || evals_error)?.getMessage() ||
+          "An unknown error occurred"}
       </div>
     {:else if is_empty}
       <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
@@ -707,73 +780,103 @@
               </tr>
             </thead>
             <tbody>
-              {#each sorted_specs || [] as spec}
-                <tr
-                  class="{select_mode
-                    ? ''
-                    : 'hover'} cursor-pointer {select_mode &&
-                  spec.id &&
-                  selected_specs.has(spec.id)
-                    ? 'bg-base-200'
-                    : ''} {spec.status === 'archived' ? 'opacity-60' : ''}"
-                  on:click={() => {
-                    if (select_mode) {
-                      toggle_selection(spec.id || "")
-                    } else {
-                      goto(`/specs/${project_id}/${task_id}/${spec.id}`)
-                    }
-                  }}
-                >
-                  {#if select_mode}
-                    <td>
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-sm"
-                        checked={(spec.id && selected_specs.has(spec.id)) ||
-                          false}
-                      />
-                    </td>
-                  {/if}
-                  <td class="font-medium">{spec.name}</td>
-                  <td class="max-w-md truncate">{spec.definition}</td>
-                  <td>
-                    {formatSpecType(spec.properties.spec_type)}
-                  </td>
-                  <td>{formatPriority(spec.priority)}</td>
-                  <td>
-                    {capitalize(spec.status)}
-                  </td>
-                  <td>
-                    {#if spec.tags && spec.tags.length > 0}
-                      {@const tagDisplay = formatTagsDisplay(spec.tags)}
-                      <div
-                        class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full cursor-pointer hover:bg-gray-300"
-                        on:click={(e) => showTagsDialog(spec.tags, e)}
-                        role="button"
-                        tabindex="0"
-                        on:keydown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault()
-                            showTagsDialog(spec.tags, e)
-                          }
-                        }}
-                      >
-                        <span class="truncate">{tagDisplay.firstTag}</span>
-                        {#if tagDisplay.othersCount > 0}
-                          <span class="ml-1 font-medium">
-                            +{tagDisplay.othersCount}
-                            {tagDisplay.othersCount === 1 ? "other" : "others"}
-                          </span>
-                        {/if}
-                      </div>
-                    {:else}
-                      <span class="text-gray-500">None</span>
+              {#each sorted_specs || [] as row}
+                {#if row.type === "spec"}
+                  {@const spec = row.data}
+                  <tr
+                    class="{select_mode
+                      ? ''
+                      : 'hover'} cursor-pointer {select_mode &&
+                    spec.id &&
+                    selected_specs.has(spec.id)
+                      ? 'bg-base-200'
+                      : ''} {spec.status === 'archived' ? 'opacity-60' : ''}"
+                    on:click={() => {
+                      if (select_mode) {
+                        toggle_selection(spec.id || "")
+                      } else {
+                        goto(`/specs/${project_id}/${task_id}/${spec.id}`)
+                      }
+                    }}
+                  >
+                    {#if select_mode}
+                      <td>
+                        <input
+                          type="checkbox"
+                          class="checkbox checkbox-sm"
+                          checked={(spec.id && selected_specs.has(spec.id)) ||
+                            false}
+                        />
+                      </td>
                     {/if}
-                  </td>
-                  <td class="text-sm text-gray-500">
-                    {formatDate(spec.created_at)}
-                  </td>
-                </tr>
+                    <td class="font-medium">{spec.name}</td>
+                    <td class="max-w-md truncate">{spec.definition}</td>
+                    <td>
+                      {formatSpecType(spec.properties.spec_type)}
+                    </td>
+                    <td>{formatPriority(spec.priority)}</td>
+                    <td>
+                      {capitalize(spec.status)}
+                    </td>
+                    <td>
+                      {#if spec.tags && spec.tags.length > 0}
+                        {@const tagDisplay = formatTagsDisplay(spec.tags)}
+                        <div
+                          class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full cursor-pointer hover:bg-gray-300"
+                          on:click={(e) => showTagsDialog(spec.tags, e)}
+                          role="button"
+                          tabindex="0"
+                          on:keydown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault()
+                              showTagsDialog(spec.tags, e)
+                            }
+                          }}
+                        >
+                          <span class="truncate">{tagDisplay.firstTag}</span>
+                          {#if tagDisplay.othersCount > 0}
+                            <span class="ml-1 font-medium">
+                              +{tagDisplay.othersCount}
+                              {tagDisplay.othersCount === 1
+                                ? "other"
+                                : "others"}
+                            </span>
+                          {/if}
+                        </div>
+                      {:else}
+                        <span class="text-gray-500">None</span>
+                      {/if}
+                    </td>
+                    <td class="text-sm text-gray-500">
+                      {formatDate(spec.created_at)}
+                    </td>
+                  </tr>
+                {:else if row.type === "legacy_eval"}
+                  {@const eval_data = row.data}
+                  <tr
+                    class="{select_mode ? '' : 'hover'} cursor-pointer"
+                    on:click={() => {
+                      if (!select_mode && eval_data.id) {
+                        goto(
+                          `/specs/${project_id}/${task_id}/legacy/${eval_data.id}`,
+                        )
+                      }
+                    }}
+                  >
+                    {#if select_mode}
+                      <td></td>
+                    {/if}
+                    <td class="font-medium">{eval_data.name}</td>
+                    <td class="text-gray-500">N/A</td>
+                    <td>Legacy Eval</td>
+                    <td class="text-gray-500">N/A</td>
+                    <td class="text-gray-500">N/A</td>
+                    <td class="text-gray-500">N/A</td>
+                    <td class="text-sm text-gray-500">
+                      {formatDate(eval_data.created_at)}
+                    </td>
+                  </tr>
+                {/if}
               {/each}
             </tbody>
           </table>
