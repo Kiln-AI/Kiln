@@ -14,7 +14,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.wandb_utils import get_wandb_default_entity
+from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,11 @@ class FireworksFinetune(BaseFinetuneAdapter):
             if not wandb_entity:
                 # Attempt to get their account default entity
                 default_entity = await get_wandb_default_entity(wandb_api_key, None)
-                if isinstance(default_entity, str) and len(default_entity) > 0:
+                if isinstance(default_entity, AuthenticationError):
+                    raise ValueError(
+                        "Authentication to Weight & Biases failed. Please check your API key and try again."
+                    )
+                elif isinstance(default_entity, str) and len(default_entity) > 0:
                     wandb_entity = default_entity
                 else:
                     raise ValueError(

@@ -477,6 +477,36 @@ async def test_start_wandb_missing_entity_gets_default(
             pass
 
 
+async def test_start_wandb_authentication_error(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    from kiln_ai.utils.wandb_utils import AuthenticationError
+
+    Config.shared().wandb_api_key = "invalid-api-key"
+    Config.shared().wandb_entity = None
+    Config.shared().wandb_base_url = None
+
+    auth_error = AuthenticationError("Failed to connect to W&B. Invalid API key.")
+
+    with patch(
+        "kiln_ai.adapters.fine_tune.fireworks_finetune.get_wandb_default_entity",
+        new=AsyncMock(return_value=auth_error),
+    ):
+        fireworks_finetune.datamodel.parent = mock_task
+        mock_dataset_id = "dataset-123"
+
+        with patch.object(
+            fireworks_finetune,
+            "generate_and_upload_jsonl",
+            return_value=mock_dataset_id,
+        ):
+            with pytest.raises(
+                ValueError,
+                match=r"Authentication to Weight & Biases failed. Please check your API key and try again.",
+            ):
+                await fireworks_finetune._start(mock_dataset)
+
+
 def test_available_parameters(fireworks_finetune):
     parameters = fireworks_finetune.available_parameters()
     assert len(parameters) == 4

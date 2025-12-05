@@ -14,7 +14,6 @@ async def get_wandb_default_entity(
 
     Args:
         key: The W&B API key to authenticate with
-        custom_entity: Optional custom entity name (currently unused)
         base_url: Optional custom W&B API base URL, defaults to https://api.wandb.ai
 
     Returns:
