@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AppPage from "../../../../../app_page.svelte"
+  import AppPage from "../../../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
@@ -9,7 +9,7 @@
   import { onMount } from "svelte"
   import Warning from "$lib/ui/warning.svelte"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
-  import type { Eval, Task, EvalConfigType } from "$lib/types"
+  import type { Eval, Task, EvalConfigType, Spec } from "$lib/types"
   import { tick } from "svelte"
   import { load_task } from "$lib/stores"
   import { goto } from "$app/navigation"
@@ -20,6 +20,13 @@
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
+
+  $: eval_id = $page.params.eval_id
+  $: spec_id = $page.params.spec_id
+
+  let spec: Spec | null = null
+  let spec_loading = true
+  let spec_error: KilnError | null = null
 
   let combined_model_name: string | undefined = undefined
   let model_name: string | undefined = undefined
@@ -35,19 +42,46 @@
   let loading_eval_error: KilnError | undefined = undefined
   let loading_task = true
   let loading_task_error: KilnError | undefined = undefined
-  $: loading = loading_eval || loading_task
-  $: loading_error = loading_eval_error || loading_task_error
+  $: loading = loading_eval || loading_task || spec_loading
+  $: loading_error = loading_eval_error || loading_task_error || spec_error
   onMount(async () => {
     // tick: need to wait for the page params to be available
     await tick()
     await load_eval()
     await load_task_local()
     await load_available_models()
+    await get_spec()
     // Force these back to undefined -- we don't want to take the last-used model from the available model dropdown
     model_name = undefined
     provider_name = undefined
     combined_model_name = undefined
   })
+
+  async function get_spec() {
+    try {
+      spec_loading = true
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: {
+              project_id: $page.params.project_id,
+              task_id: $page.params.task_id,
+              spec_id: spec_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      spec = data
+    } catch (error) {
+      spec_error = createKilnError(error)
+    } finally {
+      spec_loading = false
+    }
+  }
 
   async function load_task_local() {
     if (!evaluator) {
@@ -96,7 +130,7 @@
             path: {
               project_id: $page.params.project_id,
               task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              eval_id: eval_id,
             },
           },
         },
@@ -157,7 +191,7 @@
             path: {
               project_id: $page.params.project_id,
               task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              eval_id: eval_id,
             },
           },
           body: {
@@ -187,7 +221,7 @@
           evaluator = await set_current_eval_config(
             $page.params.project_id,
             $page.params.task_id,
-            $page.params.eval_id,
+            eval_id,
             data.id,
           )
         } catch (e) {
@@ -199,15 +233,15 @@
       const next_page = $page.url.searchParams.get("next_page")
       if (next_page === "eval_configs") {
         goto(
-          `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
+          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval/eval_configs`,
         )
       } else if (next_page === "compare_run_configs") {
         goto(
-          `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval/compare_run_configs`,
         )
       } else {
         goto(
-          `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}?selected_eval_config=${data.id}`,
+          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval?selected_eval_config=${data.id}`,
         )
       }
     } catch (e) {
@@ -333,24 +367,28 @@
     const next_page = $page.url.searchParams.get("next_page")
     const crumbs: Breadcrumb[] = [
       {
-        label: "Evals",
-        href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+        label: "Specs",
+        href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
       },
       {
-        label: evaluator?.name || "Eval",
-        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+        label: spec?.name || "Spec",
+        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}`,
+      },
+      {
+        label: "Eval",
+        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
       },
     ]
 
     if (next_page === "eval_configs") {
       crumbs.push({
         label: "Compare Judges",
-        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/eval_configs`,
+        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}/eval_configs`,
       })
     } else if (next_page === "compare_run_configs") {
       crumbs.push({
         label: "Compare Run Configurations",
-        href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/compare_run_configs`,
+        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}/compare_run_configs`,
       })
     }
 

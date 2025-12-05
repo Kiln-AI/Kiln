@@ -144,7 +144,7 @@
               name: "Eval ID",
               value: spec.eval_id || "None",
               link: spec.eval_id
-                ? `/evals/${project_id}/${task_id}/${spec.eval_id}`
+                ? `/specs/${project_id}/${task_id}/${spec_id}/${spec.eval_id}`
                 : undefined,
             },
           ]}

@@ -7,7 +7,6 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { Task, TaskRunConfig } from "$lib/types"
   import type { components } from "$lib/api_schema"
-  import RunEval from "../[eval_id]/run_eval.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -73,7 +72,7 @@
 
     // Get columns from URL
     const urlColumns = urlParams.get("columns")
-    if (urlColumns) {
+    if (urlParams) {
       const parsedColumns = parseInt(urlColumns, 10)
       if (parsedColumns >= 2 && parsedColumns <= 4) {
         columns = parsedColumns
@@ -293,10 +292,12 @@
       items: { label: string; key: string }[]
       has_default_eval_config: boolean | undefined
       eval_id: string
+      spec_id: string | null
     }[] = []
     const evalCategories: Record<string, Set<string>> = {}
     const hasDefaultEvalConfig: Record<string, boolean> = {}
     const evalIds: Record<string, string> = {}
+    const specIds: Record<string, string | null> = {}
 
     // Collect all evals and their scores from selected models
     models.forEach((modelId) => {
@@ -307,6 +308,7 @@
         hasDefaultEvalConfig[evalResult.eval_name] =
           !evalResult.missing_default_eval_config
         evalIds[evalResult.eval_name] = evalResult.eval_id || ""
+        specIds[evalResult.eval_name] = evalResult.spec_id || null
 
         if (!evalCategories[evalResult.eval_name]) {
           evalCategories[evalResult.eval_name] = new Set()
@@ -334,6 +336,7 @@
         items,
         has_default_eval_config: hasDefaultEvalConfig[evalName],
         eval_id: evalIds[evalName],
+        spec_id: specIds[evalName],
       })
     })
 
@@ -350,6 +353,7 @@
       items: costItems,
       has_default_eval_config: undefined,
       eval_id: "kiln_cost_section",
+      spec_id: null,
     })
 
     return features
@@ -456,21 +460,6 @@
     return evalResult.eval_config_result?.percent_complete || 0.0
   }
 
-  function getModelDefaultEvalConfigID(
-    modelKey: string | null,
-    evalID: string | null,
-  ): string | null | undefined {
-    if (evalID === "kiln_cost_section") return null
-    if (!modelKey || !eval_scores_cache[modelKey]) return null
-
-    const evalScores = eval_scores_cache[modelKey]
-    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
-
-    if (!evalResult) return null
-
-    return evalResult.eval_config_result?.eval_config_id
-  }
-
   function getSelectedRunConfig(modelKey: string | null): TaskRunConfig | null {
     if (!modelKey || !current_task_run_configs) return null
     return (
@@ -526,12 +515,27 @@
       (m): m is string => m !== null && m !== "__create_new_run_config__",
     )
   }
+
+  function navigateToEvalPage(
+    spec_id: string | null,
+    eval_id: string,
+    template: string | null,
+  ) {
+    if (!spec_id) return
+    if (template === "rag") {
+      goto(
+        `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`,
+      )
+    } else {
+      goto(`/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/eval_configs`)
+    }
+  }
 </script>
 
 <AppPage
   title="Compare Run Configurations"
-  subtitle="Compare run Configurations for your task using evals"
-  breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
+  subtitle="Compare run configurations for your task using evals"
+  breadcrumbs={[{ label: "Specs", href: `/specs/${project_id}/${task_id}` }]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -707,15 +711,18 @@
                         <div class="mt-2 text-error text-xs">
                           {eval_templates_errors[section.eval_id]}
                         </div>
-                      {:else if eval_templates_cache[section.eval_id] !== undefined}
-                        <a
-                          href={eval_templates_cache[section.eval_id] === "rag"
-                            ? `/evals/${project_id}/${task_id}/${section.eval_id}/compare_run_configs`
-                            : `/evals/${project_id}/${task_id}/${section.eval_id}/eval_configs`}
+                      {:else if eval_templates_cache[section.eval_id] !== undefined && section.spec_id}
+                        <button
+                          on:click={() =>
+                            navigateToEvalPage(
+                              section.spec_id,
+                              section.eval_id,
+                              eval_templates_cache[section.eval_id],
+                            )}
                           class="btn btn-xs rounded-full mt-2"
                         >
                           Manage Eval Configs
-                        </a>
+                        </button>
                       {/if}
                     {:else}
                       Unknown issue - no scores found
@@ -773,33 +780,22 @@
                                 <div class="text-warning text-sm font-medium">
                                   Eval Incomplete
                                 </div>
-                                <div class="text-left">
-                                  <RunEval
-                                    eval_id={section.eval_id}
-                                    run_config_ids={[
-                                      getSelectedRunConfig(selectedModels[i])
-                                        ?.id || "",
-                                    ]}
-                                    {project_id}
-                                    {task_id}
-                                    current_eval_config_id={getModelDefaultEvalConfigID(
-                                      selectedModels[i],
-                                      section.eval_id,
-                                    )}
-                                    eval_type="run_config"
-                                    btn_size="xs"
-                                    btn_primary={false}
-                                    on_run_complete={() => {
-                                      // Clear cache and reload eval scores for this run config
-                                      const runConfigId = selectedModels[i]
-                                      if (runConfigId) {
-                                        delete eval_scores_cache[runConfigId]
-                                        delete eval_scores_errors[runConfigId]
-                                        fetch_eval_scores(runConfigId)
-                                      }
-                                    }}
-                                  />
+                                <div class="text-xs text-gray-500 mb-2">
+                                  Run eval to see scores
                                 </div>
+                                {#if section.spec_id}
+                                  <button
+                                    class="btn btn-xs"
+                                    on:click={() =>
+                                      navigateToEvalPage(
+                                        section.spec_id,
+                                        section.eval_id,
+                                        eval_templates_cache[section.eval_id],
+                                      )}
+                                  >
+                                    Go to Eval
+                                  </button>
+                                {/if}
                               </div>
                             {/if}
                           </div>

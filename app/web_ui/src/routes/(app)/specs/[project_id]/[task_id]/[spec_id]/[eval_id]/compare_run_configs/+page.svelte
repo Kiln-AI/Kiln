@@ -1,9 +1,9 @@
 <script lang="ts">
-  import AppPage from "../../../../../app_page.svelte"
-  import type { Eval, Task } from "$lib/types"
+  import AppPage from "../../../../../../app_page.svelte"
+  import type { Eval, Task, Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount, tick } from "svelte"
+  import { onMount, tick, getContext } from "svelte"
   import { page } from "$app/stores"
   import FormElement, {
     type InlineAction,
@@ -39,14 +39,19 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import type { ActionButton } from "../../../../../types"
+  import type { ActionButton } from "../../../../../../types"
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import RunConfigSummary from "$lib/ui/run_config_component/run_config_summary.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
+  $: spec_id = $page.params.spec_id
   $: eval_id = $page.params.eval_id
+
+  let spec: Spec | null = null
+  let spec_loading = true
+  let spec_error: KilnError | null = null
 
   let task: Task | null = null
   let loading_task = true
@@ -69,8 +74,17 @@
 
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
   $: loading =
-    eval_loading || eval_configs_loading || run_configs_loading || loading_task
-  $: error = eval_error || eval_configs_error || run_configs_error || task_error
+    eval_loading ||
+    eval_configs_loading ||
+    run_configs_loading ||
+    loading_task ||
+    spec_loading
+  $: error =
+    eval_error ||
+    eval_configs_error ||
+    run_configs_error ||
+    task_error ||
+    spec_error
 
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
@@ -97,6 +111,7 @@
       load_available_prompts(),
       load_available_models(),
       get_task(),
+      get_spec(),
     ])
     // Get the eval first (want it to set the current config id before the other two load)
     await get_eval()
@@ -107,6 +122,32 @@
   })
 
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+
+  async function get_spec() {
+    try {
+      spec_loading = true
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              spec_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      spec = data
+    } catch (error) {
+      spec_error = createKilnError(error)
+    } finally {
+      spec_loading = false
+    }
+  }
 
   async function get_task() {
     loading_task = true
@@ -236,7 +277,7 @@
       const params = new URLSearchParams()
       params.set("next_page", "compare_run_configs")
       goto(
-        `/evals/${project_id}/${task_id}/${eval_id}/create_eval_config?${params.toString()}`,
+        `/specs/${project_id}/${task_id}/${spec_id}/eval/create_eval_config?${params.toString()}`,
       )
       return
     }
@@ -384,7 +425,7 @@
       return [
         {
           label: "Compare Judges",
-          href: `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/eval/eval_configs`,
           primary: !has_default_eval_config,
         },
       ]
@@ -392,7 +433,7 @@
       return [
         {
           label: "Add Judge",
-          href: `/evals/${project_id}/${task_id}/${eval_id}/create_eval_config?next_page=compare_run_configs`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/eval/create_eval_config?next_page=compare_run_configs`,
           primary: false,
         },
       ]
@@ -411,7 +452,7 @@
       evaluator = await set_current_eval_config(
         $page.params.project_id,
         $page.params.task_id,
-        $page.params.eval_id,
+        eval_id,
         current_eval_config_id,
       )
     } catch (error) {
@@ -445,12 +486,16 @@
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
   breadcrumbs={[
     {
-      label: "Evals",
-      href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+      label: "Specs",
+      href: `/specs/${project_id}/${task_id}`,
     },
     {
-      label: evaluator?.name || "Eval",
-      href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
+      label: spec?.name || "Spec",
+      href: `/specs/${project_id}/${task_id}/${spec_id}`,
+    },
+    {
+      label: "Eval",
+      href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
     },
   ]}
   action_buttons={action_buttons(evaluator)}
@@ -480,7 +525,7 @@
           action_buttons={[
             {
               label: "Create Judge",
-              href: `/evals/${project_id}/${task_id}/${eval_id}/create_eval_config?next_page=compare_run_configs&save_as_default=true`,
+              href: `/specs/${project_id}/${task_id}/${spec_id}/eval/create_eval_config?next_page=compare_run_configs&save_as_default=true`,
               is_primary: true,
             },
           ]}
@@ -543,7 +588,7 @@
               <div class="flex gap-x-4 text-sm 2xl:text-base items-center">
                 <span>Judge Quality</span>
                 <a
-                  href={`/evals/${project_id}/${task_id}/${eval_id}/eval_configs`}
+                  href={`/specs/${project_id}/${task_id}/${spec_id}/eval/eval_configs`}
                   class="link text-gray-500"
                 >
                   Compare and optimize
@@ -677,7 +722,7 @@
                       {#if percent_complete > 0}
                         <div class="mt-1">
                           <a
-                            href={`/evals/${project_id}/${task_id}/${eval_id}/${current_eval_config_id}/${task_run_config.id}/run_result`}
+                            href={`/specs/${project_id}/${task_id}/${spec_id}/eval/${current_eval_config_id}/${task_run_config.id}/run_result`}
                             class="btn btn-xs btn-outline rounded-full min-w-[120px]"
                           >
                             View Data

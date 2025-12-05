@@ -1,6 +1,6 @@
 <script lang="ts">
-  import AppPage from "../../../../app_page.svelte"
-  import type { Eval } from "$lib/types"
+  import AppPage from "../../../../../app_page.svelte"
+  import type { Eval, Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
@@ -24,7 +24,11 @@
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
+  $: spec_id = $page.params.spec_id
   $: eval_id = $page.params.eval_id
+
+  let spec: Spec | null = null
+  let spec_loading = true
 
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null
@@ -34,7 +38,7 @@
   let eval_progress: EvalProgress | null = null
   let eval_progress_error: KilnError | null = null
 
-  $: loading = eval_loading || eval_progress_loading
+  $: loading = spec_loading || eval_loading || eval_progress_loading
   $: error = eval_error || eval_progress_error
 
   onMount(async () => {
@@ -43,9 +47,31 @@
     // can be async
     load_model_info()
     load_available_models()
-    // Load data in parallel
-    await Promise.all([get_eval(), get_eval_progress()])
+    // Load spec and eval data in parallel
+    await Promise.all([get_spec(), get_eval(), get_eval_progress()])
   })
+
+  async function get_spec() {
+    try {
+      spec_loading = true
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: { project_id, task_id, spec_id },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      spec = data
+    } catch (error) {
+      eval_error = createKilnError(error)
+    } finally {
+      spec_loading = false
+    }
+  }
 
   async function get_eval() {
     try {
@@ -442,13 +468,13 @@
   }
 
   function compare_eval_methods() {
-    let url = `/evals/${project_id}/${task_id}/${eval_id}/eval_configs`
+    let url = `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/eval_configs`
     show_progress_ui("When you're done comparing judges, ", 4)
     goto(url)
   }
 
   function compare_run_configs() {
-    let url = `/evals/${project_id}/${task_id}/${eval_id}/compare_run_configs`
+    let url = `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`
     goto(url)
   }
 
@@ -466,7 +492,13 @@
     subtitle="Follow these steps to find the best way to evaluate and run your task"
     sub_subtitle="Read the Docs"
     sub_subtitle_link={docs_link(evaluator)}
-    breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
+    breadcrumbs={[
+      { label: "Specs", href: `/specs/${project_id}/${task_id}` },
+      {
+        label: spec?.name || "Spec",
+        href: `/specs/${project_id}/${task_id}/${spec_id}`,
+      },
+    ]}
     action_buttons={[
       {
         label: "Edit",
