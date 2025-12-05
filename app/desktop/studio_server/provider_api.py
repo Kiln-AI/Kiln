@@ -36,6 +36,7 @@ from kiln_ai.adapters.reranker_list import built_in_rerankers
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -482,12 +483,16 @@ def connect_provider_api(app: FastAPI):
 
         # Wandb is not a typical AI provider, but it's a provider you can connect through this UI/API
         if provider == "wandb":
-            # Load optional base URL
+            # Load optional base URL and entity
             base_url = None
-            if "Base URL" in key_data:
-                base_url = parse_url(key_data, "Base URL")
+            if "Base URL - Optional" in key_data:
+                base_url = parse_url(key_data, "Base URL - Optional")
+            custom_entity = None
+            if "Custom Entity - Optional" in key_data:
+                custom_entity = key_data["Custom Entity - Optional"].strip()
             return await connect_wandb(
                 parse_api_key(key_data),
+                custom_entity,
                 base_url,
             )
 
@@ -549,6 +554,7 @@ def connect_provider_api(app: FastAPI):
         if provider_id == "wandb":
             # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API
             Config.shared().wandb_api_key = None
+            Config.shared().wandb_entity = None
             Config.shared().wandb_base_url = None
         else:
             if provider_id not in ModelProviderName.__members__:
@@ -963,63 +969,36 @@ async def connect_anthropic(key: str):
         )
 
 
-async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
+async def connect_wandb(
+    key: str, custom_entity: str | None, base_url: str | None
+) -> JSONResponse:
     try:
-        api_url = base_url or "https://api.wandb.ai"
-        headers = {
-            "Content-Type": "application/json",
-        }
-        # Use GraphQL to validate API key with the viewer.id query
-        post_args = {
-            "query": "query { viewer { id } }",
-        }
-        response = requests.post(
-            f"{api_url}/graphql",
-            timeout=5,
-            json=post_args,
-            headers=headers,
-            auth=("api_key", key),
-        )
-
-        if response.status_code == 401:
+        # This both checks the API key is valid, and gets the default entity for the user
+        wandb_entity = await get_wandb_default_entity(key, base_url)
+        if isinstance(wandb_entity, AuthenticationError):
             return JSONResponse(
                 status_code=401,
                 content={"message": "Failed to connect to W&B. Invalid API key."},
             )
 
-        json = response.json()
-        # Check for common error (invalid key returns 200, but viewer is None)
-        if (
-            "data" in json
-            and "viewer" in json["data"]
-            and json["data"]["viewer"] is None
-        ):
+        # Get their entity: custom if provided, default if not
+        entity = custom_entity or wandb_entity
+        if entity is None:
             return JSONResponse(
-                status_code=401,
-                content={"message": "Failed to connect to W&B. Invalid API key."},
+                status_code=400,
+                content={
+                    "message": "Failed to connect to W&B: No default entity found. You must either provide a custom entity name or set a default entity in your W&B account settings."
+                },
             )
 
-        # Check for valid response
-        if (
-            "data" in json
-            and "viewer" in json["data"]
-            and isinstance(json["data"]["viewer"], dict)
-            and "id" in json["data"]["viewer"]
-        ):
-            # Save the credentials if valid
-            Config.shared().wandb_api_key = key
-            Config.shared().wandb_base_url = base_url
+        # Save the credentials if valid
+        Config.shared().wandb_api_key = key
+        Config.shared().wandb_entity = entity
+        Config.shared().wandb_base_url = base_url
 
-            return JSONResponse(
-                status_code=200, content={"message": "Connected to Weights & Biases"}
-            )
-
-        # Unknown error
         return JSONResponse(
-            status_code=400,
-            content={
-                "message": f"Failed to connect to W&B. Account request response: {response.text}"
-            },
+            status_code=200,
+            content={"message": "Connected to W&B"},
         )
 
     except Exception as e:

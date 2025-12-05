@@ -223,13 +223,18 @@
       description: "Track and visualize your experiments.",
       featured: false,
       api_key_steps: [
-        "Create a Weights & Biases account at https://wandb.ai, or host your own instance.",
-        "If you host your own instance, set the base URL below. Then create an API key and entering it below.",
-        "If you use the hosted version, go to https://wandb.ai/settings#api, get your API key, and paste it below.",
+        "Create a Weights & Biases account at https://wandb.ai , or host your own instance.",
+        "Enter your API key below. If you use hosted W&B, you can find it here: https://wandb.ai/settings#api ",
+        "Optional: if you host your own instance, set the base URL below.",
+        "Optional: enter a custom W&B entity. If you don't enter one, your default entity will be used. For example, if your workspace URL is https://wandb.ai/nico/project, then your entity is nico.",
         "Click 'Connect'",
       ],
-      api_key_fields: ["API Key", "Base URL"],
-      optional_fields: ["Base URL"],
+      api_key_fields: [
+        "API Key",
+        "Custom Entity - Optional",
+        "Base URL - Optional",
+      ],
+      optional_fields: ["Base URL - Optional", "Custom Entity - Optional"],
     },
     {
       name: "Custom API",
