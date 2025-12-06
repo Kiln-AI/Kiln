@@ -356,13 +356,6 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/task_run_configs")
-    async def get_task_run_configs(
-        project_id: str, task_id: str
-    ) -> list[TaskRunConfig]:
-        task = task_from_id(project_id, task_id)
-        return task.run_configs()
-
     @app.get("/api/projects/{project_id}/tasks/{task_id}/run_configs/")
     async def get_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
         return get_all_run_configs(project_id, task_id)

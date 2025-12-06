@@ -298,7 +298,7 @@ async def test_create_task_run_config_with_freezing(
         == "Frozen copy of prompt 'simple_chain_of_thought_prompt_builder'."
     )
     # Fetch it from API
-    fetch_response = client.get("/api/projects/project1/tasks/task1/task_run_configs")
+    fetch_response = client.get("/api/projects/project1/tasks/task1/run_configs/")
     assert fetch_response.status_code == 200
     configs = fetch_response.json()
     assert len(configs) == 1
