@@ -71,7 +71,7 @@ def mock_finetune():
     with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
         finetune = Mock(spec=Finetune)
         finetune.provider = ModelProviderName.openai
-        finetune.base_model_id = "gpt_4o"
+        finetune.base_model_id = "gpt-4o"
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
         finetune.data_strategy = ChatStrategy.single_turn
@@ -84,7 +84,7 @@ def mock_finetune_final_and_intermediate():
     with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
         finetune = Mock(spec=Finetune)
         finetune.provider = ModelProviderName.openai
-        finetune.base_model_id = "gpt_4o"
+        finetune.base_model_id = "gpt-4o"
         finetune.fine_tune_model_id = "ft:gpt-3.5-turbo:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
         finetune.data_strategy = ChatStrategy.two_message_cot
@@ -97,7 +97,7 @@ def mock_finetune_r1_compatible():
     with patch("kiln_ai.datamodel.Finetune.from_id_and_parent_path") as mock:
         finetune = Mock(spec=Finetune)
         finetune.provider = ModelProviderName.ollama
-        finetune.base_model_id = "deepseek_r1"
+        finetune.base_model_id = "deepseek-r1:8b"
         finetune.fine_tune_model_id = "ft:deepseek-r1:671b:custom:model-123"
         finetune.structured_output_mode = StructuredOutputMode.json_schema
         finetune.data_strategy = ChatStrategy.single_turn_r1_thinking
@@ -626,7 +626,7 @@ def test_finetune_provider_model_structured_mode(
 
     finetune = Mock(spec=Finetune)
     finetune.provider = provider_name
-    finetune.base_model_id = "gpt_4o"
+    finetune.base_model_id = "gpt-4o"
     finetune.fine_tune_model_id = "fireworks-model-123"
     finetune.structured_output_mode = structured_output_mode
     finetune.data_strategy = ChatStrategy.single_turn
@@ -962,7 +962,7 @@ def test_finetune_provider_model_vertex_ai(mock_project, mock_task, mock_finetun
     """Test creation of provider for Vertex AI with endpoint ID transformation"""
     finetune = Mock(spec=Finetune)
     finetune.provider = ModelProviderName.vertex
-    finetune.base_model_id = "gemini_1.5_flash"
+    finetune.base_model_id = "gemini-1.5-flash"
     finetune.fine_tune_model_id = "projects/123/locations/us-central1/endpoints/456"
     finetune.structured_output_mode = StructuredOutputMode.json_mode
     finetune.data_strategy = ChatStrategy.single_turn
