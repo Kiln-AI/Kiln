@@ -120,10 +120,14 @@ export function get_eval_steps(
       `Look at the full <conversation_history> for the task run, does the model call the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
     ]
 
+    const tool_guidelines_info = spec
+      ? "<tool_use_guidelines>, <appropriate_tool_use_examples>, and <inappropriate_tool_use_examples>"
+      : "<appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation"
+
     steps.push(
       `Utilizing information from:
       
-       (a) <appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation
+       (a) ${tool_guidelines_info}
        (b) the user's initial query <user_input>
        (c) model task description <task_description>
        

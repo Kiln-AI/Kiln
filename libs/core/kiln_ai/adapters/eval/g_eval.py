@@ -159,12 +159,34 @@ This is the reference answer:
         # Spec uses different keys than legacy eval template_properties
         if spec:
             # Spec: tool_use_guidelines, appropriate_tool_use_examples, inappropriate_tool_use_examples
-            appropriate_tool_use_guidelines = str(
-                spec.properties.get("tool_use_guidelines") or ""
+            tool_use_guidelines = str(spec.properties.get("tool_use_guidelines") or "")
+            appropriate_tool_use_examples = str(
+                spec.properties.get("appropriate_tool_use_examples") or ""
             )
-            inappropriate_tool_use_guidelines = str(
+            inappropriate_tool_use_examples = str(
                 spec.properties.get("inappropriate_tool_use_examples") or ""
             )
+            description += f"""The model was given the following <tool_use_guidelines>:
+<eval_data>
+<tool_use_guidelines>
+{tool_use_guidelines}
+</tool_use_guidelines>
+</eval_data>
+"""
+            description += f"""The model was given the following <appropriate_tool_use_examples>:
+<eval_data>
+<appropriate_tool_use_examples>
+{appropriate_tool_use_examples}
+</appropriate_tool_use_examples>
+</eval_data>
+"""
+            description += f"""The model was given the following <inappropriate_tool_use_examples>:
+<eval_data>
+<inappropriate_tool_use_examples>
+{inappropriate_tool_use_examples}
+</inappropriate_tool_use_examples>
+</eval_data>
+"""
         else:
             # Legacy eval: appropriate_tool_use_guidelines, inappropriate_tool_use_guidelines
             appropriate_tool_use_guidelines = str(
@@ -176,17 +198,17 @@ This is the reference answer:
                 or ""
             )
 
-        description += f"""The model was given the following <appropriate_tool_use_guidelines> guidelines:
+            description += f"""The model was given the following <appropriate_tool_use_guidelines> guidelines:
 <eval_data>
 <appropriate_tool_use_guidelines>
 {appropriate_tool_use_guidelines}
 </appropriate_tool_use_guidelines>
 </eval_data>
 """
-        # Only include if it has content since it is optional
-        if inappropriate_tool_use_guidelines:
-            description += """The model was given the following <inappropriate_tool_use_guidelines> guidelines:"""
-            description += f""" 
+            # Only include if it has content since it is optional
+            if inappropriate_tool_use_guidelines:
+                description += """The model was given the following <inappropriate_tool_use_guidelines> guidelines:"""
+                description += f""" 
 <eval_data>
 <inappropriate_tool_use_guidelines>
 {inappropriate_tool_use_guidelines}
