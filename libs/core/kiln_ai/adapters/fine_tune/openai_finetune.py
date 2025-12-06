@@ -136,7 +136,10 @@ class OpenAIFinetune(BaseFinetuneAdapter):
         format = DatasetFormat.OPENAI_CHAT_JSONL
         if task.output_json_schema:
             format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
-            self.datamodel.structured_output_mode = StructuredOutputMode.json_schema
+            if self.datamodel.run_config is not None:
+                self.datamodel.run_config.structured_output_mode = (
+                    StructuredOutputMode.json_schema
+                )
         train_file_id = await self.generate_and_upload_jsonl(
             dataset, self.datamodel.train_split_name, task, format
         )

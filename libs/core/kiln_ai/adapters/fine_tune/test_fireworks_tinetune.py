@@ -16,8 +16,9 @@ from kiln_ai.adapters.fine_tune.fireworks_finetune import (
 )
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -345,6 +346,16 @@ async def test_start_success(
     mock_task.output_json_schema = output_schema
 
     fireworks_finetune.datamodel.parent = mock_task
+
+    # Set up run_config
+    fireworks_finetune.datamodel.run_config = RunConfigProperties(
+        model_name="llama-v2-7b",
+        model_provider_name=ModelProviderName.fireworks_ai,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
+    )
     mock_dataset_id = "dataset-123"
     mock_model_id = "ft-model-123"
 
@@ -377,8 +388,15 @@ async def test_start_success(
 
         # Verify model ID was updated
         assert fireworks_finetune.datamodel.provider_id == mock_model_id
-        assert fireworks_finetune.datamodel.structured_output_mode == expected_mode
         assert fireworks_finetune.datamodel.properties["endpoint_version"] == "v2"
+        # Verify run_config.structured_output_mode is set correctly
+        expected_run_config_mode = (
+            expected_mode if expected_mode is not None else StructuredOutputMode.default
+        )
+        assert (
+            fireworks_finetune.datamodel.run_config.structured_output_mode
+            == expected_run_config_mode
+        )
 
         # check mockclent.post call values
         assert mock_client.post.call_count == 1

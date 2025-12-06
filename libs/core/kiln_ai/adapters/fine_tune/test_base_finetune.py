@@ -44,27 +44,6 @@ class MockFinetune(BaseFinetuneAdapter):
         ]
 
 
-class MockFinetuneWithStructuredOutput(BaseFinetuneAdapter):
-    """Mock implementation that sets structured_output_mode like Fireworks adapter would"""
-
-    async def _start(self, dataset: DatasetSplit) -> None:
-        self.datamodel.structured_output_mode = StructuredOutputMode.json_instructions
-
-    async def status(self) -> FineTuneStatus:
-        return FineTuneStatus(status=FineTuneStatusType.pending, message="loading...")
-
-    @classmethod
-    def available_parameters(cls) -> list[FineTuneParameter]:
-        return [
-            FineTuneParameter(
-                name="epochs",
-                type="int",
-                description="Number of training epochs",
-                optional=False,
-            ),
-        ]
-
-
 @pytest.fixture
 def sample_task(tmp_path):
     project_path = tmp_path / "project.kiln"
@@ -94,6 +73,18 @@ def basic_finetune(sample_task):
             dataset_split_id="dataset-123",
             system_message="Test system message",
         ),
+    )
+
+
+@pytest.fixture
+def basic_run_config():
+    return RunConfigProperties(
+        model_name="gpt-4o-mini-2024-07-18",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
     )
 
 
@@ -182,7 +173,7 @@ def mock_dataset(sample_task):
     return dataset
 
 
-async def test_create_and_start_success(mock_dataset):
+async def test_create_and_start_success(mock_dataset, basic_run_config):
     # Test successful creation with minimal parameters
     adapter, datamodel = await MockFinetune.create_and_start(
         dataset=mock_dataset,
@@ -193,6 +184,7 @@ async def test_create_and_start_success(mock_dataset):
         system_message="Test system message",
         data_strategy=ChatStrategy.single_turn,
         thinking_instructions=None,
+        run_config=basic_run_config,
     )
 
     assert isinstance(adapter, MockFinetune)
@@ -207,10 +199,10 @@ async def test_create_and_start_success(mock_dataset):
     assert datamodel.path.exists()
     assert datamodel.data_strategy == ChatStrategy.single_turn
     assert datamodel.thinking_instructions is None
-    assert datamodel.run_config is None
+    assert datamodel.run_config is not None
 
 
-async def test_create_and_start_with_all_params(mock_dataset):
+async def test_create_and_start_with_all_params(mock_dataset, basic_run_config):
     # Test creation with all optional parameters
     adapter, datamodel = await MockFinetune.create_and_start(
         dataset=mock_dataset,
@@ -224,6 +216,7 @@ async def test_create_and_start_with_all_params(mock_dataset):
         system_message="Test system message",
         data_strategy=ChatStrategy.two_message_cot,
         thinking_instructions="Custom thinking instructions",
+        run_config=basic_run_config,
     )
 
     assert datamodel.name == "Custom Name"
@@ -274,10 +267,6 @@ async def test_create_and_start_with_run_config(mock_dataset):
     assert datamodel.run_config.prompt_id == expected_prompt_id
     assert datamodel.run_config.temperature == 0.7
     assert datamodel.run_config.top_p == 0.9
-    assert (
-        datamodel.run_config.structured_output_mode
-        == StructuredOutputMode.json_instructions
-    )
 
     loaded_datamodel = FinetuneModel.load_from_file(datamodel.path)
     assert loaded_datamodel.run_config is not None
@@ -289,38 +278,23 @@ async def test_create_and_start_with_run_config(mock_dataset):
     assert loaded_datamodel.run_config.prompt_id == expected_prompt_id
 
 
-async def test_create_and_start_with_datamodel_structured_output_mode(mock_dataset):
-    run_config = RunConfigProperties(
-        model_name="gpt-4o-mini-2024-07-18",
-        model_provider_name=ModelProviderName.openai,
-        prompt_id="simple_prompt_builder",
-        temperature=0.7,
-        top_p=0.9,
-        structured_output_mode=StructuredOutputMode.default,
-    )
-
-    _, datamodel = await MockFinetuneWithStructuredOutput.create_and_start(
-        dataset=mock_dataset,
-        provider_id="openai",
-        provider_base_model_id="gpt-4o-mini-2024-07-18",
-        train_split_name="train",
-        parameters={"epochs": 10},
-        system_message="Test system message",
-        data_strategy=ChatStrategy.single_turn,
-        thinking_instructions=None,
-        run_config=run_config,
-    )
-
-    # MockFinetuneWithStructuredOutput is using json_instructions
-    assert datamodel.structured_output_mode == StructuredOutputMode.json_instructions
-    assert datamodel.run_config is not None
-    assert (
-        datamodel.run_config.structured_output_mode
-        == StructuredOutputMode.json_instructions
-    )
+async def test_create_and_start_missing_run_config(mock_dataset):
+    # Test with missing run_config
+    with pytest.raises(ValueError, match="Run config is required"):
+        await MockFinetune.create_and_start(
+            dataset=mock_dataset,
+            provider_id="openai",
+            provider_base_model_id="gpt-4o-mini-2024-07-18",
+            train_split_name="train",
+            parameters={"epochs": 10},
+            system_message="Test system message",
+            thinking_instructions=None,
+            data_strategy=ChatStrategy.single_turn,
+            run_config=None,
+        )
 
 
-async def test_create_and_start_invalid_parameters(mock_dataset):
+async def test_create_and_start_invalid_parameters(mock_dataset, basic_run_config):
     # Test with invalid parameters
     with pytest.raises(ValueError, match="Parameter epochs is required"):
         await MockFinetune.create_and_start(
@@ -332,10 +306,11 @@ async def test_create_and_start_invalid_parameters(mock_dataset):
             system_message="Test system message",
             thinking_instructions=None,
             data_strategy=ChatStrategy.single_turn,
+            run_config=basic_run_config,
         )
 
 
-async def test_create_and_start_no_parent_task():
+async def test_create_and_start_no_parent_task(basic_run_config):
     # Test with dataset that has no parent task
     dataset = Mock(spec=DatasetSplit)
     dataset.id = "dataset_123"
@@ -352,10 +327,11 @@ async def test_create_and_start_no_parent_task():
             system_message="Test system message",
             data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
+            run_config=basic_run_config,
         )
 
 
-async def test_create_and_start_no_parent_task_path():
+async def test_create_and_start_no_parent_task_path(basic_run_config):
     # Test with dataset that has parent task but no path
     task = Mock(spec=Task)
     task.path = None
@@ -375,10 +351,11 @@ async def test_create_and_start_no_parent_task_path():
             system_message="Test system message",
             data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
+            run_config=basic_run_config,
         )
 
 
-async def test_create_and_start_invalid_train_split(mock_dataset):
+async def test_create_and_start_invalid_train_split(mock_dataset, basic_run_config):
     # Test with an invalid train split name
     mock_dataset.split_contents = {"valid_train": [], "valid_test": []}
 
@@ -394,10 +371,13 @@ async def test_create_and_start_invalid_train_split(mock_dataset):
             system_message="Test system message",
             data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
+            run_config=basic_run_config,
         )
 
 
-async def test_create_and_start_invalid_validation_split(mock_dataset):
+async def test_create_and_start_invalid_validation_split(
+    mock_dataset, basic_run_config
+):
     # Test with an invalid validation split name
     mock_dataset.split_contents = {"valid_train": [], "valid_test": []}
 
@@ -414,4 +394,5 @@ async def test_create_and_start_invalid_validation_split(mock_dataset):
             system_message="Test system message",
             data_strategy=ChatStrategy.single_turn,
             thinking_instructions=None,
+            run_config=basic_run_config,
         )

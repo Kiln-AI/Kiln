@@ -19,7 +19,9 @@ from kiln_ai.adapters.fine_tune.together_finetune import (
 )
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -312,6 +314,16 @@ async def test_start_success(
     # Set parent task on finetune
     together_finetune.datamodel.parent = mock_task
 
+    # Set up run_config
+    together_finetune.datamodel.run_config = RunConfigProperties(
+        model_name="llama-v2-7b",
+        model_provider_name=ModelProviderName.together_ai,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
+    )
+
     # Mock file ID from generate_and_upload_jsonl
     mock_file_id = "file-123"
 
@@ -360,7 +372,14 @@ async def test_start_success(
         # Check that datamodel was updated correctly
         assert together_finetune.datamodel.provider_id == "job-123"
         assert together_finetune.datamodel.fine_tune_model_id == "model-123"
-        assert together_finetune.datamodel.structured_output_mode == expected_mode
+        # Verify run_config.structured_output_mode is set correctly
+        expected_run_config_mode = (
+            expected_mode if expected_mode is not None else StructuredOutputMode.default
+        )
+        assert (
+            together_finetune.datamodel.run_config.structured_output_mode
+            == expected_run_config_mode
+        )
 
 
 async def test_start_missing_task(together_finetune, mock_dataset, mock_api_key):
