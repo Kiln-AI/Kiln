@@ -1887,10 +1887,10 @@ def test_get_eval_configs_score_summary_no_filter_id(
 
 
 @pytest.mark.asyncio
-async def test_get_run_configs_excludes_unknown_and_failed_finetunes(
+async def test_get_run_configs_includes_finetunes_with_run_config(
     client, mock_task_from_id, mock_task
 ):
-    """Test that finetunes with unknown or failed status are excluded from run configs."""
+    """Test that finetunes are included in run configs only if they have a run_config set."""
     mock_task_from_id.return_value = mock_task
 
     run_config_props = RunConfigProperties(
