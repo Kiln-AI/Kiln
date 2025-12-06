@@ -13,6 +13,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.ollama_tools import OllamaConnection
 from kiln_ai.adapters.provider_tools import (
     LiteLlmCoreConfig,
+    built_in_provider_from_model_id,
     builtin_model_from,
     check_provider_warnings,
     core_provider,
@@ -263,6 +264,32 @@ def test_get_model_and_provider_multiple_providers():
     assert model.name == ModelName.llama_3_3_70b
     assert provider.name == ModelProviderName.groq
     assert provider.model_id == "llama-3.3-70b-versatile"
+
+
+def test_built_in_provider_from_model_id_found():
+    """Test finding a provider by model_id and provider name"""
+    provider = built_in_provider_from_model_id(
+        "deepseek-r1:8b", ModelProviderName.ollama
+    )
+
+    assert provider is not None
+    assert provider.name == ModelProviderName.ollama
+    assert provider.model_id == "deepseek-r1:8b"
+    assert provider.parser == ModelParserID.r1_thinking
+
+
+@pytest.mark.parametrize(
+    "model_id,provider_name",
+    [
+        ("nonexistent-model", ModelProviderName.ollama),
+        ("deepseek-r1:8b", ModelProviderName.openai),
+        ("gpt-4o", "invalid_provider"),
+    ],
+)
+def test_built_in_provider_from_model_id_returns_none(model_id, provider_name):
+    """Test that None is returned for various invalid lookups"""
+    provider = built_in_provider_from_model_id(model_id, provider_name)
+    assert provider is None
 
 
 @pytest.mark.asyncio
@@ -1193,11 +1220,11 @@ def test_provider_name_from_id_docker_model_runner():
 
 
 def test_parser_from_finetune_model_parser_takes_precedence():
-    """Test that parser from ml_model_list takes precedence over data_strategy"""
+    """Test that parser from base model in ml_model_list takes precedence over data_strategy"""
     finetune = Finetune(
         name="test-finetune",
         provider=ModelProviderName.ollama,
-        base_model_id="deepseek_r1",
+        base_model_id="deepseek-r1:8b",
         fine_tune_model_id="ft:deepseek-r1:custom:model-123",
         dataset_split_id="test-split",
         system_message="You are a helpful assistant.",
@@ -1206,7 +1233,7 @@ def test_parser_from_finetune_model_parser_takes_precedence():
 
     parser = parser_from_finetune(finetune)
 
-    # deepseek_r1 has ModelParserID.r1_thinking set in ml_model_list
+    # deepseek-r1:8b (ollama) has ModelParserID.r1_thinking set in ml_model_list
     assert parser == ModelParserID.r1_thinking
 
 
@@ -1216,8 +1243,8 @@ def test_parser_from_finetune_fallback_to_data_strategy(mock_config):
 
     finetune = Finetune(
         name="test-finetune",
-        provider=ModelProviderName.openai,
-        base_model_id="gpt_4o",
+        provider=ModelProviderName.fireworks_ai,
+        base_model_id="accounts/fireworks/models/qwen3-8b",
         fine_tune_model_id="ft:gpt-4o:custom:model-123",
         dataset_split_id="test-split",
         system_message="You are a helpful assistant.",
@@ -1235,12 +1262,12 @@ def test_parser_from_finetune_no_parser(mock_config):
 
     finetune = Finetune(
         name="test-finetune",
-        provider=ModelProviderName.openai,
-        base_model_id="gpt_4o",
+        provider=ModelProviderName.fireworks_ai,
+        base_model_id="accounts/fireworks/models/qwen3-8b",
         fine_tune_model_id="ft:gpt-4o:custom:model-123",
         dataset_split_id="test-split",
         system_message="You are a helpful assistant.",
-        data_strategy=ChatStrategy.single_turn,
+        data_strategy=ChatStrategy.single_turn,  # single turn has no parser
     )
 
     parser = parser_from_finetune(finetune)

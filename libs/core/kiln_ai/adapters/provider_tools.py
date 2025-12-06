@@ -114,6 +114,28 @@ def builtin_model_from(
     return provider
 
 
+def built_in_provider_from_model_id(
+    model_id: str, provider_name: ModelProviderName | str
+) -> KilnModelProvider | None:
+    """
+    Look up a built-in provider entry by the provider and its provider-specific model ID.
+    """
+    try:
+        provider_enum = (
+            provider_name
+            if isinstance(provider_name, ModelProviderName)
+            else ModelProviderName(provider_name)
+        )
+    except ValueError:
+        return None
+
+    for model in built_in_models:
+        for provider in model.providers:
+            if provider.name == provider_enum and provider.model_id == model_id:
+                return provider
+    return None
+
+
 def core_provider(model_id: str, provider_name: ModelProviderName) -> ModelProviderName:
     """
     Get the provider that should be run.
@@ -243,7 +265,7 @@ def parser_from_finetune(
     """
 
     # Look up the base model provider and check if there is a parser set
-    base_model_provider = builtin_model_from(
+    base_model_provider = built_in_provider_from_model_id(
         fine_tune.base_model_id, fine_tune.provider
     )
 
