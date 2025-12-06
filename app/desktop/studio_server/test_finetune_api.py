@@ -1675,6 +1675,37 @@ def test_finetune_dataset_info_no_tags(
     assert len(data["eligible_finetune_tags"]) == 0
 
 
+def test_finetune_dataset_info_excludes_orphan_datasets(
+    client, mock_task_from_id_disk_backed, test_task
+):
+    """Test that finetune_dataset_info excludes orphan datasets (datasets not associated with any finetune)"""
+    orphan_split = DatasetSplit(
+        id="orphan_split",
+        name="Orphan Split",
+        split_contents={"train": ["4", "5"]},
+        splits=AllSplitDefinition,
+    )
+    orphan_split.parent = test_task
+    orphan_split.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/finetune_dataset_info")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["existing_datasets"]) == 2
+    dataset_ids = {ds["id"] for ds in data["existing_datasets"]}
+    assert dataset_ids == {"split1", "split2"}
+    assert "orphan_split" not in dataset_ids
+
+    assert len(data["existing_finetunes"]) == 2
+
+    assert len(data["eligible_datasets"]) == 2
+    eligible_dataset_ids = {ds["id"] for ds in data["eligible_datasets"]}
+    assert eligible_dataset_ids == {"split1", "split2"}
+    assert "orphan_split" not in eligible_dataset_ids
+
+
 def test_finetune_dataset_info_no_datasets_or_finetunes(
     client, mock_task_from_id_disk_backed, tmp_path
 ):

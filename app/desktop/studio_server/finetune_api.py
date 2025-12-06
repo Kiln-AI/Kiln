@@ -370,7 +370,16 @@ def connect_fine_tune_api(app: FastAPI):
         tool_ids: Annotated[list[str] | None, Query()] = None,
     ) -> FinetuneDatasetInfo:
         task = task_from_id(project_id, task_id)
-        existing_datasets = task.dataset_splits()
+        # Only include datasets that is part of a finetune.
+        # Orphan datasets are created when user creates a dataset but didn't create a finetune.
+        existing_datasets = [
+            dataset
+            for dataset in task.dataset_splits()
+            if any(
+                finetune.dataset_split_id == dataset.id for finetune in task.finetunes()
+            )
+        ]
+
         existing_finetunes = task.finetunes()
 
         finetune_tags = compute_finetune_tag_info(task, tool_filter=None)
