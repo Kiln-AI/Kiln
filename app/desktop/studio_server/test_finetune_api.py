@@ -35,6 +35,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
 from pydantic import BaseModel
 
 from app.desktop.studio_server.finetune_api import (
@@ -42,6 +43,7 @@ from app.desktop.studio_server.finetune_api import (
     CreateFinetuneRequest,
     DatasetSplitType,
     FinetuneProviderModel,
+    compute_finetune_tag_info,
     connect_fine_tune_api,
     data_strategies_from_finetune_id,
     fetch_fireworks_finetune_models,
@@ -219,8 +221,16 @@ def mock_built_in_models():
             family="family1",
             friendly_name="Model 1",
             providers=[
-                KilnModelProvider(name="groq", provider_finetune_id="ft_model1"),
-                KilnModelProvider(name="openai", provider_finetune_id="ft_model1_p2"),
+                KilnModelProvider(
+                    name="groq",
+                    provider_finetune_id="ft_model1",
+                    supports_function_calling=True,
+                ),
+                KilnModelProvider(
+                    name="openai",
+                    provider_finetune_id="ft_model1_p2",
+                    supports_function_calling=True,
+                ),
             ],
         ),
         KilnModel(
@@ -228,7 +238,11 @@ def mock_built_in_models():
             family="family2",
             friendly_name="Model 2",
             providers=[
-                KilnModelProvider(name="groq", provider_finetune_id="ft_model2"),
+                KilnModelProvider(
+                    name="groq",
+                    provider_finetune_id="ft_model2",
+                    supports_function_calling=False,
+                ),
                 KilnModelProvider(
                     name="openai",
                     provider_finetune_id=None,  # This one should be skipped
@@ -278,7 +292,11 @@ async def test_get_finetune_providers(
     ) as mock_fetch:
         # Set up mock return value with one model
         mock_fetch.return_value = [
-            FinetuneProviderModel(name="Fireworks Model", id="fireworks/model-1")
+            FinetuneProviderModel(
+                name="Fireworks Model",
+                id="fireworks/model-1",
+                supports_function_calling=True,
+            )
         ]
 
         response = client.get("/api/finetune_providers")
@@ -297,8 +315,10 @@ async def test_get_finetune_providers(
         assert len(provider1["models"]) == 2
         assert provider1["models"][0]["name"] == "Model 1"
         assert provider1["models"][0]["id"] == "ft_model1"
+        assert provider1["models"][0]["supports_function_calling"] is True
         assert provider1["models"][1]["name"] == "Model 2"
         assert provider1["models"][1]["id"] == "ft_model2"
+        assert provider1["models"][1]["supports_function_calling"] is False
 
         # Check provider2 (openai)
         provider2 = next(p for p in providers if p["id"] == "openai")
@@ -316,6 +336,7 @@ async def test_get_finetune_providers(
         assert len(fireworks_provider["models"]) == 1
         assert fireworks_provider["models"][0]["name"] == "Fireworks Model"
         assert fireworks_provider["models"][0]["id"] == "fireworks/model-1"
+        assert fireworks_provider["models"][0]["supports_function_calling"] is True
 
 
 @pytest.fixture
@@ -615,6 +636,7 @@ async def test_create_finetune(
         description="Test description",
         validation_split_name="validation",
         data_strategy=data_strategy,
+        run_config=None,
     )
 
 
@@ -847,7 +869,7 @@ def test_create_finetune_prompt_builder_error(
 @pytest.fixture
 def mock_dataset_formatter():
     formatter = Mock()
-    formatter.dump_to_file.return_value = Path("path/to/dataset.jsonl")
+    formatter.dump_to_file = AsyncMock(return_value=Path("path/to/dataset.jsonl"))
 
     with unittest.mock.patch(
         "app.desktop.studio_server.finetune_api.DatasetFormatter",
@@ -872,7 +894,7 @@ def test_download_dataset_jsonl(
     # Create a temporary file to simulate the dataset
     test_file = tmp_path / "dataset.jsonl"
     test_file.write_text('{"test": "data"}')
-    mock_formatter.dump_to_file.return_value = test_file
+    mock_formatter.dump_to_file = AsyncMock(return_value=test_file)
 
     response = client.get(
         "/api/download_dataset_jsonl",
@@ -989,7 +1011,7 @@ def test_download_dataset_jsonl_with_prompt_builder(
     # Create a temporary file to simulate the dataset
     test_file = tmp_path / "dataset.jsonl"
     test_file.write_text('{"test": "data"}')
-    mock_formatter.dump_to_file.return_value = test_file
+    mock_formatter.dump_to_file = AsyncMock(return_value=test_file)
 
     response = client.get(
         "/api/download_dataset_jsonl",
@@ -1226,11 +1248,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
                 "name": "accounts/fireworks/models/model1",
                 "displayName": "Model One",
                 "tunable": True,
+                "supportsTools": True,
             },
             {
                 "name": "accounts/fireworks/models/model2",
                 "displayName": "Model Two",
                 "tunable": False,  # This should be skipped
+                "supportsTools": False,
             },
         ],
         "nextPageToken": "next-page-token",
@@ -1244,11 +1268,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
                 "name": "accounts/fireworks/models/model3",
                 "displayName": "",  # Empty display name
                 "tunable": True,
+                "supportsTools": False,
             },
             {
                 "name": "accounts/fireworks/models/model4",
                 "displayName": "Model Four",
                 "tunable": True,
+                "supportsTools": True,
             },
         ]
     }
@@ -1286,6 +1312,7 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
     # Check model details
     assert result[0].name == "Model One (model1)"
     assert result[0].id == "accounts/fireworks/models/model1"
+    assert result[0].supports_function_calling is True
 
     # Check that model2 (non-tunable) is not included
     assert all(model.id != "accounts/fireworks/models/model2" for model in result)
@@ -1296,6 +1323,13 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
         model for model in result if model.id == "accounts/fireworks/models/model3"
     )
     assert model3.name == "model3"
+    assert model3.supports_function_calling is False
+
+    # Check model4 has tool support
+    model4 = next(
+        model for model in result if model.id == "accounts/fireworks/models/model4"
+    )
+    assert model4.supports_function_calling is True
 
 
 @pytest.mark.asyncio
@@ -1600,6 +1634,16 @@ def test_finetune_dataset_info(client, mock_task_from_id_disk_backed, test_task)
     assert tag2["high_quality_count"] == 0
     assert tag2["reasoning_and_high_quality_count"] == 0
 
+    # Verify eligible_datasets (without tool filter, should be same as existing_datasets)
+    assert "eligible_datasets" in data
+    assert len(data["eligible_datasets"]) == 2
+    eligible_dataset_ids = {ds["id"] for ds in data["eligible_datasets"]}
+    assert eligible_dataset_ids == {"split1", "split2"}
+
+    # Verify eligible_finetune_tags (without tool filter, should be same as finetune_tags)
+    assert "eligible_finetune_tags" in data
+    assert len(data["eligible_finetune_tags"]) == 2
+
     # Verify task_from_id was called correctly
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
@@ -1623,6 +1667,43 @@ def test_finetune_dataset_info_no_tags(
 
     # Verify no fine_tune tags
     assert len(data["finetune_tags"]) == 0
+
+    # Verify eligible properties still present
+    assert "eligible_datasets" in data
+    assert len(data["eligible_datasets"]) == 2
+    assert "eligible_finetune_tags" in data
+    assert len(data["eligible_finetune_tags"]) == 0
+
+
+def test_finetune_dataset_info_excludes_orphan_datasets(
+    client, mock_task_from_id_disk_backed, test_task
+):
+    """Test that finetune_dataset_info excludes orphan datasets (datasets not associated with any finetune)"""
+    orphan_split = DatasetSplit(
+        id="orphan_split",
+        name="Orphan Split",
+        split_contents={"train": ["4", "5"]},
+        splits=AllSplitDefinition,
+    )
+    orphan_split.parent = test_task
+    orphan_split.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/finetune_dataset_info")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["existing_datasets"]) == 2
+    dataset_ids = {ds["id"] for ds in data["existing_datasets"]}
+    assert dataset_ids == {"split1", "split2"}
+    assert "orphan_split" not in dataset_ids
+
+    assert len(data["existing_finetunes"]) == 2
+
+    assert len(data["eligible_datasets"]) == 2
+    eligible_dataset_ids = {ds["id"] for ds in data["eligible_datasets"]}
+    assert eligible_dataset_ids == {"split1", "split2"}
+    assert "orphan_split" not in eligible_dataset_ids
 
 
 def test_finetune_dataset_info_no_datasets_or_finetunes(
@@ -1654,4 +1735,133 @@ def test_finetune_dataset_info_no_datasets_or_finetunes(
     assert len(data["existing_finetunes"]) == 0
     assert len(data["finetune_tags"]) == 0
 
+    # Verify empty eligible properties
+    assert "eligible_datasets" in data
+    assert len(data["eligible_datasets"]) == 0
+    assert "eligible_finetune_tags" in data
+    assert len(data["eligible_finetune_tags"]) == 0
+
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
+
+
+@pytest.fixture
+def task_with_tools(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="This is a test instruction",
+        description="This is a test task",
+        parent=project,
+    )
+    task.save_to_file()
+
+    runs = [
+        TaskRun(
+            id="run_with_tool_a",
+            name="Run with tool A",
+            parent=task,
+            tags=["fine_tune_tools"],
+            input="Test input with tool A",
+            input_source={"type": "human", "properties": {"created_by": "user1"}},
+            output=TaskOutput(
+                output="Test output A",
+                source={
+                    "type": "synthetic",
+                    "properties": {
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                    "run_config": RunConfigProperties(
+                        model_name="gpt-4",
+                        model_provider_name="openai",
+                        prompt_id="simple_prompt_builder",
+                        structured_output_mode="default",
+                        tools_config=ToolsRunConfig(
+                            tools=["mcp::remote::server_a::tool_a"]
+                        ),
+                    ),
+                },
+            ),
+        ),
+        TaskRun(
+            id="run_with_tool_a_b",
+            name="Run with tool A and B",
+            parent=task,
+            tags=["fine_tune_tools"],
+            input="Test input with tool A and B",
+            input_source={"type": "human", "properties": {"created_by": "user2"}},
+            output=TaskOutput(
+                output="Test output AB",
+                source={
+                    "type": "synthetic",
+                    "properties": {
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                    "run_config": RunConfigProperties(
+                        model_name="gpt-4",
+                        model_provider_name="openai",
+                        prompt_id="simple_prompt_builder",
+                        structured_output_mode="default",
+                        tools_config=ToolsRunConfig(
+                            tools=[
+                                "mcp::remote::server_a::tool_a",
+                                "mcp::remote::server_b::tool_b",
+                            ]
+                        ),
+                    ),
+                },
+            ),
+        ),
+        TaskRun(
+            id="run_no_tools",
+            name="Run without tools",
+            parent=task,
+            tags=["fine_tune_tools"],
+            input="Test input no tools",
+            input_source={"type": "human", "properties": {"created_by": "user3"}},
+            output=TaskOutput(
+                output="Test output no tools",
+                source={
+                    "type": "synthetic",
+                    "properties": {
+                        "model_name": "gpt-4",
+                        "model_provider": "openai",
+                        "adapter_name": "test",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                },
+            ),
+        ),
+    ]
+    for run in runs:
+        run.save_to_file()
+
+    return task
+
+
+@pytest.mark.parametrize(
+    "tool_filter, expected_count",
+    [
+        (None, 3),
+        (["mcp::remote::server_a::tool_a"], 1),
+        (["mcp::remote::server_a::tool_a", "mcp::remote::server_b::tool_b"], 1),
+        (["mcp::remote::server_x::tool_x"], 0),
+    ],
+)
+def test_compute_finetune_tag_info(task_with_tools, tool_filter, expected_count):
+    result = compute_finetune_tag_info(task_with_tools, tool_filter=tool_filter)
+
+    if expected_count == 0:
+        assert len(result) == 0
+    else:
+        assert len(result) == 1
+        assert result[0].tag == "fine_tune_tools"
+        assert result[0].count == expected_count

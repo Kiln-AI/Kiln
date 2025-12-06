@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.cloud import storage
@@ -11,8 +11,9 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetF
 from kiln_ai.adapters.fine_tune.vertex_finetune import VertexFinetune
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -280,7 +281,7 @@ async def test_generate_and_upload_jsonl(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock storage client and bucket operations
     mock_bucket = MagicMock()
@@ -341,7 +342,7 @@ async def test_generate_and_upload_jsonl_create_bucket(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock storage client and bucket operations - bucket doesn't exist
     mock_bucket = MagicMock()
@@ -413,6 +414,16 @@ async def test_start_success(
     vertex_finetune.datamodel.parent = mock_task
     mock_task.output_json_schema = output_schema
 
+    # Set up run_config
+    vertex_finetune.datamodel.run_config = RunConfigProperties(
+        model_name="gemini-2.0-pro",
+        model_provider_name=ModelProviderName.vertex,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
+    )
+
     # Mock hyperparameters
     vertex_finetune.datamodel.parameters = {
         "epochs": 3,
@@ -479,7 +490,14 @@ async def test_start_success(
 
         # Verify model updates
         assert vertex_finetune.datamodel.provider_id == "vertex-ft-123"
-        assert vertex_finetune.datamodel.structured_output_mode == expected_mode
+        # Verify run_config.structured_output_mode is set correctly
+        expected_run_config_mode = (
+            expected_mode if expected_mode is not None else StructuredOutputMode.default
+        )
+        assert (
+            vertex_finetune.datamodel.run_config.structured_output_mode
+            == expected_run_config_mode
+        )
 
 
 async def test_start_with_validation(vertex_finetune, mock_dataset, mock_task):

@@ -905,6 +905,7 @@ async def test_get_available_models(app, client):
                     "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
+                    "model_specific_run_config": None,
                 }
             ],
         },
@@ -931,6 +932,7 @@ async def test_get_available_models(app, client):
                     "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
+                    "model_specific_run_config": None,
                 },
             ],
         },
@@ -957,6 +959,7 @@ async def test_get_available_models(app, client):
                     "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
+                    "model_specific_run_config": None,
                 }
             ],
         },
@@ -1033,6 +1036,7 @@ async def test_get_available_models_ollama_exception(app, client):
                     "suggested_for_doc_extraction": False,
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
+                    "model_specific_run_config": None,
                 }
             ],
         },
@@ -1270,18 +1274,26 @@ def test_all_fine_tuned_models(mock_all_projects):
     mock_fine_tune1.name = "Fine Tune 1"
     mock_fine_tune1.fine_tune_model_id = "model1"
     mock_fine_tune1.provider = ModelProviderName.openai
+    mock_fine_tune1.run_config = None
+    mock_fine_tune1.structured_output_mode = StructuredOutputMode.json_instructions
+    mock_fine_tune1.nested_id.return_value = "proj1::task1::ft1"
 
     mock_fine_tune2 = Mock()
     mock_fine_tune2.id = "ft2"
     mock_fine_tune2.name = "Fine Tune 2"
     mock_fine_tune2.fine_tune_model_id = "model2"
     mock_fine_tune2.provider = ModelProviderName.openai
+    mock_fine_tune2.run_config = None
+    mock_fine_tune2.structured_output_mode = StructuredOutputMode.json_instructions
+    mock_fine_tune2.nested_id.return_value = "proj2::task2::ft2"
 
     mock_fine_tune3 = Mock()
     mock_fine_tune3.id = "ft3"
     mock_fine_tune3.name = "Incomplete Fine Tune"
     mock_fine_tune3.fine_tune_model_id = None  # Incomplete fine-tune
     mock_fine_tune3.provider = ModelProviderName.openai
+    mock_fine_tune3.run_config = None
+    mock_fine_tune3.structured_output_mode = StructuredOutputMode.json_instructions
 
     mock_task1 = Mock()
     mock_task1.id = "task1"

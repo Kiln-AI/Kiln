@@ -33,6 +33,7 @@ from kiln_ai.adapters.ollama_tools import (
 )
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
 from kiln_ai.adapters.reranker_list import built_in_rerankers
+from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -156,6 +157,8 @@ class ModelDetails(BaseModel):
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
+    # if the model has a model-specific run config which should be used when running the model (like a fine-tune model's baked in run config)
+    model_specific_run_config: str | None = Field(default=None)
 
 
 class AvailableModels(BaseModel):
@@ -1417,6 +1420,22 @@ def custom_models() -> AvailableModels | None:
     )
 
 
+def fine_tune_model_structured_output_mode(
+    fine_tune: Finetune,
+) -> StructuredOutputMode:
+    # Current field
+    if fine_tune.run_config and fine_tune.run_config.structured_output_mode is not None:
+        return fine_tune.run_config.structured_output_mode
+    # Legacy field
+    legacy_structured_output_mode = fine_tune.structured_output_mode
+    if legacy_structured_output_mode is not None and isinstance(
+        legacy_structured_output_mode, StructuredOutputMode
+    ):
+        return legacy_structured_output_mode
+    # Fallback
+    return StructuredOutputMode.json_instructions
+
+
 def all_fine_tuned_models() -> AvailableModels | None:
     # Add any fine tuned models
     models: List[ModelDetails] = []
@@ -1426,9 +1445,14 @@ def all_fine_tuned_models() -> AvailableModels | None:
             for fine_tune in task.finetunes():
                 # check if the fine tune is completed
                 if fine_tune.fine_tune_model_id:
+                    model_specific_run_config = (
+                        f"finetune_run_config::{project.id}::{task.id}::{fine_tune.id}"
+                        if fine_tune.run_config is not None
+                        else None
+                    )
                     models.append(
                         ModelDetails(
-                            id=f"{project.id}::{task.id}::{fine_tune.id}",
+                            id=fine_tune.nested_id(),
                             name=fine_tune.name
                             + f" ({provider_name_from_id(fine_tune.provider)})",
                             # YMMV, but we'll assume all fine tuned models support structured output, data gen, and tools as they may have been trained with them
@@ -1441,16 +1465,10 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             suggested_for_evals=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
-                            structured_output_mode=(
-                                fine_tune_mode
-                                if (
-                                    fine_tune_mode := getattr(
-                                        fine_tune, "structured_output_mode", None
-                                    )
-                                )
-                                and isinstance(fine_tune_mode, StructuredOutputMode)
-                                else StructuredOutputMode.json_instructions
+                            structured_output_mode=fine_tune_model_structured_output_mode(
+                                fine_tune
                             ),
+                            model_specific_run_config=model_specific_run_config,
                             supports_vision=False,
                             supports_doc_extraction=False,
                             suggested_for_doc_extraction=False,

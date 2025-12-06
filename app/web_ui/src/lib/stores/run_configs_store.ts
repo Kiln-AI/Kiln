@@ -1,5 +1,5 @@
 import type { TaskRunConfig, RunConfigProperties } from "$lib/types"
-import { writable } from "svelte/store"
+import { writable, get } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 import {
@@ -30,6 +30,13 @@ export async function load_task_run_configs(
 ): Promise<void> {
   const composite_key = get_task_composite_id(project_id, task_id)
 
+  if (!force_refresh) {
+    const current_configs = get(run_configs_by_task_composite_id)[composite_key]
+    if (current_configs) {
+      return Promise.resolve()
+    }
+  }
+
   if (composite_key in loading_task_run_configs) {
     if (force_refresh) {
       // If forcing refresh and there's an existing request, wait for it to complete first (still retry even on failure)
@@ -57,7 +64,7 @@ export async function load_task_run_configs(
 
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_configs",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/",
         {
           params: {
             path: {

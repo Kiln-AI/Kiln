@@ -5,7 +5,11 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel import DatasetSplit, FineTuneStatusType, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import (
+    ChatStrategy,
+    ModelProviderName,
+)
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 
 
@@ -63,6 +67,7 @@ class BaseFinetuneAdapter(ABC):
         name: str | None = None,
         description: str | None = None,
         validation_split_name: str | None = None,
+        run_config: RunConfigProperties | None = None,
     ) -> tuple["BaseFinetuneAdapter", FinetuneModel]:
         """
         Create and start a fine-tune.
@@ -81,6 +86,10 @@ class BaseFinetuneAdapter(ABC):
             raise ValueError(
                 f"Validation split {validation_split_name} not found in dataset"
             )
+
+        # Raise exception if run config is none
+        if run_config is None:
+            raise ValueError("Run config is required")
 
         # Default name if not provided
         if name is None:
@@ -104,7 +113,13 @@ class BaseFinetuneAdapter(ABC):
             thinking_instructions=thinking_instructions,
             parent=parent_task,
             data_strategy=data_strategy,
+            run_config=run_config,
         )
+
+        # Update the run config properties for fine-tuning
+        run_config.model_provider_name = ModelProviderName.kiln_fine_tune
+        run_config.model_name = datamodel.nested_id()
+        run_config.prompt_id = f"fine_tune_prompt::{datamodel.nested_id()}"
 
         adapter = cls(datamodel)
         await adapter._start(dataset)
