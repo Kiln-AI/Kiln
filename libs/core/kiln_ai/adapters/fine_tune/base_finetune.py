@@ -119,7 +119,7 @@ class BaseFinetuneAdapter(ABC):
         # Update the run config properties for fine-tuning
         if run_config is not None:
             run_config.model_provider_name = ModelProviderName.kiln_fine_tune
-            run_config.model_name = datamodel.model_id()
+            run_config.model_name = datamodel.nested_id()
             # Build the fine-tune prompt ID
             task = datamodel.parent_task()
             if task is None:

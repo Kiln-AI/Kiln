@@ -84,6 +84,6 @@ def extract_text_from_content(
                 text_parts.append(part["text"])
 
         if text_parts:
-            return "".join(text_parts)
+            return "\n".join(text_parts)
 
     return None

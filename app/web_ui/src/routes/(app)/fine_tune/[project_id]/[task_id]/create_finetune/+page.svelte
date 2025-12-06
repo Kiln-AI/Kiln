@@ -759,7 +759,7 @@
         <div>
           <PromptTypeSelector
             bind:prompt_method={system_prompt_method}
-            description={`The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model. <a class="link" href="https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts" target="_blank" rel="noreferrer noopener">Read more</a>.`}
+            description={`The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts.`}
             info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning."
             exclude_cot={true}
             custom_prompt_name="Custom Fine Tuning Prompt"

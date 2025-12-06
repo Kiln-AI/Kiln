@@ -195,7 +195,7 @@
         {/if}
         {#if description}
           <div class="text-xs text-gray-500">
-            {@html description}
+            {description}
           </div>
         {/if}
       </label>

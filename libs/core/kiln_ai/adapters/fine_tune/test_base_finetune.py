@@ -264,7 +264,7 @@ async def test_create_and_start_with_run_config(mock_dataset):
 
     assert datamodel.run_config is not None
     assert datamodel.run_config.model_provider_name == ModelProviderName.kiln_fine_tune
-    assert datamodel.run_config.model_name == datamodel.model_id()
+    assert datamodel.run_config.model_name == datamodel.nested_id()
 
     task = datamodel.parent_task()
     assert task is not None
@@ -285,7 +285,7 @@ async def test_create_and_start_with_run_config(mock_dataset):
         loaded_datamodel.run_config.model_provider_name
         == ModelProviderName.kiln_fine_tune
     )
-    assert loaded_datamodel.run_config.model_name == datamodel.model_id()
+    assert loaded_datamodel.run_config.model_name == datamodel.nested_id()
     assert loaded_datamodel.run_config.prompt_id == expected_prompt_id
 
 

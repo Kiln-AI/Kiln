@@ -350,7 +350,7 @@ def test_finetune_model_id(tmp_path):
     )
 
     expected_id = f"{project.id}::{task.id}::{finetune.id}"
-    assert finetune.model_id() == expected_id
+    assert finetune.nested_id() == expected_id
 
     finetune_no_task = Finetune(
         name="test-finetune",
@@ -361,7 +361,7 @@ def test_finetune_model_id(tmp_path):
         system_message="Test system message",
     )
     with pytest.raises(ValueError, match="Finetune must have a parent task"):
-        finetune_no_task.model_id()
+        finetune_no_task.nested_id()
 
     task_no_project = Task(name="Test Task", instruction="Test instruction")
     finetune_no_project = Finetune(
@@ -374,7 +374,7 @@ def test_finetune_model_id(tmp_path):
         system_message="Test system message",
     )
     with pytest.raises(ValueError, match="Finetune must have a parent project"):
-        finetune_no_project.model_id()
+        finetune_no_project.nested_id()
 
 
 def test_finetune_parameters_validation():

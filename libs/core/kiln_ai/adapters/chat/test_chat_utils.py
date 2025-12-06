@@ -247,7 +247,7 @@ def test_build_tool_call_messages_raises_on_missing_content():
                 },  # not text type, ignore
                 {"type": "text", "text": " jumps over the lazy dog"},
             ],
-            "The quick brown fox jumps over the lazy dog",
+            "The quick brown fox\n jumps over the lazy dog",
         ),
         (
             [

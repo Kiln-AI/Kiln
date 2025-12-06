@@ -96,9 +96,9 @@ class Finetune(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    def model_id(self) -> str:
+    def nested_id(self) -> str:
         """
-        Build the full model ID for this finetune in the format: project_id::task_id::finetune_id
+        Build the nested ID for this finetune in the format: project_id::task_id::finetune_id
         """
         task = self.parent_task()
         if task is None:
