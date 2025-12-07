@@ -124,7 +124,12 @@ For developers, see our [Kiln Python Library Docs](https://kiln-ai.github.io/Kil
 Our open-source [python library](https://pypi.org/project/kiln-ai/) allows you to integrate Kiln datasets into your own workflows, build fine tunes, use Kiln in Notebooks, build custom tools, and much more! [Read the docs](https://kiln-ai.github.io/Kiln/kiln_core_docs/index.html) for examples.
 
 ```bash
+# Install the Library
 pip install kiln-ai
+# Optional: install support for RAG (larger install)
+pip install kiln-ai[rag]
+# Optional: install support for Google Vertex fine tuning (larger install)
+pip install kiln-ai[vertex]
 ```
 
 ## Learn More
@@ -188,7 +193,7 @@ Why? We’re aiming to make Kiln fair and sustainable:
 
 - Kiln is always free for personal use.
 - Larger for-profit companies using Kiln Desktop may require a license in the future, but it is currently free.
-- This is based on the concept of the [fair code model](https://faircode.io) with the goal of making Kiln sustainable (adapted since Kiln is an app, not a service). 
+- This is based on the concept of the [fair code model](https://faircode.io) with the goal of making Kiln sustainable (adapted since Kiln is an app, not a service).
 
 Open Library and Data Format:
 

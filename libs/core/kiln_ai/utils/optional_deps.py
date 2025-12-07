@@ -8,7 +8,7 @@ with clear error messages when they're not installed.
 from __future__ import annotations
 
 import importlib
-from typing import Any
+from typing import Any, Literal
 
 
 class MissingDependencyError(ImportError):
@@ -17,14 +17,7 @@ class MissingDependencyError(ImportError):
     pass
 
 
-# Map of extra names to their pip install commands
-EXTRA_INSTALL_COMMANDS = {
-    "rag": "kiln-ai[rag]",
-    "vertex": "kiln-ai[vertex]",
-}
-
-
-def lazy_import(module_path: str, extra: str) -> Any:
+def lazy_import(module_path: str, extra: Literal["rag", "vertex"]) -> Any:
     """
     Lazily import an optional dependency module.
 
@@ -54,8 +47,8 @@ def lazy_import(module_path: str, extra: str) -> Any:
         return importlib.import_module(module_path)
     except ImportError as e:
         package = module_path.split(".")[0]
-        install_cmd = EXTRA_INSTALL_COMMANDS.get(extra, f"kiln-ai[{extra}]")
+        install_cmd = f"kiln-ai[{extra}]"
         raise MissingDependencyError(
-            f"This feature requires the '{package}' package. "
-            f"Install it with: pip install {install_cmd}"
+            f"This feature requires the optional dependency '{extra}' for '{package}'. "
+            f"Install it with: `pip install {install_cmd}`, `pip install kiln-ai[all]`, or `uv add {install_cmd}` "
         ) from e

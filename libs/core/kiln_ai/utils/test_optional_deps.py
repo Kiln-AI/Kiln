@@ -1,7 +1,6 @@
 import pytest
 
 from kiln_ai.utils.optional_deps import (
-    EXTRA_INSTALL_COMMANDS,
     MissingDependencyError,
     lazy_import,
 )
@@ -48,7 +47,7 @@ class TestLazyImport:
         with pytest.raises(MissingDependencyError) as exc_info:
             lazy_import("nonexistent_package", "rag")
 
-        assert EXTRA_INSTALL_COMMANDS["rag"] in str(exc_info.value)
+        assert "kiln-ai[rag]" in str(exc_info.value)
 
     def test_error_message_uses_fallback_for_unknown_extra(self):
         """Error message uses fallback format for unknown extras."""
@@ -64,13 +63,3 @@ class TestLazyImport:
 
         assert exc_info.value.__cause__ is not None
         assert isinstance(exc_info.value.__cause__, ImportError)
-
-
-class TestExtraInstallCommands:
-    def test_rag_extra_defined(self):
-        """The rag extra is defined."""
-        assert "rag" in EXTRA_INSTALL_COMMANDS
-
-    def test_vertex_extra_defined(self):
-        """The vertex extra is defined."""
-        assert "vertex" in EXTRA_INSTALL_COMMANDS
