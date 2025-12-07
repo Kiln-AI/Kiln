@@ -1,17 +1,17 @@
+"""
+LanceDB vector store adapter for RAG.
+
+This module requires the 'rag' optional dependencies:
+    pip install kiln-ai[rag]
+"""
+
+from __future__ import annotations
+
 import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Literal, Optional, Set, TypedDict
-
-from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.core.schema import BaseNode, TextNode
-from llama_index.core.vector_stores.types import (
-    VectorStoreQuery as LlamaIndexVectorStoreQuery,
-)
-from llama_index.core.vector_stores.types import VectorStoreQueryResult
-from llama_index.vector_stores.lancedb import LanceDBVectorStore
-from llama_index.vector_stores.lancedb.base import TableNotFoundError
+from typing import TYPE_CHECKING, List, Literal, Optional, Set, TypedDict
 
 from kiln_ai.adapters.vector_store.base_vector_store_adapter import (
     BaseVectorStoreAdapter,
@@ -31,10 +31,23 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.env import temporary_env
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.lock import AsyncLockManager
+from kiln_ai.utils.optional_deps import lazy_import
+
+if TYPE_CHECKING:
+    from llama_index.core import VectorStoreIndex
+    from llama_index.core.schema import BaseNode, TextNode
+    from llama_index.core.vector_stores.types import VectorStoreQueryResult
+    from llama_index.vector_stores.lancedb import LanceDBVectorStore
 
 table_lock_manager = AsyncLockManager()
 
 logger = logging.getLogger(__name__)
+
+
+def _is_table_not_found_error(exc: Exception) -> bool:
+    """Check if an exception is a LanceDB TableNotFoundError."""
+    lancedb_base = lazy_import("llama_index.vector_stores.lancedb.base", "rag")
+    return isinstance(exc, lancedb_base.TableNotFoundError)
 
 
 class LanceDBAdapterQueryKwargs(TypedDict):
@@ -75,7 +88,8 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         if self._index is not None:
             return self._index
 
-        storage_context = StorageContext.from_defaults(
+        llama_core = lazy_import("llama_index.core", "rag")
+        storage_context = llama_core.StorageContext.from_defaults(
             vector_store=self.lancedb_vector_store
         )
 
@@ -87,7 +101,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         # Since our own implementation does not actually use OpenAI, we set a fake API key just to
         # avoid the error
         with temporary_env("OPENAI_API_KEY", "fake-api-key"):
-            self._index = VectorStoreIndex(
+            self._index = llama_core.VectorStoreIndex(
                 [],
                 storage_context=storage_context,
                 embed_model=None,
@@ -100,11 +114,14 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         # which is set through the source node relationship
         try:
             self.index.delete_ref_doc(document_id)
-        except TableNotFoundError:
-            # Table doesn't exist yet, so there's nothing to delete
-            logger.debug(
-                f"Table not found while deleting nodes for document {document_id}, which is expected if the table does not exist yet"
-            )
+        except Exception as e:
+            if _is_table_not_found_error(e):
+                # Table doesn't exist yet, so there's nothing to delete
+                logger.debug(
+                    f"Table not found while deleting nodes for document {document_id}, which is expected if the table does not exist yet"
+                )
+            else:
+                raise
 
     async def get_nodes_by_ids(self, node_ids: List[str]) -> List[BaseNode]:
         try:
@@ -112,11 +129,13 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 node_ids=node_ids
             )
             return chunk_ids_in_database
-        except TableNotFoundError:
-            logger.warning(
-                "Table not found while getting nodes by ids, which may be expected if the table does not exist yet",
-            )
-            return []
+        except Exception as e:
+            if _is_table_not_found_error(e):
+                logger.warning(
+                    "Table not found while getting nodes by ids, which may be expected if the table does not exist yet",
+                )
+                return []
+            raise
 
     async def add_chunks_with_embeddings(
         self,
@@ -275,6 +294,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
         return kwargs
 
     async def search(self, query: VectorStoreQuery) -> List[SearchResult]:
+        vs_types = lazy_import("llama_index.core.vector_stores.types", "rag")
         try:
             if self.lancedb_vector_store.table is None:
                 raise ValueError("Table is not initialized")
@@ -285,21 +305,23 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 # and it never actually knows if it is created so it creates it every time, which when run at high
                 # concurrency causes a Too Many Open Files error
                 query_result = self.lancedb_vector_store.query(
-                    LlamaIndexVectorStoreQuery(
+                    vs_types.VectorStoreQuery(
                         **self.build_kwargs_for_query(query),
                     ),
                     query_type=self.query_type,
                 )
                 return self.format_query_result(query_result)
-        except TableNotFoundError as e:
-            logger.info("Vector store search returned no results: %s", e)
-            return []
         except Warning as e:
             msg = str(e).lower()
             if ("query results are empty" in msg) or (
                 "empty" in msg and "result" in msg
             ):
                 logger.warning("Vector store search returned no results: %s", e)
+                return []
+            raise
+        except Exception as e:
+            if _is_table_not_found_error(e):
+                logger.info("Vector store search returned no results: %s", e)
                 return []
             raise
 
@@ -310,8 +332,10 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                 raise ValueError("Table is not initialized")
             count = table.count_rows()
             return count
-        except TableNotFoundError:
-            return 0
+        except Exception as e:
+            if _is_table_not_found_error(e):
+                return 0
+            raise
 
     @property
     def query_type(self) -> Literal["fts", "hybrid", "vector"]:

@@ -46,9 +46,9 @@ def test_chunker_registry_semantic_returns_semantic_chunker():
         },
     )
 
-    # Patch at the source module since chunker_registry uses lazy imports
+    # Patch at the registry module since it directly imports the chunkers
     with patch(
-        "kiln_ai.adapters.chunkers.semantic_chunker.SemanticChunker"
+        "kiln_ai.adapters.chunkers.chunker_registry.SemanticChunker"
     ) as mock_semantic_chunker:
         instance = chunker_adapter_from_type(ChunkerType.SEMANTIC, config)
         mock_semantic_chunker.assert_called_once_with(config)

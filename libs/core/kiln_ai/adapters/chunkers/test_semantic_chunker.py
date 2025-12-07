@@ -63,7 +63,7 @@ def semantic_chunker_factory():
                 "kiln_ai.adapters.chunkers.semantic_chunker.KilnEmbeddingWrapper"
             ) as mock_wrapper_class,
             patch(
-                "kiln_ai.adapters.chunkers.semantic_chunker.SemanticSplitterNodeParser"
+                "llama_index.core.node_parser.SemanticSplitterNodeParser"
             ) as mock_splitter_class,
             patch(
                 "kiln_ai.adapters.chunkers.semantic_chunker.EmbeddingConfig.from_id_and_parent_path"
@@ -194,7 +194,7 @@ class TestSemanticChunker:
                 "kiln_ai.adapters.chunkers.semantic_chunker.KilnEmbeddingWrapper"
             ) as mock_wrapper_class,
             patch(
-                "kiln_ai.adapters.chunkers.semantic_chunker.SemanticSplitterNodeParser"
+                "llama_index.core.node_parser.SemanticSplitterNodeParser"
             ) as mock_splitter_class,
         ):
             # Setup mocks
