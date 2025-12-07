@@ -365,7 +365,7 @@ async def test_extract_failure_from_bytes_read(mock_litellm_extractor):
             return_value="provider-name/model-name",
         ),
         patch(
-            "kiln_ai.utils.pdf_utils.split_pdf_into_pages",
+            "kiln_ai.adapters.extractors.litellm_extractor.split_pdf_into_pages",
             side_effect=Exception("error from split_pdf_into_pages"),
         ),
     ):
@@ -789,7 +789,7 @@ async def test_extract_pdf_page_by_page_pdf_as_image(
         mock_litellm_extractor.model_provider.multimodal_requires_pdf_as_image = True
 
         with patch(
-            "kiln_ai.utils.pdf_utils.convert_pdf_to_images",
+            "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
             return_value=[mock_image_path],
         ) as mock_convert:
             result = await mock_litellm_extractor.extract(
@@ -831,7 +831,7 @@ async def test_convert_pdf_page_to_image_input_success(
     mock_image_path.write_bytes(b"image-bytes")
 
     with patch(
-        "kiln_ai.utils.pdf_utils.convert_pdf_to_images",
+        "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
         return_value=[mock_image_path],
     ):
         extraction_input = await mock_litellm_extractor.convert_pdf_page_to_image_input(
@@ -860,7 +860,7 @@ async def test_convert_pdf_page_to_image_input_error_on_invalid_count(
         image_paths = [img1, img2]
 
     with patch(
-        "kiln_ai.utils.pdf_utils.convert_pdf_to_images",
+        "kiln_ai.adapters.extractors.litellm_extractor.convert_pdf_to_images",
         return_value=image_paths,
     ):
         with pytest.raises(ValueError, match=r"Expected 1 image, got "):

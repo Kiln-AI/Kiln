@@ -1,6 +1,11 @@
 """
 Utilities for working with PDF files.
+
+This module requires the 'rag' optional dependencies:
+    pip install kiln-ai[rag]
 """
+
+from __future__ import annotations
 
 import asyncio
 import atexit
@@ -10,8 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-import pypdfium2
-from pypdf import PdfReader, PdfWriter
+from kiln_ai.utils.optional_deps import lazy_import
 
 _pdf_conversion_executor: ProcessPoolExecutor | None = None
 
@@ -26,6 +30,10 @@ def get_pdf_conversion_executor() -> ProcessPoolExecutor:
 
 @asynccontextmanager
 async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], None]:
+    pypdf = lazy_import("pypdf", "rag")
+    PdfReader = pypdf.PdfReader
+    PdfWriter = pypdf.PdfWriter
+
     with tempfile.TemporaryDirectory(prefix="kiln_pdf_pages_") as temp_dir:
         page_paths = []
 
@@ -52,6 +60,8 @@ async def split_pdf_into_pages(pdf_path: Path) -> AsyncGenerator[list[Path], Non
 
 
 def _convert_pdf_to_images_sync(pdf_path: Path, output_dir: Path) -> list[Path]:
+    pypdfium2 = lazy_import("pypdfium2", "rag")
+
     image_paths = []
 
     # note: doing this in a thread causes a segfault - but this is slow and blocking
