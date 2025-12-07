@@ -14,15 +14,17 @@ The repair submodule contains an adapter for the repair task.
 The parser submodule contains parsers for the output of the AI models.
 
 The eval submodule contains the code for evaluating the performance of a model.
+
+Note: Some submodules are not imported here to avoid loading optional dependencies.
+- chunkers: Requires 'rag' optional dependencies (pip install kiln-ai[rag])
+- fine_tune: Some providers require optional dependencies
 """
 
 from . import (
     chat,
-    chunkers,
     data_gen,
     eval,
     extractors,
-    fine_tune,
     ml_embedding_model_list,
     ml_model_list,
     model_adapters,
@@ -32,11 +34,9 @@ from . import (
 
 __all__ = [
     "chat",
-    "chunkers",
     "data_gen",
     "eval",
     "extractors",
-    "fine_tune",
     "ml_embedding_model_list",
     "ml_model_list",
     "model_adapters",

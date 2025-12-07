@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import logging
@@ -24,7 +26,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorConfig, ExtractorType, Kind
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 from kiln_ai.utils.litellm import get_litellm_provider_info
-from kiln_ai.utils.pdf_utils import convert_pdf_to_images, split_pdf_into_pages
+from kiln_ai.utils.optional_deps import lazy_import
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +173,8 @@ class LitellmExtractor(BaseExtractor):
     async def convert_pdf_page_to_image_input(
         self, page_path: Path, page_number: int
     ) -> ExtractionInput:
-        image_paths = await convert_pdf_to_images(page_path, page_path.parent)
+        pdf_utils = lazy_import("kiln_ai.utils.pdf_utils", "rag")
+        image_paths = await pdf_utils.convert_pdf_to_images(page_path, page_path.parent)
         if len(image_paths) != 1:
             raise ValueError(
                 f"Expected 1 image, got {len(image_paths)} for page {page_number} in {page_path}"
@@ -240,7 +243,8 @@ class LitellmExtractor(BaseExtractor):
         return content
 
     async def _extract_pdf_page_by_page(self, pdf_path: Path, prompt: str) -> str:
-        async with split_pdf_into_pages(pdf_path) as page_paths:
+        pdf_utils = lazy_import("kiln_ai.utils.pdf_utils", "rag")
+        async with pdf_utils.split_pdf_into_pages(pdf_path) as page_paths:
             page_outcomes: List[str | Exception | None] = [None] * len(page_paths)
 
             extract_page_jobs: list = []

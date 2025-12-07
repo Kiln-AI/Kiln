@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version < '3.11'",
@@ -1348,25 +1348,41 @@ dependencies = [
     { name = "boto3" },
     { name = "coverage" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
-    { name = "google-cloud-aiplatform" },
     { name = "google-genai" },
     { name = "jsonschema" },
-    { name = "lancedb" },
     { name = "litellm" },
-    { name = "llama-index" },
-    { name = "llama-index-vector-stores-lancedb" },
     { name = "mcp", extra = ["cli"] },
     { name = "openai" },
     { name = "pdoc" },
-    { name = "pillow" },
     { name = "pydantic" },
-    { name = "pypdf" },
-    { name = "pypdfium2" },
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
     { name = "pyyaml" },
     { name = "together" },
     { name = "typing-extensions" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "google-cloud-aiplatform" },
+    { name = "lancedb" },
+    { name = "llama-index" },
+    { name = "llama-index-vector-stores-lancedb" },
+    { name = "pillow" },
+    { name = "pypdf" },
+    { name = "pypdfium2" },
+    { name = "vertexai" },
+]
+rag = [
+    { name = "lancedb" },
+    { name = "llama-index" },
+    { name = "llama-index-vector-stores-lancedb" },
+    { name = "pillow" },
+    { name = "pypdf" },
+    { name = "pypdfium2" },
+]
+vertex = [
+    { name = "google-cloud-aiplatform" },
     { name = "vertexai" },
 ]
 
@@ -1386,27 +1402,30 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.37.10" },
     { name = "coverage", specifier = ">=7.6.4" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.0.0" },
-    { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
+    { name = "google-cloud-aiplatform", marker = "extra == 'vertex'", specifier = ">=1.84.0" },
     { name = "google-genai", specifier = ">=1.21.1" },
     { name = "jsonschema", specifier = ">=4.23.0" },
-    { name = "lancedb", specifier = ">=0.24.2" },
+    { name = "kiln-ai", extras = ["rag"], marker = "extra == 'all'", editable = "libs/core" },
+    { name = "kiln-ai", extras = ["vertex"], marker = "extra == 'all'", editable = "libs/core" },
+    { name = "lancedb", marker = "extra == 'rag'", specifier = ">=0.24.2" },
     { name = "litellm", specifier = ">=1.80.5" },
-    { name = "llama-index", specifier = ">=0.13.3" },
-    { name = "llama-index-vector-stores-lancedb", specifier = ">=0.4.2" },
+    { name = "llama-index", marker = "extra == 'rag'", specifier = ">=0.13.3" },
+    { name = "llama-index-vector-stores-lancedb", marker = "extra == 'rag'", specifier = ">=0.4.2" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.10.1" },
     { name = "openai", specifier = ">=1.53.0" },
     { name = "pdoc", specifier = ">=15.0.0" },
-    { name = "pillow", specifier = ">=11.1.0" },
+    { name = "pillow", marker = "extra == 'rag'", specifier = ">=11.1.0" },
     { name = "pydantic", specifier = ">=2.9.2" },
-    { name = "pypdf", specifier = ">=6.0.0" },
-    { name = "pypdfium2", specifier = ">=4.30.0" },
+    { name = "pypdf", marker = "extra == 'rag'", specifier = ">=6.0.0" },
+    { name = "pypdfium2", marker = "extra == 'rag'", specifier = ">=4.30.0" },
     { name = "pytest-benchmark", specifier = ">=5.1.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "together", git = "https://github.com/scosman/together-python" },
     { name = "typing-extensions", specifier = ">=4.12.2" },
-    { name = "vertexai", specifier = ">=1.43.0" },
+    { name = "vertexai", marker = "extra == 'vertex'", specifier = ">=1.43.0" },
 ]
+provides-extras = ["rag", "vertex", "all"]
 
 [package.metadata.requires-dev]
 dev = [
