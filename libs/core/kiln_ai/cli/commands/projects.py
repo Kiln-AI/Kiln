@@ -25,6 +25,7 @@ def print_projects_table(title: str = "Kiln Projects") -> int:
         return 0
 
     table = Table(title=title)
+    table.add_column("ID")
     table.add_column("Name", style="cyan", no_wrap=True)
     table.add_column("Path", style="dim")
 
@@ -32,10 +33,10 @@ def print_projects_table(title: str = "Kiln Projects") -> int:
     for project_path in project_paths:
         try:
             project = Project.load_from_file(project_path)
-            table.add_row(project.name, str(project_path))
+            table.add_row(project.id, project.name, str(project_path))
             loaded_count += 1
         except Exception:
-            table.add_row("[red]<failed to load>[/red]", str(project_path))
+            table.add_row("[red]<failed to load>[/red]", "", str(project_path))
 
     console.print(table)
     return loaded_count
