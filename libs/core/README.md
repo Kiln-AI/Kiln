@@ -107,9 +107,19 @@ for task in tasks:
 
 If you've already created a Kiln task and want to run it as part of a Python app you can follow this example.
 
+**Step 1: Export your Kiln task/project**
+
+You can run any Kiln task from code using it's project file/folder on disk. However, these folders can contain thousands of files relating to past runs and evals, which is more than you probably want to deploy to a service. Only a few of these files are needed for running the task: you can export a minimal project folder with on the necessary files to run a task by running our CLI:
+
+```bash
+uvx kiln_ai package_project "/path/to/your/project.kiln" -t TASK_ID_TO_EXPORT
+```
+
+**Step 2: Run Kiln Task from Code**
+
 Prerequisites:
 
-- Already have a Kiln Task created and saved to disk at `TASK_PATH`. It doesn't matter if you created it using the Kiln app or the library.
+- Already have a Kiln Task created and saved to disk at `TASK_PATH`. It doesn't matter if you created it using the Kiln app, the Kiln library, or exported it using the command above.
 - Set a default run configuration in the Kiln UI specifying how to run the task: model, AI provider, etc. Alternatively you can create a RunConfigProperties instance in code.
 - Set up any API keys required for the task. If running on the same machine as the Kiln app, these will already be saved in `~/.kiln_ai/settings.yaml` and will be loaded automatically. If running on a server, you can set the required environment variables (see `libs/core/kiln_ai/utils/config.py` for a list).
 - If your task uses RAG, ensure you have run search indexing on this machine with the Kiln UI or via the library.
