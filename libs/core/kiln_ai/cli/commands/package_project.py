@@ -1,3 +1,6 @@
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Annotated
 
@@ -206,6 +209,141 @@ def validate_and_build_prompts(
     return task_prompts
 
 
+def create_export_directory(project: Project) -> tuple[Path, Project]:
+    """Create a temporary export directory and copy project.kiln into it.
+
+    Returns:
+        Tuple of (temp_dir_path, exported_project)
+    """
+    temp_dir = Path(tempfile.mkdtemp(prefix="kiln_export_"))
+
+    if project.path is None:
+        raise ValueError("Project path is not set")
+
+    shutil.copy(project.path, temp_dir / "project.kiln")
+    exported_project = Project.load_from_file(temp_dir / "project.kiln")
+
+    return temp_dir, exported_project
+
+
+def export_task(
+    task: Task, run_config: TaskRunConfig, exported_project: Project
+) -> tuple[Task, TaskRunConfig]:
+    """Copy a task and its default run config to the export directory.
+
+    Returns:
+        Tuple of (exported_task, exported_run_config)
+    """
+    if task.path is None:
+        raise ValueError(f"Task '{task.name}' path is not set")
+    if run_config.path is None:
+        raise ValueError(f"Run config '{run_config.name}' path is not set")
+    if exported_project.path is None:
+        raise ValueError("Exported project path is not set")
+
+    task_folder_name = task.path.parent.name
+    run_config_folder_name = run_config.path.parent.name
+
+    task_dir = exported_project.path.parent / "tasks" / task_folder_name
+    task_dir.mkdir(parents=True, exist_ok=True)
+    exported_task_path = task_dir / "task.kiln"
+    shutil.copy(task.path, exported_task_path)
+
+    exported_task = Task.load_from_file(exported_task_path)
+    exported_task.parent = exported_project
+
+    run_config_dir = task_dir / "run_configs" / run_config_folder_name
+    run_config_dir.mkdir(parents=True, exist_ok=True)
+    exported_run_config_path = run_config_dir / "task_run_config.kiln"
+    shutil.copy(run_config.path, exported_run_config_path)
+
+    exported_run_config = TaskRunConfig.load_from_file(exported_run_config_path)
+    exported_run_config.parent = exported_task
+
+    return exported_task, exported_run_config
+
+
+def save_prompt_to_task(
+    prompt: Prompt, exported_task: Task, exported_run_config: TaskRunConfig
+) -> Prompt:
+    """Save a prompt to the exported task and update the run config to reference it.
+
+    Returns:
+        The saved prompt
+    """
+    prompt = prompt.model_copy(deep=True)
+    prompt.parent = exported_task
+    prompt.save_to_file()
+
+    # check it saved to the correct location
+    saved = False
+    for exported_task_prompt in exported_task.prompts(readonly=True):
+        if (
+            exported_task_prompt.path == prompt.path
+            and exported_task_prompt.id == prompt.id
+        ):
+            saved = True
+            break
+    if not saved:
+        raise ValueError(
+            f"Prompt saved to incorrect location: {prompt.path} != {exported_task_prompt.path}"
+        )
+
+    exported_run_config.run_config_properties.prompt_id = f"id::{prompt.id}"
+    exported_run_config.save_to_file()
+
+    return prompt
+
+
+def validate_exported_prompts(
+    original_prompts: dict[str, Prompt],
+    exported_tasks: dict[str, Task],
+    exported_run_configs: dict[str, TaskRunConfig],
+) -> None:
+    """Validate that exported prompts match the originals."""
+    for task_id, original_prompt in original_prompts.items():
+        exported_task = exported_tasks[task_id]
+        exported_run_config = exported_run_configs[task_id]
+
+        exported_prompts_list = exported_task.prompts()
+        if not exported_prompts_list:
+            raise ValueError(
+                f"No prompts found for exported task '{exported_task.name}'"
+            )
+
+        rebuilt_prompts = validate_and_build_prompts(
+            [exported_task], {task_id: exported_run_config}
+        )
+        rebuilt_prompt = rebuilt_prompts[task_id]
+
+        if rebuilt_prompt.prompt != original_prompt.prompt:
+            raise ValueError(
+                f"Prompt mismatch for task '{exported_task.name}': "
+                f"exported prompt does not match original"
+            )
+
+        if (
+            rebuilt_prompt.chain_of_thought_instructions
+            != original_prompt.chain_of_thought_instructions
+        ):
+            raise ValueError(
+                f"Chain of thought mismatch for task '{exported_task.name}': "
+                f"exported prompt does not match original"
+            )
+
+
+def create_zip(source_dir: Path, output_path: Path) -> None:
+    """Create a zip file from the source directory contents."""
+    output_path = output_path.resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for file_path in source_dir.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(source_dir)
+                zipf.write(file_path, arcname)
+
+
 def package_project(
     project_path: Annotated[
         Path | None,
@@ -268,9 +406,59 @@ def package_project(
     task_prompts = validate_and_build_prompts(validated_tasks, run_configs)
     console.print("[green]✓[/green] Built and validated prompts")
 
-    # Stage 1 complete - return prompts for Stage 2
     console.print("\n[green]Validation complete![/green]")
-    console.print(f"[dim]Output will be saved to: {output}[/dim]")
 
-    # Return for Stage 2 (and for testing)
+    # Stage 2: Copy and Zip
+
+    console.print("\n[bold]Exporting project...[/bold]")
+
+    # 1. Create export directory with project.kiln
+    temp_dir, exported_project = create_export_directory(project)
+    console.print("[green]✓[/green] Created export directory")
+
+    try:
+        # 2. Export tasks and run configs
+        exported_tasks: dict[str, Task] = {}
+        exported_run_configs: dict[str, TaskRunConfig] = {}
+
+        for task in validated_tasks:
+            run_config = run_configs[task.id]  # type: ignore
+            exported_task, exported_run_config = export_task(
+                task, run_config, exported_project
+            )
+            exported_tasks[task.id] = exported_task  # type: ignore
+            exported_run_configs[task.id] = exported_run_config  # type: ignore
+
+        console.print(f"[green]✓[/green] Exported {len(validated_tasks)} task(s)")
+
+        # 3. Save prompts to exported tasks
+        for task in validated_tasks:
+            prompt = task_prompts[task.id]  # type: ignore
+            exported_task = exported_tasks[task.id]  # type: ignore
+            exported_run_config = exported_run_configs[task.id]  # type: ignore
+            save_prompt_to_task(prompt, exported_task, exported_run_config)
+
+        console.print("[green]✓[/green] Saved prompts to exported tasks")
+
+        # 4. Validate exported prompts match originals
+        validate_exported_prompts(task_prompts, exported_tasks, exported_run_configs)
+        console.print("[green]✓[/green] Validated exported prompts")
+
+        # 5. Create zip file
+        create_zip(temp_dir, output)
+        console.print(f"[green]✓[/green] Created zip file: {output}")
+
+    finally:
+        # Clean up temp directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # Final success message
+    console.print(
+        f"\n[bold green]Success![/bold green] Your project has been packaged and saved to:\n"
+        f"  [cyan]{output.resolve()}[/cyan]\n\n"
+        f"Follow the steps at [link=https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html#run-a-kiln-task-from-python]"
+        f"https://kiln-ai.github.io/Kiln/kiln_core_docs/kiln_ai.html#run-a-kiln-task-from-python[/link]\n"
+        f"to load and run it from code."
+    )
+
     return task_prompts

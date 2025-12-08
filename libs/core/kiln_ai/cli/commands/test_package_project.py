@@ -1,3 +1,4 @@
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,13 +15,18 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from .package_project import (
     build_prompt_from_builder,
     check_for_tools,
+    create_export_directory,
+    create_zip,
+    export_task,
     get_default_run_config,
     is_dynamic_prompt,
     load_project,
     package_project,
     parse_task_ids,
     print_tasks_table,
+    save_prompt_to_task,
     validate_and_build_prompts,
+    validate_exported_prompts,
     validate_tasks,
 )
 
@@ -458,3 +464,332 @@ class TestBuildPromptFromBuilder:
         assert isinstance(result, Prompt)
         assert result.name == "Exported Prompt"
         assert "Test instruction" in result.prompt
+
+
+class TestCreateExportDirectory:
+    def test_creates_directory_with_project(self, temp_project):
+        """Test that export directory is created with project.kiln copied."""
+        project = temp_project["project"]
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            assert temp_dir.exists()
+            assert (temp_dir / "project.kiln").exists()
+            assert exported_project.name == project.name
+            assert exported_project.path == temp_dir / "project.kiln"
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_raises_error_if_project_path_not_set(self):
+        """Test that error is raised if project path is not set."""
+        project = Project(name="No Path Project")
+
+        with pytest.raises(ValueError, match="Project path is not set"):
+            create_export_directory(project)
+
+
+class TestExportTask:
+    def test_exports_task_with_run_config(self, temp_project):
+        """Test that task and run config are exported correctly."""
+        project = temp_project["project"]
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            exported_task, exported_run_config = export_task(
+                task, run_config, exported_project
+            )
+
+            assert exported_task.name == task.name
+            assert exported_task.instruction == task.instruction
+            assert exported_task.id == task.id
+            assert exported_task.path is not None
+            assert exported_task.path.exists()
+
+            assert exported_run_config.name == run_config.name
+            assert exported_run_config.id == run_config.id
+            assert exported_run_config.path is not None
+            assert exported_run_config.path.exists()
+
+            task_folder = exported_task.path.parent
+            assert task_folder.name == temp_project["task"].path.parent.name
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_preserves_task_folder_name(self, temp_project):
+        """Test that the original task folder name is preserved."""
+        project = temp_project["project"]
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+        assert task.path is not None
+        original_folder_name = task.path.parent.name
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            exported_task, _ = export_task(task, run_config, exported_project)
+
+            assert exported_task.path is not None
+            assert exported_task.path.parent.name == original_folder_name
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+class TestSavePromptToTask:
+    def test_saves_prompt_and_updates_run_config(self, temp_project):
+        """Test that prompt is saved and run config is updated."""
+        project = temp_project["project"]
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            exported_task, exported_run_config = export_task(
+                task, run_config, exported_project
+            )
+
+            prompt = Prompt(
+                name="Test Prompt",
+                prompt="Test prompt content",
+                chain_of_thought_instructions="Think step by step",
+            )
+
+            saved_prompt = save_prompt_to_task(
+                prompt, exported_task, exported_run_config
+            )
+
+            assert saved_prompt.path is not None
+            assert saved_prompt.path.exists()
+            assert saved_prompt.prompt == "Test prompt content"
+
+            assert exported_run_config.path is not None
+            reloaded_run_config = TaskRunConfig.load_from_file(exported_run_config.path)
+            assert (
+                reloaded_run_config.run_config_properties.prompt_id
+                == f"id::{saved_prompt.id}"
+            )
+
+            assert exported_task.path is not None
+            exported_task_reloaded = Task.load_from_file(exported_task.path)
+            prompts = exported_task_reloaded.prompts()
+            assert len(prompts) == 1
+            assert prompts[0].id == saved_prompt.id
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+class TestValidateExportedPrompts:
+    def test_validates_matching_prompts(self, temp_project):
+        """Test that validation passes when prompts match."""
+        project = temp_project["project"]
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            exported_task, exported_run_config = export_task(
+                task, run_config, exported_project
+            )
+
+            original_prompt = Prompt(
+                name="Test Prompt",
+                prompt="Test prompt content",
+                chain_of_thought_instructions=None,
+            )
+
+            save_prompt_to_task(original_prompt, exported_task, exported_run_config)
+
+            assert task.id is not None
+            validate_exported_prompts(
+                {task.id: original_prompt},
+                {task.id: exported_task},
+                {task.id: exported_run_config},
+            )
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_raises_error_on_prompt_mismatch(self, temp_project):
+        """Test that validation fails when prompts don't match."""
+        project = temp_project["project"]
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            exported_task, exported_run_config = export_task(
+                task, run_config, exported_project
+            )
+
+            original_prompt = Prompt(
+                name="Test Prompt",
+                prompt="Original prompt content",
+                chain_of_thought_instructions=None,
+            )
+
+            different_prompt = Prompt(
+                name="Test Prompt",
+                prompt="Different prompt content",
+                chain_of_thought_instructions=None,
+                parent=exported_task,
+            )
+            different_prompt.save_to_file()
+
+            exported_run_config.run_config_properties.prompt_id = (
+                f"id::{different_prompt.id}"
+            )
+            exported_run_config.save_to_file()
+
+            assert task.id is not None
+            with pytest.raises(ValueError, match="Prompt mismatch"):
+                validate_exported_prompts(
+                    {task.id: original_prompt},
+                    {task.id: exported_task},
+                    {task.id: exported_run_config},
+                )
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+class TestCreateZip:
+    def test_creates_valid_zip_file(self, tmp_path: Path):
+        """Test that a valid zip file is created."""
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        (source_dir / "file1.txt").write_text("content1")
+        (source_dir / "subdir").mkdir()
+        (source_dir / "subdir" / "file2.txt").write_text("content2")
+
+        output_path = tmp_path / "output.zip"
+
+        create_zip(source_dir, output_path)
+
+        assert output_path.exists()
+
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            names = zipf.namelist()
+            assert "file1.txt" in names
+            assert "subdir/file2.txt" in names
+
+            assert zipf.read("file1.txt").decode() == "content1"
+            assert zipf.read("subdir/file2.txt").decode() == "content2"
+
+    def test_creates_parent_directories(self, tmp_path: Path):
+        """Test that parent directories are created for output path."""
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        (source_dir / "file.txt").write_text("content")
+
+        output_path = tmp_path / "nested" / "dirs" / "output.zip"
+
+        create_zip(source_dir, output_path)
+
+        assert output_path.exists()
+
+
+class TestPackageProjectEndToEnd:
+    def test_creates_zip_with_correct_structure(self, temp_project, tmp_path: Path):
+        """Test full end-to-end export creates correct zip structure."""
+        output_path = tmp_path / "export" / "output.zip"
+
+        package_project(
+            project_path=temp_project["path"],
+            tasks=temp_project["task"].id,
+            all_tasks=False,
+            output=output_path,
+        )
+
+        assert output_path.exists()
+
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            names = zipf.namelist()
+
+            assert "project.kiln" in names
+
+            task_files = [
+                n for n in names if n.startswith("tasks/") and n.endswith("task.kiln")
+            ]
+            assert len(task_files) == 1
+
+            run_config_files = [
+                n for n in names if "run_configs" in n and n.endswith(".kiln")
+            ]
+            assert len(run_config_files) == 1
+
+            prompt_files = [n for n in names if "prompts" in n and n.endswith(".kiln")]
+            assert len(prompt_files) == 1
+
+    def test_exported_project_is_loadable(self, temp_project, tmp_path: Path):
+        """Test that the exported project can be loaded and used."""
+        output_path = tmp_path / "output.zip"
+        extract_path = tmp_path / "extracted"
+
+        package_project(
+            project_path=temp_project["path"],
+            tasks=temp_project["task"].id,
+            all_tasks=False,
+            output=output_path,
+        )
+
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        assert loaded_project.name == temp_project["project"].name
+
+        tasks = loaded_project.tasks()
+        assert len(tasks) == 1
+        assert tasks[0].id == temp_project["task"].id
+
+        prompts = tasks[0].prompts()
+        assert len(prompts) == 1
+
+        run_configs = tasks[0].run_configs()
+        assert len(run_configs) == 1
+        assert run_configs[0].run_config_properties.prompt_id == f"id::{prompts[0].id}"
+
+    def test_exports_multiple_tasks(
+        self, temp_project_with_multiple_tasks, tmp_path: Path
+    ):
+        """Test exporting multiple tasks."""
+        output_path = tmp_path / "output.zip"
+
+        package_project(
+            project_path=temp_project_with_multiple_tasks["path"],
+            tasks="",
+            all_tasks=True,
+            output=output_path,
+        )
+
+        assert output_path.exists()
+
+        extract_path = tmp_path / "extracted"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        tasks = loaded_project.tasks()
+        assert len(tasks) == 3
+
+        for task in tasks:
+            prompts = task.prompts()
+            assert len(prompts) == 1
+            run_configs = task.run_configs()
+            assert len(run_configs) == 1
