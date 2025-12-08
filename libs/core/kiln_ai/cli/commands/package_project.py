@@ -2,7 +2,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
@@ -11,9 +11,19 @@ from rich.table import Table
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
 from kiln_ai.cli.commands.projects import print_projects_table
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.datamodel.tool_id import (
+    KILN_TASK_TOOL_ID_PREFIX,
+    MCP_LOCAL_TOOL_ID_PREFIX,
+    MCP_REMOTE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+    kiln_task_server_id_from_tool_id,
+    mcp_server_and_tool_name_from_id,
+)
 
 console = Console()
 
@@ -129,19 +139,212 @@ def get_default_run_config(task: Task) -> TaskRunConfig:
     return run_config
 
 
-def check_for_tools(run_config: TaskRunConfig, task: Task) -> None:
-    """Check if the run config uses tools and warn the user."""
+def get_tools_from_run_config(run_config: TaskRunConfig) -> list[str]:
+    """Get the list of tool IDs from a run config."""
     if (
         run_config.run_config_properties.tools_config
         and run_config.run_config_properties.tools_config.tools
     ):
+        return run_config.run_config_properties.tools_config.tools
+    return []
+
+
+def collect_subtask_ids_from_tools(
+    task_ids: list[str], project: Project
+) -> tuple[set[str], list[str]]:
+    """Collect additional task IDs needed as sub-tasks from kiln_task tools.
+
+    This runs early, before full task validation, to discover sub-tasks that
+    need to be included in the export.
+
+    Args:
+        task_ids: Initial list of task IDs to export
+        project: The project containing the tasks
+
+    Returns:
+        Tuple of (additional_task_ids, subtask_names) where:
+        - additional_task_ids: Set of task IDs to add to export
+        - subtask_names: List of task names for display
+    """
+    additional_task_ids: set[str] = set()
+    subtask_names: list[str] = []
+    available_tasks = project.tasks()
+    task_id_to_task = {task.id: task for task in available_tasks if task.id}
+    external_servers = project.external_tool_servers()
+    server_id_to_server = {
+        server.id: server for server in external_servers if server.id
+    }
+
+    for task_id in task_ids:
+        if task_id not in task_id_to_task:
+            continue
+
+        task = task_id_to_task[task_id]
+        if not task.default_run_config_id:
+            continue
+
+        run_configs = task.run_configs()
+        run_config = next(
+            (rc for rc in run_configs if rc.id == task.default_run_config_id), None
+        )
+        if not run_config:
+            continue
+
+        tools = get_tools_from_run_config(run_config)
+        for tool_id in tools:
+            if tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+                server_id = kiln_task_server_id_from_tool_id(tool_id)
+                server = server_id_to_server.get(server_id)
+                if server and server.properties:
+                    subtask_id = server.properties.get("task_id")
+                    if (
+                        subtask_id
+                        and subtask_id not in task_ids
+                        and subtask_id not in additional_task_ids
+                    ):
+                        additional_task_ids.add(subtask_id)
+                        subtask = task_id_to_task.get(subtask_id)
+                        if subtask:
+                            subtask_names.append(subtask.name)
+
+    return additional_task_ids, subtask_names
+
+
+def classify_tool_id(
+    tool_id: str,
+) -> Literal["builtin", "kiln_task", "mcp_remote", "mcp_local", "rag", "unknown"]:
+    """Classify a tool ID into its type category.
+
+    Returns one of: 'builtin', 'kiln_task', 'mcp_remote', 'mcp_local', 'rag', 'unknown'
+    """
+    if tool_id in [member.value for member in KilnBuiltInToolId]:
+        return "builtin"
+    elif tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX):
+        return "kiln_task"
+    elif tool_id.startswith(MCP_REMOTE_TOOL_ID_PREFIX):
+        return "mcp_remote"
+    elif tool_id.startswith(MCP_LOCAL_TOOL_ID_PREFIX):
+        return "mcp_local"
+    elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
+        return "rag"
+    else:
+        return "unknown"
+
+
+def validate_tools(tasks: list[Task], run_configs: dict[str, TaskRunConfig]) -> None:
+    """Validate all tools in the run configs and handle each type appropriately.
+
+    Args:
+        tasks: List of tasks to validate
+        run_configs: Dictionary mapping task IDs to their run configs
+
+    Raises:
+        typer.Exit: If validation fails or user declines to continue
+    """
+    has_mcp_local = False
+    mcp_local_task_names: list[str] = []
+    has_mcp_remote = False
+    mcp_remote_task_names: list[str] = []
+
+    for task in tasks:
+        run_config = run_configs.get(task.id)  # type: ignore
+        if not run_config:
+            continue
+
+        tools = get_tools_from_run_config(run_config)
+        for tool_id in tools:
+            tool_type = classify_tool_id(tool_id)
+
+            if tool_type == "builtin":
+                # Built-in tools are fine, no action needed
+                pass
+            elif tool_type == "kiln_task":
+                # Kiln task tools are handled by collect_subtask_ids_from_tools
+                pass
+            elif tool_type == "mcp_remote":
+                # Remote MCP tools are fine, no action needed
+                if task.name not in mcp_remote_task_names:
+                    has_mcp_remote = True
+                    mcp_remote_task_names.append(task.name)
+                pass
+            elif tool_type == "mcp_local":
+                # Track for later prompt
+                if task.name not in mcp_local_task_names:
+                    has_mcp_local = True
+                    mcp_local_task_names.append(task.name)
+                pass
+            elif tool_type == "rag":
+                console.print(f"[red]Error:[/red] Task '{task.name}' uses a RAG tool.")
+                console.print(
+                    "\nThe project package tool does not currently support running tasks with RAG. "
+                    "We have dedicated instructions for deploying Kiln RAG tasks here:\n"
+                    "[link=https://docs.kiln.tech/docs/documents-and-search-rag#deploying-your-rag]"
+                    "https://docs.kiln.tech/docs/documents-and-search-rag#deploying-your-rag[/link]"
+                )
+                raise typer.Exit(1)
+            else:
+                console.print(
+                    f'[red]Error:[/red] This task uses an unrecognized tool type: "{tool_id}". '
+                    "Please contact Kiln team for assistance."
+                )
+                raise typer.Exit(1)
+
+    # Prompt for MCP local tools after checking all tasks
+    if has_mcp_local:
         console.print(
-            f"[yellow]Warning:[/yellow] Task '{task.name}' uses tools in its default run config."
+            f"\n[yellow]Warning:[/yellow] The following tasks require local MCP tools: "
+            f"{', '.join(mcp_local_task_names)}"
         )
         console.print(
-            "[red]Error:[/red] Tools are not currently supported in exported projects."
+            "\nThis task requires a MCP tool. You'll need to manually install the needed "
+            "MCP server on any machine you run this task on."
         )
-        raise typer.Exit(1)
+        if not typer.confirm("Continue?"):
+            raise typer.Exit(0)
+
+    if has_mcp_remote:
+        console.print(
+            f"\n[yellow]Warning:[/yellow] The following tasks require remote MCP tools: "
+            f"{', '.join(mcp_remote_task_names)}"
+        )
+        console.print(
+            "\nThese remote MCP tools may require configuring secrets like API keys or other credentials. This must be done on any machine you run this task on."
+        )
+        if not typer.confirm("Continue?"):
+            raise typer.Exit(0)
+
+
+def collect_required_tool_servers(
+    tasks: list[Task], run_configs: dict[str, TaskRunConfig]
+) -> set[str]:
+    """Collect the IDs of external tool servers needed by the tasks.
+
+    Args:
+        tasks: List of tasks to check
+        run_configs: Dictionary mapping task IDs to their run configs
+
+    Returns:
+        Set of server IDs that need to be exported
+    """
+    server_ids: set[str] = set()
+
+    for task in tasks:
+        run_config = run_configs.get(task.id)  # type: ignore
+        if not run_config:
+            continue
+
+        tools = get_tools_from_run_config(run_config)
+        for tool_id in tools:
+            tool_type = classify_tool_id(tool_id)
+
+            if tool_type == "kiln_task":
+                server_id = kiln_task_server_id_from_tool_id(tool_id)
+                server_ids.add(server_id)
+            elif tool_type in ("mcp_remote", "mcp_local"):
+                server_id, _ = mcp_server_and_tool_name_from_id(tool_id)
+                server_ids.add(server_id)
+
+    return server_ids
 
 
 def is_dynamic_prompt(prompt_id: str) -> bool:
@@ -332,6 +535,43 @@ def validate_exported_prompts(
             )
 
 
+def export_tool_servers(
+    server_ids: set[str],
+    project: Project,
+    exported_project: Project,
+) -> None:
+    """Export external tool servers needed by the tasks.
+
+    Args:
+        server_ids: Set of server IDs to export
+        project: The original project
+        exported_project: The exported project to copy servers into
+    """
+    if not server_ids:
+        return
+
+    if exported_project.path is None:
+        raise ValueError("Exported project path is not set")
+
+    for server in project.external_tool_servers():
+        if server.id not in server_ids:
+            continue
+        if server.path is None:
+            raise ValueError(f"Server '{server.name}' path is not set")
+
+        folder_name = server.path.parent.name
+        server_dir = (
+            exported_project.path.parent / "external_tool_servers" / folder_name
+        )
+        server_dir.mkdir(parents=True, exist_ok=True)
+
+        exported_server_path = server_dir / "external_tool_server.kiln"
+        shutil.copy(server.path, exported_server_path)
+
+        exported_server = ExternalToolServer.load_from_file(exported_server_path)
+        exported_server.parent = exported_project
+
+
 def create_zip(source_dir: Path, output_path: Path) -> None:
     """Create a zip file from the source directory contents."""
     output_path = output_path.resolve()
@@ -388,21 +628,39 @@ def package_project(
         raise typer.Exit(1)
 
     task_ids = parse_task_ids(tasks, all_tasks, available_tasks)
+
+    # 3. Collect additional task IDs from kiln_task tools (sub-tasks)
+    additional_task_ids, subtask_names = collect_subtask_ids_from_tools(
+        task_ids, project
+    )
+    if additional_task_ids:
+        console.print(
+            f"[cyan]Adding {len(additional_task_ids)} task(s) to export. "
+            f"These are required as sub-tasks: {', '.join(subtask_names)}[/cyan]"
+        )
+        task_ids = list(set(task_ids) | additional_task_ids)
+
     validated_tasks = validate_tasks(task_ids, project)
     console.print(
         f"[green]✓[/green] Validated {len(validated_tasks)} task(s): {', '.join(t.name for t in validated_tasks)}"
     )
 
-    # 3. Validate run configs and check for tools
+    # 4. Validate run configs
     run_configs: dict[str, TaskRunConfig] = {}
     for task in validated_tasks:
         run_config = get_default_run_config(task)
-        check_for_tools(run_config, task)
         run_configs[task.id] = run_config  # type: ignore
 
     console.print("[green]✓[/green] Validated default run configs")
 
-    # 4. Build and validate prompts
+    # 5. Validate all tools in run configs
+    validate_tools(validated_tasks, run_configs)
+    console.print("[green]✓[/green] Validated tools")
+
+    # 6. Collect required tool servers
+    required_server_ids = collect_required_tool_servers(validated_tasks, run_configs)
+
+    # 7. Build and validate prompts
     task_prompts = validate_and_build_prompts(validated_tasks, run_configs)
     console.print("[green]✓[/green] Built and validated prompts")
 
@@ -444,7 +702,14 @@ def package_project(
         validate_exported_prompts(task_prompts, exported_tasks, exported_run_configs)
         console.print("[green]✓[/green] Validated exported prompts")
 
-        # 5. Create zip file
+        # 5. Export required tool servers
+        export_tool_servers(required_server_ids, project, exported_project)
+        if required_server_ids:
+            console.print(
+                f"[green]✓[/green] Exported {len(required_server_ids)} tool server(s)"
+            )
+
+        # 6. Create zip file
         create_zip(temp_dir, output)
         console.print(f"[green]✓[/green] Created zip file: {output}")
 
