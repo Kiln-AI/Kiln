@@ -37,6 +37,7 @@ class EvalTemplateId(str, Enum):
     """
 
     kiln_requirements = "kiln_requirements"
+    desired_behaviour = "desired_behaviour"
     issue = "kiln_issue"
     tool_call = "tool_call"
     toxicity = "toxicity"

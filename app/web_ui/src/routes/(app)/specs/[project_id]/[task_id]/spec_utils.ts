@@ -170,8 +170,11 @@ function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
   if (spec_type === "reference_answer_accuracy") {
     return "rag"
   }
-  if (spec_type === "behaviour") {
-    return null
+  if (spec_type === "desired_behaviour") {
+    return "desired_behaviour"
+  }
+  if (spec_type === "issue") {
+    return "kiln_issue"
   }
   if (spec_type === "factual_correctness") {
     return "factual_correctness"

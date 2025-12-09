@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Annotated, Any, Literal, TypeVar
 
 from pydantic import AfterValidator
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 T = TypeVar("T")
 
@@ -11,7 +11,8 @@ class SpecType(str, Enum):
     """Defines the type of spec."""
 
     # Functionality
-    behaviour = "behaviour"
+    desired_behaviour = "desired_behaviour"
+    issue = "issue"
     tone = "tone"
     formatting = "formatting"
     localization = "localization"
@@ -53,42 +54,81 @@ def validate_string_properties(
     Returns:
         The validated properties dictionary
     """
+    # Check that the required fields are present and not empty
     props_dict: Any = properties
     for field in required_fields:
         value = props_dict.get(field)
         if value is None or not value.strip():
             raise ValueError(f"{field} cannot be empty")
 
+    # Check that optional fields are not empty if provided (but can be missing or None)
     if optional_fields:
         for field in optional_fields:
             value = props_dict.get(field)
+            # If the field is present and not None, it must not be empty or whitespace-only
             if value is not None and not value.strip():
                 raise ValueError(f"{field} if provided cannot be empty")
 
+    # Check that there are no fields that shouldn't belong to the properties dictionary
+    allowed_fields = set(required_fields)
+    if optional_fields:
+        allowed_fields.update(optional_fields)
+    # spec_type is always allowed as it's present in all property TypedDicts
+    allowed_fields.add("spec_type")
+
+    for field in props_dict.keys():
+        if field not in allowed_fields:
+            raise ValueError(
+                f"{field} is not a valid property for {type(properties).__name__}"
+            )
     return properties
 
 
-class BehaviourProperties(TypedDict, total=True):
-    spec_type: Literal[SpecType.behaviour]
+class DesiredBehaviourProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.desired_behaviour]
     base_instruction: str
-    behavior_description: str
-    correct_behavior_examples: str | None
-    incorrect_behavior_examples: str | None
+    desired_behaviour_description: str
+    correct_behaviour_examples: NotRequired[str]
+    incorrect_behaviour_examples: NotRequired[str]
 
 
-def validate_behaviour_properties(
-    properties: BehaviourProperties,
-) -> BehaviourProperties:
+def validate_desired_behaviour_properties(
+    properties: DesiredBehaviourProperties,
+) -> DesiredBehaviourProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "behavior_description"],
-        optional_fields=["correct_behavior_examples", "incorrect_behavior_examples"],
+        required_fields=["base_instruction", "desired_behaviour_description"],
+        optional_fields=["correct_behaviour_examples", "incorrect_behaviour_examples"],
     )
 
 
-BehaviourPropertiesValidator = Annotated[
-    BehaviourProperties,
-    AfterValidator(lambda v: validate_behaviour_properties(v)),
+DesiredBehaviourPropertiesValidator = Annotated[
+    DesiredBehaviourProperties,
+    AfterValidator(lambda v: validate_desired_behaviour_properties(v)),
+]
+
+
+class IssueProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.issue]
+    base_instruction: str
+    issue_description: str
+    issue_examples: NotRequired[str]
+    non_issue_examples: NotRequired[str]
+
+
+def validate_issue_properties(
+    properties: IssueProperties,
+) -> IssueProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["base_instruction", "issue_description"],
+        optional_fields=["issue_examples", "non_issue_examples"],
+    )
+
+
+IssuePropertiesValidator = Annotated[
+    IssueProperties,
+    AfterValidator(lambda v: validate_issue_properties(v)),
 ]
 
 
@@ -96,8 +136,8 @@ class ToneProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.tone]
     base_instruction: str
     tone_description: str
-    acceptable_examples: str | None
-    unacceptable_examples: str | None
+    acceptable_examples: NotRequired[str]
+    unacceptable_examples: NotRequired[str]
 
 
 def validate_tone_properties(properties: ToneProperties) -> ToneProperties:
@@ -118,8 +158,8 @@ class FormattingProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.formatting]
     base_instruction: str
     formatting_requirements: str
-    proper_formatting_examples: str | None
-    improper_formatting_examples: str | None
+    proper_formatting_examples: NotRequired[str]
+    improper_formatting_examples: NotRequired[str]
 
 
 def validate_formatting_properties(
@@ -167,6 +207,7 @@ LocalizationPropertiesValidator = Annotated[
 class AppropriateToolUseProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.appropriate_tool_use]
     base_instruction: str
+    tool_id: str
     tool_function_name: str
     tool_use_guidelines: str
     appropriate_tool_use_examples: str
@@ -180,6 +221,7 @@ def validate_appropriate_tool_use_properties(
         properties,
         required_fields=[
             "base_instruction",
+            "tool_id",
             "tool_function_name",
             "tool_use_guidelines",
             "appropriate_tool_use_examples",
@@ -432,7 +474,8 @@ PromptLeakagePropertiesValidator = Annotated[
 
 
 SpecProperties = (
-    BehaviourPropertiesValidator
+    DesiredBehaviourPropertiesValidator
+    | IssuePropertiesValidator
     | TonePropertiesValidator
     | FormattingPropertiesValidator
     | LocalizationPropertiesValidator

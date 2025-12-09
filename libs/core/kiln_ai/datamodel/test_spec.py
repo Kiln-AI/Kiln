@@ -5,12 +5,13 @@ from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import (
     AppropriateToolUseProperties,
-    BehaviourProperties,
     BiasProperties,
     CompletenessProperties,
+    DesiredBehaviourProperties,
     FactualCorrectnessProperties,
     FormattingProperties,
     HallucinationsProperties,
+    IssueProperties,
     JailbreakProperties,
     LocalizationProperties,
     MaliciousnessProperties,
@@ -36,8 +37,6 @@ def sample_tone_properties():
         spec_type=SpecType.tone,
         base_instruction="Test instruction",
         tone_description="Professional and friendly",
-        acceptable_examples=None,
-        unacceptable_examples=None,
     )
 
 
@@ -47,8 +46,6 @@ def test_spec_valid_creation(sample_task):
         spec_type=SpecType.tone,
         base_instruction="Test instruction",
         tone_description="Professional and friendly",
-        acceptable_examples=None,
-        unacceptable_examples=None,
     )
     spec = Spec(
         name="Test Spec",
@@ -148,29 +145,29 @@ def create_sample_properties(spec_type: SpecType):
     """Helper to create sample properties for testing."""
     base_instruction = "Test instruction"
 
-    if spec_type == SpecType.behaviour:
-        return BehaviourProperties(
+    if spec_type == SpecType.desired_behaviour:
+        return DesiredBehaviourProperties(
             spec_type=spec_type,
             base_instruction=base_instruction,
-            behavior_description="Test behavior",
-            correct_behavior_examples=None,
-            incorrect_behavior_examples=None,
+            desired_behaviour_description="Test desired behaviour",
+        )
+    elif spec_type == SpecType.issue:
+        return IssueProperties(
+            spec_type=spec_type,
+            base_instruction=base_instruction,
+            issue_description="Test issue description",
         )
     elif spec_type == SpecType.tone:
         return ToneProperties(
             spec_type=spec_type,
             base_instruction=base_instruction,
             tone_description="Professional",
-            acceptable_examples=None,
-            unacceptable_examples=None,
         )
     elif spec_type == SpecType.formatting:
         return FormattingProperties(
             spec_type=spec_type,
             base_instruction=base_instruction,
             formatting_requirements="Use markdown",
-            proper_formatting_examples=None,
-            improper_formatting_examples=None,
         )
     elif spec_type == SpecType.localization:
         return LocalizationProperties(
@@ -183,6 +180,7 @@ def create_sample_properties(spec_type: SpecType):
         return AppropriateToolUseProperties(
             spec_type=spec_type,
             base_instruction=base_instruction,
+            tool_id="test_tool_id",
             tool_function_name="test_tool",
             tool_use_guidelines="Use when needed",
             appropriate_tool_use_examples="Example: correct tool usage",
@@ -264,7 +262,8 @@ def create_sample_properties(spec_type: SpecType):
 @pytest.mark.parametrize(
     "spec_type",
     [
-        SpecType.behaviour,
+        SpecType.desired_behaviour,
+        SpecType.issue,
         SpecType.tone,
         SpecType.formatting,
         SpecType.localization,
@@ -395,6 +394,7 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
         base_instruction="Test instruction",
+        tool_id="tool_123",
         tool_function_name="tool_function_123",
         tool_use_guidelines="Use the tool when needed",
         appropriate_tool_use_examples="Example: search queries",
@@ -421,6 +421,7 @@ def test_spec_with_appropriate_tool_use_properties_all_fields(sample_task):
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
         base_instruction="Test instruction",
+        tool_id="tool_456",
         tool_function_name="tool_function_456",
         tool_use_guidelines="Use the tool when needed",
         appropriate_tool_use_examples="Example: correct usage",
@@ -444,32 +445,32 @@ def test_spec_with_appropriate_tool_use_properties_all_fields(sample_task):
     )
 
 
-def test_spec_with_behaviour_properties(sample_task):
-    """Test creating a spec with BehaviourProperties."""
-    properties = BehaviourProperties(
-        spec_type=SpecType.behaviour,
+def test_spec_with_desired_behaviour_properties(sample_task):
+    """Test creating a spec with DesiredBehaviourProperties."""
+    properties = DesiredBehaviourProperties(
+        spec_type=SpecType.desired_behaviour,
         base_instruction="Test instruction",
-        behavior_description="Avoid toxic language",
-        correct_behavior_examples="Example 1: Be polite and respectful",
-        incorrect_behavior_examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
+        desired_behaviour_description="Avoid toxic language",
+        correct_behaviour_examples="Example 1: Be polite and respectful",
+        incorrect_behaviour_examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
     )
     spec = Spec(
-        name="Behaviour Spec",
-        definition="Test behaviour spec",
+        name="Desired Behaviour Spec",
+        definition="Test desired behaviour spec",
         properties=properties,
         parent=sample_task,
     )
 
     assert spec.properties is not None
     assert isinstance(spec.properties, dict)
-    assert spec.properties["spec_type"] == SpecType.behaviour
-    assert spec.properties["behavior_description"] == "Avoid toxic language"
+    assert spec.properties["spec_type"] == SpecType.desired_behaviour
+    assert spec.properties["desired_behaviour_description"] == "Avoid toxic language"
     assert (
-        spec.properties["correct_behavior_examples"]
+        spec.properties.get("correct_behaviour_examples")
         == "Example 1: Be polite and respectful"
     )
     assert (
-        spec.properties["incorrect_behavior_examples"]
+        spec.properties.get("incorrect_behaviour_examples")
         == "Example 1: Don't use slurs\nExample 2: Don't be rude"
     )
 
@@ -492,7 +493,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
 
     with pytest.raises(ValidationError) as exc_info:
         properties = {
-            "spec_type": SpecType.behaviour,
+            "spec_type": SpecType.desired_behaviour,
             "base_instruction": "Test instruction",
         }
         Spec(
@@ -523,12 +524,10 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
         )
 
     with pytest.raises(ValidationError):
-        properties = BehaviourProperties(
+        properties = DesiredBehaviourProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
             base_instruction="Test instruction",
-            behavior_description="Avoid toxic language",
-            correct_behavior_examples=None,
-            incorrect_behavior_examples=None,
+            desired_behaviour_description="Avoid toxic language",
         )
         Spec(
             name="Test Spec",
@@ -554,6 +553,7 @@ def test_spec_with_properties_and_definition(sample_task):
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
         base_instruction="Test instruction",
+        tool_id="tool_123",
         tool_function_name="tool_function_123",
         tool_use_guidelines="Use the tool when needed",
         appropriate_tool_use_examples="Example: correct tool usage",
