@@ -232,10 +232,16 @@
       optional_fields: ["Base URL"],
     },
     {
-      name: "Kiln Copliot",
+      name: "Kiln Copilot",
       id: "kiln_copliot",
       description: "Kiln Copilot, AI for AI.",
       featured: false,
+      api_key_steps: [
+        "Go to KINDE WEBSITE",
+        "Generate an API Key",
+        "Click 'Connect' to save the key.",
+      ],
+      api_key_fields: ["API Key"],
     },
     {
       name: "Custom API",
@@ -731,6 +737,9 @@
       }
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
+      }
+      if (data["kiln_copliot_api_key"]) {
+        status.kiln_copliot.connected = true
       }
       if (
         data["openai_compatible_providers"] &&
