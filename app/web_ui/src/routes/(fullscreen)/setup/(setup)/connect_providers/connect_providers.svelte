@@ -14,6 +14,7 @@
   import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
+  import { goto } from "$app/navigation"
 
   export let highlight_finetune = false
   export let required_providers: string[] = []
@@ -234,14 +235,8 @@
     {
       name: "Kiln Copilot",
       id: "kiln_copilot",
-      description: "Kiln Copilot, AI for AI.",
+      description: "Kiln Copilot, AI for AI. Sign up to get your API key.",
       featured: false,
-      api_key_steps: [
-        "Go to KINDE WEBSITE",
-        "Generate an API Key",
-        "Click 'Connect' to save the key.",
-      ],
-      api_key_fields: ["API Key"],
     },
     {
       name: "Custom API",
@@ -437,6 +432,14 @@
     }
     if (provider.id === "openai_compatible") {
       show_custom_api_dialog()
+    }
+    if (provider.id === "kiln_copilot") {
+      const isSettings = window.location.pathname.includes("/settings/")
+      const route = isSettings
+        ? "/settings/providers/kiln_copilot"
+        : "/setup/connect_providers/kiln_copilot"
+      goto(route)
+      return
     }
 
     if (provider.api_key_steps) {
@@ -758,6 +761,7 @@
 
   onMount(async () => {
     await check_existing_providers()
+
     // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
