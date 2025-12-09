@@ -7,4 +7,9 @@ export type UiProperty = {
   error?: boolean
   warn_icon?: boolean
   badge?: boolean
+  value_with_link?: {
+    prefix: string
+    link_text: string
+    link: string
+  }
 }

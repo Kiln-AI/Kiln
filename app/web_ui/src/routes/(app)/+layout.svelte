@@ -26,7 +26,6 @@
     Documents,
     Settings,
     Prompts,
-    Evals,
     Specs,
     Generate,
     Run,
@@ -58,8 +57,6 @@
       section = Section.FineTune
     } else if (path_start("/prompts", $page.url.pathname)) {
       section = Section.Prompts
-    } else if (path_start("/evals", $page.url.pathname)) {
-      section = Section.Evals
     } else if (path_start("/docs", $page.url.pathname)) {
       section = Section.Documents
     } else if (path_start("/models", $page.url.pathname)) {
@@ -226,20 +223,7 @@
             <EvalIcon />
           </div>
 
-          Specs</a
-        >
-      </li>
-
-      <li class="menu-md">
-        <a
-          href={`/evals/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-          class={section == Section.Evals ? "active" : ""}
-        >
-          <div class="h-6 w-6 mr-2">
-            <EvalIcon />
-          </div>
-
-          Evals</a
+          Specs &amp; Evals</a
         >
       </li>
 

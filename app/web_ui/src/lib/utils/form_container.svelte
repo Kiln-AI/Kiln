@@ -87,7 +87,7 @@
 
   const dispatch = createEventDispatcher()
 
-  async function validate_and_submit() {
+  export async function validate_and_submit() {
     await trigger_validation()
     const firstError = first_error()
     if (firstError) {

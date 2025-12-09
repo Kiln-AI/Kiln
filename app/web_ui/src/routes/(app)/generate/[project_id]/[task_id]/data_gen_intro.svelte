@@ -2,7 +2,7 @@
   import Intro from "$lib/ui/intro.svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { Eval, FinetuneDatasetInfo } from "$lib/types"
+  import type { Eval, Spec, FinetuneDatasetInfo } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
   import MultiIntro from "$lib/ui/multi_intro.svelte"
   import { onMount } from "svelte"
@@ -21,10 +21,40 @@
     load_finetune_dataset_info()
   })
 
-  let evals_dialog: Dialog | null = null
+  let specs_dialog: Dialog | null = null
+  let specs_loading: boolean = false
+  let specs: Spec[] = []
+  let specs_error: KilnError | null = null
+  let evals_by_id: Record<string, Eval> = {}
   let evals_loading: boolean = false
-  let evals: Eval[] = []
   let evals_error: KilnError | null = null
+
+  async function get_specs() {
+    try {
+      specs_loading = true
+      specs_error = null
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      specs = data.filter((spec) => spec.eval_id)
+    } catch (error) {
+      specs_error = createKilnError(error)
+    } finally {
+      specs_loading = false
+    }
+  }
+
   async function get_evals() {
     try {
       evals_loading = true
@@ -43,7 +73,12 @@
       if (error) {
         throw error
       }
-      evals = data
+      evals_by_id = {}
+      for (const eval_item of data) {
+        if (eval_item.id) {
+          evals_by_id[eval_item.id] = eval_item
+        }
+      }
     } catch (error) {
       evals_error = createKilnError(error)
     } finally {
@@ -51,12 +86,17 @@
     }
   }
 
-  function show_evals_dialog() {
-    evals_dialog?.show()
-    get_evals()
+  function show_specs_dialog() {
+    specs_dialog?.show()
+    Promise.all([get_specs(), get_evals()])
   }
 
-  function select_eval(evaluator: Eval) {
+  function select_spec(spec: Spec) {
+    const evaluator = spec.eval_id ? evals_by_id[spec.eval_id] : null
+    if (!evaluator) {
+      alert("This spec doesn't have an associated eval yet.")
+      return
+    }
     const eval_set_filter_id = evaluator.eval_set_filter_id
     const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
     const splits: Record<string, number> = {}
@@ -103,7 +143,7 @@
     } else {
       goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
     }
-    evals_dialog?.close()
+    specs_dialog?.close()
   }
 
   let fine_tuning_dialog: Dialog | null = null
@@ -259,7 +299,7 @@
           action_buttons: [
             {
               label: "Generate Eval Data",
-              handler: show_evals_dialog,
+              handler: show_specs_dialog,
               primary: true,
             },
           ],
@@ -288,25 +328,25 @@
   {/if}
 </div>
 
-<Dialog title="Generate Synthetic Eval Data" bind:this={evals_dialog}>
-  {#if evals_loading}
+<Dialog title="Generate Synthetic Eval Data" bind:this={specs_dialog}>
+  {#if specs_loading || evals_loading}
     <div class="flex justify-center my-16">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
-  {:else if evals_error}
+  {:else if specs_error || evals_error}
     <div class="font-light">
-      There was an error loading the evals. Please try again.
+      There was an error loading the specs. Please try again.
     </div>
     <div class="font-light text-error">
-      {evals_error.message ?? "Unknown error"}
+      {specs_error?.message ?? evals_error?.message ?? "Unknown error"}
     </div>
-  {:else if evals.length > 0}
+  {:else if specs.length > 0}
     <div class="flex items-center mt-4">
       <a
-        href={`/evals/${project_id}/${task_id}/create_evaluator`}
+        href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-outline mx-auto my-4"
       >
-        Create a New Eval
+        Create a New Spec
       </a>
     </div>
     <div class="flex items-center mt-4">
@@ -314,20 +354,15 @@
       <div class="px-4 text-sm font-light text-base-content/60">OR</div>
       <div class="flex-1 border-t border-base-300"></div>
     </div>
-    <div class="font-medium text-center my-6">Select an Existing Eval</div>
+    <div class="font-medium text-center my-6">Select an Existing Spec</div>
     <div class="flex flex-col gap-3">
-      {#each evals as evaluator}
+      {#each specs as spec}
         <button
-          on:click={() => select_eval(evaluator)}
+          on:click={() => select_spec(spec)}
           class="card bg-base-100 border border-base-300 hover:border-primary hover:shadow-md transition-all duration-200 cursor-pointer"
         >
           <div class="p-4 text-sm text-left">
-            <div class="">{evaluator.name}</div>
-            {#if evaluator.description}
-              <p class="text-xs text-gray-500 mt-1">
-                {evaluator.description}
-              </p>
-            {/if}
+            <div class="">{spec.name}</div>
           </div>
         </button>
       {/each}
@@ -335,16 +370,16 @@
   {:else}
     <div class="font-light">
       <p class="mt-2 mb-6 text-sm">
-        Create an evaluator to get started. This helps us understand what
+        Create a spec with an eval to get started. This helps us understand what
         specific scenarios to generate data for.
       </p>
     </div>
     <div class="flex items-center mt-4">
       <a
-        href={`/evals/${project_id}/${task_id}/create_evaluator`}
+        href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-primary mx-auto my-4"
       >
-        Create a New Eval
+        Create a New Spec
       </a>
     </div>
   {/if}
