@@ -235,7 +235,7 @@
     {
       name: "Kiln Copilot",
       id: "kiln_copilot",
-      description: "Kiln Copilot, AI for AI. Sign up to get your API key.",
+      description: "Kiln Copilot, Optimize your AI systems.",
       featured: false,
     },
     {
