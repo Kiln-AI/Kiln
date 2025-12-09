@@ -27,7 +27,7 @@
   let specs: Spec[] | null = null
   let specs_error: KilnError | null = null
   let specs_loading = true
-  let sortColumn: "name" | "type" | "priority" | "status" | "created_at" =
+  let sortColumn: "name" | "template" | "priority" | "status" | "created_at" =
     "created_at"
   let sortDirection: "asc" | "desc" = "desc"
   let filter_tags = ($page.url.searchParams.getAll("tags") || []) as string[]
@@ -76,7 +76,12 @@
   let removeable_tags: Record<string, number> = {}
   let show_archived = false
 
-  type SortableColumn = "name" | "type" | "priority" | "status" | "created_at"
+  type SortableColumn =
+    | "name"
+    | "template"
+    | "priority"
+    | "status"
+    | "created_at"
   type TableColumn = {
     key: string
     label: string
@@ -86,7 +91,7 @@
   const tableColumns: TableColumn[] = [
     { key: "name", label: "Name", sortable: true, sortKey: "name" },
     { key: "definition", label: "Definition", sortable: false },
-    { key: "type", label: "Type", sortable: true, sortKey: "type" },
+    { key: "template", label: "Template", sortable: true, sortKey: "template" },
     { key: "priority", label: "Priority", sortable: true, sortKey: "priority" },
     { key: "status", label: "Status", sortable: true, sortKey: "status" },
     { key: "tags", label: "Tags", sortable: false },
@@ -206,7 +211,7 @@
         aValue = a.name.toLowerCase()
         bValue = b.name.toLowerCase()
         break
-      case "type":
+      case "template":
         aValue = a.properties.spec_type
         bValue = b.properties.spec_type
         break
