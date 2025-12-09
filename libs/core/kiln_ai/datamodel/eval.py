@@ -9,6 +9,7 @@ from typing_extensions import Self
 from kiln_ai.datamodel.basemodel import (
     ID_TYPE,
     FilenameString,
+    FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
 )
@@ -59,7 +60,7 @@ class EvalOutputScore(BaseModel):
     Very similar to TaskRequirement, but conceptually different keeping in a separate models.
     """
 
-    name: str = Field(
+    name: FilenameStringShort = Field(
         description="The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance."
     )
     instruction: str | None = Field(
