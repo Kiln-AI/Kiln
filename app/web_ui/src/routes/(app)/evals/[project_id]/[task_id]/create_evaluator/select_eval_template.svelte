@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { is_empty } from "$lib/utils/input_validators"
+  import {
+    is_empty,
+    filename_string_short_validator,
+  } from "$lib/utils/input_validators"
   import type { EvalTemplateResult } from "./eval_template"
   import type { Task, EvalTemplateId } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -395,31 +398,53 @@
   let failure_example = ""
   let pass_example = ""
   let issue_eval_create_complete = false
+  let issue_error: KilnError | null = null
+  let issue_submitting = false
 
   function create_issue_eval() {
-    issue_eval_create_complete = true
-    const eval_tag = generate_eval_tag(issue_eval_name)
+    try {
+      issue_submitting = true
+      issue_error = null
 
-    selected_template_callback({
-      template_id: "kiln_issue",
-      name: "Issue - " + issue_eval_name,
-      description: "An eval to check for the issue: " + issue_eval_name,
-      output_scores: [
-        {
-          name: issue_eval_name,
-          type: "pass_fail",
-          instruction: issue_eval_prompt,
+      issue_eval_name = issue_eval_name.trim()
+
+      // Validate the issue eval name (it will be used as a score name)
+      const name_validation_error =
+        filename_string_short_validator(issue_eval_name)
+      if (name_validation_error) {
+        issue_error = createKilnError({
+          message: `Please correct the issue eval name: ${name_validation_error}`,
+          status: 400,
+        })
+        return
+      }
+
+      issue_eval_create_complete = true
+      const eval_tag = generate_eval_tag(issue_eval_name)
+
+      selected_template_callback({
+        template_id: "kiln_issue",
+        name: "Issue - " + issue_eval_name,
+        description: "An eval to check for the issue: " + issue_eval_name,
+        output_scores: [
+          {
+            name: issue_eval_name,
+            type: "pass_fail",
+            instruction: issue_eval_prompt,
+          },
+        ],
+        default_eval_tag: "eval_" + eval_tag,
+        default_golden_tag: "eval_golden_" + eval_tag,
+        template_properties: {
+          issue_prompt: issue_eval_prompt,
+          failure_example: failure_example,
+          pass_example: pass_example,
         },
-      ],
-      default_eval_tag: "eval_" + eval_tag,
-      default_golden_tag: "eval_golden_" + eval_tag,
-      template_properties: {
-        issue_prompt: issue_eval_prompt,
-        failure_example: failure_example,
-        pass_example: pass_example,
-      },
-      evaluation_data_type: "final_answer",
-    })
+        evaluation_data_type: "final_answer",
+      })
+    } finally {
+      issue_submitting = false
+    }
   }
 
   let tool_call_eval_dialog: Dialog | undefined = undefined
@@ -447,6 +472,19 @@
       if (is_empty(tool_call_eval_name)) {
         tool_call_eval_error = createKilnError({
           message: "Please enter a name for this eval.",
+          status: 400,
+        })
+        return
+      }
+
+      tool_call_eval_name = tool_call_eval_name.trim()
+
+      // Validate the tool call eval name (it will be used as a score name)
+      const name_validation_error =
+        filename_string_short_validator(tool_call_eval_name)
+      if (name_validation_error) {
+        tool_call_eval_error = createKilnError({
+          message: `Please correct the eval name: ${name_validation_error}`,
           status: 400,
         })
         return
@@ -581,6 +619,8 @@
       !issue_eval_create_complete &&
       (issue_eval_name || issue_eval_prompt || failure_example || pass_example)
     )}
+    error={issue_error}
+    submitting={issue_submitting}
   >
     <FormElement
       label="Issue Name"

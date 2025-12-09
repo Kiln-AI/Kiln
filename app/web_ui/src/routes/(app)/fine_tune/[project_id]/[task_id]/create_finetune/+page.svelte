@@ -524,7 +524,7 @@
           <PromptTypeSelector
             bind:prompt_method={system_prompt_method}
             description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: [OpenAI Docs](https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts)."
             exclude_cot={true}
             custom_prompt_name="Custom Fine Tuning Prompt"
           />
@@ -533,7 +533,7 @@
               <FormElement
                 label="Custom System Prompt"
                 description="Enter a custom system prompt to use during fine-tuning."
-                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: [OpenAI Docs](https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts)."
                 inputType="textarea"
                 id="finetune_custom_system_prompt"
                 bind:value={finetune_custom_system_prompt}

@@ -3,6 +3,7 @@ import {
   validate_number,
   number_validator,
   tool_name_validator,
+  filename_string_short_validator,
 } from "./input_validators"
 
 describe("input_validators", () => {
@@ -592,6 +593,95 @@ describe("input_validators", () => {
       it("should return error for name longer than 64 characters", () => {
         const result = tool_name_validator("a".repeat(65))
         expect(result).toBe("Must be less than 65 characters long")
+      })
+    })
+
+    describe("filename_string_short_validator", () => {
+      it("should accept valid names with spaces", () => {
+        const result = filename_string_short_validator("Valid Name")
+        expect(result).toBeNull()
+      })
+
+      it("should accept valid names with underscores", () => {
+        const result = filename_string_short_validator("Valid_Name")
+        expect(result).toBeNull()
+      })
+
+      it("should accept valid names up to 32 characters", () => {
+        const result = filename_string_short_validator("a".repeat(32))
+        expect(result).toBeNull()
+      })
+
+      it("should return error for trailing whitespace", () => {
+        const result = filename_string_short_validator("Correctness ")
+        expect(result).toBe("Cannot have leading or trailing whitespace")
+      })
+
+      it("should return error for leading whitespace", () => {
+        const result = filename_string_short_validator(" Leading Space")
+        expect(result).toBe("Cannot have leading or trailing whitespace")
+      })
+
+      it("should return error for consecutive underscores", () => {
+        const result = filename_string_short_validator(
+          "consecutive__underscores",
+        )
+        expect(result).toBe("Cannot contain consecutive underscores")
+      })
+
+      it("should return error for slash", () => {
+        const result = filename_string_short_validator("invalid/slash")
+        expect(result).not.toBeNull()
+        expect(result).toContain("Cannot contain any of these characters")
+      })
+
+      it("should return error for period", () => {
+        const result = filename_string_short_validator("invalid.period")
+        expect(result).not.toBeNull()
+        expect(result).toContain("Cannot contain any of these characters")
+      })
+
+      it("should return error for backslash", () => {
+        const result = filename_string_short_validator("invalid\\backslash")
+        expect(result).not.toBeNull()
+        expect(result).toContain("Cannot contain any of these characters")
+      })
+
+      it("should return error for names longer than 32 characters", () => {
+        const result = filename_string_short_validator("a".repeat(33))
+        expect(result).toBe("Must be at most 32 characters long")
+      })
+
+      it("should return error for empty string", () => {
+        const result = filename_string_short_validator("")
+        expect(result).toBe("Cannot be empty")
+      })
+
+      it("should return error for leading underscore", () => {
+        const result = filename_string_short_validator("_leading")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+
+      it("should return error for trailing underscore", () => {
+        const result = filename_string_short_validator("trailing_")
+        expect(result).toBe("Cannot start or end with an underscore")
+      })
+
+      it("should return error for consecutive whitespace", () => {
+        const result = filename_string_short_validator("consecutive  spaces")
+        expect(result).toBe("Cannot contain consecutive whitespace")
+      })
+
+      it("should return error for colon", () => {
+        const result = filename_string_short_validator("invalid:colon")
+        expect(result).not.toBeNull()
+        expect(result).toContain("Cannot contain any of these characters")
+      })
+
+      it("should return error for pipe", () => {
+        const result = filename_string_short_validator("invalid|pipe")
+        expect(result).not.toBeNull()
+        expect(result).toContain("Cannot contain any of these characters")
       })
     })
   })
