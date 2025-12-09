@@ -233,7 +233,7 @@
     },
     {
       name: "Kiln Copilot",
-      id: "kiln_copliot",
+      id: "kiln_copilot",
       description: "Kiln Copilot, AI for AI.",
       featured: false,
       api_key_steps: [
@@ -360,7 +360,7 @@
       error: null,
       custom_description: null,
     },
-    kiln_copliot: {
+    kiln_copilot: {
       connected: false,
       connecting: false,
       error: null,
@@ -738,8 +738,8 @@
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
       }
-      if (data["kiln_copliot_api_key"]) {
-        status.kiln_copliot.connected = true
+      if (data["kiln_copilot_api_key"]) {
+        status.kiln_copilot.connected = true
       }
       if (
         data["openai_compatible_providers"] &&

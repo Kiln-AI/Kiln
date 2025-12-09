@@ -77,7 +77,7 @@ def get_litellm_provider_info(
             is_custom = True
         case ModelProviderName.kiln_fine_tune:
             is_custom = True
-        case ModelProviderName.kiln_copliot:
+        case ModelProviderName.kiln_copilot:
             is_custom = True
         case _:
             raise_exhaustive_enum_error(model_provider.name)

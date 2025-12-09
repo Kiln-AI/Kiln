@@ -348,7 +348,7 @@ def provider_name_from_id(id: str) -> str:
                 return "Cerebras"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
-            case ModelProviderName.kiln_copliot:
+            case ModelProviderName.kiln_copilot:
                 return "Kiln Copliot"
             case _:
                 # triggers pyright warning if I miss a case
@@ -602,7 +602,7 @@ def lite_llm_core_config_for_provider(
             return None
         case ModelProviderName.kiln_custom_registry:
             return None
-        case ModelProviderName.kiln_copliot:
+        case ModelProviderName.kiln_copilot:
             return None
         case _:
             raise_exhaustive_enum_error(provider_name)

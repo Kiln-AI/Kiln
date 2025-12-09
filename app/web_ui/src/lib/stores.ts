@@ -543,7 +543,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   siliconflow_cn: "SiliconFlow CN",
   cerebras: "Cerebras",
   docker_model_runner: "Docker Model Runner",
-  kiln_copliot: "Kiln Copilot",
+  kiln_copilot: "Kiln Copilot",
 }
 
 export function provider_name_from_id(provider_id: string): string {

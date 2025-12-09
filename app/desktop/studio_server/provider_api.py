@@ -530,8 +530,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
-            case ModelProviderName.kiln_copliot:
-                return await connect_kiln_copliot(parse_api_key(key_data))
+            case ModelProviderName.kiln_copilot:
+                return await connect_kiln_copilot(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -592,8 +592,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
-                case ModelProviderName.kiln_copliot:
-                    Config.shared().kiln_copliot_api_key = None
+                case ModelProviderName.kiln_copilot:
+                    Config.shared().kiln_copilot_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1152,7 +1152,7 @@ async def connect_bedrock(key_data: dict):
     )
 
 
-async def connect_kiln_copliot(key: str):
+async def connect_kiln_copilot(key: str):
     # no op for now, will need to call Kinde to get SSO and generate API key.
     return
 
