@@ -150,7 +150,7 @@ async def test_status_job_states(
     mock_response.state = state
 
     with patch(
-        "kiln_ai.adapters.fine_tune.vertex_finetune.sft.SupervisedTuningJob",
+        "vertexai.tuning.sft.SupervisedTuningJob",
         return_value=mock_response,
     ):
         status = await vertex_finetune.status()
@@ -165,7 +165,7 @@ async def test_status_with_error(vertex_finetune, mock_response):
     mock_response.error.message = "Test error message"
 
     with patch(
-        "kiln_ai.adapters.fine_tune.vertex_finetune.sft.SupervisedTuningJob",
+        "vertexai.tuning.sft.SupervisedTuningJob",
         return_value=mock_response,
     ):
         status = await vertex_finetune.status()
@@ -181,7 +181,7 @@ async def test_status_updates_model_id(vertex_finetune, mock_response):
     mock_response.tuned_model_endpoint_name = "new-ft-model"
 
     with patch(
-        "kiln_ai.adapters.fine_tune.vertex_finetune.sft.SupervisedTuningJob",
+        "vertexai.tuning.sft.SupervisedTuningJob",
         return_value=mock_response,
     ):
         status = await vertex_finetune.status()
@@ -202,7 +202,7 @@ async def test_status_updates_latest_status(vertex_finetune, mock_response):
     mock_response.state = gca_types.JobState.JOB_STATE_SUCCEEDED
 
     with patch(
-        "kiln_ai.adapters.fine_tune.vertex_finetune.sft.SupervisedTuningJob",
+        "vertexai.tuning.sft.SupervisedTuningJob",
         return_value=mock_response,
     ):
         status = await vertex_finetune.status()
@@ -227,7 +227,7 @@ async def test_status_model_id_update_exception(vertex_finetune, mock_response):
 
     with (
         patch(
-            "kiln_ai.adapters.fine_tune.vertex_finetune.sft.SupervisedTuningJob",
+            "vertexai.tuning.sft.SupervisedTuningJob",
             return_value=mock_response,
         ),
         patch("kiln_ai.adapters.fine_tune.vertex_finetune.logger") as mock_logger,
@@ -301,7 +301,7 @@ async def test_generate_and_upload_jsonl(
             return_value=mock_formatter,
         ),
         patch(
-            "kiln_ai.adapters.fine_tune.vertex_finetune.storage.Client",
+            "google.cloud.storage.Client",
             return_value=mock_storage_client,
         ),
         patch(
@@ -362,7 +362,7 @@ async def test_generate_and_upload_jsonl_create_bucket(
             return_value=mock_formatter,
         ),
         patch(
-            "kiln_ai.adapters.fine_tune.vertex_finetune.storage.Client",
+            "google.cloud.storage.Client",
             return_value=mock_storage_client,
         ),
         patch(
@@ -433,9 +433,9 @@ async def test_start_success(
             "generate_and_upload_jsonl",
             side_effect=[train_file_uri, validation_file_uri],
         ) as mock_upload,
-        patch("kiln_ai.adapters.fine_tune.vertex_finetune.vertexai.init") as mock_init,
+        patch("vertexai.init") as mock_init,
         patch(
-            "kiln_ai.adapters.fine_tune.vertex_finetune.sft.train",
+            "vertexai.tuning.sft.train",
             return_value=mock_sft_job,
         ) as mock_train,
         patch.object(Config, "shared") as mock_config,
@@ -500,9 +500,9 @@ async def test_start_with_validation(vertex_finetune, mock_dataset, mock_task):
             "generate_and_upload_jsonl",
             side_effect=[train_file_uri, validation_file_uri],
         ) as mock_upload,
-        patch("kiln_ai.adapters.fine_tune.vertex_finetune.vertexai.init"),
+        patch("vertexai.init"),
         patch(
-            "kiln_ai.adapters.fine_tune.vertex_finetune.sft.train",
+            "vertexai.tuning.sft.train",
             return_value=mock_sft_job,
         ) as mock_train,
         patch.object(Config, "shared") as mock_config,

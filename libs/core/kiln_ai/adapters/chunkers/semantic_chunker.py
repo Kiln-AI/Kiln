@@ -1,8 +1,13 @@
-from typing import List
+"""
+Semantic chunker that groups semantically related sentences together.
 
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.core.node_parser import SemanticSplitterNodeParser
-from llama_index.core.schema import Document
+This module requires the 'rag' optional dependencies:
+    pip install kiln-ai[rag]
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List
 
 from kiln_ai.adapters.chunkers.base_chunker import (
     BaseChunker,
@@ -13,6 +18,10 @@ from kiln_ai.adapters.chunkers.embedding_wrapper import KilnEmbeddingWrapper
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
 from kiln_ai.datamodel.embedding import EmbeddingConfig
+from kiln_ai.utils.optional_deps import lazy_import
+
+if TYPE_CHECKING:
+    from llama_index.core.embeddings import BaseEmbedding
 
 
 class SemanticChunker(BaseChunker):
@@ -27,7 +36,8 @@ class SemanticChunker(BaseChunker):
         self.embed_model = self._build_embedding_model(chunker_config)
         self.properties = chunker_config.semantic_properties
 
-        self.semantic_splitter = SemanticSplitterNodeParser(
+        node_parser = lazy_import("llama_index.core.node_parser", "rag")
+        self.semantic_splitter = node_parser.SemanticSplitterNodeParser(
             embed_model=self.embed_model,
             buffer_size=self.properties["buffer_size"],
             breakpoint_percentile_threshold=self.properties[
@@ -57,7 +67,8 @@ class SemanticChunker(BaseChunker):
         return KilnEmbeddingWrapper(embedding_adapter)
 
     async def _chunk(self, text: str) -> ChunkingResult:
-        document = Document(text=text)
+        schema = lazy_import("llama_index.core.schema", "rag")
+        document = schema.Document(text=text)
 
         nodes = await self.semantic_splitter.abuild_semantic_nodes_from_documents(
             [document],

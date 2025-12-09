@@ -1,10 +1,12 @@
+"""
+Fine-tuning adapter for Google Vertex AI.
+
+This module requires the 'vertex' optional dependencies:
+    pip install kiln-ai[vertex]
+"""
+
 import logging
 import time
-
-import vertexai
-from google.cloud import storage
-from google.cloud.aiplatform_v1beta1 import types as gca_types
-from vertexai.tuning import sft
 
 from kiln_ai.adapters.fine_tune.base_finetune import (
     BaseFinetuneAdapter,
@@ -15,6 +17,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.optional_deps import lazy_import
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,9 @@ class VertexFinetune(BaseFinetuneAdapter):
         return status
 
     async def _status(self) -> FineTuneStatus:
+        sft = lazy_import("vertexai.tuning", "vertex").sft
+        gca_types = lazy_import("google.cloud.aiplatform_v1beta1", "vertex").types
+
         if not self.datamodel or not self.datamodel.provider_id:
             return FineTuneStatus(
                 status=FineTuneStatusType.pending,
@@ -113,6 +119,9 @@ class VertexFinetune(BaseFinetuneAdapter):
         )
 
     async def _start(self, dataset: DatasetSplit) -> None:
+        vertexai = lazy_import("vertexai", "vertex")
+        sft = lazy_import("vertexai.tuning", "vertex").sft
+
         task = self.datamodel.parent_task()
         if not task:
             raise ValueError("Task is required to start a fine-tune")
@@ -159,6 +168,8 @@ class VertexFinetune(BaseFinetuneAdapter):
     async def generate_and_upload_jsonl(
         self, dataset: DatasetSplit, split_name: str, task: Task, format: DatasetFormat
     ) -> str:
+        storage = lazy_import("google.cloud", "vertex").storage
+
         formatter = DatasetFormatter(
             dataset, self.datamodel.system_message, self.datamodel.thinking_instructions
         )

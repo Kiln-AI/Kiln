@@ -21,27 +21,44 @@ dependencies = [
     "boto3>=1.37.10",
     "coverage>=7.6.4",
     "exceptiongroup>=1.0.0; python_version<'3.11'",
-    "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
     "jsonschema>=4.23.0",
-    "lancedb>=0.24.2",
     "openai>=1.53.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",
-    "pypdf>=6.0.0",
     "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
     "pyyaml>=6.0.2",
     "together",
     "typing-extensions>=4.12.2",
-    "vertexai>=1.43.0",
-    "llama-index>=0.13.3",
     "anyio>=4.10.0",
-    "pypdfium2>=4.30.0",
-    "pillow>=11.1.0",
-    "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
     "litellm>=1.80.5",
+]
+
+[project.optional-dependencies]
+# RAG dependencies: vector stores, chunking, document processing
+# Install with: pip install kiln-ai[rag]
+rag = [
+    "lancedb>=0.24.2",
+    "llama-index>=0.13.3",
+    "llama-index-vector-stores-lancedb>=0.4.2",
+    "pypdf>=6.0.0",
+    "pypdfium2>=4.30.0",
+    "pillow>=11.1.0",
+]
+
+# Vertex AI fine-tuning dependencies
+# Install with: pip install kiln-ai[vertex]
+vertex = [
+    "google-cloud-aiplatform>=1.84.0",
+    "vertexai>=1.43.0",
+]
+
+# All optional dependencies
+all = [
+    "kiln-ai[rag]",
+    "kiln-ai[vertex]",
 ]
 
 [dependency-groups]
@@ -60,10 +77,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
 requires-python = ">=3.10"
-
-[tool.uv.sources]
-together = { git = "https://github.com/scosman/together-python" }
-
 
 [project.urls]
 Homepage = "https://kiln.tech"

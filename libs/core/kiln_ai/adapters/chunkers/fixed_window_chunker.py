@@ -1,6 +1,11 @@
-from typing import List
+"""
+Fixed window chunker for splitting text into chunks.
 
-from llama_index.core.text_splitter import SentenceSplitter
+This module requires the 'rag' optional dependencies:
+    pip install kiln-ai[rag]
+"""
+
+from typing import List
 
 from kiln_ai.adapters.chunkers.base_chunker import (
     BaseChunker,
@@ -8,6 +13,7 @@ from kiln_ai.adapters.chunkers.base_chunker import (
     TextChunk,
 )
 from kiln_ai.datamodel.chunk import ChunkerConfig, ChunkerType
+from kiln_ai.utils.optional_deps import lazy_import
 
 
 class FixedWindowChunker(BaseChunker):
@@ -16,7 +22,9 @@ class FixedWindowChunker(BaseChunker):
             raise ValueError("Chunker type must be FIXED_WINDOW")
 
         super().__init__(chunker_config)
-        self.splitter = SentenceSplitter(
+
+        text_splitter = lazy_import("llama_index.core.text_splitter", "rag")
+        self.splitter = text_splitter.SentenceSplitter(
             chunk_size=chunker_config.fixed_window_properties["chunk_size"],
             chunk_overlap=chunker_config.fixed_window_properties["chunk_overlap"],
         )

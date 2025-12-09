@@ -46,6 +46,7 @@ def test_chunker_registry_semantic_returns_semantic_chunker():
         },
     )
 
+    # Patch at the registry module since it directly imports the chunkers
     with patch(
         "kiln_ai.adapters.chunkers.chunker_registry.SemanticChunker"
     ) as mock_semantic_chunker:
