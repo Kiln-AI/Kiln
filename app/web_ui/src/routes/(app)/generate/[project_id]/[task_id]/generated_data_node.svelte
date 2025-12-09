@@ -385,7 +385,7 @@
   <tr on:click={() => toggleExpand(index)} class="cursor-pointer">
     <td style="padding-left: {depth * 25 + 20}px" class="py-2">
       {#if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap">{formatExpandedSample(
+        <pre class="whitespace-pre-wrap break-words">{formatExpandedSample(
             sample.input,
           )}</pre>
       {:else}
@@ -396,7 +396,7 @@
       {#if !formatted_output}
         {output_status}
       {:else if expandedSamples[index]}
-        <pre class="whitespace-pre-wrap">{formatted_output}</pre>
+        <pre class="whitespace-pre-wrap break-words">{formatted_output}</pre>
       {:else}
         <div class="truncate w-0 min-w-full">
           {formatted_output}
