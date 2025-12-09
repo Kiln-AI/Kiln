@@ -183,7 +183,7 @@
             {#if percent_complete > 0}
               <div class="mt-1">
                 <a
-                  href={`/specs/${project_id}/${task_id}/${spec_id}/${interactive && current_eval_config_id ? current_eval_config_id : evaluator.current_config_id}/${task_run_config.id}/run_result`}
+                  href={`/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/${current_eval_config_id ? current_eval_config_id : evaluator.current_config_id}/${task_run_config.id}/run_result`}
                   class="btn btn-xs btn-outline rounded-full min-w-[120px]"
                 >
                   View Data

@@ -739,7 +739,10 @@ def test_eval_template_properties_issue_template_validation(
         )
         assert eval.template == EvalTemplateId.issue
         for key, value in template_properties.items():
-            assert eval.template_properties[key] == value
+            assert (
+                eval.template_properties is not None
+                and eval.template_properties[key] == value
+            )
 
 
 @pytest.mark.parametrize(
@@ -776,7 +779,10 @@ def test_eval_template_properties_non_validated_templates(
     )
     assert eval.template == template
     for key, value in template_properties.items():
-        assert eval.template_properties[key] == value
+        assert (
+            eval.template_properties is not None
+            and eval.template_properties[key] == value
+        )
 
 
 @pytest.mark.parametrize(
@@ -921,7 +927,10 @@ def test_eval_template_properties_tool_call_template_validation(
         )
         assert eval.template == EvalTemplateId.tool_call
         for key, value in template_properties.items():
-            assert eval.template_properties[key] == value
+            assert (
+                eval.template_properties is not None
+                and eval.template_properties[key] == value
+            )
 
 
 def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():

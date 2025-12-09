@@ -64,10 +64,13 @@ export async function createSpec(
     throw createKilnError("Failed to create eval for spec")
   }
 
-  // Build the properties object with spec_type
+  // Build the properties object with spec_type, filtering out null values
+  const filteredPropertyValues = Object.fromEntries(
+    Object.entries(property_values).filter(([_, value]) => value !== null),
+  )
   const properties = {
     spec_type: spec_type,
-    ...property_values,
+    ...filteredPropertyValues,
   } as SpecProperties
 
   // Build definition from properties
@@ -117,7 +120,6 @@ async function createEval(
   const tag = specEvalTag(spec_name)
   const eval_set_filter_id = `tag::${tag}`
   const eval_configs_filter_id = `tag::${tag}_golden`
-  const template_properties = {} // TODO: Refactor evals to use spec definition instead?
   const evaluation_data_type = specEvalDataType(spec_type)
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
@@ -132,7 +134,7 @@ async function createEval(
         output_scores,
         eval_set_filter_id,
         eval_configs_filter_id,
-        template_properties,
+        template_properties: null,
         evaluation_data_type,
       },
     },
@@ -168,7 +170,10 @@ function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
   if (spec_type === "reference_answer_accuracy") {
     return "rag"
   }
-  if (spec_type === "behaviour") {
+  if (spec_type === "desired_behaviour") {
+    return "desired_behaviour"
+  }
+  if (spec_type === "issue") {
     return "kiln_issue"
   }
   if (spec_type === "factual_correctness") {
@@ -198,32 +203,4 @@ function specEvalTag(spec_name: string): string {
     return tag.slice(0, 32)
   }
   return tag
-}
-
-async function get_eval_progress() {
-  eval_progress = null
-  eval_progress_loading = true
-  try {
-    eval_progress = null
-    const { data, error } = await client.GET(
-      "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
-      {
-        params: {
-          path: {
-            project_id,
-            task_id,
-            eval_id,
-          },
-        },
-      },
-    )
-    if (error) {
-      throw error
-    }
-    eval_progress = data
-  } catch (error) {
-    eval_progress_error = createKilnError(error)
-  } finally {
-    eval_progress_loading = false
-  }
 }

@@ -48,9 +48,9 @@
     // tick: need to wait for the page params to be available
     await tick()
     await load_eval()
+    await get_spec()
     await load_task_local()
     await load_available_models()
-    await get_spec()
     // Force these back to undefined -- we don't want to take the last-used model from the available model dropdown
     model_name = undefined
     provider_name = undefined
@@ -58,6 +58,10 @@
   })
 
   async function get_spec() {
+    if (spec_id === "legacy") {
+      spec_loading = false
+      return
+    }
     try {
       spec_loading = true
       const { data, error } = await client.GET(
@@ -367,7 +371,7 @@
     const next_page = $page.url.searchParams.get("next_page")
     const crumbs: Breadcrumb[] = [
       {
-        label: "Specs",
+        label: "Specs & Evals",
         href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
       },
       {
@@ -579,6 +583,12 @@
                   We've pre-populated the evaluation steps for you based on the
                   template you selected ({evaluator.template}). Feel free to
                   edit.
+                </div>
+              {/if}
+              {#if spec}
+                <div class="text-xs text-gray-500">
+                  We've pre-populated the evaluation steps for you based on the
+                  spec you selected ({spec.name}). Feel free to edit.
                 </div>
               {/if}
             </div>

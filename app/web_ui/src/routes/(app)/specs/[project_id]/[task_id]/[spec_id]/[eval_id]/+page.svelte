@@ -442,7 +442,7 @@
       if (spec_properties?.spec_type === "appropriate_tool_use") {
         tool_id = spec_properties?.tool_id
       } else {
-        tool_id = evaluator.template_properties.tool_id as string
+        tool_id = evaluator.template_properties?.tool_id as string
       }
       if (tool_id) {
         params.set("tool_id", String(tool_id))
@@ -505,9 +505,17 @@
     sub_subtitle="Read the Docs"
     sub_subtitle_link={docs_link(evaluator)}
     breadcrumbs={spec_id === "legacy"
-      ? [{ label: "Specs", href: `/specs/${project_id}/${task_id}` }]
+      ? [
+          {
+            label: "Specs & Evals",
+            href: `/specs/${project_id}/${task_id}`,
+          },
+        ]
       : [
-          { label: "Specs", href: `/specs/${project_id}/${task_id}` },
+          {
+            label: "Specs & Evals",
+            href: `/specs/${project_id}/${task_id}`,
+          },
           {
             label: spec?.name || "Spec",
             href: `/specs/${project_id}/${task_id}/${spec_id}`,

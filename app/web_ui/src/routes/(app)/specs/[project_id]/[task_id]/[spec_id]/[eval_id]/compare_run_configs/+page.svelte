@@ -32,9 +32,7 @@
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import RunEval from "../run_eval.svelte"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -90,17 +88,6 @@
       get_task_composite_id(project_id, task_id)
     ] || null
 
-  // Check if all run configs are 100% complete
-  $: all_run_configs_complete = score_summary?.run_config_percent_complete
-    ? Object.values(score_summary.run_config_percent_complete).every(
-        (percent) => percent >= 1.0,
-      )
-    : false
-
-  $: focus_run_all = !(
-    eval_state?.includes("complete") || all_run_configs_complete
-  )
-
   onMount(async () => {
     // Wait for page params to load
     await tick()
@@ -123,6 +110,10 @@
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
 
   async function get_spec() {
+    if (spec_id === "legacy") {
+      spec_loading = false
+      return
+    }
     try {
       spec_loading = true
       const { data, error } = await client.GET(
@@ -469,20 +460,31 @@
     subtitle="Find the best configuration for running your task."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-run-method"
-    breadcrumbs={[
-      {
-        label: "Specs",
-        href: `/specs/${project_id}/${task_id}`,
-      },
-      {
-        label: spec?.name || "Spec",
-        href: `/specs/${project_id}/${task_id}/${spec_id}`,
-      },
-      {
-        label: "Eval",
-        href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
-      },
-    ]}
+    breadcrumbs={spec_id === "legacy"
+      ? [
+          {
+            label: "Specs & Evals",
+            href: `/specs/${project_id}/${task_id}`,
+          },
+          {
+            label: "Eval",
+            href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
+          },
+        ]
+      : [
+          {
+            label: "Specs & Evals",
+            href: `/specs/${project_id}/${task_id}`,
+          },
+          {
+            label: spec?.name || "Spec",
+            href: `/specs/${project_id}/${task_id}/${spec_id}`,
+          },
+          {
+            label: "Eval",
+            href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
+          },
+        ]}
     action_buttons={action_buttons(evaluator)}
   >
     {#if loading}

@@ -199,6 +199,10 @@
   })
 
   async function get_spec() {
+    if (spec_id === "legacy") {
+      spec_loading = false
+      return
+    }
     try {
       spec_loading = true
       const { data, error } = await client.GET(
@@ -431,20 +435,31 @@
   subtitle="Find the judge that best matches human preferences"
   sub_subtitle="Read the docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
-  breadcrumbs={[
-    {
-      label: "Specs",
-      href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
-    },
-    {
-      label: spec?.name || "Spec",
-      href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}`,
-    },
-    {
-      label: "Eval",
-      href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
-    },
-  ]}
+  breadcrumbs={spec_id === "legacy"
+    ? [
+        {
+          label: "Specs & Evals",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+        },
+        {
+          label: "Eval",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+        },
+      ]
+    : [
+        {
+          label: "Specs & Evals",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+        },
+        {
+          label: spec?.name || "Spec",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}`,
+        },
+        {
+          label: "Eval",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+        },
+      ]}
   action_buttons={eval_configs?.length
     ? [
         {

@@ -7,6 +7,7 @@
   import type { SpecType } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import { createSpec } from "../spec_utils"
+  import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -14,7 +15,7 @@
   let spec_error: KilnError | null = null
   let spec_loading = true
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
   let name = ""
   let property_values: Record<string, string | null> = {}
 
@@ -61,9 +62,12 @@
 
       if (storedData) {
         const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
+
+        // Wait 5 seconds to simulate analysis
+        await new Promise((resolve) => setTimeout(resolve, 5000))
 
         // Generate mock review data (in a real implementation, this would come from an API)
         review_rows = [
@@ -210,7 +214,7 @@
     subtitle="Review these examples to ensure the spec accurately captures your goal"
     breadcrumbs={[
       {
-        label: "Specs",
+        label: "Specs & Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {
@@ -220,9 +224,7 @@
     ]}
   >
     {#if spec_loading}
-      <div class="flex justify-center items-center h-full min-h-[200px]">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
+      <SpecAnalyzingAnimation />
     {:else if spec_error}
       <div class="text-error text-sm">
         {spec_error.getMessage() || "An unknown error occurred"}

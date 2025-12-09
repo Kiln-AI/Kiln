@@ -187,7 +187,7 @@ This is the reference answer:
 </inappropriate_tool_use_examples>
 </eval_data>
 """
-        else:
+        elif self.eval.template_properties:
             # Legacy eval: appropriate_tool_use_guidelines, inappropriate_tool_use_guidelines
             appropriate_tool_use_guidelines = str(
                 self.eval.template_properties.get("appropriate_tool_use_guidelines")
@@ -198,7 +198,7 @@ This is the reference answer:
                 or ""
             )
 
-            description += f"""The model was given the following <appropriate_tool_use_guidelines> guidelines:
+            description += f"""The model was given the following <appropriate_tool_use_guidelines> guidelines: 
 <eval_data>
 <appropriate_tool_use_guidelines>
 {appropriate_tool_use_guidelines}
@@ -207,8 +207,7 @@ This is the reference answer:
 """
             # Only include if it has content since it is optional
             if inappropriate_tool_use_guidelines:
-                description += """The model was given the following <inappropriate_tool_use_guidelines> guidelines:"""
-                description += f""" 
+                description += f"""The model was given the following <inappropriate_tool_use_guidelines> guidelines: 
 <eval_data>
 <inappropriate_tool_use_guidelines>
 {inappropriate_tool_use_guidelines}

@@ -291,7 +291,7 @@
     title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
     breadcrumbs={[
       {
-        label: "Specs",
+        label: "Specs & Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
@@ -350,11 +350,15 @@
                 value: eval_progress
                   ? eval_progress.current_eval_method !== null
                     ? "Ready"
-                    : "Not Ready"
+                    : ""
                   : "Loading...",
-                tooltip:
-                  eval_progress?.current_eval_method === null
-                    ? "Click on the eval link above to configure the eval for this spec"
+                value_with_link:
+                  eval_progress?.current_eval_method === null && spec.eval_id
+                    ? {
+                        prefix: "Not Ready - ",
+                        link_text: "Configure",
+                        link: `/specs/${project_id}/${task_id}/${spec_id}/${spec.eval_id}`,
+                      }
                     : undefined,
               },
               {
@@ -383,7 +387,16 @@
         </div>
       </div>
 
-      {#if should_show_compare_table && evaluator && sorted_task_run_configs.length > 0}
+      {#if has_eval && eval_progress?.current_eval_method === null && spec.eval_id}
+        <div class="mt-8">
+          <a
+            href={`/specs/${project_id}/${task_id}/${spec_id}/${spec.eval_id}`}
+            class="btn btn-primary w-full"
+          >
+            Configure Eval
+          </a>
+        </div>
+      {:else if should_show_compare_table && evaluator && sorted_task_run_configs.length > 0}
         <div class="mt-8">
           <RunConfigComparisonTable
             {project_id}

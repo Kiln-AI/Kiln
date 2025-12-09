@@ -2199,6 +2199,8 @@ export interface components {
             spec_type: "appropriate_tool_use";
             /** Base Instruction */
             base_instruction: string;
+            /** Tool Id */
+            tool_id: string;
             /** Tool Function Name */
             tool_function_name: string;
             /** Tool Use Guidelines */
@@ -2254,22 +2256,6 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
-        };
-        /** BehaviourProperties */
-        BehaviourProperties: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            spec_type: "behaviour";
-            /** Base Instruction */
-            base_instruction: string;
-            /** Behavior Description */
-            behavior_description: string;
-            /** Correct Behavior Examples */
-            correct_behavior_examples: string | null;
-            /** Incorrect Behavior Examples */
-            incorrect_behavior_examples: string | null;
         };
         /** BiasProperties */
         BiasProperties: {
@@ -2684,7 +2670,7 @@ export interface components {
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
@@ -3125,6 +3111,22 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DesiredBehaviourProperties */
+        DesiredBehaviourProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "desired_behaviour";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Desired Behaviour Description */
+            desired_behaviour_description: string;
+            /** Correct Behaviour Examples */
+            correct_behaviour_examples?: string;
+            /** Incorrect Behaviour Examples */
+            incorrect_behaviour_examples?: string;
+        };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
             /** Message */
@@ -3350,11 +3352,10 @@ export interface components {
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
-             * @default {}
              */
-            template_properties: {
+            template_properties?: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             /**
              * @description The output of the task run to evaluate. Can be final answer or full trace.
              * @default final_answer
@@ -3477,7 +3478,7 @@ export interface components {
              */
             instruction?: string | null;
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
-            type?: components["schemas"]["TaskOutputRatingType"] | null;
+            type: components["schemas"]["TaskOutputRatingType"];
         };
         /** EvalProgress */
         EvalProgress: {
@@ -3603,7 +3604,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -4114,9 +4115,9 @@ export interface components {
             /** Formatting Requirements */
             formatting_requirements: string;
             /** Proper Formatting Examples */
-            proper_formatting_examples: string | null;
+            proper_formatting_examples?: string;
             /** Improper Formatting Examples */
-            improper_formatting_examples: string | null;
+            improper_formatting_examples?: string;
         };
         /** Function */
         Function: {
@@ -4176,6 +4177,22 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** IssueProperties */
+        IssueProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "issue";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Issue Description */
+            issue_description: string;
+            /** Issue Examples */
+            issue_examples?: string;
+            /** Non Issue Examples */
+            non_issue_examples?: string;
         };
         /** JailbreakProperties */
         JailbreakProperties: {
@@ -5164,6 +5181,8 @@ export interface components {
             eval_config_result: components["schemas"]["EvalConfigResult"] | null;
             /** Missing Default Eval Config */
             missing_default_eval_config: boolean;
+            /** Spec Id */
+            spec_id: string | null;
         };
         /** RunConfigEvalScoresSummary */
         RunConfigEvalScoresSummary: {
@@ -5388,7 +5407,7 @@ export interface components {
              * Properties
              * @description The properties of the spec.
              */
-            properties: components["schemas"]["BehaviourProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             /**
              * @description The priority of the spec.
              * @default 1
@@ -5426,7 +5445,7 @@ export interface components {
             /** Definition */
             definition: string;
             /** Properties */
-            properties: components["schemas"]["BehaviourProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             priority: components["schemas"]["Priority"];
             status: components["schemas"]["SpecStatus"];
             /** Tags */
@@ -5893,9 +5912,9 @@ export interface components {
             /** Tone Description */
             tone_description: string;
             /** Acceptable Examples */
-            acceptable_examples: string | null;
+            acceptable_examples?: string;
             /** Unacceptable Examples */
-            unacceptable_examples: string | null;
+            unacceptable_examples?: string;
         };
         /** ToolApiDescription */
         ToolApiDescription: {

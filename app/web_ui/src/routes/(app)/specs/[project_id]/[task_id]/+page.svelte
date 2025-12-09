@@ -600,7 +600,7 @@
 
 <AppPage
   limit_max_width={true}
-  title="Specs"
+  title="Specs &amp; Evals"
   subtitle="Define the specs your task should follow and be judged against"
   sub_subtitle={is_empty ? undefined : "Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
@@ -627,7 +627,7 @@
     {:else if is_empty}
       <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
         <Intro
-          title="Specs"
+          title="Specs &amp; Evals"
           description_paragraphs={[
             "Specs are used to define how you want your task to behave.",
           ]}
@@ -907,7 +907,7 @@
 
 <FilterTagsDialog
   bind:this={filter_tags_dialog}
-  title="Filter Specs by Tags"
+  title="Filter Specs &amp; Evals by Tags"
   {filter_tags}
   {available_filter_tags}
   onRemoveFilterTag={remove_filter_tag}

@@ -470,7 +470,7 @@ ${issue.name}
       task_type == "outputs" ? "contains" : "will trigger"
 
     // kiln_issue only exists in legacy evals (no corresponding spec type)
-    const issue_description = issue.template_properties["issue_prompt"]
+    const issue_description = issue.template_properties?.["issue_prompt"]
     if (issue_description) {
       template += `
 
@@ -480,7 +480,7 @@ ${issue_description}
 </issue_description>`
     }
 
-    const issue_failure_example = issue.template_properties["failure_example"]
+    const issue_failure_example = issue.template_properties?.["failure_example"]
     if (issue_failure_example) {
       template += `
 
@@ -490,7 +490,7 @@ ${issue_failure_example}
 </issue_example>`
     }
 
-    const issue_success_example = issue.template_properties["pass_example"]
+    const issue_success_example = issue.template_properties?.["pass_example"]
     if (issue_success_example) {
       template += `
 
@@ -525,7 +525,7 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     if (spec_properties?.spec_type === "appropriate_tool_use") {
       tool = spec_properties?.tool_function_name
     } else {
-      tool = tool_call.template_properties.tool as string
+      tool = tool_call.template_properties?.tool as string
     }
     if (!tool) {
       throw new Error("Tool is required for tool call template")
@@ -632,7 +632,7 @@ Here are two examples showing how guidelines map to inputs:
       appropriate_tool_use_guidelines = spec_properties?.tool_use_guidelines
     } else {
       appropriate_tool_use_guidelines = tool_call.template_properties
-        .appropriate_tool_use_guidelines as string
+        ?.appropriate_tool_use_guidelines as string
     }
     let inappropriate_tool_use_guidelines: string | undefined = undefined
     if (spec_properties?.spec_type === "appropriate_tool_use") {
@@ -640,7 +640,7 @@ Here are two examples showing how guidelines map to inputs:
         spec_properties?.inappropriate_tool_use_examples
     } else {
       inappropriate_tool_use_guidelines = tool_call.template_properties
-        .inappropriate_tool_use_guidelines as string
+        ?.inappropriate_tool_use_guidelines as string
     }
 
     // Find tool name and description from available tools

@@ -13,34 +13,65 @@ export type FieldConfig = {
 
 // Per-spec-type field configurations (excludes spec_type since it's auto-set)
 export const spec_field_configs: Record<SpecType, FieldConfig[]> = {
-  behaviour: [
+  desired_behaviour: [
     {
       key: "base_instruction",
       label: "Base Instruction",
       description: "The core requirement that the model must follow.",
       default_value:
-        "The model must follow the specified behaviour requirements.",
+        "The model must follow the specified desired behaviour requirements.",
       required: true,
     },
     {
-      key: "behavior_description",
-      label: "Behaviour Description",
+      key: "desired_behaviour_description",
+      label: "Desired Behaviour Description",
       description:
-        "Describe the behaviour in detail. You can specify what the model should do, what it must avoid, or both.",
+        "Describe the desired behaviour in detail. Specify what the model should do.",
       required: true,
     },
     {
-      key: "correct_behavior_examples",
+      key: "correct_behaviour_examples",
       label: "Correct Behaviour Examples",
       description:
         "Provide one or more examples demonstrating the correct behaviour",
       required: false,
     },
     {
-      key: "incorrect_behavior_examples",
+      key: "incorrect_behaviour_examples",
       label: "Incorrect Behaviour Examples",
       description:
-        "Provide examples that fail to meet the behaviour requirements",
+        "Provide examples that fail to meet the desired behaviour requirements",
+      required: false,
+    },
+  ],
+  issue: [
+    {
+      key: "base_instruction",
+      label: "Base Instruction",
+      description: "The core requirement that the model must follow.",
+      default_value:
+        "The model must not exhibit the problematic behaviour described in the issue.",
+      required: true,
+    },
+    {
+      key: "issue_description",
+      label: "Issue Description",
+      description:
+        "Describe the issue or problem with the model's behaviour. Specify what the model should avoid doing.",
+      required: true,
+    },
+    {
+      key: "issue_examples",
+      label: "Issue Examples",
+      description:
+        "Provide one or more examples demonstrating the problematic behaviour",
+      required: false,
+    },
+    {
+      key: "non_issue_examples",
+      label: "Non-Issue Examples",
+      description:
+        "Provide examples where the model does not exhibit the issue",
       required: false,
     },
   ],
@@ -453,9 +484,13 @@ export const spec_categories: SpecCategoryData[] = [
     category: "Functionality",
     templates: [
       {
-        spec_type: "behaviour",
+        spec_type: "desired_behaviour",
+        description: "Specify a desired behaviour the model should follow.",
+      },
+      {
+        spec_type: "issue",
         description:
-          "Specify a behaviour the model should follow or avoid to prevent recurring issues.",
+          "Specify a problematic behaviour the model should avoid to prevent recurring issues.",
       },
       {
         spec_type: "tone",

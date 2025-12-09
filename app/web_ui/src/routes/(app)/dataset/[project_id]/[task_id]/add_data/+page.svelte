@@ -50,7 +50,7 @@
     reason === "eval"
       ? [
           {
-            label: "Specs",
+            label: "Specs & Evals",
             href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
           },
         ]

@@ -217,6 +217,13 @@ export function capitalize(str: string | undefined | null): string {
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
+export function autofillSpecName(spec_type: string): string {
+  if (spec_type === "desired_behaviour" || spec_type === "issue") {
+    return ""
+  }
+  return formatSpecTypeName(spec_type)
+}
+
 export function formatSpecTypeName(spec_type: string): string {
   if (spec_type === "nsfw") {
     return "NSFW"

@@ -36,6 +36,7 @@ class EvalTemplateId(str, Enum):
     """
 
     kiln_requirements = "kiln_requirements"
+    desired_behaviour = "desired_behaviour"
     issue = "kiln_issue"
     tool_call = "tool_call"
     toxicity = "toxicity"
@@ -65,8 +66,7 @@ class EvalOutputScore(BaseModel):
         default=None,
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
     )
-    type: TaskOutputRatingType | None = Field(
-        default=None,
+    type: TaskOutputRatingType = Field(
         description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
     )
 
@@ -347,8 +347,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
-    template_properties: dict[str, str | int | bool | float] = Field(
-        default={},
+    template_properties: dict[str, str | int | bool | float] | None = Field(
+        default=None,
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
     )
     evaluation_data_type: EvalDataType = Field(
@@ -452,7 +452,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 "eval_configs_filter_id is required for all templates except 'rag'"
             )
 
-        # Check for properties that are required for the issue template
+        # For spec-based evals, template_properties will be None and validation happens in the spec
+        # For legacy evals, template_properties contains the data and we validate here
+        if self.template_properties is None:
+            return self
+
+        # Check for properties that are required for the issue template (legacy evals only)
         if self.template == EvalTemplateId.issue:
             if "issue_prompt" not in self.template_properties or not isinstance(
                 self.template_properties["issue_prompt"], str

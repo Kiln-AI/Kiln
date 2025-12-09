@@ -72,7 +72,7 @@
 
     // Get columns from URL
     const urlColumns = urlParams.get("columns")
-    if (urlParams) {
+    if (urlColumns) {
       const parsedColumns = parseInt(urlColumns, 10)
       if (parsedColumns >= 2 && parsedColumns <= 4) {
         columns = parsedColumns
@@ -535,7 +535,9 @@
 <AppPage
   title="Compare Run Configurations"
   subtitle="Compare run configurations for your task using evals"
-  breadcrumbs={[{ label: "Specs", href: `/specs/${project_id}/${task_id}` }]}
+  breadcrumbs={[
+    { label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -711,11 +713,11 @@
                         <div class="mt-2 text-error text-xs">
                           {eval_templates_errors[section.eval_id]}
                         </div>
-                      {:else if eval_templates_cache[section.eval_id] !== undefined && section.spec_id}
+                      {:else if eval_templates_cache[section.eval_id] !== undefined}
                         <button
                           on:click={() =>
                             navigateToEvalPage(
-                              section.spec_id,
+                              section.spec_id ?? "legacy",
                               section.eval_id,
                               eval_templates_cache[section.eval_id],
                             )}
