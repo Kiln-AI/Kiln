@@ -1153,8 +1153,14 @@ async def connect_bedrock(key_data: dict):
 
 
 async def connect_kiln_copilot(key: str):
-    # no op for now, will need to call Kinde to get SSO and generate API key.
-    return
+    Config.shared().kiln_copilot_api_key = key
+
+    # TODO Validate the key is valid
+
+    return JSONResponse(
+        status_code=200,
+        content={"message": "Connected to Kiln Copilot"},
+    )
 
 
 async def available_ollama_models() -> AvailableModels | None:

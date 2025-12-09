@@ -148,17 +148,17 @@
   <ol class="flex-none my-2 text-gray-700">
     <li class="list-decimal pl-1 mx-8 my-4">
       <button class="link" on:click={openSignup}>Sign Up</button>
-      to create your Kiln Copilot account
+      to create your Kiln Copilot account.
     </li>
     <li class="list-decimal pl-1 mx-8 my-4">
       After registration,
       <button class="link" on:click={openSelfServePortal}>
         open the self-serve portal
       </button>
-      to create your API key
+      to create your API key.
     </li>
     <li class="list-decimal pl-1 mx-8 my-4">
-      Copy your API Key, paste it below and click 'Connect'
+      Copy your API Key, paste it below and click 'Connect'.
     </li>
   </ol>
 
