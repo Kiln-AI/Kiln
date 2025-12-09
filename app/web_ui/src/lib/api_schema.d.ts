@@ -2152,6 +2152,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/spec/clarify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clarify Spec */
+        post: operations["clarify_spec_api_spec_clarify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spec/refine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Spec */
+        post: operations["refine_spec_api_spec_refine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spec/generate_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Batch */
+        post: operations["generate_batch_api_spec_generate_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2550,6 +2601,26 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
+        /** ClarifySpecApiInput */
+        ClarifySpecApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Spec Rendered Prompt Template */
+            spec_rendered_prompt_template: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            /**
+             * Num Exemplars
+             * @default 10
+             */
+            num_exemplars: number;
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -4133,6 +4204,26 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** GenerateBatchApiInput */
+        GenerateBatchApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Spec Rendered Prompt Template */
+            spec_rendered_prompt_template: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            /**
+             * Enable Scoring
+             * @default false
+             */
+            enable_scoring: boolean;
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -5062,6 +5153,27 @@ export interface components {
             accurate_examples: string;
             /** Inaccurate Examples */
             inaccurate_examples: string;
+        };
+        /** RefineSpecApiInput */
+        RefineSpecApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Task Info */
+            task_info: {
+                [key: string]: unknown;
+            };
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
+            /** Examples With Feedback */
+            examples_with_feedback: {
+                [key: string]: unknown;
+            }[];
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -10776,6 +10888,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clarify_spec_api_spec_clarify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClarifySpecApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_spec_api_spec_refine_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefineSpecApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_batch_api_spec_generate_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateBatchApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

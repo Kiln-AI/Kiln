@@ -8,6 +8,9 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { createSpec } from "../spec_utils"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import { client } from "$lib/api_client"
+  import { load_task } from "$lib/stores"
+  import { buildDefinitionFromProperties } from "../select_template/spec_templates"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -66,36 +69,59 @@
         name = formData.name || ""
         property_values = { ...formData.property_values }
 
-        // Wait 5 seconds to simulate analysis
-        await new Promise((resolve) => setTimeout(resolve, 5000))
+        // Load the task to get instruction and schemas
+        const task = await load_task(project_id, task_id)
+        if (!task) {
+          throw createKilnError("Failed to load task")
+        }
 
-        // Generate mock review data (in a real implementation, this would come from an API)
-        review_rows = [
-          {
-            id: "1",
-            input: "User uploads a PDF document",
-            output: "Document successfully processed",
-            model_decision: "meets_spec",
-            meets_spec: null,
-            feedback: "",
+        // Build the spec rendered prompt template from property values
+        const spec_definition = buildDefinitionFromProperties(
+          spec_type,
+          property_values,
+        )
+
+        // Construct task_prompt_with_few_shot (instruction + few shot examples if any)
+        let task_prompt_with_few_shot = task.instruction || ""
+
+        // Call the clarify API
+        const { data, error } = await client.POST("/api/spec/clarify", {
+          body: {
+            task_prompt_with_few_shot,
+            task_input_schema: task.input_json_schema
+              ? JSON.stringify(task.input_json_schema)
+              : "",
+            task_output_schema: task.output_json_schema
+              ? JSON.stringify(task.output_json_schema)
+              : "",
+            spec_rendered_prompt_template: spec_definition,
+            num_samples_per_topic: 10,
+            num_topics: 10,
+            num_exemplars: 10,
           },
-          {
-            id: "2",
-            input: "User tries to upload an invalid file",
-            output: "Error: Invalid file format",
-            model_decision: "fails_spec",
-            meets_spec: null,
-            feedback: "",
-          },
-          {
-            id: "3",
-            input: "User requests a summary of uploaded file",
-            output: "Summary generated successfully",
-            model_decision: "meets_spec",
-            meets_spec: null,
-            feedback: "",
-          },
-        ]
+        })
+
+        if (error || !data) {
+          throw createKilnError(error || "Failed to clarify spec")
+        }
+
+        // Map the API response to review_rows
+        type ExampleForFeedback = {
+          input: string
+          output: string
+          exhibits_issue: boolean
+        }
+        const examples = (
+          data as { examples_for_feedback: ExampleForFeedback[] }
+        ).examples_for_feedback
+        review_rows = examples.map((example, index) => ({
+          id: String(index + 1),
+          input: example.input,
+          output: example.output,
+          model_decision: example.exhibits_issue ? "fails_spec" : "meets_spec",
+          meets_spec: null,
+          feedback: "",
+        }))
 
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created

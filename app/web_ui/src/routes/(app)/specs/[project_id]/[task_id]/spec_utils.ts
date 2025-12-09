@@ -6,9 +6,14 @@ import type {
   EvalTemplateId,
   SpecProperties,
   SpecType,
+  TaskRun,
 } from "$lib/types"
-import { buildDefinitionFromProperties } from "./select_template/spec_templates"
+import { buildDefinitionFromProperties as buildDefinition } from "./select_template/spec_templates"
 import { createKilnError } from "$lib/utils/error_handlers"
+import { load_task } from "$lib/stores"
+
+// Re-export for convenience
+export { buildDefinition as buildDefinitionFromProperties }
 
 /**
  * Navigate to review_spec page after storing form data
@@ -58,11 +63,20 @@ export async function createSpec(
   property_values: Record<string, string | null>,
 ): Promise<string | null> {
   // First create a new eval for the spec under the hood
-
   const eval_id = await createEval(project_id, task_id, name, spec_type)
   if (!eval_id) {
     throw createKilnError("Failed to create eval for spec")
   }
+
+  // Generate eval data batch before creating the spec
+  const tag = specEvalTag(name)
+  await generateAndSaveEvalData(
+    project_id,
+    task_id,
+    spec_type,
+    property_values,
+    tag,
+  )
 
   // Build the properties object with spec_type, filtering out null values
   const filteredPropertyValues = Object.fromEntries(
@@ -74,7 +88,7 @@ export async function createSpec(
   } as SpecProperties
 
   // Build definition from properties
-  const definition = buildDefinitionFromProperties(spec_type, property_values)
+  const definition = buildDefinition(spec_type, property_values)
 
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/spec",
@@ -203,4 +217,114 @@ function specEvalTag(spec_name: string): string {
     return tag.slice(0, 32)
   }
   return tag
+}
+
+/**
+ * Generate eval data using the generate_batch API and save as TaskRuns
+ * @param project_id - The project ID
+ * @param task_id - The task ID
+ * @param spec_type - The spec type
+ * @param property_values - The property values for the spec
+ * @param tag - The eval tag to apply to generated runs
+ */
+async function generateAndSaveEvalData(
+  project_id: string,
+  task_id: string,
+  spec_type: SpecType,
+  property_values: Record<string, string | null>,
+  tag: string,
+): Promise<void> {
+  // Load the task to get instruction and schemas
+  const task = await load_task(project_id, task_id)
+  if (!task) {
+    throw createKilnError("Failed to load task")
+  }
+
+  // Build the spec rendered prompt template from property values
+  const spec_definition = buildDefinition(spec_type, property_values)
+
+  // Call the generate_batch API
+  const { data, error } = await client.POST("/api/spec/generate_batch", {
+    body: {
+      task_prompt_with_few_shot: task.instruction || "",
+      task_input_schema: task.input_json_schema
+        ? JSON.stringify(task.input_json_schema)
+        : "",
+      task_output_schema: task.output_json_schema
+        ? JSON.stringify(task.output_json_schema)
+        : "",
+      spec_rendered_prompt_template: spec_definition,
+      num_samples_per_topic: 10,
+      num_topics: 10,
+      enable_scoring: false,
+    },
+  })
+
+  if (error || !data) {
+    throw createKilnError(error || "Failed to generate batch")
+  }
+
+  // Convert examples to TaskRuns and save them
+  type ExampleForFeedback = {
+    input: string
+    output: string
+    exhibits_issue: boolean
+  }
+  const examples = (data as { examples_for_feedback: ExampleForFeedback[] })
+    .examples_for_feedback
+
+  // Save each example as a TaskRun with the eval tag
+  for (const example of examples) {
+    const taskRun: TaskRun = {
+      v: 1,
+      id: generate_id(),
+      path: null,
+      created_at: new Date().toISOString(),
+      input: example.input,
+      output: {
+        v: 1,
+        output: example.output,
+        source: {
+          type: "synthetic",
+          properties: {
+            adapter_name: "spec_eval_data_gen",
+            model_name: "spec_eval_data_gen",
+            model_provider: "kiln",
+          },
+        },
+      },
+      input_source: {
+        type: "synthetic",
+        properties: {
+          adapter_name: "spec_eval_data_gen",
+          model_name: "spec_eval_data_gen",
+          model_provider: "kiln",
+        },
+      },
+      tags: [tag],
+    }
+
+    // Save the run
+    const { error: saveError } = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/save_sample",
+      {
+        params: {
+          path: { project_id, task_id },
+        },
+        body: taskRun,
+      },
+    )
+
+    if (saveError) {
+      // Log error but continue saving other runs
+      console.error("Failed to save run:", saveError)
+    }
+  }
+}
+
+function generate_id(): string {
+  // Generate a 12 digit random integer string, matching Python's generate_model_id()
+  // which does: str(uuid.uuid4().int)[:12]
+  const randomInt = Math.floor(Math.random() * 1000000000000)
+  return randomInt.toString().padStart(12, "0")
 }

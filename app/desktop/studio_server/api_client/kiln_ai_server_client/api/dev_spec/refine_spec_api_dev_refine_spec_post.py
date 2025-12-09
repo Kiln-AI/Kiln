@@ -5,22 +5,43 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.http_validation_error import HTTPValidationError
+from ...models.refine_spec_input import RefineSpecInput
+from ...models.refine_spec_output import RefineSpecOutput
 from ...types import Response
 
 
-def _get_kwargs() -> dict[str, Any]:
+def _get_kwargs(
+    *,
+    body: RefineSpecInput,
+) -> dict[str, Any]:
+    headers: dict[str, Any] = {}
+
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/ping",
+        "method": "post",
+        "url": "/dev/refine_spec",
     }
 
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> str | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> HTTPValidationError | RefineSpecOutput | None:
     if response.status_code == 200:
-        response_200 = response.text
+        response_200 = RefineSpecOutput.from_dict(response.json())
+
         return response_200
+
+    if response.status_code == 422:
+        response_422 = HTTPValidationError.from_dict(response.json())
+
+        return response_422
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -28,7 +49,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[str]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[HTTPValidationError | RefineSpecOutput]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -40,26 +63,24 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 def sync_detailed(
     *,
     client: AuthenticatedClient | Client,
-) -> Response[str]:
-    r"""Ping
+    body: RefineSpecInput,
+) -> Response[HTTPValidationError | RefineSpecOutput]:
+    """Refine Spec Api
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        body (RefineSpecInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[str]
+        Response[HTTPValidationError | RefineSpecOutput]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        body=body,
+    )
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -71,53 +92,48 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient | Client,
-) -> str | None:
-    r"""Ping
+    body: RefineSpecInput,
+) -> HTTPValidationError | RefineSpecOutput | None:
+    """Refine Spec Api
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        body (RefineSpecInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        str
+        HTTPValidationError | RefineSpecOutput
     """
 
     return sync_detailed(
         client=client,
+        body=body,
     ).parsed
 
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient | Client,
-) -> Response[str]:
-    r"""Ping
+    body: RefineSpecInput,
+) -> Response[HTTPValidationError | RefineSpecOutput]:
+    """Refine Spec Api
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        body (RefineSpecInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[str]
+        Response[HTTPValidationError | RefineSpecOutput]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        body=body,
+    )
 
     response = await client.get_async_httpx_client().request(**kwargs)
 
@@ -127,27 +143,24 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient | Client,
-) -> str | None:
-    r"""Ping
+    body: RefineSpecInput,
+) -> HTTPValidationError | RefineSpecOutput | None:
+    """Refine Spec Api
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        body (RefineSpecInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        str
+        HTTPValidationError | RefineSpecOutput
     """
 
     return (
         await asyncio_detailed(
             client=client,
+            body=body,
         )
     ).parsed

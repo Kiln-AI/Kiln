@@ -10,6 +10,8 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import { createSpec, navigateToReviewSpec } from "../spec_utils"
+  import { client } from "$lib/api_client"
+  import { load_task } from "$lib/stores"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -78,6 +80,92 @@
 
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
+
+        // If we have review feedback, call the refine API
+        if (formData.review_feedback && formData.review_feedback.length > 0) {
+          // Load the task to get instruction and schemas
+          const task = await load_task(project_id, task_id)
+          if (!task) {
+            throw createKilnError("Failed to load task")
+          }
+
+          // Build spec info
+          const spec_fields: Record<string, string> = {}
+          const spec_field_current_values: Record<string, string> = {}
+
+          for (const field of field_configs) {
+            spec_fields[field.key] = field.description
+            spec_field_current_values[field.key] =
+              current_property_values[field.key] || ""
+          }
+
+          // Build task info
+          const task_info = {
+            task_prompt: task.instruction || "",
+            few_shot_examples: null,
+          }
+
+          // Map review feedback to examples_with_feedback
+          type ReviewFeedback = {
+            model_decision: string
+            feedback: string
+            input: string
+            output: string
+          }
+          const examples_with_feedback = (
+            formData.review_feedback as ReviewFeedback[]
+          ).map((feedback) => ({
+            user_rating_exhibits_issue_correct:
+              feedback.model_decision === "fails_spec",
+            user_feedback: feedback.feedback,
+            input: feedback.input,
+            output: feedback.output,
+            exhibits_issue: feedback.model_decision === "fails_spec",
+          }))
+
+          // Call the refine API
+          const { data, error } = await client.POST("/api/spec/refine", {
+            body: {
+              task_prompt_with_few_shot: task.instruction || "",
+              task_input_schema: task.input_json_schema
+                ? JSON.stringify(task.input_json_schema)
+                : "",
+              task_output_schema: task.output_json_schema
+                ? JSON.stringify(task.output_json_schema)
+                : "",
+              task_info,
+              spec: {
+                spec_fields,
+                spec_field_current_values,
+              },
+              examples_with_feedback,
+            },
+          })
+
+          if (error || !data) {
+            throw createKilnError(error || "Failed to refine spec")
+          }
+
+          // Apply the suggested edits to suggested_property_values
+          type SpecEdit = {
+            proposed_edit: string
+            reason_for_edit: string
+            old_value: string
+          }
+          type RefineResponse = {
+            new_proposed_spec_edits: Record<string, SpecEdit>
+            out_of_scope_feedback: string
+          }
+          const refineData = data as RefineResponse
+          if (refineData.new_proposed_spec_edits) {
+            for (const [field_key, edit] of Object.entries(
+              refineData.new_proposed_spec_edits,
+            )) {
+              suggested_property_values[field_key] = edit.proposed_edit
+              ai_suggested_fields.add(field_key)
+            }
+          }
+        }
 
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created
