@@ -114,6 +114,7 @@ class ModelName(str, Enum):
     claude_sonnet_4_5 = "claude_sonnet_4_5"
     claude_opus_4 = "claude_opus_4"
     claude_opus_4_1 = "claude_opus_4_1"
+    claude_opus_4_5 = "claude_opus_4_5"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -189,6 +190,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_6 = "glm_4_6"
+    glm_4_6v = "glm_4_6v"
     glm_4_5v = "glm_4_5v"
     glm_4_5 = "glm_4_5"
     glm_4_5_air = "glm_4_5_air"
@@ -1236,6 +1238,25 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="claude-3-5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    # Claude Opus 4.5
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_5,
+        friendly_name="Claude Opus 4.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.5",
+                structured_output_mode=StructuredOutputMode.function_calling,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-5-20251101",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                temp_top_p_exclusive=True,
             ),
         ],
     ),
@@ -4815,6 +4836,54 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # GLM 4.6V
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_6v,
+        friendly_name="GLM 4.6V (Vision-Language)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.6v",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/glm-4.6v",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                max_parallel_requests=1,
             ),
         ],
     ),
