@@ -1362,6 +1362,7 @@ dependencies = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
     { name = "together" },
+    { name = "typer" },
     { name = "typing-extensions" },
     { name = "vertexai" },
 ]
@@ -1400,6 +1401,7 @@ requires-dist = [
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "together", git = "https://github.com/scosman/together-python" },
+    { name = "typer", specifier = ">=0.9.0" },
     { name = "typing-extensions", specifier = ">=4.12.2" },
     { name = "vertexai", specifier = ">=1.43.0" },
 ]
