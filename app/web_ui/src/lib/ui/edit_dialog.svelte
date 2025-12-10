@@ -3,11 +3,13 @@
   import DeleteDialog from "./delete_dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import Warning from "./warning.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { base_url } from "$lib/api_client"
 
   export let name: string
   export let subtitle: string | undefined = undefined
+  export let warning: string | undefined = undefined
   export let patch_url: string
   export let delete_url: string | undefined = undefined
   export let after_save: () => void = () => {
@@ -98,6 +100,15 @@
 >
   {#if subtitle}
     <div class="text-sm font-light text-gray-500">{subtitle}</div>
+  {/if}
+  {#if warning}
+    <div class="mt-6">
+      <Warning
+        warning_message={warning}
+        warning_color="warning"
+        warning_icon="info"
+      />
+    </div>
   {/if}
   <div class="mt-6">
     <FormContainer
