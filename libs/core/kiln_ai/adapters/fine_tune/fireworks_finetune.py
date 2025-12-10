@@ -162,7 +162,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
 
         # Only setup W&B if the base URL is None as FW doesn't support custom base URLs.
         if wandb_api_key and wandb_base_url is None:
-            # users may not have entity set. Try geting default entity from W&B.
+            # users may not have entity set. Try getting default entity from W&B.
             if not wandb_entity:
                 # Attempt to get their account default entity
                 default_entity = await get_wandb_default_entity(wandb_api_key, None)

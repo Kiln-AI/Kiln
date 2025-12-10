@@ -16,6 +16,7 @@
     // The parent page can override this, but reload the page by default
     window.location.reload()
   }
+  export let after_delete: (() => void) | undefined = undefined
 
   type EditField = {
     label: string
@@ -140,6 +141,6 @@
     bind:this={delete_dialog}
     {name}
     {delete_url}
-    after_delete={after_save}
+    after_delete={after_delete || after_save}
   />
 {/if}
