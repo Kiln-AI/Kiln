@@ -104,9 +104,8 @@
   }
 
   async function get_eval_progress() {
-    eval_progress = null
-    eval_progress_loading = true
     try {
+      eval_progress_loading = true
       eval_progress = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
@@ -437,8 +436,9 @@
     // Spec uses different keys than legacy eval template_properties
     // Spec: tool_function_name, Legacy: tool
     if (evaluator.template === "tool_call") {
-      let tool_id: string | undefined = undefined
-      tool_id = evaluator.template_properties?.tool_id as string
+      const tool_id = evaluator.template_properties?.tool_id as
+        | string
+        | undefined
       if (tool_id) {
         params.set("tool_id", String(tool_id))
       }

@@ -36,7 +36,7 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import type { ActionButton } from "../../../../../../types"
+  import type { ActionButton } from "$lib/types"
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
@@ -236,7 +236,7 @@
       return
     }
     try {
-      score_summary = null
+      score_summary_error = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
         {

@@ -164,31 +164,37 @@ function specEvalDataType(spec_type: SpecType): EvalDataType {
 }
 
 function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
-  if (spec_type === "appropriate_tool_use") {
-    return "tool_call"
+  switch (spec_type) {
+    case "appropriate_tool_use":
+      return "tool_call"
+    case "reference_answer_accuracy":
+      return "rag"
+    case "factual_correctness":
+      return "factual_correctness"
+    case "toxicity":
+      return "toxicity"
+    case "bias":
+      return "bias"
+    case "maliciousness":
+      return "maliciousness"
+    case "jailbreak":
+      return "jailbreak"
+    case "behaviour":
+    case "tone":
+    case "formatting":
+    case "localization":
+    case "hallucinations":
+    case "completeness":
+    case "nsfw":
+    case "taboo":
+    case "prompt_leakage":
+      return null
+    default: {
+      const _exhaustive: never = spec_type
+      void _exhaustive
+      return null
+    }
   }
-  if (spec_type === "reference_answer_accuracy") {
-    return "rag"
-  }
-  if (spec_type === "behaviour") {
-    return null
-  }
-  if (spec_type === "factual_correctness") {
-    return "factual_correctness"
-  }
-  if (spec_type === "toxicity") {
-    return "toxicity"
-  }
-  if (spec_type === "bias") {
-    return "bias"
-  }
-  if (spec_type === "maliciousness") {
-    return "maliciousness"
-  }
-  if (spec_type === "jailbreak") {
-    return "jailbreak"
-  }
-  return null
 }
 
 function specEvalTag(spec_name: string): string {
