@@ -29,6 +29,7 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
@@ -727,6 +728,9 @@
     the highest scores on your eval dataset."
   {project_id}
   {task}
+  new_run_config_created={async () => {
+    await load_task_prompts(project_id, task_id, true)
+  }}
 />
 
 <Dialog

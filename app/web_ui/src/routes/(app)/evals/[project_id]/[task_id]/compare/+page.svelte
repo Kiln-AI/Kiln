@@ -8,6 +8,7 @@
   import type { Task, TaskRunConfig } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import RunEval from "../[eval_id]/run_eval.svelte"
+  import CompareChart from "./compare_chart.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -15,8 +16,6 @@
   import {
     model_info,
     load_model_info,
-    current_task_prompts,
-    load_available_prompts,
     load_available_models,
     get_task_composite_id,
     load_task,
@@ -25,6 +24,10 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
+  import {
+    load_task_prompts,
+    prompts_by_task_composite_id,
+  } from "$lib/stores/prompts_store"
   import {
     getDetailedModelName,
     getRunConfigPromptDisplayName,
@@ -145,7 +148,7 @@
     // Load data needed for the page
     await Promise.all([
       load_model_info(),
-      load_available_prompts(),
+      load_task_prompts(project_id, task_id),
       load_available_models(),
       get_task(),
     ])
@@ -219,7 +222,7 @@
     }
   }
 
-  // Reactively fetch eval scores when models are selected
+  // Reactively fetch eval scores when models are selected (for table)
   $: {
     selectedModels.forEach((modelId) => {
       if (
@@ -232,6 +235,29 @@
       }
     })
   }
+
+  // Fetch eval scores for ALL run configs (for chart)
+  $: if (current_task_run_configs) {
+    current_task_run_configs.forEach((config) => {
+      if (
+        config.id &&
+        !eval_scores_cache[config.id] &&
+        !eval_scores_loading[config.id]
+      ) {
+        fetch_eval_scores(config.id)
+      }
+    })
+  }
+
+  // Check if chart data is still loading
+  $: chartLoading =
+    !current_task_run_configs ||
+    current_task_run_configs.some(
+      (config) =>
+        config.id &&
+        !eval_scores_cache[config.id] &&
+        !eval_scores_errors[config.id],
+    )
 
   async function fetch_eval_template(eval_id: string) {
     if (
@@ -272,6 +298,15 @@
   // Generate comparison features dynamically from eval_scores
   $: comparisonFeatures = generateComparisonFeatures(
     selectedModels,
+    eval_scores_cache,
+  )
+
+  // Generate comparison features for ALL run configs (for chart)
+  $: allRunConfigIds = (current_task_run_configs || [])
+    .map((c) => c.id)
+    .filter((id): id is string => id !== null && id !== undefined)
+  $: chartComparisonFeatures = generateComparisonFeatures(
+    allRunConfigIds,
     eval_scores_cache,
   )
 
@@ -384,61 +419,68 @@
     }
   }
 
-  function getModelValue(modelKey: string | null, dataKey: string): string {
-    if (!modelKey || !eval_scores_cache[modelKey]) return "—"
+  // Core value extraction - returns raw number, used by both table and chart
+  function getModelValueRaw(
+    modelKey: string | null,
+    dataKey: string,
+  ): number | null {
+    if (!modelKey || !eval_scores_cache[modelKey]) return null
 
     const [category, scoreKey] = dataKey.split("::")
-    if (!category || !scoreKey) return "—"
+    if (!category || !scoreKey) return null
 
     const evalScores = eval_scores_cache[modelKey]
 
     // Handle cost metrics
     if (category === "cost") {
-      if (!evalScores.mean_usage) return "—"
+      if (!evalScores.mean_usage) return null
 
       const meanUsage = evalScores.mean_usage
-      let value: number | null | undefined = null
-
       switch (scoreKey) {
         case "mean_input_tokens":
-          value = meanUsage.mean_input_tokens
-          break
+          return meanUsage.mean_input_tokens ?? null
         case "mean_output_tokens":
-          value = meanUsage.mean_output_tokens
-          break
+          return meanUsage.mean_output_tokens ?? null
         case "mean_total_tokens":
-          value = meanUsage.mean_total_tokens
-          break
+          return meanUsage.mean_total_tokens ?? null
         case "mean_cost":
-          value = meanUsage.mean_cost
-          break
+          return meanUsage.mean_cost ?? null
       }
-
-      if (value !== null && value !== undefined) {
-        // Format cost with currency symbol, others as whole numbers
-        if (scoreKey === "mean_cost") {
-          return `$${value.toFixed(7)}`
-        } else {
-          return value.toFixed(1)
-        }
-      }
-
-      return "—"
+      return null
     }
 
-    // Handle eval metrics (existing logic)
+    // Handle eval metrics
     const evalResult = evalScores.eval_results.find(
       (e) => e.eval_name === category,
     )
-    if (!evalResult) return "—"
+    if (!evalResult) return null
 
     const score: ScoreSummary | null | undefined =
       evalResult.eval_config_result?.results[scoreKey]
     if (score) {
-      return score.mean_score.toFixed(2)
+      return score.mean_score
     }
 
-    return "—"
+    return null
+  }
+
+  // Formatted value for table display
+  function getModelValue(modelKey: string | null, dataKey: string): string {
+    const value = getModelValueRaw(modelKey, dataKey)
+    if (value === null) return "—"
+
+    const [category, scoreKey] = dataKey.split("::")
+
+    // Format cost with currency symbol, tokens as whole numbers, others as decimals
+    if (category === "cost") {
+      if (scoreKey === "mean_cost") {
+        return `$${value.toFixed(7)}`
+      } else {
+        return value.toFixed(1)
+      }
+    }
+
+    return value.toFixed(2)
   }
 
   function getModelPercentComplete(
@@ -530,7 +572,7 @@
 
 <AppPage
   title="Compare Run Configurations"
-  subtitle="Compare run Configurations for your task using evals"
+  subtitle="Find the optimal run configuration for your task using evals"
   breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
 >
   {#if loading}
@@ -651,13 +693,17 @@
                           >
                             {getRunConfigPromptDisplayName(
                               selectedConfig,
-                              $current_task_prompts,
+                              $prompts_by_task_composite_id[
+                                get_task_composite_id(project_id, task_id)
+                              ] || null,
                             )}
                           </a>
                         {:else}
                           Prompt: {getRunConfigPromptDisplayName(
                             selectedConfig,
-                            $current_task_prompts,
+                            $prompts_by_task_composite_id[
+                              get_task_composite_id(project_id, task_id)
+                            ] || null,
                           )}
                         {/if}
                         {#if prompt_info_text}
@@ -870,6 +916,17 @@
               </div>
             </div>
           {/if}
+        </div>
+
+        <div class="mt-16">
+          <CompareChart
+            comparisonFeatures={chartComparisonFeatures}
+            {getModelValueRaw}
+            run_configs={current_task_run_configs || []}
+            model_info={$model_info}
+            prompts={$current_task_prompts}
+            loading={loading || chartLoading}
+          />
         </div>
       {/if}
     </div>
