@@ -79,7 +79,7 @@
     for (const group of axisOptions) {
       const option = group.options.find((opt) => opt.value === dataKey)
       if (option) {
-        return group.label ? `${group.label}: ${option.label}` : option.label
+        return option.label
       }
     }
 
@@ -217,13 +217,14 @@
 </script>
 
 <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-  <div class="flex flex-col lg:flex-row gap-6">
+  <div class="flex flex-col gap-6">
     <!-- Axis Selection Controls -->
-    <div class="flex flex-col gap-4 lg:w-64 flex-shrink-0">
-      <div>
+    <div class="flex flex-row gap-8 flex-shrink-0 items-center">
+      <div class="text-xl font-bold flex-grow">Chart</div>
+      <div class="flex flex-row gap-2 items-center">
         <label
           for="x-axis-select"
-          class="block text-sm font-medium text-gray-700 mb-1"
+          class="text-sm font-medium text-gray-700 mb-1 whitespace-nowrap"
         >
           X-Axis
         </label>
@@ -234,10 +235,10 @@
           empty_label="Select metric"
         />
       </div>
-      <div>
+      <div class="flex flex-row gap-2 items-center">
         <label
           for="y-axis-select"
-          class="block text-sm font-medium text-gray-700 mb-1"
+          class="text-sm font-medium text-gray-700 mb-1 whitespace-nowrap"
         >
           Y-Axis
         </label>

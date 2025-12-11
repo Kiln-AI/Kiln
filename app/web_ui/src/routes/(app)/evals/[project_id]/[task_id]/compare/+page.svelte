@@ -573,14 +573,6 @@
   subtitle="Compare run Configurations for your task using evals"
   breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
 >
-  <CompareChart
-    comparisonFeatures={chartComparisonFeatures}
-    {getModelValueRaw}
-    run_configs={current_task_run_configs || []}
-    model_info={$model_info}
-    loading={loading || chartLoading}
-  />
-
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
@@ -918,6 +910,16 @@
               </div>
             </div>
           {/if}
+        </div>
+
+        <div class="mt-16">
+          <CompareChart
+            comparisonFeatures={chartComparisonFeatures}
+            {getModelValueRaw}
+            run_configs={current_task_run_configs || []}
+            model_info={$model_info}
+            loading={loading || chartLoading}
+          />
         </div>
       {/if}
     </div>
