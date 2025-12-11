@@ -2,7 +2,16 @@
   import * as echarts from "echarts"
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import type { TaskRunConfig, ProviderModels } from "$lib/types"
+  import type {
+    TaskRunConfig,
+    ProviderModels,
+    PromptResponse,
+  } from "$lib/types"
+  import {
+    getDetailedModelName,
+    getRunConfigPromptDisplayName,
+  } from "$lib/utils/run_config_formatters"
+  import { provider_name_from_id } from "$lib/stores"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -20,6 +29,7 @@
   ) => number | null
   export let run_configs: TaskRunConfig[]
   export let model_info: ProviderModels | null
+  export let prompts: PromptResponse | null = null
   export let loading: boolean = false
 
   // Axis selection state
@@ -96,6 +106,10 @@
     return value.toFixed(2)
   }
 
+  function getRunConfigById(configId: string): TaskRunConfig | null {
+    return run_configs.find((c) => c.id === configId) || null
+  }
+
   function generateChartData(): {
     series: echarts.SeriesOption[]
     legend: string[]
@@ -125,7 +139,7 @@
         series.push({
           name,
           type: "scatter",
-          data: [[xValue, yValue]],
+          data: [[xValue, yValue, configId]],
           symbolSize: 15,
         })
       }
@@ -147,11 +161,31 @@
           trigger: "item",
           formatter: function (params: {
             seriesName: string
-            value: number[]
+            value: (number | string)[]
           }) {
             const xLabel = getAxisLabel(xAxis)
             const yLabel = getAxisLabel(yAxis)
-            return `<strong>${params.seriesName}</strong><br/>${xLabel}: ${formatValue(params.value[0], xAxis)}<br/>${yLabel}: ${formatValue(params.value[1], yAxis)}`
+            const configId = params.value[2] as string
+            const config = getRunConfigById(configId)
+
+            let tooltipHtml = `<strong>${params.seriesName}</strong>`
+
+            if (config) {
+              const modelName = getDetailedModelName(config, model_info)
+              const providerName = provider_name_from_id(
+                config.run_config_properties?.model_provider_name,
+              )
+              const promptName = getRunConfigPromptDisplayName(config, prompts)
+
+              tooltipHtml = `<strong>${modelName}</strong>`
+              tooltipHtml += `<br/><span style="color: #666;">Provider:</span> ${providerName}`
+              tooltipHtml += `<br/><span style="color: #666;">Prompt:</span> ${promptName}`
+            }
+
+            tooltipHtml += `<br/><br/><span style="color: #666;">${xLabel}:</span> ${formatValue(params.value[0] as number, xAxis)}`
+            tooltipHtml += `<br/><span style="color: #666;">${yLabel}:</span> ${formatValue(params.value[1] as number, yAxis)}`
+
+            return tooltipHtml
           },
         },
         legend: {

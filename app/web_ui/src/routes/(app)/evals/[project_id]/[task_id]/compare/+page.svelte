@@ -918,6 +918,7 @@
             {getModelValueRaw}
             run_configs={current_task_run_configs || []}
             model_info={$model_info}
+            prompts={$current_task_prompts}
             loading={loading || chartLoading}
           />
         </div>
