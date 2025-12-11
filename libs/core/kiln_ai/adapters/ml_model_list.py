@@ -1250,12 +1250,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.5",
-                structured_output_mode=StructuredOutputMode.function_calling,
+                structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-5-20251101",
-                structured_output_mode=StructuredOutputMode.function_calling,
+                structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
             ),
         ],
