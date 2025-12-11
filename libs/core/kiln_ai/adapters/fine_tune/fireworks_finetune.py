@@ -14,6 +14,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 
 logger = logging.getLogger(__name__)
 
@@ -154,13 +155,35 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
         }
-        # Add W&B config if API key is set
-        if Config.shared().wandb_api_key:
+
+        wandb_api_key = Config.shared().wandb_api_key
+        wandb_entity = Config.shared().wandb_entity
+        wandb_base_url = Config.shared().wandb_base_url
+
+        # Only setup W&B if the base URL is None as FW doesn't support custom base URLs.
+        if wandb_api_key and wandb_base_url is None:
+            # users may not have entity set. Try getting default entity from W&B.
+            if not wandb_entity:
+                # Attempt to get their account default entity
+                default_entity = await get_wandb_default_entity(wandb_api_key, None)
+                if isinstance(default_entity, AuthenticationError):
+                    raise ValueError(
+                        "Authentication to Weight & Biases failed. Please check your API key and try again."
+                    )
+                elif isinstance(default_entity, str) and len(default_entity) > 0:
+                    wandb_entity = default_entity
+                else:
+                    raise ValueError(
+                        "Weights & Biases entity not found and is required. Please set a default entity in your W&B account settings, or disconnect and reconnect Weights & Biases in Kiln Settings -> Manage Providers to set a custom entity."
+                    )
+
             payload["wandbConfig"] = {
                 "enabled": True,
-                "project": "Kiln_AI",
-                "apiKey": Config.shared().wandb_api_key,
+                "project": "kiln_ai",
+                "entity": wandb_entity,
+                "apiKey": wandb_api_key,
             }
+
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
         payload.update(hyperparameters)
         headers = {

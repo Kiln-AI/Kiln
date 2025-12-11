@@ -661,6 +661,9 @@
   name="Eval"
   patch_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
   delete_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
+  after_delete={() => {
+    goto(`/evals/${project_id}/${task_id}`)
+  }}
   fields={[
     {
       label: "Eval Name",
