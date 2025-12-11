@@ -570,7 +570,7 @@
 
 <AppPage
   title="Compare Run Configurations"
-  subtitle="Compare run Configurations for your task using evals"
+  subtitle="Find the optimal run configuration for your task using evals"
   breadcrumbs={[{ label: "Evals", href: `/evals/${project_id}/${task_id}` }]}
 >
   {#if loading}

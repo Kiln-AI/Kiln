@@ -204,15 +204,29 @@
           type: "value",
           name: getAxisLabel(selectedXAxis),
           nameLocation: "middle",
-          nameGap: 30,
+          nameGap: 35,
           scale: true,
+          nameTextStyle: {
+            fontSize: 14,
+            fontWeight: 500,
+          },
+          axisLabel: {
+            fontSize: 13,
+          },
         },
         yAxis: {
           type: "value",
           name: getAxisLabel(selectedYAxis),
           nameLocation: "middle",
-          nameGap: 40,
+          nameGap: 50,
           scale: true,
+          nameTextStyle: {
+            fontSize: 14,
+            fontWeight: 500,
+          },
+          axisLabel: {
+            fontSize: 13,
+          },
         },
         series,
       },
@@ -256,34 +270,36 @@
     <!-- Axis Selection Controls -->
     <div class="flex flex-row gap-8 flex-shrink-0 items-center">
       <div class="text-xl font-bold flex-grow">Chart</div>
-      <div class="flex flex-row gap-2 items-center">
-        <label
-          for="x-axis-select"
-          class="text-sm font-medium text-gray-700 mb-1 whitespace-nowrap"
-        >
-          X-Axis
-        </label>
-        <FancySelect
-          aria_label="Select X-Axis metric"
-          options={axisOptions}
-          bind:selected={selectedXAxis}
-          empty_label="Select metric"
-        />
-      </div>
-      <div class="flex flex-row gap-2 items-center">
-        <label
-          for="y-axis-select"
-          class="text-sm font-medium text-gray-700 mb-1 whitespace-nowrap"
-        >
-          Y-Axis
-        </label>
-        <FancySelect
-          aria_label="Select Y-Axis metric"
-          options={axisOptions}
-          bind:selected={selectedYAxis}
-          empty_label="Select metric"
-        />
-      </div>
+      {#if !loading && axisOptions.length > 1}
+        <div class="flex flex-row gap-2 items-center">
+          <label
+            for="x-axis-select"
+            class="text-sm font-medium text-gray-700 mb-1 whitespace-nowrap"
+          >
+            X-Axis
+          </label>
+          <FancySelect
+            aria_label="Select X-Axis metric"
+            options={axisOptions}
+            bind:selected={selectedXAxis}
+            empty_label="Select metric"
+          />
+        </div>
+        <div class="flex flex-row gap-2 items-center">
+          <label
+            for="y-axis-select"
+            class="text-sm font-medium text-gray-700 mb-1 whitespace-nowrap"
+          >
+            Y-Axis
+          </label>
+          <FancySelect
+            aria_label="Select Y-Axis metric"
+            options={axisOptions}
+            bind:selected={selectedYAxis}
+            empty_label="Select metric"
+          />
+        </div>
+      {/if}
     </div>
 
     <!-- Chart Container -->
@@ -296,7 +312,7 @@
           <span>Loading chart data...</span>
         </div>
       {:else if axisOptions.length <= 1}
-        <div class="flex items-center justify-center h-[400px] text-gray-500">
+        <div class="flex items-center justify-center h-[300px]">
           <div class="text-center">
             <svg
               class="mx-auto h-12 w-12 text-gray-400 mb-4"
@@ -307,18 +323,18 @@
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                stroke-width="2"
+                stroke-width="1.2"
                 d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
               />
             </svg>
-            <p class="font-medium">No eval data available</p>
-            <p class="text-sm mt-1">
-              Run evals on your configurations to see comparison charts
+            <p class="text-lg font-medium">No Data Available</p>
+            <p class="mt-1 text-gray-500">
+              Create and run evals to see a comparison chart.
             </p>
           </div>
         </div>
       {:else}
-        <div use:initChart class="w-full h-[400px] lg:h-[600px]"></div>
+        <div use:initChart class="w-full h-[400px] xl:h-[600px]"></div>
       {/if}
     </div>
   </div>
