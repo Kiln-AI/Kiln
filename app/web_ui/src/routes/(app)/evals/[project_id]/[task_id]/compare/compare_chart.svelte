@@ -290,7 +290,7 @@
     <div class="flex-1 min-w-0">
       {#if loading}
         <div
-          class="flex items-center justify-center h-[400px] lg:h-[600px] text-gray-500 gap-2"
+          class="flex items-center justify-center h-[400px] text-gray-500 gap-2"
         >
           <div class="loading loading-spinner loading-md"></div>
           <span>Loading chart data...</span>
@@ -318,7 +318,7 @@
           </div>
         </div>
       {:else}
-        <div use:initChart class="w-full h-[400px]"></div>
+        <div use:initChart class="w-full h-[400px] lg:h-[600px]"></div>
       {/if}
     </div>
   </div>
