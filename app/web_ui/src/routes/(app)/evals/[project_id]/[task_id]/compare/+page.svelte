@@ -9,7 +9,6 @@
   import type { components } from "$lib/api_schema"
   import RunEval from "../[eval_id]/run_eval.svelte"
   import CompareChart from "./compare_chart.svelte"
-
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
   type ScoreSummary = components["schemas"]["ScoreSummary"]
@@ -924,7 +923,9 @@
             {getModelValueRaw}
             run_configs={current_task_run_configs || []}
             model_info={$model_info}
-            prompts={$current_task_prompts}
+            prompts={$prompts_by_task_composite_id[
+              get_task_composite_id(project_id, task_id)
+            ] || null}
             loading={loading || chartLoading}
           />
         </div>
