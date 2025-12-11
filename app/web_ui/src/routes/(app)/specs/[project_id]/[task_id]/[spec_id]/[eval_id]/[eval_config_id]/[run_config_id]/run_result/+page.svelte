@@ -25,7 +25,7 @@
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
-  import OutputTypeTablePreview from "../../../output_type_table_preview.svelte"
+  import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
 
   $: eval_id = $page.params.eval_id
 

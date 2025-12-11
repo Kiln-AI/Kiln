@@ -5,7 +5,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
-  import RunEval from "./../run_eval.svelte"
+  import RunEval from "$lib/components/run_eval.svelte"
   import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import {
@@ -292,8 +292,9 @@
   }
 
   async function get_score_summary() {
-    score_summary = null
     try {
+      score_summary = null
+      score_summary_error = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary",
         {

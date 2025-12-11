@@ -44,17 +44,34 @@
   let eval_progress_loading = true
   let eval_progress_error: KilnError | null = null
 
-  let error: KilnError | null = null
-  let loading: boolean = false
-  $: error = spec_error || eval_progress_error
-  $: loading = spec_loading || eval_progress_loading
-
   let evaluator: Eval | null = null
+  let eval_error: KilnError | null = null
+  let eval_loading = false
 
   let task: Task | null = null
+  let task_error: KilnError | null = null
+  let task_loading = false
+
+  let run_configs_error: KilnError | null = null
+  let run_configs_loading = false
 
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
+
+  let error: KilnError | null = null
+  let loading: boolean = false
+  $: error =
+    spec_error ||
+    eval_progress_error ||
+    eval_error ||
+    task_error ||
+    run_configs_error
+  $: loading =
+    spec_loading ||
+    eval_progress_loading ||
+    eval_loading ||
+    task_loading ||
+    run_configs_loading
 
   let eval_state:
     | "not_started"
@@ -119,6 +136,8 @@
   async function load_eval_data() {
     if (!spec?.eval_id) return
     try {
+      eval_loading = true
+      eval_error = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
         {
@@ -136,23 +155,33 @@
       }
       evaluator = data
     } catch (error) {
-      console.error("Error loading eval data:", error)
+      eval_error = createKilnError(error)
+    } finally {
+      eval_loading = false
     }
   }
 
   async function load_task_data() {
     try {
+      task_loading = true
+      task_error = null
       task = await load_task(project_id, task_id)
     } catch (error) {
-      console.error("Error loading task:", error)
+      task_error = createKilnError(error)
+    } finally {
+      task_loading = false
     }
   }
 
   async function load_run_configs_data() {
     try {
+      run_configs_loading = true
+      run_configs_error = null
       await load_task_run_configs(project_id, task_id)
     } catch (error) {
-      console.error("Error loading run configs:", error)
+      run_configs_error = createKilnError(error)
+    } finally {
+      run_configs_loading = false
     }
   }
 
@@ -179,7 +208,6 @@
       score_summary = data
     } catch (error) {
       score_summary_error = createKilnError(error)
-      console.error("Error loading score summary:", error)
     }
   }
 
@@ -258,9 +286,8 @@
 
   async function get_eval_progress() {
     if (!spec?.eval_id) return
-    eval_progress = null
-    eval_progress_loading = true
     try {
+      eval_progress_loading = true
       eval_progress = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",

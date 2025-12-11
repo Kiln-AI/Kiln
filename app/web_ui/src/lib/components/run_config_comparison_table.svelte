@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Eval, Task, TaskRunConfig, EvalResultSummary } from "$lib/types"
   import RunConfigSummary from "$lib/ui/run_config_component/run_config_summary.svelte"
-  import OutputTypeTablePreview from "../../routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/output_type_table_preview.svelte"
-  import RunEval from "../../routes/(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/run_eval.svelte"
+  import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
+  import RunEval from "$lib/components/run_eval.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -30,6 +30,8 @@
   export let on_add_run_config: (() => void) | null = null
   export let current_eval_config_name: string | null = null
   export let score_summary_error: KilnError | null = null
+
+  $: spec_id_for_url = spec_id || "legacy"
 
   function show_incomplete_warning(
     score_summary: EvalResultSummary | null,
@@ -170,7 +172,7 @@
                   />
                 {:else}
                   <a
-                    href={`/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`}
+                    href={`/specs/${project_id}/${task_id}/${spec_id_for_url}/${eval_id}/compare_run_configs`}
                     class="btn btn-xs btn-outline rounded-full min-w-[120px]"
                   >
                     Run Eval
@@ -183,7 +185,7 @@
             {#if percent_complete > 0}
               <div class="mt-1">
                 <a
-                  href={`/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/${current_eval_config_id ? current_eval_config_id : evaluator.current_config_id}/${task_run_config.id}/run_result`}
+                  href={`/specs/${project_id}/${task_id}/${spec_id_for_url}/${eval_id}/${current_eval_config_id ? current_eval_config_id : evaluator.current_config_id}/${task_run_config.id}/run_result`}
                   class="btn btn-xs btn-outline rounded-full min-w-[120px]"
                 >
                   View Data

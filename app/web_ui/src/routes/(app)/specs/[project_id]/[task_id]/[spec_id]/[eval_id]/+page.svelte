@@ -104,9 +104,8 @@
   }
 
   async function get_eval_progress() {
-    eval_progress = null
-    eval_progress_loading = true
     try {
+      eval_progress_loading = true
       eval_progress = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
@@ -442,7 +441,7 @@
       if (spec_properties?.spec_type === "appropriate_tool_use") {
         tool_id = spec_properties?.tool_id
       } else {
-        tool_id = evaluator.template_properties?.tool_id as string
+        tool_id = evaluator.template_properties?.tool_id as string | undefined
       }
       if (tool_id) {
         params.set("tool_id", String(tool_id))

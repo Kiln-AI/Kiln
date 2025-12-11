@@ -14,7 +14,7 @@
   let spec_error: KilnError | null = null
   let spec_loading = true
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
   let name = ""
   let property_values: Record<string, string | null> = {}
 

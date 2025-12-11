@@ -33,7 +33,7 @@
     return ai_suggested_fields.has(key)
   }
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
 
   // Get field configs for the current spec_type
   $: field_configs = spec_field_configs[spec_type] || []

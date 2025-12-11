@@ -1,5 +1,17 @@
 import type { components } from "./api_schema"
 
+// A type for a button which can appear on an app page
+export type ActionButton = {
+  label?: string
+  icon?: string
+  handler?: () => void
+  href?: string
+  primary?: boolean
+  notice?: boolean
+  shortcut?: string
+  disabled?: boolean
+}
+
 // Project-Input is a variant with path
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]

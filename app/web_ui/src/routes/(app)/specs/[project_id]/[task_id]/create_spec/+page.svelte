@@ -15,7 +15,7 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
   let name = ""
 
   // Store property values as a Record<string, string | null>
