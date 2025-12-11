@@ -21,7 +21,14 @@ from kiln_ai.datamodel.run_config import RunConfigProperties
 class MockFinetune(BaseFinetuneAdapter):
     """Mock implementation of BaseFinetune for testing"""
 
+    set_structured_output_mode = True
+
     async def _start(self, dataset: DatasetSplit) -> None:
+        # required each provider sets this
+        if self.datamodel.run_config is not None and self.set_structured_output_mode:
+            self.datamodel.run_config.structured_output_mode = (
+                StructuredOutputMode.json_schema
+            )
         pass
 
     async def status(self) -> FineTuneStatus:
@@ -171,6 +178,29 @@ def mock_dataset(sample_task):
     dataset.parent_task.return_value = sample_task
     dataset.split_contents = {"train": [], "validation": [], "test": []}
     return dataset
+
+
+async def test_create_and_start_fails_to_set_structured_output_mode(
+    mock_dataset, basic_run_config
+):
+    class MockFinetuneNoStructuredOutput(MockFinetune):
+        set_structured_output_mode = False
+
+    with pytest.raises(
+        ValueError,
+        match="Structured output mode is required to be set on a fine-tune run",
+    ):
+        await MockFinetuneNoStructuredOutput.create_and_start(
+            dataset=mock_dataset,
+            provider_id="openai",
+            provider_base_model_id="gpt-4o-mini-2024-07-18",
+            train_split_name="train",
+            parameters={"epochs": 10},  # Required parameter
+            system_message="Test system message",
+            data_strategy=ChatStrategy.single_turn,
+            thinking_instructions=None,
+            run_config=basic_run_config,
+        )
 
 
 async def test_create_and_start_success(mock_dataset, basic_run_config):

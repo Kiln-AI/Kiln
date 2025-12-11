@@ -8,6 +8,7 @@ from kiln_ai.datamodel import Finetune as FinetuneModel
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
     ModelProviderName,
+    StructuredOutputMode,
 )
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -123,6 +124,15 @@ class BaseFinetuneAdapter(ABC):
 
         adapter = cls(datamodel)
         await adapter._start(dataset)
+
+        # second check that structured_data_mode is set
+        if (
+            run_config.structured_output_mode == StructuredOutputMode.default
+            or run_config.structured_output_mode is StructuredOutputMode.unknown
+        ):
+            raise ValueError(
+                "Structured output mode is required to be set on a fine-tune run config by the adapter/provider. Default/unknown is dangerous as we won't know later which method to use."
+            )
 
         datamodel.save_to_file()
 
