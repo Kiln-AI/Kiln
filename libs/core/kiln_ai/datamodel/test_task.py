@@ -9,7 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import (
-    BehaviourProperties,
+    DesiredBehaviourProperties,
     SpecType,
     ToxicityProperties,
 )
@@ -349,12 +349,12 @@ def test_task_specs_relationship(tmp_path):
     )
     task.save_to_file()
 
-    properties = BehaviourProperties(
-        spec_type=SpecType.behaviour,
+    properties = DesiredBehaviourProperties(
+        spec_type=SpecType.desired_behaviour,
         base_instruction="Test instruction",
-        behavior_description="The system should behave correctly",
-        correct_behavior_examples="Example 1",
-        incorrect_behavior_examples="Example 1",
+        desired_behaviour_description="The system should behave correctly",
+        correct_behaviour_examples="Example 1",
+        incorrect_behaviour_examples="Example 1",
     )
     spec = Spec(
         name="Test Spec",
@@ -369,7 +369,7 @@ def test_task_specs_relationship(tmp_path):
     assert len(specs) == 1
     assert specs[0].name == "Test Spec"
     assert specs[0].definition == "The system should behave correctly"
-    assert specs[0].properties["spec_type"] == SpecType.behaviour
+    assert specs[0].properties["spec_type"] == SpecType.desired_behaviour
 
 
 def test_task_specs_readonly(tmp_path):

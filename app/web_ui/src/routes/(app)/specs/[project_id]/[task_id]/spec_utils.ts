@@ -179,7 +179,10 @@ function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
       return "maliciousness"
     case "jailbreak":
       return "jailbreak"
-    case "behaviour":
+    case "issue":
+      return "kiln_issue"
+    case "desired_behaviour":
+      return "desired_behaviour"
     case "tone":
     case "formatting":
     case "localization":
