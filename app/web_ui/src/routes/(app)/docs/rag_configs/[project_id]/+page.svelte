@@ -38,7 +38,7 @@
   $: project_id = $page.params.project_id
   $: current_task_id = $ui_state.current_task_id
   $: evals_href = current_task_id
-    ? `/evals/${project_id}/${current_task_id}/create_evaluator?template_id=rag`
+    ? `/specs/${project_id}/${current_task_id}/select_template?template_id=rag`
     : undefined
 
   onMount(async () => {

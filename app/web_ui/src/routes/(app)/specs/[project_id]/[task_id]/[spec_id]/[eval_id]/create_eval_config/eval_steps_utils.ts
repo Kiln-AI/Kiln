@@ -1,4 +1,4 @@
-import type { EvalTemplateId, Task, Eval } from "$lib/types"
+import type { EvalTemplateId, Task, Eval, Spec } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
@@ -43,12 +43,21 @@ export function get_eval_steps(
   template: EvalTemplateId | null | undefined,
   task: Task,
   evaluator: Eval,
+  spec: Spec | null = null,
 ): string[] {
   if (!template) {
     return []
   }
 
   if (template in eval_steps_static_templates) {
+    if (spec !== null) {
+      const full_trace = evaluator.evaluation_data_type === "full_trace"
+      const generic_spec_step = `Look at the ${full_trace ? "<conversation_history>" : "output"} for the task run. Evaluate if the model's behaviour meets the <spec_description>. The eval should pass if the model's behaviour meets all requirements of the spec, and fail if any requirements of the spec are not met.
+<spec_description>
+${spec.definition}
+</spec_description>`
+      return [generic_spec_step]
+    }
     return eval_steps_static_templates[template as StaticEvalTemplates]
   }
 
@@ -66,20 +75,32 @@ export function get_eval_steps(
   }
 
   if (template === "kiln_issue") {
-    const issue_prompt = evaluator.template_properties.issue_prompt
-    if (!issue_prompt) {
+    // Extract variables from either spec properties or eval template properties
+    let issue_description: string
+    let failure_example: string | undefined
+    let pass_example: string | undefined
+
+    // Legacy eval only (specs not yet supported for kiln_issue)
+    issue_description = evaluator.template_properties?.issue_prompt as string
+    if (!issue_description) {
       throw new Error("Issue prompt is required for kiln_issue template")
     }
+    failure_example = evaluator.template_properties?.failure_example as
+      | string
+      | undefined
+    pass_example = evaluator.template_properties?.pass_example as
+      | string
+      | undefined
+
+    // Build steps using the extracted variables
     const steps: string[] = [
-      `Does the model's output contain the issue described here: \n<issue_description>\n${issue_prompt}\n</issue_description>`,
+      `Does the model's output contain the issue described here: \n<issue_description>\n${issue_description}\n</issue_description>`,
     ]
-    const failure_example = evaluator.template_properties.failure_example
     if (failure_example) {
       steps.push(
         `Is the model's output similar to this example of a failing output: \n<failure_example>\n${failure_example}\n</failure_example>`,
       )
     }
-    const pass_example = evaluator.template_properties.pass_example
     if (pass_example) {
       steps.push(
         `Is the model's output similar to this example of a passing output: \n<pass_example>\n${pass_example}\n</pass_example>`,
@@ -99,7 +120,15 @@ export function get_eval_steps(
   }
 
   if (template === "tool_call") {
-    const tool_function_name = evaluator.template_properties.tool_function_name
+    // Both spec and legacy eval use tool_function_name
+    const spec_properties = spec?.properties
+    let tool_function_name: string | undefined = undefined
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      tool_function_name = spec_properties?.tool_function_name
+    } else {
+      tool_function_name = evaluator.template_properties
+        ?.tool_function_name as string
+    }
     if (!tool_function_name) {
       throw new Error(
         "Tool function name is required for Appropriate Tool Use template",
@@ -110,10 +139,14 @@ export function get_eval_steps(
       `Look at the full <conversation_history> for the task run, does the model call the following tool: \n<tool>\n${tool_function_name}\n</tool>`,
     ]
 
+    const tool_guidelines_info = spec
+      ? "<tool_use_guidelines>, <appropriate_tool_use_examples>, and <inappropriate_tool_use_examples>"
+      : "<appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation"
+
     steps.push(
       `Utilizing information from:
       
-       (a) <appropriate_tool_use_guidelines>, and optionally <inappropriate_tool_use_guidelines> if specified earlier in the conversation
+       (a) ${tool_guidelines_info}
        (b) the user's initial query <user_input>
        (c) model task description <task_description>
        

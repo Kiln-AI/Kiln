@@ -454,7 +454,7 @@ def test_create_spec_with_properties(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Behaviour Spec",
+        "name": "Desired Behaviour Spec",
         "definition": "System should avoid toxic language",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
@@ -463,7 +463,6 @@ def test_create_spec_with_properties(client, project_and_task):
             "spec_type": SpecType.behaviour.value,
             "base_instruction": "Test instruction",
             "behavior_description": "Avoid toxic language and offensive content",
-            "correct_behavior_examples": None,
             "incorrect_behavior_examples": "Example 1: Don't use slurs\nExample 2: Don't be rude",
         },
         "eval_id": None,
@@ -484,7 +483,7 @@ def test_create_spec_with_properties(client, project_and_task):
         == "Avoid toxic language and offensive content"
     )
     assert (
-        res["properties"]["incorrect_behavior_examples"]
+        res["properties"]["incorrect_behaviour_examples"]
         == "Example 1: Don't use slurs\nExample 2: Don't be rude"
     )
 
@@ -1138,6 +1137,7 @@ def test_create_spec_with_empty_tool_function_name(client, project_and_task):
         "properties": {
             "spec_type": "appropriate_tool_use",
             "base_instruction": "Test instruction",
+            "tool_id": "test_tool",
             "tool_function_name": "",
             "tool_use_guidelines": "Use this tool when needed",
             "appropriate_tool_use_examples": "examples",
@@ -1173,6 +1173,7 @@ def test_create_spec_with_empty_tool_use_guidelines(client, project_and_task):
         "properties": {
             "spec_type": "appropriate_tool_use",
             "base_instruction": "Test instruction",
+            "tool_id": "test_tool",
             "tool_function_name": "test_tool_function",
             "tool_use_guidelines": "",
             "appropriate_tool_use_examples": "examples",
@@ -1200,8 +1201,8 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Behaviour Spec",
-        "definition": "Behaviour validation test",
+        "name": "Desired Behaviour Spec",
+        "definition": "Desired behaviour validation test",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
@@ -1209,7 +1210,6 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
             "spec_type": "behaviour",
             "base_instruction": "Test instruction",
             "behavior_description": "",
-            "correct_behavior_examples": None,
             "incorrect_behavior_examples": "Example 1: Don't do this",
         },
         "eval_id": None,
@@ -1234,8 +1234,8 @@ def test_create_spec_with_empty_base_instruction(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Behaviour Spec",
-        "definition": "Behaviour validation test",
+        "name": "Desired Behaviour Spec",
+        "definition": "Desired behaviour validation test",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
@@ -1243,8 +1243,6 @@ def test_create_spec_with_empty_base_instruction(client, project_and_task):
             "spec_type": "behaviour",
             "base_instruction": "",
             "behavior_description": "Avoid toxic content",
-            "correct_behavior_examples": None,
-            "incorrect_behavior_examples": None,
         },
         "eval_id": None,
     }

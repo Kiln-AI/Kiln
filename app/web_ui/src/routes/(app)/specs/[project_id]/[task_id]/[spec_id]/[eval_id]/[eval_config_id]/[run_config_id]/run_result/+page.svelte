@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AppPage from "../../../../../../../app_page.svelte"
+  import AppPage from "../../../../../../../../app_page.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type {
@@ -25,7 +25,9 @@
     load_available_prompts,
     load_available_models,
   } from "$lib/stores"
-  import OutputTypeTablePreview from "../../../output_type_table_preview.svelte"
+  import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
+
+  $: eval_id = $page.params.eval_id
 
   let results: EvalRunResult | null = null
   let results_error: KilnError | null = null
@@ -57,7 +59,7 @@
             path: {
               project_id: $page.params.project_id,
               task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              eval_id: eval_id,
               eval_config_id: $page.params.eval_config_id,
               run_config_id: $page.params.run_config_id,
             },
@@ -185,7 +187,9 @@
             {#each results.eval.output_scores as score}
               <th class="text-center">
                 {score.name}
-                <OutputTypeTablePreview output_score_type={score.type} />
+                {#if score.type}
+                  <OutputTypeTablePreview output_score_type={score.type} />
+                {/if}
               </th>
             {/each}
           </tr>

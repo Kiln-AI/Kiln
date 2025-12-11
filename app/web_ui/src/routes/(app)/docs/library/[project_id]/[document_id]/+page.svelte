@@ -11,7 +11,7 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import { isMacOS } from "$lib/utils/platform"
   import { goto } from "$app/navigation"
-  import Output from "../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { capitalize } from "$lib/utils/formatters"
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"

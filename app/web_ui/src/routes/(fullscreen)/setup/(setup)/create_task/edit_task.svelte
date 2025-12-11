@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Task } from "$lib/types"
-  import Output from "../../../../(app)/run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"

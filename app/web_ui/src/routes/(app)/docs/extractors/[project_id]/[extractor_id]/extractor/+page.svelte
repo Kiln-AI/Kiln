@@ -7,7 +7,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { onMount } from "svelte"
   import { extractor_output_format, formatDate } from "$lib/utils/formatters"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id

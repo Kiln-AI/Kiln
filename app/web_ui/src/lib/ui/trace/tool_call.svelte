@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ToolCallMessageParam } from "$lib/types"
-  import Output from "../../../routes/(app)/run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   export let tool_call: ToolCallMessageParam
   export let nameTag: string = "Tool Name"

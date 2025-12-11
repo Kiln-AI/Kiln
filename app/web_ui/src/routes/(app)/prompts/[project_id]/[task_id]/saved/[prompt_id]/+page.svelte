@@ -7,7 +7,7 @@
     prompt_name_from_id,
   } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 

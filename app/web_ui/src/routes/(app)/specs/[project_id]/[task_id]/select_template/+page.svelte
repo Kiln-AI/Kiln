@@ -69,7 +69,7 @@
     subtitle="Start by choosing the template that best fits the spec you want to create."
     breadcrumbs={[
       {
-        label: "Specs",
+        label: "Specs & Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}

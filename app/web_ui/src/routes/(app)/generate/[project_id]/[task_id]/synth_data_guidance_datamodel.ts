@@ -1,5 +1,5 @@
 import { client } from "$lib/api_client"
-import type { Eval, Task } from "$lib/types"
+import type { Eval, Task, Spec } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -19,6 +19,7 @@ export class SynthDataGuidanceDataModel {
   public project_id: string = ""
   public task_id: string = ""
   private evaluator: Eval | null = null
+  private spec: Spec | null = null
   public gen_type: "training" | "eval" | null = null
   public splits: Writable<Record<string, number>> = writable({})
   public task: Task | null = null
@@ -104,6 +105,10 @@ export class SynthDataGuidanceDataModel {
         throw error
       }
       this.evaluator = data
+
+      // Load the spec if this eval is associated with one
+      await this.load_spec_for_eval(eval_id)
+
       // Generate the select options for the dropdown, with update eval
       this.build_select_options(static_templates, data)
       // Jump to the issue eval template
@@ -118,6 +123,29 @@ export class SynthDataGuidanceDataModel {
       this.loading_error.set(createKilnError(error))
     } finally {
       this.loading.set(false)
+    }
+  }
+
+  private async load_spec_for_eval(eval_id: string): Promise<void> {
+    try {
+      // Load all specs for the task
+      const { data: specs, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs",
+        {
+          params: {
+            path: { project_id: this.project_id, task_id: this.task_id },
+          },
+        },
+      )
+      if (error) {
+        // Don't throw, just leave spec as null (legacy eval)
+        return
+      }
+      // Find the spec associated with this eval
+      this.spec = specs?.find((s) => s.eval_id === eval_id) || null
+    } catch {
+      // Don't throw, just leave spec as null (legacy eval)
+      this.spec = null
     }
   }
 
@@ -440,7 +468,9 @@ ${issue.name}
 
     const goal_description =
       task_type == "outputs" ? "contains" : "will trigger"
-    const issue_description = issue.template_properties["issue_prompt"]
+
+    // kiln_issue only exists in legacy evals (no corresponding spec type)
+    const issue_description = issue.template_properties?.["issue_prompt"]
     if (issue_description) {
       template += `
 
@@ -450,7 +480,7 @@ ${issue_description}
 </issue_description>`
     }
 
-    const issue_failure_example = issue.template_properties["failure_example"]
+    const issue_failure_example = issue.template_properties?.["failure_example"]
     if (issue_failure_example) {
       template += `
 
@@ -460,7 +490,7 @@ ${issue_failure_example}
 </issue_example>`
     }
 
-    const issue_success_example = issue.template_properties["pass_example"]
+    const issue_success_example = issue.template_properties?.["pass_example"]
     if (issue_success_example) {
       template += `
 
@@ -488,7 +518,15 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     tool_call: Eval,
     task_type: "topics" | "inputs" | "outputs",
   ): string {
-    const tool = tool_call.template_properties.tool
+    // Spec uses different keys than legacy eval template_properties
+    // Spec: tool_function_name, Legacy: tool
+    const spec_properties = this.spec?.properties
+    let tool: string | undefined = undefined
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      tool = spec_properties?.tool_function_name
+    } else {
+      tool = tool_call.template_properties?.tool as string
+    }
     if (!tool) {
       throw new Error("Tool is required for tool call template")
     }
@@ -586,10 +624,24 @@ Here are two examples showing how guidelines map to inputs:
 
     template += "\n\n"
 
-    const appropriate_tool_use_guidelines =
-      tool_call.template_properties.appropriate_tool_use_guidelines
-    const inappropriate_tool_use_guidelines =
-      tool_call.template_properties.inappropriate_tool_use_guidelines
+    // Spec uses different keys than legacy eval template_properties
+    // Spec: tool_use_guidelines, appropriate_tool_use_examples, inappropriate_tool_use_examples
+    // Legacy: appropriate_tool_use_guidelines, inappropriate_tool_use_guidelines
+    let appropriate_tool_use_guidelines: string | undefined = undefined
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      appropriate_tool_use_guidelines = spec_properties?.tool_use_guidelines
+    } else {
+      appropriate_tool_use_guidelines = tool_call.template_properties
+        ?.appropriate_tool_use_guidelines as string
+    }
+    let inappropriate_tool_use_guidelines: string | undefined = undefined
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      inappropriate_tool_use_guidelines =
+        spec_properties?.inappropriate_tool_use_examples
+    } else {
+      inappropriate_tool_use_guidelines = tool_call.template_properties
+        ?.inappropriate_tool_use_guidelines as string
+    }
 
     // Find tool name and description from available tools
     const tool_info = this.get_tool_info(tool as string)

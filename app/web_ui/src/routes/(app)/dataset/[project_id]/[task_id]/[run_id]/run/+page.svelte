@@ -1,8 +1,8 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
-  import type { ActionButton } from "../../../../../types"
+  import type { ActionButton } from "$lib/types"
   import Run from "../../../../../run/run.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import {
     current_task,
     model_name,

@@ -50,8 +50,8 @@
     reason === "eval"
       ? [
           {
-            label: "Evals",
-            href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+            label: "Specs & Evals",
+            href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
           },
         ]
       : reason === "generic"

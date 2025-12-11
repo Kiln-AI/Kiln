@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ActionButton } from "../../routes/(app)/types"
+  import type { ActionButton } from "$lib/types"
 
   export let buttons: ActionButton[]
 </script>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
-  import Output from "../../../routes/(app)/run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"

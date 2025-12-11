@@ -11,7 +11,7 @@
     Trace,
   } from "$lib/types"
   import { client } from "$lib/api_client"
-  import Output from "./output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
