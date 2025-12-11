@@ -52,11 +52,12 @@
 
   // Set default axes when options become available
   $: if (axisOptions.length > 0) {
-    // Default X to last section's first item (typically cost)
+    // Default X to last section's last item (typically cost)
     if (selectedXAxis === null) {
       const lastSection = axisOptions[axisOptions.length - 1]
       if (lastSection && lastSection.options.length > 0) {
-        selectedXAxis = lastSection.options[0].value as string
+        selectedXAxis = lastSection.options[lastSection.options.length - 1]
+          .value as string
       }
     }
     // Default Y to first section's first item (typically first eval)
@@ -289,7 +290,7 @@
     <div class="flex-1 min-w-0">
       {#if loading}
         <div
-          class="flex items-center justify-center h-[400px] text-gray-500 gap-2"
+          class="flex items-center justify-center h-[400px] lg:h-[600px] text-gray-500 gap-2"
         >
           <div class="loading loading-spinner loading-md"></div>
           <span>Loading chart data...</span>
