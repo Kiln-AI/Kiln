@@ -4,7 +4,7 @@
   import { current_task } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount, tick } from "svelte"
+  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import type { SampleDataNode } from "../gen_model"
   import GeneratedDataNode from "../generated_data_node.svelte"
@@ -25,7 +25,6 @@
   import type { TaskRunOutput } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
-  import IncrementUi from "$lib/ui/increment_ui.svelte"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
