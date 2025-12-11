@@ -15,8 +15,6 @@
   import {
     model_info,
     load_model_info,
-    current_task_prompts,
-    load_available_prompts,
     load_available_models,
     get_task_composite_id,
     load_task,
@@ -25,6 +23,10 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
+  import {
+    load_task_prompts,
+    prompts_by_task_composite_id,
+  } from "$lib/stores/prompts_store"
   import {
     getDetailedModelName,
     getRunConfigPromptDisplayName,
@@ -145,7 +147,7 @@
     // Load data needed for the page
     await Promise.all([
       load_model_info(),
-      load_available_prompts(),
+      load_task_prompts(project_id, task_id),
       load_available_models(),
       get_task(),
     ])
@@ -651,13 +653,17 @@
                           >
                             {getRunConfigPromptDisplayName(
                               selectedConfig,
-                              $current_task_prompts,
+                              $prompts_by_task_composite_id[
+                                get_task_composite_id(project_id, task_id)
+                              ] || null,
                             )}
                           </a>
                         {:else}
                           Prompt: {getRunConfigPromptDisplayName(
                             selectedConfig,
-                            $current_task_prompts,
+                            $prompts_by_task_composite_id[
+                              get_task_composite_id(project_id, task_id)
+                            ] || null,
                           )}
                         {/if}
                         {#if prompt_info_text}
