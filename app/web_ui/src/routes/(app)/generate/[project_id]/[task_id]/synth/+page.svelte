@@ -4,7 +4,7 @@
   import { current_task } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import type { SampleDataNode } from "../gen_model"
   import GeneratedDataNode from "../generated_data_node.svelte"
@@ -25,6 +25,7 @@
   import type { TaskRunOutput } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -804,23 +805,42 @@
                 {#if current_step == 1}
                   {@const has_topics =
                     $saved_state.root_node.sub_topics.length > 0}
-                  <button
-                    class="btn btn-sm btn-primary mr-2 {has_topics
-                      ? 'btn-outline'
-                      : ''}"
-                    on:click={() =>
-                      root_node_component?.open_generate_subtopics_modal()}
-                  >
-                    Add Topics
-                  </button>
-                  <button
-                    class="btn btn-sm btn-primary {has_topics
-                      ? ''
-                      : 'btn-outline'}"
-                    on:click={() => set_current_step(2)}
-                  >
-                    Next Step
-                  </button>
+                  {#if has_topics}
+                    <button
+                      class="btn btn-sm btn-primary mr-2 btn-outline"
+                      on:click={() =>
+                        root_node_component?.open_generate_subtopics_modal()}
+                    >
+                      Add Topics
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary mr-2 btn-outline"
+                      on:click={() =>
+                        root_node_component?.open_add_nested_topics_modal()}
+                    >
+                      Add Subtopics
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary"
+                      on:click={() => set_current_step(2)}
+                    >
+                      Next Step
+                    </button>
+                  {:else}
+                    <button
+                      class="btn btn-sm btn-primary mr-2"
+                      on:click={() =>
+                        root_node_component?.open_generate_subtopics_modal()}
+                    >
+                      Add Topics
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary btn-outline"
+                      on:click={() => set_current_step(2)}
+                    >
+                      Next Step
+                    </button>
+                  {/if}
                 {:else if current_step == 2}
                   {@const done_generating =
                     input_generated_count > 0 &&
