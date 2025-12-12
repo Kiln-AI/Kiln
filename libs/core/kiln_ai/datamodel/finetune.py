@@ -9,6 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
 )
+from kiln_ai.datamodel.run_config import RunConfigProperties
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -33,7 +34,7 @@ class Finetune(KilnParentedModel):
     )
     structured_output_mode: StructuredOutputMode | None = Field(
         default=None,
-        description="The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode.",
+        description="Legacy field -- replaced by run_config.structured_output_mode. The mode to use to train the model for structured output, if it was trained with structured output. We should call the tuned model with this mode if set.",
     )
     provider: str = Field(
         description="The provider to use for the fine-tune (e.g. 'openai')."
@@ -84,12 +85,28 @@ class Finetune(KilnParentedModel):
         default=ChatStrategy.single_turn,
         description="The strategy to use for training the model. 'final_only' will only train on the final response. 'final_and_intermediate' will train on the final response and intermediate outputs (chain of thought or reasoning).",
     )
+    run_config: RunConfigProperties | None = Field(
+        default=None,
+        description="The run configuration for this fine-tune.",
+    )
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
         if self.parent is None or self.parent.__class__.__name__ != "Task":
             return None
         return self.parent  # type: ignore
+
+    def nested_id(self) -> str:
+        """
+        Build the nested ID for this finetune in the format: project_id::task_id::finetune_id
+        """
+        task = self.parent_task()
+        if task is None:
+            raise ValueError("Finetune must have a parent task")
+        project = task.parent_project()
+        if project is None:
+            raise ValueError("Finetune must have a parent project")
+        return f"{project.id}::{task.id}::{self.id}"
 
     @model_validator(mode="after")
     def validate_thinking_instructions(self) -> Self:

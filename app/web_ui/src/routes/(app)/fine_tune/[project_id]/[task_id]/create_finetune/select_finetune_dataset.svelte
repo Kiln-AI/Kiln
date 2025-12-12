@@ -13,6 +13,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import { page } from "$app/stores"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   let finetune_dataset_info: FinetuneDatasetInfo | null = null
   let loading = true
@@ -21,16 +22,49 @@
   export let project_id: string
   export let task_id: string
   export let selected_dataset: DatasetSplit | null = null
+  export let required_tool_ids: string[] | undefined = undefined
+  export let saved_dataset_id: string | null = null
 
   let create_dataset_dialog: Dialog | null = null
   let existing_dataset_dialog: Dialog | null = null
 
   let filter_to_reasoning_data = false
   let filter_to_highly_rated_data = false
+  let last_restored_dataset_id: string | null = null
 
   onMount(async () => {
     load_finetune_dataset_info()
   })
+
+  // Watch for saved_dataset_id changes and restore dataset.
+  // create_finetune page tracks the saved_dataset_id in the IndexedDB-backed store.
+  $: if (
+    saved_dataset_id &&
+    finetune_dataset_info &&
+    !selected_dataset &&
+    saved_dataset_id !== last_restored_dataset_id
+  ) {
+    const matching_dataset = finetune_dataset_info.eligible_datasets?.find(
+      (dataset) => dataset.id === saved_dataset_id,
+    )
+    if (matching_dataset) {
+      selected_dataset = matching_dataset
+      last_restored_dataset_id = saved_dataset_id
+    }
+  }
+
+  // comma separated string of tool ids, used for tracking changes in tools
+  let previous_tool_ids_key = ""
+  // comma separated string for the current selected tools
+  $: tool_ids_key = required_tool_ids?.join(",") || ""
+  // if tool ids have changed, reload the dataset info
+  $: if (project_id && task_id && tool_ids_key !== previous_tool_ids_key) {
+    previous_tool_ids_key = tool_ids_key
+    load_finetune_dataset_info()
+    if (selected_dataset) {
+      selected_dataset = null
+    }
+  }
 
   async function load_finetune_dataset_info() {
     try {
@@ -48,6 +82,12 @@
                 project_id,
                 task_id,
               },
+              query:
+                required_tool_ids && required_tool_ids.length > 0
+                  ? {
+                      tool_ids: required_tool_ids,
+                    }
+                  : undefined,
             },
           },
         )
@@ -58,6 +98,18 @@
         throw new Error("Invalid response from server")
       }
       finetune_dataset_info = finetune_dataset_info_response
+
+      // Clear the selected dataset if the tools have changed and it's no longer eligible
+      if (selected_dataset) {
+        const current_id = selected_dataset.id
+        const matching_dataset =
+          finetune_dataset_info_response.eligible_datasets?.find(
+            (dataset) => dataset.id === current_id,
+          )
+        if (!matching_dataset) {
+          selected_dataset = null
+        }
+      }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError("Could not load fine-tune dataset info.", null)
@@ -73,7 +125,7 @@
     {
       label: "Dataset Tags",
       options:
-        finetune_dataset_info?.finetune_tags?.map((tag) => ({
+        finetune_dataset_info?.eligible_finetune_tags?.map((tag) => ({
           label: tag.tag,
           value: tag.tag,
           description: `The tag '${tag.tag}' has ${tag.count} samples.`,
@@ -82,10 +134,23 @@
   ]
 
   $: show_existing_dataset_option =
-    finetune_dataset_info?.existing_finetunes.length
-  $: show_new_dataset_option = finetune_dataset_info?.finetune_tags.length
-  $: can_select_dataset =
-    show_existing_dataset_option || show_new_dataset_option
+    finetune_dataset_info?.eligible_datasets?.length
+  $: show_new_dataset_option =
+    finetune_dataset_info?.eligible_finetune_tags?.length
+
+  // Case where there are tags but none are eligible
+  $: has_only_ineligible_tags =
+    (finetune_dataset_info?.finetune_tags?.length || 0) > 0 &&
+    !show_new_dataset_option
+
+  // Case where there are tools selected with eligible tags but no eligible datasets
+  $: has_eligible_tags_but_no_eligible_datasets =
+    required_tool_ids &&
+    required_tool_ids.length > 0 &&
+    show_new_dataset_option &&
+    (finetune_dataset_info?.existing_datasets?.length || 0) > 0 &&
+    finetune_dataset_info?.eligible_datasets?.length === 0
+
   $: top_options = [
     ...(show_existing_dataset_option
       ? [
@@ -107,22 +172,20 @@
           },
         ]
       : []),
-    ...(!can_select_dataset
-      ? [
-          {
-            id: "add",
-            name: "Add Fine-Tuning Data",
-            description:
-              "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
-          },
-        ]
-      : []),
+    ...[
+      {
+        id: "add",
+        name: "Add Fine-Tuning Data",
+        description:
+          "Add data for fine-tuning using synthetic data generation, CSV upload, or by tagging existing data.",
+      },
+    ],
   ]
 
   function select_top_option(option: string) {
     if (option === "new_dataset") {
-      if (finetune_dataset_info?.finetune_tags.length === 1) {
-        dataset_tag = finetune_dataset_info?.finetune_tags[0].tag
+      if (finetune_dataset_info?.eligible_finetune_tags.length === 1) {
+        dataset_tag = finetune_dataset_info?.eligible_finetune_tags[0].tag
       }
       create_dataset_dialog?.show()
     } else if (option === "add") {
@@ -138,9 +201,10 @@
 
   let new_dataset_split = "train_val"
   let dataset_tag: string | null = null
-  $: selected_dataset_tag_data = finetune_dataset_info?.finetune_tags.find(
-    (t) => t.tag === dataset_tag,
-  )
+  $: selected_dataset_tag_data =
+    finetune_dataset_info?.eligible_finetune_tags.find(
+      (t) => t.tag === dataset_tag,
+    )
   let create_dataset_split_error: KilnError | null = null
   let create_dataset_split_loading = false
   async function create_dataset() {
@@ -211,9 +275,16 @@
       step_count: 4,
       current_step: 2,
     })
-    let link = `/dataset/${project_id}/${task_id}/add_data?reason=fine_tune&template_id=fine_tuning&splits=fine_tune_data:1.0&finetune_link=${encodeURIComponent(
-      `/fine_tune/${project_id}/${task_id}/create_finetune`,
-    )}`
+    const params = new URLSearchParams({
+      reason: "fine_tune",
+      template_id: "fine_tuning",
+      splits: "fine_tune_data:1.0",
+      finetune_link: `/fine_tune/${project_id}/${task_id}/create_finetune`,
+    })
+    if (required_tool_ids && required_tool_ids.length > 0) {
+      params.set("fine_tuning_tools", required_tool_ids.join(","))
+    }
+    let link = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     goto(link)
   }
 
@@ -269,12 +340,8 @@
         >
       </div>
 
-      <div class="collapse collapse-arrow bg-base-200 mt-4">
-        <input type="checkbox" class="peer" />
-        <div class="collapse-title font-medium flex items-center">
-          Training Dataset Details
-        </div>
-        <div class="collapse-content flex flex-col gap-4">
+      <div class="mt-4">
+        <Collapse title="Training Dataset Details">
           <div class="text-sm">
             The selected dataset has {selected_dataset.splits?.length}
             {selected_dataset.splits?.length === 1 ? "split" : "splits"}:
@@ -297,16 +364,30 @@
               {/each}
             </ul>
           </div>
-        </div>
+        </Collapse>
       </div>
     {:else}
       <OptionList options={top_options} select_option={select_top_option} />
-      {#if can_select_dataset}
-        <div class="pt-4 font-light">
-          or
-          <button class="link font-normal" on:click={show_add_data}
-            >add additional fine-tuning data</button
-          > before you start.
+      {#if has_only_ineligible_tags}
+        <div class="pt-4">
+          <Warning
+            warning_message="Existing tuning data won't work as it wasn't generated with the tools you've selected. Please generate new fine-tuning data with these tools."
+            tight={true}
+            warning_color="gray"
+            warning_icon="info"
+            large_icon={true}
+          />
+        </div>
+      {:else if has_eligible_tags_but_no_eligible_datasets}
+        <div class="pt-4">
+          <Warning
+            warning_message="Existing tuning datasets do not match your selected tools. Please
+          create new dataset for training with tool calls or add additional fine-tuning data before you start."
+            tight={true}
+            warning_color="gray"
+            warning_icon="info"
+            large_icon={true}
+          />
         </div>
       {/if}
     {/if}
@@ -354,33 +435,24 @@
             bind:value={filter_to_highly_rated_data}
           />
 
-          <div class="collapse collapse-arrow bg-base-200">
-            <input type="checkbox" class="peer" />
-            <div class="collapse-title font-medium flex items-center">
-              Advanced Options
-            </div>
-            <div class="collapse-content flex flex-col gap-4">
-              <FormElement
-                label="Dataset Splits"
-                description="Select ratios for splitting the data into training, validation, and test."
-                info_description="If in doubt, leave the the recommended value. If you're using an external test set such as Kiln Evals, you don't need a test set here."
-                inputType="select"
-                optional={false}
-                id="dataset_split"
-                select_options={[
-                  ["train_val", "80% Training, 20% Validation (Recommended)"],
-                  ["train_test", "80% Training, 10% Test, 10% Validation"],
-                  ["train_test_val", "60% Training, 20% Test, 20% Validation"],
-                  [
-                    "train_test_val_80",
-                    "80% Training, 10% Test, 10% Validation",
-                  ],
-                  ["all", "100% Training"],
-                ]}
-                bind:value={new_dataset_split}
-              />
-            </div>
-          </div>
+          <Collapse title="Advanced Options">
+            <FormElement
+              label="Dataset Splits"
+              description="Select ratios for splitting the data into training, validation, and test."
+              info_description="If in doubt, leave the the recommended value. If you're using an external test set such as Kiln Evals, you don't need a test set here."
+              inputType="select"
+              optional={false}
+              id="dataset_split"
+              select_options={[
+                ["train_val", "80% Training, 20% Validation (Recommended)"],
+                ["train_test", "80% Training, 10% Test, 10% Validation"],
+                ["train_test_val", "60% Training, 20% Test, 20% Validation"],
+                ["train_test_val_80", "80% Training, 10% Test, 10% Validation"],
+                ["all", "100% Training"],
+              ]}
+              bind:value={new_dataset_split}
+            />
+          </Collapse>
 
           {#if new_dataset_filter_count !== undefined}
             <Warning
@@ -418,7 +490,7 @@
       this fine-tune.
     </div>
     <div class="flex flex-col gap-4 text-sm max-w-[600px]">
-      {#each finetune_dataset_info.existing_datasets as dataset}
+      {#each finetune_dataset_info.eligible_datasets as dataset}
         {@const finetunes = finetune_dataset_info.existing_finetunes.filter(
           (f) => f.dataset_split_id === dataset.id,
         )}

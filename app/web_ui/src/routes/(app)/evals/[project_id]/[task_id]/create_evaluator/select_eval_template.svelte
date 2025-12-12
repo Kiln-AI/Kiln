@@ -689,9 +689,12 @@
       {project_id}
       {task_id}
       label="Tool to Evaluate"
-      description="Select the tool you want to evaluate for appropriate use."
-      info_description={undefined}
-      single_select={true}
+      settings={{
+        description:
+          "Select the tool you want to evaluate for appropriate use.",
+        hide_info_description: true,
+        single_select: true,
+      }}
       bind:single_select_selected_tool={selected_tool}
     />
     <FormElement
