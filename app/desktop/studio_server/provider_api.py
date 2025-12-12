@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
@@ -535,6 +536,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
+            case ModelProviderName.kiln_copilot:
+                return await connect_kiln_copilot(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -596,6 +599,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
+                case ModelProviderName.kiln_copilot:
+                    Config.shared().kiln_copilot_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1125,6 +1130,41 @@ async def connect_bedrock(key_data: dict):
         status_code=400,
         content={"message": "Unknown Bedrock Error"},
     )
+
+
+async def connect_kiln_copilot(key: str):
+    try:
+        base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
+        # Temporary endpoint to verify the API key
+        response = requests.post(
+            f"{base_url}/verify_api_key",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5,
+        )
+
+        if response.status_code == 200:
+            Config.shared().kiln_copilot_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Kiln Copilot"},
+            )
+        else:
+            try:
+                error_content = response.json()
+            except Exception:
+                error_content = {
+                    "message": f"Failed to verify API key (HTTP {response.status_code})"
+                }
+
+            return JSONResponse(
+                status_code=response.status_code,
+                content=error_content,
+            )
+    except requests.exceptions.RequestException as e:
+        return JSONResponse(
+            status_code=503,
+            content={"message": f"Could not reach Kiln Copilot server: {e}"},
+        )
 
 
 async def available_ollama_models() -> AvailableModels | None:
