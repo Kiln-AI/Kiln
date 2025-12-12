@@ -13,15 +13,15 @@
   let apiKeyMessage: string | null = null
   let submitting = false
 
+  const KILN_ACCOUNT_DOMAIN = "https://account.kiln.tech"
+  const KILN_ACCOUNT_CLIENT_ID = "2428f47a1e0b404b82e68400a2d580c6"
+
   async function initKindeClient() {
     if (kindeClient) return kindeClient
 
-    const clientId = "378b85a51709459682d01bfe2b4b7ce4"
-    const domain = "https://kilndev.kinde.com"
-
     kindeClient = await createKindeClient({
-      client_id: clientId,
-      domain: domain,
+      client_id: KILN_ACCOUNT_CLIENT_ID,
+      domain: KILN_ACCOUNT_DOMAIN,
       redirect_uri: window.location.origin + window.location.pathname,
       on_redirect_callback: () => {},
     })
@@ -62,13 +62,15 @@
         return
       }
 
-      const domain = "https://kilndev.kinde.com"
-      const response = await fetch(`${domain}/account_api/v1/portal_link`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          sub_nav: "api_keys",
+      const response = await fetch(
+        `${KILN_ACCOUNT_DOMAIN}/account_api/v1/portal_link`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            sub_nav: "api_keys",
+          },
         },
-      })
+      )
 
       if (!response.ok) {
         throw new Error("Failed to generate portal link")
