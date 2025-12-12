@@ -416,6 +416,24 @@ built_in_models: List[KilnModel] = [
         friendly_name="GPT-5.2 Chat",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.2-chat-latest",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2-chat",
                 structured_output_mode=StructuredOutputMode.json_schema,
