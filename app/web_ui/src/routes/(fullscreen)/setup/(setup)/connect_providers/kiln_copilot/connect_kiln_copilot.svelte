@@ -108,8 +108,11 @@
         }),
       })
 
+      const data = await res.json()
+
       if (!res.ok) {
-        apiKeyMessage = "Failed to connect to provider"
+        apiKeyMessage =
+          data.message || data.detail || "Failed to connect to provider"
         apiKeyError = true
         return
       }

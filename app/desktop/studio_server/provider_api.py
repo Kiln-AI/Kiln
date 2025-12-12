@@ -1153,14 +1153,37 @@ async def connect_bedrock(key_data: dict):
 
 
 async def connect_kiln_copilot(key: str):
-    Config.shared().kiln_copilot_api_key = key
+    try:
+        # Temporary endpoint to verify the API key
+        response = requests.post(
+            "http://localhost:8000/verify_api_key",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5,
+        )
 
-    # TODO Validate the key is valid
+        if response.status_code == 200:
+            Config.shared().kiln_copilot_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Kiln Copilot"},
+            )
+        else:
+            try:
+                error_content = response.json()
+            except Exception:
+                error_content = {
+                    "message": f"Failed to verify API key (HTTP {response.status_code})"
+                }
 
-    return JSONResponse(
-        status_code=200,
-        content={"message": "Connected to Kiln Copilot"},
-    )
+            return JSONResponse(
+                status_code=response.status_code,
+                content=error_content,
+            )
+    except requests.exceptions.RequestException as e:
+        return JSONResponse(
+            status_code=503,
+            content={"message": f"Could not reach Kiln Copilot server: {e}"},
+        )
 
 
 async def available_ollama_models() -> AvailableModels | None:

@@ -135,9 +135,16 @@ def test_connect_api_key_siliconflow_success(mock_connect_siliconflow, client):
 
 
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-def test_connect_api_key_kiln_copilot_success(mock_config_shared, client):
+@patch("app.desktop.studio_server.provider_api.requests.post")
+def test_connect_api_key_kiln_copilot_success(
+    mock_requests_post, mock_config_shared, client
+):
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_requests_post.return_value = mock_response
 
     response = client.post(
         "/api/provider/connect_api_key",
