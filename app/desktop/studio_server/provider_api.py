@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
@@ -1154,9 +1155,10 @@ async def connect_bedrock(key_data: dict):
 
 async def connect_kiln_copilot(key: str):
     try:
+        base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
         # Temporary endpoint to verify the API key
         response = requests.post(
-            "http://localhost:8000/verify_api_key",
+            f"{base_url}/verify_api_key",
             headers={"Authorization": f"Bearer {key}"},
             timeout=5,
         )
