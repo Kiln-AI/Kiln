@@ -46,8 +46,10 @@ json_joke_schema = """{
   },
   "required": [
     "setup",
-    "punchline"
-  ]
+    "punchline",
+    "rating"
+  ],
+  "additionalProperties": false
 }
 """
 
@@ -57,7 +59,7 @@ def test_json_schema():
     parsed_schema = schema_from_json_str(o.x_schema)
     assert parsed_schema is not None
     assert parsed_schema["type"] == "object"
-    assert parsed_schema["required"] == ["setup", "punchline"]
+    assert parsed_schema["required"] == ["setup", "punchline", "rating"]
     assert parsed_schema["properties"]["setup"]["type"] == "string"
     assert parsed_schema["properties"]["punchline"]["type"] == "string"
     assert parsed_schema["properties"]["rating"] is not None
@@ -77,7 +79,7 @@ def test_validate_schema_content():
     o = {"setup": "asdf"}
     with pytest.raises(jsonschema.exceptions.ValidationError):
         validate_schema(0, json_joke_schema)
-    o = {"setup": "asdf", "punchline": "asdf"}
+    o = {"setup": "asdf", "punchline": "asdf", "rating": None}
     validate_schema(o, json_joke_schema)
     o = {"setup": "asdf", "punchline": "asdf", "rating": "1"}
     with pytest.raises(jsonschema.exceptions.ValidationError):
@@ -92,7 +94,7 @@ def test_validate_schema_content_with_value_error():
         ValueError, match="PREFIX The error from the schema check was: "
     ):
         validate_schema_with_value_error(0, json_joke_schema, "PREFIX")
-    o = {"setup": "asdf", "punchline": "asdf"}
+    o = {"setup": "asdf", "punchline": "asdf", "rating": None}
     validate_schema_with_value_error(o, json_joke_schema, "PREFIX")
     o = {"setup": "asdf", "punchline": "asdf", "rating": "1"}
     with pytest.raises(
