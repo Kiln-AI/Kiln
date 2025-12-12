@@ -64,13 +64,15 @@ async def test_mock_unstructred_response(tmp_path):
     task = build_structured_output_test_task(tmp_path)
 
     # don't error on valid response
-    adapter = MockAdapter(task, response={"setup": "asdf", "punchline": "asdf"})
+    adapter = MockAdapter(
+        task, response={"setup": "asdf", "punchline": "asdf", "rating": None}
+    )
     run = await adapter.invoke("You are a mock, send me the response!")
     answer = json.loads(run.output.output)
     assert answer["setup"] == "asdf"
     assert answer["punchline"] == "asdf"
 
-    # error on response that doesn't match schema
+    # error on response that doesn't match schema (missing required fields)
     adapter = MockAdapter(task, response={"setup": "asdf"})
     with pytest.raises(Exception):
         answer = await adapter.invoke("You are a mock, send me the response!")
