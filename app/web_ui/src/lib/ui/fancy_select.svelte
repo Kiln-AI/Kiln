@@ -91,6 +91,13 @@
 
   // Select a prompt
   function selectOption(option: unknown) {
+    // Check if this option is disabled
+    const flatOptions = options.flatMap((group) => group.options)
+    const optionObj = flatOptions.find((item) => item.value === option)
+    if (optionObj?.disabled) {
+      return
+    }
+
     if (multi_select) {
       // Deselect if already selected, select if not
       if (selected_values.includes(option)) {
@@ -452,6 +459,7 @@
     selected: unknown,
     selected_values: unknown[],
     options: OptionGroup[],
+    empty_label: string,
   ) {
     if (multi_select && selected_values.length > 1) {
       return (
@@ -573,7 +581,7 @@
     on:keydown={containerKeyDown}
   >
     <span class="truncate">
-      {selectedLabel(selected, selected_values, options)}
+      {selectedLabel(selected, selected_values, options, empty_label)}
     </span>
   </div>
 
@@ -707,6 +715,7 @@
                 aria-selected={multi_select
                   ? selected_values.includes(item.value)
                   : selected === item.value}
+                aria-disabled={item.disabled || false}
                 class="pointer-events-auto flex {focusedIndex === overallIndex
                   ? ' active'
                   : 'hover:bg-transparent'} {item.disabled
@@ -719,7 +728,9 @@
                     return
                   }
                   event.stopPropagation()
-                  selectOption(item.value)
+                  if (!item.disabled) {
+                    selectOption(item.value)
+                  }
                 }}
                 on:mouseenter={() => {
                   if (!item.disabled) {

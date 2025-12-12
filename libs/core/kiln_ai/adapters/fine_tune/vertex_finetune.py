@@ -119,8 +119,10 @@ class VertexFinetune(BaseFinetuneAdapter):
 
         # Use chat format for unstructured output, and JSON for formatted output
         format = DatasetFormat.VERTEX_GEMINI
-        if task.output_json_schema:
-            self.datamodel.structured_output_mode = StructuredOutputMode.json_mode
+        if task.output_json_schema and self.datamodel.run_config is not None:
+            self.datamodel.run_config.structured_output_mode = (
+                StructuredOutputMode.json_mode
+            )
         train_file_id = await self.generate_and_upload_jsonl(
             dataset, self.datamodel.train_split_name, task, format
         )
@@ -162,7 +164,9 @@ class VertexFinetune(BaseFinetuneAdapter):
         formatter = DatasetFormatter(
             dataset, self.datamodel.system_message, self.datamodel.thinking_instructions
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         project, location = self.get_vertex_provider_location()
         storage_client = storage.Client(project=project)
