@@ -137,6 +137,7 @@ class ModelName(str, Enum):
     qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
+    deepseek_3_2 = "deepseek_3_2"
     deepseek_3_1 = "deepseek_3_1"
     deepseek_3_1_terminus = "deepseek_3_1_terminus"
     deepseek_3 = "deepseek_3"
@@ -3294,6 +3295,32 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # DeepSeek 3.2
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_3_2,
+        friendly_name="DeepSeek 3.2",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v3.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v3p2",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/deepseek-ai/DeepSeek-V3.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
     # DeepSeek 3.1 Terminus
     KilnModel(
         family=ModelFamily.deepseek,
@@ -5242,7 +5269,7 @@ built_in_models: List[KilnModel] = [
         ],
     ),
     # Kimi K2 Thinking
-    # Not hosted on Groq, Silliconflow-cn, or Together AI yet
+    # Not hosted on Groq, and Together AI yet
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_k2_thinking,
@@ -5261,6 +5288,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/moonshotai/Kimi-K2-Thinking",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
                 supports_data_gen=True,
             ),
         ],
