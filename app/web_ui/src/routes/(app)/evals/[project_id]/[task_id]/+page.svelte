@@ -130,10 +130,6 @@
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
-  {:else if is_empty}
-    <div class="flex flex-col items-center justify-center min-h-[60vh]">
-      <EmptyEvaluator {project_id} {task_id} />
-    </div>
   {:else if error}
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
@@ -142,6 +138,10 @@
       <div class="text-error text-sm">
         {error.getMessage() || "An unknown error occurred"}
       </div>
+    </div>
+  {:else if is_empty}
+    <div class="flex flex-col items-center justify-center min-h-[60vh]">
+      <EmptyEvaluator {project_id} {task_id} />
     </div>
   {:else if evals}
     <a href={`/evals/${project_id}/${task_id}/compare`} class="group">

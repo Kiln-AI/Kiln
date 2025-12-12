@@ -131,6 +131,10 @@ class Config:
                 env_var="WANDB_API_KEY",
                 sensitive=True,
             ),
+            "wandb_entity": ConfigProperty(
+                str,
+                env_var="WANDB_ENTITY",
+            ),
             "siliconflow_cn_api_key": ConfigProperty(
                 str,
                 env_var="SILICONFLOW_CN_API_KEY",

@@ -2773,183 +2773,147 @@ async def test_connect_siliconflow_non_200_response(
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.get_wandb_default_entity")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_wandb_success(mock_config_shared, mock_requests_post):
-    # Setup
+async def test_connect_wandb_success_with_default_entity(
+    mock_config_shared, mock_get_wandb_default_entity
+):
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"data": {"viewer": {"id": "test-user-id"}}}
-    mock_requests_post.return_value = mock_response
+    mock_get_wandb_default_entity.return_value = "default-entity"
 
-    # Test
-    result = await connect_wandb("test-api-key", None)
+    result = await connect_wandb("test-api-key", None, None)
 
-    # Assertions
     assert result.status_code == 200
-    assert result.body == b'{"message":"Connected to Weights & Biases"}'
+    assert result.body == b'{"message":"Connected to W&B"}'
 
-    # Verify API call
-    mock_requests_post.assert_called_once_with(
-        "https://api.wandb.ai/graphql",
-        timeout=5,
-        json={"query": "query { viewer { id } }"},
-        headers={"Content-Type": "application/json"},
-        auth=("api_key", "test-api-key"),
-    )
+    mock_get_wandb_default_entity.assert_called_once_with("test-api-key", None)
 
-    # Verify config values saved
-    mock_config.wandb_api_key = "test-api-key"
-    mock_config.wandb_base_url = None
+    assert mock_config.wandb_api_key == "test-api-key"
+    assert mock_config.wandb_entity == "default-entity"
+    assert mock_config.wandb_base_url is None
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.get_wandb_default_entity")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_wandb_custom_base_url(mock_config_shared, mock_requests_post):
-    # Setup
+async def test_connect_wandb_success_with_custom_entity(
+    mock_config_shared, mock_get_wandb_default_entity
+):
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"data": {"viewer": {"id": "test-user-id"}}}
-    mock_requests_post.return_value = mock_response
+    mock_get_wandb_default_entity.return_value = "default-entity"
 
+    result = await connect_wandb("test-api-key", "custom-entity", None)
+
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to W&B"}'
+
+    mock_get_wandb_default_entity.assert_called_once_with("test-api-key", None)
+
+    assert mock_config.wandb_api_key == "test-api-key"
+    assert mock_config.wandb_entity == "custom-entity"
+    assert mock_config.wandb_base_url is None
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.get_wandb_default_entity")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_wandb_success_with_custom_base_url(
+    mock_config_shared, mock_get_wandb_default_entity
+):
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    mock_get_wandb_default_entity.return_value = "default-entity"
     custom_url = "https://custom-wandb.example.com"
 
-    # Test
-    result = await connect_wandb("test-api-key", custom_url)
+    result = await connect_wandb("test-api-key", None, custom_url)
 
-    # Assertions
     assert result.status_code == 200
-    assert result.body == b'{"message":"Connected to Weights & Biases"}'
+    assert result.body == b'{"message":"Connected to W&B"}'
 
-    # Verify API call with custom URL
-    mock_requests_post.assert_called_once_with(
-        f"{custom_url}/graphql",
-        timeout=5,
-        json={"query": "query { viewer { id } }"},
-        headers={"Content-Type": "application/json"},
-        auth=("api_key", "test-api-key"),
-    )
+    mock_get_wandb_default_entity.assert_called_once_with("test-api-key", custom_url)
 
-    # Verify config values saved
-    mock_config.wandb_api_key = "test-api-key"
-    mock_config.wandb_base_url = custom_url
+    assert mock_config.wandb_api_key == "test-api-key"
+    assert mock_config.wandb_entity == "default-entity"
+    assert mock_config.wandb_base_url == custom_url
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.get_wandb_default_entity")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_wandb_invalid_api_key(mock_config_shared, mock_requests_post):
-    # Setup
-    mock_config = MagicMock()
-    mock_config_shared.return_value = mock_config
-
-    mock_response = MagicMock()
-    mock_response.status_code = 401
-    mock_requests_post.return_value = mock_response
-
-    # Test
-    result = await connect_wandb("invalid-api-key", None)
-
-    # Assertions
-    assert result.status_code == 401
-    assert "Invalid API key" in result.body.decode()
-
-    # Verify config values were not saved
-    assert (
-        not hasattr(mock_config, "wandb_api_key")
-        or mock_config.wandb_api_key != "invalid-api-key"
-    )
-
-
-@pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
-@patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_wandb_null_viewer(mock_config_shared, mock_requests_post):
-    # Setup
-    mock_config = MagicMock()
-    mock_config_shared.return_value = mock_config
-
-    # W&B API returns 200 but null viewer when API key is invalid -- normal failure case
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"data": {"viewer": None}}
-    mock_requests_post.return_value = mock_response
-
-    # Test
-    result = await connect_wandb("invalid-api-key", None)
-
-    # Assertions
-    assert result.status_code == 401
-    assert "Invalid API key" in result.body.decode()
-
-    # Verify config values were not saved
-    assert (
-        not hasattr(mock_config, "wandb_api_key")
-        or mock_config.wandb_api_key != "invalid-api-key"
-    )
-
-
-@pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
-@patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_wandb_unexpected_response(
-    mock_config_shared, mock_requests_post
+async def test_connect_wandb_auth_error(
+    mock_config_shared, mock_get_wandb_default_entity
 ):
-    # Setup
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
 
-    # Response with unexpected format
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"data": {"unexpected": "format"}}
-    mock_response.text = '{"data": {"unexpected": "format"}}'
-    mock_requests_post.return_value = mock_response
+    from kiln_ai.utils.wandb_utils import AuthenticationError
 
-    # Test
-    result = await connect_wandb("test-api-key", None)
+    mock_get_wandb_default_entity.return_value = AuthenticationError("Invalid API key")
 
-    # Assertions
-    assert result.status_code == 400
-    assert "Failed to connect to W&B" in result.body.decode()
+    result = await connect_wandb("invalid-api-key", None, None)
 
-    # Verify config values were not saved
-    assert (
-        not hasattr(mock_config, "wandb_api_key")
-        or mock_config.wandb_api_key != "test-api-key"
+    assert result.status_code == 401
+    assert "Invalid API key" in result.body.decode()
+
+    mock_get_wandb_default_entity.assert_called_once_with("invalid-api-key", None)
+
+    assert not hasattr(mock_config, "wandb_api_key") or (
+        hasattr(mock_config, "wandb_api_key")
+        and mock_config.wandb_api_key != "invalid-api-key"
     )
 
 
 @pytest.mark.asyncio
-@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.get_wandb_default_entity")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-async def test_connect_wandb_request_exception(mock_config_shared, mock_requests_post):
-    # Setup
+async def test_connect_wandb_no_default_entity(
+    mock_config_shared, mock_get_wandb_default_entity
+):
     mock_config = MagicMock()
     mock_config_shared.return_value = mock_config
 
-    # Simulate a request exception
-    mock_requests_post.side_effect = Exception("Network error")
+    mock_get_wandb_default_entity.return_value = None
 
-    # Test
-    result = await connect_wandb("test-api-key", None)
+    result = await connect_wandb("test-api-key", None, None)
 
-    # Assertions
+    assert result.status_code == 400
+    assert "No default entity found" in result.body.decode()
+
+    mock_get_wandb_default_entity.assert_called_once_with("test-api-key", None)
+
+    assert not hasattr(mock_config, "wandb_api_key") or (
+        hasattr(mock_config, "wandb_api_key")
+        and mock_config.wandb_api_key != "test-api-key"
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.get_wandb_default_entity")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_wandb_exception(
+    mock_config_shared, mock_get_wandb_default_entity
+):
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    mock_get_wandb_default_entity.side_effect = Exception("Network error")
+
+    result = await connect_wandb("test-api-key", None, None)
+
     assert result.status_code == 400
     assert "Failed to connect to W&B" in result.body.decode()
     assert "Network error" in result.body.decode()
 
-    # Verify config values were not saved
-    assert (
-        not hasattr(mock_config, "wandb_api_key")
-        or mock_config.wandb_api_key != "test-api-key"
+    mock_get_wandb_default_entity.assert_called_once_with("test-api-key", None)
+
+    assert not hasattr(mock_config, "wandb_api_key") or (
+        hasattr(mock_config, "wandb_api_key")
+        and mock_config.wandb_api_key != "test-api-key"
     )
 
 

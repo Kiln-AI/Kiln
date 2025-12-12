@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 
+.cursor/commands/
 .env
 .act_secrets
 __pycache__/
