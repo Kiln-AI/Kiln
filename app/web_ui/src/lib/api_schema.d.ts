@@ -1326,6 +1326,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rate_limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Rate Limits
+         * @description Get the current rate limits configuration.
+         */
+        get: operations["read_rate_limits_api_rate_limits_get"];
+        put?: never;
+        /**
+         * Update Rate Limits
+         * @description Update rate limits configuration on the shared rate limiter.
+         *
+         *     Args:
+         *         rate_limits: New rate limits configuration
+         *
+         *     Returns:
+         *         The saved rate limits configuration
+         */
+        post: operations["update_rate_limits_api_rate_limits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/generate_categories": {
         parameters: {
             query?: never;
@@ -4833,6 +4863,31 @@ export interface components {
              * @description The search results
              */
             results: components["schemas"]["SearchResult"][];
+        };
+        /**
+         * RateLimits
+         * @description Rate limits configuration with provider-wide and model-specific limits.
+         *
+         *     provider_limits: Max concurrent requests per provider (applies to all models)
+         *     model_limits: Max concurrent requests per model (takes precedence over provider limits)
+         */
+        RateLimits: {
+            /**
+             * Provider Limits
+             * @description Max concurrent requests per provider (applies to all models from that provider unless overridden by a model-specific limit)
+             */
+            provider_limits?: {
+                [key: string]: number;
+            };
+            /**
+             * Model Limits
+             * @description Max concurrent requests per model (takes precedence over provider limits)
+             */
+            model_limits?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
         };
         /** RatingOption */
         RatingOption: {
@@ -8577,6 +8632,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_rate_limits_api_rate_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimits"];
+                };
+            };
+        };
+    };
+    update_rate_limits_api_rate_limits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateLimits"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimits"];
                 };
             };
             /** @description Validation Error */

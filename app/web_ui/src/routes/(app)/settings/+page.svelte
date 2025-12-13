@@ -59,6 +59,14 @@
           href: "/settings/providers/add_models",
           button_text: "Custom Models",
         },
+        {
+          type: "settings",
+          name: "Rate Limits",
+          description:
+            "Configure max concurrent requests for models to manage API rate limits.",
+          href: "/settings/rate_limits",
+          button_text: "Manage Rate Limits",
+        },
       ],
     },
     {
