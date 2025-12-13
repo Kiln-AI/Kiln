@@ -1,7 +1,11 @@
 name: Build Desktop Apps
 
 on:
+  release:
+    types: [created]
   push:
+    branches:
+      - main
 
 jobs:
   build:
