@@ -1160,7 +1160,7 @@ async def connect_kiln_copilot(key: str):
         response = requests.post(
             f"{base_url}/verify_api_key",
             headers={"Authorization": f"Bearer {key}"},
-            timeout=5,
+            timeout=20,
         )
 
         if response.status_code == 200:

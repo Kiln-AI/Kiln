@@ -3,6 +3,7 @@
   import createKindeClient from "@kinde-oss/kinde-auth-pkce-js"
   import { base_url } from "$lib/api_client"
   import posthog from "posthog-js"
+  import { env } from "$env/dynamic/public"
 
   export let onSuccess: () => void
   export let onCancel: () => void
@@ -13,15 +14,18 @@
   let apiKeyMessage: string | null = null
   let submitting = false
 
-  const KILN_ACCOUNT_DOMAIN = "https://account.kiln.tech"
-  const KILN_ACCOUNT_CLIENT_ID = "2428f47a1e0b404b82e68400a2d580c6"
+  // Defaults are for prod (these aren't secrets). Can override for dev/staging.
+  const KINDE_ACCOUNT_DOMAIN =
+    env.PUBLIC_KINDE_ACCOUNT_DOMAIN || "https://account.kiln.tech"
+  const KINDE_ACCOUNT_CLIENT_ID =
+    env.PUBLIC_KINDE_ACCOUNT_CLIENT_ID || "2428f47a1e0b404b82e68400a2d580c6"
 
   async function initKindeClient() {
     if (kindeClient) return kindeClient
 
     kindeClient = await createKindeClient({
-      client_id: KILN_ACCOUNT_CLIENT_ID,
-      domain: KILN_ACCOUNT_DOMAIN,
+      client_id: KINDE_ACCOUNT_CLIENT_ID,
+      domain: KINDE_ACCOUNT_DOMAIN,
       redirect_uri: window.location.origin + window.location.pathname,
       on_redirect_callback: () => {},
     })
@@ -63,7 +67,7 @@
       }
 
       const response = await fetch(
-        `${KILN_ACCOUNT_DOMAIN}/account_api/v1/portal_link`,
+        `${KINDE_ACCOUNT_DOMAIN}/account_api/v1/portal_link`,
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
