@@ -152,6 +152,11 @@ def list_json_schema_for_task(task: Task) -> str:
     """
     if task.input_json_schema:
         items_schema = json.loads(task.input_json_schema)
+        if (
+            items_schema.get("type") == "object"
+            and "additionalProperties" not in items_schema
+        ):
+            items_schema["additionalProperties"] = False
     else:
         items_schema = {"type": "string"}
 
@@ -166,6 +171,7 @@ def list_json_schema_for_task(task: Task) -> str:
             "generated_samples": list_schema,
         },
         "required": ["generated_samples"],
+        "additionalProperties": False,
     }
 
     return json.dumps(top_level_schema, ensure_ascii=False)

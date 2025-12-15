@@ -439,6 +439,14 @@
     )
   }
 
+  function handleGenerateSamplesPartialComplete() {
+    // Trigger reactivity
+    data = data
+
+    // Trigger save to localStorage
+    triggerSave()
+  }
+
   function handleGenerateSamplesCompleted() {
     // Trigger reactivity
     data = data
@@ -715,6 +723,7 @@
     {num_samples_to_generate}
     {custom_topics_string}
     on_completed={handleGenerateSamplesCompleted}
+    on_partial_complete={handleGenerateSamplesPartialComplete}
     cascade_mode={generate_samples_cascade_mode}
   />
 {/if}

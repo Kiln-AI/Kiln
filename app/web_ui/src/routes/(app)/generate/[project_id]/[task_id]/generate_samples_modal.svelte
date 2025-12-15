@@ -48,6 +48,7 @@
   $: topics_failed_to_generate_count = topics_failed_to_generate.length
 
   export let on_completed: () => void
+  export let on_partial_complete: (() => void) | null = null
 
   function add_synthetic_samples(
     topic: SampleDataNode,
@@ -214,7 +215,13 @@
 
     sample_generating = false
 
-    // if every topic was generated successfully, move on
+    // Always trigger save/update so successfully generated samples are visible
+    // even if some topics failed
+    if (on_partial_complete) {
+      on_partial_complete()
+    }
+
+    // if every topic was generated successfully, close the modal
     // otherwise we stay here to show the user the errors
     if (topics_failed_to_generate_count === 0) {
       on_completed()
