@@ -28,6 +28,7 @@
   $: eval_id = $page.params.eval_id
 
   let spec: Spec | null = null
+  let spec_error: KilnError | null = null
   let spec_loading = true
 
   let evaluator: Eval | null = null
@@ -39,7 +40,7 @@
   let eval_progress_error: KilnError | null = null
 
   $: loading = spec_loading || eval_loading || eval_progress_loading
-  $: error = eval_error || eval_progress_error
+  $: error = spec_error || eval_error || eval_progress_error
 
   onMount(async () => {
     // Wait for page params to load
@@ -71,7 +72,7 @@
       }
       spec = data
     } catch (error) {
-      eval_error = createKilnError(error)
+      spec_error = createKilnError(error)
     } finally {
       spec_loading = false
     }
