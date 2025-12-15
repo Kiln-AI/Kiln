@@ -1,0 +1,32 @@
+{
+  "name": "project",
+  "dependencies": {
+    "tessl/pypi-pillow": {
+      "version": "11.3.0"
+    },
+    "tessl/pypi-pyinstaller": {
+      "version": "6.15.0"
+    },
+    "tessl/pypi-certifi": {
+      "version": "2024.12.0"
+    },
+    "tessl/pypi-kiln-ai": {
+      "version": "0.22.1"
+    },
+    "tessl/pypi-pyright": {
+      "version": "1.1.0"
+    },
+    "tessl/pypi-pytest": {
+      "version": "8.4.0"
+    },
+    "tessl/pypi-pytest-xdist": {
+      "version": "3.8.0"
+    },
+    "tessl/pypi-python-dotenv": {
+      "version": "1.1.0"
+    },
+    "tessl/pypi-watchfiles": {
+      "version": "1.1.0"
+    }
+  }
+}
