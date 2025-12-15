@@ -33,7 +33,7 @@
     return ai_suggested_fields.has(key)
   }
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
 
   // Get field configs for the current spec_type
   $: field_configs = spec_field_configs[spec_type] || []
@@ -71,7 +71,7 @@
 
       if (storedData) {
         const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
 
         // Initialize both current and suggested with the same values
         current_name = formData.name || ""

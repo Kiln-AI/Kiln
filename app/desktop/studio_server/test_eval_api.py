@@ -35,7 +35,7 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
 )
 from kiln_ai.datamodel.spec import Spec
-from kiln_ai.datamodel.spec_properties import BehaviourProperties, SpecType
+from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
 
@@ -1898,12 +1898,10 @@ async def test_get_run_config_eval_scores_includes_spec_id(
         id="spec1",
         name="Test Spec",
         definition="Test spec definition",
-        properties=BehaviourProperties(
-            spec_type=SpecType.behaviour,
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
             base_instruction="test instruction",
-            behavior_description="test behaviour",
-            correct_behavior_examples=None,
-            incorrect_behavior_examples=None,
+            desired_behaviour_description="test desired behaviour",
         ),
         eval_id=mock_eval.id,  # Associate this spec with the eval
         parent=mock_task,

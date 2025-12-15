@@ -15,7 +15,7 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
   let name = ""
 
   // Store property values as a Record<string, string | null>
@@ -39,7 +39,7 @@
       try {
         const formData = JSON.parse(storedData)
         // Restore form state
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
         initial_property_values = { ...formData.property_values }

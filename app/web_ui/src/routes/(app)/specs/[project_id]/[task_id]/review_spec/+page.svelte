@@ -14,7 +14,7 @@
   let spec_error: KilnError | null = null
   let spec_loading = true
 
-  let spec_type: SpecType = "behaviour"
+  let spec_type: SpecType = "desired_behaviour"
   let name = ""
   let property_values: Record<string, string | null> = {}
 
@@ -61,7 +61,7 @@
 
       if (storedData) {
         const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
 

@@ -2,7 +2,7 @@ import type { EvalTemplateId, Task, Eval, Spec } from "$lib/types"
 
 type StaticEvalTemplates = Exclude<
   EvalTemplateId,
-  "kiln_requirements" | "kiln_issue" | "tool_call" | "rag"
+  "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "rag"
 >
 
 const eval_steps_static_templates: Record<StaticEvalTemplates, string[]> = {
@@ -74,23 +74,68 @@ ${spec.definition}
     return steps
   }
 
+  if (template === "desired_behaviour") {
+    if (spec && spec.properties.spec_type === "desired_behaviour") {
+      const desired_behaviour_description =
+        spec.properties.desired_behaviour_description
+      if (!desired_behaviour_description) {
+        throw new Error(
+          "Desired behaviour description is required for desired_behaviour template",
+        )
+      }
+      const steps: string[] = [
+        `Does the model's output exhibit the desired behaviour described here: \n<desired_behaviour_description>\n${desired_behaviour_description}\n</desired_behaviour_description>`,
+      ]
+      const pass_example = spec.properties.correct_behaviour_examples
+      if (pass_example) {
+        steps.push(
+          `Is the model's output similar to this example of correct behaviour: \n<pass_example>\n${pass_example}\n</pass_example>`,
+        )
+      }
+      const failure_example = spec.properties.incorrect_behaviour_examples
+      if (failure_example) {
+        steps.push(
+          `Is the model's output similar to this example of incorrect behaviour: \n<failure_example>\n${failure_example}\n</failure_example>`,
+        )
+      }
+      steps.push(
+        "Considering the above, does the model's output exhibit the desired behaviour? It should pass if it exhibits the desired behaviour, and fail if it does not.",
+      )
+      return steps
+    } else {
+      throw new Error(
+        "Spec with desired_behaviour spec_type is required for desired_behaviour template",
+      )
+    }
+  }
+
   if (template === "kiln_issue") {
     // Extract variables from either spec properties or eval template properties
     let issue_description: string
     let failure_example: string | undefined
     let pass_example: string | undefined
 
-    // Legacy eval only (specs not yet supported for kiln_issue)
-    issue_description = evaluator.template_properties?.issue_prompt as string
-    if (!issue_description) {
-      throw new Error("Issue prompt is required for kiln_issue template")
+    if (spec && spec.properties.spec_type === "issue") {
+      // Spec-based eval
+      issue_description = spec.properties.issue_description
+      if (!issue_description) {
+        throw new Error("Issue description is required for kiln_issue template")
+      }
+      failure_example = spec.properties.issue_examples ?? undefined
+      pass_example = spec.properties.non_issue_examples ?? undefined
+    } else {
+      // Legacy eval
+      issue_description = evaluator.template_properties?.issue_prompt as string
+      if (!issue_description) {
+        throw new Error("Issue prompt is required for kiln_issue template")
+      }
+      failure_example = evaluator.template_properties?.failure_example as
+        | string
+        | undefined
+      pass_example = evaluator.template_properties?.pass_example as
+        | string
+        | undefined
     }
-    failure_example = evaluator.template_properties?.failure_example as
-      | string
-      | undefined
-    pass_example = evaluator.template_properties?.pass_example as
-      | string
-      | undefined
 
     // Build steps using the extracted variables
     const steps: string[] = [
