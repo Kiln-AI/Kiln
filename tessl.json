@@ -27,6 +27,69 @@
     },
     "tessl/pypi-watchfiles": {
       "version": "1.1.0"
+    },
+    "tessl/npm-floating-ui--dom": {
+      "version": "1.7.0"
+    },
+    "tessl/npm-sveltejs--kit": {
+      "version": "2.37.0"
+    },
+    "tessl/npm-sveltejs--vite-plugin-svelte": {
+      "version": "6.1.0"
+    },
+    "tessl/npm-tailwindcss--typography": {
+      "version": "0.5.0"
+    },
+    "tessl/npm-typescript-eslint--eslint-plugin": {
+      "version": "8.42.0"
+    },
+    "tessl/npm-typescript-eslint--parser": {
+      "version": "8.42.0"
+    },
+    "tessl/npm-daisyui": {
+      "version": "4.12.0"
+    },
+    "tessl/npm-echarts": {
+      "version": "6.0.0"
+    },
+    "tessl/npm-eslint-config-prettier": {
+      "version": "10.1.0"
+    },
+    "tessl/npm-eslint-plugin-svelte": {
+      "version": "3.12.0"
+    },
+    "tessl/npm-eslint": {
+      "version": "9.34.0"
+    },
+    "tessl/npm-highlight.js": {
+      "version": "11.11.0"
+    },
+    "tessl/npm-openapi-typescript": {
+      "version": "7.9.0"
+    },
+    "tessl/npm-postcss": {
+      "version": "8.5.0"
+    },
+    "tessl/npm-prettier": {
+      "version": "3.6.0"
+    },
+    "tessl/npm-svelte-check": {
+      "version": "3.8.0"
+    },
+    "tessl/npm-svelte": {
+      "version": "4.2.0"
+    },
+    "tessl/npm-tailwindcss": {
+      "version": "3.4.0"
+    },
+    "tessl/npm-typescript": {
+      "version": "5.9.0"
+    },
+    "tessl/npm-vite": {
+      "version": "7.1.0"
+    },
+    "tessl/npm-vitest": {
+      "version": "4.0.0"
     }
   }
 }
