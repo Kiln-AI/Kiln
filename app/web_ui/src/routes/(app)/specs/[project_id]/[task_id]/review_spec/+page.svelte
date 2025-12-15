@@ -6,7 +6,9 @@
   import { goto } from "$app/navigation"
   import type { SpecType } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
   import { createSpec } from "../spec_utils"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -20,6 +22,7 @@
 
   let create_error: KilnError | null = null
   let submitting = false
+  let form_container: FormContainer
 
   type ReviewRow = {
     id: string
@@ -150,7 +153,7 @@
     return user_says_meets_spec === model_says_meets_spec
   })
 
-  $: all_feedback_provided = review_rows.every((row) => {
+  $: all_examples_reviewed = review_rows.every((row) => {
     // All rows must have a meets_spec answer
     if (row.meets_spec === null) return false
     // If the answer is misaligned with the model, feedback is required
@@ -160,7 +163,22 @@
     return true
   })
 
-  function continue_to_refine() {
+  $: any_feedback_provided = review_rows.some((row) => {
+    // All rows must have a meets_spec answer
+    if (row.meets_spec === null) return false
+    // If the answer is misaligned with the model, feedback is required
+    if (should_show_feedback(row)) {
+      return row.feedback.trim().length > 0
+    }
+    return false
+  })
+
+  async function continue_to_refine() {
+    // Trigger validation first - if validation passes, do_continue_to_refine will be called via on:submit
+    await form_container?.validate_and_submit()
+  }
+
+  function do_continue_to_refine() {
     // Store the review data and continue to refine_spec
     const formData = {
       name,
@@ -228,122 +246,137 @@
         {spec_error.getMessage() || "An unknown error occurred"}
       </div>
     {:else}
-      <div class="flex flex-col gap-6">
-        <div class="rounded-lg border">
-          <table class="table table-fixed">
-            <thead>
-              <tr>
-                <th style="width: calc(50% - 100px)">Input</th>
-                <th style="width: calc(50% - 100px)">Output</th>
-                <th style="width: 200px">Meets Spec</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each review_rows as row (row.id)}
-                <tr
-                  on:click={() => toggleRowExpand(row.id)}
-                  class="cursor-pointer"
-                >
-                  <td class="py-2">
-                    {#if expandedRows[row.id]}
-                      <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                          row.input,
-                        )}</pre>
-                    {:else}
-                      <div class="truncate w-0 min-w-full">{row.input}</div>
-                    {/if}
-                  </td>
-                  <td class="py-2">
-                    {#if expandedRows[row.id]}
-                      <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                          row.output,
-                        )}</pre>
-                    {:else}
-                      <div class="truncate w-0 min-w-full">{row.output}</div>
-                    {/if}
-                  </td>
-                  <td class="py-2">
-                    <div class="flex gap-1">
-                      <button
-                        class="btn btn-sm btn-outline hover:btn-success {row.meets_spec ===
-                        'yes'
-                          ? 'btn-secondary'
-                          : 'text-base-content/40'}"
-                        on:click={(e) => set_meets_spec(row.id, "yes", e)}
-                        tabindex="0">Yes</button
-                      >
-                      <button
-                        class="btn btn-sm btn-outline hover:btn-warning {row.meets_spec ===
-                        'no'
-                          ? 'btn-secondary'
-                          : 'text-base-content/40'}"
-                        on:click={(e) => set_meets_spec(row.id, "no", e)}
-                        tabindex="0">No</button
-                      >
-                    </div>
-                  </td>
+      <FormContainer
+        bind:this={form_container}
+        submit_visible={false}
+        focus_on_mount={false}
+        on:submit={do_continue_to_refine}
+      >
+        <div class="flex flex-col gap-6">
+          <div class="rounded-lg border">
+            <table class="table table-fixed">
+              <thead>
+                <tr>
+                  <th style="width: calc(50% - 100px)">Input</th>
+                  <th style="width: calc(50% - 100px)">Output</th>
+                  <th style="width: 200px">Meets Spec</th>
                 </tr>
-                {#if should_show_feedback(row)}
-                  <tr on:click={(e) => e.stopPropagation()}>
-                    <td colspan="3" class="bg-base-200 py-4">
-                      <FormElement
-                        label={get_feedback_label(row)}
-                        description="Our judge analysis was inconsistent with your response. Please provide more detail to help refine the spec."
-                        id="feedback-{row.id}"
-                        inputType="textarea"
-                        height="base"
-                        bind:value={row.feedback}
-                      />
+              </thead>
+              <tbody>
+                {#each review_rows as row (row.id)}
+                  <tr
+                    on:click={() => toggleRowExpand(row.id)}
+                    class="cursor-pointer"
+                  >
+                    <td class="py-2">
+                      {#if expandedRows[row.id]}
+                        <pre class="whitespace-pre-wrap">{formatExpandedContent(
+                            row.input,
+                          )}</pre>
+                      {:else}
+                        <div class="truncate w-0 min-w-full">{row.input}</div>
+                      {/if}
+                    </td>
+                    <td class="py-2">
+                      {#if expandedRows[row.id]}
+                        <pre class="whitespace-pre-wrap">{formatExpandedContent(
+                            row.output,
+                          )}</pre>
+                      {:else}
+                        <div class="truncate w-0 min-w-full">{row.output}</div>
+                      {/if}
+                    </td>
+                    <td class="py-2">
+                      <div class="flex gap-1">
+                        <button
+                          class="btn btn-sm btn-outline hover:btn-success {row.meets_spec ===
+                          'yes'
+                            ? 'btn-secondary'
+                            : 'text-base-content/40'}"
+                          on:click={(e) => set_meets_spec(row.id, "yes", e)}
+                          tabindex="0">Yes</button
+                        >
+                        <button
+                          class="btn btn-sm btn-outline hover:btn-warning {row.meets_spec ===
+                          'no'
+                            ? 'btn-secondary'
+                            : 'text-base-content/40'}"
+                          on:click={(e) => set_meets_spec(row.id, "no", e)}
+                          tabindex="0">No</button
+                        >
+                      </div>
                     </td>
                   </tr>
-                {/if}
-              {/each}
-            </tbody>
-          </table>
+                  {#if should_show_feedback(row)}
+                    <tr on:click={(e) => e.stopPropagation()}>
+                      <td colspan="3" class="bg-base-200 py-4">
+                        <FormElement
+                          label={get_feedback_label(row)}
+                          description="Our judge analysis was inconsistent with your response. Please provide more detail to help refine the spec."
+                          id="feedback-{row.id}"
+                          inputType="textarea"
+                          height="base"
+                          bind:value={row.feedback}
+                          optional={false}
+                        />
+                      </td>
+                    </tr>
+                  {/if}
+                {/each}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </FormContainer>
 
-        <div class="flex flex-col gap-2 items-end">
-          {#if create_error}
-            <div class="text-error text-sm">
-              {create_error.getMessage() || "An error occurred"}
-            </div>
+      <div class="flex flex-col gap-2 items-end">
+        {#if create_error}
+          <div class="text-error text-sm">
+            {create_error.getMessage() || "An error occurred"}
+          </div>
+        {/if}
+        {#if all_feedback_aligned}
+          <button
+            class="btn btn-primary"
+            disabled={!all_feedback_aligned || submitting}
+            on:click={create_spec}
+          >
+            {#if submitting}
+              <span class="loading loading-spinner loading-sm"></span>
+            {:else}
+              Create Spec
+            {/if}
+          </button>
+        {:else}
+          {#if !all_examples_reviewed && any_feedback_provided && !submitting}
+            <Warning
+              warning_color="warning"
+              warning_message="For best results, finish reviewing all examples before refining the spec."
+              tight={true}
+            />
           {/if}
-          {#if all_feedback_aligned}
+          <button
+            class="btn btn-primary"
+            disabled={!any_feedback_provided || submitting}
+            on:click={continue_to_refine}
+          >
+            Refine Spec with Feedback
+          </button>
+          <div class="flex flex-row gap-1 mt-2 justify-end">
+            <span class="text-xs text-gray-500">or</span>
             <button
-              class="btn btn-primary"
-              disabled={!all_feedback_aligned || submitting}
+              class="link underline text-xs text-gray-500"
+              disabled={submitting}
               on:click={create_spec}
             >
               {#if submitting}
-                <span class="loading loading-spinner loading-sm"></span>
+                <span class="loading loading-spinner loading-xs"></span>
               {:else}
-                Create Spec
+                Create Spec Without Refining Further
               {/if}
             </button>
-          {:else}
-            <button
-              class="btn btn-primary"
-              disabled={!all_feedback_provided || submitting}
-              on:click={continue_to_refine}
-            >
-              Refine Spec with Feedback
-            </button>
-            <div class="flex flex-row gap-1 mt-2 justify-end">
-              <span class="text-xs text-gray-500">or</span>
-              <button
-                class="link underline text-xs text-gray-500"
-                disabled={submitting}
-                on:click={create_spec}
-              >
-                {#if submitting}
-                  <span class="loading loading-spinner loading-xs"></span>
-                {:else}
-                  Create Spec Without Refining Further
-                {/if}
-              </button>
-            </div>
-          {/if}
-        </div>
+          </div>
+        {/if}
       </div>
     {/if}
   </AppPage>
