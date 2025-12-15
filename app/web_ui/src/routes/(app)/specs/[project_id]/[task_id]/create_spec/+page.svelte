@@ -39,7 +39,7 @@
       try {
         const formData = JSON.parse(storedData)
         // Restore form state
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
         initial_property_values = { ...formData.property_values }

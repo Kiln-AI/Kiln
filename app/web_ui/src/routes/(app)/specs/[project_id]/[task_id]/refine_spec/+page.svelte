@@ -71,7 +71,7 @@
 
       if (storedData) {
         const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
 
         // Initialize both current and suggested with the same values
         current_name = formData.name || ""

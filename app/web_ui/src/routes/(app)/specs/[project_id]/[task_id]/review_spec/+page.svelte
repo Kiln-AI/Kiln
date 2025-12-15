@@ -61,7 +61,7 @@
 
       if (storedData) {
         const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "behaviour"
+        spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
 
