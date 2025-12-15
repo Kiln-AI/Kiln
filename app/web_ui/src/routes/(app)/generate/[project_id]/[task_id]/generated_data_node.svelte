@@ -23,7 +23,9 @@
   const selected_template = guidance_data.selected_template
 
   $: project_id = guidance_data.project_id
-  let run_config_component: RunConfigComponent | null = null
+  // Separate refs for each RunConfigComponent to avoid null issues when one unmounts
+  let run_config_component_modal: RunConfigComponent | null = null
+  let run_config_component_nested: RunConfigComponent | null = null
 
   export let data: SampleDataNode
   export let path: string[]
@@ -155,7 +157,7 @@
   async function generate_topics() {
     // Capture run config properties before modal closes and component is destroyed
     const run_config_properties =
-      run_config_component?.run_options_as_run_config_properties() ?? null
+      run_config_component_modal?.run_options_as_run_config_properties() ?? null
     try {
       topic_generating = true
       topic_generation_error = null
@@ -287,11 +289,10 @@
   }
 
   async function add_nested_topics_to_all_leaf_topics() {
-    // Wait a tick to ensure the RunConfigComponent is fully mounted
-    await tick()
-
+    // Capture run config properties before modal closes and component is destroyed
     const run_config_properties =
-      run_config_component?.run_options_as_run_config_properties() ?? null
+      run_config_component_nested?.run_options_as_run_config_properties() ??
+      null
     if (!run_config_properties) {
       nested_topics_error = new KilnError(
         "Run config properties not found. Please ensure model and settings are configured.",
@@ -377,9 +378,12 @@
             samples: [],
           })
         }
-      }
 
-      triggerSave()
+        // Trigger reactivity and save after each leaf topic is processed
+        // This allows partial saves if an error occurs later
+        data = data
+        triggerSave()
+      }
 
       posthog.capture("add_nested_topics_to_all", {
         num_leaf_topics: leaf_topics.length,
@@ -677,7 +681,7 @@
             <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
           <RunConfigComponent
-            bind:this={run_config_component}
+            bind:this={run_config_component_modal}
             {project_id}
             requires_structured_output={true}
             hide_prompt_selector={true}
@@ -750,7 +754,7 @@
       </div>
       {#if guidance_data.task}
         <RunConfigComponent
-          bind:this={run_config_component}
+          bind:this={run_config_component_nested}
           {project_id}
           current_task={guidance_data.task}
           requires_structured_output={true}
