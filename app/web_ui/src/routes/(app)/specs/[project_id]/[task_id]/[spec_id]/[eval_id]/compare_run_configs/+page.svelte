@@ -40,6 +40,7 @@
   import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -640,6 +641,9 @@
     the highest scores on your eval dataset."
   {project_id}
   {task}
+  new_run_config_created={async () => {
+    await load_task_prompts(project_id, task_id, true)
+  }}
 />
 
 <Dialog

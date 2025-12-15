@@ -27,6 +27,7 @@
   } from "$lib/stores/run_configs_store"
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
 
   // ### Spec Details Page ###
 
@@ -456,4 +457,7 @@
   subtitle="Compare multiple run configurations to find which one produces the highest scores on your eval dataset."
   {project_id}
   {task}
+  new_run_config_created={async () => {
+    await load_task_prompts(project_id, task_id, true)
+  }}
 />

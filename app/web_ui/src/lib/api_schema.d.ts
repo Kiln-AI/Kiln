@@ -1627,15 +1627,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/task_run_configs": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Task Run Configs */
-        get: operations["get_task_run_configs_api_projects__project_id__tasks__task_id__task_run_configs_get"];
+        /** Get Run Configs */
+        get: operations["get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2732,6 +2732,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -3934,7 +3935,7 @@ export interface components {
              * @description A description of the fine-tune for you and your team. Not used in training.
              */
             description?: string | null;
-            /** @description The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode. */
+            /** @description Legacy field -- replaced by run_config.structured_output_mode. The mode to use to train the model for structured output, if it was trained with structured output. We should call the tuned model with this mode if set. */
             structured_output_mode?: components["schemas"]["StructuredOutputMode"] | null;
             /**
              * Provider
@@ -4008,6 +4009,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4022,6 +4025,10 @@ export interface components {
             existing_finetunes: components["schemas"]["Finetune"][];
             /** Finetune Tags */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+            /** Eligible Datasets */
+            eligible_datasets: components["schemas"]["DatasetSplit"][];
+            /** Eligible Finetune Tags */
+            eligible_finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
         };
         /**
          * FinetuneDatasetTagInfo
@@ -4064,6 +4071,11 @@ export interface components {
             id: string;
             /** Data Strategies Supported */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
+            /**
+             * Supports Function Calling
+             * @default true
+             */
+            supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus
@@ -4542,6 +4554,8 @@ export interface components {
             untested_model: boolean;
             /** Task Filter */
             task_filter?: string[] | null;
+            /** Model Specific Run Config */
+            model_specific_run_config?: string | null;
         };
         /**
          * ModelProviderName
@@ -9552,7 +9566,9 @@ export interface operations {
     };
     finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tool_ids?: string[] | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -9657,7 +9673,7 @@ export interface operations {
             };
         };
     };
-    get_task_run_configs_api_projects__project_id__tasks__task_id__task_run_configs_get: {
+    get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get: {
         parameters: {
             query?: never;
             header?: never;

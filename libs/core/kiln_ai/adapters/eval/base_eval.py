@@ -170,5 +170,6 @@ class BaseEval:
             "type": "object",
             "properties": properties,
             "required": list(properties.keys()),
+            "additionalProperties": False,
         }
         return json.dumps(schema, ensure_ascii=False)

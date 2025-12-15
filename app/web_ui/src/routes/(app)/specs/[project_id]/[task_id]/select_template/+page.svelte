@@ -106,9 +106,12 @@
       {project_id}
       {task_id}
       label="Tool to Use"
-      description="Select the tool you want to use for this spec."
-      info_description=""
-      single_select={true}
+      settings={{
+        description: "Select the tool you want to use for this spec.",
+        hide_info_description: true,
+        single_select: true,
+        optional: false,
+      }}
       bind:single_select_selected_tool={selected_tool}
     />
   </Dialog>
