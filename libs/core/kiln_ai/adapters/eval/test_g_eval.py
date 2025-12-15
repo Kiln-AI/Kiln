@@ -332,6 +332,8 @@ def test_generate_full_trace_run_description(test_eval_config, test_run_config):
     # Test case 1: With available tools (non-empty string)
     available_tools = "tool1: description1\ntool2: description2"
     appropriate_tool_use_guidelines = "Call the tool when user asks for help"
+    if g_eval.eval.template_properties is None:
+        g_eval.eval.template_properties = {}
     g_eval.eval.template_properties["appropriate_tool_use_guidelines"] = (
         appropriate_tool_use_guidelines
     )
@@ -412,6 +414,8 @@ This is the full conversation history for the task run:
 
     # Test case 4: With inappropriate_tool_use_guidelines
     inappropriate_tool_use_guidelines = "Don't call the tool for simple questions"
+    if g_eval.eval.template_properties is None:
+        g_eval.eval.template_properties = {}
     g_eval.eval.template_properties["inappropriate_tool_use_guidelines"] = (
         inappropriate_tool_use_guidelines
     )

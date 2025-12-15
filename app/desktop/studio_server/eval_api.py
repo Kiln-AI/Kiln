@@ -101,7 +101,7 @@ class CreateEvaluatorRequest(BaseModel):
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
     eval_configs_filter_id: DatasetFilterId | None
-    template_properties: dict[str, str | float | int | bool]
+    template_properties: dict[str, str | float | int | bool] | None
     evaluation_data_type: EvalDataType
 
 
@@ -194,6 +194,7 @@ class RunConfigEvalResult(BaseModel):
     dataset_size: int
     eval_config_result: EvalConfigResult | None
     missing_default_eval_config: bool
+    spec_id: ID_TYPE | None
 
 
 class RunConfigEvalScoresSummary(BaseModel):
@@ -205,6 +206,7 @@ class RunConfigEvalScoresSummary(BaseModel):
 class UpdateEvalRequest(BaseModel):
     name: str
     description: str | None = None
+    output_scores: List[EvalOutputScore] | None = None
 
 
 def dataset_ids_in_filter(
@@ -333,6 +335,8 @@ def connect_evals_api(app: FastAPI):
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.name = request.name
         eval.description = request.description
+        if request.output_scores is not None:
+            eval.output_scores = request.output_scores
         eval.save_to_file()
         return eval
 
@@ -855,6 +859,13 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
+        # Build a mapping from eval_id to spec_id for evals that are associated with specs
+        specs = task.specs()
+        eval_id_to_spec_id: Dict[str, str] = {}
+        for spec in specs:
+            if spec.eval_id and spec.id:
+                eval_id_to_spec_id[spec.eval_id] = spec.id
+
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
 
@@ -901,6 +912,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
+                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
                     )
                 )
                 continue
@@ -988,6 +1000,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
+                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

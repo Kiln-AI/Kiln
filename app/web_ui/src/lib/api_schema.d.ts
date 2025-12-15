@@ -2684,7 +2684,7 @@ export interface components {
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
@@ -3350,11 +3350,10 @@ export interface components {
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
-             * @default {}
              */
-            template_properties: {
+            template_properties?: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             /**
              * @description The output of the task run to evaluate. Can be final answer or full trace.
              * @default final_answer
@@ -5164,6 +5163,8 @@ export interface components {
             eval_config_result: components["schemas"]["EvalConfigResult"] | null;
             /** Missing Default Eval Config */
             missing_default_eval_config: boolean;
+            /** Spec Id */
+            spec_id: string | null;
         };
         /** RunConfigEvalScoresSummary */
         RunConfigEvalScoresSummary: {
@@ -5971,6 +5972,8 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+            /** Output Scores */
+            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
         };
         /** UpdateFavouriteRequest */
         UpdateFavouriteRequest: {

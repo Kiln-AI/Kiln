@@ -1,11 +1,11 @@
 <script lang="ts">
-  import AppPage from "../../../../../app_page.svelte"
-  import type { Eval } from "$lib/types"
+  import AppPage from "../../../../../../app_page.svelte"
+  import type { Eval, Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
-  import RunEval from "./../run_eval.svelte"
+  import RunEval from "$lib/components/run_eval.svelte"
   import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import {
@@ -27,6 +27,12 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
 
+  $: eval_id = $page.params.eval_id
+  $: spec_id = $page.params.spec_id
+
+  let spec: Spec | null = null
+  let spec_loading = true
+  let spec_error: KilnError | null = null
   let score_legend_dialog: Dialog | null = null
 
   let evaluator: Eval | null = null
@@ -54,8 +60,9 @@
 
   let score_type: ScoreType = "kendalltau"
 
-  $: loading = eval_loading || eval_configs_loading // Score summary not blocking whole UI
-  $: error = eval_error || eval_configs_error || score_summary_error
+  $: loading = eval_loading || eval_configs_loading || spec_loading // Score summary not blocking whole UI
+  $: error =
+    eval_error || eval_configs_error || score_summary_error || spec_error
 
   let eval_state:
     | "not_started"
@@ -182,6 +189,7 @@
       load_model_info(),
       load_available_prompts(),
       load_available_models(),
+      get_spec(),
       // Get this first, as we want to know "current" for sorting
       get_eval(),
     ])
@@ -189,6 +197,36 @@
     get_eval_config()
     get_score_summary()
   })
+
+  async function get_spec() {
+    if (spec_id === "legacy") {
+      spec_loading = false
+      return
+    }
+    try {
+      spec_loading = true
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        {
+          params: {
+            path: {
+              project_id: $page.params.project_id,
+              task_id: $page.params.task_id,
+              spec_id: spec_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      spec = data
+    } catch (error) {
+      spec_error = createKilnError(error)
+    } finally {
+      spec_loading = false
+    }
+  }
 
   async function get_eval() {
     try {
@@ -200,7 +238,7 @@
             path: {
               project_id: $page.params.project_id,
               task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              eval_id: eval_id,
             },
           },
         },
@@ -235,7 +273,7 @@
             path: {
               project_id: $page.params.project_id,
               task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              eval_id: eval_id,
             },
           },
         },
@@ -254,8 +292,9 @@
   }
 
   async function get_score_summary() {
-    score_summary = null
     try {
+      score_summary = null
+      score_summary_error = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary",
         {
@@ -263,7 +302,7 @@
             path: {
               project_id: $page.params.project_id,
               task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              eval_id: eval_id,
             },
           },
         },
@@ -352,7 +391,7 @@
       evaluator = await set_current_eval_config(
         $page.params.project_id,
         $page.params.task_id,
-        $page.params.eval_id,
+        eval_id,
         eval_config_id,
       )
     } catch (error) {
@@ -397,16 +436,31 @@
   subtitle="Find the judge that best matches human preferences"
   sub_subtitle="Read the docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations#finding-the-ideal-eval-method"
-  breadcrumbs={[
-    {
-      label: "Evals",
-      href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
-    },
-    {
-      label: evaluator?.name || "Eval",
-      href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}`,
-    },
-  ]}
+  breadcrumbs={spec_id === "legacy"
+    ? [
+        {
+          label: "Specs & Evals",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+        },
+        {
+          label: "Eval",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+        },
+      ]
+    : [
+        {
+          label: "Specs & Evals",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+        },
+        {
+          label: spec?.name || "Spec",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}`,
+        },
+        {
+          label: "Eval",
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+        },
+      ]}
   action_buttons={eval_configs?.length
     ? [
         {
@@ -417,7 +471,7 @@
         },
         {
           label: "Add Judge",
-          href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`,
+          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
         },
       ]
     : []}
@@ -502,7 +556,7 @@
                 bind:eval_state
                 project_id={$page.params.project_id}
                 task_id={$page.params.task_id}
-                eval_id={$page.params.eval_id}
+                {eval_id}
                 run_all={true}
                 btn_primary={!focus_select_eval_config}
                 eval_type="eval_config"
@@ -553,13 +607,15 @@
                 {#each evaluator.output_scores as output_score}
                   <th class="text-center">
                     {output_score.name}
-                    <InfoTooltip
-                      tooltip_text={info_tooltip_text(
-                        output_score.type,
-                        score_type,
-                      )}
-                      no_pad={true}
-                    />
+                    {#if output_score.type}
+                      <InfoTooltip
+                        tooltip_text={info_tooltip_text(
+                          output_score.type,
+                          score_type,
+                        )}
+                        no_pad={true}
+                      />
+                    {/if}
                   </th>
                 {/each}
               </tr>
@@ -712,7 +768,7 @@
           action_buttons={[
             {
               label: "Add Judge",
-              href: `/evals/${$page.params.project_id}/${$page.params.task_id}/${$page.params.eval_id}/create_eval_config?next_page=eval_configs`,
+              href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
               is_primary: true,
             },
           ]}

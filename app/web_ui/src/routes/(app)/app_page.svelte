@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
-  import type { ActionButton } from "./types"
+  import type { ActionButton } from "$lib/types"
 
   export let title: string = ""
   export let subtitle: string = ""

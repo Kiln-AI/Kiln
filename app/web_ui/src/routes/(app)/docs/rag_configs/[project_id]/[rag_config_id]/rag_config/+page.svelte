@@ -20,7 +20,7 @@
   } from "$lib/stores"
   import type { AvailableModels } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { mime_type_to_string } from "$lib/utils/formatters"
   import { update_rag_config_archived_state } from "$lib/stores/rag_progress_store"
