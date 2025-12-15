@@ -1,6 +1,7 @@
 name: Build Desktop Apps
 
 on:
+  workflow_dispatch:
   release:
     types: [created]
   push:
