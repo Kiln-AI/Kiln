@@ -492,6 +492,10 @@ def connect_provider_api(app: FastAPI):
                 base_url,
             )
 
+        # Kiln Copilot is not a model provider but it's a provider you can connect through this UI/API
+        if provider == "kiln_copilot":
+            return await connect_kiln_copilot(parse_api_key(key_data))
+
         if provider not in ModelProviderName.__members__:
             return JSONResponse(
                 status_code=400,
@@ -531,8 +535,6 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
-            case ModelProviderName.kiln_copilot:
-                return await connect_kiln_copilot(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -593,8 +595,6 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
-                case ModelProviderName.kiln_copilot:
-                    Config.shared().kiln_copilot_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune

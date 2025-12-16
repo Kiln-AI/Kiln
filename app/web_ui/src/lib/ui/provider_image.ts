@@ -1,6 +1,9 @@
 import type { ModelProviderName } from "$lib/types"
 
-const provider_image_map: Record<ModelProviderName | "wandb", string> = {
+const provider_image_map: Record<
+  ModelProviderName | "wandb" | "kiln_copilot",
+  string
+> = {
   openai: "/images/openai.svg",
   openrouter: "/images/openrouter.svg",
   anthropic: "/images/anthropic.svg",
