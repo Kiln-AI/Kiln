@@ -1156,7 +1156,7 @@ async def connect_bedrock(key_data: dict):
 async def connect_kiln_copilot(key: str):
     base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
     async with httpx.AsyncClient() as client:
-        response = await client.post(
+        response = await client.get(
             f"{base_url}/v1/verify_api_key",
             headers={"Authorization": f"Bearer {key}"},
             timeout=20,
