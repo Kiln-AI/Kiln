@@ -1154,37 +1154,31 @@ async def connect_bedrock(key_data: dict):
 
 
 async def connect_kiln_copilot(key: str):
-    try:
-        base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
-        # Temporary endpoint to verify the API key
-        response = requests.post(
-            f"{base_url}/verify_api_key",
+    base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{base_url}/v1/verify_api_key",
             headers={"Authorization": f"Bearer {key}"},
             timeout=20,
         )
 
-        if response.status_code == 200:
-            Config.shared().kiln_copilot_api_key = key
-            return JSONResponse(
-                status_code=200,
-                content={"message": "Connected to Kiln Copilot"},
-            )
-        else:
-            try:
-                error_content = response.json()
-            except Exception:
-                error_content = {
-                    "message": f"Failed to verify API key (HTTP {response.status_code})"
-                }
-
-            return JSONResponse(
-                status_code=response.status_code,
-                content=error_content,
-            )
-    except requests.exceptions.RequestException as e:
+    if response.status_code == 200:
+        Config.shared().kiln_copilot_api_key = key
         return JSONResponse(
-            status_code=503,
-            content={"message": f"Could not reach Kiln Copilot server: {e}"},
+            status_code=200,
+            content={"message": "Connected to Kiln Copilot"},
+        )
+    else:
+        try:
+            error_content = response.json()
+        except Exception:
+            error_content = {
+                "message": f"Failed to verify API key (HTTP {response.status_code})"
+            }
+
+        return JSONResponse(
+            status_code=response.status_code,
+            content=error_content,
         )
 
 
