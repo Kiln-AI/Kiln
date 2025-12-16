@@ -629,7 +629,7 @@
         <Intro
           title="Specs &amp; Evals"
           description_paragraphs={[
-            "Specs are used to define how you want your task to behave.",
+            "Specs are used to define how you want your task to behave and can be evaluated to measure how well your task is performing.",
           ]}
           action_buttons={[
             {

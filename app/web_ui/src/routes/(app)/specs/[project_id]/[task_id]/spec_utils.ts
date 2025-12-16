@@ -17,6 +17,7 @@ import { createKilnError } from "$lib/utils/error_handlers"
  * @param name - The spec name
  * @param spec_type - The spec type
  * @param property_values - The property values for the spec
+ * @param evaluate_full_trace - Whether to evaluate full trace vs final answer
  */
 export async function navigateToReviewSpec(
   project_id: string,
@@ -24,12 +25,14 @@ export async function navigateToReviewSpec(
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
+  evaluate_full_trace: boolean = false,
 ): Promise<void> {
   // Store form data in sessionStorage to pass to review page
   const formData = {
     name,
     spec_type,
     property_values,
+    evaluate_full_trace,
   }
   sessionStorage.setItem(
     `spec_refine_${project_id}_${task_id}`,
@@ -47,6 +50,7 @@ export async function navigateToReviewSpec(
  * @param name - The spec name
  * @param spec_type - The spec type
  * @param property_values - The property values for the spec
+ * @param evaluate_full_trace - Whether to evaluate full trace vs final answer
  * @returns The created spec ID or null if creation failed
  * @throws Error if the API call fails
  */
@@ -56,10 +60,17 @@ export async function createSpec(
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
+  evaluate_full_trace: boolean = false,
 ): Promise<string | null> {
   // First create a new eval for the spec under the hood
 
-  const eval_id = await createEval(project_id, task_id, name, spec_type)
+  const eval_id = await createEval(
+    project_id,
+    task_id,
+    name,
+    spec_type,
+    evaluate_full_trace,
+  )
   if (!eval_id) {
     throw createKilnError("Failed to create eval for spec")
   }
@@ -112,6 +123,7 @@ async function createEval(
   task_id: string,
   spec_name: string,
   spec_type: SpecType,
+  evaluate_full_trace: boolean = false,
 ): Promise<string | null> {
   const name = spec_name
   const description = `An eval to measure if the model's behaviour meets the spec: ${spec_name}.`
@@ -120,7 +132,7 @@ async function createEval(
   const tag = specEvalTag(spec_name)
   const eval_set_filter_id = `tag::${tag}`
   const eval_configs_filter_id = `tag::${tag}_golden`
-  const evaluation_data_type = specEvalDataType(spec_type)
+  const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
     {
@@ -153,12 +165,18 @@ function specEvalOutputScore(spec_type: SpecType): EvalOutputScore {
   }
 }
 
-function specEvalDataType(spec_type: SpecType): EvalDataType {
+function specEvalDataType(
+  spec_type: SpecType,
+  evaluate_full_trace: boolean = false,
+): EvalDataType {
   if (spec_type === "appropriate_tool_use") {
     return "full_trace"
   }
   if (spec_type === "reference_answer_accuracy") {
     return "reference_answer"
+  }
+  if (evaluate_full_trace) {
+    return "full_trace"
   }
   return "final_answer"
 }

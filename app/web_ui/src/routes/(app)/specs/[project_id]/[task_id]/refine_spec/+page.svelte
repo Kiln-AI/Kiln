@@ -28,6 +28,9 @@
   let ai_suggested_fields: Set<string> = new Set()
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
 
+  // Advanced options
+  let evaluate_full_trace = false
+
   // Check if a field has an AI suggestion
   function hasAiSuggestion(key: string): boolean {
     return ai_suggested_fields.has(key)
@@ -79,6 +82,12 @@
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
 
+        // Load evaluate_full_trace, defaulting to true for tool use specs
+        evaluate_full_trace =
+          spec_type === "appropriate_tool_use"
+            ? true
+            : formData.evaluate_full_trace ?? false
+
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created
       } else {
@@ -129,6 +138,7 @@
         current_name,
         spec_type,
         suggested_property_values,
+        evaluate_full_trace,
       )
     } catch (error) {
       submit_error = createKilnError(error)
@@ -158,6 +168,7 @@
         current_name,
         spec_type,
         suggested_property_values,
+        evaluate_full_trace,
       )
 
       if (spec_id) {

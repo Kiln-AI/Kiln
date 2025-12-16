@@ -17,6 +17,7 @@
   let spec_type: SpecType = "desired_behaviour"
   let name = ""
   let property_values: Record<string, string | null> = {}
+  let evaluate_full_trace = false
 
   let create_error: KilnError | null = null
   let submitting = false
@@ -64,6 +65,11 @@
         spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
+        // Load evaluate_full_trace, defaulting to true for tool use specs
+        evaluate_full_trace =
+          spec_type === "appropriate_tool_use"
+            ? true
+            : formData.evaluate_full_trace ?? false
 
         // Generate mock review data (in a real implementation, this would come from an API)
         review_rows = [
@@ -166,6 +172,7 @@
       name,
       spec_type,
       property_values,
+      evaluate_full_trace,
       review_feedback: rows_with_feedback.map((row) => ({
         input: row.input,
         output: row.output,
@@ -191,6 +198,7 @@
         name,
         spec_type,
         property_values,
+        evaluate_full_trace,
       )
 
       if (spec_id) {

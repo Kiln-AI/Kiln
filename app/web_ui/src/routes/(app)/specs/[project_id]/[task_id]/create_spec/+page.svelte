@@ -9,6 +9,7 @@
   import { goto } from "$app/navigation"
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import { createSpec, navigateToReviewSpec } from "../spec_utils"
 
@@ -22,6 +23,14 @@
   let property_values: Record<string, string | null> = {}
   let initial_property_values: Record<string, string | null> = {}
   let initialized = false
+
+  // Advanced options
+  let evaluate_full_trace = false
+  $: is_tool_use_spec = spec_type === "appropriate_tool_use"
+  $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
+  $: full_trace_disabled = is_tool_use_spec
+  $: show_advanced_options = !is_reference_answer_spec
+  $: if (is_tool_use_spec) evaluate_full_trace = true
 
   // Get field configs for the current spec_type
   $: field_configs = spec_field_configs[spec_type] || []
@@ -43,6 +52,10 @@
         name = formData.name || ""
         property_values = { ...formData.property_values }
         initial_property_values = { ...formData.property_values }
+        // Restore evaluate_full_trace only if not a tool use spec (tool use always uses full trace)
+        if (spec_type !== "appropriate_tool_use") {
+          evaluate_full_trace = formData.evaluate_full_trace ?? false
+        }
         initialized = true
         return
       } catch (error) {
@@ -143,6 +156,7 @@
         name,
         spec_type,
         property_values,
+        evaluate_full_trace,
       )
     } catch (error) {
       create_error = createKilnError(error)
@@ -186,6 +200,7 @@
         name,
         spec_type,
         property_values,
+        evaluate_full_trace,
       )
 
       if (spec_id) {
@@ -247,6 +262,22 @@
             : undefined}
         />
       {/each}
+
+      {#if show_advanced_options}
+        <Collapse title="Advanced Options">
+          <FormElement
+            label="Include conversation history"
+            id="evaluate_full_trace"
+            inputType="checkbox"
+            bind:value={evaluate_full_trace}
+            disabled={full_trace_disabled}
+            description="When enabled, this spec will be judged on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+            info_description={full_trace_disabled
+              ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
+              : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
+          />
+        </Collapse>
+      {/if}
     </FormContainer>
     <div class="flex flex-row gap-1 mt-2 justify-end">
       <span class="text-xs text-gray-500">or</span>
