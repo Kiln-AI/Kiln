@@ -11,11 +11,11 @@
   Connect AI Providers
 </h1>
 <h3 class="text-base font-medium text-center mt-3 max-w-[600px] mx-auto">
-  Kiln is free, but your need to connect API keys to use AI services.
+  Kiln is free, but you need to connect API keys to use AI services.
 </h3>
 
 <div
-  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 w-full mx-auto"
+  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col w-full mx-auto"
 >
   <div class="w-full flex flex-col items-center">
     <ConnectKilnCopilot
