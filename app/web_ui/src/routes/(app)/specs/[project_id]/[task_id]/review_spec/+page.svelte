@@ -6,7 +6,11 @@
   import { goto } from "$app/navigation"
   import type { SpecType } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { createSpec } from "../spec_utils"
+  import {
+    createSpec,
+    storeReviewedExamples,
+    type ReviewedExample,
+  } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -160,7 +164,25 @@
     return true
   })
 
+  /**
+   * Collect reviewed examples from current review rows.
+   * Only includes rows that have been explicitly reviewed (have a meets_spec value).
+   */
+  function collectReviewedExamples(): ReviewedExample[] {
+    return review_rows
+      .filter((row) => row.meets_spec !== null)
+      .map((row) => ({
+        input: row.input,
+        output: row.output,
+        meets_spec: row.meets_spec === "yes",
+      }))
+  }
+
   function continue_to_refine() {
+    // Store the current reviewed examples (will be unioned with previous cycles)
+    const currentExamples = collectReviewedExamples()
+    storeReviewedExamples(project_id, task_id, currentExamples)
+
     // Store the review data and continue to refine_spec
     const formData = {
       name,
@@ -185,6 +207,7 @@
       create_error = null
       submitting = true
 
+      // createSpec will read and save the accumulated reviewed examples
       const spec_id = await createSpec(
         project_id,
         task_id,
@@ -201,6 +224,14 @@
     } finally {
       submitting = false
     }
+  }
+
+  async function create_spec_handler() {
+    // Store current reviewed examples (unions with any from previous cycles)
+    const currentExamples = collectReviewedExamples()
+    storeReviewedExamples(project_id, task_id, currentExamples)
+
+    create_spec()
   }
 </script>
 
@@ -312,7 +343,7 @@
             <button
               class="btn btn-primary"
               disabled={!all_feedback_aligned || submitting}
-              on:click={create_spec}
+              on:click={create_spec_handler}
             >
               {#if submitting}
                 <span class="loading loading-spinner loading-sm"></span>
