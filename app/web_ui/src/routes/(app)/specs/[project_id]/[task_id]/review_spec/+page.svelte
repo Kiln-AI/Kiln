@@ -22,6 +22,7 @@
 
   let create_error: KilnError | null = null
   let submitting = false
+  let complete = false
   let form_container: FormContainer
 
   type ReviewRow = {
@@ -195,6 +196,7 @@
       `spec_refine_${project_id}_${task_id}`,
       JSON.stringify(formData),
     )
+    complete = true
     goto(`/specs/${project_id}/${task_id}/refine_spec`)
   }
 
@@ -212,6 +214,7 @@
       )
 
       if (spec_id) {
+        complete = true
         goto(`/specs/${project_id}/${task_id}/${spec_id}`)
       }
     } catch (error) {
@@ -251,6 +254,7 @@
         submit_visible={false}
         focus_on_mount={false}
         on:submit={do_continue_to_refine}
+        warn_before_unload={!complete}
       >
         <div class="flex flex-col gap-6">
           <div class="rounded-lg border">
