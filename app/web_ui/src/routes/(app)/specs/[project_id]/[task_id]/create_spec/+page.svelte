@@ -11,7 +11,11 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { createSpec, navigateToReviewSpec } from "../spec_utils"
+  import {
+    createSpec,
+    navigateToReviewSpec,
+    loadSpecFormData,
+  } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -41,32 +45,22 @@
     const has_url_params = spec_type_param !== null
 
     // Check if we have saved form data from a back navigation
-    const formDataKey = `spec_refine_${project_id}_${task_id}`
-    const storedData = sessionStorage.getItem(formDataKey)
+    const formData = loadSpecFormData(project_id, task_id)
 
-    if (storedData && !has_url_params) {
-      try {
-        const formData = JSON.parse(storedData)
-        // Restore form state
-        spec_type = formData.spec_type || "desired_behaviour"
-        name = formData.name || ""
-        property_values = { ...formData.property_values }
-        initial_property_values = { ...formData.property_values }
-        // Restore evaluate_full_trace only if not a tool use spec (tool use always uses full trace)
-        if (spec_type !== "appropriate_tool_use") {
-          evaluate_full_trace = formData.evaluate_full_trace ?? false
-        }
-        initialized = true
-        return
-      } catch (error) {
-        // If parsing fails, continue with normal initialization
-        console.error("Failed to restore form data:", error)
-      }
+    if (formData && !has_url_params) {
+      // Restore form state
+      spec_type = formData.spec_type
+      name = formData.name
+      property_values = { ...formData.property_values }
+      initial_property_values = { ...formData.property_values }
+      evaluate_full_trace = formData.evaluate_full_trace
+      initialized = true
+      return
     }
 
     // If no stored data and no URL params, redirect to specs list
     // This happens when user navigates back after creating a spec
-    if (!storedData && !has_url_params) {
+    if (!formData && !has_url_params) {
       goto(`/specs/${project_id}/${task_id}`)
       return
     }

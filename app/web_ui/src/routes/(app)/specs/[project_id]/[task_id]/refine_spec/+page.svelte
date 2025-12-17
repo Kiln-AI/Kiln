@@ -9,7 +9,11 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { createSpec, navigateToReviewSpec } from "../spec_utils"
+  import {
+    createSpec,
+    navigateToReviewSpec,
+    loadSpecFormData,
+  } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -69,24 +73,19 @@
       spec_loading = true
       spec_error = null
 
-      const formDataKey = `spec_refine_${project_id}_${task_id}`
-      const storedData = sessionStorage.getItem(formDataKey)
+      const formData = loadSpecFormData(project_id, task_id)
 
-      if (storedData) {
-        const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "desired_behaviour"
+      if (formData) {
+        spec_type = formData.spec_type
 
         // Initialize both current and suggested with the same values
-        current_name = formData.name || ""
+        current_name = formData.name
 
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
 
         // Load evaluate_full_trace, defaulting to true for tool use specs
-        evaluate_full_trace =
-          spec_type === "appropriate_tool_use"
-            ? true
-            : formData.evaluate_full_trace ?? false
+        evaluate_full_trace = formData.evaluate_full_trace
 
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created

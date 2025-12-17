@@ -14,10 +14,17 @@ import {
   getStoredReviewedExamples,
   saveReviewedExamplesAsGoldenDataset,
 } from "./spec_reviewed_examples_store"
+import {
+  type SpecFormData,
+  loadSpecFormData,
+  saveSpecFormData,
+  clearSpecFormData,
+} from "./spec_form_data_store"
 
 // Re-export for convenience
-export type { ReviewedExample }
+export type { ReviewedExample, SpecFormData }
 export { storeReviewedExamples } from "./spec_reviewed_examples_store"
+export { loadSpecFormData, saveSpecFormData, clearSpecFormData }
 
 /**
  * Navigate to review_spec page after storing form data
@@ -37,16 +44,13 @@ export async function navigateToReviewSpec(
   evaluate_full_trace: boolean = false,
 ): Promise<void> {
   // Store form data in sessionStorage to pass to review page
-  const formData = {
+  const formData: SpecFormData = {
     name,
     spec_type,
     property_values,
     evaluate_full_trace,
   }
-  sessionStorage.setItem(
-    `spec_refine_${project_id}_${task_id}`,
-    JSON.stringify(formData),
-  )
+  saveSpecFormData(project_id, task_id, formData)
 
   // Navigate to review_spec page
   goto(`/specs/${project_id}/${task_id}/review_spec`)
@@ -134,8 +138,7 @@ export async function createSpec(
   }
 
   // Clear the sessionStorage after successful creation
-  const formDataKey = `spec_refine_${project_id}_${task_id}`
-  sessionStorage.removeItem(formDataKey)
+  clearSpecFormData(project_id, task_id)
   // Also clear the reviewed examples storage
   clearStoredReviewedExamples(project_id, task_id)
 
@@ -198,16 +201,15 @@ function specEvalDataType(
   spec_type: SpecType,
   evaluate_full_trace: boolean = false,
 ): EvalDataType {
-  if (spec_type === "appropriate_tool_use") {
-    return "full_trace"
-  }
   if (spec_type === "reference_answer_accuracy") {
     return "reference_answer"
   }
+
   if (evaluate_full_trace) {
     return "full_trace"
+  } else {
+    return "final_answer"
   }
-  return "final_answer"
 }
 
 function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {

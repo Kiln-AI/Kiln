@@ -10,7 +10,10 @@
   import {
     createSpec,
     storeReviewedExamples,
+    loadSpecFormData,
+    saveSpecFormData,
     type ReviewedExample,
+    type SpecFormData,
   } from "../spec_utils"
   import Warning from "$lib/ui/warning.svelte"
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
@@ -71,11 +74,9 @@
       spec_loading = true
       spec_error = null
 
-      const formDataKey = `spec_refine_${project_id}_${task_id}`
-      const storedData = sessionStorage.getItem(formDataKey)
+      const formData = loadSpecFormData(project_id, task_id)
 
-      if (storedData) {
-        const formData = JSON.parse(storedData)
+      if (formData) {
         spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
@@ -167,7 +168,6 @@
     }
   }
 
-  $: rows_with_feedback = review_rows.filter(should_show_feedback)
   $: all_feedback_aligned = review_rows.every((row) => {
     if (row.meets_spec === null) return false
     const user_says_meets_spec = row.meets_spec === "yes"
@@ -225,23 +225,18 @@
     const currentExamples = collectReviewedExamples()
     storeReviewedExamples(project_id, task_id, currentExamples)
 
-    // Store the review data and continue to refine_spec
-    const formData = {
+    // TODO: Call AI refinement API here with review_rows.filter(should_show_feedback)
+    // Pass the rows where user feedback is misaligned with model decision
+    // The API will return refined property_values which we'll store and pass to refine_spec
+
+    // Store the current form data
+    const formData: SpecFormData = {
       name,
       spec_type,
       property_values,
       evaluate_full_trace,
-      review_feedback: rows_with_feedback.map((row) => ({
-        input: row.input,
-        output: row.output,
-        model_decision: row.model_decision,
-        feedback: row.feedback,
-      })),
     }
-    sessionStorage.setItem(
-      `spec_refine_${project_id}_${task_id}`,
-      JSON.stringify(formData),
-    )
+    saveSpecFormData(project_id, task_id, formData)
     complete = true
     goto(`/specs/${project_id}/${task_id}/refine_spec`)
   }
