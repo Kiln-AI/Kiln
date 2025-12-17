@@ -178,6 +178,6 @@ def dataset_filter_from_id(id: DatasetFilterId) -> DatasetFilter:
 
     try:
         static_filter = StaticDatasetFilters(id)
-        return static_dataset_filters[static_filter]
+        return static_dataset_filters[static_filter]  # type: ignore[return-value]
     except ValueError:
         raise ValueError(f"Invalid dataset filter ID: {id}")

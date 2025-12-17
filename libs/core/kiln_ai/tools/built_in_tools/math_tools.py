@@ -34,7 +34,7 @@ class AddTool(KilnTool):
 
     async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Add two numbers and return the result."""
-        kwargs = AddParams(**kwargs)
+        kwargs = AddParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         a = kwargs["a"]
         b = kwargs["b"]
         return ToolCallResult(output=str(a + b))
@@ -72,7 +72,7 @@ class SubtractTool(KilnTool):
 
     async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Subtract b from a and return the result."""
-        kwargs = SubtractParams(**kwargs)
+        kwargs = SubtractParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         a = kwargs["a"]
         b = kwargs["b"]
         return ToolCallResult(output=str(a - b))
@@ -107,7 +107,7 @@ class MultiplyTool(KilnTool):
 
     async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Multiply two numbers and return the result."""
-        kwargs = MultiplyParams(**kwargs)
+        kwargs = MultiplyParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         a = kwargs["a"]
         b = kwargs["b"]
         return ToolCallResult(output=str(a * b))
@@ -148,7 +148,7 @@ class DivideTool(KilnTool):
 
     async def run(self, context=None, **kwargs) -> ToolCallResult:
         """Divide a by b and return the result."""
-        kwargs = DivideParams(**kwargs)
+        kwargs = DivideParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         a = kwargs["a"]
         b = kwargs["b"]
         if b == 0:
