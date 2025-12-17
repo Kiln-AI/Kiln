@@ -96,7 +96,7 @@
 
   let submit_error: KilnError | null = null
   let submitting = false
-
+  let complete = false
   let analyze_dialog: Dialog | null = null
   async function analyze_spec() {
     try {
@@ -161,6 +161,7 @@
       )
 
       if (spec_id) {
+        complete = true
         goto(`/specs/${project_id}/${task_id}/${spec_id}`)
       }
     } catch (error) {
@@ -199,6 +200,7 @@
       on:submit={analyze_spec}
       bind:error={submit_error}
       bind:submitting
+      warn_before_unload={!complete}
     >
       <!-- Column Headers -->
       <div class="grid grid-cols-2 gap-8 mb-4">
