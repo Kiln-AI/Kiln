@@ -43,6 +43,9 @@ exclude = []
 [tool.ty.src]
 exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv"]
 
+[tool.ty.rules]
+invalid-key = "ignore"
+
 [tool.ruff.lint]
 # I is import sorting
 # F401 is unused imports
