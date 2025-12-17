@@ -86,7 +86,7 @@
 
       // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
       formatter[displayName] =
-        `${displayName}\n{sub|${modelName}}\n{sub|${promptName}}`
+        `${displayName}\n{sub|Model: ${modelName}}\n{sub|Prompt: ${promptName}}`
     }
     return formatter
   }
@@ -290,7 +290,13 @@
   <div class="flex flex-col gap-6">
     <!-- Axis Selection Controls -->
     <div class="flex flex-row gap-8 flex-shrink-0 items-center">
-      <div class="text-xl font-bold flex-grow">Metric Correlation</div>
+      <div class="flex-grow">
+        <div class="text-xl font-bold">Metric Correlation</div>
+
+        <div class="text-sm text-gray-500 mb-4">
+          Compare all run configurations by any two metrics.
+        </div>
+      </div>
       {#if !loading && axisOptions.length > 1}
         <div class="flex flex-row gap-2 items-center">
           <label

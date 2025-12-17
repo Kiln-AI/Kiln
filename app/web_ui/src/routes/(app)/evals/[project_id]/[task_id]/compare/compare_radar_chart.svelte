@@ -64,7 +64,7 @@
 
       // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
       formatter[displayName] =
-        `${displayName}\n{sub|${modelName}}\n{sub|${promptName}}`
+        `${displayName}\n{sub|Model: ${modelName}}\n{sub|Prompt: ${promptName}}`
     }
     return formatter
   }
@@ -242,6 +242,9 @@
 <div
   class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
 >
-  <div class="text-xl font-bold mb-4">Radar Chart</div>
+  <div class="text-xl font-bold">Radar Chart</div>
+  <div class="text-sm text-gray-500 mb-4">
+    Compare the evaluation scores of the run configurations selected above.
+  </div>
   <div use:initChart class="w-full flex-1 min-h-[400px]"></div>
 </div>
