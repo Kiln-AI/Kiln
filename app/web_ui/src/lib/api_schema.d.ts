@@ -332,7 +332,11 @@ export interface paths {
         /** Get Runs */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Task Run
+         * @description Create a TaskRun directly without running a model.
+         */
+        post: operations["create_task_run_api_projects__project_id__tasks__task_id__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1627,15 +1631,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/task_run_configs": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Task Run Configs */
-        get: operations["get_task_run_configs_api_projects__project_id__tasks__task_id__task_run_configs_get"];
+        /** Get Run Configs */
+        get: operations["get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1659,25 +1663,7 @@ export interface paths {
         delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
         options?: never;
         head?: never;
-        /** Update Eval */
-        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Eval Favourite */
-        patch: operations["update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch"];
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -2199,6 +2185,8 @@ export interface components {
             spec_type: "appropriate_tool_use";
             /** Base Instruction */
             base_instruction: string;
+            /** Tool Id */
+            tool_id: string;
             /** Tool Function Name */
             tool_function_name: string;
             /** Tool Use Guidelines */
@@ -2254,22 +2242,6 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
-        };
-        /** BehaviourProperties */
-        BehaviourProperties: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            spec_type: "behaviour";
-            /** Base Instruction */
-            base_instruction: string;
-            /** Behavior Description */
-            behavior_description: string;
-            /** Correct Behavior Examples */
-            correct_behavior_examples: string | null;
-            /** Incorrect Behavior Examples */
-            incorrect_behavior_examples: string | null;
         };
         /** BiasProperties */
         BiasProperties: {
@@ -2684,7 +2656,7 @@ export interface components {
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
@@ -2746,6 +2718,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -2839,6 +2812,45 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /**
+         * CreateTaskRunRequest
+         * @description Request model for creating a synthetic TaskRun directly (without running a model).
+         */
+        CreateTaskRunRequest: {
+            /**
+             * Input
+             * @description The input for the task run
+             */
+            input: string;
+            /**
+             * Output
+             * @description The output for the task run
+             */
+            output: string;
+            /**
+             * Tags
+             * @description Tags to apply to the task run
+             * @default []
+             */
+            tags: string[];
+            /** @description Optional rating for the output */
+            rating?: components["schemas"]["TaskOutputRating-Input"] | null;
+            /**
+             * Model Name
+             * @description The name of the model used to generate the data
+             */
+            model_name: string;
+            /**
+             * Model Provider
+             * @description The provider of the model used to generate the data
+             */
+            model_provider: string;
+            /**
+             * Adapter Name
+             * @description The name of the adapter used to generate the data
+             */
+            adapter_name: string;
         };
         /** CreateVectorStoreConfigRequest */
         CreateVectorStoreConfigRequest: {
@@ -3125,6 +3137,22 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DesiredBehaviourProperties */
+        DesiredBehaviourProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "desired_behaviour";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Desired Behaviour Description */
+            desired_behaviour_description: string;
+            /** Correct Behaviour Examples */
+            correct_behaviour_examples?: string;
+            /** Incorrect Behaviour Examples */
+            incorrect_behaviour_examples?: string;
+        };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
             /** Message */
@@ -3350,11 +3378,10 @@ export interface components {
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
-             * @default {}
              */
-            template_properties: {
+            template_properties?: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             /**
              * @description The output of the task run to evaluate. Can be final answer or full trace.
              * @default final_answer
@@ -3603,7 +3630,7 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -3933,7 +3960,7 @@ export interface components {
              * @description A description of the fine-tune for you and your team. Not used in training.
              */
             description?: string | null;
-            /** @description The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode. */
+            /** @description Legacy field -- replaced by run_config.structured_output_mode. The mode to use to train the model for structured output, if it was trained with structured output. We should call the tuned model with this mode if set. */
             structured_output_mode?: components["schemas"]["StructuredOutputMode"] | null;
             /**
              * Provider
@@ -4007,6 +4034,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4021,6 +4050,10 @@ export interface components {
             existing_finetunes: components["schemas"]["Finetune"][];
             /** Finetune Tags */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+            /** Eligible Datasets */
+            eligible_datasets: components["schemas"]["DatasetSplit"][];
+            /** Eligible Finetune Tags */
+            eligible_finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
         };
         /**
          * FinetuneDatasetTagInfo
@@ -4063,6 +4096,11 @@ export interface components {
             id: string;
             /** Data Strategies Supported */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
+            /**
+             * Supports Function Calling
+             * @default true
+             */
+            supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus
@@ -4114,9 +4152,9 @@ export interface components {
             /** Formatting Requirements */
             formatting_requirements: string;
             /** Proper Formatting Examples */
-            proper_formatting_examples: string | null;
+            proper_formatting_examples?: string;
             /** Improper Formatting Examples */
-            improper_formatting_examples: string | null;
+            improper_formatting_examples?: string;
         };
         /** Function */
         Function: {
@@ -4176,6 +4214,22 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** IssueProperties */
+        IssueProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "issue";
+            /** Base Instruction */
+            base_instruction: string;
+            /** Issue Description */
+            issue_description: string;
+            /** Issue Examples */
+            issue_examples?: string;
+            /** Non Issue Examples */
+            non_issue_examples?: string;
         };
         /** JailbreakProperties */
         JailbreakProperties: {
@@ -4525,6 +4579,8 @@ export interface components {
             untested_model: boolean;
             /** Task Filter */
             task_filter?: string[] | null;
+            /** Model Specific Run Config */
+            model_specific_run_config?: string | null;
         };
         /**
          * ModelProviderName
@@ -5164,6 +5220,8 @@ export interface components {
             eval_config_result: components["schemas"]["EvalConfigResult"] | null;
             /** Missing Default Eval Config */
             missing_default_eval_config: boolean;
+            /** Spec Id */
+            spec_id: string | null;
         };
         /** RunConfigEvalScoresSummary */
         RunConfigEvalScoresSummary: {
@@ -5388,7 +5446,7 @@ export interface components {
              * Properties
              * @description The properties of the spec.
              */
-            properties: components["schemas"]["BehaviourProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             /**
              * @description The priority of the spec.
              * @default 1
@@ -5426,7 +5484,7 @@ export interface components {
             /** Definition */
             definition: string;
             /** Properties */
-            properties: components["schemas"]["BehaviourProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
             priority: components["schemas"]["Priority"];
             status: components["schemas"]["SpecStatus"];
             /** Tags */
@@ -5893,9 +5951,9 @@ export interface components {
             /** Tone Description */
             tone_description: string;
             /** Acceptable Examples */
-            acceptable_examples: string | null;
+            acceptable_examples?: string;
             /** Unacceptable Examples */
-            unacceptable_examples: string | null;
+            unacceptable_examples?: string;
         };
         /** ToolApiDescription */
         ToolApiDescription: {
@@ -5964,18 +6022,6 @@ export interface components {
             base_instruction: string;
             /** Toxicity Examples */
             toxicity_examples: string;
-        };
-        /** UpdateEvalRequest */
-        UpdateEvalRequest: {
-            /** Name */
-            name: string;
-            /** Description */
-            description?: string | null;
-        };
-        /** UpdateFavouriteRequest */
-        UpdateFavouriteRequest: {
-            /** Favourite */
-            favourite: boolean;
         };
         /**
          * UpdateFinetuneRequest
@@ -6887,6 +6933,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_run_api_projects__project_id__tasks__task_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
                 };
             };
             /** @description Validation Error */
@@ -9531,7 +9613,9 @@ export interface operations {
     };
     finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tool_ids?: string[] | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -9636,7 +9720,7 @@ export interface operations {
             };
         };
     };
-    get_task_run_configs_api_projects__project_id__tasks__task_id__task_run_configs_get: {
+    get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -9721,80 +9805,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                eval_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateEvalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Eval"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                eval_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateFavouriteRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Eval"];
                 };
             };
             /** @description Validation Error */

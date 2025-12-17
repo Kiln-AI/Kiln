@@ -7,7 +7,7 @@
     prompt_name_from_id,
   } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 
@@ -112,7 +112,7 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
-  subtitle="Prompt content can't be edited to ensure consistency with prior runs. If you want to modify the content, create a new prompt instead of editing."
+  warning="Prompt body is locked to preserve consistency of past data. If you want to edit the prompt body, create a new prompt."
   patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
   delete_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
   fields={[

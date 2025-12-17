@@ -50,8 +50,8 @@
     reason === "eval"
       ? [
           {
-            label: "Evals",
-            href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+            label: "Specs & Evals",
+            href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
           },
         ]
       : reason === "generic"
@@ -139,6 +139,8 @@
       if (tool_id) params.set("tool_id", tool_id)
       const splits_param = $page.url.searchParams.get("splits")
       if (splits_param) params.set("splits", splits_param)
+      const fine_tuning_tools = $page.url.searchParams.get("fine_tuning_tools")
+      if (fine_tuning_tools) params.set("fine_tuning_tools", fine_tuning_tools)
 
       const query_string = params.toString()
       const url = `/generate/${$page.params.project_id}/${$page.params.task_id}?${query_string}`

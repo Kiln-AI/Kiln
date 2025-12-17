@@ -153,6 +153,7 @@
         checked={value ? true : false}
         on:change={handleCheckboxChange}
         aria-label={aria_label || label}
+        {disabled}
       />
     {/if}
     {#if label || inline_action || info_description || error_message || description}

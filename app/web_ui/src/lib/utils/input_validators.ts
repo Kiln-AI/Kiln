@@ -69,6 +69,74 @@ export function number_validator({
     })
 }
 
+// Important: if updating this, also update the corresponding validator in the backend datamodel/basemodel.py
+// This mirrors the name_validator and string_to_valid_name functions
+export function filename_string_validator(
+  value: unknown,
+  min_length: number = 1,
+  max_length: number = 120,
+): string | null {
+  if (is_empty(value)) {
+    return "Cannot be empty"
+  }
+
+  if (typeof value !== "string") {
+    return "Must be a string"
+  }
+
+  const name = value
+
+  // Check length
+  if (name.length < min_length) {
+    return `Must be at least ${min_length} character${min_length > 1 ? "s" : ""} long`
+  }
+
+  if (name.length > max_length) {
+    return `Must be at most ${max_length} characters long`
+  }
+
+  // Check for forbidden characters: / \ ? % * : | " < > . , ; = newline
+  // ref: https://en.wikipedia.org/wiki/Filename#Problematic_characters
+  const forbidden_chars_regex = /[/\\?%*:|"<>.,;=\n]/
+  if (forbidden_chars_regex.test(name)) {
+    return 'Cannot contain any of these characters: / \\ ? % * : | " < > . , ; = or newlines'
+  }
+
+  // Check for leading/trailing whitespace or underscores
+  if (name !== name.trim()) {
+    return "Cannot have leading or trailing whitespace"
+  }
+  if (name.startsWith("_") || name.endsWith("_")) {
+    return "Cannot start or end with an underscore"
+  }
+
+  // Check for consecutive whitespace
+  if (/\s\s+/.test(name)) {
+    return "Cannot contain consecutive whitespace"
+  }
+
+  // Check for consecutive underscores
+  if (name.includes("__")) {
+    return "Cannot contain consecutive underscores"
+  }
+
+  return null
+}
+
+// FilenameStringShort validator (max 32 characters) - used for eval score names, task requirement names
+export const filename_string_short_validator: (
+  value: unknown,
+) => string | null = (value: unknown) => {
+  return filename_string_validator(value, 1, 32)
+}
+
+// FilenameString validator (max 120 characters) - used for task names, eval names, etc
+export const filename_string_validator_default: (
+  value: unknown,
+) => string | null = (value: unknown) => {
+  return filename_string_validator(value, 1, 120)
+}
+
 // Important: if updating this, also update the corresponding validator in the backend utils/validation.py
 export const tool_name_validator: (value: unknown) => string | null = (
   value: unknown,

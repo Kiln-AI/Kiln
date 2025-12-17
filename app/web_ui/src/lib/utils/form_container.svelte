@@ -35,6 +35,7 @@
   export let saved = false
   export let keyboard_submit = true
   export let submit_visible = true
+  export let submit_disabled = false
   export let gap: number = 6
   export let focus_on_mount = true
   $: ui_saved_indicator = update_ui_saved_indicator(saved)
@@ -87,7 +88,7 @@
 
   const dispatch = createEventDispatcher()
 
-  async function validate_and_submit() {
+  export async function validate_and_submit() {
     await trigger_validation()
     const firstError = first_error()
     if (firstError) {
@@ -193,7 +194,7 @@
         ? 'btn-success'
         : ''} {submit_visible ? '' : 'hidden'}"
       on:click={validate_and_submit}
-      disabled={submitting}
+      disabled={submitting || submit_disabled}
     >
       {#if ui_saved_indicator}
         ✔ Saved

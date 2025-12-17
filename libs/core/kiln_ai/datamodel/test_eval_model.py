@@ -372,6 +372,73 @@ def test_eval_valid_output_scores():
     assert eval.output_scores[2].name == "basic_check"
 
 
+def test_eval_output_score_name_validation():
+    """Test that EvalOutputScore validates score names properly"""
+
+    with pytest.raises(
+        ValueError,
+        match="cannot contain any of the following characters",
+    ):
+        EvalOutputScore(
+            name="Correctness ",
+            type=TaskOutputRatingType.five_star,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot contain any of the following characters",
+    ):
+        EvalOutputScore(
+            name=" Leading Space",
+            type=TaskOutputRatingType.five_star,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot contain any of the following characters",
+    ):
+        EvalOutputScore(
+            name="consecutive__underscores",
+            type=TaskOutputRatingType.five_star,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot contain any of the following characters",
+    ):
+        EvalOutputScore(
+            name="invalid/slash",
+            type=TaskOutputRatingType.five_star,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="cannot contain any of the following characters",
+    ):
+        EvalOutputScore(
+            name="invalid.period",
+            type=TaskOutputRatingType.five_star,
+        )
+
+    with pytest.raises(ValueError, match="too long"):
+        EvalOutputScore(
+            name="a" * 33,
+            type=TaskOutputRatingType.five_star,
+        )
+
+    valid_score = EvalOutputScore(
+        name="Valid Name With Spaces",
+        type=TaskOutputRatingType.five_star,
+    )
+    assert valid_score.name == "Valid Name With Spaces"
+
+    max_length_score = EvalOutputScore(
+        name="a" * 32,
+        type=TaskOutputRatingType.five_star,
+    )
+    assert max_length_score.name == "a" * 32
+
+
 @pytest.fixture
 def valid_eval_run_data():
     return {
@@ -739,7 +806,10 @@ def test_eval_template_properties_issue_template_validation(
         )
         assert eval.template == EvalTemplateId.issue
         for key, value in template_properties.items():
-            assert eval.template_properties[key] == value
+            assert (
+                eval.template_properties is not None
+                and eval.template_properties[key] == value
+            )
 
 
 @pytest.mark.parametrize(
@@ -776,7 +846,10 @@ def test_eval_template_properties_non_validated_templates(
     )
     assert eval.template == template
     for key, value in template_properties.items():
-        assert eval.template_properties[key] == value
+        assert (
+            eval.template_properties is not None
+            and eval.template_properties[key] == value
+        )
 
 
 @pytest.mark.parametrize(
@@ -921,7 +994,10 @@ def test_eval_template_properties_tool_call_template_validation(
         )
         assert eval.template == EvalTemplateId.tool_call
         for key, value in template_properties.items():
-            assert eval.template_properties[key] == value
+            assert (
+                eval.template_properties is not None
+                and eval.template_properties[key] == value
+            )
 
 
 def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():

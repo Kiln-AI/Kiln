@@ -7,7 +7,7 @@ from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import (
-    BehaviourProperties,
+    DesiredBehaviourProperties,
     HallucinationsProperties,
     SpecType,
     ToneProperties,
@@ -55,8 +55,6 @@ def create_tone_properties_dict():
         "spec_type": SpecType.tone.value,
         "base_instruction": "Test instruction",
         "tone_description": "Professional and friendly",
-        "acceptable_examples": None,
-        "unacceptable_examples": None,
     }
 
 
@@ -87,8 +85,6 @@ def sample_tone_properties():
         spec_type=SpecType.tone,
         base_instruction="Test instruction",
         tone_description="Professional and friendly",
-        acceptable_examples=None,
-        unacceptable_examples=None,
     )
 
 
@@ -113,14 +109,14 @@ def sample_toxicity_properties():
 
 
 @pytest.fixture
-def sample_behaviour_properties():
-    """Fixture for creating complete BehaviourProperties objects."""
-    return BehaviourProperties(
-        spec_type=SpecType.behaviour,
+def sample_desired_behaviour_properties():
+    """Fixture for creating complete DesiredBehaviourProperties objects."""
+    return DesiredBehaviourProperties(
+        spec_type=SpecType.desired_behaviour,
         base_instruction="Test instruction",
-        behavior_description="Avoid toxic content",
-        correct_behavior_examples=None,
-        incorrect_behavior_examples=None,
+        desired_behaviour_description="Avoid toxic content",
+        correct_behaviour_examples=None,
+        incorrect_behaviour_examples=None,
     )
 
 
@@ -454,17 +450,16 @@ def test_create_spec_with_properties(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Behaviour Spec",
+        "name": "Desired Behaviour Spec",
         "definition": "System should avoid toxic language",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": {
-            "spec_type": SpecType.behaviour.value,
+            "spec_type": SpecType.desired_behaviour.value,
             "base_instruction": "Test instruction",
-            "behavior_description": "Avoid toxic language and offensive content",
-            "correct_behavior_examples": None,
-            "incorrect_behavior_examples": "Example 1: Don't use slurs\nExample 2: Don't be rude",
+            "desired_behaviour_description": "Avoid toxic language and offensive content",
+            "incorrect_behaviour_examples": "Example 1: Don't use slurs\nExample 2: Don't be rude",
         },
         "eval_id": None,
     }
@@ -478,20 +473,20 @@ def test_create_spec_with_properties(client, project_and_task):
     assert response.status_code == 200
     res = response.json()
     assert res["properties"] is not None
-    assert res["properties"]["spec_type"] == SpecType.behaviour.value
+    assert res["properties"]["spec_type"] == SpecType.desired_behaviour.value
     assert (
-        res["properties"]["behavior_description"]
+        res["properties"]["desired_behaviour_description"]
         == "Avoid toxic language and offensive content"
     )
     assert (
-        res["properties"]["incorrect_behavior_examples"]
+        res["properties"]["incorrect_behaviour_examples"]
         == "Example 1: Don't use slurs\nExample 2: Don't be rude"
     )
 
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].properties is not None
-    assert specs[0].properties["spec_type"] == SpecType.behaviour
+    assert specs[0].properties["spec_type"] == SpecType.desired_behaviour
 
 
 def test_create_spec_with_archived_status(client, project_and_task):
@@ -1138,6 +1133,7 @@ def test_create_spec_with_empty_tool_function_name(client, project_and_task):
         "properties": {
             "spec_type": "appropriate_tool_use",
             "base_instruction": "Test instruction",
+            "tool_id": "test_tool",
             "tool_function_name": "",
             "tool_use_guidelines": "Use this tool when needed",
             "appropriate_tool_use_examples": "examples",
@@ -1173,6 +1169,7 @@ def test_create_spec_with_empty_tool_use_guidelines(client, project_and_task):
         "properties": {
             "spec_type": "appropriate_tool_use",
             "base_instruction": "Test instruction",
+            "tool_id": "test_tool",
             "tool_function_name": "test_tool_function",
             "tool_use_guidelines": "",
             "appropriate_tool_use_examples": "examples",
@@ -1200,17 +1197,16 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Behaviour Spec",
-        "definition": "Behaviour validation test",
+        "name": "Desired Behaviour Spec",
+        "definition": "Desired behaviour validation test",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": {
-            "spec_type": "behaviour",
+            "spec_type": "desired_behaviour",
             "base_instruction": "Test instruction",
-            "behavior_description": "",
-            "correct_behavior_examples": None,
-            "incorrect_behavior_examples": "Example 1: Don't do this",
+            "desired_behaviour_description": "",
+            "incorrect_behaviour_examples": "Example 1: Don't do this",
         },
         "eval_id": None,
     }
@@ -1225,7 +1221,7 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
     res = response.json()
     assert "source_errors" in res
     assert any(
-        "behavior_description" in error.get("msg", "").lower()
+        "desired_behaviour_description" in error.get("msg", "").lower()
         for error in res["source_errors"]
     )
 
@@ -1234,17 +1230,15 @@ def test_create_spec_with_empty_base_instruction(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Behaviour Spec",
-        "definition": "Behaviour validation test",
+        "name": "Desired Behaviour Spec",
+        "definition": "Desired behaviour validation test",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": {
-            "spec_type": "behaviour",
+            "spec_type": "desired_behaviour",
             "base_instruction": "",
-            "behavior_description": "Avoid toxic content",
-            "correct_behavior_examples": None,
-            "incorrect_behavior_examples": None,
+            "desired_behaviour_description": "Avoid toxic content",
         },
         "eval_id": None,
     }

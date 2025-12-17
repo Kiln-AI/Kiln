@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { TaskRunConfig } from "$lib/types"
-  import { model_info } from "$lib/stores"
+  import { model_info, get_task_composite_id } from "$lib/stores"
   import { getDetailedModelName } from "$lib/utils/run_config_formatters"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
-  import { current_task_prompts } from "$lib/stores"
+  import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import RunConfigDetailsDialog from "./run_config_details_dialog.svelte"
 
   export let project_id: string
@@ -16,6 +16,10 @@
   function open_details_dialog() {
     details_dialog?.show()
   }
+
+  $: task_prompts =
+    $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
+    null
 
   $: tools_count =
     task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
@@ -34,10 +38,7 @@
     Model: {getDetailedModelName(task_run_config, $model_info)}
   </div>
   <div>
-    Prompt: {getRunConfigPromptDisplayName(
-      task_run_config,
-      $current_task_prompts,
-    )}
+    Prompt: {getRunConfigPromptDisplayName(task_run_config, task_prompts)}
   </div>
   <div>
     Tools: {tools_count > 0 ? `${tools_count} available` : "None"}

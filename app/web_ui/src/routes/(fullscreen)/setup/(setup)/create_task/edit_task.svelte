@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Task } from "$lib/types"
-  import Output from "../../../../(app)/run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -281,14 +281,17 @@
 
     <!-- Don't show these if onboarding, keep onboarding view as simple as possible -->
     {#if !onboarding}
-      <FormElement
-        label="Task Description"
-        inputType="textarea"
-        id="task_description"
-        description="A description for you and your team, not used by the model."
-        optional={true}
-        bind:value={task.description}
-      />
+      <!-- Don't show if Creating. Only on editing. -->
+      {#if !creating}
+        <FormElement
+          label="Task Description"
+          inputType="textarea"
+          id="task_description"
+          description="A description for you and your team, not used by the model."
+          optional={true}
+          bind:value={task.description}
+        />
+      {/if}
 
       <FormElement
         label="'Thinking' Instructions"

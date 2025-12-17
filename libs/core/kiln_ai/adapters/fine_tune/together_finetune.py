@@ -117,9 +117,10 @@ class TogetherFinetune(BaseFinetuneAdapter):
             # Instead we augment the system message with custom JSON instructions for a fine-tune (see augment_system_message). A nice simple instructions.
             # Why: Fine-tunes tend to need less coaching to get JSON format correct, as they have seen examples. And they are often on smaller models that have trouble following longer/complex JSON-schema prompts so our default is a poor choice.
             # We save json_custom_instructions mode so it knows what to do at call time.
-            self.datamodel.structured_output_mode = (
-                StructuredOutputMode.json_custom_instructions
-            )
+            if self.datamodel.run_config is not None:
+                self.datamodel.run_config.structured_output_mode = (
+                    StructuredOutputMode.json_custom_instructions
+                )
 
         train_file_id = await self.generate_and_upload_jsonl(
             dataset, self.datamodel.train_split_name, task, format
@@ -249,7 +250,9 @@ class TogetherFinetune(BaseFinetuneAdapter):
             system_message=self.datamodel.system_message,
             thinking_instructions=self.datamodel.thinking_instructions,
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         try:
             together_file = self.client.files.upload(

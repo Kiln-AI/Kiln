@@ -1,5 +1,17 @@
 import type { components } from "./api_schema"
 
+// A type for a button which can appear on an app page
+export type ActionButton = {
+  label?: string
+  icon?: string
+  handler?: () => void
+  href?: string
+  primary?: boolean
+  notice?: boolean
+  shortcut?: string
+  disabled?: boolean
+}
+
 // Project-Input is a variant with path
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
@@ -42,6 +54,8 @@ export type EvalProgress = components["schemas"]["EvalProgress"]
 export type RatingOption = components["schemas"]["RatingOption"]
 export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
 export type FinetuneDatasetInfo = components["schemas"]["FinetuneDatasetInfo"]
+export type FinetuneDatasetTagInfo =
+  components["schemas"]["FinetuneDatasetTagInfo"]
 export type StructuredOutputMode = components["schemas"]["StructuredOutputMode"]
 export type KilnDocument = components["schemas"]["Document"]
 export type KilnDocumentKind = components["schemas"]["Kind"]
@@ -111,7 +125,8 @@ export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
 export type SpecProperties =
   | components["schemas"]["AppropriateToolUseProperties"]
-  | components["schemas"]["BehaviourProperties"]
+  | components["schemas"]["DesiredBehaviourProperties"]
+  | components["schemas"]["IssueProperties"]
   | components["schemas"]["ToneProperties"]
   | components["schemas"]["FormattingProperties"]
   | components["schemas"]["LocalizationProperties"]

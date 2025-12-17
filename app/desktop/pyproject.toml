@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kiln-studio-desktop"
-version = "0.1.0"
+version = "0.23.0"
 description = "The Kiln Desktop App. Download from https://kiln.tech"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,3 +21,9 @@ only-include = ["__init__.py"]
 
 [tool.uv.sources]
 kiln-server = { workspace = true }
+
+[tool.ruff]
+exclude = [
+    # Automatically generated code, so we don't lint it
+    "studio_server/api_client/kiln_ai_server_client",
+]

@@ -33,9 +33,11 @@ from kiln_ai.adapters.ollama_tools import (
 )
 from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
 from kiln_ai.adapters.reranker_list import built_in_rerankers
+from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,8 @@ class ModelDetails(BaseModel):
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
+    # if the model has a model-specific run config which should be used when running the model (like a fine-tune model's baked in run config)
+    model_specific_run_config: str | None = Field(default=None)
 
 
 class AvailableModels(BaseModel):
@@ -482,12 +486,16 @@ def connect_provider_api(app: FastAPI):
 
         # Wandb is not a typical AI provider, but it's a provider you can connect through this UI/API
         if provider == "wandb":
-            # Load optional base URL
+            # Load optional base URL and entity
             base_url = None
-            if "Base URL" in key_data:
-                base_url = parse_url(key_data, "Base URL")
+            if "Base URL - Optional" in key_data:
+                base_url = parse_url(key_data, "Base URL - Optional")
+            custom_entity = None
+            if "Custom Entity - Optional" in key_data:
+                custom_entity = key_data["Custom Entity - Optional"].strip()
             return await connect_wandb(
                 parse_api_key(key_data),
+                custom_entity,
                 base_url,
             )
 
@@ -549,6 +557,7 @@ def connect_provider_api(app: FastAPI):
         if provider_id == "wandb":
             # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API
             Config.shared().wandb_api_key = None
+            Config.shared().wandb_entity = None
             Config.shared().wandb_base_url = None
         else:
             if provider_id not in ModelProviderName.__members__:
@@ -963,63 +972,36 @@ async def connect_anthropic(key: str):
         )
 
 
-async def connect_wandb(key: str, base_url: str | None) -> JSONResponse:
+async def connect_wandb(
+    key: str, custom_entity: str | None, base_url: str | None
+) -> JSONResponse:
     try:
-        api_url = base_url or "https://api.wandb.ai"
-        headers = {
-            "Content-Type": "application/json",
-        }
-        # Use GraphQL to validate API key with the viewer.id query
-        post_args = {
-            "query": "query { viewer { id } }",
-        }
-        response = requests.post(
-            f"{api_url}/graphql",
-            timeout=5,
-            json=post_args,
-            headers=headers,
-            auth=("api_key", key),
-        )
-
-        if response.status_code == 401:
+        # This both checks the API key is valid, and gets the default entity for the user
+        wandb_entity = await get_wandb_default_entity(key, base_url)
+        if isinstance(wandb_entity, AuthenticationError):
             return JSONResponse(
                 status_code=401,
                 content={"message": "Failed to connect to W&B. Invalid API key."},
             )
 
-        json = response.json()
-        # Check for common error (invalid key returns 200, but viewer is None)
-        if (
-            "data" in json
-            and "viewer" in json["data"]
-            and json["data"]["viewer"] is None
-        ):
+        # Get their entity: custom if provided, default if not
+        entity = custom_entity or wandb_entity
+        if entity is None:
             return JSONResponse(
-                status_code=401,
-                content={"message": "Failed to connect to W&B. Invalid API key."},
+                status_code=400,
+                content={
+                    "message": "Failed to connect to W&B: No default entity found. You must either provide a custom entity name or set a default entity in your W&B account settings."
+                },
             )
 
-        # Check for valid response
-        if (
-            "data" in json
-            and "viewer" in json["data"]
-            and isinstance(json["data"]["viewer"], dict)
-            and "id" in json["data"]["viewer"]
-        ):
-            # Save the credentials if valid
-            Config.shared().wandb_api_key = key
-            Config.shared().wandb_base_url = base_url
+        # Save the credentials if valid
+        Config.shared().wandb_api_key = key
+        Config.shared().wandb_entity = entity
+        Config.shared().wandb_base_url = base_url
 
-            return JSONResponse(
-                status_code=200, content={"message": "Connected to Weights & Biases"}
-            )
-
-        # Unknown error
         return JSONResponse(
-            status_code=400,
-            content={
-                "message": f"Failed to connect to W&B. Account request response: {response.text}"
-            },
+            status_code=200,
+            content={"message": "Connected to W&B"},
         )
 
     except Exception as e:
@@ -1438,6 +1420,22 @@ def custom_models() -> AvailableModels | None:
     )
 
 
+def fine_tune_model_structured_output_mode(
+    fine_tune: Finetune,
+) -> StructuredOutputMode:
+    # Current field
+    if fine_tune.run_config and fine_tune.run_config.structured_output_mode is not None:
+        return fine_tune.run_config.structured_output_mode
+    # Legacy field
+    legacy_structured_output_mode = fine_tune.structured_output_mode
+    if legacy_structured_output_mode is not None and isinstance(
+        legacy_structured_output_mode, StructuredOutputMode
+    ):
+        return legacy_structured_output_mode
+    # Fallback
+    return StructuredOutputMode.json_instructions
+
+
 def all_fine_tuned_models() -> AvailableModels | None:
     # Add any fine tuned models
     models: List[ModelDetails] = []
@@ -1447,9 +1445,14 @@ def all_fine_tuned_models() -> AvailableModels | None:
             for fine_tune in task.finetunes():
                 # check if the fine tune is completed
                 if fine_tune.fine_tune_model_id:
+                    model_specific_run_config = (
+                        f"finetune_run_config::{project.id}::{task.id}::{fine_tune.id}"
+                        if fine_tune.run_config is not None
+                        else None
+                    )
                     models.append(
                         ModelDetails(
-                            id=f"{project.id}::{task.id}::{fine_tune.id}",
+                            id=fine_tune.nested_id(),
                             name=fine_tune.name
                             + f" ({provider_name_from_id(fine_tune.provider)})",
                             # YMMV, but we'll assume all fine tuned models support structured output, data gen, and tools as they may have been trained with them
@@ -1462,16 +1465,10 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             suggested_for_evals=False,
                             uncensored=False,
                             suggested_for_uncensored_data_gen=False,
-                            structured_output_mode=(
-                                fine_tune_mode
-                                if (
-                                    fine_tune_mode := getattr(
-                                        fine_tune, "structured_output_mode", None
-                                    )
-                                )
-                                and isinstance(fine_tune_mode, StructuredOutputMode)
-                                else StructuredOutputMode.json_instructions
+                            structured_output_mode=fine_tune_model_structured_output_mode(
+                                fine_tune
                             ),
+                            model_specific_run_config=model_specific_run_config,
                             supports_vision=False,
                             supports_doc_extraction=False,
                             suggested_for_doc_extraction=False,

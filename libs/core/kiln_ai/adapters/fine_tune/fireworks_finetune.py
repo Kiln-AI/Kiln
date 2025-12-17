@@ -14,6 +14,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,10 @@ class FireworksFinetune(BaseFinetuneAdapter):
             # This formatter will check it's valid JSON, and normalize the output (chat format just uses exact string).
             format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
             # Fireworks doesn't support function calls or json schema, so we'll use json mode at call time
-            self.datamodel.structured_output_mode = StructuredOutputMode.json_mode
+            if self.datamodel.run_config is not None:
+                self.datamodel.run_config.structured_output_mode = (
+                    StructuredOutputMode.json_mode
+                )
 
         train_file_id = await self.generate_and_upload_jsonl(
             dataset, self.datamodel.train_split_name, task, format
@@ -154,13 +158,35 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "displayName": display_name,
             "baseModel": self.datamodel.base_model_id,
         }
-        # Add W&B config if API key is set
-        if Config.shared().wandb_api_key:
+
+        wandb_api_key = Config.shared().wandb_api_key
+        wandb_entity = Config.shared().wandb_entity
+        wandb_base_url = Config.shared().wandb_base_url
+
+        # Only setup W&B if the base URL is None as FW doesn't support custom base URLs.
+        if wandb_api_key and wandb_base_url is None:
+            # users may not have entity set. Try getting default entity from W&B.
+            if not wandb_entity:
+                # Attempt to get their account default entity
+                default_entity = await get_wandb_default_entity(wandb_api_key, None)
+                if isinstance(default_entity, AuthenticationError):
+                    raise ValueError(
+                        "Authentication to Weight & Biases failed. Please check your API key and try again."
+                    )
+                elif isinstance(default_entity, str) and len(default_entity) > 0:
+                    wandb_entity = default_entity
+                else:
+                    raise ValueError(
+                        "Weights & Biases entity not found and is required. Please set a default entity in your W&B account settings, or disconnect and reconnect Weights & Biases in Kiln Settings -> Manage Providers to set a custom entity."
+                    )
+
             payload["wandbConfig"] = {
                 "enabled": True,
-                "project": "Kiln_AI",
-                "apiKey": Config.shared().wandb_api_key,
+                "project": "kiln_ai",
+                "entity": wandb_entity,
+                "apiKey": wandb_api_key,
             }
+
         hyperparameters = self.create_payload_parameters(self.datamodel.parameters)
         payload.update(hyperparameters)
         headers = {
@@ -168,7 +194,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, json=payload, headers=headers, timeout=30.0
+            )
         if response.status_code != 200:
             raise ValueError(
                 f"Failed to create fine-tuning job: [{response.status_code}] {response.text}"
@@ -198,7 +226,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             system_message=self.datamodel.system_message,
             thinking_instructions=self.datamodel.thinking_instructions,
         )
-        path = formatter.dump_to_file(split_name, format, self.datamodel.data_strategy)
+        path = await formatter.dump_to_file(
+            split_name, format, self.datamodel.data_strategy
+        )
 
         # First call creates the dataset
         api_key = Config.shared().fireworks_api_key
@@ -221,7 +251,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         }
         async with httpx.AsyncClient() as client:
             create_dataset_response = await client.post(
-                url, json=payload, headers=headers
+                url, json=payload, headers=headers, timeout=30.0
             )
         if create_dataset_response.status_code != 200:
             raise ValueError(
@@ -240,6 +270,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
                     url,
                     headers=headers,
                     files=files,
+                    timeout=60.0,
                 )
         if upload_dataset_response.status_code != 200:
             raise ValueError(
@@ -249,7 +280,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # Third call checks it's "READY"
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}"
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=headers)
+            response = await client.get(url, headers=headers, timeout=15.0)
         if response.status_code != 200:
             raise ValueError(
                 f"Failed to check dataset status: [{response.status_code}] {response.text}"
@@ -357,7 +388,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
             "Content-Type": "application/json",
         }
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, json=payload, headers=headers, timeout=60.0
+            )
 
         # Fresh deploy worked (200) or already deployed (code=9)
         if response.status_code == 200 or response.json().get("code") == 9:
@@ -429,7 +462,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
+            response = await client.post(
+                url, json=payload, headers=headers, timeout=60.0
+            )
 
         if response.status_code == 200:
             basemodel = response.json().get("baseModel")
@@ -465,7 +500,9 @@ class FireworksFinetune(BaseFinetuneAdapter):
         # Paginate through all deployments
         async with httpx.AsyncClient() as client:
             while True:
-                response = await client.get(url, params=params, headers=headers)
+                response = await client.get(
+                    url, params=params, headers=headers, timeout=15.0
+                )
                 json = response.json()
                 if "deployments" not in json or not isinstance(
                     json["deployments"], list

@@ -82,6 +82,13 @@
           >
             {property.value}
           </button>
+        {:else if property.value_with_link}
+          <span>
+            {property.value_with_link.prefix}
+            <a href={property.value_with_link.link} class="link">
+              {property.value_with_link.link_text}
+            </a>
+          </span>
         {:else if property.link}
           <a href={property.link} class="link">{property.value}</a>
         {:else}

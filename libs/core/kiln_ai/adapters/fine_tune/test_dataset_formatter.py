@@ -7,9 +7,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from kiln_ai.adapters.chat.chat_formatter import COT_FINAL_ANSWER_PROMPT, ChatMessage
+from kiln_ai.adapters.chat.chat_formatter import (
+    COT_FINAL_ANSWER_PROMPT,
+    BasicChatMessage,
+    ToolCallMessage,
+    ToolResponseMessage,
+)
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
-    VERTEX_GEMINI_ROLE_MAP,
     DatasetFormat,
     DatasetFormatter,
     build_training_chat,
@@ -17,8 +21,11 @@ from kiln_ai.adapters.fine_tune.dataset_formatter import (
     generate_chat_message_toolcall,
     generate_huggingface_chat_template,
     generate_huggingface_chat_template_toolcall,
-    generate_vertex_gemini,
     serialize_r1_style_message,
+)
+from kiln_ai.adapters.fine_tune.vertex_formatter import (
+    VERTEX_GEMINI_ROLE_MAP,
+    generate_vertex_gemini,
 )
 from kiln_ai.datamodel import (
     DatasetSplit,
@@ -65,10 +72,41 @@ def mock_task():
                                     "model_provider": "test",
                                     "adapter_name": "test",
                                 },
+                                "run_config": None,
                             },
                         ),
                     },
                 ),
+                "trace": [
+                    {
+                        "content": "system message",
+                        "role": "system",
+                    },
+                    {"content": '{"test": "input 你好"}', "role": "user"},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": f"call_tool{i}_1",
+                                "function": {
+                                    "arguments": '{"value": "intermediate"}',
+                                    "name": "helper_tool",
+                                },
+                                "type": "function",
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "content": "intermediate result",
+                        "tool_call_id": f"call_tool{i}_1",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": '{"test": "output 你好"}',
+                    },
+                ],
             },
         )
         for i in range(1, 4)
@@ -103,40 +141,40 @@ def mock_dataset(mock_task):
 @pytest.fixture
 def mock_training_chat_short():
     return [
-        ChatMessage(role="system", content="system message"),
-        ChatMessage(
+        BasicChatMessage(role="system", content="system message"),
+        BasicChatMessage(
             role="user",
             content="test input",
         ),
-        ChatMessage(role="assistant", content="test output"),
+        BasicChatMessage(role="assistant", content="test output"),
     ]
 
 
 @pytest.fixture
 def mock_training_chat_two_step_plaintext():
     return [
-        ChatMessage(role="system", content="system message"),
-        ChatMessage(
+        BasicChatMessage(role="system", content="system message"),
+        BasicChatMessage(
             role="user",
             content="The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
         ),
-        ChatMessage(role="assistant", content="thinking output"),
-        ChatMessage(role="user", content="thinking final answer prompt"),
-        ChatMessage(role="assistant", content="test output"),
+        BasicChatMessage(role="assistant", content="thinking output"),
+        BasicChatMessage(role="user", content="thinking final answer prompt"),
+        BasicChatMessage(role="assistant", content="test output"),
     ]
 
 
 @pytest.fixture
 def mock_training_chat_two_step_json():
     return [
-        ChatMessage(role="system", content="system message"),
-        ChatMessage(
+        BasicChatMessage(role="system", content="system message"),
+        BasicChatMessage(
             role="user",
             content="The input is:\n<user_input>\ntest input\n</user_input>\n\nthinking instructions",
         ),
-        ChatMessage(role="assistant", content="thinking output"),
-        ChatMessage(role="user", content="thinking final answer prompt"),
-        ChatMessage(role="assistant", content='{"a":"你好"}'),
+        BasicChatMessage(role="assistant", content="thinking output"),
+        BasicChatMessage(role="user", content="thinking final answer prompt"),
+        BasicChatMessage(role="assistant", content='{"a":"你好"}'),
     ]
 
 
@@ -210,29 +248,31 @@ def test_generate_chat_message_toolcall_invalid_json(mock_training_chat_two_step
         generate_chat_message_toolcall(mock_training_chat_two_step_json)
 
 
-def test_dataset_formatter_dump_invalid_format(mock_dataset):
+async def test_dataset_formatter_dump_invalid_format(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message")
 
     with pytest.raises(ValueError, match="Unsupported format"):
-        formatter.dump_to_file("train", "invalid_format", ChatStrategy.single_turn)
+        await formatter.dump_to_file(
+            "train", "invalid_format", ChatStrategy.single_turn
+        )
 
 
-def test_dataset_formatter_dump_invalid_split(mock_dataset):
+async def test_dataset_formatter_dump_invalid_split(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message")
 
     with pytest.raises(ValueError, match="Split invalid_split not found in dataset"):
-        formatter.dump_to_file(
+        await formatter.dump_to_file(
             "invalid_split",
             DatasetFormat.OPENAI_CHAT_JSONL,
             ChatStrategy.single_turn,
         )
 
 
-def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
+async def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         path=output_path,
@@ -249,17 +289,19 @@ def test_dataset_formatter_dump_to_file(mock_dataset, tmp_path):
         for line in lines:
             data = json.loads(line)
             assert "messages" in data
-            assert len(data["messages"]) == 3
+            assert len(data["messages"]) == 5
             assert data["messages"][0]["content"] == "system message"
             assert data["messages"][1]["content"] == '{"test": "input 你好"}'
+            assert data["messages"][2]["role"] == "assistant"
+            assert data["messages"][3]["role"] == "tool"
             # Raw chat doesn't fix json issues, like extra spaces
-            assert data["messages"][2]["content"] == '{"test":   "output 你好"}'
+            assert data["messages"][4]["content"] == '{"test":   "output 你好"}'
 
 
-def test_dataset_formatter_dump_to_temp_file(mock_dataset):
+async def test_dataset_formatter_dump_to_temp_file(mock_dataset):
     formatter = DatasetFormatter(mock_dataset, "system message 你好")
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.single_turn,
@@ -285,11 +327,11 @@ def test_dataset_formatter_dump_to_temp_file(mock_dataset):
         assert "thinking instructions" not in lines[0]
 
 
-def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
+async def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_TOOLCALL_JSONL,
         path=output_path,
@@ -306,12 +348,15 @@ def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
         for line in lines:
             data = json.loads(line)
             assert "messages" in data
-            assert len(data["messages"]) == 3
+            assert len(data["messages"]) == 5
             # Check system and user messages
             assert data["messages"][0]["content"] == "system message"
             assert data["messages"][1]["content"] == '{"test": "input 你好"}'
-            # Check tool call format
-            assistant_msg = data["messages"][2]
+            # Check trace tool calls (from trace)
+            assert data["messages"][2]["role"] == "assistant"
+            assert data["messages"][3]["role"] == "tool"
+            # Check final tool call format (task_response)
+            assistant_msg = data["messages"][4]
             assert assistant_msg["content"] is None
             assert "tool_calls" in assistant_msg
             assert len(assistant_msg["tool_calls"]) == 1
@@ -321,7 +366,7 @@ def test_dataset_formatter_dump_to_file_tool_format(mock_dataset, tmp_path):
             assert tool_call["function"]["arguments"] == '{"test": "output 你好"}'
 
 
-def test_dataset_formatter_dump_with_intermediate_data(
+async def test_dataset_formatter_dump_with_intermediate_data(
     mock_dataset, mock_intermediate_outputs
 ):
     formatter = DatasetFormatter(
@@ -330,7 +375,7 @@ def test_dataset_formatter_dump_with_intermediate_data(
         thinking_instructions="thinking instructions",
     )
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.two_message_cot_legacy,
@@ -352,7 +397,7 @@ def test_dataset_formatter_dump_with_intermediate_data(
             assert "thinking instructions" in line
 
 
-def test_dataset_formatter_dump_with_intermediate_data_r1_style(
+async def test_dataset_formatter_dump_with_intermediate_data_r1_style(
     mock_dataset, mock_intermediate_outputs
 ):
     formatter = DatasetFormatter(
@@ -361,7 +406,7 @@ def test_dataset_formatter_dump_with_intermediate_data_r1_style(
         thinking_instructions=None,
     )
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.single_turn_r1_thinking,
@@ -383,14 +428,14 @@ def test_dataset_formatter_dump_with_intermediate_data_r1_style(
             assert "</think>" in line
 
 
-def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
+async def test_dataset_formatter_dump_with_intermediate_data_custom_instructions(
     mock_dataset, mock_intermediate_outputs
 ):
     formatter = DatasetFormatter(
         mock_dataset, "custom system message 你好", "custom thinking instructions"
     )
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSONL,
         data_strategy=ChatStrategy.two_message_cot_legacy,
@@ -479,9 +524,9 @@ def test_generate_vertex_template_thinking(mock_training_chat_two_step_plaintext
 
 def test_generate_huggingface_chat_template_toolcall():
     messages = [
-        ChatMessage("system", "system message"),
-        ChatMessage("user", "test input"),
-        ChatMessage("assistant", '{"key":"value"}'),
+        BasicChatMessage("system", "system message"),
+        BasicChatMessage("user", "test input"),
+        BasicChatMessage("assistant", '{"key":"value"}'),
     ]
 
     result = generate_huggingface_chat_template_toolcall(messages)
@@ -549,7 +594,7 @@ def test_build_training_chat(mock_task):
         data_strategy=ChatStrategy.single_turn,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -558,7 +603,15 @@ def test_build_training_chat(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -577,7 +630,7 @@ def test_build_training_data_with_COT(mock_task):
         thinking_instructions="thinking instructions",
     )
 
-    assert len(messages) == 5
+    assert len(messages) == 7
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -589,15 +642,23 @@ def test_build_training_data_with_COT(mock_task):
         == 'The input is:\n<user_input>\n{"test": "input 你好"}\n</user_input>\n\nthinking instructions'
     )
 
-    assistant_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    assistant_msg = messages[4]
     assert assistant_msg.role == "assistant"
     assert assistant_msg.content == "cot output"
 
-    final_answer_prompt_msg = messages[3]
+    final_answer_prompt_msg = messages[5]
     assert final_answer_prompt_msg.role == "user"
     assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
 
-    final_msg = messages[4]
+    final_msg = messages[6]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -616,7 +677,7 @@ def test_build_training_data_with_COT_legacy(mock_task):
         thinking_instructions="thinking instructions",
     )
 
-    assert len(messages) == 6
+    assert len(messages) == 8
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -629,15 +690,23 @@ def test_build_training_data_with_COT_legacy(mock_task):
     assert cot_msg.role == "system"
     assert cot_msg.content == "thinking instructions"
 
-    assistant_msg = messages[3]
+    tool_call_msg = messages[3]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[4]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    assistant_msg = messages[5]
     assert assistant_msg.role == "assistant"
     assert assistant_msg.content == "cot output"
 
-    final_answer_prompt_msg = messages[4]
+    final_answer_prompt_msg = messages[6]
     assert final_answer_prompt_msg.role == "user"
     assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
 
-    final_msg = messages[5]
+    final_msg = messages[7]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -656,7 +725,7 @@ def test_build_training_data_with_COT_r1_style(mock_task):
         thinking_instructions=None,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -665,7 +734,15 @@ def test_build_training_data_with_COT_r1_style(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     assert (
         final_msg.content
@@ -693,7 +770,7 @@ def test_build_training_data_with_thinking(mock_task):
         thinking_instructions="thinking instructions",
     )
 
-    assert len(messages) == 5
+    assert len(messages) == 7
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -705,15 +782,23 @@ def test_build_training_data_with_thinking(mock_task):
         == 'The input is:\n<user_input>\n{"test": "input 你好"}\n</user_input>\n\nthinking instructions'
     )
 
-    assistant_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    assistant_msg = messages[4]
     assert assistant_msg.role == "assistant"
     assert assistant_msg.content == "thinking output"
 
-    final_answer_prompt_msg = messages[3]
+    final_answer_prompt_msg = messages[5]
     assert final_answer_prompt_msg.role == "user"
     assert final_answer_prompt_msg.content == COT_FINAL_ANSWER_PROMPT
 
-    final_msg = messages[4]
+    final_msg = messages[6]
     assert final_msg.role == "assistant"
     assert final_msg.content == '{"test":   "output 你好"}'
 
@@ -739,7 +824,7 @@ def test_build_training_data_with_thinking_r1_style(mock_task):
         thinking_instructions=None,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -748,7 +833,15 @@ def test_build_training_data_with_thinking_r1_style(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     assert (
         final_msg.content
@@ -774,7 +867,7 @@ def test_build_training_data_with_repaired_output(mock_task):
         data_strategy=ChatStrategy.single_turn,
     )
 
-    assert len(messages) == 3
+    assert len(messages) == 5
     system_msg = messages[0]
     assert system_msg.role == "system"
     assert system_msg.content == "system message"
@@ -783,17 +876,27 @@ def test_build_training_data_with_repaired_output(mock_task):
     assert user_msg.role == "user"
     assert user_msg.content == '{"test": "input 你好"}'
 
-    final_msg = messages[2]
+    tool_call_msg = messages[2]
+    assert tool_call_msg.role == "assistant"
+    assert len(tool_call_msg.tool_calls) == 1
+
+    tool_response_msg = messages[3]
+    assert tool_response_msg.role == "tool"
+    assert tool_response_msg.content == "intermediate result"
+
+    final_msg = messages[4]
     assert final_msg.role == "assistant"
     # Note we re-format the json
     assert final_msg.content == '{"test": "repaired output"}'
 
 
-def test_dataset_formatter_dump_to_file_json_schema_format(mock_dataset, tmp_path):
+async def test_dataset_formatter_dump_to_file_json_schema_format(
+    mock_dataset, tmp_path
+):
     formatter = DatasetFormatter(mock_dataset, "system message")
     output_path = tmp_path / "output.jsonl"
 
-    result_path = formatter.dump_to_file(
+    result_path = await formatter.dump_to_file(
         "train",
         DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL,
         path=output_path,
@@ -810,12 +913,15 @@ def test_dataset_formatter_dump_to_file_json_schema_format(mock_dataset, tmp_pat
         for line in lines:
             data = json.loads(line)
             assert "messages" in data
-            assert len(data["messages"]) == 3
+            assert len(data["messages"]) == 5
             # Check system and user messages
             assert data["messages"][0]["content"] == "system message"
             assert data["messages"][1]["content"] == '{"test": "input 你好"}'
+            # Check trace tool calls
+            assert data["messages"][2]["role"] == "assistant"
+            assert data["messages"][3]["role"] == "tool"
             # Check JSON format
-            assistant_msg = data["messages"][2]
+            assistant_msg = data["messages"][4]
             assert assistant_msg["role"] == "assistant"
             # Verify the content is valid JSON
             assert assistant_msg["content"] == '{"test": "output 你好"}'
@@ -856,11 +962,11 @@ def test_serialize_r1_style_message_missing_thinking(thinking, final_output):
 
 
 def test_vertex_gemini_role_map_coverage():
-    """Test that VERTEX_GEMINI_ROLE_MAP covers all possible ChatMessage.role values"""
+    """Test that VERTEX_GEMINI_ROLE_MAP covers all possible BasicChatMessage.role values"""
     from typing import get_type_hints
 
-    # Get the Literal type from ChatMessage.role
-    role_type = get_type_hints(ChatMessage)["role"]
+    # Get the Literal type from BasicChatMessage.role
+    role_type = get_type_hints(BasicChatMessage)["role"]
     # Extract the possible values from the Literal type
     possible_roles = role_type.__args__  # type: ignore
 
@@ -874,3 +980,207 @@ def test_vertex_gemini_role_map_coverage():
     assert set(VERTEX_GEMINI_ROLE_MAP.keys()) == set(possible_roles), (
         "VERTEX_GEMINI_ROLE_MAP has extra mappings"
     )
+
+
+def mock_training_chat_two_step_with_tools(jsonOutput: bool = False):
+    return [
+        BasicChatMessage(
+            role="system",
+            content="You are a calculator, your task is to solve math equation by leveraging tools and standard conventions.",
+        ),
+        BasicChatMessage(role="user", content="Calculate 92 - (21+34)"),
+        ToolCallMessage(
+            role="assistant",
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_EeflFatFRBKui10Z23uTQQIN",
+                    "function": {"arguments": '{"a":21,"b":34}', "name": "add"},
+                    "type": "function",
+                },
+            ],
+        ),
+        ToolResponseMessage(
+            role="tool", content="55", tool_call_id="call_EeflFatFRBKui10Z23uTQQIN"
+        ),
+        ToolCallMessage(
+            role="assistant",
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+                    "function": {"arguments": '{"a":92,"b":55}', "name": "subtract"},
+                    "type": "function",
+                }
+            ],
+        ),
+        ToolResponseMessage(
+            role="tool", content="37", tool_call_id="call_zzMBArMOdlDD0Pn3vWMliMmn"
+        ),
+        BasicChatMessage(
+            role="assistant",
+            content="The result of \\( 92 - (21 + 34) \\) is 37."
+            if not jsonOutput
+            else '{"answer": 37}',
+        ),
+    ]
+
+
+@pytest.fixture
+def mock_tool_definitions():
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "add",
+                "description": "Add two numbers together and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number to add",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to add",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "subtract",
+                "description": "Subtract the second number from the first number and return the result",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {
+                            "type": "number",
+                            "description": "The first number (minuend)",
+                        },
+                        "b": {
+                            "type": "number",
+                            "description": "The second number to subtract (subtrahend)",
+                        },
+                    },
+                    "required": ["a", "b"],
+                },
+            },
+        },
+    ]
+
+
+def test_generate_chat_message_response_with_tools(mock_tool_definitions):
+    result = generate_chat_message_response(
+        mock_training_chat_two_step_with_tools(),
+        mock_tool_definitions,
+    )
+    assert result == {
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a calculator, your task is to solve math equation by leveraging tools and standard conventions.",
+            },
+            {"role": "user", "content": "Calculate 92 - (21+34)"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_EeflFatFRBKui10Z23uTQQIN",
+                        "function": {"arguments": '{"a":21,"b":34}', "name": "add"},
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "55",
+                "tool_call_id": "call_EeflFatFRBKui10Z23uTQQIN",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+                        "function": {
+                            "arguments": '{"a":92,"b":55}',
+                            "name": "subtract",
+                        },
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "37",
+                "tool_call_id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+            },
+            {
+                "role": "assistant",
+                "content": "The result of \\( 92 - (21 + 34) \\) is 37.",
+            },
+        ],
+        "tools": mock_tool_definitions,
+    }
+
+
+def test_generate_chat_message_response_with_tools_json(mock_tool_definitions):
+    result = generate_chat_message_response(
+        mock_training_chat_two_step_with_tools(jsonOutput=True),
+        mock_tool_definitions,
+    )
+    assert result == {
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a calculator, your task is to solve math equation by leveraging tools and standard conventions.",
+            },
+            {"role": "user", "content": "Calculate 92 - (21+34)"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_EeflFatFRBKui10Z23uTQQIN",
+                        "function": {"arguments": '{"a":21,"b":34}', "name": "add"},
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "55",
+                "tool_call_id": "call_EeflFatFRBKui10Z23uTQQIN",
+            },
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+                        "function": {
+                            "arguments": '{"a":92,"b":55}',
+                            "name": "subtract",
+                        },
+                        "type": "function",
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "37",
+                "tool_call_id": "call_zzMBArMOdlDD0Pn3vWMliMmn",
+            },
+            {
+                "role": "assistant",
+                "content": '{"answer": 37}',
+            },
+        ],
+        "tools": mock_tool_definitions,
+    }

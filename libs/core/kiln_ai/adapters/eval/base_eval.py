@@ -115,6 +115,7 @@ class BaseEval:
             property: dict[str, str | int | float | list[str] | list[int]] = {
                 "title": output_score.name,
             }
+
             match output_score.type:
                 case TaskOutputRatingType.five_star:
                     if allow_float_scores:
@@ -169,5 +170,6 @@ class BaseEval:
             "type": "object",
             "properties": properties,
             "required": list(properties.keys()),
+            "additionalProperties": False,
         }
         return json.dumps(schema, ensure_ascii=False)
