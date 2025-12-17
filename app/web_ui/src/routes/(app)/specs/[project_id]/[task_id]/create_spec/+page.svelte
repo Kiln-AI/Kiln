@@ -203,10 +203,8 @@
         evaluate_full_trace,
       )
 
-      if (spec_id) {
-        complete = true
-        goto(`/specs/${project_id}/${task_id}/${spec_id}`)
-      }
+      complete = true
+      goto(`/specs/${project_id}/${task_id}/${spec_id}`)
     } catch (error) {
       create_error = createKilnError(error)
     } finally {
