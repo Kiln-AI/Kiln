@@ -160,10 +160,8 @@
         suggested_property_values,
       )
 
-      if (spec_id) {
-        complete = true
-        goto(`/specs/${project_id}/${task_id}/${spec_id}`)
-      }
+      complete = true
+      goto(`/specs/${project_id}/${task_id}/${spec_id}`)
     } catch (error) {
       submit_error = createKilnError(error)
     } finally {
