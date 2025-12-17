@@ -193,9 +193,6 @@
             name: "Eval Scores",
             type: "radar",
             data: series,
-            areaStyle: {
-              opacity: 0.1,
-            },
             lineStyle: {
               width: 2,
             },
