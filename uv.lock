@@ -1425,20 +1425,19 @@ dependencies = [
     { name = "kiln-ai" },
     { name = "kiln-server" },
     { name = "kiln-studio-desktop" },
-    { name = "ty" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "diff-cover" },
     { name = "isort" },
-    { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
     { name = "python-dotenv" },
     { name = "ruff" },
     { name = "scalar-fastapi" },
+    { name = "ty" },
     { name = "watchfiles" },
 ]
 
@@ -1448,20 +1447,19 @@ requires-dist = [
     { name = "kiln-ai", editable = "libs/core" },
     { name = "kiln-server", editable = "libs/server" },
     { name = "kiln-studio-desktop", editable = "app/desktop" },
-    { name = "ty", specifier = ">=0.0.2" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "diff-cover", specifier = ">=9.6.0" },
     { name = "isort", specifier = ">=5.13.2" },
-    { name = "pyright", specifier = "==1.1.376" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-xdist", specifier = ">=3.5" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "ruff", specifier = ">=0.13.0" },
     { name = "scalar-fastapi", specifier = ">=1.4.3" },
+    { name = "ty", specifier = ">=0.0.2" },
     { name = "watchfiles", specifier = ">=1.1.0" },
 ]
 
