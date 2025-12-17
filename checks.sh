@@ -69,7 +69,7 @@ fi
 # Check if python files were changed, and run tests/typecheck if so
 if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
     echo "${headerStart}Checking Python Types${headerEnd}"
-    pyright .
+    uvx ty check
 
     echo "${headerStart}Running Python Tests${headerEnd}"
     python3 -m pytest --benchmark-quiet -q -n auto .
