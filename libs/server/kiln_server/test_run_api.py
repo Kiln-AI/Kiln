@@ -620,6 +620,119 @@ async def test_get_runs_task_not_found(client):
 
 
 @pytest.mark.asyncio
+async def test_create_task_run_success(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs",
+            json={
+                "input": "Test input for direct creation",
+                "output": "Test output for direct creation",
+                "tags": ["golden_tag", "test_tag"],
+                "rating": {
+                    "type": "five_star",
+                    "requirement_ratings": {
+                        "named::desired_behaviour": {
+                            "type": "pass_fail",
+                            "value": 1.0,
+                        }
+                    },
+                },
+                "model_name": "copilot",
+                "model_provider": "kiln",
+                "adapter_name": "kiln-ai-adapter",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["input"] == "Test input for direct creation"
+    assert result["output"]["output"] == "Test output for direct creation"
+    assert result["tags"] == ["golden_tag", "test_tag"]
+    assert result["output"]["rating"]["type"] == "five_star"
+    assert (
+        result["output"]["rating"]["requirement_ratings"]["named::desired_behaviour"][
+            "value"
+        ]
+        == 1.0
+    )
+    assert result["output"]["source"]["properties"]["adapter_name"] == "kiln-ai-adapter"
+    assert result["id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_with_fail_rating(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs",
+            json={
+                "input": "Failing test input",
+                "output": "Failing test output",
+                "tags": ["golden_tag"],
+                "rating": {
+                    "type": "five_star",
+                    "requirement_ratings": {
+                        "named::desired_behaviour": {
+                            "type": "pass_fail",
+                            "value": 0.0,
+                        }
+                    },
+                },
+                "model_name": "copilot",
+                "model_provider": "kiln",
+                "adapter_name": "kiln-ai-adapter",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert (
+        result["output"]["rating"]["requirement_ratings"]["named::desired_behaviour"][
+            "value"
+        ]
+        == 0.0
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_minimal(client, task_run_setup):
+    """Test creating a TaskRun with only required fields."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs",
+            json={
+                "input": "Minimal input",
+                "output": "Minimal output",
+                "model_name": "copilot",
+                "model_provider": "kiln",
+                "adapter_name": "kiln-ai-adapter",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["input"] == "Minimal input"
+    assert result["output"]["output"] == "Minimal output"
+    assert result["tags"] == []
+    assert result["output"]["source"]["type"] == "synthetic"
+    assert result["output"]["source"]["properties"]["model_name"] == "copilot"
+
+
+@pytest.mark.asyncio
 async def test_delete_run(client, task_run_setup):
     project = task_run_setup["project"]
     task = task_run_setup["task"]

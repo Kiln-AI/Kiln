@@ -8,6 +8,16 @@ import type {
   SpecType,
 } from "$lib/types"
 import { buildDefinitionFromProperties } from "./select_template/spec_templates"
+import {
+  type ReviewedExample,
+  clearStoredReviewedExamples,
+  getStoredReviewedExamples,
+  saveReviewedExamplesAsGoldenDataset,
+} from "./spec_reviewed_examples_store"
+
+// Re-export for convenience
+export type { ReviewedExample }
+export { storeReviewedExamples } from "./spec_reviewed_examples_store"
 
 /**
  * Navigate to review_spec page after storing form data
@@ -40,7 +50,8 @@ export async function navigateToReviewSpec(
 }
 
 /**
- * Create a new spec via the API
+ * Create a new spec via the API.
+ * Also creates a new eval for the spec and saves any accumulated reviewed examples as the golden dataset.
  * @param project_id - The project ID
  * @param task_id - The task ID
  * @param name - The spec name
@@ -59,6 +70,19 @@ export async function createSpec(
   // First create a new eval for the spec under the hood
 
   const eval_id = await createEval(project_id, task_id, name, spec_type)
+
+  // Save any accumulated reviewed examples as the golden dataset
+  const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
+  if (reviewed_examples.length > 0) {
+    const goldenTag = specEvalTag(name) + "_golden"
+    await saveReviewedExamplesAsGoldenDataset(
+      project_id,
+      task_id,
+      reviewed_examples,
+      goldenTag,
+      spec_type, // The eval output score name matches the spec_type
+    )
+  }
 
   // Build the properties object with spec_type, filtering out null values
   const filteredPropertyValues = Object.fromEntries(
@@ -101,6 +125,8 @@ export async function createSpec(
   // Clear the sessionStorage after successful creation
   const formDataKey = `spec_refine_${project_id}_${task_id}`
   sessionStorage.removeItem(formDataKey)
+  // Also clear the reviewed examples storage
+  clearStoredReviewedExamples(project_id, task_id)
 
   return data.id
 }

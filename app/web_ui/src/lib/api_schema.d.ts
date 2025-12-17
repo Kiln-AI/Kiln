@@ -332,7 +332,11 @@ export interface paths {
         /** Get Runs */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Task Run
+         * @description Create a TaskRun directly without running a model.
+         */
+        post: operations["create_task_run_api_projects__project_id__tasks__task_id__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2826,6 +2830,45 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /**
+         * CreateTaskRunRequest
+         * @description Request model for creating a synthetic TaskRun directly (without running a model).
+         */
+        CreateTaskRunRequest: {
+            /**
+             * Input
+             * @description The input for the task run
+             */
+            input: string;
+            /**
+             * Output
+             * @description The output for the task run
+             */
+            output: string;
+            /**
+             * Tags
+             * @description Tags to apply to the task run
+             * @default []
+             */
+            tags: string[];
+            /** @description Optional rating for the output */
+            rating?: components["schemas"]["TaskOutputRating-Input"] | null;
+            /**
+             * Model Name
+             * @description The name of the model used to generate the data
+             */
+            model_name: string;
+            /**
+             * Model Provider
+             * @description The provider of the model used to generate the data
+             */
+            model_provider: string;
+            /**
+             * Adapter Name
+             * @description The name of the adapter used to generate the data
+             */
+            adapter_name: string;
         };
         /** CreateVectorStoreConfigRequest */
         CreateVectorStoreConfigRequest: {
@@ -6922,6 +6965,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_run_api_projects__project_id__tasks__task_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
                 };
             };
             /** @description Validation Error */

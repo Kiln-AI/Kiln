@@ -15,13 +15,14 @@ from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, Task
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
     DatasetFileImporter,
     DatasetImportFormat,
     ImportConfig,
     KilnInvalidImportFormat,
 )
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from kiln_server.task_api import task_from_id
 
@@ -133,6 +134,26 @@ class BulkUploadResponse(BaseModel):
     imported_count: int
 
 
+class CreateTaskRunRequest(BaseModel):
+    """Request model for creating a synthetic TaskRun directly (without running a model)."""
+
+    input: str = Field(description="The input for the task run")
+    output: str = Field(description="The output for the task run")
+    tags: list[str] = Field(default=[], description="Tags to apply to the task run")
+    rating: TaskOutputRating | None = Field(
+        default=None, description="Optional rating for the output"
+    )
+    model_name: str = Field(
+        description="The name of the model used to generate the data",
+    )
+    model_provider: str = Field(
+        description="The provider of the model used to generate the data",
+    )
+    adapter_name: str = Field(
+        description="The name of the adapter used to generate the data",
+    )
+
+
 def run_from_id(project_id: str, task_id: str, run_id: str) -> TaskRun:
     _, run = task_and_run_from_id(project_id, task_id, run_id)
     return run
@@ -166,6 +187,38 @@ def connect_run_api(app: FastAPI):
     async def get_runs(project_id: str, task_id: str) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
         return list(task.runs(readonly=True))
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs")
+    async def create_task_run(
+        project_id: str, task_id: str, request: CreateTaskRunRequest
+    ) -> TaskRun:
+        """Create a TaskRun directly without running a model."""
+        task = task_from_id(project_id, task_id)
+
+        data_source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": request.model_name,
+                "model_provider": request.model_provider,
+                "adapter_name": request.adapter_name,
+            },
+        )
+
+        output = TaskOutput(
+            output=request.output,
+            source=data_source,
+            rating=request.rating,
+        )
+
+        run = TaskRun(
+            parent=task,
+            input=request.input,
+            input_source=data_source,
+            output=output,
+            tags=request.tags,
+        )
+        run.save_to_file()
+        return run
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
     async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:

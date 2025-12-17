@@ -7,7 +7,11 @@
   import type { SpecType } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import { createSpec } from "../spec_utils"
+  import {
+    createSpec,
+    storeReviewedExamples,
+    type ReviewedExample,
+  } from "../spec_utils"
   import Warning from "$lib/ui/warning.svelte"
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
   import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
@@ -175,6 +179,20 @@
     return true
   })
 
+  /**
+   * Collect reviewed examples from current review rows.
+   * Only includes rows that have been explicitly reviewed (have a meets_spec value).
+   */
+  function collectReviewedExamples(): ReviewedExample[] {
+    return review_rows
+      .filter((row) => row.meets_spec !== null)
+      .map((row) => ({
+        input: row.input,
+        output: row.output,
+        meets_spec: row.meets_spec === "yes",
+      }))
+  }
+
   $: any_feedback_provided = review_rows.some((row) => {
     // All rows must have a meets_spec answer
     if (row.meets_spec === null) return false
@@ -187,6 +205,9 @@
 
   function handle_submit() {
     if (all_feedback_aligned) {
+      // Store current reviewed examples (unions with any from previous cycles)
+      const currentExamples = collectReviewedExamples()
+      storeReviewedExamples(project_id, task_id, currentExamples)
       create_spec()
     } else {
       continue_to_refine()
@@ -194,6 +215,10 @@
   }
 
   function continue_to_refine() {
+    // Store the current reviewed examples (will be unioned with previous cycles)
+    const currentExamples = collectReviewedExamples()
+    storeReviewedExamples(project_id, task_id, currentExamples)
+
     // Store the review data and continue to refine_spec
     const formData = {
       name,
@@ -219,6 +244,7 @@
       create_error = null
       submitting = true
 
+      // createSpec will read and save the accumulated reviewed examples
       const spec_id = await createSpec(
         project_id,
         task_id,
