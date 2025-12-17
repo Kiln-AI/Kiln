@@ -1663,25 +1663,7 @@ export interface paths {
         delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
         options?: never;
         head?: never;
-        /** Update Eval */
-        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Eval Favourite */
-        patch: operations["update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch"];
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -6041,20 +6023,6 @@ export interface components {
             /** Toxicity Examples */
             toxicity_examples: string;
         };
-        /** UpdateEvalRequest */
-        UpdateEvalRequest: {
-            /** Name */
-            name: string;
-            /** Description */
-            description?: string | null;
-            /** Output Scores */
-            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
-        };
-        /** UpdateFavouriteRequest */
-        UpdateFavouriteRequest: {
-            /** Favourite */
-            favourite: boolean;
-        };
         /**
          * UpdateFinetuneRequest
          * @description Request to update a finetune
@@ -9837,80 +9805,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                eval_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateEvalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Eval"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                eval_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateFavouriteRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Eval"];
                 };
             };
             /** @description Validation Error */

@@ -244,12 +244,6 @@ class RunConfigEvalScoresSummary(BaseModel):
     mean_usage: MeanUsage | None = None
 
 
-class UpdateEvalRequest(BaseModel):
-    name: str
-    description: str | None = None
-    output_scores: List[EvalOutputScore] | None = None
-
-
 def dataset_ids_in_filter(
     task: Task, filter_id: DatasetFilterId, readonly: bool
 ) -> Set[ID_TYPE]:
@@ -365,27 +359,6 @@ def connect_evals_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
-
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def update_eval(
-        project_id: str, task_id: str, eval_id: str, request: UpdateEvalRequest
-    ) -> Eval:
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.name = request.name
-        eval.description = request.description
-        if request.output_scores is not None:
-            eval.output_scores = request.output_scores
-        eval.save_to_file()
-        return eval
-
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav")
-    async def update_eval_favourite(
-        project_id: str, task_id: str, eval_id: str, request: UpdateFavouriteRequest
-    ) -> Eval:
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.favourite = request.favourite
-        eval.save_to_file()
-        return eval
 
     @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:

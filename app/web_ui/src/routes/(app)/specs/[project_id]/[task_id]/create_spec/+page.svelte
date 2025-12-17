@@ -9,8 +9,13 @@
   import { goto } from "$app/navigation"
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { createSpec, navigateToReviewSpec } from "../spec_utils"
+  import {
+    createSpec,
+    navigateToReviewSpec,
+    loadSpecFormData,
+  } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -23,6 +28,14 @@
   let initial_property_values: Record<string, string | null> = {}
   let initialized = false
 
+  // Advanced options
+  let evaluate_full_trace = false
+  $: is_tool_use_spec = spec_type === "appropriate_tool_use"
+  $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
+  $: full_trace_disabled = is_tool_use_spec
+  $: show_advanced_options = !is_reference_answer_spec
+  $: if (is_tool_use_spec) evaluate_full_trace = true
+
   // Get field configs for the current spec_type
   $: field_configs = spec_field_configs[spec_type] || []
 
@@ -32,28 +45,22 @@
     const has_url_params = spec_type_param !== null
 
     // Check if we have saved form data from a back navigation
-    const formDataKey = `spec_refine_${project_id}_${task_id}`
-    const storedData = sessionStorage.getItem(formDataKey)
+    const formData = loadSpecFormData(project_id, task_id)
 
-    if (storedData && !has_url_params) {
-      try {
-        const formData = JSON.parse(storedData)
-        // Restore form state
-        spec_type = formData.spec_type || "desired_behaviour"
-        name = formData.name || ""
-        property_values = { ...formData.property_values }
-        initial_property_values = { ...formData.property_values }
-        initialized = true
-        return
-      } catch (error) {
-        // If parsing fails, continue with normal initialization
-        console.error("Failed to restore form data:", error)
-      }
+    if (formData && !has_url_params) {
+      // Restore form state
+      spec_type = formData.spec_type
+      name = formData.name
+      property_values = { ...formData.property_values }
+      initial_property_values = { ...formData.property_values }
+      evaluate_full_trace = formData.evaluate_full_trace
+      initialized = true
+      return
     }
 
     // If no stored data and no URL params, redirect to specs list
     // This happens when user navigates back after creating a spec
-    if (!storedData && !has_url_params) {
+    if (!formData && !has_url_params) {
       goto(`/specs/${project_id}/${task_id}`)
       return
     }
@@ -143,6 +150,7 @@
         name,
         spec_type,
         property_values,
+        evaluate_full_trace,
       )
     } catch (error) {
       create_error = createKilnError(error)
@@ -186,6 +194,7 @@
         name,
         spec_type,
         property_values,
+        evaluate_full_trace,
       )
 
       complete = true
@@ -245,6 +254,22 @@
             : undefined}
         />
       {/each}
+
+      {#if show_advanced_options}
+        <Collapse title="Advanced Options">
+          <FormElement
+            label="Include conversation history"
+            id="evaluate_full_trace"
+            inputType="checkbox"
+            bind:value={evaluate_full_trace}
+            disabled={full_trace_disabled}
+            description="When enabled, this spec will be judged on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+            info_description={full_trace_disabled
+              ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
+              : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
+          />
+        </Collapse>
+      {/if}
     </FormContainer>
     <div class="flex flex-row gap-1 mt-2 justify-end">
       <span class="text-xs text-gray-500">or</span>

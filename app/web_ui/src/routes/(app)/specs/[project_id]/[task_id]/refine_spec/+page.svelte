@@ -9,7 +9,11 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { createSpec, navigateToReviewSpec } from "../spec_utils"
+  import {
+    createSpec,
+    navigateToReviewSpec,
+    loadSpecFormData,
+  } from "../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -17,8 +21,9 @@
   let spec_error: KilnError | null = null
   let spec_loading = true
 
+  let name = ""
+
   // Current values (read-only)
-  let current_name = ""
   let current_property_values: Record<string, string | null> = {}
 
   // Suggested values (editable)
@@ -27,6 +32,9 @@
   // Track which fields have AI-generated suggestions (empty means no suggestion, use current value)
   let ai_suggested_fields: Set<string> = new Set()
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
+
+  // Advanced options
+  let evaluate_full_trace = false
 
   // Check if a field has an AI suggestion
   function hasAiSuggestion(key: string): boolean {
@@ -66,18 +74,18 @@
       spec_loading = true
       spec_error = null
 
-      const formDataKey = `spec_refine_${project_id}_${task_id}`
-      const storedData = sessionStorage.getItem(formDataKey)
+      const formData = loadSpecFormData(project_id, task_id)
 
-      if (storedData) {
-        const formData = JSON.parse(storedData)
-        spec_type = formData.spec_type || "desired_behaviour"
+      if (formData) {
+        spec_type = formData.spec_type
+
+        name = formData.name
 
         // Initialize both current and suggested with the same values
-        current_name = formData.name || ""
-
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
+
+        evaluate_full_trace = formData.evaluate_full_trace
 
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created
@@ -126,9 +134,10 @@
       await navigateToReviewSpec(
         project_id,
         task_id,
-        current_name,
+        name,
         spec_type,
         suggested_property_values,
+        evaluate_full_trace,
       )
     } catch (error) {
       submit_error = createKilnError(error)
@@ -155,9 +164,10 @@
       const spec_id = await createSpec(
         project_id,
         task_id,
-        current_name,
+        name,
         spec_type,
         suggested_property_values,
+        evaluate_full_trace,
       )
 
       complete = true
@@ -212,7 +222,7 @@
           label="Spec Name"
           description="A short name for your own reference."
           id="current_spec_name"
-          value={current_name}
+          value={name}
           disabled={true}
         />
         <div>
@@ -220,7 +230,7 @@
             label="Spec Name"
             description="A short name for your own reference."
             id="suggested_spec_name"
-            bind:value={current_name}
+            bind:value={name}
             disabled={true}
           />
         </div>

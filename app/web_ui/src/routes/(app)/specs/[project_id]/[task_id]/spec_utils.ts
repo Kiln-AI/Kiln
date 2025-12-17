@@ -14,10 +14,17 @@ import {
   getStoredReviewedExamples,
   saveReviewedExamplesAsGoldenDataset,
 } from "./spec_reviewed_examples_store"
+import {
+  type SpecFormData,
+  loadSpecFormData,
+  saveSpecFormData,
+  clearSpecFormData,
+} from "./spec_form_data_store"
 
 // Re-export for convenience
-export type { ReviewedExample }
+export type { ReviewedExample, SpecFormData }
 export { storeReviewedExamples } from "./spec_reviewed_examples_store"
+export { loadSpecFormData, saveSpecFormData, clearSpecFormData }
 
 /**
  * Navigate to review_spec page after storing form data
@@ -26,6 +33,7 @@ export { storeReviewedExamples } from "./spec_reviewed_examples_store"
  * @param name - The spec name
  * @param spec_type - The spec type
  * @param property_values - The property values for the spec
+ * @param evaluate_full_trace - Whether to evaluate full trace vs final answer
  */
 export async function navigateToReviewSpec(
   project_id: string,
@@ -33,17 +41,16 @@ export async function navigateToReviewSpec(
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
+  evaluate_full_trace: boolean = false,
 ): Promise<void> {
   // Store form data in sessionStorage to pass to review page
-  const formData = {
+  const formData: SpecFormData = {
     name,
     spec_type,
     property_values,
+    evaluate_full_trace,
   }
-  sessionStorage.setItem(
-    `spec_refine_${project_id}_${task_id}`,
-    JSON.stringify(formData),
-  )
+  saveSpecFormData(project_id, task_id, formData)
 
   // Navigate to review_spec page
   goto(`/specs/${project_id}/${task_id}/review_spec`)
@@ -57,6 +64,7 @@ export async function navigateToReviewSpec(
  * @param name - The spec name
  * @param spec_type - The spec type
  * @param property_values - The property values for the spec
+ * @param evaluate_full_trace - Whether to evaluate full trace vs final answer
  * @returns The created spec ID
  * @throws Error if the API call fails
  */
@@ -66,10 +74,17 @@ export async function createSpec(
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
+  evaluate_full_trace: boolean = false,
 ): Promise<string> {
   // First create a new eval for the spec under the hood
 
-  const eval_id = await createEval(project_id, task_id, name, spec_type)
+  const eval_id = await createEval(
+    project_id,
+    task_id,
+    name,
+    spec_type,
+    evaluate_full_trace,
+  )
 
   // Save any accumulated reviewed examples as the golden dataset
   const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
@@ -123,8 +138,7 @@ export async function createSpec(
   }
 
   // Clear the sessionStorage after successful creation
-  const formDataKey = `spec_refine_${project_id}_${task_id}`
-  sessionStorage.removeItem(formDataKey)
+  clearSpecFormData(project_id, task_id)
   // Also clear the reviewed examples storage
   clearStoredReviewedExamples(project_id, task_id)
 
@@ -136,6 +150,7 @@ async function createEval(
   task_id: string,
   spec_name: string,
   spec_type: SpecType,
+  evaluate_full_trace: boolean = false,
 ): Promise<string> {
   const name = spec_name
   const description = `An eval to measure if the model's behaviour meets the spec: ${spec_name}.`
@@ -144,7 +159,7 @@ async function createEval(
   const tag = specEvalTag(spec_name)
   const eval_set_filter_id = `tag::${tag}`
   const eval_configs_filter_id = `tag::${tag}_golden`
-  const evaluation_data_type = specEvalDataType(spec_type)
+  const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
     {
@@ -182,14 +197,19 @@ function specEvalOutputScore(spec_type: SpecType): EvalOutputScore {
   }
 }
 
-function specEvalDataType(spec_type: SpecType): EvalDataType {
-  if (spec_type === "appropriate_tool_use") {
-    return "full_trace"
-  }
+function specEvalDataType(
+  spec_type: SpecType,
+  evaluate_full_trace: boolean = false,
+): EvalDataType {
   if (spec_type === "reference_answer_accuracy") {
     return "reference_answer"
   }
-  return "final_answer"
+
+  if (evaluate_full_trace) {
+    return "full_trace"
+  } else {
+    return "final_answer"
+  }
 }
 
 function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
