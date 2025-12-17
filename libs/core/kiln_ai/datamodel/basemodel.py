@@ -216,13 +216,13 @@ class KilnAttachmentModel(BaseModel):
         its permanent location when the model is saved.
         """
         extension = guess_extension(mime_type) or ".unknown"
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
-        if isinstance(data, str):
-            temp_file.write(data.encode("utf-8"))
-        else:
-            temp_file.write(data)
-        temp_file.close()
-        return cls(input_path=Path(temp_file.name))
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+            if isinstance(data, str):
+                temp_file.write(data.encode("utf-8"))
+            else:
+                temp_file.write(data)
+            temp_file_path = Path(temp_file.name)
+        return cls(input_path=temp_file_path)
 
     @classmethod
     def from_file(cls, path: Path | str) -> Self:
@@ -636,15 +636,19 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             return None
 
         # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
-        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
-            child_id = ModelCache.shared().get_model_id(child_path, cls)
-            if child_id == id:
-                return cls.load_from_file(child_path)
-            if child_id is None:
-                child = cls.load_from_file(child_path)
-                if child.id == id:
-                    return child
-        return None
+        iterator = cls.iterate_children_paths_of_parent_path(parent_path)
+        try:
+            for child_path in iterator:
+                child_id = ModelCache.shared().get_model_id(child_path, cls)
+                if child_id == id:
+                    return cls.load_from_file(child_path)
+                if child_id is None:
+                    child = cls.load_from_file(child_path)
+                    if child.id == id:
+                        return child
+            return None
+        finally:
+            iterator.close()
 
     @classmethod
     def from_ids_and_parent_path(
