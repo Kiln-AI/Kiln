@@ -16,7 +16,7 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(self, input, system_prompt_override: str | None = None):
         return None, None
 
     def adapter_name(self) -> str:
@@ -229,7 +229,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input):
+        async def mock_run(input, system_prompt_override: str | None = None):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -619,3 +619,41 @@ async def test_available_tools_duplicate_names_raises_error(base_project):
         # Should raise ValueError when tools have duplicate names
         with pytest.raises(ValueError, match="Each tool must have a unique name"):
             await adapter.available_tools()
+
+
+async def test_system_prompt_override(base_task):
+    """Test that system_prompt_override parameter overrides the built system prompt"""
+    adapter = MockAdapter(
+        task=base_task,
+        run_config=RunConfigProperties(
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    # Mock model provider
+    provider = MagicMock()
+    provider.reasoning_capable = False
+    provider.tuned_chat_strategy = None
+    adapter.model_provider = MagicMock(return_value=provider)
+
+    # Test 1: Without override, build_chat_formatter should use the built prompt
+    formatter = adapter.build_chat_formatter(input="test input")
+    assert formatter.system_message == adapter.build_prompt()
+
+    # Test 2: With override, build_chat_formatter should use the override
+    custom_system_prompt = "This is a custom system prompt override"
+    formatter_with_override = adapter.build_chat_formatter(
+        input="test input", system_prompt_override=custom_system_prompt
+    )
+    assert formatter_with_override.system_message == custom_system_prompt
+    assert formatter_with_override.system_message != adapter.build_prompt()
+
+    # Test 3: Verify that empty string override works (edge case)
+    formatter_empty = adapter.build_chat_formatter(
+        input="test input", system_prompt_override=""
+    )
+    assert formatter_empty.system_message == ""
+    assert formatter_empty.system_message != adapter.build_prompt()

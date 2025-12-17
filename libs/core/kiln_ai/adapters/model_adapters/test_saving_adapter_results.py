@@ -2,24 +2,17 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.model_adapters.base_adapter import (
-    BaseAdapter,
-    RunOutput,
-)
-from kiln_ai.datamodel import (
-    DataSource,
-    DataSourceType,
-    Project,
-    Task,
-    Usage,
-)
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, Usage
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, system_prompt_override: str | None = None
+    ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="Test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:

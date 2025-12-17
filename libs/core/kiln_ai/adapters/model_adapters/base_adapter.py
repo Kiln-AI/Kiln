@@ -90,14 +90,18 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        system_prompt_override: str | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, system_prompt_override
+        )
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        system_prompt_override: str | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -116,7 +120,7 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(formatted_input)
+        run_output, usage = await self._run(formatted_input, system_prompt_override)
 
         # Parse
         provider = self.model_provider()
@@ -191,7 +195,9 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, system_prompt_override: str | None = None
+    ) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:
@@ -207,11 +213,17 @@ class BaseAdapter(metaclass=ABCMeta):
             include_json_instructions=add_json_instructions
         )
 
-    def build_chat_formatter(self, input: InputType) -> ChatFormatter:
+    def build_chat_formatter(
+        self, input: InputType, system_prompt_override: str | None = None
+    ) -> ChatFormatter:
         # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
 
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
-        system_message = self.build_prompt()
+        system_message = (
+            system_prompt_override
+            if system_prompt_override is not None
+            else self.build_prompt()
+        )
 
         # If no COT prompt, use the single turn strategy. Even when a tuned strategy is set, as the tuned strategy is either already single turn, or won't work without a COT prompt.
         if not cot_prompt:

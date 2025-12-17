@@ -53,7 +53,9 @@ class MockAdapter(BaseAdapter):
         )
         self.response = response
 
-    async def _run(self, input: str) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: str, system_prompt_override: str | None = None
+    ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output=self.response, intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
