@@ -37,6 +37,7 @@ export function storeReviewedExamples(
     try {
       allExamples = JSON.parse(existingData) as ReviewedExample[]
     } catch {
+      console.error("Error parsing existing reviewed examples", existingData)
       allExamples = []
     }
   }
@@ -63,6 +64,7 @@ export function getStoredReviewedExamples(
   try {
     return JSON.parse(data) as ReviewedExample[]
   } catch {
+    console.error("Error parsing stored reviewed examples", data)
     return []
   }
 }

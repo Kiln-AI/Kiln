@@ -8,7 +8,6 @@ import type {
   SpecType,
 } from "$lib/types"
 import { buildDefinitionFromProperties } from "./select_template/spec_templates"
-import { createKilnError } from "$lib/utils/error_handlers"
 import {
   type ReviewedExample,
   clearStoredReviewedExamples,
@@ -58,7 +57,7 @@ export async function navigateToReviewSpec(
  * @param name - The spec name
  * @param spec_type - The spec type
  * @param property_values - The property values for the spec
- * @returns The created spec ID or null if creation failed
+ * @returns The created spec ID
  * @throws Error if the API call fails
  */
 export async function createSpec(
@@ -67,13 +66,10 @@ export async function createSpec(
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
-): Promise<string | null> {
+): Promise<string> {
   // First create a new eval for the spec under the hood
 
   const eval_id = await createEval(project_id, task_id, name, spec_type)
-  if (!eval_id) {
-    throw createKilnError("Failed to create eval for spec")
-  }
 
   // Save any accumulated reviewed examples as the golden dataset
   const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
@@ -122,15 +118,17 @@ export async function createSpec(
     throw error
   }
 
-  // Clear the sessionStorage after successful creation
-  if (data?.id) {
-    const formDataKey = `spec_refine_${project_id}_${task_id}`
-    sessionStorage.removeItem(formDataKey)
-    // Also clear the reviewed examples storage
-    clearStoredReviewedExamples(project_id, task_id)
+  if (!data.id) {
+    throw new Error("Failed to create spec")
   }
 
-  return data?.id || null
+  // Clear the sessionStorage after successful creation
+  const formDataKey = `spec_refine_${project_id}_${task_id}`
+  sessionStorage.removeItem(formDataKey)
+  // Also clear the reviewed examples storage
+  clearStoredReviewedExamples(project_id, task_id)
+
+  return data.id
 }
 
 async function createEval(
@@ -138,7 +136,7 @@ async function createEval(
   task_id: string,
   spec_name: string,
   spec_type: SpecType,
-): Promise<string | null> {
+): Promise<string> {
   const name = spec_name
   const description = `An eval to measure if the model's behaviour meets the spec: ${spec_name}.`
   const template = specEvalTemplate(spec_type)
@@ -168,7 +166,12 @@ async function createEval(
   if (error) {
     throw error
   }
-  return data?.id || null
+
+  if (!data.id) {
+    throw new Error("Failed to create eval for spec")
+  }
+
+  return data.id
 }
 
 function specEvalOutputScore(spec_type: SpecType): EvalOutputScore {
