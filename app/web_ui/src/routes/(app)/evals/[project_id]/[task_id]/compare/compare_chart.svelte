@@ -69,18 +69,26 @@
     }
   }
 
+  // Get simple display name for the series (used as the internal name/key)
   function getRunConfigDisplayName(config: TaskRunConfig): string {
-    const modelId = config.run_config_properties?.model_name
-    const providerId = config.run_config_properties?.model_provider_name
+    return config.name || getDetailedModelName(config, model_info) || "Unknown"
+  }
 
-    if (modelId && providerId && model_info?.models) {
-      const key = `${providerId}/${modelId}`
-      if (model_info.models[key]) {
-        return model_info.models[key].name
-      }
+  // Build a map from display name to full legend text (name, model, prompt)
+  function buildLegendFormatter(): Record<string, string> {
+    const formatter: Record<string, string> = {}
+    for (const config of run_configs) {
+      if (!config.id) continue
+
+      const displayName = getRunConfigDisplayName(config)
+      const modelName = getDetailedModelName(config, model_info) || "Unknown"
+      const promptName = getRunConfigPromptDisplayName(config, prompts)
+
+      // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
+      formatter[displayName] =
+        `${displayName}\n{sub|${modelName}}\n{sub|${promptName}}`
     }
-
-    return config.name || "Unknown"
+    return formatter
   }
 
   function getAxisLabel(dataKey: string | null): string {
@@ -155,6 +163,7 @@
     const xAxis = selectedXAxis
     const yAxis = selectedYAxis
     const { series, legend } = generateChartData()
+    const legendFormatter = buildLegendFormatter()
 
     chartInstance.setOption(
       {
@@ -192,11 +201,23 @@
         legend: {
           data: legend,
           orient: "vertical",
-          right: 10,
-          top: "center",
+          left: "70%",
+          top: "middle",
+          itemGap: 16,
+          formatter: (name: string) => legendFormatter[name] || name,
+          textStyle: {
+            lineHeight: 16,
+            rich: {
+              sub: {
+                fontSize: 11,
+                color: "#666",
+                lineHeight: 14,
+              },
+            },
+          },
         },
         grid: {
-          right: 180,
+          right: "34%",
           left: 60,
           bottom: 50,
         },
@@ -269,7 +290,7 @@
   <div class="flex flex-col gap-6">
     <!-- Axis Selection Controls -->
     <div class="flex flex-row gap-8 flex-shrink-0 items-center">
-      <div class="text-xl font-bold flex-grow">Chart</div>
+      <div class="text-xl font-bold flex-grow">Metric Correlation</div>
       {#if !loading && axisOptions.length > 1}
         <div class="flex flex-row gap-2 items-center">
           <label
@@ -334,7 +355,7 @@
           </div>
         </div>
       {:else}
-        <div use:initChart class="w-full h-[400px] xl:h-[600px]"></div>
+        <div use:initChart class="w-full h-[400px] xl:h-[600px] m-4"></div>
       {/if}
     </div>
   </div>
