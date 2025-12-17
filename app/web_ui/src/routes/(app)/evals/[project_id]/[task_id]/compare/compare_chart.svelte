@@ -150,6 +150,9 @@
           type: "scatter",
           data: [[xValue, yValue, configId]],
           symbolSize: 15,
+          emphasis: {
+            scale: 2,
+          },
         })
       }
     })
@@ -273,6 +276,21 @@
       chartInstance?.resize()
     })
     resizeObserver.observe(node)
+
+    // Add legend hover interaction to highlight corresponding chart points
+    chartInstance.on("mouseover", "legendItem", (params: { name: string }) => {
+      chartInstance?.dispatchAction({
+        type: "highlight",
+        seriesName: params.name,
+      })
+    })
+
+    chartInstance.on("mouseout", "legendItem", (params: { name: string }) => {
+      chartInstance?.dispatchAction({
+        type: "downplay",
+        seriesName: params.name,
+      })
+    })
 
     updateChart()
 
