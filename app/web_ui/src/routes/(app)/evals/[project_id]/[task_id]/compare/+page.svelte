@@ -562,11 +562,20 @@
     return percentDiff >= 0 ? `+${formatted}%` : `${formatted}%`
   }
 
-  function getValidSelectedModels(): string[] {
-    return selectedModels.filter(
-      (m): m is string => m !== null && m !== "__create_new_run_config__",
-    )
-  }
+  // Reactive valid selected models - must be reactive ($:) for template to update
+  $: validSelectedModels = selectedModels.filter(
+    (m): m is string => m !== null && m !== "__create_new_run_config__",
+  )
+
+  $: allSelectedLoading = validSelectedModels.every(
+    (modelId) =>
+      eval_scores_loading[modelId] ||
+      (!eval_scores_cache[modelId] && !eval_scores_errors[modelId]),
+  )
+
+  $: anyLoadedData = validSelectedModels.some(
+    (modelId) => eval_scores_cache[modelId],
+  )
 </script>
 
 <AppPage
@@ -588,17 +597,8 @@
       </div>
     </div>
   {:else}
-    {@const hasSelectedModels = getValidSelectedModels()}
-    {@const allSelectedLoading = hasSelectedModels.every(
-      (modelId) =>
-        eval_scores_loading[modelId] ||
-        (!eval_scores_cache[modelId] && !eval_scores_errors[modelId]),
-    )}
-    {@const anyLoadedData = hasSelectedModels.some(
-      (modelId) => eval_scores_cache[modelId],
-    )}
     <div class="max-w-[1900px] mx-auto">
-      {#if allSelectedLoading && !anyLoadedData && hasSelectedModels.length > 0}
+      {#if allSelectedLoading && !anyLoadedData && validSelectedModels.length > 0}
         <!-- Big centered loading spinner when no data is loaded yet -->
         <div
           class="bg-white border border-gray-200 rounded-lg p-12 flex flex-col items-center justify-center min-h-[400px]"
@@ -721,7 +721,7 @@
           </div>
 
           <!-- Comparison Data - only show if models are selected -->
-          {#if hasSelectedModels.length > 0}
+          {#if validSelectedModels.length > 0}
             {#each comparisonFeatures as section}
               <!-- Section Header -->
               <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
