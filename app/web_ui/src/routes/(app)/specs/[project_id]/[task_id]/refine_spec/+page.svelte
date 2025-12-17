@@ -21,8 +21,9 @@
   let spec_error: KilnError | null = null
   let spec_loading = true
 
+  let name = ""
+
   // Current values (read-only)
-  let current_name = ""
   let current_property_values: Record<string, string | null> = {}
 
   // Suggested values (editable)
@@ -78,13 +79,12 @@
       if (formData) {
         spec_type = formData.spec_type
 
-        // Initialize both current and suggested with the same values
-        current_name = formData.name
+        name = formData.name
 
+        // Initialize both current and suggested with the same values
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
 
-        // Load evaluate_full_trace, defaulting to true for tool use specs
         evaluate_full_trace = formData.evaluate_full_trace
 
         // Don't clear the stored data - keep it for back navigation
@@ -134,7 +134,7 @@
       await navigateToReviewSpec(
         project_id,
         task_id,
-        current_name,
+        name,
         spec_type,
         suggested_property_values,
         evaluate_full_trace,
@@ -164,7 +164,7 @@
       const spec_id = await createSpec(
         project_id,
         task_id,
-        current_name,
+        name,
         spec_type,
         suggested_property_values,
         evaluate_full_trace,
@@ -222,7 +222,7 @@
           label="Spec Name"
           description="A short name for your own reference."
           id="current_spec_name"
-          value={current_name}
+          value={name}
           disabled={true}
         />
         <div>
@@ -230,7 +230,7 @@
             label="Spec Name"
             description="A short name for your own reference."
             id="suggested_spec_name"
-            bind:value={current_name}
+            bind:value={name}
             disabled={true}
           />
         </div>

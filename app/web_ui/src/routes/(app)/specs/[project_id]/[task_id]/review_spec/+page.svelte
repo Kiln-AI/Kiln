@@ -80,11 +80,7 @@
         spec_type = formData.spec_type || "desired_behaviour"
         name = formData.name || ""
         property_values = { ...formData.property_values }
-        // Load evaluate_full_trace, defaulting to true for tool use specs
-        evaluate_full_trace =
-          spec_type === "appropriate_tool_use"
-            ? true
-            : formData.evaluate_full_trace ?? false
+        evaluate_full_trace = formData.evaluate_full_trace
 
         // Generate mock review data (in a real implementation, this would come from an API)
         review_rows = [
