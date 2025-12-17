@@ -9,6 +9,7 @@
   import type { components } from "$lib/api_schema"
   import RunEval from "../[eval_id]/run_eval.svelte"
   import CompareChart from "./compare_chart.svelte"
+  import CompareRadarChart from "./compare_radar_chart.svelte"
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
   type ScoreSummary = components["schemas"]["ScoreSummary"]
@@ -916,6 +917,21 @@
             </div>
           {/if}
         </div>
+
+        {#if validSelectedModels.length > 0}
+          <div class="mt-16">
+            <CompareRadarChart
+              {comparisonFeatures}
+              {getModelValueRaw}
+              run_configs={current_task_run_configs || []}
+              model_info={$model_info}
+              selectedRunConfigIds={validSelectedModels}
+              prompts={$prompts_by_task_composite_id[
+                get_task_composite_id(project_id, task_id)
+              ] || null}
+            />
+          </div>
+        {/if}
 
         <div class="mt-16">
           <CompareChart
