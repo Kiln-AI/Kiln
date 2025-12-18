@@ -604,6 +604,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         base_filename = cls.base_filename()
         # Iterate through immediate subdirectories using scandir for better performance
         # Benchmark: scandir is 10x faster than glob, so worth the extra code
+        child_files = []
         with os.scandir(relationship_folder) as entries:
             for entry in entries:
                 if not entry.is_dir():
@@ -611,7 +612,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
                 child_file = Path(entry.path) / base_filename
                 if child_file.is_file():
-                    yield child_file
+                    child_files.append(child_file)
+
+        yield from child_files
 
     @classmethod
     def all_children_of_parent_path(
@@ -636,19 +639,15 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
             return None
 
         # Note: we're using the in-file ID. We could make this faster using the path-ID if this becomes perf bottleneck, but it's better to have 1 source of truth.
-        iterator = cls.iterate_children_paths_of_parent_path(parent_path)
-        try:
-            for child_path in iterator:
-                child_id = ModelCache.shared().get_model_id(child_path, cls)
-                if child_id == id:
-                    return cls.load_from_file(child_path)
-                if child_id is None:
-                    child = cls.load_from_file(child_path)
-                    if child.id == id:
-                        return child
-            return None
-        finally:
-            iterator.close()
+        for child_path in cls.iterate_children_paths_of_parent_path(parent_path):
+            child_id = ModelCache.shared().get_model_id(child_path, cls)
+            if child_id == id:
+                return cls.load_from_file(child_path)
+            if child_id is None:
+                child = cls.load_from_file(child_path)
+                if child.id == id:
+                    return child
+        return None
 
     @classmethod
     def from_ids_and_parent_path(
