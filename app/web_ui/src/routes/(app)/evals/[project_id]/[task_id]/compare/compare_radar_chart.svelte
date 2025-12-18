@@ -246,16 +246,19 @@
   }
 </script>
 
-<div
-  class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
->
-  <div class="text-xl font-bold">Radar Chart</div>
-  <div class="text-sm text-gray-500 mb-4">
-    Compare the evaluation scores of the run configurations selected above.
+<!-- Radar charts don't really work with <3 items -->
+{#if dataKeys.length >= 3}
+  <div
+    class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
+  >
+    <div class="text-xl font-bold">Radar Chart</div>
+    <div class="text-sm text-gray-500 mb-4">
+      Compare the evaluation scores of the run configurations selected above.
+    </div>
+    {#if hasData}
+      <div use:initChart class="w-full flex-1 min-h-[400px]"></div>
+    {:else}
+      <ChartNoData />
+    {/if}
   </div>
-  {#if hasData}
-    <div use:initChart class="w-full flex-1 min-h-[400px]"></div>
-  {:else}
-    <ChartNoData />
-  {/if}
-</div>
+{/if}
