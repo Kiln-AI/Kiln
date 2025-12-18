@@ -134,6 +134,7 @@
     if (cleanupAutoUpdate) {
       cleanupAutoUpdate()
     }
+    document.removeEventListener("click", handleClickOutside)
   })
 
   function handleClickOutside(event: MouseEvent) {
