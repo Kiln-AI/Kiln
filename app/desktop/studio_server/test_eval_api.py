@@ -1218,6 +1218,48 @@ def test_delete_eval_not_found(client):
     assert response.json()["detail"] == "Eval not found. ID: nonexistent_eval"
 
 
+async def test_create_eval_then_delete_on_spec_failure(
+    client, mock_task_from_id, mock_task
+):
+    create_request = {
+        "name": "Test Eval for Spec",
+        "description": "Test eval that will be cleaned up",
+        "template": None,
+        "output_scores": [
+            {
+                "name": "tone",
+                "type": "pass_fail",
+                "instruction": "Evaluate tone",
+            }
+        ],
+        "eval_set_filter_id": "tag::test_tag",
+        "eval_configs_filter_id": "tag::test_tag_golden",
+        "template_properties": None,
+        "evaluation_data_type": "final_answer",
+    }
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator", json=create_request
+    )
+
+    assert response.status_code == 200
+    eval_data = response.json()
+    eval_id = eval_data["id"]
+
+    assert len(mock_task.evals()) == 1
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        created_eval = mock_task.evals()[0]
+        mock_eval_from_id.return_value = created_eval
+
+        delete_response = client.delete(
+            f"/api/projects/project1/tasks/task1/eval/{eval_id}"
+        )
+
+    assert delete_response.status_code == 200
+    assert len(mock_task.evals()) == 0
+
+
 def test_runs_in_filter():
     # Create a mock task with runs
     mock_task = Mock(spec=Task)
