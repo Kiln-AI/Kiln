@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { get } from "svelte/store"
 import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
-import type { Eval, Task } from "$lib/types"
+import type { Eval, Task, Spec } from "$lib/types"
 
 // Mock the API client
 vi.mock("$lib/api_client", () => ({
@@ -214,6 +214,34 @@ describe("SynthDataGuidanceDataModel", () => {
       )
 
       expect(get(model.selected_template)).toBe("requirements_eval_template")
+    })
+
+    it("should set template to desired_behaviour_eval_template for desired_behaviour evaluator", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Test Eval",
+        template: "desired_behaviour",
+        template_properties: {},
+      } as Eval
+
+      mockClient.GET.mockResolvedValue({
+        data: mockEval,
+        error: null,
+      })
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe(
+        "desired_behaviour_eval_template",
+      )
     })
 
     it("should handle API errors gracefully", async () => {
@@ -439,6 +467,39 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(guidance).toContain("requirement_1")
       expect(guidance).toContain("requirement_2")
     })
+
+    it("should apply desired_behaviour eval template when spec is present", () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Test Desired Behaviour",
+        template: "desired_behaviour",
+        template_properties: {},
+      } as unknown as Eval
+
+      const mockSpec = {
+        id: "spec1",
+        name: "Test Spec",
+        definition: "Test definition",
+        eval_id: "eval1",
+        properties: {
+          spec_type: "desired_behaviour",
+          desired_behaviour_description: "The model should be helpful",
+          correct_behaviour_examples: "Good example",
+          incorrect_behaviour_examples: "Bad example",
+        },
+      } as Spec
+
+      model["evaluator"] = mockEval
+      model["spec"] = mockSpec
+      model["apply_selected_template"]("desired_behaviour_eval_template")
+
+      const guidance = get(model.topic_guidance)
+      expect(guidance).toContain("Test Desired Behaviour")
+      expect(guidance).toContain("The model should be helpful")
+      expect(guidance).toContain("Good example")
+      expect(guidance).toContain("Bad example")
+      expect(guidance).toContain("fail to exhibit")
+    })
   })
 
   describe("template generation methods", () => {
@@ -522,6 +583,110 @@ describe("SynthDataGuidanceDataModel", () => {
         expect(template).not.toContain("no_issue_example")
       })
     })
+
+    describe("desired_behaviour_eval_template", () => {
+      beforeEach(() => {
+        const mockEval = {
+          id: "eval1",
+          name: "Test Desired Behaviour",
+          template: "desired_behaviour",
+          template_properties: {},
+        } as unknown as Eval
+        model["evaluator"] = mockEval
+      })
+
+      it("should generate template with all desired behaviour properties", () => {
+        const mockSpec = {
+          id: "spec1",
+          name: "Test Spec",
+          definition: "Test definition",
+          eval_id: "eval1",
+          properties: {
+            spec_type: "desired_behaviour",
+            desired_behaviour_description:
+              "Description of the desired behaviour",
+            correct_behaviour_examples: "This is a correct example",
+            incorrect_behaviour_examples: "This is an incorrect example",
+          },
+        } as Spec
+
+        model["spec"] = mockSpec
+
+        const template = model["desired_behaviour_eval_template"]("topics")
+
+        expect(template).toContain("Test Desired Behaviour")
+        expect(template).toContain("Description of the desired behaviour")
+        expect(template).toContain("This is a correct example")
+        expect(template).toContain("This is an incorrect example")
+        expect(template).toContain("fail to exhibit")
+      })
+
+      it("should handle missing optional properties", () => {
+        const mockSpec = {
+          id: "spec1",
+          name: "Simple Spec",
+          definition: "Simple definition",
+          eval_id: "eval1",
+          properties: {
+            spec_type: "desired_behaviour",
+            desired_behaviour_description: "Simple description",
+          },
+        } as Spec
+
+        model["spec"] = mockSpec
+
+        const template = model["desired_behaviour_eval_template"]("topics")
+
+        expect(template).toContain("Simple description")
+        expect(template).not.toContain("correct_behaviour_example")
+        expect(template).not.toContain("incorrect_behaviour_example")
+      })
+
+      it("should throw error when spec is not present", () => {
+        model["spec"] = null
+
+        expect(() =>
+          model["desired_behaviour_eval_template"]("topics"),
+        ).toThrow("Spec with desired_behaviour spec_type is required")
+      })
+
+      it("should throw error when spec type is not desired_behaviour", () => {
+        const mockSpec = {
+          id: "spec1",
+          name: "Wrong Spec",
+          definition: "Wrong definition",
+          eval_id: "eval1",
+          properties: {
+            spec_type: "issue",
+            issue_description: "test",
+          },
+        } as Spec
+
+        model["spec"] = mockSpec
+
+        expect(() =>
+          model["desired_behaviour_eval_template"]("topics"),
+        ).toThrow("Spec with desired_behaviour spec_type is required")
+      })
+
+      it("should throw error when desired_behaviour_description is missing", () => {
+        const mockSpec = {
+          id: "spec1",
+          name: "Incomplete Spec",
+          definition: "Incomplete definition",
+          eval_id: "eval1",
+          properties: {
+            spec_type: "desired_behaviour",
+          },
+        } as Spec
+
+        model["spec"] = mockSpec
+
+        expect(() =>
+          model["desired_behaviour_eval_template"]("topics"),
+        ).toThrow("Desired behaviour description is required")
+      })
+    })
   })
 
   describe("build_select_options", () => {
@@ -576,6 +741,23 @@ describe("SynthDataGuidanceDataModel", () => {
 
       const options = get(model.select_options)
       expect(options[0].options[0].value).toBe("requirements_eval_template")
+    })
+
+    it("should build options with evaluator (desired_behaviour type)", () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Test Desired Behaviour",
+        template: "desired_behaviour",
+        template_properties: {},
+      } as unknown as Eval
+
+      model["build_select_options"](mockStaticTemplates, mockEval)
+
+      const options = get(model.select_options)
+      expect(options[0].options[0].value).toBe(
+        "desired_behaviour_eval_template",
+      )
+      expect(options[0].options[0].label).toBe("Desired Behaviour Eval")
     })
 
     it("should build options without evaluator", () => {

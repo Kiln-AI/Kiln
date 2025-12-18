@@ -114,6 +114,8 @@ export class SynthDataGuidanceDataModel {
       // Jump to the issue eval template
       if (this.evaluator.template === "kiln_issue") {
         this.selected_template.set("issue_eval_template")
+      } else if (this.evaluator.template === "desired_behaviour") {
+        this.selected_template.set("desired_behaviour_eval_template")
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
       } else if (this.evaluator.template === "tool_call") {
@@ -198,6 +200,12 @@ export class SynthDataGuidanceDataModel {
       this.output_guidance.set(
         this.issue_eval_template(this.evaluator, "outputs"),
       )
+    }
+
+    if (template == "desired_behaviour_eval_template" && this.spec) {
+      this.topic_guidance.set(this.desired_behaviour_eval_template("topics"))
+      this.input_guidance.set(this.desired_behaviour_eval_template("inputs"))
+      this.output_guidance.set(this.desired_behaviour_eval_template("outputs"))
     }
 
     if (
@@ -514,6 +522,151 @@ When generating model inputs, generate inputs that are likely to trigger the iss
     return template
   }
 
+  private desired_behaviour_eval_template(
+    task_type: "topics" | "inputs" | "outputs",
+  ): string {
+    if (!this.spec || this.spec.properties.spec_type !== "desired_behaviour") {
+      throw new Error(
+        "Spec with desired_behaviour spec_type is required for desired_behaviour template",
+      )
+    }
+
+    const desired_behaviour_description =
+      this.spec.properties.desired_behaviour_description
+    if (!desired_behaviour_description) {
+      throw new Error(
+        "Desired behaviour description is required for desired_behaviour template",
+      )
+    }
+
+    let template =
+      "We are building a dataset for an AI eval. We want to test a desired behaviour, so we need to generate data that will fail to exhibit that behaviour.\n\n"
+
+    if (task_type == "topics") {
+      template += `When generating top-level topics, generate topics that are likely to cause the model to NOT exhibit the desired behaviour. This may take some creativity, but it's important to make sure the desired behaviour is NOT exhibited.
+
+Here are two examples of topics generated from an example task/system prompt and desired behaviour description:
+
+## Example 1
+ - Task/System Prompt: "Generate news article headlines from a summary of the article, avoiding clickbait."
+ - Desired behaviour description: "The model generates informative, non-clickbait headlines that accurately summarize the article."
+ - Generated Topics (showing two levels of depth):
+   - "News Topics Often Associated with Clickbait Headlines"
+      - "Celebrity Gossip"
+      - "Diet and Fitness Tips"
+      - "Advice Columns"
+      - "Financial Advice Columns"
+   - "Summaries containing clickbait phrases"
+      - "You won't believe..."
+      - "This one simple trick..."
+      - "... will shock you!"
+
+## Example 2
+ - Task/System Prompt: "Generate concise answers to technical questions, avoiding unnecessary elaboration."
+ - Desired behaviour description: "The model produces clear, brief answers that directly address the question without excessive detail."
+ - Generated Topics (showing two levels of depth):
+   - "Technical Questions with Complex Context"
+      - "Explaining OAuth Authentication Flows"
+      - "Describing Machine Learning Model Training"
+      - "Detailing Database Indexing Strategies"
+   - "Messages likely to trigger verbose output"
+      - "Messages including 'explain in detail'"
+      - "Messages including 'walk me through'"
+      - "Messages including 'help me understand everything about'"
+`
+    } else if (task_type == "inputs") {
+      template += `Here are two examples of inputs generated from an example task/system prompt, desired behaviour description, and a topic path:
+
+## Example 1
+ - Task/System Prompt: "Generate news article headlines from a summary of the article, avoiding clickbait."
+ - Desired behaviour description: "The model generates informative, non-clickbait headlines that accurately summarize the article."
+ - Topic Path: [] (root node)
+ - Generated Inputs:
+   - "You'll never believe what Jennifer Lopez did on her birthday! A party in Milan with over 1000 guests."
+   - "One simple trick to actually lose weight. Eating healthy and exercise proven to be an effective way to lose weight."
+
+## Example 2
+ - Task/System Prompt: "Generate concise answers to technical questions, avoiding unnecessary elaboration."
+ - Desired behaviour description: "The model produces clear, brief answers that directly address the question without excessive detail."
+ - Topic Path: ["Technical Questions with Complex Context"]
+ - Generated Inputs:
+   - "Explain how neural networks work"
+   - "Explain OAuth authentication"
+   - "Explain how to build a database from scratch"
+
+Apply the same approach to generate inputs for the provided system prompt, desired behaviour description, and topic path.
+  `
+    } else if (task_type == "outputs") {
+      template += `When generating model outputs, generate outputs that do NOT exhibit the desired behaviour.
+
+Here is an example of outputs generated from an example task/system prompt, desired behaviour description, and task inputs:
+
+## Example
+ - Task/System Prompt: "Generate news article headlines from a summary of the article, avoiding clickbait."
+ - Desired behaviour description: "The model generates informative, non-clickbait headlines that accurately summarize the article."
+ - Inputs / Output pairs (your role is to generate the outputs):
+   - "You'll never believe what Jennifer Lopez did on her birthday! A party in Milan with over 1000 guests." / "You'll never believe what Jennifer Lopez did on her birthday!"
+   - "One simple trick to actually lose weight. Eating healthy and exercise proven to be an effective way to lose weight." / "One simple trick to actually lose weight..."
+`
+    }
+
+    template += `
+
+## Desired Behaviour
+
+Now complete the task for the desired behaviour described below:
+
+The desired behaviour is named: 
+<behaviour_name>
+${this.evaluator?.name || "Desired Behaviour"}
+</behaviour_name>`
+
+    const goal_description =
+      task_type == "outputs" ? "does not exhibit" : "will fail to exhibit"
+
+    template += `
+
+The desired behaviour is described as (we want to generate data which ${goal_description} this behaviour):
+<desired_behaviour_description>
+${desired_behaviour_description}
+</desired_behaviour_description>`
+
+    const correct_behaviour_example =
+      this.spec.properties.correct_behaviour_examples
+    if (correct_behaviour_example) {
+      template += `
+
+Here is an example of model output that exhibits the desired behaviour to help you understand the behaviour:
+<correct_behaviour_example>
+${correct_behaviour_example}
+</correct_behaviour_example>`
+    }
+
+    const incorrect_behaviour_example =
+      this.spec.properties.incorrect_behaviour_examples
+    if (incorrect_behaviour_example) {
+      template += `
+
+Here is an example of model output that ${goal_description} the desired behaviour to help you understand the behaviour:
+<incorrect_behaviour_example>
+${incorrect_behaviour_example}
+</incorrect_behaviour_example>`
+
+      if (task_type == "inputs") {
+        template += `
+
+When generating model inputs, generate inputs that are likely to cause the model to NOT exhibit the desired behaviour with the model output but still within the bounds of reasonable inputs that follow the input specification (realistic inputs). This may take some creativity, but it's important to make sure the desired behaviour is NOT exhibited.`
+      }
+    }
+
+    if (correct_behaviour_example || incorrect_behaviour_example) {
+      template +=
+        "\n\nNote: the examples are only to help you understand the desired behaviour; they are not examples of the form data you should generate."
+    }
+
+    return template
+  }
+
   private appropriate_tool_use_eval_template(
     tool_call: Eval,
     task_type: "topics" | "inputs" | "outputs",
@@ -719,6 +872,13 @@ When generating ${task_type}, use these guidelines to create test cases that are
           value: "issue_eval_template",
           description:
             "Generate data expected to trigger a specific issue, for an eval to detect that issue.",
+        })
+      } else if (evaluator.template === "desired_behaviour") {
+        eval_options.push({
+          label: "Desired Behaviour Eval",
+          value: "desired_behaviour_eval_template",
+          description:
+            "Generate challenging data to test if the model exhibits a desired behaviour.",
         })
       } else if (evaluator.template === "kiln_requirements") {
         eval_options.push({
