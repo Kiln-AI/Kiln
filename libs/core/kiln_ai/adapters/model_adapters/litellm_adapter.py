@@ -178,16 +178,14 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(
-        self, input: InputType, system_prompt_override: str | None = None
-    ) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
-        chat_formatter = self.build_chat_formatter(input, system_prompt_override)
+        chat_formatter = self.build_chat_formatter(input)
         messages: list[ChatCompletionMessageIncludingLiteLLM] = []
 
         prior_output: str | None = None

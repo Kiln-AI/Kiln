@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
-from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+    RunOutput,
+)
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.project import Project
@@ -16,7 +21,7 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input, system_prompt_override: str | None = None):
+    async def _run(self, input):
         return None, None
 
     def adapter_name(self) -> str:
@@ -229,7 +234,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input, system_prompt_override: str | None = None):
+        async def mock_run(input):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -621,8 +626,16 @@ async def test_available_tools_duplicate_names_raises_error(base_project):
             await adapter.available_tools()
 
 
-async def test_system_prompt_override(base_task):
-    """Test that system_prompt_override parameter overrides the built system prompt"""
+async def test_custom_prompt_builder(base_task):
+    """Test that custom prompt builder can be injected via AdapterConfig"""
+
+    # Create a custom prompt builder
+    class CustomPromptBuilder(BasePromptBuilder):
+        def build_base_prompt(self) -> str:
+            return "This is a custom prompt from injected builder"
+
+    custom_builder = CustomPromptBuilder(base_task)
+
     adapter = MockAdapter(
         task=base_task,
         run_config=RunConfigProperties(
@@ -631,6 +644,7 @@ async def test_system_prompt_override(base_task):
             prompt_id="simple_prompt_builder",
             structured_output_mode="json_schema",
         ),
+        config=AdapterConfig(prompt_builder=custom_builder),
     )
 
     # Mock model provider
@@ -639,21 +653,7 @@ async def test_system_prompt_override(base_task):
     provider.tuned_chat_strategy = None
     adapter.model_provider = MagicMock(return_value=provider)
 
-    # Test 1: Without override, build_chat_formatter should use the built prompt
+    # Test that the custom prompt builder is used
     formatter = adapter.build_chat_formatter(input="test input")
-    assert formatter.system_message == adapter.build_prompt()
-
-    # Test 2: With override, build_chat_formatter should use the override
-    custom_system_prompt = "This is a custom system prompt override"
-    formatter_with_override = adapter.build_chat_formatter(
-        input="test input", system_prompt_override=custom_system_prompt
-    )
-    assert formatter_with_override.system_message == custom_system_prompt
-    assert formatter_with_override.system_message != adapter.build_prompt()
-
-    # Test 3: Verify that empty string override works (edge case)
-    formatter_empty = adapter.build_chat_formatter(
-        input="test input", system_prompt_override=""
-    )
-    assert formatter_empty.system_message == ""
-    assert formatter_empty.system_message != adapter.build_prompt()
+    assert formatter.system_message == "This is a custom prompt from injected builder"
+    assert adapter.prompt_builder == custom_builder

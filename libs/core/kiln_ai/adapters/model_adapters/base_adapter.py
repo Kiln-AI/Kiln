@@ -12,7 +12,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
 from kiln_ai.adapters.parsers.request_formatters import request_formatter_from_id
-from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import (
@@ -44,6 +44,13 @@ class AdapterConfig:
     top_logprobs: int | None = None
     default_tags: list[str] | None = None
 
+    """
+    A custom prompt builder can be injected to override the system prompt building process.
+    If not provided, the prompt builder will be created from the run_config.prompt_id which
+    may load additional files from disk.
+    """
+    prompt_builder: BasePromptBuilder | None = None
+
 
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.
@@ -62,12 +69,16 @@ class BaseAdapter(metaclass=ABCMeta):
         self.task = task
         self.run_config = run_config
         self.update_run_config_unknown_structured_output_mode()
-        self.prompt_builder = prompt_builder_from_id(run_config.prompt_id, task)
+        self.base_adapter_config = config or AdapterConfig()
+
+        self.prompt_builder = (
+            self.base_adapter_config.prompt_builder
+            or prompt_builder_from_id(run_config.prompt_id, task)
+        )
         self._model_provider: KilnModelProvider | None = None
 
         self.output_schema = task.output_json_schema
         self.input_schema = task.input_json_schema
-        self.base_adapter_config = config or AdapterConfig()
 
     def model_provider(self) -> KilnModelProvider:
         """
@@ -90,18 +101,14 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        system_prompt_override: str | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, system_prompt_override
-        )
+        run_output, _ = await self.invoke_returning_run_output(input, input_source)
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        system_prompt_override: str | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -120,7 +127,7 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(formatted_input, system_prompt_override)
+        run_output, usage = await self._run(formatted_input)
 
         # Parse
         provider = self.model_provider()
@@ -195,9 +202,7 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(
-        self, input: InputType, system_prompt_override: str | None = None
-    ) -> Tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:
@@ -213,17 +218,11 @@ class BaseAdapter(metaclass=ABCMeta):
             include_json_instructions=add_json_instructions
         )
 
-    def build_chat_formatter(
-        self, input: InputType, system_prompt_override: str | None = None
-    ) -> ChatFormatter:
+    def build_chat_formatter(self, input: InputType) -> ChatFormatter:
         # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
 
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
-        system_message = (
-            system_prompt_override
-            if system_prompt_override is not None
-            else self.build_prompt()
-        )
+        system_message = self.build_prompt()
 
         # If no COT prompt, use the single turn strategy. Even when a tuned strategy is set, as the tuned strategy is either already single turn, or won't work without a COT prompt.
         if not cot_prompt:
