@@ -553,25 +553,8 @@
       }
 
       for (const spec of specs_to_update) {
-        if (!spec.id) continue
-
         const new_status = should_archive ? "archived" : "active"
-
-        const { error } = await client.PATCH(
-          "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-          {
-            params: {
-              path: { project_id, task_id, spec_id: spec.id },
-            },
-            body: {
-              status: new_status,
-            },
-          },
-        )
-
-        if (error) {
-          throw error
-        }
+        await updateSpecStatus(spec, new_status as SpecStatus)
       }
 
       success = true
