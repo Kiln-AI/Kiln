@@ -22,6 +22,7 @@
   let cleanupAutoUpdate: (() => void) | null = null
   let mounted = false
   let isHovered = false
+  let clickListenerTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   $: displayText = formatDisplay(currentValue)
 
@@ -109,6 +110,10 @@
     if (cleanupAutoUpdate) {
       cleanupAutoUpdate()
     }
+    if (clickListenerTimeoutId !== null) {
+      clearTimeout(clickListenerTimeoutId)
+      clickListenerTimeoutId = null
+    }
     document.removeEventListener("click", handleClickOutside)
   })
 
@@ -125,10 +130,18 @@
   }
 
   $: if (isEditing) {
-    setTimeout(() => {
+    if (clickListenerTimeoutId !== null) {
+      clearTimeout(clickListenerTimeoutId)
+    }
+    clickListenerTimeoutId = setTimeout(() => {
+      clickListenerTimeoutId = null
       document.addEventListener("click", handleClickOutside)
     }, 0)
   } else {
+    if (clickListenerTimeoutId !== null) {
+      clearTimeout(clickListenerTimeoutId)
+      clickListenerTimeoutId = null
+    }
     document.removeEventListener("click", handleClickOutside)
   }
 </script>
