@@ -9,6 +9,7 @@
     getDetailedModelName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
+  import ChartNoData from "./chart_no_data.svelte"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -129,15 +130,24 @@
     return { indicators, series, legend }
   }
 
+  // Check if there's data to display (reactive, depends on dataKeys and selectedRunConfigIds)
+  $: hasData = (() => {
+    if (!dataKeys || dataKeys.length === 0 || !selectedRunConfigIds) {
+      return false
+    }
+    const { indicators, series } = generateChartData()
+    return indicators.length > 0 && series.length > 0
+  })()
+
   function updateChart() {
     if (!chartInstance) return
 
-    const { indicators, series, legend } = generateChartData()
-
-    if (indicators.length === 0 || series.length === 0) {
+    if (!hasData) {
       chartInstance.clear()
       return
     }
+
+    const { indicators, series, legend } = generateChartData()
 
     const legendFormatter = buildLegendFormatter()
 
@@ -243,5 +253,9 @@
   <div class="text-sm text-gray-500 mb-4">
     Compare the evaluation scores of the run configurations selected above.
   </div>
-  <div use:initChart class="w-full flex-1 min-h-[400px]"></div>
+  {#if hasData}
+    <div use:initChart class="w-full flex-1 min-h-[400px]"></div>
+  {:else}
+    <ChartNoData />
+  {/if}
 </div>
