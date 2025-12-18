@@ -33,7 +33,9 @@
             tight={true}
           />
         {/if}
-        {#if Array.isArray(property.value)}
+        {#if property.use_custom_slot && $$slots.custom_value}
+          <slot name="custom_value" {property} />
+        {:else if Array.isArray(property.value)}
           {#if property.badge}
             <div class="flex flex-wrap gap-1">
               {#each property.value as value, i}
