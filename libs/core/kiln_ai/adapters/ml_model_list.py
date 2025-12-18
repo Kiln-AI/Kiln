@@ -127,7 +127,9 @@ class ModelName(str, Enum):
     gemini_2_5_flash = "gemini_2_5_flash"
     gemini_2_5_flash_lite = "gemini_2_5_flash_lite"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3_nano = "nemotron_3_nano"
     mixtral_8x7b = "mixtral_8x7b"
     qwen_2p5_7b = "qwen_2p5_7b"
     qwen_2p5_14b = "qwen_2p5_14b"
@@ -1459,7 +1461,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -1493,6 +1494,67 @@ built_in_models: List[KilnModel] = [
                 thinking_level="medium",
             ),
             # Vertex isn't working yet: they have a page up, but the API can't find the model ID.
+        ],
+    ),
+    # Gemini 3 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_flash,
+        friendly_name="Gemini 3 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3-flash-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3-flash-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                reasoning_capable=True,
+                thinking_level="medium",
+            ),
         ],
     ),
     # Gemini 2.5 Pro
@@ -1884,6 +1946,20 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-1.5-flash-8b",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=False,
+            ),
+        ],
+    ),
+    # Nemotron 3 Nano
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.nemotron_3_nano,
+        friendly_name="Nemotron 3 Nano",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3-nano-30b-a3b:free",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
             ),
         ],
     ),
