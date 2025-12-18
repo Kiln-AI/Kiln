@@ -35,6 +35,8 @@
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
   } from "../spec_utils"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { goto } from "$app/navigation"
 
   // ### Spec Details Page ###
 
@@ -91,6 +93,7 @@
     | "complete"
     | "complete_with_errors" = "not_started"
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+  let edit_dialog: EditDialog | null = null
 
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
@@ -345,13 +348,7 @@
             path: { project_id, task_id, spec_id: spec.id },
           },
           body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: spec.priority,
-            status: spec.status,
             tags: tags,
-            eval_id: spec.eval_id || null,
           },
         },
       )
@@ -401,6 +398,14 @@
       {
         label: "Specs & Evals",
         href: `/specs/${project_id}/${task_id}`,
+      },
+    ]}
+    action_buttons={[
+      {
+        label: "Edit",
+        handler: () => {
+          edit_dialog?.show()
+        },
       },
     ]}
   >
@@ -565,6 +570,25 @@
     {/if}
   </AppPage>
 </div>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Spec"
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
+  delete_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
+  after_delete={() => {
+    goto(`/specs/${project_id}/${task_id}`)
+  }}
+  fields={[
+    {
+      label: "Spec Name",
+      description: "A name to identify this spec.",
+      api_name: "name",
+      value: spec?.name || "",
+      input_type: "input",
+    },
+  ]}
+/>
 
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}

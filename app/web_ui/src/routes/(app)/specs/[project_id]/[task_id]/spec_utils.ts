@@ -288,13 +288,7 @@ export async function updateSpecPriority(
         path: { project_id, task_id, spec_id: spec.id },
       },
       body: {
-        name: spec.name,
-        definition: spec.definition,
-        properties: spec.properties,
         priority: newPriority as 0 | 1 | 2 | 3,
-        status: spec.status,
-        tags: spec.tags,
-        eval_id: spec.eval_id ?? null,
       },
     },
   )
@@ -332,13 +326,7 @@ export async function updateSpecStatus(
         path: { project_id, task_id, spec_id: spec.id },
       },
       body: {
-        name: spec.name,
-        definition: spec.definition,
-        properties: spec.properties,
-        priority: spec.priority,
         status: newStatus,
-        tags: spec.tags,
-        eval_id: spec.eval_id ?? null,
       },
     },
   )
