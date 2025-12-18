@@ -1,66 +1,48 @@
-<script lang="ts">
+<script lang="ts" generics="T">
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
-  import type { Spec, SpecStatus } from "$lib/types"
-  import { formatPriority } from "$lib/utils/formatters"
-  import { capitalize } from "$lib/utils/formatters"
+  import type { Spec } from "$lib/types"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
   export let spec: Spec
-  export let field: "priority" | "status"
+  export let currentValue: T
   export let options: OptionGroup[]
-  export let aria_label: string = ""
-  export let onUpdate: (spec: Spec, value: number | SpecStatus) => void
+  export let aria_label: string
+  export let formatDisplay: (value: T) => string
+  export let onUpdate: (spec: Spec, value: T) => void
+  export let dropdownWidth: string = "w-24"
   export let compact: boolean = false
   export let onOpen: (() => void) | undefined = undefined
   export let always_show_border: boolean = false
 
-  let currentValue: number | SpecStatus =
-    field === "priority" ? spec.priority : spec.status
-  let lastSyncedSpecValue: number | SpecStatus =
-    field === "priority" ? spec.priority : spec.status
   let lastUpdateTime = 0
   let isEditing = false
-  let hasPendingUpdate = false
   let dropdownElement: HTMLElement
   let triggerElement: HTMLElement
   let cleanupAutoUpdate: (() => void) | null = null
   let mounted = false
   let isHovered = false
 
-  $: widthClass = field === "priority" ? "w-24" : "w-32"
-  $: specValue = field === "priority" ? spec.priority : spec.status
-  $: displayText =
-    field === "priority"
-      ? formatPriority(currentValue as number)
-      : capitalize(currentValue as SpecStatus)
-
-  $: {
-    if (specValue !== lastSyncedSpecValue) {
-      lastSyncedSpecValue = specValue
-      currentValue = specValue
-      if (hasPendingUpdate) {
-        hasPendingUpdate = false
-        setTimeout(() => {
-          isEditing = false
-        }, 100)
-      }
-    }
-  }
+  $: displayText = formatDisplay(currentValue)
 
   function handleValueChange() {
-    if (currentValue !== lastSyncedSpecValue && isEditing) {
+    if (isEditing) {
       const now = Date.now()
       if (now - lastUpdateTime > 300) {
         lastUpdateTime = now
-        hasPendingUpdate = true
         onUpdate(spec, currentValue)
       }
     }
   }
 
-  $: if (isEditing) {
+  export function triggerUpdate() {
     handleValueChange()
+  }
+
+  export function setPendingComplete() {
+    setTimeout(() => {
+      isEditing = false
+    }, 100)
   }
 
   function startEditing() {
@@ -80,16 +62,9 @@
     return options.flatMap((group) => group.options)
   }
 
-  function selectOption(option: unknown) {
-    currentValue = option as number | SpecStatus
-    if (currentValue !== lastSyncedSpecValue) {
-      const now = Date.now()
-      if (now - lastUpdateTime > 300) {
-        lastUpdateTime = now
-        hasPendingUpdate = true
-        onUpdate(spec, currentValue)
-      }
-    }
+  function selectOption(value: unknown) {
+    currentValue = value as T
+    handleValueChange()
     setTimeout(() => {
       stopEditing()
     }, 100)
@@ -166,7 +141,7 @@
       : 'border border-transparent'} {compact
       ? 'px-1'
       : 'px-2 py-1'} {always_show_border && isHovered ? 'bg-base-200' : ''}"
-    aria-label={aria_label || (field === "priority" ? "Priority" : "Status")}
+    aria-label={aria_label}
     on:click={(e) => {
       e.stopPropagation()
       if (!isEditing) {
@@ -197,8 +172,7 @@
   {#if isEditing && mounted}
     <div
       bind:this={dropdownElement}
-      class="bg-base-100 rounded-box z-[1000] p-2 shadow border flex flex-col fixed"
-      style="width: {widthClass === 'w-24' ? '96px' : '128px'};"
+      class="bg-base-100 rounded-box z-[1000] p-2 shadow border flex flex-col fixed {dropdownWidth}"
       on:click={(e) => e.stopPropagation()}
       role="presentation"
     >

@@ -4,7 +4,8 @@
   import { page } from "$app/stores"
   import { onMount, tick } from "svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import EditableSpecField from "../editable_spec_field.svelte"
+  import EditablePriorityField from "../editable_priority_field.svelte"
+  import EditableStatusField from "../editable_status_field.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type {
     Spec,
@@ -14,6 +15,7 @@
     TaskRunConfig,
     EvalResultSummary,
     EvalProgress,
+    Priority,
   } from "$lib/types"
   import { client } from "$lib/api_client"
   import TagPicker from "$lib/ui/tag_picker.svelte"
@@ -51,8 +53,8 @@
   let current_tags: string[] = []
   let updating_priorities = false
   let updating_statuses = false
-  let priorityField: EditableSpecField | null = null
-  let statusField: EditableSpecField | null = null
+  let priorityField: EditablePriorityField | null = null
+  let statusField: EditableStatusField | null = null
 
   let eval_progress: EvalProgress | null = null
   let eval_progress_loading = true
@@ -165,12 +167,12 @@
     }
   }
 
-  function handlePriorityUpdate(spec: Spec, value: number | SpecStatus) {
-    updateSpecPriority(value as number)
+  function handlePriorityUpdate(spec: Spec, value: Priority) {
+    updateSpecPriority(value)
   }
 
-  function handleStatusUpdate(spec: Spec, value: number | SpecStatus) {
-    updateSpecStatus(value as SpecStatus)
+  function handleStatusUpdate(spec: Spec, value: SpecStatus) {
+    updateSpecStatus(value)
   }
 
   $: has_eval = spec?.eval_id
@@ -487,11 +489,10 @@
           >
             <svelte:fragment slot="custom_value" let:property>
               {#if property.name === "Priority"}
-                <EditableSpecField
+                <EditablePriorityField
                   bind:this={priorityField}
                   always_show_border={true}
                   {spec}
-                  field="priority"
                   options={getPriorityOptions()}
                   aria_label="Priority"
                   onUpdate={handlePriorityUpdate}
@@ -501,11 +502,10 @@
                   }}
                 />
               {:else if property.name === "Status"}
-                <EditableSpecField
+                <EditableStatusField
                   bind:this={statusField}
                   always_show_border={true}
                   {spec}
-                  field="status"
                   options={getStatusOptions()}
                   aria_label="Status"
                   onUpdate={handleStatusUpdate}

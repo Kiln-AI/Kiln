@@ -5,7 +5,7 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec, SpecStatus, Eval } from "$lib/types"
+  import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
@@ -14,7 +14,8 @@
   import RemoveTagsDialog from "$lib/ui/remove_tags_dialog.svelte"
   import { formatDate, formatSpecType } from "$lib/utils/formatters"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import EditableSpecField from "./editable_spec_field.svelte"
+  import EditablePriorityField from "./editable_priority_field.svelte"
+  import EditableStatusField from "./editable_status_field.svelte"
   import {
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
@@ -664,12 +665,12 @@
     }
   }
 
-  function handlePriorityUpdate(spec: Spec, value: number | SpecStatus) {
-    updateSpecPriority(spec, value as number)
+  function handlePriorityUpdate(spec: Spec, value: Priority) {
+    updateSpecPriority(spec, value)
   }
 
-  function handleStatusUpdate(spec: Spec, value: number | SpecStatus) {
-    updateSpecStatus(spec, value as SpecStatus)
+  function handleStatusUpdate(spec: Spec, value: SpecStatus) {
+    updateSpecStatus(spec, value)
   }
 </script>
 
@@ -890,18 +891,16 @@
                       {formatSpecType(spec.properties.spec_type)}
                     </td>
                     <td>
-                      <EditableSpecField
+                      <EditablePriorityField
                         {spec}
-                        field="priority"
                         options={getPriorityOptions()}
                         aria_label="Priority"
                         onUpdate={handlePriorityUpdate}
                       />
                     </td>
                     <td>
-                      <EditableSpecField
+                      <EditableStatusField
                         {spec}
-                        field="status"
                         options={getStatusOptions()}
                         aria_label="Status"
                         onUpdate={handleStatusUpdate}
