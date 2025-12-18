@@ -13,6 +13,7 @@
   export let onUpdate: (spec: Spec, value: number | SpecStatus) => void
   export let compact: boolean = false
   export let onOpen: (() => void) | undefined = undefined
+  export let always_show_border: boolean = false
 
   let currentValue: number | SpecStatus =
     field === "priority" ? spec.priority : spec.status
@@ -158,9 +159,12 @@
 
 <div class="relative" bind:this={triggerElement}>
   <div
-    class="cursor-pointer rounded inline-block transition-all {isHovered
+    class="cursor-pointer rounded inline-block transition-all {isHovered ||
+    always_show_border
       ? 'border border-base-content border-opacity-30'
-      : 'border border-transparent'} {compact ? 'px-1' : 'px-2 py-1'}"
+      : 'border border-transparent'} {compact
+      ? 'px-1'
+      : 'px-2 py-1'} {always_show_border && isHovered ? 'bg-base-200' : ''}"
     aria-label={aria_label || (field === "priority" ? "Priority" : "Status")}
     on:click={(e) => {
       e.stopPropagation()

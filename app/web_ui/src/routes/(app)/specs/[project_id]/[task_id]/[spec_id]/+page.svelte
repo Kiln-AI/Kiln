@@ -3,7 +3,7 @@
   import { page } from "$app/stores"
   import { onMount, tick } from "svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  // import EditableSpecField from "../editable_spec_field.svelte"
+  import EditableSpecField from "../editable_spec_field.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type {
     Spec,
@@ -45,41 +45,8 @@
   let current_tags: string[] = []
   let updating_priorities = false
   let updating_statuses = false
-  // let priorityField: EditableSpecField | null = null
-  // let statusField: EditableSpecField | null = null
-
-  /**
-   *        <div class="flex items-center">Priority</div>
-            <div class="flex items-center overflow-x-hidden text-gray-500 px-1">
-              <EditableSpecField
-                bind:this={priorityField}
-                {spec}
-                field="priority"
-                options={getPriorityOptions()}
-                aria_label="Priority"
-                onUpdate={handlePriorityUpdate}
-                compact={true}
-                onOpen={() => {
-                  statusField?.close()
-                }}
-              />
-            </div>
-            <div class="flex items-center">Status</div>
-            <div class="flex items-center overflow-x-hidden text-gray-500 px-1">
-              <EditableSpecField
-                bind:this={statusField}
-                {spec}
-                field="status"
-                options={getStatusOptions()}
-                aria_label="Status"
-                onUpdate={handleStatusUpdate}
-                compact={true}
-                onOpen={() => {
-                  priorityField?.close()
-                }}
-              />
-            </div>
-   */
+  let priorityField: EditableSpecField | null = null
+  let statusField: EditableSpecField | null = null
 
   let eval_progress: EvalProgress | null = null
   let eval_progress_loading = true
@@ -509,10 +476,12 @@
               {
                 name: "Priority",
                 value: formatPriority(spec.priority),
+                use_custom_slot: true,
               },
               {
                 name: "Status",
                 value: capitalize(spec.status),
+                use_custom_slot: true,
               },
               {
                 name: "Eval ID",
@@ -544,7 +513,39 @@
                   : "Loading...",
               },
             ]}
-          />
+          >
+            <svelte:fragment slot="custom_value" let:property>
+              {#if property.name === "Priority"}
+                <EditableSpecField
+                  bind:this={priorityField}
+                  always_show_border={true}
+                  {spec}
+                  field="priority"
+                  options={getPriorityOptions()}
+                  aria_label="Priority"
+                  onUpdate={handlePriorityUpdate}
+                  compact={true}
+                  onOpen={() => {
+                    statusField?.close()
+                  }}
+                />
+              {:else if property.name === "Status"}
+                <EditableSpecField
+                  bind:this={statusField}
+                  always_show_border={true}
+                  {spec}
+                  field="status"
+                  options={getStatusOptions()}
+                  aria_label="Status"
+                  onUpdate={handleStatusUpdate}
+                  compact={true}
+                  onOpen={() => {
+                    priorityField?.close()
+                  }}
+                />
+              {/if}
+            </svelte:fragment>
+          </PropertyList>
           <div class="text-xl font-bold mt-8">Tags</div>
           {#if tags_error}
             <div class="text-error text-sm mb-2">

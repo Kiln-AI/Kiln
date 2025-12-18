@@ -77,8 +77,8 @@
       const formData = loadSpecFormData(project_id, task_id)
 
       if (formData) {
-        spec_type = formData.spec_type || "desired_behaviour"
-        name = formData.name || ""
+        spec_type = formData.spec_type
+        name = formData.name
         property_values = { ...formData.property_values }
         evaluate_full_trace = formData.evaluate_full_trace
 
