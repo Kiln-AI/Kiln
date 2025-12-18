@@ -4,13 +4,18 @@
   import { page } from "$app/stores"
   import { onMount, tick } from "svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import EditablePriorityField from "../editable_priority_field.svelte"
+  import EditableStatusField from "../editable_status_field.svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type {
     Spec,
+    SpecStatus,
     Eval,
     Task,
     TaskRunConfig,
     EvalResultSummary,
     EvalProgress,
+    Priority,
   } from "$lib/types"
   import { client } from "$lib/api_client"
   import TagPicker from "$lib/ui/tag_picker.svelte"
@@ -28,6 +33,12 @@
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"
+  import {
+    updateSpecPriority as updateSpecPriorityUtil,
+    updateSpecStatus as updateSpecStatusUtil,
+  } from "../spec_utils"
+  import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { goto } from "$app/navigation"
 
   // ### Spec Details Page ###
 
@@ -40,6 +51,10 @@
   let spec_loading = true
   let tags_error: KilnError | null = null
   let current_tags: string[] = []
+  let updating_priorities = false
+  let updating_statuses = false
+  let priorityField: EditablePriorityField | null = null
+  let statusField: EditableStatusField | null = null
 
   let eval_progress: EvalProgress | null = null
   let eval_progress_loading = true
@@ -80,6 +95,7 @@
     | "complete"
     | "complete_with_errors" = "not_started"
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+  let edit_dialog: EditDialog | null = null
 
   $: current_task_run_configs =
     $run_configs_by_task_composite_id[
@@ -88,6 +104,75 @@
 
   $: if (spec) {
     current_tags = spec.tags || []
+  }
+
+  function getPriorityOptions(): OptionGroup[] {
+    return [
+      {
+        options: [
+          { label: "P0", value: 0 },
+          { label: "P1", value: 1 },
+          { label: "P2", value: 2 },
+          { label: "P3", value: 3 },
+        ],
+      },
+    ]
+  }
+
+  function getStatusOptions(): OptionGroup[] {
+    return [
+      {
+        options: [
+          { label: "Active", value: "active" },
+          { label: "Future", value: "future" },
+          { label: "Deprecated", value: "deprecated" },
+          { label: "Archived", value: "archived" },
+        ],
+      },
+    ]
+  }
+
+  async function updateSpecPriority(newPriority: number) {
+    if (!spec?.id || spec.priority === newPriority || updating_priorities) {
+      return
+    }
+
+    updating_priorities = true
+    try {
+      spec = await updateSpecPriorityUtil(
+        project_id,
+        task_id,
+        spec,
+        newPriority,
+      )
+    } catch (error) {
+      spec_error = createKilnError(error)
+    } finally {
+      updating_priorities = false
+    }
+  }
+
+  async function updateSpecStatus(newStatus: SpecStatus) {
+    if (!spec?.id || spec.status === newStatus || updating_statuses) {
+      return
+    }
+
+    updating_statuses = true
+    try {
+      spec = await updateSpecStatusUtil(project_id, task_id, spec, newStatus)
+    } catch (error) {
+      spec_error = createKilnError(error)
+    } finally {
+      updating_statuses = false
+    }
+  }
+
+  function handlePriorityUpdate(spec: Spec, value: Priority) {
+    updateSpecPriority(value)
+  }
+
+  function handleStatusUpdate(spec: Spec, value: SpecStatus) {
+    updateSpecStatus(value)
   }
 
   $: has_eval = spec?.eval_id
@@ -265,13 +350,7 @@
             path: { project_id, task_id, spec_id: spec.id },
           },
           body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: spec.priority,
-            status: spec.status,
             tags: tags,
-            eval_id: spec.eval_id || null,
           },
         },
       )
@@ -323,6 +402,15 @@
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
+    action_buttons={[
+      {
+        label: "Edit",
+        disabled: loading || error !== null,
+        handler: () => {
+          edit_dialog?.show()
+        },
+      },
+    ]}
   >
     {#if loading}
       <div class="flex justify-center items-center h-full">
@@ -361,10 +449,12 @@
               {
                 name: "Priority",
                 value: formatPriority(spec.priority),
+                use_custom_slot: true,
               },
               {
                 name: "Status",
                 value: capitalize(spec.status),
+                use_custom_slot: true,
               },
               {
                 name: "Eval ID",
@@ -396,7 +486,37 @@
                   : "Loading...",
               },
             ]}
-          />
+          >
+            <svelte:fragment slot="custom_value" let:property>
+              {#if property.name === "Priority"}
+                <EditablePriorityField
+                  bind:this={priorityField}
+                  always_show_border={true}
+                  {spec}
+                  options={getPriorityOptions()}
+                  aria_label="Priority"
+                  onUpdate={handlePriorityUpdate}
+                  compact={true}
+                  onOpen={() => {
+                    statusField?.close()
+                  }}
+                />
+              {:else if property.name === "Status"}
+                <EditableStatusField
+                  bind:this={statusField}
+                  always_show_border={true}
+                  {spec}
+                  options={getStatusOptions()}
+                  aria_label="Status"
+                  onUpdate={handleStatusUpdate}
+                  compact={true}
+                  onOpen={() => {
+                    priorityField?.close()
+                  }}
+                />
+              {/if}
+            </svelte:fragment>
+          </PropertyList>
           <div class="text-xl font-bold mt-8">Tags</div>
           {#if tags_error}
             <div class="text-error text-sm mb-2">
@@ -451,6 +571,25 @@
     {/if}
   </AppPage>
 </div>
+
+<EditDialog
+  bind:this={edit_dialog}
+  name="Spec"
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
+  delete_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
+  after_delete={() => {
+    goto(`/specs/${project_id}/${task_id}`)
+  }}
+  fields={[
+    {
+      label: "Spec Name",
+      description: "A name to identify this spec.",
+      api_name: "name",
+      value: spec?.name || "",
+      input_type: "input",
+    },
+  ]}
+/>
 
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}

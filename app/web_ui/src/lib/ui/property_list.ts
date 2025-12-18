@@ -12,4 +12,8 @@ export type UiProperty = {
     link_text: string
     link: string
   }
+
+  // If true, the PropertyList component must have a "custom_value" slot defined.
+  // Falls back to displaying the value if the slot is not provided.
+  use_custom_slot?: boolean
 }

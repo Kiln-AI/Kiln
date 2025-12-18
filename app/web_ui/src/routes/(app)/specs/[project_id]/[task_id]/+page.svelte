@@ -5,19 +5,21 @@
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec, SpecStatus, Eval } from "$lib/types"
+  import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
   import TableToolbar from "$lib/ui/table_toolbar.svelte"
   import AddTagsDialog from "$lib/ui/add_tags_dialog.svelte"
   import RemoveTagsDialog from "$lib/ui/remove_tags_dialog.svelte"
+  import { formatDate, formatSpecType } from "$lib/utils/formatters"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import EditablePriorityField from "./editable_priority_field.svelte"
+  import EditableStatusField from "./editable_status_field.svelte"
   import {
-    capitalize,
-    formatDate,
-    formatPriority,
-    formatSpecType,
-  } from "$lib/utils/formatters"
+    updateSpecPriority as updateSpecPriorityUtil,
+    updateSpecStatus as updateSpecStatusUtil,
+  } from "./spec_utils"
 
   // ### Spec Table ###
 
@@ -117,7 +119,7 @@
     filterAndSortSpecs()
   }
 
-  $: is_empty = !specs || specs.length === 0
+  $: is_empty = (!specs || specs.length === 0) && (!evals || evals.length === 0)
   $: has_archived_specs = specs
     ? specs.some((spec) => spec.status === "archived")
     : false
@@ -282,8 +284,9 @@
         bValue = bData?.properties.spec_type || (bEval ? "legacy_eval" : "")
         break
       case "priority":
-        aValue = aData?.priority ?? null
-        bValue = bData?.priority ?? null
+        // Priority is flipped since P0 is the highest priority
+        aValue = bData?.priority ?? null
+        bValue = aData?.priority ?? null
         break
       case "status":
         aValue = aData ? getStatusSortOrder(aData.status) : null
@@ -490,13 +493,7 @@
               path: { project_id, task_id, spec_id: spec.id },
             },
             body: {
-              name: spec.name,
-              definition: spec.definition,
-              properties: spec.properties,
-              priority: spec.priority,
-              status: spec.status,
               tags: updated_tags,
-              eval_id: spec.eval_id ?? null,
             },
           },
         )
@@ -557,31 +554,8 @@
       }
 
       for (const spec of specs_to_update) {
-        if (!spec.id) continue
-
         const new_status = should_archive ? "archived" : "active"
-
-        const { error } = await client.PATCH(
-          "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-          {
-            params: {
-              path: { project_id, task_id, spec_id: spec.id },
-            },
-            body: {
-              name: spec.name,
-              definition: spec.definition,
-              properties: spec.properties,
-              priority: spec.priority,
-              status: new_status,
-              tags: spec.tags,
-              eval_id: spec.eval_id ?? null,
-            },
-          },
-        )
-
-        if (error) {
-          throw error
-        }
+        await updateSpecStatus(spec, new_status as SpecStatus)
       }
 
       success = true
@@ -596,6 +570,108 @@
   }
 
   let archive_dialog: Dialog | null = null
+  let updating_priorities: Set<string> = new Set()
+  let updating_statuses: Set<string> = new Set()
+
+  function getPriorityOptions(): OptionGroup[] {
+    return [
+      {
+        options: [
+          { label: "P0", value: 0 },
+          { label: "P1", value: 1 },
+          { label: "P2", value: 2 },
+          { label: "P3", value: 3 },
+        ],
+      },
+    ]
+  }
+
+  function getStatusOptions(): OptionGroup[] {
+    return [
+      {
+        options: [
+          { label: "Active", value: "active" },
+          { label: "Future", value: "future" },
+          { label: "Deprecated", value: "deprecated" },
+          { label: "Archived", value: "archived" },
+        ],
+      },
+    ]
+  }
+
+  async function updateSpecPriority(spec: Spec, newPriority: number) {
+    if (
+      !spec.id ||
+      spec.priority === newPriority ||
+      updating_priorities.has(spec.id)
+    ) {
+      return
+    }
+
+    updating_priorities.add(spec.id)
+    try {
+      const data = await updateSpecPriorityUtil(
+        project_id,
+        task_id,
+        spec,
+        newPriority,
+      )
+
+      if (data && specs) {
+        const index = specs.findIndex((s) => s.id === spec.id)
+        if (index !== -1) {
+          specs[index] = data
+          specs = specs
+          filterAndSortSpecs()
+        }
+      }
+    } catch (error) {
+      specs_error = createKilnError(error)
+    } finally {
+      updating_priorities.delete(spec.id)
+    }
+  }
+
+  async function updateSpecStatus(spec: Spec, newStatus: SpecStatus) {
+    if (
+      !spec.id ||
+      spec.status === newStatus ||
+      updating_statuses.has(spec.id)
+    ) {
+      return
+    }
+
+    updating_statuses.add(spec.id)
+    try {
+      const data = await updateSpecStatusUtil(
+        project_id,
+        task_id,
+        spec,
+        newStatus,
+      )
+
+      if (data && specs) {
+        const index = specs.findIndex((s) => s.id === spec.id)
+        if (index !== -1) {
+          specs[index] = data
+          specs = specs
+          filterAndSortSpecs()
+        }
+      }
+    } catch (error) {
+      specs_error = createKilnError(error)
+    } finally {
+      updating_statuses.delete(spec.id)
+    }
+  }
+
+  function handlePriorityUpdate(spec: Spec, value: Priority) {
+    updateSpecPriority(spec, value)
+  }
+
+  function handleStatusUpdate(spec: Spec, value: SpecStatus) {
+    updateSpecStatus(spec, value)
+  }
 </script>
 
 <AppPage
@@ -625,7 +701,7 @@
           "An unknown error occurred"}
       </div>
     {:else if is_empty}
-      <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
+      <div class="mx-auto mt-[10vh]">
         <Intro
           title="Specs &amp; Evals"
           description_paragraphs={[
@@ -814,9 +890,21 @@
                     <td>
                       {formatSpecType(spec.properties.spec_type)}
                     </td>
-                    <td>{formatPriority(spec.priority)}</td>
                     <td>
-                      {capitalize(spec.status)}
+                      <EditablePriorityField
+                        {spec}
+                        options={getPriorityOptions()}
+                        aria_label="Priority"
+                        onUpdate={handlePriorityUpdate}
+                      />
+                    </td>
+                    <td>
+                      <EditableStatusField
+                        {spec}
+                        options={getStatusOptions()}
+                        aria_label="Status"
+                        onUpdate={handleStatusUpdate}
+                      />
                     </td>
                     <td>
                       {#if spec.tags && spec.tags.length > 0}
@@ -869,8 +957,8 @@
                     <td class="font-medium">{eval_data.name}</td>
                     <td class="text-gray-500">N/A</td>
                     <td>Legacy Eval</td>
-                    <td class="text-gray-500">N/A</td>
-                    <td class="text-gray-500">N/A</td>
+                    <td class="text-gray-500 pl-6">N/A</td>
+                    <td class="text-gray-500 pl-6">N/A</td>
                     <td class="text-gray-500">N/A</td>
                     <td class="text-sm text-gray-500">
                       {formatDate(eval_data.created_at)}
