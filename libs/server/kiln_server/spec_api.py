@@ -12,7 +12,15 @@ from kiln_server.task_api import task_from_id
 
 
 class UpdateSpecRequest(BaseModel):
-    name: FilenameString
+    name: FilenameString | None = None
+    definition: str | None = None
+    properties: SpecProperties | None = Field(
+        default=None,
+        discriminator="spec_type",
+    )
+    priority: Priority | None = None
+    status: SpecStatus | None = None
+    tags: List[str] | None = None
 
 
 def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
@@ -27,7 +35,7 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
     )
 
 
-class SpecUpsertRequest(BaseModel):
+class SpecCreationRequest(BaseModel):
     name: FilenameString
     definition: str
     properties: SpecProperties = Field(
@@ -42,7 +50,7 @@ class SpecUpsertRequest(BaseModel):
 def connect_spec_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/tasks/{task_id}/spec")
     async def create_spec(
-        project_id: str, task_id: str, spec_data: SpecUpsertRequest
+        project_id: str, task_id: str, spec_data: SpecCreationRequest
     ) -> Spec:
         task = task_from_id(project_id, task_id)
         spec = Spec(
@@ -72,7 +80,21 @@ def connect_spec_api(app: FastAPI):
         project_id: str, task_id: str, spec_id: str, request: UpdateSpecRequest
     ) -> Spec:
         spec = spec_from_id(project_id, task_id, spec_id)
-        spec.name = request.name
+
+        # Update all provided fields
+        if request.name is not None:
+            spec.name = request.name
+        if request.definition is not None:
+            spec.definition = request.definition
+        if request.properties is not None:
+            spec.properties = request.properties
+        if request.priority is not None:
+            spec.priority = request.priority
+        if request.status is not None:
+            spec.status = request.status
+        if request.tags is not None:
+            spec.tags = request.tags
+
         spec.save_to_file()
         return spec
 

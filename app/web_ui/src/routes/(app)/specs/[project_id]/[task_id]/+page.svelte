@@ -496,7 +496,6 @@
               priority: spec.priority,
               status: spec.status,
               tags: updated_tags,
-              eval_id: spec.eval_id ?? null,
             },
           },
         )
@@ -574,7 +573,6 @@
               priority: spec.priority,
               status: new_status,
               tags: spec.tags,
-              eval_id: spec.eval_id ?? null,
             },
           },
         )

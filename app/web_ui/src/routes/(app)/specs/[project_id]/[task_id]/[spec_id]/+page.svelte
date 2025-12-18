@@ -274,7 +274,6 @@
             priority: spec.priority,
             status: spec.status,
             tags: tags,
-            eval_id: spec.eval_id || null,
           },
         },
       )

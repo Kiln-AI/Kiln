@@ -387,6 +387,56 @@ def test_update_spec_with_existing_eval_id(
     assert res["eval_id"] == "original_eval_id"
 
 
+def test_update_spec_with_all_fields(client, project_and_task, sample_tone_properties):
+    """Test updating a spec with all fields (save_tags use case)."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Original Name",
+        definition="Original definition",
+        priority=Priority.p3,
+        status=SpecStatus.active,
+        tags=["old_tag"],
+        eval_id="original_eval_id",
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Simulate save_tags function sending all fields
+    update_data = {
+        "name": spec.name,
+        "definition": spec.definition,
+        "properties": create_tone_properties_dict(),
+        "priority": spec.priority,
+        "status": spec.status.value,
+        "tags": ["new_tag", "updated_tag"],
+        "eval_id": spec.eval_id,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["tags"] == ["new_tag", "updated_tag"]
+    # Verify other fields remain the same
+    assert res["name"] == "Original Name"
+    assert res["definition"] == "Original definition"
+    assert res["priority"] == 3
+    assert res["status"] == "active"
+    assert res["eval_id"] == "original_eval_id"
+
+    # Verify the change persisted
+    updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
+    assert updated_spec is not None
+    assert updated_spec.tags == ["new_tag", "updated_tag"]
+
+
 def test_update_spec_not_found(client, project_and_task):
     project, task = project_and_task
 
@@ -888,32 +938,6 @@ def test_create_spec_tag_with_space(client, project_and_task):
         )
         for error in res["source_errors"]
     )
-
-
-def test_update_spec_missing_name(client, project_and_task, sample_tone_properties):
-    """Test that updating a spec without providing name fails."""
-    project, task = project_and_task
-
-    spec = Spec(
-        name="Test Spec",
-        definition="System should behave correctly",
-        properties=sample_tone_properties,
-        parent=task,
-    )
-    spec.save_to_file()
-
-    update_data = {}
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
-            json=update_data,
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
 
 
 def test_update_spec_invalid_name_type(

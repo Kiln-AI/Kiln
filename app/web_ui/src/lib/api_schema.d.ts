@@ -5472,14 +5472,8 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /**
-         * SpecStatus
-         * @description Defines the status of a spec.
-         * @enum {string}
-         */
-        SpecStatus: "active" | "future" | "deprecated" | "archived";
-        /** SpecUpsertRequest */
-        SpecUpsertRequest: {
+        /** SpecCreationRequest */
+        SpecCreationRequest: {
             /** Name */
             name: string;
             /** Definition */
@@ -5493,6 +5487,12 @@ export interface components {
             /** Eval Id */
             eval_id: string | null;
         };
+        /**
+         * SpecStatus
+         * @description Defines the status of a spec.
+         * @enum {string}
+         */
+        SpecStatus: "active" | "future" | "deprecated" | "archived";
         /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
@@ -6046,7 +6046,15 @@ export interface components {
         /** UpdateSpecRequest */
         UpdateSpecRequest: {
             /** Name */
-            name: string;
+            name?: string | null;
+            /** Definition */
+            definition?: string | null;
+            /** Properties */
+            properties?: (components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"]) | null;
+            priority?: components["schemas"]["Priority"] | null;
+            status?: components["schemas"]["SpecStatus"] | null;
+            /** Tags */
+            tags?: string[] | null;
         };
         /** Usage */
         Usage: {
@@ -6689,7 +6697,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecUpsertRequest"];
+                "application/json": components["schemas"]["SpecCreationRequest"];
             };
         };
         responses: {
