@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import (
     DesiredBehaviourProperties,
@@ -1256,3 +1257,126 @@ def test_create_spec_with_empty_base_instruction(client, project_and_task):
         "base_instruction" in error.get("msg", "").lower()
         for error in res["source_errors"]
     )
+
+
+def test_delete_spec_success(client, project_and_task, sample_tone_properties):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    specs = task.specs()
+    assert len(specs) == 1
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+
+    specs = task.specs()
+    assert len(specs) == 0
+
+
+def test_delete_spec_not_found(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/nonexistent_id"
+        )
+
+    assert response.status_code == 404
+    assert "Spec not found" in response.json()["message"]
+
+
+def test_delete_spec_with_associated_eval(
+    client, project_and_task, sample_tone_properties
+):
+    """Test that deleting a spec also deletes its associated eval."""
+    project, task = project_and_task
+
+    # Create an eval with required fields (using 'rag' template to avoid needing eval_configs_filter_id)
+    eval = Eval(
+        name="Test Eval",
+        description="Test eval description",
+        template="rag",
+        eval_set_filter_id="tag::test_eval",
+        output_scores=[
+            EvalOutputScore(
+                name="Quality",
+                type=TaskOutputRatingType.five_star,
+            )
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+
+    # Create a spec with the eval_id
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        eval_id=eval.id,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Verify both exist
+    specs = task.specs()
+    evals = task.evals()
+    assert len(specs) == 1
+    assert len(evals) == 1
+
+    # Delete the spec
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+
+    # Verify both spec and eval are deleted
+    specs = task.specs()
+    evals = task.evals()
+    assert len(specs) == 0
+    assert len(evals) == 0
+
+
+def test_delete_spec_without_associated_eval(
+    client, project_and_task, sample_tone_properties
+):
+    """Test that deleting a spec without an eval works correctly."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        eval_id=None,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    specs = task.specs()
+    assert len(specs) == 1
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+
+    specs = task.specs()
+    assert len(specs) == 0

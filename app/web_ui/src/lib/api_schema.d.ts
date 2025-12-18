@@ -296,7 +296,8 @@ export interface paths {
         get: operations["get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Spec */
+        delete: operations["delete_spec_api_projects__project_id__tasks__task_id__specs__spec_id__delete"];
         options?: never;
         head?: never;
         /** Update Spec */
@@ -6759,6 +6760,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_spec_api_projects__project_id__tasks__task_id__specs__spec_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                spec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

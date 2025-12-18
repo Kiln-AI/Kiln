@@ -18,7 +18,6 @@
   import { goto } from "$app/navigation"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import EditDialog from "$lib/ui/edit_dialog.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
 
@@ -209,8 +208,6 @@
   }
 
   $: has_default_eval_config = evaluator && evaluator.current_config_id
-
-  let edit_dialog: EditDialog | null = null
 
   const MIN_DATASET_SIZE = 25
   let current_step: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 0
@@ -521,14 +518,6 @@
             href: `/specs/${project_id}/${task_id}/${spec_id}`,
           },
         ]}
-    action_buttons={[
-      {
-        label: "Edit",
-        handler: () => {
-          edit_dialog?.show()
-        },
-      },
-    ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -709,30 +698,3 @@
     {/if}
   </AppPage>
 </div>
-
-<EditDialog
-  bind:this={edit_dialog}
-  name="Eval"
-  patch_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
-  delete_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
-  after_delete={() => {
-    goto(`/evals/${project_id}/${task_id}`)
-  }}
-  fields={[
-    {
-      label: "Eval Name",
-      description: "A name to identify this eval.",
-      api_name: "name",
-      value: evaluator?.name || "",
-      input_type: "input",
-    },
-    {
-      label: "Description",
-      description: "A description of the eval for you and your team.",
-      api_name: "description",
-      value: evaluator?.description || "",
-      input_type: "textarea",
-      optional: true,
-    },
-  ]}
-/>

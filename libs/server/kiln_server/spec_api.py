@@ -3,6 +3,7 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
@@ -78,3 +79,16 @@ def connect_spec_api(app: FastAPI):
 
         spec.save_to_file()
         return spec
+
+    @app.delete("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
+    async def delete_spec(project_id: str, task_id: str, spec_id: str) -> None:
+        spec = spec_from_id(project_id, task_id, spec_id)
+
+        # Delete associated eval if it exists
+        if spec.eval_id:
+            parent_task = task_from_id(project_id, task_id)
+            eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
+            if eval:
+                eval.delete()
+
+        spec.delete()
