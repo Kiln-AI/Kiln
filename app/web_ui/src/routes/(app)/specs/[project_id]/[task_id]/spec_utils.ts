@@ -130,10 +130,12 @@ export async function createSpec(
   )
 
   if (error) {
+    await cleanupEval(project_id, task_id, eval_id)
     throw error
   }
 
   if (!data.id) {
+    await cleanupEval(project_id, task_id, eval_id)
     throw new Error("Failed to create spec")
   }
 
@@ -258,4 +260,26 @@ function specEvalTag(spec_name: string): string {
     return tag.slice(0, 32)
   }
   return tag
+}
+
+async function cleanupEval(
+  project_id: string,
+  task_id: string,
+  eval_id: string,
+): Promise<void> {
+  try {
+    await client.DELETE(
+      "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+      {
+        params: {
+          path: { project_id, task_id, eval_id },
+        },
+      },
+    )
+  } catch (cleanupError) {
+    console.error(
+      "Failed to cleanup eval after spec creation failure:",
+      cleanupError,
+    )
+  }
 }
