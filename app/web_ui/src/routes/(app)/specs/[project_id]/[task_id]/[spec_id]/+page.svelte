@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PropertyList from "$lib/ui/property_list.svelte"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
   import { onMount, tick } from "svelte"
@@ -17,9 +18,9 @@
   import { client } from "$lib/api_client"
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import {
-    formatSpecType,
-    formatPriority,
     capitalize,
+    formatPriority,
+    formatSpecType,
   } from "$lib/utils/formatters"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import { load_task, get_task_composite_id } from "$lib/stores"
@@ -30,7 +31,10 @@
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"
-  import PropertyList from "$lib/ui/property_list.svelte"
+  import {
+    updateSpecPriority as updateSpecPriorityUtil,
+    updateSpecStatus as updateSpecStatusUtil,
+  } from "../spec_utils"
 
   // ### Spec Details Page ###
 
@@ -130,29 +134,12 @@
 
     updating_priorities = true
     try {
-      const { data, error } = await client.PATCH(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        {
-          params: {
-            path: { project_id, task_id, spec_id: spec.id },
-          },
-          body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: newPriority as 0 | 1 | 2 | 3,
-            status: spec.status,
-            tags: spec.tags,
-            eval_id: spec.eval_id ?? null,
-          },
-        },
+      spec = await updateSpecPriorityUtil(
+        project_id,
+        task_id,
+        spec,
+        newPriority,
       )
-
-      if (error) {
-        throw error
-      }
-
-      spec = data
     } catch (error) {
       spec_error = createKilnError(error)
     } finally {
@@ -167,29 +154,7 @@
 
     updating_statuses = true
     try {
-      const { data, error } = await client.PATCH(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        {
-          params: {
-            path: { project_id, task_id, spec_id: spec.id },
-          },
-          body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: spec.priority,
-            status: newStatus,
-            tags: spec.tags,
-            eval_id: spec.eval_id ?? null,
-          },
-        },
-      )
-
-      if (error) {
-        throw error
-      }
-
-      spec = data
+      spec = await updateSpecStatusUtil(project_id, task_id, spec, newStatus)
     } catch (error) {
       spec_error = createKilnError(error)
     } finally {

@@ -15,6 +15,10 @@
   import { formatDate, formatSpecType } from "$lib/utils/formatters"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import EditableSpecField from "./editable_spec_field.svelte"
+  import {
+    updateSpecPriority as updateSpecPriorityUtil,
+    updateSpecStatus as updateSpecStatusUtil,
+  } from "./spec_utils"
 
   // ### Spec Table ###
 
@@ -634,27 +638,12 @@
 
     updating_priorities.add(spec.id)
     try {
-      const { data, error } = await client.PATCH(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        {
-          params: {
-            path: { project_id, task_id, spec_id: spec.id },
-          },
-          body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: newPriority as 0 | 1 | 2 | 3,
-            status: spec.status,
-            tags: spec.tags,
-            eval_id: spec.eval_id ?? null,
-          },
-        },
+      const data = await updateSpecPriorityUtil(
+        project_id,
+        task_id,
+        spec,
+        newPriority,
       )
-
-      if (error) {
-        throw error
-      }
 
       if (data && specs) {
         const index = specs.findIndex((s) => s.id === spec.id)
@@ -682,27 +671,12 @@
 
     updating_statuses.add(spec.id)
     try {
-      const { data, error } = await client.PATCH(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        {
-          params: {
-            path: { project_id, task_id, spec_id: spec.id },
-          },
-          body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: spec.priority,
-            status: newStatus,
-            tags: spec.tags,
-            eval_id: spec.eval_id ?? null,
-          },
-        },
+      const data = await updateSpecStatusUtil(
+        project_id,
+        task_id,
+        spec,
+        newStatus,
       )
-
-      if (error) {
-        throw error
-      }
 
       if (data && specs) {
         const index = specs.findIndex((s) => s.id === spec.id)

@@ -4,7 +4,9 @@ import type {
   EvalDataType,
   EvalOutputScore,
   EvalTemplateId,
+  Spec,
   SpecProperties,
+  SpecStatus,
   SpecType,
 } from "$lib/types"
 import { buildDefinitionFromProperties } from "./select_template/spec_templates"
@@ -258,4 +260,92 @@ function specEvalTag(spec_name: string): string {
     return tag.slice(0, 32)
   }
   return tag
+}
+
+/**
+ * Update a spec's priority via the API
+ * @param project_id - The project ID
+ * @param task_id - The task ID
+ * @param spec - The spec to update
+ * @param newPriority - The new priority value
+ * @returns The updated spec
+ * @throws Error if the API call fails
+ */
+export async function updateSpecPriority(
+  project_id: string,
+  task_id: string,
+  spec: Spec,
+  newPriority: number,
+): Promise<Spec> {
+  if (!spec.id) {
+    throw new Error("Spec ID is required")
+  }
+
+  const { data, error } = await client.PATCH(
+    "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+    {
+      params: {
+        path: { project_id, task_id, spec_id: spec.id },
+      },
+      body: {
+        name: spec.name,
+        definition: spec.definition,
+        properties: spec.properties,
+        priority: newPriority as 0 | 1 | 2 | 3,
+        status: spec.status,
+        tags: spec.tags,
+        eval_id: spec.eval_id ?? null,
+      },
+    },
+  )
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+/**
+ * Update a spec's status via the API
+ * @param project_id - The project ID
+ * @param task_id - The task ID
+ * @param spec - The spec to update
+ * @param newStatus - The new status value
+ * @returns The updated spec
+ * @throws Error if the API call fails
+ */
+export async function updateSpecStatus(
+  project_id: string,
+  task_id: string,
+  spec: Spec,
+  newStatus: SpecStatus,
+): Promise<Spec> {
+  if (!spec.id) {
+    throw new Error("Spec ID is required")
+  }
+
+  const { data, error } = await client.PATCH(
+    "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+    {
+      params: {
+        path: { project_id, task_id, spec_id: spec.id },
+      },
+      body: {
+        name: spec.name,
+        definition: spec.definition,
+        properties: spec.properties,
+        priority: spec.priority,
+        status: newStatus,
+        tags: spec.tags,
+        eval_id: spec.eval_id ?? null,
+      },
+    },
+  )
+
+  if (error) {
+    throw error
+  }
+
+  return data
 }
