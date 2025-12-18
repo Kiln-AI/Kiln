@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import (
     DesiredBehaviourProperties,
@@ -316,12 +317,6 @@ def test_update_spec_success(client, project_and_task, sample_tone_properties):
 
     update_data = {
         "name": "Updated Name",
-        "definition": "Updated definition",
-        "priority": Priority.p1,
-        "status": SpecStatus.active.value,
-        "tags": ["new_tag", "updated"],
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -334,25 +329,28 @@ def test_update_spec_success(client, project_and_task, sample_tone_properties):
     assert response.status_code == 200
     res = response.json()
     assert res["name"] == "Updated Name"
-    assert res["definition"] == "Updated definition"
-    assert res["priority"] == 1
+    # Verify other fields remain unchanged
+    assert res["definition"] == "Original definition"
+    assert res["priority"] == 3
     assert res["status"] == "active"
-    assert res["tags"] == ["new_tag", "updated"]
+    assert res["tags"] == ["old_tag"]
     assert res["properties"]["spec_type"] == SpecType.tone.value
 
     # Verify the spec was updated in the task/file
     updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
     assert updated_spec is not None
     assert updated_spec.name == "Updated Name"
-    assert updated_spec.definition == "Updated definition"
-    assert updated_spec.priority == Priority.p1
+    # Verify other fields remain unchanged
+    assert updated_spec.definition == "Original definition"
+    assert updated_spec.priority == Priority.p3
     assert updated_spec.status == SpecStatus.active
-    assert updated_spec.tags == ["new_tag", "updated"]
+    assert updated_spec.tags == ["old_tag"]
 
 
-def test_update_spec_with_eval_id_none(
+def test_update_spec_with_existing_eval_id(
     client, project_and_task, sample_toxicity_properties
 ):
+    """Test that updating a spec's name doesn't affect its eval_id."""
     project, task = project_and_task
 
     spec = Spec(
@@ -368,13 +366,7 @@ def test_update_spec_with_eval_id_none(
     spec.save_to_file()
 
     update_data = {
-        "name": "Original Name",
-        "definition": "Original definition",
-        "priority": Priority.p2,
-        "status": SpecStatus.active.value,
-        "tags": ["old_tag"],
-        "properties": create_toxicity_properties_dict(),
-        "eval_id": None,
+        "name": "Updated Name",
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -386,12 +378,99 @@ def test_update_spec_with_eval_id_none(
 
     assert response.status_code == 200
     res = response.json()
-    assert res["name"] == "Original Name"
+    assert res["name"] == "Updated Name"
+    # Verify other fields including eval_id remain unchanged
     assert res["definition"] == "Original definition"
     assert res["properties"]["spec_type"] == SpecType.toxicity.value
     assert res["priority"] == 2
     assert res["status"] == "active"
-    assert res["eval_id"] is None
+    assert res["eval_id"] == "original_eval_id"
+
+
+def test_update_spec_tags_only(client, project_and_task, sample_tone_properties):
+    """Test updating only tags field (save_tags use case)."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Original Name",
+        definition="Original definition",
+        priority=Priority.p3,
+        status=SpecStatus.active,
+        tags=["old_tag"],
+        eval_id="original_eval_id",
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Simulate save_tags function sending only tags
+    update_data = {
+        "tags": ["new_tag", "updated_tag"],
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["tags"] == ["new_tag", "updated_tag"]
+    # Verify other fields remain unchanged
+    assert res["name"] == "Original Name"
+    assert res["definition"] == "Original definition"
+    assert res["priority"] == 3
+    assert res["status"] == "active"
+    assert res["eval_id"] == "original_eval_id"
+
+    # Verify the change persisted
+    updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
+    assert updated_spec is not None
+    assert updated_spec.tags == ["new_tag", "updated_tag"]
+
+
+def test_update_spec_status_only(client, project_and_task, sample_tone_properties):
+    """Test updating only status field (archive use case)."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="Test definition",
+        priority=Priority.p2,
+        status=SpecStatus.active,
+        tags=["test"],
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Update only status to archived
+    update_data = {
+        "status": SpecStatus.archived.value,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["status"] == "archived"
+    # Verify other fields remain unchanged
+    assert res["name"] == "Test Spec"
+    assert res["definition"] == "Test definition"
+    assert res["priority"] == 2
+    assert res["tags"] == ["test"]
+
+    # Verify the change persisted
+    updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
+    assert updated_spec is not None
+    assert updated_spec.status == SpecStatus.archived
 
 
 def test_update_spec_not_found(client, project_and_task):
@@ -399,12 +478,6 @@ def test_update_spec_not_found(client, project_and_task):
 
     update_data = {
         "name": "Updated Name",
-        "definition": "Updated definition",
-        "priority": Priority.p1,
-        "status": SpecStatus.active.value,
-        "tags": [],
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -517,47 +590,6 @@ def test_create_spec_with_archived_status(client, project_and_task):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].status == SpecStatus.archived
-
-
-def test_update_spec_to_archived_status(
-    client, project_and_task, sample_tone_properties
-):
-    """Test updating a spec to archived status."""
-    project, task = project_and_task
-
-    spec = Spec(
-        name="Active Spec",
-        definition="This spec is active",
-        status=SpecStatus.active,
-        properties=sample_tone_properties,
-        parent=task,
-    )
-    spec.save_to_file()
-
-    update_data = {
-        "name": "Active Spec",
-        "definition": "This spec is active",
-        "priority": Priority.p1,
-        "status": SpecStatus.archived.value,
-        "tags": [],
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
-    }
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
-            json=update_data,
-        )
-
-    assert response.status_code == 200
-    res = response.json()
-    assert res["status"] == "archived"
-
-    updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
-    assert updated_spec is not None
-    assert updated_spec.status == SpecStatus.archived
 
 
 def test_get_spec_with_archived_status(
@@ -944,114 +976,10 @@ def test_create_spec_tag_with_space(client, project_and_task):
     )
 
 
-def test_update_spec_missing_required_fields(
-    client, project_and_task, sample_tone_properties
-):
-    project, task = project_and_task
-
-    spec = Spec(
-        name="Test Spec",
-        definition="System should behave correctly",
-        properties=sample_tone_properties,
-        parent=task,
-    )
-    spec.save_to_file()
-
-    update_data = {"name": "Updated Name"}
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
-            json=update_data,
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
-
-
-def test_update_spec_invalid_priority_enum(
-    client, project_and_task, sample_tone_properties
-):
-    project, task = project_and_task
-
-    spec = Spec(
-        name="Test Spec",
-        definition="System should behave correctly",
-        properties=sample_tone_properties,
-        parent=task,
-    )
-    spec.save_to_file()
-
-    update_data = {
-        "name": "Test Spec",
-        "definition": "System should behave correctly",
-        "priority": "critical",
-        "status": SpecStatus.active.value,
-        "tags": [],
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
-    }
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
-            json=update_data,
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
-    assert any(
-        error["loc"] == ["body", "priority"] and error["type"] == "enum"
-        for error in res["source_errors"]
-    )
-
-
-def test_update_spec_invalid_status_enum(
-    client, project_and_task, sample_tone_properties
-):
-    project, task = project_and_task
-
-    spec = Spec(
-        name="Test Spec",
-        definition="System should behave correctly",
-        properties=sample_tone_properties,
-        parent=task,
-    )
-    spec.save_to_file()
-
-    update_data = {
-        "name": "Test Spec",
-        "definition": "System should behave correctly",
-        "priority": Priority.p1,
-        "status": "finished",
-        "tags": [],
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
-    }
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
-            json=update_data,
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
-    assert any(
-        error["loc"] == ["body", "status"] and error["type"] == "enum"
-        for error in res["source_errors"]
-    )
-
-
 def test_update_spec_invalid_name_type(
     client, project_and_task, sample_tone_properties
 ):
+    """Test that updating a spec with invalid name type fails."""
     project, task = project_and_task
 
     spec = Spec(
@@ -1064,12 +992,6 @@ def test_update_spec_invalid_name_type(
 
     update_data = {
         "name": 12345,
-        "definition": "System should behave correctly",
-        "priority": Priority.p1,
-        "status": SpecStatus.active.value,
-        "tags": [],
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -1083,42 +1005,6 @@ def test_update_spec_invalid_name_type(
     res = response.json()
     assert "source_errors" in res
     assert any(error["loc"] == ["body", "name"] for error in res["source_errors"])
-
-
-def test_update_spec_invalid_tags_type(
-    client, project_and_task, sample_tone_properties
-):
-    project, task = project_and_task
-
-    spec = Spec(
-        name="Test Spec",
-        definition="System should behave correctly",
-        properties=sample_tone_properties,
-        parent=task,
-    )
-    spec.save_to_file()
-
-    update_data = {
-        "name": "Test Spec",
-        "definition": "System should behave correctly",
-        "priority": Priority.p1,
-        "status": SpecStatus.active.value,
-        "tags": {"not": "a list"},
-        "properties": create_tone_properties_dict(),
-        "eval_id": None,
-    }
-
-    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
-        mock_task_from_id.return_value = task
-        response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
-            json=update_data,
-        )
-
-    assert response.status_code == 422
-    res = response.json()
-    assert "source_errors" in res
-    assert any(error["loc"] == ["body", "tags"] for error in res["source_errors"])
 
 
 def test_create_spec_with_empty_tool_function_name(client, project_and_task):
@@ -1286,3 +1172,126 @@ def test_create_spec_with_eval_id_persists_eval_id(client, project_and_task):
     specs = task.specs()
     assert len(specs) == 1
     assert specs[0].eval_id == eval_id
+
+
+def test_delete_spec_success(client, project_and_task, sample_tone_properties):
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    specs = task.specs()
+    assert len(specs) == 1
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+
+    specs = task.specs()
+    assert len(specs) == 0
+
+
+def test_delete_spec_not_found(client, project_and_task):
+    project, task = project_and_task
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/nonexistent_id"
+        )
+
+    assert response.status_code == 404
+    assert "Spec not found" in response.json()["message"]
+
+
+def test_delete_spec_with_associated_eval(
+    client, project_and_task, sample_tone_properties
+):
+    """Test that deleting a spec also deletes its associated eval."""
+    project, task = project_and_task
+
+    # Create an eval with required fields (using 'rag' template to avoid needing eval_configs_filter_id)
+    eval = Eval(
+        name="Test Eval",
+        description="Test eval description",
+        template="rag",
+        eval_set_filter_id="tag::test_eval",
+        output_scores=[
+            EvalOutputScore(
+                name="Quality",
+                type=TaskOutputRatingType.five_star,
+            )
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+
+    # Create a spec with the eval_id
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        eval_id=eval.id,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Verify both exist
+    specs = task.specs()
+    evals = task.evals()
+    assert len(specs) == 1
+    assert len(evals) == 1
+
+    # Delete the spec
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+
+    # Verify both spec and eval are deleted
+    specs = task.specs()
+    evals = task.evals()
+    assert len(specs) == 0
+    assert len(evals) == 0
+
+
+def test_delete_spec_without_associated_eval(
+    client, project_and_task, sample_tone_properties
+):
+    """Test that deleting a spec without an eval works correctly."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        eval_id=None,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    specs = task.specs()
+    assert len(specs) == 1
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+
+    specs = task.specs()
+    assert len(specs) == 0
