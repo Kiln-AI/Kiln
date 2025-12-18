@@ -1144,6 +1144,36 @@ def test_create_spec_with_empty_base_instruction(client, project_and_task):
     )
 
 
+def test_create_spec_with_eval_id_persists_eval_id(client, project_and_task):
+    project, task = project_and_task
+
+    eval_id = "test_eval_id_123"
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "System should behave correctly",
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": create_tone_properties_dict(),
+        "eval_id": eval_id,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["eval_id"] == eval_id
+
+    specs = task.specs()
+    assert len(specs) == 1
+    assert specs[0].eval_id == eval_id
+
+
 def test_delete_spec_success(client, project_and_task, sample_tone_properties):
     project, task = project_and_task
 
