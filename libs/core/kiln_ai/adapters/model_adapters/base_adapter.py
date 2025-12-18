@@ -58,6 +58,10 @@ class BaseAdapter(metaclass=ABCMeta):
     This abstract class provides the foundation for implementing model-specific adapters
     that can process tasks with structured or unstructured inputs/outputs. It handles
     input/output validation, prompt building, and run tracking.
+
+    Prompt building is handled internally by the adapter, which uses a prompt builder
+    based on the run config. To override the prompt building behavior, pass a custom prompt
+    builder to the adapter config.
     """
 
     def __init__(

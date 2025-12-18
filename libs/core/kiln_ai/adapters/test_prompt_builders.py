@@ -35,7 +35,7 @@ from kiln_ai.datamodel import (
     TaskRun,
     Usage,
 )
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 
 logger = logging.getLogger(__name__)
@@ -77,9 +77,7 @@ def test_short_prompt_builder(tmp_path):
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(
-        self, input: str, system_prompt_override: str | None = None
-    ) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="mock response", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
