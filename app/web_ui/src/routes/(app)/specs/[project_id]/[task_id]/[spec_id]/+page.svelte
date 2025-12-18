@@ -323,6 +323,7 @@
     action_buttons={[
       {
         label: "Edit",
+        disabled: loading || error !== null,
         handler: () => {
           edit_dialog?.show()
         },
