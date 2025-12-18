@@ -1493,7 +1493,16 @@ built_in_models: List[KilnModel] = [
                 max_parallel_requests=2,
                 thinking_level="medium",
             ),
-            # Vertex isn't working yet: they have a page up, but the API can't find the model ID.
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3-pro-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
+            ),
         ],
     ),
     # Gemini 3 Flash
@@ -1553,6 +1562,16 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 reasoning_capable=True,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3-flash-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                reasoning_capable=True,
+                gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
         ],
@@ -1958,6 +1977,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="nvidia/nemotron-3-nano-30b-a3b:free",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="nemotron-3-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
             ),
