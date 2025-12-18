@@ -23,6 +23,8 @@
   let mounted = false
   let isHovered = false
   let clickListenerTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let pendingStopTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingCompleteTimer: ReturnType<typeof setTimeout> | null = null
 
   $: displayText = formatDisplay(currentValue)
 
@@ -41,7 +43,11 @@
   }
 
   export function setPendingComplete() {
-    setTimeout(() => {
+    if (pendingCompleteTimer !== null) {
+      clearTimeout(pendingCompleteTimer)
+    }
+    pendingCompleteTimer = setTimeout(() => {
+      pendingCompleteTimer = null
       isEditing = false
     }, 100)
   }
@@ -52,6 +58,14 @@
   }
 
   function stopEditing() {
+    if (pendingStopTimer !== null) {
+      clearTimeout(pendingStopTimer)
+      pendingStopTimer = null
+    }
+    if (pendingCompleteTimer !== null) {
+      clearTimeout(pendingCompleteTimer)
+      pendingCompleteTimer = null
+    }
     isEditing = false
   }
 
@@ -66,7 +80,11 @@
   function selectOption(value: unknown) {
     currentValue = value as T
     handleValueChange()
-    setTimeout(() => {
+    if (pendingStopTimer !== null) {
+      clearTimeout(pendingStopTimer)
+    }
+    pendingStopTimer = setTimeout(() => {
+      pendingStopTimer = null
       stopEditing()
     }, 100)
   }
@@ -113,6 +131,14 @@
     if (clickListenerTimeoutId !== null) {
       clearTimeout(clickListenerTimeoutId)
       clickListenerTimeoutId = null
+    }
+    if (pendingStopTimer !== null) {
+      clearTimeout(pendingStopTimer)
+      pendingStopTimer = null
+    }
+    if (pendingCompleteTimer !== null) {
+      clearTimeout(pendingCompleteTimer)
+      pendingCompleteTimer = null
     }
     document.removeEventListener("click", handleClickOutside)
   })
