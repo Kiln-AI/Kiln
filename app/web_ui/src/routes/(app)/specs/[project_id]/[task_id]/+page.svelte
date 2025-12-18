@@ -118,7 +118,7 @@
     filterAndSortSpecs()
   }
 
-  $: is_empty = !specs || specs.length === 0
+  $: is_empty = (!specs || specs.length === 0) && (!evals || evals.length === 0)
   $: has_archived_specs = specs
     ? specs.some((spec) => spec.status === "archived")
     : false
@@ -729,7 +729,7 @@
           "An unknown error occurred"}
       </div>
     {:else if is_empty}
-      <div class="max-w-[300px] mx-auto flex flex-col gap-2 mt-[10vh]">
+      <div class="mx-auto mt-[10vh]">
         <Intro
           title="Specs &amp; Evals"
           description_paragraphs={[
