@@ -18,6 +18,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
   import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
+  import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -66,6 +67,9 @@
   }
 
   onMount(async () => {
+    // Wait 6 seconds to simulate loading time
+    await new Promise((resolve) => setTimeout(resolve, 6000))
+
     await load_spec_data()
   })
 
@@ -77,8 +81,8 @@
       const formData = loadSpecFormData(project_id, task_id)
 
       if (formData) {
-        spec_type = formData.spec_type || "desired_behaviour"
-        name = formData.name || ""
+        spec_type = formData.spec_type
+        name = formData.name
         property_values = { ...formData.property_values }
         evaluate_full_trace = formData.evaluate_full_trace
 
@@ -279,7 +283,7 @@
   >
     {#if spec_loading}
       <div class="flex justify-center items-center h-full min-h-[200px]">
-        <div class="loading loading-spinner loading-lg"></div>
+        <SpecAnalyzingAnimation />
       </div>
     {:else if spec_error}
       <div class="text-error text-sm">

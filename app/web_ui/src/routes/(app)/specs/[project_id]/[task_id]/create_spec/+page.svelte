@@ -8,7 +8,6 @@
   import type { SpecType } from "$lib/types"
   import { goto } from "$app/navigation"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import {
@@ -115,7 +114,6 @@
     warn_before_unload = has_form_changes()
   }
 
-  let analyze_dialog: Dialog | null = null
   async function analyze_spec() {
     try {
       create_error = null
@@ -131,15 +129,6 @@
         }
       }
 
-      // Reset submitting state so button doesn't show spinner
-      submitting = false
-
-      // Show analyzing dialog
-      analyze_dialog?.show()
-
-      // Wait 2 seconds
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
       // Don't warn before unloading since we're intentionally navigating
       warn_before_unload = false
 
@@ -154,7 +143,6 @@
       )
     } catch (error) {
       create_error = createKilnError(error)
-      analyze_dialog?.hide()
       submitting = false
     }
   }
@@ -280,9 +268,3 @@
     </div>
   </AppPage>
 </div>
-
-<Dialog bind:this={analyze_dialog} title="Analyzing Spec">
-  <div class="flex flex-col items-center justify-center min-h-[100px]">
-    <div class="loading loading-spinner loading-lg"></div>
-  </div>
-</Dialog>

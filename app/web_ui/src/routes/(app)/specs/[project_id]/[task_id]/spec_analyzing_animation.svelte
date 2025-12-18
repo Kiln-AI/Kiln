@@ -1,4 +1,26 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte"
+
+  const messages = [
+    "Reviewing spec...",
+    "Finding edge cases...",
+    "Judging examples...",
+  ]
+
+  let currentMessageIndex = 0
+  let intervalId: number | undefined
+
+  onMount(() => {
+    intervalId = window.setInterval(() => {
+      currentMessageIndex = (currentMessageIndex + 1) % messages.length
+    }, 2000)
+  })
+
+  onDestroy(() => {
+    if (intervalId !== undefined) {
+      clearInterval(intervalId)
+    }
+  })
 </script>
 
 <div class="flex flex-col min-h-[500px]">
@@ -691,4 +713,7 @@
       </g>
     </g>
   </svg>
+  <div class="text-center text-md text-gray-500 mb-4">
+    {messages[currentMessageIndex]}
+  </div>
 </div>
