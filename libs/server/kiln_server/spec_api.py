@@ -11,6 +11,10 @@ from pydantic import BaseModel, Field
 from kiln_server.task_api import task_from_id
 
 
+class UpdateSpecRequest(BaseModel):
+    name: FilenameString
+
+
 def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
     parent_task = task_from_id(project_id, task_id)
     spec = Spec.from_id_and_parent_path(spec_id, parent_task.path)
@@ -65,18 +69,10 @@ def connect_spec_api(app: FastAPI):
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
     async def update_spec(
-        project_id: str, task_id: str, spec_id: str, spec_data: SpecUpsertRequest
+        project_id: str, task_id: str, spec_id: str, request: UpdateSpecRequest
     ) -> Spec:
         spec = spec_from_id(project_id, task_id, spec_id)
-
-        spec.name = spec_data.name
-        spec.definition = spec_data.definition
-        spec.properties = spec_data.properties
-        spec.priority = spec_data.priority
-        spec.status = spec_data.status
-        spec.tags = spec_data.tags
-        spec.eval_id = spec_data.eval_id
-
+        spec.name = request.name
         spec.save_to_file()
         return spec
 

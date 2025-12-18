@@ -6043,6 +6043,11 @@ export interface components {
             /** Is Archived */
             is_archived?: boolean | null;
         };
+        /** UpdateSpecRequest */
+        UpdateSpecRequest: {
+            /** Name */
+            name: string;
+        };
         /** Usage */
         Usage: {
             /**
@@ -6819,7 +6824,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecUpsertRequest"];
+                "application/json": components["schemas"]["UpdateSpecRequest"];
             };
         };
         responses: {
