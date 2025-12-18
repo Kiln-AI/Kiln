@@ -268,11 +268,6 @@
             path: { project_id, task_id, spec_id: spec.id },
           },
           body: {
-            name: spec.name,
-            definition: spec.definition,
-            properties: spec.properties,
-            priority: spec.priority,
-            status: spec.status,
             tags: tags,
           },
         },

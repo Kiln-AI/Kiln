@@ -387,8 +387,8 @@ def test_update_spec_with_existing_eval_id(
     assert res["eval_id"] == "original_eval_id"
 
 
-def test_update_spec_with_all_fields(client, project_and_task, sample_tone_properties):
-    """Test updating a spec with all fields (save_tags use case)."""
+def test_update_spec_tags_only(client, project_and_task, sample_tone_properties):
+    """Test updating only tags field (save_tags use case)."""
     project, task = project_and_task
 
     spec = Spec(
@@ -403,15 +403,9 @@ def test_update_spec_with_all_fields(client, project_and_task, sample_tone_prope
     )
     spec.save_to_file()
 
-    # Simulate save_tags function sending all fields
+    # Simulate save_tags function sending only tags
     update_data = {
-        "name": spec.name,
-        "definition": spec.definition,
-        "properties": create_tone_properties_dict(),
-        "priority": spec.priority,
-        "status": spec.status.value,
         "tags": ["new_tag", "updated_tag"],
-        "eval_id": spec.eval_id,
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -424,7 +418,7 @@ def test_update_spec_with_all_fields(client, project_and_task, sample_tone_prope
     assert response.status_code == 200
     res = response.json()
     assert res["tags"] == ["new_tag", "updated_tag"]
-    # Verify other fields remain the same
+    # Verify other fields remain unchanged
     assert res["name"] == "Original Name"
     assert res["definition"] == "Original definition"
     assert res["priority"] == 3
@@ -435,6 +429,48 @@ def test_update_spec_with_all_fields(client, project_and_task, sample_tone_prope
     updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
     assert updated_spec is not None
     assert updated_spec.tags == ["new_tag", "updated_tag"]
+
+
+def test_update_spec_status_only(client, project_and_task, sample_tone_properties):
+    """Test updating only status field (archive use case)."""
+    project, task = project_and_task
+
+    spec = Spec(
+        name="Test Spec",
+        definition="Test definition",
+        priority=Priority.p2,
+        status=SpecStatus.active,
+        tags=["test"],
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Update only status to archived
+    update_data = {
+        "status": SpecStatus.archived.value,
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["status"] == "archived"
+    # Verify other fields remain unchanged
+    assert res["name"] == "Test Spec"
+    assert res["definition"] == "Test definition"
+    assert res["priority"] == 2
+    assert res["tags"] == ["test"]
+
+    # Verify the change persisted
+    updated_spec = next((s for s in task.specs() if s.id == spec.id), None)
+    assert updated_spec is not None
+    assert updated_spec.status == SpecStatus.archived
 
 
 def test_update_spec_not_found(client, project_and_task):

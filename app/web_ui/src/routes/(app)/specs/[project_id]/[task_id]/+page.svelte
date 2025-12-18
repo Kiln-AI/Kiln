@@ -490,11 +490,6 @@
               path: { project_id, task_id, spec_id: spec.id },
             },
             body: {
-              name: spec.name,
-              definition: spec.definition,
-              properties: spec.properties,
-              priority: spec.priority,
-              status: spec.status,
               tags: updated_tags,
             },
           },
@@ -567,12 +562,7 @@
               path: { project_id, task_id, spec_id: spec.id },
             },
             body: {
-              name: spec.name,
-              definition: spec.definition,
-              properties: spec.properties,
-              priority: spec.priority,
               status: new_status,
-              tags: spec.tags,
             },
           },
         )
