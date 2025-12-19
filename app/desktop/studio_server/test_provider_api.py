@@ -135,7 +135,7 @@ def test_connect_api_key_siliconflow_success(mock_connect_siliconflow, client):
 
 
 @patch("app.desktop.studio_server.provider_api.Config.shared")
-@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.post")
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
 def test_connect_api_key_kiln_copilot_success(
     mock_httpx_post, mock_config_shared, client
 ):
