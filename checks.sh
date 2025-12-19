@@ -31,9 +31,14 @@ echo $PWD
 headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
 
-echo "${headerStart}Checking Python: Ruff, format, check${headerEnd}"
+echo "${headerStart}Checking Python: uvx ruff check ${headerEnd}"
 uvx ruff check
+
+echo "${headerStart}Checking Python: uvx ruff format --check ${headerEnd}"
 uvx ruff format --check .
+
+echo "${headerStart}Checking Python Types: uvx ty check${headerEnd}"
+uvx ty check
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
 if command -v misspell >/dev/null 2>&1; then
@@ -65,12 +70,8 @@ else
     echo "Skipping Web UI: no files changed"
 fi
 
-
-# Check if python files were changed, and run tests/typecheck if so
+# Check if python files were changed, and run tests if so
 if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
-    echo "${headerStart}Checking Python Types${headerEnd}"
-    pyright .
-
     echo "${headerStart}Running Python Tests${headerEnd}"
     python3 -m pytest --benchmark-quiet -q -n auto .
 else

@@ -55,7 +55,7 @@ def validate_string_properties(
         The validated properties dictionary
     """
     # Check that the required fields are present and not empty
-    props_dict: Any = properties
+    props_dict: dict[str, Any] = properties  # type: ignore[assignment]
     for field in required_fields:
         value = props_dict.get(field)
         if value is None or not value.strip():

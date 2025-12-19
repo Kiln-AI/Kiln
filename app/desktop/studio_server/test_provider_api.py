@@ -6,32 +6,6 @@ import httpx
 import litellm
 import openai
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
-from kiln_ai.adapters.ml_embedding_model_list import (
-    EmbeddingModelName,
-    KilnEmbeddingModel,
-    KilnEmbeddingModelProvider,
-    built_in_embedding_models,
-)
-from kiln_ai.adapters.ml_model_list import (
-    KilnModel,
-    KilnModelProvider,
-    ModelName,
-    ModelProviderName,
-    StructuredOutputMode,
-    built_in_models,
-    default_structured_output_mode_for_model_provider,
-)
-from kiln_ai.adapters.reranker_list import (
-    KilnRerankerModel,
-    KilnRerankerModelProvider,
-    RerankerModelName,
-    built_in_rerankers,
-)
-from kiln_ai.utils.config import Config
-
 from app.desktop.studio_server.provider_api import (
     AvailableModels,
     ModelDetails,
@@ -61,6 +35,31 @@ from app.desktop.studio_server.provider_api import (
     openai_compatible_providers_load_cache,
     parse_url,
 )
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    KilnEmbeddingModel,
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+)
+from kiln_ai.adapters.ml_model_list import (
+    KilnModel,
+    KilnModelProvider,
+    ModelName,
+    ModelProviderName,
+    StructuredOutputMode,
+    built_in_models,
+    default_structured_output_mode_for_model_provider,
+)
+from kiln_ai.adapters.reranker_list import (
+    KilnRerankerModel,
+    KilnRerankerModelProvider,
+    RerankerModelName,
+    built_in_rerankers,
+)
+from kiln_ai.utils.config import Config
 
 
 @pytest.fixture
