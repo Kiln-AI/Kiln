@@ -14,6 +14,7 @@
   import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
+  import { goto } from "$app/navigation"
 
   export let highlight_finetune = false
   export let required_providers: string[] = []
@@ -237,6 +238,12 @@
       optional_fields: ["Base URL - Optional", "Custom Entity - Optional"],
     },
     {
+      name: "Kiln Copilot",
+      id: "kiln_copilot",
+      description: "Kiln Copilot, Optimize your AI systems.",
+      featured: false,
+    },
+    {
       name: "Custom API",
       id: "openai_compatible",
       description: "Connect any OpenAI compatible API.",
@@ -353,6 +360,12 @@
       error: null,
       custom_description: null,
     },
+    kiln_copilot: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
   }
 
   export let has_connected_providers = false
@@ -424,6 +437,14 @@
     }
     if (provider.id === "openai_compatible") {
       show_custom_api_dialog()
+    }
+    if (provider.id === "kiln_copilot") {
+      const isSettings = window.location.pathname.includes("/settings/")
+      const route = isSettings
+        ? "/settings/providers/kiln_copilot"
+        : "/setup/connect_providers/kiln_copilot"
+      goto(route)
+      return
     }
 
     if (provider.api_key_steps) {
@@ -725,6 +746,9 @@
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
       }
+      if (data["kiln_copilot_api_key"]) {
+        status.kiln_copilot.connected = true
+      }
       if (
         data["openai_compatible_providers"] &&
         data["openai_compatible_providers"].length > 0
@@ -742,6 +766,7 @@
 
   onMount(async () => {
     await check_existing_providers()
+
     // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run

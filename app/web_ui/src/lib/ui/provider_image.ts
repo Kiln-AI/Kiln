@@ -1,6 +1,9 @@
 import type { ModelProviderName } from "$lib/types"
 
-const provider_image_map: Record<ModelProviderName | "wandb", string> = {
+const provider_image_map: Record<
+  ModelProviderName | "wandb" | "kiln_copilot",
+  string
+> = {
   openai: "/images/openai.svg",
   openrouter: "/images/openrouter.svg",
   anthropic: "/images/anthropic.svg",
@@ -20,6 +23,7 @@ const provider_image_map: Record<ModelProviderName | "wandb", string> = {
   wandb: "/images/wandb.svg",
   siliconflow_cn: "/images/siliconflow.svg",
   cerebras: "/images/cerebras.svg",
+  kiln_copilot: "/images/kiln_logo_black.svg",
 }
 
 export function get_provider_image(provider_name: string) {
