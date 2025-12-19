@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
+from kiln_ai.adapters.ollama_tools import resolve_ollama_model_variant
 from kiln_ai.adapters.reranker_list import KilnRerankerModelProvider
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -90,8 +91,16 @@ def get_litellm_provider_info(
             f"Provider name could not lookup valid litellm provider ID {model_provider.model_id}"
         )
 
+    # for Ollama, we need to resolve which model slug is actually installed
+    resolved_model_id = model_provider.model_id
+    if model_provider.name == ModelProviderName.ollama:
+        resolved_model_id = resolve_ollama_model_variant(
+            model_provider.model_id,
+            getattr(model_provider, "ollama_model_aliases", None),
+        )
+
     return LitellmProviderInfo(
         provider_name=litellm_provider_name,
         is_custom=is_custom,
-        litellm_model_id=f"{litellm_provider_name}/{model_provider.model_id}",
+        litellm_model_id=f"{litellm_provider_name}/{resolved_model_id}",
     )
