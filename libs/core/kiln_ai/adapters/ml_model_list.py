@@ -1985,6 +1985,7 @@ built_in_models: List[KilnModel] = [
                 model_id="nemotron-3-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
+                ollama_model_aliases=["nemotron-3-nano:30b"],
             ),
         ],
     ),
