@@ -11,6 +11,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
+    Finetune,
     Priority,
     Project,
     RequirementRating,
@@ -23,6 +24,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import (
+    FineTuneStatusType,
     StructuredOutputMode,
 )
 from kiln_ai.datamodel.eval import (
@@ -42,6 +44,7 @@ from app.desktop.studio_server.eval_api import (
     CreateEvaluatorRequest,
     connect_evals_api,
     eval_config_from_id,
+    get_all_run_configs,
     task_run_config_from_id,
 )
 
@@ -295,7 +298,7 @@ async def test_create_task_run_config_with_freezing(
         == "Frozen copy of prompt 'simple_chain_of_thought_prompt_builder'."
     )
     # Fetch it from API
-    fetch_response = client.get("/api/projects/project1/tasks/task1/task_run_configs")
+    fetch_response = client.get("/api/projects/project1/tasks/task1/run_configs/")
     assert fetch_response.status_code == 200
     configs = fetch_response.json()
     assert len(configs) == 1
@@ -546,6 +549,104 @@ async def test_task_run_config_from_id(
         task_run_config_from_id("project1", "task1", "non_existent")
 
 
+@pytest.mark.asyncio
+async def test_task_run_config_from_id_finetune(mock_task_from_id, mock_task):
+    mock_task_from_id.return_value = mock_task
+
+    run_config_props = RunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_chain_of_thought_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    mock_finetune = Finetune(
+        id="ft_test",
+        name="Test Finetune",
+        description="Test finetune description",
+        provider="openai",
+        base_model_id="model1",
+        dataset_split_id="split1",
+        system_message="System message",
+        latest_status=FineTuneStatusType.completed,
+        run_config=run_config_props,
+        fine_tune_model_id="ft_model_123",
+        parent=mock_task,
+    )
+
+    with patch(
+        "app.desktop.studio_server.eval_api.finetune_from_finetune_run_config_id"
+    ) as mock_finetune_from_id:
+        mock_finetune_from_id.return_value = mock_finetune
+
+        run_config = task_run_config_from_id(
+            "project1", "task1", "finetune_run_config::project1::task1::ft_test"
+        )
+
+        assert run_config.id == "finetune_run_config::project1::task1::ft_test"
+        assert run_config.name == "Test Finetune"
+        assert run_config.description == "Test finetune description"
+        assert run_config.run_config_properties == run_config_props
+        assert run_config.parent == mock_task
+
+
+@pytest.mark.asyncio
+async def test_get_all_run_configs(mock_task_from_id, mock_task):
+    """Test that get_all_run_configs returns regular run configs and completed finetune run configs."""
+    mock_task_from_id.return_value = mock_task
+
+    run_config_props = RunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_chain_of_thought_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    regular_run_config = TaskRunConfig(
+        id="regular_run_config1",
+        name="Regular Run Config",
+        description="A regular run config",
+        run_config_properties=run_config_props,
+        parent=mock_task,
+    )
+    regular_run_config.save_to_file()
+
+    completed_finetune = Finetune(
+        id="ft_completed",
+        name="Completed Finetune",
+        provider="openai",
+        base_model_id="model1",
+        dataset_split_id="split1",
+        system_message="System message",
+        latest_status=FineTuneStatusType.completed,
+        run_config=run_config_props,
+        fine_tune_model_id="ft_model_123",
+        parent=mock_task,
+    )
+    completed_finetune.save_to_file()
+
+    incomplete_finetune = Finetune(
+        id="ft_incomplete",
+        name="Incomplete Finetune",
+        provider="openai",
+        base_model_id="model2",
+        dataset_split_id="split2",
+        system_message="System message",
+        latest_status=FineTuneStatusType.running,
+        run_config=run_config_props,
+        fine_tune_model_id=None,
+        parent=mock_task,
+    )
+    incomplete_finetune.save_to_file()
+
+    configs = get_all_run_configs("project1", "task1")
+
+    config_ids = [config.id for config in configs]
+    assert "regular_run_config1" in config_ids
+    assert "finetune_run_config::project1::task1::ft_completed" in config_ids
+    assert "finetune_run_config::project1::task1::ft_incomplete" not in config_ids
+
+
 @pytest.fixture
 def mock_eval_for_score_summary():
     eval = Mock(spec=Eval)
@@ -633,6 +734,7 @@ async def test_get_eval_config_score_summary(
             Mock(spec=TaskRunConfig, id="run4"),
             Mock(spec=TaskRunConfig, id="run5"),
         ]
+        mock_task.finetunes.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -1882,3 +1984,96 @@ def test_get_eval_configs_score_summary_no_filter_id(
             == "No eval configs filter id set, cannot get eval configs score summary."
         )
         mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")
+
+
+@pytest.mark.asyncio
+async def test_get_run_configs_includes_finetunes_with_run_config(
+    client, mock_task_from_id, mock_task
+):
+    """Test that finetunes are included in run configs only if they have a run_config set."""
+    mock_task_from_id.return_value = mock_task
+
+    run_config_props = RunConfigProperties(
+        model_name="gpt-4",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_chain_of_thought_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+    )
+
+    finetunes = [
+        Finetune(
+            id="ft_completed",
+            name="Completed Finetune",
+            provider="openai",
+            base_model_id="model1",
+            dataset_split_id="split1",
+            system_message="System message",
+            latest_status=FineTuneStatusType.completed,
+            run_config=run_config_props,
+            fine_tune_model_id="ft_model_123",
+            parent=mock_task,
+        ),
+        Finetune(
+            id="ft_running",
+            name="Running Finetune",
+            provider="openai",
+            base_model_id="model2",
+            dataset_split_id="split2",
+            system_message="System message",
+            latest_status=FineTuneStatusType.running,
+            run_config=run_config_props,
+            fine_tune_model_id=None,
+            parent=mock_task,
+        ),
+        Finetune(
+            id="ft_unknown",
+            name="Unknown Finetune",
+            provider="openai",
+            base_model_id="model3",
+            dataset_split_id="split3",
+            system_message="System message",
+            latest_status=FineTuneStatusType.unknown,
+            run_config=run_config_props,
+            fine_tune_model_id=None,
+            parent=mock_task,
+        ),
+        Finetune(
+            id="ft_failed",
+            name="Failed Finetune",
+            provider="openai",
+            base_model_id="model4",
+            dataset_split_id="split4",
+            system_message="System message",
+            latest_status=FineTuneStatusType.failed,
+            run_config=run_config_props,
+            fine_tune_model_id=None,
+            parent=mock_task,
+        ),
+        Finetune(
+            id="ft_no_run_config",
+            name="No Run Config Finetune",
+            provider="openai",
+            base_model_id="model5",
+            dataset_split_id="split5",
+            system_message="System message",
+            latest_status=FineTuneStatusType.completed,
+            run_config=None,
+            parent=mock_task,
+        ),
+    ]
+
+    for finetune in finetunes:
+        finetune.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/run_configs/")
+
+    assert response.status_code == 200
+    configs = response.json()
+
+    config_ids = [config["id"] for config in configs]
+
+    assert "finetune_run_config::project1::task1::ft_completed" in config_ids
+    assert "finetune_run_config::project1::task1::ft_running" not in config_ids
+    assert "finetune_run_config::project1::task1::ft_failed" not in config_ids
+    assert "finetune_run_config::project1::task1::ft_unknown" not in config_ids
+    assert "finetune_run_config::project1::task1::ft_no_run_config" not in config_ids

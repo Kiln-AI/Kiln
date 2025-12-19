@@ -16,8 +16,9 @@ from kiln_ai.adapters.fine_tune.fireworks_finetune import (
 )
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -250,7 +251,7 @@ async def test_generate_and_upload_jsonl_success(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock responses for the three API calls
     create_response = MagicMock(spec=httpx.Response)
@@ -342,9 +343,21 @@ async def test_start_success(
     expected_format,
 ):
     Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = "test-entity"
+    Config.shared().wandb_base_url = None
     mock_task.output_json_schema = output_schema
 
     fireworks_finetune.datamodel.parent = mock_task
+
+    # Set up run_config
+    fireworks_finetune.datamodel.run_config = RunConfigProperties(
+        model_name="llama-v2-7b",
+        model_provider_name=ModelProviderName.fireworks_ai,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
+    )
     mock_dataset_id = "dataset-123"
     mock_model_id = "ft-model-123"
 
@@ -377,16 +390,24 @@ async def test_start_success(
 
         # Verify model ID was updated
         assert fireworks_finetune.datamodel.provider_id == mock_model_id
-        assert fireworks_finetune.datamodel.structured_output_mode == expected_mode
         assert fireworks_finetune.datamodel.properties["endpoint_version"] == "v2"
+        # Verify run_config.structured_output_mode is set correctly
+        expected_run_config_mode = (
+            expected_mode if expected_mode is not None else StructuredOutputMode.default
+        )
+        assert (
+            fireworks_finetune.datamodel.run_config.structured_output_mode
+            == expected_run_config_mode
+        )
 
         # check mockclent.post call values
         assert mock_client.post.call_count == 1
         submit_call_values = mock_client.post.call_args[1]
         assert submit_call_values["json"]["wandbConfig"] == {
             "enabled": True,
-            "project": "Kiln_AI",
+            "project": "kiln_ai",
             "apiKey": "test-api-key",
+            "entity": "test-entity",
         }
         assert submit_call_values["json"]["baseModel"] == "llama-v2-7b"
         assert (
@@ -424,6 +445,84 @@ async def test_start_api_error(
 
         with pytest.raises(ValueError, match="Failed to create fine-tuning job"):
             await fireworks_finetune._start(mock_dataset)
+
+
+async def test_start_wandb_missing_entity_no_default(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = None
+    Config.shared().wandb_base_url = None
+
+    with patch(
+        "kiln_ai.adapters.fine_tune.fireworks_finetune.get_wandb_default_entity",
+        new=AsyncMock(return_value=None),
+    ):
+        fireworks_finetune.datamodel.parent = mock_task
+        mock_dataset_id = "dataset-123"
+
+        with patch.object(
+            fireworks_finetune,
+            "generate_and_upload_jsonl",
+            return_value=mock_dataset_id,
+        ):
+            with pytest.raises(
+                ValueError, match=r"Weights & Biases entity not found and is required"
+            ):
+                await fireworks_finetune._start(mock_dataset)
+
+
+async def test_start_wandb_missing_entity_gets_default(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    Config.shared().wandb_api_key = "test-api-key"
+    Config.shared().wandb_entity = "test-entity"
+    Config.shared().wandb_base_url = None
+
+    with patch(
+        "kiln_ai.adapters.fine_tune.fireworks_finetune.get_wandb_default_entity",
+        new=AsyncMock(return_value=None),
+    ):
+        fireworks_finetune.datamodel.parent = mock_task
+        mock_dataset_id = "dataset-123"
+
+        with patch.object(
+            fireworks_finetune,
+            "generate_and_upload_jsonl",
+            return_value=mock_dataset_id,
+        ):
+            # Not raising an exception is good!
+            pass
+
+
+async def test_start_wandb_authentication_error(
+    fireworks_finetune, mock_dataset, mock_task, mock_api_key
+):
+    from kiln_ai.utils.wandb_utils import AuthenticationError
+
+    Config.shared().wandb_api_key = "invalid-api-key"
+    Config.shared().wandb_entity = None
+    Config.shared().wandb_base_url = None
+
+    auth_error = AuthenticationError("Failed to connect to W&B. Invalid API key.")
+
+    with patch(
+        "kiln_ai.adapters.fine_tune.fireworks_finetune.get_wandb_default_entity",
+        new=AsyncMock(return_value=auth_error),
+    ):
+        fireworks_finetune.datamodel.parent = mock_task
+        mock_dataset_id = "dataset-123"
+
+        with patch.object(
+            fireworks_finetune,
+            "generate_and_upload_jsonl",
+            return_value=mock_dataset_id,
+        ):
+            with pytest.raises(
+                ValueError,
+                match=r"Authentication to Weight & Biases failed. Please check your API key and try again.",
+            ):
+                await fireworks_finetune._start(mock_dataset)
 
 
 def test_available_parameters(fireworks_finetune):

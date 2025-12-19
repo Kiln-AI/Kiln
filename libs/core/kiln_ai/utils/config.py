@@ -1,3 +1,4 @@
+import copy
 import getpass
 import os
 import threading
@@ -131,6 +132,10 @@ class Config:
                 env_var="WANDB_API_KEY",
                 sensitive=True,
             ),
+            "wandb_entity": ConfigProperty(
+                str,
+                env_var="WANDB_ENTITY",
+            ),
             "siliconflow_cn_api_key": ConfigProperty(
                 str,
                 env_var="SILICONFLOW_CN_API_KEY",
@@ -260,7 +265,7 @@ class Config:
         settings = {
             k: "[hidden]"
             if k in self._properties and self._properties[k].sensitive
-            else v
+            else copy.deepcopy(v)
             for k, v in self._settings.items()
         }
         # Hide sensitive keys in lists. Could generalize this if we every have more types, but right not it's only needed for root elements of lists

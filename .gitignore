@@ -11,6 +11,7 @@ __pycache__/
 **/*.egg-info
 node_modules/
 conductor.json
+CLAUDE.md
 
 libs/core/docs
 libs/core/build
