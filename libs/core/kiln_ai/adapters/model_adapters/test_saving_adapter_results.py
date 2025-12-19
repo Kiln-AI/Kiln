@@ -2,17 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.model_adapters.base_adapter import (
-    BaseAdapter,
-    RunOutput,
-)
-from kiln_ai.datamodel import (
-    DataSource,
-    DataSourceType,
-    Project,
-    Task,
-    Usage,
-)
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, Usage
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.utils.config import Config
