@@ -281,7 +281,7 @@ def connect_fine_tune_api(app: FastAPI):
                 status_code=400,
                 detail=f"Fine tune provider '{finetune.provider}' not found",
             )
-        finetune_adapter = finetune_registry[finetune.provider]
+        finetune_adapter = finetune_registry[finetune.provider]  # type: ignore[invalid-argument-type]
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
 
@@ -360,7 +360,7 @@ def connect_fine_tune_api(app: FastAPI):
             raise HTTPException(
                 status_code=400, detail=f"Fine tune provider '{provider_id}' not found"
             )
-        finetune_adapter_class = finetune_registry[provider_id]
+        finetune_adapter_class = finetune_registry[provider_id]  # type: ignore[invalid-argument-type]
         return finetune_adapter_class.available_parameters()
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info")
@@ -433,7 +433,7 @@ def connect_fine_tune_api(app: FastAPI):
                 status_code=400,
                 detail=f"Fine tune provider '{request.provider}' not found",
             )
-        finetune_adapter_class = finetune_registry[request.provider]
+        finetune_adapter_class = finetune_registry[request.provider]  # type: ignore[invalid-argument-type]
 
         dataset = DatasetSplit.from_id_and_parent_path(request.dataset_id, task.path)
         if dataset is None:

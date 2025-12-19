@@ -153,7 +153,7 @@ class ChunkerConfig(KilnParentedModel):
         # or cast (but it is currently banned in our linting rules). Better solution
         # would be discriminated union, but that requires the discriminator to be part
         # of the properties (not outside on the parent model).
-        return self.properties
+        return self.properties  # type: ignore[return-value]
 
     @property
     def fixed_window_properties(self) -> FixedWindowChunkerProperties:
@@ -165,7 +165,7 @@ class ChunkerConfig(KilnParentedModel):
         # or cast (but it is currently banned in our linting rules). Better solution
         # would be discriminated union, but that requires the discriminator to be part
         # of the properties (not outside on the parent model).
-        return self.properties
+        return self.properties  # type: ignore[return-value]
 
 
 class Chunk(BaseModel):
