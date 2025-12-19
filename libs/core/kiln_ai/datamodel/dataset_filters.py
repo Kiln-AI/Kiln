@@ -1,6 +1,6 @@
 import re
 from enum import Enum
-from typing import Annotated, ClassVar, List, Protocol
+from typing import Annotated, ClassVar, Dict, List, Protocol
 
 from pydantic import AfterValidator
 
@@ -19,7 +19,7 @@ class DatasetFilter(Protocol):
         ...
 
 
-def AllDatasetFilter(_: TaskRun) -> bool:
+def AllDatasetFilter(task_run: TaskRun) -> bool:
     return True
 
 
@@ -128,7 +128,7 @@ class StaticDatasetFilters(str, Enum):
     THINKING_MODEL_HIGH_RATED = "thinking_model_high_rated"
 
 
-static_dataset_filters = {
+static_dataset_filters: Dict[StaticDatasetFilters, DatasetFilter] = {
     StaticDatasetFilters.ALL: AllDatasetFilter,
     StaticDatasetFilters.HIGH_RATING: HighRatingDatasetFilter,
     StaticDatasetFilters.THINKING_MODEL: ThinkingModelDatasetFilter,

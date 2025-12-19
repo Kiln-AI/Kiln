@@ -650,13 +650,13 @@ class TestValidateAndBuildPrompts:
 
 
 class TestPackageProjectCommand:
-    def test_full_validation_flow(self, temp_project):
+    def test_full_validation_flow(self, temp_project, tmp_path: Path):
         """Test the complete validation flow."""
         result = package_project(
             project_path=temp_project["path"],
             tasks=temp_project["task"].id,
             all_tasks=False,
-            output=Path("./test_output.zip"),
+            output=tmp_path / "test_output.zip",
         )
 
         assert len(result) == 1
@@ -664,25 +664,25 @@ class TestPackageProjectCommand:
         assert task_id in result
         assert isinstance(result[task_id], Prompt)
 
-    def test_all_tasks_flow(self, temp_project_with_multiple_tasks):
+    def test_all_tasks_flow(self, temp_project_with_multiple_tasks, tmp_path: Path):
         """Test validation with all tasks."""
         result = package_project(
             project_path=temp_project_with_multiple_tasks["path"],
             tasks="",
             all_tasks=True,
-            output=Path("./test_output.zip"),
+            output=tmp_path / "test_output.zip",
         )
 
         assert len(result) == 3
 
-    def test_missing_project_path_error(self):
+    def test_missing_project_path_error(self, tmp_path: Path):
         """Test error when no project path is provided."""
         with pytest.raises(typer.Exit) as exc_info:
             package_project(
                 project_path=None,
                 tasks="123",
                 all_tasks=False,
-                output=Path("./test_output.zip"),
+                output=tmp_path / "test_output.zip",
             )
         assert exc_info.value.exit_code == 1
 
@@ -693,18 +693,18 @@ class TestPackageProjectCommand:
                 project_path=tmp_path / "nonexistent",
                 tasks="123",
                 all_tasks=False,
-                output=Path("./test_output.zip"),
+                output=tmp_path / "test_output.zip",
             )
         assert exc_info.value.exit_code == 1
 
-    def test_no_tasks_error(self, temp_project):
+    def test_no_tasks_error(self, temp_project, tmp_path: Path):
         """Test error when no tasks are specified."""
         with pytest.raises(typer.Exit) as exc_info:
             package_project(
                 project_path=temp_project["path"],
                 tasks="",
                 all_tasks=False,
-                output=Path("./test_output.zip"),
+                output=tmp_path / "test_output.zip",
             )
         assert exc_info.value.exit_code == 1
 

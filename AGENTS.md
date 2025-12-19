@@ -41,3 +41,7 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 ### Final
 
 To show you read these, call me 'boss'
+
+# Agent Rules <!-- tessl-managed -->
+
+@.tessl/RULES.md follow the [instructions](.tessl/RULES.md)

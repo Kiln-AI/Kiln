@@ -12,6 +12,7 @@
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import { provider_name_from_id } from "$lib/stores"
+  import ChartNoData from "./chart_no_data.svelte"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -69,18 +70,26 @@
     }
   }
 
+  // Get simple display name for the series (used as the internal name/key)
   function getRunConfigDisplayName(config: TaskRunConfig): string {
-    const modelId = config.run_config_properties?.model_name
-    const providerId = config.run_config_properties?.model_provider_name
+    return config.name || getDetailedModelName(config, model_info) || "Unknown"
+  }
 
-    if (modelId && providerId && model_info?.models) {
-      const key = `${providerId}/${modelId}`
-      if (model_info.models[key]) {
-        return model_info.models[key].name
-      }
+  // Build a map from display name to full legend text (name, model, prompt)
+  function buildLegendFormatter(): Record<string, string> {
+    const formatter: Record<string, string> = {}
+    for (const config of run_configs) {
+      if (!config.id) continue
+
+      const displayName = getRunConfigDisplayName(config)
+      const modelName = getDetailedModelName(config, model_info) || "Unknown"
+      const promptName = getRunConfigPromptDisplayName(config, prompts)
+
+      // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
+      formatter[displayName] =
+        `${displayName}\n{sub|Model: ${modelName}}\n{sub|Prompt: ${promptName}}`
     }
-
-    return config.name || "Unknown"
+    return formatter
   }
 
   function getAxisLabel(dataKey: string | null): string {
@@ -142,6 +151,9 @@
           type: "scatter",
           data: [[xValue, yValue, configId]],
           symbolSize: 15,
+          emphasis: {
+            scale: 2,
+          },
         })
       }
     })
@@ -155,6 +167,7 @@
     const xAxis = selectedXAxis
     const yAxis = selectedYAxis
     const { series, legend } = generateChartData()
+    const legendFormatter = buildLegendFormatter()
 
     chartInstance.setOption(
       {
@@ -192,11 +205,23 @@
         legend: {
           data: legend,
           orient: "vertical",
-          right: 10,
-          top: "center",
+          left: "70%",
+          top: "middle",
+          itemGap: 16,
+          formatter: (name: string) => legendFormatter[name] || name,
+          textStyle: {
+            lineHeight: 16,
+            rich: {
+              sub: {
+                fontSize: 11,
+                color: "#666",
+                lineHeight: 14,
+              },
+            },
+          },
         },
         grid: {
-          right: 180,
+          right: "34%",
           left: 60,
           bottom: 50,
         },
@@ -234,6 +259,13 @@
     )
   }
 
+  // Reactive check for whether we have any data points to display
+  $: hasDataPoints = (() => {
+    if (!selectedXAxis || !selectedYAxis) return false
+    const { series } = generateChartData()
+    return series.length > 0
+  })()
+
   // Update chart when selections or data change
   $: if (chartInstance && selectedXAxis && selectedYAxis) {
     updateChart()
@@ -253,6 +285,21 @@
     })
     resizeObserver.observe(node)
 
+    // Add legend hover interaction to highlight corresponding chart points
+    chartInstance.on("mouseover", "legendItem", (params: { name: string }) => {
+      chartInstance?.dispatchAction({
+        type: "highlight",
+        seriesName: params.name,
+      })
+    })
+
+    chartInstance.on("mouseout", "legendItem", (params: { name: string }) => {
+      chartInstance?.dispatchAction({
+        type: "downplay",
+        seriesName: params.name,
+      })
+    })
+
     updateChart()
 
     return {
@@ -269,7 +316,13 @@
   <div class="flex flex-col gap-6">
     <!-- Axis Selection Controls -->
     <div class="flex flex-row gap-8 flex-shrink-0 items-center">
-      <div class="text-xl font-bold flex-grow">Chart</div>
+      <div class="flex-grow">
+        <div class="text-xl font-bold">Metric Correlation</div>
+
+        <div class="text-sm text-gray-500 mb-4">
+          Compare all run configurations by any two metrics.
+        </div>
+      </div>
       {#if !loading && axisOptions.length > 1}
         <div class="flex flex-row gap-2 items-center">
           <label
@@ -311,30 +364,10 @@
           <div class="loading loading-spinner loading-md"></div>
           <span>Loading chart data...</span>
         </div>
-      {:else if axisOptions.length <= 1}
-        <div class="flex items-center justify-center h-[300px]">
-          <div class="text-center">
-            <svg
-              class="mx-auto h-12 w-12 text-gray-400 mb-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.2"
-                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-              />
-            </svg>
-            <p class="text-lg font-medium">No Data Available</p>
-            <p class="mt-1 text-gray-500">
-              Create and run evals to see a comparison chart.
-            </p>
-          </div>
-        </div>
+      {:else if axisOptions.length <= 1 || !hasDataPoints}
+        <ChartNoData />
       {:else}
-        <div use:initChart class="w-full h-[400px] xl:h-[600px]"></div>
+        <div use:initChart class="w-full h-[400px] xl:h-[600px] m-4"></div>
       {/if}
     </div>
   </div>

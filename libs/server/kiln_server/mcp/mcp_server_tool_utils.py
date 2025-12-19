@@ -78,7 +78,7 @@ async def _build_tool_context(resolution: ToolResolution) -> ToolContext:
         description=description,
         inputSchema=parameters,
         outputSchema=output_schema,
-        _meta={"kiln_tool_id": resolution.tool_id},
+        _meta={"kiln_tool_id": resolution.tool_id},  # type: ignore[unknown-argument]
     )
 
     return ToolContext(

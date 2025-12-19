@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tessl": {
+      "type": "stdio",
+      "command": "tessl",
+      "args": ["mcp", "start"]
+    },
+    "HooksMCP": {
+      "command": "uvx",
+      "args": ["hooks-mcp", "--working-directory", "."]
+    }
+  }
+}

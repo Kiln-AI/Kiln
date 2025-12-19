@@ -365,17 +365,17 @@ class CreateChunkerConfigRequest(BaseModel):
             case ChunkerType.SEMANTIC:
                 return SemanticChunkerProperties(
                     chunker_type=ChunkerType.SEMANTIC,
-                    embedding_config_id=properties.embedding_config_id,
-                    buffer_size=properties.buffer_size,
-                    breakpoint_percentile_threshold=properties.breakpoint_percentile_threshold,
+                    embedding_config_id=properties.embedding_config_id,  # type: ignore[possibly-missing-attribute]
+                    buffer_size=properties.buffer_size,  # type: ignore[possibly-missing-attribute]
+                    breakpoint_percentile_threshold=properties.breakpoint_percentile_threshold,  # type: ignore[possibly-missing-attribute]
                     include_metadata=False,
                     include_prev_next_rel=False,
                 )
             case ChunkerType.FIXED_WINDOW:
                 return FixedWindowChunkerProperties(
                     chunker_type=ChunkerType.FIXED_WINDOW,
-                    chunk_size=properties.chunk_size,
-                    chunk_overlap=properties.chunk_overlap,
+                    chunk_size=properties.chunk_size,  # type: ignore[possibly-missing-attribute]
+                    chunk_overlap=properties.chunk_overlap,  # type: ignore[possibly-missing-attribute]
                 )
         raise_exhaustive_enum_error(properties.chunker_type)
 
@@ -1632,12 +1632,13 @@ def connect_document_api(app: FastAPI):
         # if semantic, validate that the referenced embedding config exists
         if request.properties.chunker_type == ChunkerType.SEMANTIC:
             embedding_config = EmbeddingConfig.from_id_and_parent_path(
-                request.properties.embedding_config_id, project.path
+                request.properties.embedding_config_id,  # type: ignore[possibly-missing-attribute]
+                project.path,
             )
             if not embedding_config:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Embedding config {request.properties.embedding_config_id} not found",
+                    detail=f"Embedding config {request.properties.embedding_config_id} not found",  # type: ignore[possibly-missing-attribute]
                 )
 
         chunker_config = ChunkerConfig(
@@ -2148,11 +2149,11 @@ def connect_document_api(app: FastAPI):
         chunker_config = ChunkerConfig(
             name="ephemeral-fixed-window",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={
-                "chunker_type": ChunkerType.FIXED_WINDOW,
-                "chunk_size": request.chunk_size,
-                "chunk_overlap": request.chunk_overlap or 0,
-            },
+            properties=FixedWindowChunkerProperties(
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                chunk_size=request.chunk_size,
+                chunk_overlap=request.chunk_overlap or 0,
+            ),
         )
 
         chunker = chunker_adapter_from_type(ChunkerType.FIXED_WINDOW, chunker_config)

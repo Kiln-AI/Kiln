@@ -137,7 +137,7 @@ def serialize_r1_style_message(thinking: str | None, final_output: str):
 
 def generate_chat_message_list(
     training_chat: list[ChatMessage],
-) -> list[dict[str, str | None]]:
+) -> list[dict[str, Any]]:
     """Generate OpenAI chat list. Not the full OpenAI body, just the list of messages."""
 
     messages: list[dict[str, Any]] = []
@@ -184,7 +184,7 @@ def generate_chat_message_response(
 ) -> Dict[str, Any]:
     """Generate OpenAI chat format with plaintext response"""
 
-    messages: list[dict[str, str | None]] = generate_chat_message_list(training_chat)
+    messages: list[dict[str, Any]] = generate_chat_message_list(training_chat)
 
     result: Dict[str, Any] = {"messages": messages}
 

@@ -24,7 +24,7 @@ actions:
 
   - name: "typecheck_python"
     description: "Typecheck the source code"
-    command: "uv run pyright ."
+    command: "uvx ty check"
 
   - name: "test_file_python"
     description: "Run tests in a specific python file or directory"

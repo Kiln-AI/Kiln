@@ -326,7 +326,7 @@ class KilnBaseModel(BaseModel):
         copy = super().model_copy(deep=True)
         # Reset readonly flag on copies so they can be mutated
         copy._readonly = False
-        return copy
+        return copy  # type: ignore[return-value]
 
     # if changing the model name, should keep the original name here for parsing old files
     @classmethod
@@ -691,11 +691,11 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
     def _create_child_method(
         cls, relationship_name: str, child_class: Type[KilnParentedModel]
     ):
-        def child_method(self, readonly: bool = False) -> list[child_class]:
+        def child_method(self, readonly: bool = False) -> list[child_class]:  # type: ignore[invalid-type-form]
             return child_class.all_children_of_parent_path(self.path, readonly=readonly)
 
         child_method.__name__ = relationship_name
-        child_method.__annotations__ = {"return": List[child_class]}
+        child_method.__annotations__ = {"return": List[child_class]}  # type: ignore[invalid-type-form]
         setattr(cls, relationship_name, child_method)
 
     @classmethod
@@ -787,7 +787,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
                             kwargs = {"data": value, "save": save}
                             if instance is not None:
                                 kwargs["parent"] = instance
-                            parent_type._validate_nested(**kwargs)
+                            parent_type._validate_nested(**kwargs)  # type: ignore[invalid-argument-type]
                         elif issubclass(parent_type, KilnParentedModel):
                             # Root node
                             subinstance = parent_type.model_validate(value)

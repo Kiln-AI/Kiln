@@ -281,6 +281,41 @@ async def test_openai_compatible_providers():
     ]
 
 
+async def test_openai_compatible_providers_not_mutated_by_hide_sensitive():
+    config = Config.shared()
+    assert config.openai_compatible_providers == []
+
+    new_settings = [
+        {
+            "name": "provider1",
+            "url": "https://provider1.com",
+            "api_key": "secret_key_123",
+        },
+        {
+            "name": "provider2",
+            "url": "https://provider2.com",
+            "api_key": "another_secret_key",
+        },
+    ]
+    config.save_setting("openai_compatible_providers", new_settings)
+    assert config.openai_compatible_providers == new_settings
+
+    hidden_settings = config.settings(hide_sensitive=True)
+    assert hidden_settings["openai_compatible_providers"] == [
+        {
+            "name": "provider1",
+            "url": "https://provider1.com",
+            "api_key": "[hidden]",
+        },
+        {"name": "provider2", "url": "https://provider2.com", "api_key": "[hidden]"},
+    ]
+
+    retrieved_providers = config.openai_compatible_providers
+    assert retrieved_providers == new_settings
+    assert retrieved_providers[0]["api_key"] == "secret_key_123"
+    assert retrieved_providers[1]["api_key"] == "another_secret_key"
+
+
 def test_yaml_persistence_structured_data(config_with_yaml, mock_yaml_file):
     # Set a value
     new_settings = [

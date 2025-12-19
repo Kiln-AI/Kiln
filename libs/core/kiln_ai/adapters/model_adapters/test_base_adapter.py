@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
-from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+    RunOutput,
+)
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.project import Project
@@ -619,3 +624,36 @@ async def test_available_tools_duplicate_names_raises_error(base_project):
         # Should raise ValueError when tools have duplicate names
         with pytest.raises(ValueError, match="Each tool must have a unique name"):
             await adapter.available_tools()
+
+
+async def test_custom_prompt_builder(base_task):
+    """Test that custom prompt builder can be injected via AdapterConfig"""
+
+    # Create a custom prompt builder
+    class CustomPromptBuilder(BasePromptBuilder):
+        def build_base_prompt(self) -> str:
+            return "This is a custom prompt from injected builder"
+
+    custom_builder = CustomPromptBuilder(base_task)
+
+    adapter = MockAdapter(
+        task=base_task,
+        run_config=RunConfigProperties(
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        config=AdapterConfig(prompt_builder=custom_builder),
+    )
+
+    # Mock model provider
+    provider = MagicMock()
+    provider.reasoning_capable = False
+    provider.tuned_chat_strategy = None
+    adapter.model_provider = MagicMock(return_value=provider)
+
+    # Test that the custom prompt builder is used
+    formatter = adapter.build_chat_formatter(input="test input")
+    assert formatter.system_message == "This is a custom prompt from injected builder"
+    assert adapter.prompt_builder == custom_builder

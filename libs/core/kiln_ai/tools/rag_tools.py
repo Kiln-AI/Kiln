@@ -227,7 +227,7 @@ class RagTool(KilnToolInterface):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        kwargs = RagParams(**kwargs)
+        kwargs = RagParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         query = kwargs["query"]
 
         search_results = await self.search(query)
