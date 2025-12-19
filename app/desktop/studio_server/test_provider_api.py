@@ -133,6 +133,38 @@ def test_connect_api_key_siliconflow_success(mock_connect_siliconflow, client):
     mock_connect_siliconflow.assert_called_once_with("test_key")
 
 
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+def test_connect_api_key_kiln_copilot_success(
+    mock_httpx_get, mock_config_shared, client
+):
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_get.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to Kiln Copilot"}
+    assert mock_config.kiln_copilot_api_key == "test_key"
+
+
+def test_connect_api_key_kiln_copilot_empty_key(client):
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": ""}},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "API Key not found"}
+
+
 @patch("app.desktop.studio_server.provider_api.requests.get")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
