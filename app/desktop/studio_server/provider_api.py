@@ -555,6 +555,9 @@ def connect_provider_api(app: FastAPI):
             # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API
             Config.shared().wandb_api_key = None
             Config.shared().wandb_base_url = None
+        elif provider_id == "kiln_copilot":
+            # Kiln Copilot is not a model provider but it's a provider you can connect through this UI/API
+            Config.shared().kiln_copilot_api_key = None
         else:
             if provider_id not in ModelProviderName.__members__:
                 return JSONResponse(

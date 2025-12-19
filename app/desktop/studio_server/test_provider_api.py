@@ -1948,6 +1948,9 @@ def mock_config_all_providers():
     mock_config.bedrock_access_key = "test_key"
     mock_config.bedrock_secret_key = "test_key"
     mock_config.siliconflow_cn_api_key = "test_key"
+    mock_config.wandb_api_key = "test_key"
+    mock_config.wandb_base_url = "https://api.wandb.ai"
+    mock_config.kiln_copilot_api_key = "test_key"
     return mock_config
 
 
@@ -2085,6 +2088,39 @@ async def test_disconnect_api_key_unsupported_provider(client, provider_id):
 
     assert response.status_code == 400
     assert response.json() == {"message": "Provider not supported"}
+
+
+async def test_disconnect_api_key_wandb(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "wandb"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.wandb_api_key is None
+        assert mock_config_all_providers.wandb_base_url is None
+
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+async def test_disconnect_api_key_kiln_copilot(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "kiln_copilot"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.kiln_copilot_api_key is None
+
+        assert mock_config_all_providers.open_ai_api_key is not None
 
 
 def test_parse_url():
