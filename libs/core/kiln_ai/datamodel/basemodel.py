@@ -216,13 +216,13 @@ class KilnAttachmentModel(BaseModel):
         its permanent location when the model is saved.
         """
         extension = guess_extension(mime_type) or ".unknown"
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=extension)
-        if isinstance(data, str):
-            temp_file.write(data.encode("utf-8"))
-        else:
-            temp_file.write(data)
-        temp_file.close()
-        return cls(input_path=Path(temp_file.name))
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+            if isinstance(data, str):
+                temp_file.write(data.encode("utf-8"))
+            else:
+                temp_file.write(data)
+            temp_file_path = Path(temp_file.name)
+        return cls(input_path=temp_file_path)
 
     @classmethod
     def from_file(cls, path: Path | str) -> Self:
@@ -604,6 +604,7 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         base_filename = cls.base_filename()
         # Iterate through immediate subdirectories using scandir for better performance
         # Benchmark: scandir is 10x faster than glob, so worth the extra code
+        child_files = []
         with os.scandir(relationship_folder) as entries:
             for entry in entries:
                 if not entry.is_dir():
@@ -611,7 +612,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
 
                 child_file = Path(entry.path) / base_filename
                 if child_file.is_file():
-                    yield child_file
+                    child_files.append(child_file)
+
+        yield from child_files
 
     @classmethod
     def all_children_of_parent_path(
