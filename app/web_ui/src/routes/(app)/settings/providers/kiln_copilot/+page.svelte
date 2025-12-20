@@ -5,7 +5,7 @@
 </script>
 
 <AppPage
-  title="Connect Kiln Copilot"
+  title="Kiln Copilot"
   breadcrumbs={[
     { label: "Settings", href: "/settings" },
     { label: "AI Providers", href: "/settings/providers" },
