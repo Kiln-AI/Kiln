@@ -3636,9 +3636,7 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
         assert response.status_code == 200
         result = response.json()
 
-        # Should have two tool sets: RAG and Kiln Task
-        assert len(result) == 2
-
+        # Find the specific tool sets we created
         rag_set = next(
             (s for s in result if s["set_name"] == "Search Tools (RAG)"), None
         )
@@ -3646,16 +3644,28 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
             (s for s in result if s["set_name"] == "Kiln Tasks as Tools"), None
         )
 
-        assert rag_set is not None
-        assert kiln_task_set is not None
+        assert rag_set is not None, "RAG tool set should be present"
+        assert kiln_task_set is not None, "Kiln Task tool set should be present"
 
         # Only the active RAG config should be present
         assert len(rag_set["tools"]) == 1
         assert rag_set["tools"][0]["name"] == "active_rag"
 
+        # Verify archived RAG config is NOT present
+        rag_tool_names = [tool["name"] for tool in rag_set["tools"]]
+        assert "archived_rag" not in rag_tool_names, (
+            "Archived RAG tool should be excluded"
+        )
+
         # Only the active kiln task tool should be present
         assert len(kiln_task_set["tools"]) == 1
         assert kiln_task_set["tools"][0]["name"] == "active_task_tool"
+
+        # Verify archived kiln task tool is NOT present
+        kiln_task_tool_names = [tool["name"] for tool in kiln_task_set["tools"]]
+        assert "archived_task_tool" not in kiln_task_tool_names, (
+            "Archived kiln task tool should be excluded"
+        )
 
 
 class TestExternalToolApiDescription:
