@@ -23,6 +23,7 @@
     disabled?: boolean
     loading?: boolean
     hide?: boolean
+    width?: "normal" | "wide"
   }
   export let action_buttons: ActionButton[] = []
   let action_running = false
@@ -187,9 +188,9 @@
                 </form>
               {:else}
                 <button
-                  class="btn btn-sm h-10 min-w-24 {button.isPrimary
-                    ? 'btn-primary'
-                    : ''}
+                  class="btn btn-sm h-10 min-w-24 {button.width === 'wide'
+                    ? 'w-full'
+                    : ''} {button.isPrimary ? 'btn-primary' : ''}
                   {button.isError ? 'btn-error' : ''}
                   {button.isWarning ? 'btn-warning' : ''}"
                   disabled={button.disabled || button.loading}
@@ -205,6 +206,7 @@
           {/if}
         </div>
       {/if}
+      <slot name="footer" />
     </div>
   </div>
   <form
