@@ -426,7 +426,7 @@
   }
 
   const connect_provider = (provider: Provider) => {
-    if (status[provider.id]?.connected) {
+    if (status[provider.id].connected) {
       return
     }
     if (provider.id === "ollama") {
@@ -958,7 +958,8 @@
       class="w-full grid grid-cols-1 xl:grid-cols-2 gap-y-6 gap-x-24 max-w-lg xl:max-w-screen-xl"
     >
       {#each providers as provider}
-        {@const is_connected = status[provider.id]?.connected || false}
+        {@const is_connected =
+          status[provider.id] && status[provider.id].connected}
         <div class="flex flex-row gap-4 items-center">
           <img
             src={get_provider_image(provider.id)}
@@ -984,8 +985,7 @@
               </p>
             {:else}
               <p class="text-sm text-gray-500">
-                {status[provider.id]?.custom_description ||
-                  provider.description}
+                {status[provider.id].custom_description || provider.description}
               </p>
             {/if}
             {#if provider.id === "ollama" && status[provider.id] && status[provider.id].error}
@@ -1029,7 +1029,7 @@
               />
               <span class="text-xs hidden group-hover:inline">Disconnect</span>
             </button>
-          {:else if status[provider.id]?.connecting}
+          {:else if status[provider.id].connecting}
             <div class="btn md:min-w-[100px]">
               <div class=" loading loading-spinner loading-md"></div>
             </div>

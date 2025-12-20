@@ -135,7 +135,16 @@
     warn_before_unload = has_form_changes()
   }
 
+  $: has_skipped_kiln_copilot_upsell =
+    typeof window !== "undefined" &&
+    localStorage.getItem(SKIP_COPILOT_KEY) === "true"
+
   async function check_kiln_copilot_and_proceed() {
+    if (!has_kiln_copilot && has_skipped_kiln_copilot_upsell) {
+      await create_spec()
+      return
+    }
+
     try {
       create_error = null
       submitting = true
@@ -150,19 +159,10 @@
         }
       }
 
-      // Check if user has previously skipped the copilot upsell
-      const hasSkipped =
-        typeof window !== "undefined" &&
-        localStorage.getItem(SKIP_COPILOT_KEY) === "true"
-
-      if (hasSkipped) {
-        await proceed_to_review()
-        return
-      }
-
       // Check if kiln-copilot is connected
       const { data, error } = await client.GET("/api/settings")
       if (error) {
+        // TODO: Show error in UI?
         console.error("Failed to check kiln-copilot status", error)
         await proceed_to_review()
         return
@@ -267,7 +267,9 @@
     ]}
   >
     <FormContainer
-      submit_label="Next"
+      submit_label={!has_kiln_copilot && has_skipped_kiln_copilot_upsell
+        ? "Create Spec"
+        : "Next"}
       on:submit={check_kiln_copilot_and_proceed}
       bind:error={create_error}
       bind:submitting
@@ -536,6 +538,7 @@
         if (typeof window !== "undefined") {
           localStorage.setItem(SKIP_COPILOT_KEY, "true")
         }
+        has_skipped_kiln_copilot_upsell = true
         return true
       },
     },
