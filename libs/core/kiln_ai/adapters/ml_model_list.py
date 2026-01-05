@@ -195,9 +195,9 @@ class ModelName(str, Enum):
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_4_7 = "glm_4_7"
     glm_4_6 = "glm_4_6"
     glm_4_6v = "glm_4_6v"
-    glm_4_7 = "glm_4_7"
     glm_4_5v = "glm_4_5v"
     glm_4_5 = "glm_4_5"
     glm_4_5_air = "glm_4_5_air"
@@ -5152,25 +5152,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # GLM 4.6
-    KilnModel(
-        family=ModelFamily.glm,
-        name=ModelName.glm_4_6,
-        friendly_name="GLM 4.6",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="z-ai/glm-4.6:exacto",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="zai-org/GLM-4.6",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-            ),
-        ],
-    ),
     # GLM 4.7
     KilnModel(
         family=ModelFamily.glm,
@@ -5186,6 +5167,27 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # GLM 4.6
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_6,
+        friendly_name="GLM 4.6",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.6:exacto",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="zai-org/GLM-4.6",
                 structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
