@@ -109,12 +109,14 @@
     initialized = true
   })
 
+  let next_error: KilnError | null = null
   let create_error: KilnError | null = null
+
   let submitting = false
   let complete = false
   let warn_before_unload = false
 
-  let copilot_upsell_dialog: Dialog | null = null
+  let copilot_v_manual_dialog: Dialog | null = null
   let has_kiln_copilot = false
   let show_connect_kiln_steps = false
   let connect_steps_component: ConnectKilnCopilotSteps | null = null
@@ -135,7 +137,7 @@
 
   async function check_kiln_copilot_and_proceed() {
     try {
-      create_error = null
+      next_error = null
       submitting = true
 
       // Validate required fields
@@ -143,7 +145,7 @@
         if (field.required) {
           const value = property_values[field.key]
           if (!value || !value.trim()) {
-            throw createKilnError(`${field.label} is required`)
+            throw new Error(`${field.label} is required`)
           }
         }
       }
@@ -151,22 +153,20 @@
       // Check if kiln-copilot is connected
       const { data, error } = await client.GET("/api/settings")
       if (error) {
-        // TODO: Show error in UI?
-        console.error("Failed to check kiln-copilot status", error)
-        await proceed_to_review()
+        throw new Error(
+          `Failed to check kiln-copilot status, please try again.`,
+        )
+      }
+
+      if (!data || !data["kiln_copilot_api_key"]) {
+        submitting = false
+        copilot_v_manual_dialog?.show()
         return
       }
 
-      const has_kiln_copilot = data && data["kiln_copilot_api_key"]
-
-      if (!has_kiln_copilot) {
-        submitting = false
-        copilot_upsell_dialog?.show()
-      } else {
-        await proceed_to_review()
-      }
+      await proceed_to_review()
     } catch (error) {
-      create_error = createKilnError(error)
+      next_error = createKilnError(error)
       submitting = false
     }
   }
@@ -205,9 +205,9 @@
     return false
   }
 
-  async function create_spec() {
+  async function do_create_spec(set_error: (error: KilnError | null) => void) {
     try {
-      create_error = null
+      set_error(null)
       submitting = true
       complete = false
 
@@ -216,7 +216,7 @@
         if (field.required) {
           const value = property_values[field.key]
           if (!value || !value.trim()) {
-            throw createKilnError(`${field.label} is required`)
+            throw new Error(`${field.label} is required`)
           }
         }
       }
@@ -233,10 +233,20 @@
       complete = true
       goto(`/specs/${project_id}/${task_id}/${spec_id}`)
     } catch (error) {
-      create_error = createKilnError(error)
+      set_error(createKilnError(error))
     } finally {
       submitting = false
     }
+  }
+
+  // For dialog - errors show in the card
+  function create_spec_from_dialog() {
+    do_create_spec((e) => (create_error = e))
+  }
+
+  // For main form - errors show in FormContainer
+  function create_spec_from_form() {
+    do_create_spec((e) => (next_error = e))
   }
 </script>
 
@@ -258,7 +268,7 @@
     <FormContainer
       submit_label="Next"
       on:submit={check_kiln_copilot_and_proceed}
-      bind:error={create_error}
+      bind:error={next_error}
       bind:submitting
       {warn_before_unload}
     >
@@ -309,7 +319,7 @@
         <span class="text-xs text-gray-500">or</span>
         <button
           class="link underline text-xs text-gray-500"
-          on:click={create_spec}>Create Spec Without Analysis</button
+          on:click={create_spec_from_form}>Create Spec Without Analysis</button
         >
       </div>
     {/if}
@@ -317,7 +327,7 @@
 </div>
 
 <Dialog
-  bind:this={copilot_upsell_dialog}
+  bind:this={copilot_v_manual_dialog}
   title={show_connect_kiln_steps
     ? "Connect Kiln Copilot"
     : "Choose your workflow"}
@@ -327,6 +337,7 @@
   width={show_connect_kiln_steps ? "normal" : "wide"}
   on:close={() => {
     show_connect_kiln_steps = false
+    create_error = null
   }}
 >
   {#if show_connect_kiln_steps}
@@ -342,7 +353,7 @@
           class="btn btn-primary mt-4 w-full"
           on:click={() => {
             proceed_to_review()
-            copilot_upsell_dialog?.close()
+            copilot_v_manual_dialog?.close()
           }}
         >
           Continue to Refine Spec
@@ -367,18 +378,10 @@
           "Manual synthetic data generation",
           "No API key required",
         ]}
-      >
-        <button
-          slot="actions"
-          class="btn btn-outline w-full"
-          on:click={() => {
-            create_spec()
-            copilot_upsell_dialog?.close()
-          }}
-        >
-          Create Manually
-        </button>
-      </WorkflowOptionCard>
+        error={create_error}
+        button_label="Create Manually"
+        on_click={create_spec_from_dialog}
+      />
       <WorkflowOptionCard
         title="Kiln Copilot"
         description="AI-assisted workflow that sets up evals for you, fast."
@@ -390,17 +393,12 @@
           "Automatic eval judge setup",
           "Automatic synthetic data generation",
         ]}
-      >
-        <button
-          slot="actions"
-          class="btn btn-primary w-full"
-          on:click={() => {
-            show_connect_kiln_steps = true
-          }}
-        >
-          Connect
-        </button>
-      </WorkflowOptionCard>
+        button_label="Connect"
+        button_primary={true}
+        on_click={() => {
+          show_connect_kiln_steps = true
+        }}
+      />
     </div>
   {/if}
 </Dialog>
