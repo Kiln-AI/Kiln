@@ -491,7 +491,6 @@
               {#if property.name === "Priority"}
                 <EditablePriorityField
                   bind:this={priorityField}
-                  always_show_border={true}
                   {spec}
                   options={getPriorityOptions()}
                   aria_label="Priority"
@@ -504,7 +503,6 @@
               {:else if property.name === "Status"}
                 <EditableStatusField
                   bind:this={statusField}
-                  always_show_border={true}
                   {spec}
                   options={getStatusOptions()}
                   aria_label="Status"

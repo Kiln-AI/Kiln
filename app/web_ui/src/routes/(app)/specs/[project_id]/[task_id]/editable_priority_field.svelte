@@ -10,7 +10,6 @@
   export let onUpdate: (spec: Spec, value: Priority) => void
   export let compact: boolean = false
   export let onOpen: (() => void) | undefined = undefined
-  export let always_show_border: boolean = false
 
   let baseComponent: EditableFieldBase<Priority>
   let currentValue: Priority = spec.priority
@@ -44,5 +43,4 @@
   dropdownWidth="w-24"
   {compact}
   {onOpen}
-  {always_show_border}
 />
