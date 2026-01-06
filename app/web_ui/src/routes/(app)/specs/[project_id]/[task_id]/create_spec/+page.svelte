@@ -257,7 +257,7 @@
     subtitle={`Template: ${formatSpecTypeName(spec_type)}`}
     breadcrumbs={[
       {
-        label: "Specs",
+        label: "Specs & Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {
