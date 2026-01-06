@@ -206,7 +206,6 @@
           {/if}
         </div>
       {/if}
-      <slot name="footer" />
     </div>
   </div>
   <form

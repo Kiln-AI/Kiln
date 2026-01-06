@@ -7,7 +7,6 @@
 
   export let onSuccess: () => void
   export let showTitle = true
-  export let small = false
   export let showCheckmark = false
 
   let kindeClient: Awaited<ReturnType<typeof createKindeClient>> | null = null
@@ -151,13 +150,11 @@
 </script>
 
 {#if showTitle}
-  <h1 class="text-{small ? 'lg' : 'xl'} font-medium text-center mb-2">
-    Connect Kiln Copilot
-  </h1>
+  <h1 class="text-xl font-medium text-center mb-2">Connect Kiln Copilot</h1>
 {/if}
 
-<ol class="my-2 text-gray-700 {small ? 'text-sm' : ''}">
-  <li class="list-decimal pl-1 mx-8 my-4">
+<ol class="mb-2 text-gray-700">
+  <li class="list-decimal pl-1 mx-8 mb-4">
     <button class="link" on:click={openSignup}>Sign Up</button>
     to create your Kiln Copilot account.
   </li>
