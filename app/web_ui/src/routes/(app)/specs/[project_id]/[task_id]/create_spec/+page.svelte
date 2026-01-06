@@ -18,7 +18,6 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { client } from "$lib/api_client"
   import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
-  import WorkflowOptionCard from "./workflow_option_card.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -360,36 +359,103 @@
       </button>
     </div>
   {:else}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-      <WorkflowOptionCard
-        title="Manual"
-        description="Create the spec as written and set up evals yourself."
-        features={[
-          "Manual eval judge setup",
-          "Manual synthetic data generation",
-          "No API key required",
-        ]}
-        error={create_error}
-        button_label="Create Manually"
-        on_click={create_spec_from_dialog}
-      />
-      <WorkflowOptionCard
-        title="Kiln Copilot"
-        description="AI-assisted workflow that sets up evals for you, fast."
-        badge="Recommended"
-        highlighted={true}
-        checkmarkColor="primary"
-        features={[
-          "AI-assisted spec refinement",
-          "Automatic eval judge setup",
-          "Automatic synthetic data generation",
-        ]}
-        button_label="Connect"
-        button_primary={true}
-        on_click={() => {
-          show_connect_kiln_steps = true
-        }}
-      />
+    <div class="mt-4 max-w-[500px] mx-auto">
+      <div class="overflow-x-auto rounded-lg border">
+        <table class="table table-fixed w-full">
+          <colgroup>
+            <col class="w-[160px]" />
+            <col class="w-[140px]" />
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th></th>
+              <th class="text-center">Manual</th>
+              <th class="text-center">
+                <div class="flex items-center justify-center gap-2">
+                  Kiln Copilot
+                  <span class="badge badge-primary badge-sm">Recommended</span>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th class="font-bold text-xs text-gray-500">Eval judge setup</th>
+              <td class="text-center">Manual</td>
+              <td class="text-center text-primary">Automatic</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-gray-500"
+                >Edge case discovery</th
+              >
+              <td class="text-center">Manual</td>
+              <td class="text-center text-primary">Automatic</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-gray-500">Eval data creation</th
+              >
+              <td class="text-center">Manual</td>
+              <td class="text-center text-primary">Automatic</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-base-content/60"
+                >Eval accuracy</th
+              >
+              <td class="text-center">Varies</td>
+              <td class="text-center text-primary">High</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-gray-500">Approx. effort</th>
+              <td class="text-center">~20 min</td>
+              <td class="text-center text-primary">~3 min</td>
+            </tr>
+            <tr>
+              <th class="font-bold text-xs text-base-content/60"
+                >Kiln account</th
+              >
+              <td class="text-center">Optional</td>
+              <td class="text-center text-primary">Required</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <table class="table-fixed w-full mt-4">
+        <colgroup>
+          <col class="w-[160px]" />
+          <col class="w-[140px]" />
+          <col />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td></td>
+            <td class="text-center">
+              <button
+                class="btn btn-outline btn-sm"
+                on:click={create_spec_from_dialog}
+              >
+                Create Manually
+              </button>
+            </td>
+            <td class="text-center">
+              <button
+                class="btn btn-primary btn-sm"
+                on:click={() => {
+                  show_connect_kiln_steps = true
+                }}
+              >
+                Connect Kiln Copilot
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {#if create_error}
+        <div class="alert alert-error mt-4">
+          <span>{create_error.message}</span>
+        </div>
+      {/if}
     </div>
   {/if}
 </Dialog>
