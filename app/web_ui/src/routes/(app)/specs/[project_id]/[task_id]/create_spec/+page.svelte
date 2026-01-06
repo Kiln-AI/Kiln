@@ -150,21 +150,12 @@
         }
       }
 
-      // Check if kiln-copilot is connected
-      const { data, error } = await client.GET("/api/settings")
-      if (error) {
-        throw new Error(
-          `Failed to check kiln-copilot status, please try again.`,
-        )
-      }
-
-      if (!data || !data["kiln_copilot_api_key"]) {
+      if (!has_kiln_copilot) {
         submitting = false
         copilot_v_manual_dialog?.show()
-        return
+      } else {
+        await proceed_to_review()
       }
-
-      await proceed_to_review()
     } catch (error) {
       next_error = createKilnError(error)
       submitting = false
