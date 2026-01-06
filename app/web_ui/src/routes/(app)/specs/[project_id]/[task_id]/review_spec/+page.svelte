@@ -272,7 +272,7 @@
     subtitle="Review these examples to ensure the spec accurately captures your goal by comparing your responses against our judge's."
     breadcrumbs={[
       {
-        label: "Specs",
+        label: "Specs & Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {

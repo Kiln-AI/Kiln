@@ -185,7 +185,7 @@
   subtitle="Refine your spec so it correctly captures your goal"
   breadcrumbs={[
     {
-      label: "Specs",
+      label: "Specs & Evals",
       href: `/specs/${project_id}/${task_id}`,
     },
     {

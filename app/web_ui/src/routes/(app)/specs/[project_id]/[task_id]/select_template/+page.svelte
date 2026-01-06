@@ -65,7 +65,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Select a Spec Template"
+    title="Select a Template"
     subtitle="Start by choosing the template that best fits the spec you want to create."
     breadcrumbs={[
       {
