@@ -7,11 +7,11 @@
 </p>
 
 <h3 align="center">
-    Easily Build AI Systems
+  Build, Evaluate, and Optimize AI Systems
 </h3>
 
 <p align="center">
-  Kiln is a free and intuitive app for building AI systems and products
+  Kiln is a free app with everything you need to build better AI products
 </p>
 
 <p align="center">
@@ -91,6 +91,7 @@ Kiln is quite intuitive, so we suggest launching the desktop app and diving in. 
 - [Quick Start](https://docs.kiln.tech/getting-started/quickstart)
 - [How to use any AI model or provider in Kiln](https://docs.kiln.tech/docs/models-and-ai-providers)
 - [Documents & Search Tools (RAG)](https://docs.kiln.tech/docs/documents-and-search-rag)
+- [Agents](https://docs.kiln.tech/docs/agents)
 - [Tools & MCP](https://docs.kiln.tech/docs/tools-and-mcp)
 - [Reasoning & Chain of Thought](https://docs.kiln.tech/docs/reasoning-and-chain-of-thought)
 - [Synthetic Data Generation](https://docs.kiln.tech/docs/synthetic-data-generation)
@@ -188,7 +189,7 @@ Why? We’re aiming to make Kiln fair and sustainable:
 
 - Kiln is always free for personal use.
 - Larger for-profit companies using Kiln Desktop may require a license in the future, but it is currently free.
-- This is based on the concept of the [fair code model](https://faircode.io) with the goal of making Kiln sustainable (adapted since Kiln is an app, not a service). 
+- This is based on the concept of the [fair code model](https://faircode.io) with the goal of making Kiln sustainable (adapted since Kiln is an app, not a service).
 
 Open Library and Data Format:
 
