@@ -11,7 +11,7 @@
 </h3>
 
 <p align="center">
-  Kiln is a free app with everything you need to build better Al products
+  Kiln is a free app with everything you need to build better AI products
 </p>
 
 <p align="center">
