@@ -165,6 +165,35 @@ def test_connect_api_key_kiln_copilot_empty_key(client):
     assert response.json() == {"detail": "API Key not found"}
 
 
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+def test_connect_api_key_kiln_copilot_failure(mock_httpx_get, client):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.json.return_value = {"message": "Invalid API key"}
+    mock_httpx_get.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": "invalid_key"}},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"message": "Invalid API key"}
+
+
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+def test_connect_api_key_kiln_copilot_network_error(mock_httpx_get, client):
+    mock_httpx_get.side_effect = httpx.RequestError("Network error")
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 400
+    assert "Failed to connect" in response.json()["message"]
+
+
 @patch("app.desktop.studio_server.provider_api.requests.get")
 @patch("app.desktop.studio_server.provider_api.Config.shared")
 def test_connect_openai_success(mock_config_shared, mock_requests_get, client):
