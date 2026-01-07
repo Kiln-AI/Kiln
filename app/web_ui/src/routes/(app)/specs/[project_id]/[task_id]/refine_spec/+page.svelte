@@ -14,6 +14,7 @@
     navigateToReviewSpec,
     loadSpecFormData,
   } from "../spec_utils"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -42,6 +43,11 @@
     suggested_property_values[key] = original_suggested_property_values[key]
     suggested_property_values = suggested_property_values // trigger reactivity
   }
+
+  // Check if any refinements were made (refined values differ from original values)
+  $: has_refinements = Object.keys(suggested_property_values).some(
+    (key) => suggested_property_values[key] !== current_property_values[key],
+  )
 
   // Advanced options
   let evaluate_full_trace = false
@@ -210,8 +216,8 @@
     </div>
   {:else}
     <FormContainer
-      submit_label="Next"
-      on:submit={analyze_spec}
+      submit_label={has_refinements ? "Next" : "Create Spec"}
+      on:submit={has_refinements ? analyze_spec : create_spec}
       bind:error={submit_error}
       bind:submitting
       warn_before_unload={!complete}
@@ -288,14 +294,25 @@
           </FormElement>
         </div>
       {/each}
+      {#if !has_refinements}
+        <div class="flex justify-center">
+          <Warning
+            warning_color="success"
+            warning_icon="check"
+            warning_message="No refinements made. Your spec is ready to be created."
+          />
+        </div>
+      {/if}
     </FormContainer>
-    <div class="flex flex-row gap-1 mt-2 justify-end">
-      <span class="text-xs text-gray-500">or</span>
-      <button
-        class="link underline text-xs text-gray-500"
-        on:click={create_spec}>Create Spec Without Analyzing Changes</button
-      >
-    </div>
+    {#if has_refinements}
+      <div class="flex flex-row gap-1 mt-2 justify-end">
+        <span class="text-xs text-gray-500">or</span>
+        <button
+          class="link underline text-xs text-gray-500"
+          on:click={create_spec}>Skip Review and Create Spec</button
+        >
+      </div>
+    {/if}
   {/if}
 </AppPage>
 
