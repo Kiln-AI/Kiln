@@ -373,8 +373,12 @@
               <th class="text-center">Manual</th>
               <th class="text-center">
                 <div class="flex items-center justify-center gap-2">
-                  Kiln Copilot
-                  <span class="badge badge-primary badge-sm">Recommended</span>
+                  <img
+                    src="/images/animated_logo.svg"
+                    alt="Kiln Copilot"
+                    class="size-4"
+                  />
+                  <span>Kiln Copilot</span>
                 </div>
               </th>
             </tr>
