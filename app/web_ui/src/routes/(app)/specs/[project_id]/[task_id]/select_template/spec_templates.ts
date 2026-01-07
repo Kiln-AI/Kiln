@@ -481,32 +481,33 @@ type SpecCategoryData = {
 
 export const spec_categories: SpecCategoryData[] = [
   {
-    category: "Functionality",
+    category: "Behavioral",
     templates: [
       {
         spec_type: "desired_behaviour",
-        description: "Specify a desired behaviour the model should follow.",
+        description:
+          "Specify the general behaviors and norms the model should follow across outputs.",
       },
       {
         spec_type: "issue",
         description:
-          "Specify a problematic behaviour the model should avoid to prevent recurring issues.",
+          "Specify recurring or known problematic behaviors the model should avoid.",
       },
-      {
-        spec_type: "tone",
-        description:
-          "Specify the desired tone and style of the model's output.",
-      },
-      {
-        spec_type: "formatting",
-        description:
-          "Specify the desired formatting and structure of the model's output.",
-      },
-      {
-        spec_type: "localization",
-        description:
-          "Specify how the model should adapt its output for the target language, region, and culture.",
-      },
+      // {
+      //   spec_type: "tone",
+      //   description:
+      //     "Specify the desired tone and stylistic characteristics of the model's output.",
+      // },
+      // {
+      //   spec_type: "formatting",
+      //   description:
+      //     "Specify the desired structure, layout, and formatting of the model's output.",
+      // },
+      // {
+      //   spec_type: "localization",
+      //   description:
+      //     "Specify requirements for adapting the model's output to the target language, region, and cultural context.",
+      // },
     ],
   },
   {
@@ -529,18 +530,18 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "factual_correctness",
         description:
-          "Specify what is considered factual correctness and critical omissions for the model's output.",
+          "Specify what constitutes factual correctness, acceptable uncertainty, and critical omissions in the model's output.",
       },
-      {
-        spec_type: "hallucinations",
-        description:
-          "Specify what is considered hallucinations and fabricated information for the model's output.",
-      },
-      {
-        spec_type: "completeness",
-        description:
-          "Specify what is considered a complete output and whether it addresses all aspects of the request.",
-      },
+      // {
+      //   spec_type: "hallucinations",
+      //   description:
+      //     "Specify what constitutes fabricated, unsupported, or ungrounded information in the model's output.",
+      // },
+      // {
+      //   spec_type: "completeness",
+      //   description:
+      //     "Specify what constitutes a complete output that addresses all aspects of the request.",
+      // },
     ],
   },
   {
@@ -549,28 +550,28 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "toxicity",
         description:
-          "Specify what is considered toxic content for the model's output.",
+          "Specify what is considered toxic, hateful, or abusive content.",
       },
       {
         spec_type: "bias",
         description:
-          "Specify what is considered biased content for the model's output.",
+          "Specify what is considered biased, unfair, or discriminatory content.",
       },
       {
         spec_type: "maliciousness",
         description:
-          "Specify what is considered malicious content for the model's output.",
+          "Specify what is considered malicious or harmful intent or facilitation.",
       },
-      {
-        spec_type: "nsfw",
-        description:
-          "Specify what is considered not safe for work content for the model's output.",
-      },
-      {
-        spec_type: "taboo",
-        description:
-          "Specify what is considered taboo or sensitive content for the model's output.",
-      },
+      // {
+      //   spec_type: "nsfw",
+      //   description:
+      //     "Specify what constitutes inappropriate material for general audiences.",
+      // },
+      // {
+      //   spec_type: "taboo",
+      //   description:
+      //     "Specify culturally or contextually sensitive content that the model should avoid due to potential harm or offense.",
+      // },
     ],
   },
   {
@@ -579,13 +580,13 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "jailbreak",
         description:
-          "Specify what is considered a jailbreak for the model's output.",
+          "Specify model behaviors that indicate successful circumvention of safety or policy constraints.",
       },
-      {
-        spec_type: "prompt_leakage",
-        description:
-          "Specify what is considered prompt leakage and system message exposure for the model's output.",
-      },
+      // {
+      //   spec_type: "prompt_leakage",
+      //   description:
+      //     "Specify behaviors that expose system prompts, developer instructions, or internal context.",
+      // },
     ],
   },
 ]
