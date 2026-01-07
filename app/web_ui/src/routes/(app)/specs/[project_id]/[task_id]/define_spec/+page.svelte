@@ -41,15 +41,28 @@
   // Get field configs for the current spec_type
   $: field_configs = spec_field_configs[spec_type] || []
 
+  let loading = false
+  let loading_error: KilnError | null = null
+
   onMount(async () => {
+    loading = true
+
     // Check if kiln-copilot is connected
     try {
       const { data, error } = await client.GET("/api/settings")
-      if (!error && data && data["kiln_copilot_api_key"]) {
+      if (error) {
+        throw error
+      }
+      if (!data) {
+        throw new Error("Failed to load Kiln settings")
+      }
+      if (data["kiln_copilot_api_key"]) {
         has_kiln_copilot = true
+      } else {
+        has_kiln_copilot = false
       }
     } catch (e) {
-      console.error("Failed to check kiln-copilot status", e)
+      loading_error = createKilnError(e)
     }
 
     // Check for URL params first (fresh navigation from select_template)
@@ -67,6 +80,7 @@
       initial_property_values = { ...formData.property_values }
       evaluate_full_trace = formData.evaluate_full_trace
       initialized = true
+      loading = false
       return
     }
 
@@ -106,6 +120,7 @@
     }
 
     initialized = true
+    loading = false
   })
 
   let next_error: KilnError | null = null
@@ -118,7 +133,6 @@
   let copilot_v_manual_dialog: Dialog | null = null
   let has_kiln_copilot = false
   let show_connect_kiln_steps = false
-  let connect_steps_component: ConnectKilnCopilotSteps | null = null
 
   $: void (name, property_values, initialized, update_warn_before_unload())
 
@@ -255,63 +269,73 @@
       },
     ]}
   >
-    <FormContainer
-      submit_label={has_kiln_copilot ? "Refine Spec with Copilot" : "Next"}
-      on:submit={check_kiln_copilot_and_proceed}
-      bind:error={next_error}
-      bind:submitting
-      {warn_before_unload}
-    >
-      <FormElement
-        label="Spec Name"
-        description="A short name for your own reference."
-        id="spec_name"
-        bind:value={name}
-      />
-
-      {#each field_configs as field (field.key)}
-        <FormElement
-          label={field.label}
-          id={field.key}
-          inputType="textarea"
-          disabled={field.disabled || false}
-          description={field.description}
-          height={field.height || "base"}
-          bind:value={property_values[field.key]}
-          optional={!field.required}
-          inline_action={initial_property_values[field.key]
-            ? {
-                handler: () => reset_field(field.key),
-                label: "Reset",
-              }
-            : undefined}
-        />
-      {/each}
-
-      {#if show_advanced_options}
-        <Collapse title="Advanced Options">
-          <FormElement
-            label="Include conversation history"
-            id="evaluate_full_trace"
-            inputType="checkbox"
-            bind:value={evaluate_full_trace}
-            disabled={full_trace_disabled}
-            description="When enabled, this spec will be judged on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
-            info_description={full_trace_disabled
-              ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
-              : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
-          />
-        </Collapse>
-      {/if}
-    </FormContainer>
-    {#if has_kiln_copilot}
-      <div class="flex flex-row gap-1 mt-2 justify-end">
-        <span class="text-xs text-gray-500">or</span>
-        <button
-          class="link underline text-xs text-gray-500"
-          on:click={create_spec_from_form}>Create Spec Without Copilot</button
-        >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
+    {:else if loading_error}
+      <div class="text-error text-sm">
+        {loading_error.getMessage() || "An unknown error occurred"}
+      </div>
+    {:else}
+      <FormContainer
+        submit_label={has_kiln_copilot ? "Refine Spec with Copilot" : "Next"}
+        on:submit={check_kiln_copilot_and_proceed}
+        bind:error={next_error}
+        bind:submitting
+        {warn_before_unload}
+      >
+        <FormElement
+          label="Spec Name"
+          description="A short name for your own reference."
+          id="spec_name"
+          bind:value={name}
+        />
+
+        {#each field_configs as field (field.key)}
+          <FormElement
+            label={field.label}
+            id={field.key}
+            inputType="textarea"
+            disabled={field.disabled || false}
+            description={field.description}
+            height={field.height || "base"}
+            bind:value={property_values[field.key]}
+            optional={!field.required}
+            inline_action={initial_property_values[field.key]
+              ? {
+                  handler: () => reset_field(field.key),
+                  label: "Reset",
+                }
+              : undefined}
+          />
+        {/each}
+
+        {#if show_advanced_options}
+          <Collapse title="Advanced Options">
+            <FormElement
+              label="Include conversation history"
+              id="evaluate_full_trace"
+              inputType="checkbox"
+              bind:value={evaluate_full_trace}
+              disabled={full_trace_disabled}
+              description="When enabled, this spec will be judged on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+              info_description={full_trace_disabled
+                ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
+                : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
+            />
+          </Collapse>
+        {/if}
+      </FormContainer>
+      {#if has_kiln_copilot}
+        <div class="flex flex-row gap-1 mt-2 justify-end">
+          <span class="text-xs text-gray-500">or</span>
+          <button
+            class="link underline text-xs text-gray-500"
+            on:click={create_spec_from_form}>Create Spec Without Copilot</button
+          >
+        </div>
+      {/if}
     {/if}
   </AppPage>
 </div>
@@ -333,7 +357,6 @@
   {#if show_connect_kiln_steps}
     <div class="flex flex-col">
       <ConnectKilnCopilotSteps
-        bind:this={connect_steps_component}
         showTitle={false}
         onSuccess={handle_connect_success}
         showCheckmark={has_kiln_copilot}
