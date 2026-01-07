@@ -35,9 +35,7 @@
   let submitting = false
   let complete = false
 
-  $: submit_label = all_feedback_aligned
-    ? "Create Spec"
-    : "Refine Spec with Feedback"
+  $: submit_label = all_feedback_aligned ? "Create Spec" : "Next"
   $: submit_disabled = !all_feedback_aligned && !any_feedback_provided
 
   type ReviewRow = {
@@ -395,7 +393,7 @@
           <div class="flex justify-center">
             <Warning
               warning_color="warning"
-              warning_message="For best results, finish reviewing all examples before refining the spec."
+              warning_message="For best results, finish reviewing all examples before continuing."
               tight={true}
             />
           </div>

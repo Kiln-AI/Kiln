@@ -139,15 +139,7 @@
       next_error = null
       submitting = true
 
-      // Validate required fields
-      for (const field of field_configs) {
-        if (field.required) {
-          const value = property_values[field.key]
-          if (!value || !value.trim()) {
-            throw new Error(`${field.label} is required`)
-          }
-        }
-      }
+      validateRequiredFields()
 
       if (!has_kiln_copilot) {
         submitting = false
@@ -165,15 +157,20 @@
     // Don't warn before unloading since we're intentionally navigating
     warn_before_unload = false
 
-    // Navigate to review_spec page
-    await navigateToReviewSpec(
-      project_id,
-      task_id,
-      name,
-      spec_type,
-      property_values,
-      evaluate_full_trace,
-    )
+    try {
+      // Navigate to review_spec page
+      await navigateToReviewSpec(
+        project_id,
+        task_id,
+        name,
+        spec_type,
+        property_values,
+        evaluate_full_trace,
+      )
+    } catch (error) {
+      warn_before_unload = true
+      next_error = createKilnError(error)
+    }
   }
 
   let show_continue_to_review = false
@@ -195,21 +192,24 @@
     return false
   }
 
+  function validateRequiredFields() {
+    for (const field of field_configs) {
+      if (field.required) {
+        const value = property_values[field.key]
+        if (!value || !value.trim()) {
+          throw new Error(`${field.label} is required`)
+        }
+      }
+    }
+  }
+
   async function do_create_spec(set_error: (error: KilnError | null) => void) {
     try {
       set_error(null)
       submitting = true
       complete = false
 
-      // Validate required fields
-      for (const field of field_configs) {
-        if (field.required) {
-          const value = property_values[field.key]
-          if (!value || !value.trim()) {
-            throw new Error(`${field.label} is required`)
-          }
-        }
-      }
+      validateRequiredFields()
 
       const spec_id = await createSpec(
         project_id,
@@ -256,7 +256,7 @@
     ]}
   >
     <FormContainer
-      submit_label="Next"
+      submit_label={has_kiln_copilot ? "Refine Spec with Copilot" : "Next"}
       on:submit={check_kiln_copilot_and_proceed}
       bind:error={next_error}
       bind:submitting
@@ -309,7 +309,7 @@
         <span class="text-xs text-gray-500">or</span>
         <button
           class="link underline text-xs text-gray-500"
-          on:click={create_spec_from_form}>Create Spec Without Analysis</button
+          on:click={create_spec_from_form}>Create Spec Without Copilot</button
         >
       </div>
     {/if}
@@ -341,8 +341,8 @@
       {#if show_continue_to_review}
         <button
           class="btn btn-primary mt-4 w-full"
-          on:click={() => {
-            proceed_to_review()
+          on:click={async () => {
+            await proceed_to_review()
             copilot_v_manual_dialog?.close()
           }}
         >
