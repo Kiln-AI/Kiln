@@ -52,6 +52,12 @@
 - 📚 [**Awesome Docs**](https://docs.kiln.tech): easy-to-follow video guides, approachable for beginners, and depth for advanced users.
 - 💰 **Free**: Our apps are free and our library is open-source.
 
+## Measure, Improve, Repeat
+
+Build better AI systems through iteration. Kiln brings evals and optimization together so every change is measurable—and every iteration moves you forward.
+
+<img width="600" height="263" alt="kiln_optimization" src="https://github.com/user-attachments/assets/5517b33b-74dd-444a-9f40-6a9c6d8a1ffc" />
+
 ## Demo
 
 [Watch a 2 minute overview of Kiln](https://kiln.tech#demo) or our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
