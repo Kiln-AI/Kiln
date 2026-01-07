@@ -328,6 +328,14 @@
       current_step = 3
       current_step_id = "compare_run_configs"
     } else {
+      if (has_default_eval_config) {
+        // Not everything is technically setup but the user bypassed recommended steps
+        // And selected a default judge. So we can just set to the final step.
+        current_step = 5
+        current_step_id = "compare_run_configs"
+        return
+      }
+
       current_step = 3
       current_step_id = "human_ratings"
       if (golden_dataset_explanation) {
