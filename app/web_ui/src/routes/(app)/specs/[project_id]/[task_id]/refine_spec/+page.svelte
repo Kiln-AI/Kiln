@@ -29,17 +29,22 @@
   // Suggested values (editable)
   let suggested_property_values: Record<string, string | null> = {}
 
-  // Track which fields have AI-generated suggestions (empty means no suggestion, use current value)
+  // Original suggested values (before user edits, for Reset functionality)
+  let original_suggested_property_values: Record<string, string | null> = {}
+
+  // Track which fields have AI-generated suggestions (for badge display)
   let ai_suggested_fields: Set<string> = new Set()
+
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
+
+  // Reset a field to its original suggested value (undo user edits)
+  function resetField(key: string) {
+    suggested_property_values[key] = original_suggested_property_values[key]
+    suggested_property_values = suggested_property_values // trigger reactivity
+  }
 
   // Advanced options
   let evaluate_full_trace = false
-
-  // Check if a field has an AI suggestion
-  function hasAiSuggestion(key: string): boolean {
-    return ai_suggested_fields.has(key)
-  }
 
   let spec_type: SpecType = "desired_behaviour"
 
@@ -81,9 +86,10 @@
 
         name = formData.name
 
-        // Initialize both current and suggested with the same values
+        // Initialize current, suggested, and original suggested with the same values (temporary)
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
+        original_suggested_property_values = { ...formData.property_values }
 
         evaluate_full_trace = formData.evaluate_full_trace
 
@@ -212,7 +218,7 @@
     >
       <!-- Column Headers -->
       <div class="grid grid-cols-2 gap-8 mb-4">
-        <div class="text-xl font-bold">Current</div>
+        <div class="text-xl font-bold">Original</div>
         <div class="text-xl font-bold">Refined</div>
       </div>
 
@@ -258,20 +264,23 @@
             height={bumpHeight(field.key, field.height)}
             bind:value={suggested_property_values[field.key]}
             optional={!field.required}
+            inline_action={disabledKeys.has(field.key)
+              ? undefined
+              : { label: "Reset", handler: () => resetField(field.key) }}
           >
             <svelte:fragment slot="label_suffix">
               {#if !disabledKeys.has(field.key)}
-                {#if !hasAiSuggestion(field.key)}
+                {#if !ai_suggested_fields.has(field.key)}
                   <span
                     class="badge badge-success badge-outline badge-sm gap-1 ml-2"
                   >
-                    No changes
+                    No change suggested
                   </span>
                 {:else}
                   <span
                     class="badge badge-warning badge-outline badge-sm gap-1 ml-2"
                   >
-                    Refined
+                    Refinement suggested
                   </span>
                 {/if}
               {/if}
