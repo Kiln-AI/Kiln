@@ -14,6 +14,7 @@
     navigateToReviewSpec,
     loadSpecFormData,
   } from "../spec_utils"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -29,17 +30,27 @@
   // Suggested values (editable)
   let suggested_property_values: Record<string, string | null> = {}
 
-  // Track which fields have AI-generated suggestions (empty means no suggestion, use current value)
+  // Original suggested values (before user edits, for Reset functionality)
+  let original_suggested_property_values: Record<string, string | null> = {}
+
+  // Track which fields have AI-generated suggestions (for badge display)
   let ai_suggested_fields: Set<string> = new Set()
+
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
+
+  // Reset a field to its original suggested value (undo user edits)
+  function resetField(key: string) {
+    suggested_property_values[key] = original_suggested_property_values[key]
+    suggested_property_values = suggested_property_values // trigger reactivity
+  }
+
+  // Check if any refinements were made (refined values differ from original values)
+  $: has_refinements = Object.keys(suggested_property_values).some(
+    (key) => suggested_property_values[key] !== current_property_values[key],
+  )
 
   // Advanced options
   let evaluate_full_trace = false
-
-  // Check if a field has an AI suggestion
-  function hasAiSuggestion(key: string): boolean {
-    return ai_suggested_fields.has(key)
-  }
 
   let spec_type: SpecType = "desired_behaviour"
 
@@ -81,9 +92,10 @@
 
         name = formData.name
 
-        // Initialize both current and suggested with the same values
+        // Initialize current, suggested, and original suggested with the same values (temporary)
         current_property_values = { ...formData.property_values }
         suggested_property_values = { ...formData.property_values }
+        original_suggested_property_values = { ...formData.property_values }
 
         evaluate_full_trace = formData.evaluate_full_trace
 
@@ -204,16 +216,16 @@
     </div>
   {:else}
     <FormContainer
-      submit_label="Next"
-      on:submit={analyze_spec}
+      submit_label={has_refinements ? "Next" : "Create Spec"}
+      on:submit={has_refinements ? analyze_spec : create_spec}
       bind:error={submit_error}
       bind:submitting
       warn_before_unload={!complete}
     >
       <!-- Column Headers -->
       <div class="grid grid-cols-2 gap-8 mb-4">
-        <div class="text-xl font-bold">Current</div>
-        <div class="text-xl font-bold">Suggestions</div>
+        <div class="text-xl font-bold">Original</div>
+        <div class="text-xl font-bold">Refined</div>
       </div>
 
       <!-- Spec Name Row -->
@@ -258,44 +270,23 @@
             height={bumpHeight(field.key, field.height)}
             bind:value={suggested_property_values[field.key]}
             optional={!field.required}
+            inline_action={disabledKeys.has(field.key)
+              ? undefined
+              : { label: "Reset", handler: () => resetField(field.key) }}
           >
             <svelte:fragment slot="label_suffix">
               {#if !disabledKeys.has(field.key)}
-                {#if !hasAiSuggestion(field.key)}
+                {#if !ai_suggested_fields.has(field.key)}
                   <span
                     class="badge badge-success badge-outline badge-sm gap-1 ml-2"
                   >
-                    No changes
-                    <svg
-                      class="w-3 h-3"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M16 9L10 15.5L7.5 13M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
+                    No change suggested
                   </span>
                 {:else}
                   <span
                     class="badge badge-warning badge-outline badge-sm gap-1 ml-2"
                   >
-                    Edit suggested
-                    <svg
-                      class="w-3 h-3"
-                      fill="currentColor"
-                      viewBox="0 0 256 256"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
-                      />
-                    </svg>
+                    Refinement suggested
                   </span>
                 {/if}
               {/if}
@@ -303,14 +294,25 @@
           </FormElement>
         </div>
       {/each}
+      {#if !has_refinements}
+        <div class="flex justify-center">
+          <Warning
+            warning_color="success"
+            warning_icon="check"
+            warning_message="No refinements made. Your spec is ready to be created."
+          />
+        </div>
+      {/if}
     </FormContainer>
-    <div class="flex flex-row gap-1 mt-2 justify-end">
-      <span class="text-xs text-gray-500">or</span>
-      <button
-        class="link underline text-xs text-gray-500"
-        on:click={create_spec}>Create Spec Without Analyzing Changes</button
-      >
-    </div>
+    {#if has_refinements}
+      <div class="flex flex-row gap-1 mt-2 justify-end">
+        <span class="text-xs text-gray-500">or</span>
+        <button
+          class="link underline text-xs text-gray-500"
+          on:click={create_spec}>Skip Review and Create Spec</button
+        >
+      </div>
+    {/if}
   {/if}
 </AppPage>
 
