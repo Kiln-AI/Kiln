@@ -71,7 +71,6 @@
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            sub_nav: "api_keys",
           },
         },
       )
