@@ -1,5 +1,3 @@
-from typing import Any
-
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
@@ -8,21 +6,41 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecInput,
     ClarifySpecOutput,
-    ExampleWithFeedback,
     GenerateBatchInput,
     GenerateBatchOutput,
     HTTPValidationError,
     RefineSpecInput,
     RefineSpecOutput,
-    SpecInfo,
-    TaskInfo,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from fastapi import FastAPI, HTTPException
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.utils.config import Config
 from pydantic import BaseModel, Field
+
+
+# Pydantic input models (replacing attrs-based client models)
+class TaskInfoApi(BaseModel):
+    task_prompt: str
+    few_shot_examples: str | None = None
+
+
+class SpecInfoApi(BaseModel):
+    spec_fields: dict[str, str]
+    spec_field_current_values: dict[str, str]
+
+
+class ExampleWithFeedbackApi(BaseModel):
+    user_rating_exhibits_issue_correct: bool
+    input: str = Field(alias="input")
+    output: str
+    exhibits_issue: bool
+    user_feedback: str | None = None
+
+    class Config:
+        populate_by_name = True
 
 
 class ClarifySpecApiInput(BaseModel):
@@ -39,9 +57,9 @@ class RefineSpecApiInput(BaseModel):
     task_prompt_with_few_shot: str
     task_input_schema: str
     task_output_schema: str
-    task_info: TaskInfo
-    spec: SpecInfo
-    examples_with_feedback: list[ExampleWithFeedback]
+    task_info: TaskInfoApi
+    spec: SpecInfoApi
+    examples_with_feedback: list[ExampleWithFeedbackApi]
 
 
 class GenerateBatchApiInput(BaseModel):
@@ -52,6 +70,49 @@ class GenerateBatchApiInput(BaseModel):
     num_samples_per_topic: int
     num_topics: int
     enable_scoring: bool = Field(default=False)
+
+
+class SubsampleBatchOutputItemApi(BaseModel):
+    input: str = Field(alias="input")
+    output: str
+    exhibits_issue: bool
+
+
+class ClarifySpecApiOutput(BaseModel):
+    examples_for_feedback: list[SubsampleBatchOutputItemApi]
+    model_id: str
+    model_provider: ModelProviderName
+    judge_prompt: str
+
+
+class SpecEditApi(BaseModel):
+    old_value: str
+    proposed_edit: str
+    reason_for_edit: str
+
+
+class RefineSpecApiOutput(BaseModel):
+    new_proposed_spec_edits: dict[str, SpecEditApi]
+    out_of_scope_feedback: str
+
+
+class SampleApi(BaseModel):
+    input: str = Field(alias="input")
+    output: str
+
+
+class ScoredSampleApi(BaseModel):
+    input: str = Field(alias="input")
+    output: str
+    exhibits_issue: bool
+    reasoning: str
+
+
+class GenerateBatchApiOutput(BaseModel):
+    data_by_topic: dict[str, list[SampleApi | ScoredSampleApi]]
+    topic_gen_prompt: str | None = None
+    input_gen_prompt: str | None = None
+    judge_prompt: str | None = None
 
 
 def _get_api_key() -> str:
@@ -67,7 +128,7 @@ def _get_api_key() -> str:
 
 def connect_copilot_api(app: FastAPI):
     @app.post("/api/copilot/clarify_spec")
-    async def clarify_spec(input: ClarifySpecApiInput) -> dict[str, Any]:
+    async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
@@ -90,7 +151,7 @@ def connect_copilot_api(app: FastAPI):
             )
 
         if isinstance(result, ClarifySpecOutput):
-            return result.to_dict()
+            return ClarifySpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
             status_code=500,
@@ -98,11 +159,11 @@ def connect_copilot_api(app: FastAPI):
         )
 
     @app.post("/api/copilot/refine_spec")
-    async def refine_spec(input: RefineSpecApiInput) -> dict[str, Any]:
+    async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        refine_input = RefineSpecInput(**input.model_dump())
+        refine_input = RefineSpecInput.from_dict(input.model_dump(by_alias=True))
 
         result = await refine_spec_v1_copilot_refine_spec_post.asyncio(
             client=client,
@@ -121,7 +182,7 @@ def connect_copilot_api(app: FastAPI):
             )
 
         if isinstance(result, RefineSpecOutput):
-            return result.to_dict()
+            return RefineSpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
             status_code=500,
@@ -129,7 +190,7 @@ def connect_copilot_api(app: FastAPI):
         )
 
     @app.post("/api/copilot/generate_batch")
-    async def generate_batch(input: GenerateBatchApiInput) -> dict[str, Any]:
+    async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
@@ -152,7 +213,7 @@ def connect_copilot_api(app: FastAPI):
             )
 
         if isinstance(result, GenerateBatchOutput):
-            return result.to_dict()
+            return GenerateBatchApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
             status_code=500,

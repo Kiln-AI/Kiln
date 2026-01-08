@@ -1,15 +1,17 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_batch_output import (
     GenerateBatchOutput,
-    GenerateBatchOutputDataByTopic,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
     HTTPValidationError,
-    ModelProviderName,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_output import (
     RefineSpecOutput,
-    RefineSpecOutputNewProposedSpecEdits,
-    SubsampleBatchOutputItem,
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from fastapi import FastAPI
@@ -101,18 +103,19 @@ class TestClarifySpec:
             assert "API key not configured" in response.json()["detail"]
 
     def test_clarify_spec_success(self, client, clarify_spec_input, mock_api_key):
-        mock_output = ClarifySpecOutput(
-            examples_for_feedback=[
-                SubsampleBatchOutputItem(
-                    input_="test input",
-                    output="test output",
-                    exhibits_issue=False,
-                )
+        mock_output = MagicMock(spec=ClarifySpecOutput)
+        mock_output.to_dict.return_value = {
+            "examples_for_feedback": [
+                {
+                    "input": "test input",
+                    "output": "test output",
+                    "exhibits_issue": False,
+                }
             ],
-            model_id="gpt-4",
-            model_provider=ModelProviderName.OPENAI,
-            judge_prompt="Test judge prompt",
-        )
+            "model_id": "gpt-4",
+            "model_provider": "openai",
+            "judge_prompt": "Test judge prompt",
+        }
 
         with patch(
             "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
@@ -138,7 +141,8 @@ class TestClarifySpec:
     def test_clarify_spec_validation_error(
         self, client, clarify_spec_input, mock_api_key
     ):
-        mock_error = HTTPValidationError(detail=[])
+        mock_error = MagicMock(spec=HTTPValidationError)
+        mock_error.to_dict.return_value = {"detail": []}
 
         with patch(
             "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
@@ -163,10 +167,11 @@ class TestRefineSpec:
             assert "API key not configured" in response.json()["detail"]
 
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
-        mock_output = RefineSpecOutput(
-            new_proposed_spec_edits=RefineSpecOutputNewProposedSpecEdits(),
-            out_of_scope_feedback="No out of scope feedback",
-        )
+        mock_output = MagicMock(spec=RefineSpecOutput)
+        mock_output.to_dict.return_value = {
+            "new_proposed_spec_edits": {},
+            "out_of_scope_feedback": "No out of scope feedback",
+        }
 
         with patch(
             "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
@@ -192,7 +197,8 @@ class TestRefineSpec:
     def test_refine_spec_validation_error(
         self, client, refine_spec_input, mock_api_key
     ):
-        mock_error = HTTPValidationError(detail=[])
+        mock_error = MagicMock(spec=HTTPValidationError)
+        mock_error.to_dict.return_value = {"detail": []}
 
         with patch(
             "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
@@ -219,9 +225,8 @@ class TestGenerateBatch:
             assert "API key not configured" in response.json()["detail"]
 
     def test_generate_batch_success(self, client, generate_batch_input, mock_api_key):
-        mock_output = GenerateBatchOutput(
-            data_by_topic=GenerateBatchOutputDataByTopic(),
-        )
+        mock_output = MagicMock(spec=GenerateBatchOutput)
+        mock_output.to_dict.return_value = {"data_by_topic": {}}
 
         with patch(
             "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
@@ -252,7 +257,8 @@ class TestGenerateBatch:
     def test_generate_batch_validation_error(
         self, client, generate_batch_input, mock_api_key
     ):
-        mock_error = HTTPValidationError(detail=[])
+        mock_error = MagicMock(spec=HTTPValidationError)
+        mock_error.to_dict.return_value = {"detail": []}
 
         with patch(
             "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
@@ -269,9 +275,8 @@ class TestGenerateBatch:
         self, client, generate_batch_input, mock_api_key
     ):
         generate_batch_input["enable_scoring"] = True
-        mock_output = GenerateBatchOutput(
-            data_by_topic=GenerateBatchOutputDataByTopic(),
-        )
+        mock_output = MagicMock(spec=GenerateBatchOutput)
+        mock_output.to_dict.return_value = {"data_by_topic": {}}
 
         with patch(
             "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
