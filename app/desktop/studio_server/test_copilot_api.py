@@ -189,6 +189,20 @@ class TestRefineSpec:
             assert response.status_code == 500
             assert "No response" in response.json()["detail"]
 
+    def test_refine_spec_validation_error(
+        self, client, refine_spec_input, mock_api_key
+    ):
+        mock_error = HTTPValidationError(detail=[])
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ):
+            response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
+            assert response.status_code == 422
+            assert "Validation error" in response.json()["detail"]
+
 
 class TestGenerateBatch:
     def test_generate_batch_no_api_key(self, client, generate_batch_input):
@@ -234,6 +248,22 @@ class TestGenerateBatch:
             )
             assert response.status_code == 500
             assert "No response" in response.json()["detail"]
+
+    def test_generate_batch_validation_error(
+        self, client, generate_batch_input, mock_api_key
+    ):
+        mock_error = HTTPValidationError(detail=[])
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ):
+            response = client.post(
+                "/api/copilot/generate_batch", json=generate_batch_input
+            )
+            assert response.status_code == 422
+            assert "Validation error" in response.json()["detail"]
 
     def test_generate_batch_with_scoring(
         self, client, generate_batch_input, mock_api_key
