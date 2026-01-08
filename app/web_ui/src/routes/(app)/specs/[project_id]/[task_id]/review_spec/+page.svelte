@@ -19,6 +19,9 @@
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
   import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import { client } from "$lib/api_client"
+  import { load_task } from "$lib/stores"
+  import { buildDefinitionFromProperties } from "../select_template/spec_templates"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -65,9 +68,6 @@
   }
 
   onMount(async () => {
-    // Wait 3 seconds to simulate loading time
-    await new Promise((resolve) => setTimeout(resolve, 3000))
-
     await load_spec_data()
   })
 
@@ -84,33 +84,53 @@
         property_values = { ...formData.property_values }
         evaluate_full_trace = formData.evaluate_full_trace
 
-        // Generate mock review data (in a real implementation, this would come from an API)
-        review_rows = [
-          {
-            id: "1",
-            input: "User uploads a PDF document",
-            output: "Document successfully processed",
-            model_decision: "meets_spec",
-            meets_spec: null,
-            feedback: "",
+        // Load the task to get instruction and schemas
+        const task = await load_task(project_id, task_id)
+        if (!task) {
+          throw new Error("Failed to load task")
+        }
+
+        const spec_definition = buildDefinitionFromProperties(
+          spec_type,
+          property_values,
+        )
+
+        // TODO: Create a few shot prompt instead of basic prompt
+        // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
+        const { data, error } = await client.POST("/api/copilot/clarify_spec", {
+          body: {
+            task_prompt_with_few_shot: task.instruction,
+            task_input_schema: task.input_json_schema
+              ? JSON.stringify(task.input_json_schema)
+              : "",
+            task_output_schema: task.output_json_schema
+              ? JSON.stringify(task.output_json_schema)
+              : "",
+            spec_rendered_prompt_template: spec_definition,
+            num_samples_per_topic: 10,
+            num_topics: 5,
+            num_exemplars: 10,
           },
-          {
-            id: "2",
-            input: "User tries to upload an invalid file",
-            output: "Error: Invalid file format",
-            model_decision: "fails_spec",
-            meets_spec: null,
-            feedback: "",
-          },
-          {
-            id: "3",
-            input: "User requests a summary of uploaded file",
-            output: "Summary generated successfully",
-            model_decision: "meets_spec",
-            meets_spec: null,
-            feedback: "",
-          },
-        ]
+        })
+
+        if (error) {
+          throw error
+        }
+
+        if (!data) {
+          throw new Error(
+            "Failed to analyze spec for review. Please try again.",
+          )
+        }
+
+        review_rows = data.examples_for_feedback.map((example, index) => ({
+          id: String(index + 1),
+          input: example.input,
+          output: example.output,
+          model_decision: example.exhibits_issue ? "fails_spec" : "meets_spec",
+          meets_spec: null,
+          feedback: "",
+        }))
 
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created
