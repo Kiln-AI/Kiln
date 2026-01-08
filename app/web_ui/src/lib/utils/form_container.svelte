@@ -38,6 +38,7 @@
   export let submit_disabled = false
   export let gap: number = 6
   export let focus_on_mount = true
+  export let compact_button = false
   $: ui_saved_indicator = update_ui_saved_indicator(saved)
 
   function update_ui_saved_indicator(saved: boolean): boolean {
@@ -173,7 +174,7 @@
 <form class="flex flex-col gap-{gap} w-full" {id} on:submit={handleFormSubmit}>
   <slot />
 
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-2 {compact_button ? 'items-end' : ''}">
     {#if has_validation_errors}
       <div class="text-sm text-center text-error">
         <button class="link" on:click={() => focus_first_error()}
@@ -192,7 +193,9 @@
       type="submit"
       class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
         ? 'btn-success'
-        : ''} {submit_visible ? '' : 'hidden'}"
+        : ''} {submit_visible ? '' : 'hidden'} {compact_button
+        ? 'min-w-64 px-12'
+        : 'w-full'}"
       on:click={validate_and_submit}
       disabled={submitting || submit_disabled}
     >

@@ -54,8 +54,8 @@ export async function navigateToReviewSpec(
   }
   saveSpecFormData(project_id, task_id, formData)
 
-  // Navigate to review_spec page
-  goto(`/specs/${project_id}/${task_id}/review_spec`)
+  // Navigate to review_spec page, replacing history so browser back goes to templates
+  goto(`/specs/${project_id}/${task_id}/review_spec`, { replaceState: true })
 }
 
 /**

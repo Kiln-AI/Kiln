@@ -7,7 +7,6 @@
   import type { SpecType } from "$lib/types"
   import { goto } from "$app/navigation"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import {
     createSpec,
@@ -117,7 +116,6 @@
   let submit_error: KilnError | null = null
   let submitting = false
   let complete = false
-  let analyze_dialog: Dialog | null = null
   async function analyze_spec() {
     try {
       submit_error = null
@@ -136,11 +134,8 @@
       // Reset submitting state so button doesn't show spinner
       submitting = false
 
-      // Show analyzing dialog
-      analyze_dialog?.show()
-
-      // Wait 2 seconds
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Set complete to true so the warn before unload doesn't show when navigating to review_spec
+      complete = true
 
       // Navigate to review_spec page
       await navigateToReviewSpec(
@@ -153,7 +148,6 @@
       )
     } catch (error) {
       submit_error = createKilnError(error)
-      analyze_dialog?.hide()
       submitting = false
     }
   }
@@ -183,7 +177,8 @@
       )
 
       complete = true
-      goto(`/specs/${project_id}/${task_id}/${spec_id}`)
+      // Replace history so browser back goes to templates
+      goto(`/specs/${project_id}/${task_id}/${spec_id}`, { replaceState: true })
     } catch (error) {
       submit_error = createKilnError(error)
     } finally {
@@ -221,6 +216,7 @@
       bind:error={submit_error}
       bind:submitting
       warn_before_unload={!complete}
+      compact_button={true}
     >
       <!-- Column Headers -->
       <div class="grid grid-cols-2 gap-8 mb-4">
@@ -295,7 +291,7 @@
         </div>
       {/each}
       {#if !has_refinements}
-        <div class="flex justify-center">
+        <div class="flex justify-end">
           <Warning
             warning_color="success"
             warning_icon="check"
@@ -315,9 +311,3 @@
     {/if}
   {/if}
 </AppPage>
-
-<Dialog bind:this={analyze_dialog} title="Analyzing Spec">
-  <div class="flex flex-col items-center justify-center min-h-[100px]">
-    <div class="loading loading-spinner loading-lg"></div>
-  </div>
-</Dialog>

@@ -235,7 +235,8 @@
       )
 
       complete = true
-      goto(`/specs/${project_id}/${task_id}/${spec_id}`)
+      // Replace history so browser back goes to templates
+      goto(`/specs/${project_id}/${task_id}/${spec_id}`, { replaceState: true })
     } catch (error) {
       set_error(createKilnError(error))
     } finally {
@@ -283,6 +284,7 @@
         on:submit={check_kiln_copilot_and_proceed}
         bind:error={next_error}
         bind:submitting
+        compact_button={true}
         {warn_before_unload}
       >
         <FormElement
