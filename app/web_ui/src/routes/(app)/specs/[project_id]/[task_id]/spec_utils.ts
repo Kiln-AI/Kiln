@@ -361,3 +361,37 @@ async function cleanupEval(
     )
   }
 }
+
+/**
+ * Extract a tag from a filter_id string (e.g., "tag::my_tag" -> "my_tag")
+ * @param filter_id - The filter ID to extract the tag from
+ * @returns The tag if the filter_id is a tag filter, undefined otherwise
+ */
+export function tagFromFilterId(filter_id: string): string | undefined {
+  if (filter_id.startsWith("tag::")) {
+    return filter_id.replace("tag::", "")
+  }
+  return undefined
+}
+
+/**
+ * Generate a dataset link from a filter_id
+ * @param project_id - The project ID
+ * @param task_id - The task ID
+ * @param filter_id - The filter ID to generate a link from
+ * @returns The dataset URL if the filter_id is a tag filter, undefined otherwise
+ */
+export function linkFromFilterId(
+  project_id: string,
+  task_id: string,
+  filter_id: string | null | undefined,
+): string | undefined {
+  if (!filter_id) {
+    return undefined
+  }
+  const tag = tagFromFilterId(filter_id)
+  if (tag) {
+    return `/dataset/${project_id}/${task_id}?tags=${tag}`
+  }
+  return undefined
+}

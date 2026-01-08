@@ -8,18 +8,11 @@
   import FormElement, {
     type InlineAction,
   } from "$lib/utils/form_element.svelte"
-  import type {
-    EvalConfig,
-    ProviderModels,
-    TaskRunConfig,
-    EvalResultSummary,
-  } from "$lib/types"
+  import type { EvalConfig, TaskRunConfig, EvalResultSummary } from "$lib/types"
   import { goto } from "$app/navigation"
   import {
     model_info,
     load_model_info,
-    model_name,
-    provider_name_from_id,
     load_available_prompts,
     load_available_models,
     load_task,
@@ -32,7 +25,7 @@
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import { formatEvalConfigName } from "$lib/utils/formatters"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -279,20 +272,6 @@
     }
   }
 
-  // A dropdown name for the eval config that is human readable and helpful
-  // Combine's it's name with it's properties
-  function get_eval_config_name(
-    eval_config: EvalConfig,
-    model_info: ProviderModels | null,
-  ): string {
-    let parts = []
-    parts.push(eval_config_to_ui_name(eval_config.config_type))
-    parts.push(
-      `${model_name(eval_config.model_name, model_info)} (${provider_name_from_id(eval_config.model_provider)})`,
-    )
-    return eval_config.name + " — " + parts.join(", ")
-  }
-
   $: current_eval_config = eval_configs?.find(
     (config) => config.id === current_eval_config_id,
   )
@@ -375,7 +354,7 @@
         label: "Judges",
         options: sortedConfigs.map((config) => ({
           value: config.id,
-          label: get_eval_config_name(config, $model_info),
+          label: formatEvalConfigName(config, $model_info),
           badge:
             config.id === evaluator?.current_config_id ? "Default" : undefined,
         })),
