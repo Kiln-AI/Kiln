@@ -21,6 +21,7 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -171,7 +172,7 @@
     properties.push({
       name: "Eval Dataset",
       value: evaluator.eval_set_filter_id + eval_set_size,
-      link: link_from_filter_id(evaluator.eval_set_filter_id),
+      link: linkFromFilterId(project_id, task_id, evaluator.eval_set_filter_id),
     })
     let golden_dataset_size = ""
     if (eval_progress) {
@@ -183,7 +184,11 @@
         value: evaluator.eval_configs_filter_id + golden_dataset_size,
         tooltip:
           "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
-        link: link_from_filter_id(evaluator.eval_configs_filter_id),
+        link: linkFromFilterId(
+          project_id,
+          task_id,
+          evaluator.eval_configs_filter_id,
+        ),
       })
     }
 
@@ -383,33 +388,17 @@
     }
   }
 
-  function tag_from_filter_id(filter_id: string): string | undefined {
-    if (filter_id.startsWith("tag::")) {
-      return filter_id.replace("tag::", "")
-    }
-    return undefined
-  }
-
-  function link_from_filter_id(filter_id: string | null): string | undefined {
-    if (!filter_id) {
-      return undefined
-    }
-    const tag = tag_from_filter_id(filter_id)
-    if (tag) {
-      return `/dataset/${project_id}/${task_id}?tags=${tag}`
-    }
-    return undefined
-  }
-
   function add_eval_data() {
     if (!evaluator) {
       alert("Unable to add eval data. Please try again later.")
       return
     }
-    const eval_tag = tag_from_filter_id(evaluator?.eval_set_filter_id)
+    const eval_tag = evaluator?.eval_set_filter_id
+      ? tagFromFilterId(evaluator.eval_set_filter_id)
+      : undefined
     let golden_tag: string | undefined = undefined
     if (evaluator?.eval_configs_filter_id) {
-      golden_tag = tag_from_filter_id(evaluator.eval_configs_filter_id)
+      golden_tag = tagFromFilterId(evaluator.eval_configs_filter_id)
     }
     if (!eval_tag || (evaluator.template !== "rag" && !golden_tag)) {
       alert(
@@ -479,7 +468,11 @@
     if (!evaluator || !evaluator.eval_configs_filter_id) {
       return
     }
-    const url = link_from_filter_id(evaluator.eval_configs_filter_id)
+    const url = linkFromFilterId(
+      project_id,
+      task_id,
+      evaluator.eval_configs_filter_id,
+    )
     if (!url) {
       return
     }
@@ -635,7 +628,7 @@
                         {/if}
                       </div>
                       <div>
-                        {#if evaluator.eval_configs_filter_id && link_from_filter_id(evaluator.eval_configs_filter_id)}
+                        {#if evaluator.eval_configs_filter_id && linkFromFilterId(project_id, task_id, evaluator.eval_configs_filter_id)}
                           <button
                             class="btn btn-sm {current_step_id ==
                             'human_ratings'
