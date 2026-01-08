@@ -8,6 +8,7 @@ import type {
   SpecProperties,
   SpecStatus,
   SpecType,
+  TaskRun,
 } from "$lib/types"
 import { buildDefinitionFromProperties } from "./select_template/spec_templates"
 import {
@@ -22,6 +23,7 @@ import {
   saveSpecFormData,
   clearSpecFormData,
 } from "./spec_form_data_store"
+import { load_task } from "$lib/stores"
 
 // Re-export for convenience
 export type { ReviewedExample, SpecFormData }
@@ -88,6 +90,18 @@ export async function createSpec(
     evaluate_full_trace,
   )
 
+  // TODO: IF COPILOT {
+
+  // Generate eval data set
+  const tag = specEvalTag(name)
+  await generateAndSaveEvalData(
+    project_id,
+    task_id,
+    spec_type,
+    property_values,
+    tag,
+  )
+
   // Save any accumulated reviewed examples as the golden dataset
   const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
   if (reviewed_examples.length > 0) {
@@ -100,6 +114,8 @@ export async function createSpec(
       spec_type, // The eval output score name matches the spec_type
     )
   }
+
+  // } END IF COPILOT
 
   // Build the properties object with spec_type, filtering out null values
   const filteredPropertyValues = Object.fromEntries(
@@ -191,6 +207,118 @@ async function createEval(
   }
 
   return data.id
+}
+
+/**
+ * Generate eval data using the generate_batch API and save as TaskRuns
+ * @param project_id - The project ID
+ * @param task_id - The task ID
+ * @param spec_type - The spec type
+ * @param property_values - The property values for the spec
+ * @param tag - The eval tag to apply to generated runs
+ */
+async function generateAndSaveEvalData(
+  project_id: string,
+  task_id: string,
+  spec_type: SpecType,
+  property_values: Record<string, string | null>,
+  tag: string,
+): Promise<void> {
+  // Load the task to get instruction and schemas
+  const task = await load_task(project_id, task_id)
+  if (!task) {
+    throw new Error("Failed to load task")
+  }
+
+  // Build the spec rendered prompt template from property values
+  const spec_definition = buildDefinitionFromProperties(
+    spec_type,
+    property_values,
+  )
+
+  // Call the generate_batch API
+
+  // TODO: Add few shot examples to the task prompt if able
+  // TODO: Fix task input/output schemas?
+  const { data, error } = await client.POST("/api/copilot/generate_batch", {
+    body: {
+      task_prompt_with_few_shot: task.instruction || "",
+      task_input_schema: task.input_json_schema
+        ? JSON.stringify(task.input_json_schema)
+        : "",
+      task_output_schema: task.output_json_schema
+        ? JSON.stringify(task.output_json_schema)
+        : "",
+      spec_rendered_prompt_template: spec_definition,
+      num_samples_per_topic: 5,
+      num_topics: 2,
+      enable_scoring: false,
+    },
+  })
+
+  if (error) {
+    throw error
+  }
+
+  if (!data) {
+    throw new Error("Failed to generate batch")
+  }
+
+  const examples = Object.values(data.data_by_topic).flat()
+
+  // Save each example as a TaskRun with the eval tag
+  for (const example of examples) {
+    const taskRun: TaskRun = {
+      v: 1,
+      id: generate_id(),
+      path: null,
+      created_at: new Date().toISOString(),
+      input: example.input,
+      output: {
+        v: 1,
+        output: example.output,
+        source: {
+          type: "synthetic",
+          properties: {
+            adapter_name: "kiln-adapter",
+            model_name: "kiln-copilot",
+            model_provider: "kiln",
+          },
+        },
+      },
+      input_source: {
+        type: "synthetic",
+        properties: {
+          adapter_name: "kiln-adapter",
+          model_name: "kiln-copilot",
+          model_provider: "kiln",
+        },
+      },
+      tags: [tag],
+    }
+
+    // Save the run
+    const { error: saveError } = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/save_sample",
+      {
+        params: {
+          path: { project_id, task_id },
+        },
+        body: taskRun,
+      },
+    )
+
+    if (saveError) {
+      throw saveError
+    }
+  }
+}
+
+function generate_id(): string {
+  // Generate a 12 digit random integer string, matching Python's generate_model_id()
+  // which does: str(uuid.uuid4().int)[:12]
+  const randomInt = Math.floor(Math.random() * 1000000000000)
+  return randomInt.toString().padStart(12, "0")
 }
 
 function specEvalOutputScore(spec_type: SpecType): EvalOutputScore {
