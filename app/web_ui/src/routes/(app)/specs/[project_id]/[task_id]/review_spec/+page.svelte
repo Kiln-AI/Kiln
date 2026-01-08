@@ -45,8 +45,8 @@
     id: string
     input: string
     output: string
-    model_decision: "meets_spec" | "fails_spec"
-    meets_spec: "yes" | "no" | null
+    model_says_meets_spec: boolean
+    user_says_meets_spec: boolean | null
     feedback: string
   }
 
@@ -107,7 +107,7 @@
               ? JSON.stringify(task.output_json_schema)
               : "",
             spec_rendered_prompt_template: spec_definition,
-            num_samples_per_topic: 10,
+            num_samples_per_topic: 2,
             num_topics: 5,
             num_exemplars: 10,
           },
@@ -127,8 +127,8 @@
           id: String(index + 1),
           input: example.input,
           output: example.output,
-          model_decision: example.exhibits_issue ? "fails_spec" : "meets_spec",
-          meets_spec: null,
+          model_says_meets_spec: !example.exhibits_issue,
+          user_says_meets_spec: null,
           feedback: "",
         }))
 
@@ -166,20 +166,17 @@
   }
 
   function is_row_aligned(row: ReviewRow): boolean {
-    if (row.meets_spec === null) return false
-    const user_says_meets_spec = row.meets_spec === "yes"
-    const model_says_meets_spec = row.model_decision === "meets_spec"
-    return user_says_meets_spec === model_says_meets_spec
+    if (row.user_says_meets_spec === null) return false
+    return row.user_says_meets_spec === row.model_says_meets_spec
   }
 
   function should_show_feedback(row: ReviewRow): boolean {
-    if (row.meets_spec === null) return false
+    if (row.user_says_meets_spec === null) return false
     return !is_row_aligned(row)
   }
 
   function get_feedback_label(row: ReviewRow): string {
-    const user_says_meets_spec = row.meets_spec === "yes"
-    if (user_says_meets_spec) {
+    if (row.user_says_meets_spec) {
       return "Describe why this meets the spec"
     } else {
       return "Describe why this does not meet the spec"
@@ -187,15 +184,13 @@
   }
 
   $: all_feedback_aligned = review_rows.every((row) => {
-    if (row.meets_spec === null) return false
-    const user_says_meets_spec = row.meets_spec === "yes"
-    const model_says_meets_spec = row.model_decision === "meets_spec"
-    return user_says_meets_spec === model_says_meets_spec
+    if (row.user_says_meets_spec === null) return false
+    return row.user_says_meets_spec === row.model_says_meets_spec
   })
 
   $: all_examples_reviewed = review_rows.every((row) => {
     // All rows must have a meets_spec answer
-    if (row.meets_spec === null) return false
+    if (row.user_says_meets_spec === null) return false
     // If the answer is misaligned with the model, feedback is required
     if (should_show_feedback(row)) {
       return row.feedback.trim().length > 0
@@ -205,21 +200,26 @@
 
   /**
    * Collect reviewed examples from current review rows.
-   * Only includes rows that have been explicitly reviewed (have a meets_spec value).
+   * Only includes rows that have been explicitly reviewed (have a user_says_meets_spec value).
    */
   function collectReviewedExamples(): ReviewedExample[] {
     return review_rows
-      .filter((row) => row.meets_spec !== null)
+      .filter((row) => row.user_says_meets_spec !== null)
       .map((row) => ({
         input: row.input,
         output: row.output,
-        meets_spec: row.meets_spec === "yes",
+        user_says_meets_spec: row.user_says_meets_spec ?? false,
+        feedback:
+          row.user_says_meets_spec !== row.model_says_meets_spec
+            ? row.feedback
+            : null,
+        model_says_meets_spec: row.model_says_meets_spec,
       }))
   }
 
   $: any_feedback_provided = review_rows.some((row) => {
     // All rows must have a meets_spec answer
-    if (row.meets_spec === null) return false
+    if (row.user_says_meets_spec === null) return false
     // If the answer is misaligned with the model, feedback is required
     if (should_show_feedback(row)) {
       return row.feedback.trim().length > 0
@@ -359,16 +359,14 @@
                     <td class="py-2">
                       <div class="flex gap-1">
                         <button
-                          class="btn btn-sm btn-outline hover:btn-success {row.meets_spec ===
-                          'yes'
+                          class="btn btn-sm btn-outline hover:btn-success {row.user_says_meets_spec
                             ? 'btn-secondary'
                             : 'text-base-content/40'}"
                           on:click={(e) => set_meets_spec(row.id, "yes", e)}
                           tabindex="0">Yes</button
                         >
                         <button
-                          class="btn btn-sm btn-outline hover:btn-warning {row.meets_spec ===
-                          'no'
+                          class="btn btn-sm btn-outline hover:btn-warning {!row.user_says_meets_spec
                             ? 'btn-secondary'
                             : 'text-base-content/40'}"
                           on:click={(e) => set_meets_spec(row.id, "no", e)}
@@ -378,7 +376,7 @@
                     </td>
                     <td class="py-2">
                       <div class="w-5 h-5">
-                        {#if row.meets_spec !== null}
+                        {#if row.user_says_meets_spec !== null}
                           {#if is_row_aligned(row)}
                             <div class="text-success w-full h-full">
                               <CheckCircleIcon />

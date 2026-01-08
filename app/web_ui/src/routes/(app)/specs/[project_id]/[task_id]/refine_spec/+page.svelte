@@ -14,6 +14,9 @@
     loadSpecFormData,
   } from "../spec_utils"
   import Warning from "$lib/ui/warning.svelte"
+  import { getStoredReviewedExamples } from "../spec_reviewed_examples_store"
+  import { load_task } from "$lib/stores"
+  import { client } from "$lib/api_client"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -97,6 +100,90 @@
         original_suggested_property_values = { ...formData.property_values }
 
         evaluate_full_trace = formData.evaluate_full_trace
+
+        // If we have review feedback, call the refine API
+        const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
+        if (reviewed_examples && reviewed_examples.length > 0) {
+          // Load the task to get instruction and schemas
+          const task = await load_task(project_id, task_id)
+          if (!task) {
+            throw new Error("Failed to load task")
+          }
+
+          // Build spec info
+          const spec_fields: Record<string, string> = {}
+          const spec_field_current_values: Record<string, string> = {}
+
+          for (const field of field_configs) {
+            spec_fields[field.key] = field.description
+            spec_field_current_values[field.key] =
+              current_property_values[field.key] || ""
+          }
+
+          // Build task info
+          const task_info = {
+            task_prompt: task.instruction || "",
+            few_shot_examples: null,
+          }
+
+          const examples_with_feedback = reviewed_examples
+            .filter((example) => example.feedback !== null)
+            .map((example) => ({
+              user_rating_exhibits_issue_correct:
+                example.model_says_meets_spec === example.user_says_meets_spec,
+              user_feedback: example.feedback,
+              input: example.input,
+              output: example.output,
+              exhibits_issue: !example.user_says_meets_spec,
+            }))
+
+          if (examples_with_feedback.length === 0) {
+            // This shouldn't happen, but just in case
+            throw new Error(
+              "No valid reviewed examples with feedback to refine spec",
+            )
+          }
+
+          // Call the refine API
+          const { data, error } = await client.POST(
+            "/api/copilot/refine_spec",
+            {
+              body: {
+                task_prompt_with_few_shot: task.instruction || "",
+                task_input_schema: task.input_json_schema
+                  ? JSON.stringify(task.input_json_schema)
+                  : "",
+                task_output_schema: task.output_json_schema
+                  ? JSON.stringify(task.output_json_schema)
+                  : "",
+                task_info,
+                spec: {
+                  spec_fields,
+                  spec_field_current_values,
+                },
+                examples_with_feedback,
+              },
+            },
+          )
+
+          if (error) {
+            throw error
+          }
+
+          if (!data) {
+            throw new Error("Failed to refine spec")
+          }
+
+          // Apply the suggested edits to suggested_property_values
+          if (data.new_proposed_spec_edits) {
+            for (const [field_key, edit] of Object.entries(
+              data.new_proposed_spec_edits,
+            )) {
+              suggested_property_values[field_key] = edit.proposed_edit
+              ai_suggested_fields.add(field_key)
+            }
+          }
+        }
 
         // Don't clear the stored data - keep it for back navigation
         // It will be cleared when the spec is successfully created

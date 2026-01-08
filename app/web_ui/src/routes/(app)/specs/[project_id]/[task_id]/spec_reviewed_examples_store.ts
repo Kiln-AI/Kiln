@@ -7,7 +7,9 @@ import { client } from "$lib/api_client"
 export type ReviewedExample = {
   input: string
   output: string
-  meets_spec: boolean
+  user_says_meets_spec: boolean
+  feedback: string | null
+  model_says_meets_spec: boolean
 }
 
 /**
@@ -119,13 +121,13 @@ export async function saveReviewedExamplesAsGoldenDataset(
             requirement_ratings: {
               [ratingKey]: {
                 type: "pass_fail",
-                value: example.meets_spec ? 1.0 : 0.0,
+                value: example.user_says_meets_spec ? 1.0 : 0.0,
               },
             },
           },
-          model_name: "copilot",
+          model_name: "kiln-copilot",
           model_provider: "kiln",
-          adapter_name: "kiln-ai-adapter",
+          adapter_name: "kiln-adapter",
         },
       },
     )
