@@ -23,7 +23,9 @@
     capitalize,
     formatPriority,
     formatSpecType,
+    formatEvalConfigName,
   } from "$lib/utils/formatters"
+  import { model_info, load_model_info } from "$lib/stores"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import { load_task, get_task_composite_id } from "$lib/stores"
   import {
@@ -36,6 +38,7 @@
   import {
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
+    linkFromFilterId,
   } from "../spec_utils"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { goto } from "$app/navigation"
@@ -181,6 +184,7 @@
 
   onMount(async () => {
     await tick()
+    load_model_info()
     await load_spec()
     if (spec?.eval_id) {
       await Promise.all([
@@ -480,10 +484,32 @@
                     : undefined,
               },
               {
+                name: "Eval Judge",
+                value: eval_progress
+                  ? eval_progress.current_eval_method
+                    ? formatEvalConfigName(
+                        eval_progress.current_eval_method,
+                        $model_info,
+                        true,
+                      )
+                    : "None"
+                  : "Loading...",
+                link: eval_progress?.current_eval_method
+                  ? `/specs/${project_id}/${task_id}/${spec_id}/${spec.eval_id}/eval_configs`
+                  : undefined,
+              },
+              {
                 name: "Eval Dataset Size",
                 value: eval_progress
                   ? eval_progress.dataset_size + " items"
                   : "Loading...",
+                link: eval_progress
+                  ? linkFromFilterId(
+                      project_id,
+                      task_id,
+                      evaluator?.eval_set_filter_id,
+                    )
+                  : undefined,
               },
             ]}
           >

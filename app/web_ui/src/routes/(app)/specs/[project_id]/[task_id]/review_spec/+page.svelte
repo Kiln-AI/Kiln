@@ -35,9 +35,7 @@
   let submitting = false
   let complete = false
 
-  $: submit_label = all_feedback_aligned
-    ? "Create Spec"
-    : "Refine Spec with Feedback"
+  $: submit_label = all_feedback_aligned ? "Create Spec" : "Next"
   $: submit_disabled = !all_feedback_aligned && !any_feedback_provided
 
   type ReviewRow = {
@@ -67,8 +65,8 @@
   }
 
   onMount(async () => {
-    // Wait 6 seconds to simulate loading time
-    await new Promise((resolve) => setTimeout(resolve, 6000))
+    // Wait 3 seconds to simulate loading time
+    await new Promise((resolve) => setTimeout(resolve, 3000))
 
     await load_spec_data()
   })
@@ -238,7 +236,8 @@
     }
     saveSpecFormData(project_id, task_id, formData)
     complete = true
-    goto(`/specs/${project_id}/${task_id}/refine_spec`)
+    // Replace history so browser back goes to templates, not review
+    goto(`/specs/${project_id}/${task_id}/refine_spec`, { replaceState: true })
   }
 
   async function create_spec() {
@@ -257,7 +256,8 @@
       )
 
       complete = true
-      goto(`/specs/${project_id}/${task_id}/${spec_id}`)
+      // Replace history so browser back goes to templates
+      goto(`/specs/${project_id}/${task_id}/${spec_id}`, { replaceState: true })
     } catch (error) {
       create_error = createKilnError(error)
     } finally {
@@ -281,24 +281,26 @@
       },
     ]}
   >
-    {#if spec_loading}
-      <div class="flex justify-center items-center h-full min-h-[200px]">
-        <SpecAnalyzingAnimation />
-      </div>
-    {:else if spec_error}
-      <div class="text-error text-sm">
-        {spec_error.getMessage() || "An unknown error occurred"}
-      </div>
-    {:else}
-      <FormContainer
-        {submit_label}
-        {submit_disabled}
-        focus_on_mount={false}
-        on:submit={handle_submit}
-        bind:error={create_error}
-        bind:submitting
-        warn_before_unload={!complete}
-      >
+    <FormContainer
+      {submit_label}
+      {submit_disabled}
+      focus_on_mount={false}
+      on:submit={handle_submit}
+      bind:error={create_error}
+      bind:submitting
+      submit_visible={!spec_loading && !spec_error}
+      warn_before_unload={!complete}
+      compact_button={true}
+    >
+      {#if spec_loading}
+        <div class="flex justify-center items-center h-full min-h-[200px]">
+          <SpecAnalyzingAnimation />
+        </div>
+      {:else if spec_error}
+        <div class="text-error text-sm">
+          {spec_error.getMessage() || "An unknown error occurred"}
+        </div>
+      {:else}
         <div class="flex flex-col gap-6">
           <div class="rounded-lg border">
             <table class="table">
@@ -395,13 +397,13 @@
           <div class="flex justify-center">
             <Warning
               warning_color="warning"
-              warning_message="For best results, finish reviewing all examples before refining the spec."
+              warning_message="For best results, finish reviewing all examples before continuing."
               tight={true}
             />
           </div>
         {/if}
         {#if all_feedback_aligned}
-          <div class="flex justify-center">
+          <div class="flex justify-end">
             <Warning
               warning_color="success"
               warning_icon="check"
@@ -410,24 +412,24 @@
             />
           </div>
         {/if}
-      </FormContainer>
-
-      {#if !all_feedback_aligned}
-        <div class="flex flex-row gap-1 mt-2 justify-end">
-          <span class="text-xs text-gray-500">or</span>
-          <button
-            class="link underline text-xs text-gray-500"
-            disabled={submitting}
-            on:click={create_spec}
-          >
-            {#if submitting}
-              <span class="loading loading-spinner loading-xs"></span>
-            {:else}
-              Create Spec Without Refining Further
-            {/if}
-          </button>
-        </div>
       {/if}
+    </FormContainer>
+
+    {#if !all_feedback_aligned && !spec_loading && !spec_error}
+      <div class="flex flex-row gap-1 mt-2 justify-end">
+        <span class="text-xs text-gray-500">or</span>
+        <button
+          class="link underline text-xs text-gray-500"
+          disabled={submitting}
+          on:click={create_spec}
+        >
+          {#if submitting}
+            <span class="loading loading-spinner loading-xs"></span>
+          {:else}
+            Create Spec Without Refining Further
+          {/if}
+        </button>
+      </div>
     {/if}
   </AppPage>
 </div>

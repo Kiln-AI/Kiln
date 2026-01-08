@@ -1,12 +1,15 @@
 import {
   type ChunkerConfig,
   type ChunkerType,
+  type EvalConfig,
   type EvalConfigType,
   type OutputFormat,
+  type ProviderModels,
   type SpecType,
   type StructuredOutputMode,
   type ToolServerType,
 } from "$lib/types"
+import { model_name, provider_name_from_id } from "$lib/stores"
 import {
   fixedWindowChunkerProperties,
   semanticChunkerProperties,
@@ -300,4 +303,26 @@ export function toolServerTypeToString(
       return undefined
     }
   }
+}
+
+/**
+ * Format an eval config name for display in dropdowns and properties.
+ * Format: "{name} — {config_type}, {model_name} ({provider})"
+ * Example: "Electric Dragon — G-eval, GPT 4.1 (OpenAI)"
+ * If compact is true, it will only return the name and model name.
+ * Example: "Electric Dragon — GPT 4.1"
+ */
+export function formatEvalConfigName(
+  eval_config: EvalConfig,
+  model_info: ProviderModels | null,
+  compact: boolean = false,
+): string {
+  const model_name_value = model_name(eval_config.model_name, model_info)
+  const parts = compact
+    ? [model_name_value]
+    : [
+        eval_config_to_ui_name(eval_config.config_type),
+        `${model_name_value} (${provider_name_from_id(eval_config.model_provider)})`,
+      ]
+  return eval_config.name + " — " + parts.join(", ")
 }

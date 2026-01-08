@@ -54,8 +54,8 @@ export async function navigateToReviewSpec(
   }
   saveSpecFormData(project_id, task_id, formData)
 
-  // Navigate to review_spec page
-  goto(`/specs/${project_id}/${task_id}/review_spec`)
+  // Navigate to review_spec page, replacing history so browser back goes to templates
+  goto(`/specs/${project_id}/${task_id}/review_spec`, { replaceState: true })
 }
 
 /**
@@ -360,4 +360,38 @@ async function cleanupEval(
       cleanupError,
     )
   }
+}
+
+/**
+ * Extract a tag from a filter_id string (e.g., "tag::my_tag" -> "my_tag")
+ * @param filter_id - The filter ID to extract the tag from
+ * @returns The tag if the filter_id is a tag filter, undefined otherwise
+ */
+export function tagFromFilterId(filter_id: string): string | undefined {
+  if (filter_id.startsWith("tag::")) {
+    return filter_id.replace("tag::", "")
+  }
+  return undefined
+}
+
+/**
+ * Generate a dataset link from a filter_id
+ * @param project_id - The project ID
+ * @param task_id - The task ID
+ * @param filter_id - The filter ID to generate a link from
+ * @returns The dataset URL if the filter_id is a tag filter, undefined otherwise
+ */
+export function linkFromFilterId(
+  project_id: string,
+  task_id: string,
+  filter_id: string | null | undefined,
+): string | undefined {
+  if (!filter_id) {
+    return undefined
+  }
+  const tag = tagFromFilterId(filter_id)
+  if (tag) {
+    return `/dataset/${project_id}/${task_id}?tags=${tag}`
+  }
+  return undefined
 }
