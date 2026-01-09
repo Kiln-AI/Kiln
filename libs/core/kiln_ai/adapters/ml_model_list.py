@@ -93,9 +93,16 @@ class ModelName(str, Enum):
     phi_4_5p6b = "phi_4_5p6b"
     phi_4_mini = "phi_4_mini"
     mistral_large = "mistral_large"
+    mistral_3_large_2512 = "mistral_3_large_2512"
     mistral_nemo = "mistral_nemo"
     mistral_small_3 = "mistral_small_3"
     mistral_medium_3_1 = "mistral_medium_3_1"
+    mistral_small_creative = (
+        "mistral_small_creative"  # mistralai/mistral-small-creative
+    )
+    ministral_3_14b_2512 = "ministral_3_14b_2512"
+    ministral_3_8b_2512 = "ministral_3_8b_2512"
+    ministral_3_3b_2512 = "ministral_3_3b_2512"
     magistral_medium = "magistral_medium"
     magistral_medium_thinking = "magistral_medium_thinking"
     gemma_2_2b = "gemma_2_2b"
@@ -2322,6 +2329,64 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Mistral Small Creative
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_small_creative,
+        friendly_name="Mistral Small Creative",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-small-creative",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+        ],
+    ),
+    # Ministral 3 14B 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.ministral_3_14b_2512,
+        friendly_name="Ministral 3 14B 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/ministral-14b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="mistralai/Ministral-3-14B-Instruct-2512",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Ministral 3 8B 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.ministral_3_8b_2512,
+        friendly_name="Ministral 3 8B 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/ministral-8b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Ministral 3 3B 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.ministral_3_3b_2512,
+        friendly_name="Ministral 3 3B 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/ministral-3b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Mistral Medium 3.1
     KilnModel(
         family=ModelFamily.mistral,
@@ -2377,6 +2442,19 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/mistral-nemo:12B-Q4_K_M",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Mistral Large 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_3_large_2512,
+        friendly_name="Mistral Large 3 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-large-2512",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
