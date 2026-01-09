@@ -5171,6 +5171,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="zai-glm-4.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
         ],
     ),
     # GLM 4.6
@@ -5189,6 +5195,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-4.6",
                 structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="zai-glm-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
             ),
         ],
     ),
