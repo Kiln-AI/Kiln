@@ -211,6 +211,8 @@ class ModelName(str, Enum):
     minimax_m2 = "minimax_m2"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
+    bytedance_seed_1_6 = "bytedance_seed_1_6"
+    bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     stepfun_step3 = "stepfun_step3"
 
 
@@ -5610,7 +5612,7 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Bytedance
+    # Bytedance Seed OSS 36B
     KilnModel(
         family=ModelFamily.bytedance,
         name=ModelName.bytedance_seed_oss_36b,
@@ -5632,6 +5634,36 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 supports_function_calling=False,
                 reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # Bytedance Seed 1.6
+    KilnModel(
+        family=ModelFamily.bytedance,
+        name=ModelName.bytedance_seed_1_6,
+        friendly_name="ByteDance Seed 1.6",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="bytedance-seed/seed-1.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Bytedance Seed 1.6 Flash
+    KilnModel(
+        family=ModelFamily.bytedance,
+        name=ModelName.bytedance_seed_1_6_flash,
+        friendly_name="ByteDance Seed 1.6 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="bytedance-seed/seed-1.6-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
             ),
         ],
     ),
