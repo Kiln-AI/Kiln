@@ -11,7 +11,7 @@ from ...types import Response
 def _get_kwargs() -> dict[str, Any]:
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/ping",
+        "url": "/v1/ping",
     }
 
     return _kwargs
@@ -39,17 +39,11 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 
 def sync_detailed(
     *,
-    client: AuthenticatedClient | Client,
+    client: AuthenticatedClient,
 ) -> Response[str]:
-    r"""Ping
+    """Secure Ping
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+     Simple ping endpoint, with auth security.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -70,17 +64,11 @@ def sync_detailed(
 
 def sync(
     *,
-    client: AuthenticatedClient | Client,
+    client: AuthenticatedClient,
 ) -> str | None:
-    r"""Ping
+    """Secure Ping
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+     Simple ping endpoint, with auth security.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -97,17 +85,11 @@ def sync(
 
 async def asyncio_detailed(
     *,
-    client: AuthenticatedClient | Client,
+    client: AuthenticatedClient,
 ) -> Response[str]:
-    r"""Ping
+    """Secure Ping
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+     Simple ping endpoint, with auth security.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -126,17 +108,11 @@ async def asyncio_detailed(
 
 async def asyncio(
     *,
-    client: AuthenticatedClient | Client,
+    client: AuthenticatedClient,
 ) -> str | None:
-    r"""Ping
+    """Secure Ping
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+     Simple ping endpoint, with auth security.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

@@ -1,26 +1,41 @@
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.gepa_job_result_response import GEPAJobResultResponse
+from ...models.http_validation_error import HTTPValidationError
 from ...types import Response
 
 
-def _get_kwargs() -> dict[str, Any]:
+def _get_kwargs(
+    job_id: str,
+) -> dict[str, Any]:
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/ping",
+        "url": "/v1/jobs/gepa_job/{job_id}/result".format(
+            job_id=quote(str(job_id), safe=""),
+        ),
     }
 
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> str | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> GEPAJobResultResponse | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = response.text
+        response_200 = GEPAJobResultResponse.from_dict(response.json())
+
         return response_200
+
+    if response.status_code == 422:
+        response_422 = HTTPValidationError.from_dict(response.json())
+
+        return response_422
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -28,7 +43,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[str]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[GEPAJobResultResponse | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -38,28 +55,26 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 
 
 def sync_detailed(
+    job_id: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> Response[str]:
-    r"""Ping
+    client: AuthenticatedClient,
+) -> Response[GEPAJobResultResponse | HTTPValidationError]:
+    """Get Gepa Job Result
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        job_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[str]
+        Response[GEPAJobResultResponse | HTTPValidationError]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        job_id=job_id,
+    )
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -69,55 +84,50 @@ def sync_detailed(
 
 
 def sync(
+    job_id: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> str | None:
-    r"""Ping
+    client: AuthenticatedClient,
+) -> GEPAJobResultResponse | HTTPValidationError | None:
+    """Get Gepa Job Result
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        job_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        str
+        GEPAJobResultResponse | HTTPValidationError
     """
 
     return sync_detailed(
+        job_id=job_id,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
+    job_id: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> Response[str]:
-    r"""Ping
+    client: AuthenticatedClient,
+) -> Response[GEPAJobResultResponse | HTTPValidationError]:
+    """Get Gepa Job Result
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        job_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[str]
+        Response[GEPAJobResultResponse | HTTPValidationError]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        job_id=job_id,
+    )
 
     response = await client.get_async_httpx_client().request(**kwargs)
 
@@ -125,29 +135,26 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    job_id: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> str | None:
-    r"""Ping
+    client: AuthenticatedClient,
+) -> GEPAJobResultResponse | HTTPValidationError | None:
+    """Get Gepa Job Result
 
-     Simple ping endpoint.
-
-    A lightweight endpoint that returns a simple \"pong\" response,
-    useful for basic connectivity testing and load balancer health checks.
-
-    Returns:
-        str: The string \"pong\"
+    Args:
+        job_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        str
+        GEPAJobResultResponse | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
+            job_id=job_id,
             client=client,
         )
     ).parsed

@@ -2139,6 +2139,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/copilot/clarify_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clarify Spec */
+        post: operations["clarify_spec_api_copilot_clarify_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/refine_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Spec */
+        post: operations["refine_spec_api_copilot_refine_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/generate_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Batch */
+        post: operations["generate_batch_api_copilot_generate_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Gepa Job
+         * @description Start a GEPA job by zipping the project and sending it to the Kiln server.
+         */
+        post: operations["start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gepa_jobs/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gepa Job Status
+         * @description Get the status of a GEPA job.
+         */
+        get: operations["get_gepa_job_status_api_gepa_jobs__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gepa_jobs/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gepa Job Result
+         * @description Get the result of a GEPA job (includes status and output if completed).
+         */
+        get: operations["get_gepa_job_result_api_gepa_jobs__job_id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2537,6 +2648,36 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
+        /** ClarifySpecApiInput */
+        ClarifySpecApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Spec Rendered Prompt Template */
+            spec_rendered_prompt_template: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            /**
+             * Num Exemplars
+             * @default 10
+             */
+            num_exemplars: number;
+        };
+        /** ClarifySpecApiOutput */
+        ClarifySpecApiOutput: {
+            /** Examples For Feedback */
+            examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
+            /** Model Id */
+            model_id: string;
+            model_provider: components["schemas"]["ModelProviderName"];
+            /** Judge Prompt */
+            judge_prompt: string;
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -3632,6 +3773,19 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /** ExampleWithFeedbackApi */
+        ExampleWithFeedbackApi: {
+            /** User Rating Exhibits Issue Correct */
+            user_rating_exhibits_issue_correct: boolean;
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Exhibits Issue */
+            exhibits_issue: boolean;
+            /** User Feedback */
+            user_feedback?: string | null;
+        };
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -4170,6 +4324,39 @@ export interface components {
             arguments: string;
             /** Name */
             name: string;
+        };
+        /** GenerateBatchApiInput */
+        GenerateBatchApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Spec Rendered Prompt Template */
+            spec_rendered_prompt_template: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            /**
+             * Enable Scoring
+             * @default false
+             */
+            enable_scoring: boolean;
+        };
+        /** GenerateBatchApiOutput */
+        GenerateBatchApiOutput: {
+            /** Data By Topic */
+            data_by_topic: {
+                [key: string]: (components["schemas"]["SampleApi"] | components["schemas"]["ScoredSampleApi"])[];
+            };
+            /** Topic Gen Prompt */
+            topic_gen_prompt?: string | null;
+            /** Input Gen Prompt */
+            input_gen_prompt?: string | null;
+            /** Judge Prompt */
+            judge_prompt?: string | null;
         };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
@@ -5103,6 +5290,28 @@ export interface components {
             /** Inaccurate Examples */
             inaccurate_examples: string;
         };
+        /** RefineSpecApiInput */
+        RefineSpecApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            task_info: components["schemas"]["TaskInfoApi"];
+            spec: components["schemas"]["SpecInfoApi"];
+            /** Examples With Feedback */
+            examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
+        };
+        /** RefineSpecApiOutput */
+        RefineSpecApiOutput: {
+            /** New Proposed Spec Edits */
+            new_proposed_spec_edits: {
+                [key: string]: components["schemas"]["SpecEditApi"];
+            };
+            /** Out Of Scope Feedback */
+            out_of_scope_feedback: string;
+        };
         /** RemoteServerProperties */
         RemoteServerProperties: {
             /** Server Url */
@@ -5304,6 +5513,13 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** SampleApi */
+        SampleApi: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -5336,6 +5552,17 @@ export interface components {
         ScoreSummary: {
             /** Mean Score */
             mean_score: number;
+        };
+        /** ScoredSampleApi */
+        ScoredSampleApi: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Exhibits Issue */
+            exhibits_issue: boolean;
+            /** Reasoning */
+            reasoning: string;
         };
         /** SearchResult */
         SearchResult: {
@@ -5487,12 +5714,42 @@ export interface components {
             /** Eval Id */
             eval_id: string | null;
         };
+        /** SpecEditApi */
+        SpecEditApi: {
+            /** Old Value */
+            old_value: string;
+            /** Proposed Edit */
+            proposed_edit: string;
+            /** Reason For Edit */
+            reason_for_edit: string;
+        };
+        /** SpecInfoApi */
+        SpecInfoApi: {
+            /** Spec Fields */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /** Spec Field Current Values */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
         /**
          * SpecStatus
          * @description Defines the status of a spec.
          * @enum {string}
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
+        /** StartGepaJobRequest */
+        StartGepaJobRequest: {
+            /**
+             * Token Budget
+             * @enum {string}
+             */
+            token_budget: "light" | "medium" | "heavy";
+            /** Target Run Config Id */
+            target_run_config_id: string;
+        };
         /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
@@ -5508,6 +5765,15 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /** SubsampleBatchOutputItemApi */
+        SubsampleBatchOutputItemApi: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Exhibits Issue */
+            exhibits_issue: boolean;
+        };
         /** TabooProperties */
         TabooProperties: {
             /**
@@ -5580,6 +5846,13 @@ export interface components {
             default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** TaskInfoApi */
+        TaskInfoApi: {
+            /** Task Prompt */
+            task_prompt: string;
+            /** Few Shot Examples */
+            few_shot_examples?: string | null;
         };
         /**
          * TaskOutput
@@ -10812,6 +11085,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clarify_spec_api_copilot_clarify_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClarifySpecApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarifySpecApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_spec_api_copilot_refine_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefineSpecApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_batch_api_copilot_generate_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateBatchApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateBatchApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartGepaJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gepa_job_status_api_gepa_jobs__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gepa_job_result_api_gepa_jobs__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
