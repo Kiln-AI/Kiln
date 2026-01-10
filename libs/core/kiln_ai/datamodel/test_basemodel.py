@@ -389,8 +389,8 @@ def test_string_to_valid_name(tmp_path, name, expected):
         ("short_name.txt", "short_name txt"),  # . becomes space
         (
             "a" * 119 + ".txt",
-            "a" * 119 + " ",
-        ),  # . becomes space, total 120 chars (no truncation needed)
+            "a" * 119,
+        ),  # . becomes space, gets stripped after truncation
         # Names exactly MAX_FILENAME_LENGTH are unchanged if no forbidden chars
         ("a" * 120, "a" * 120),
         # Names longer than MAX_FILENAME_LENGTH are truncated

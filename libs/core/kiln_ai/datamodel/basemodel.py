@@ -109,6 +109,8 @@ def string_to_valid_name(name: str, truncate_to_max_length: bool = False) -> str
     valid_name = valid_name.strip("_").strip()
     if truncate_to_max_length and len(valid_name) > MAX_FILENAME_LENGTH:
         valid_name = valid_name[:MAX_FILENAME_LENGTH]
+        # after truncation, strip trailing whitespace and dots to avoid filesystem issues
+        valid_name = valid_name.rstrip(" .")
     return valid_name
 
 
