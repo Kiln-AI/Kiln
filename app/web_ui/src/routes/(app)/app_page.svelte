@@ -81,7 +81,7 @@
       {/if}
     {/if}
   </div>
-  <div class="flex flex-col md:flex-row gap-2">
+  <div class="flex-shrink-0 flex flex-col md:flex-row gap-2">
     {#each action_buttons as action_button}
       <div>
         <button
