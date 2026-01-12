@@ -5185,6 +5185,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 4.7
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_7,
+        friendly_name="GLM 4.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/zai-org/GLM-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="zai-glm-4.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 4.6V
     KilnModel(
         family=ModelFamily.glm,
@@ -5230,33 +5257,6 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
                 max_parallel_requests=1,
-            ),
-        ],
-    ),
-    # GLM 4.7
-    KilnModel(
-        family=ModelFamily.glm,
-        name=ModelName.glm_4_7,
-        friendly_name="GLM 4.7",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="z-ai/glm-4.7",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="Pro/zai-org/GLM-4.7",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.cerebras,
-                model_id="zai-glm-4.7",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
             ),
         ],
     ),
