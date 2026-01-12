@@ -14,6 +14,7 @@
   import TableButton from "./table_button.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
 
   let custom_topic_mode: boolean = false
 
@@ -22,7 +23,9 @@
   const selected_template = guidance_data.selected_template
 
   $: project_id = guidance_data.project_id
-  let run_config_component: RunConfigComponent | null = null
+  // Separate refs for each RunConfigComponent to avoid null issues when one unmounts
+  let run_config_component_modal: RunConfigComponent | null = null
+  let run_config_component_nested: RunConfigComponent | null = null
 
   export let data: SampleDataNode
   export let path: string[]
@@ -154,7 +157,7 @@
   async function generate_topics() {
     // Capture run config properties before modal closes and component is destroyed
     const run_config_properties =
-      run_config_component?.run_options_as_run_config_properties() ?? null
+      run_config_component_modal?.run_options_as_run_config_properties() ?? null
     try {
       topic_generating = true
       topic_generation_error = null
@@ -249,6 +252,151 @@
   function delete_topic() {
     dispatch("delete_topic", { node_to_delete: data })
     // Note: The parent will handle removing this node and triggering save
+  }
+
+  // Nested topics logic
+  type TopicNodeWithPath = {
+    path: string[]
+    node: SampleDataNode
+  }
+
+  function get_all_leaf_topics(
+    node: SampleDataNode,
+    path_arg: string[] = [],
+  ): TopicNodeWithPath[] {
+    const leaf_topics: TopicNodeWithPath[] = []
+    const current_path = node.topic ? [...path_arg, node.topic] : path_arg
+
+    if (node.sub_topics.length === 0) {
+      leaf_topics.push({ path: current_path, node })
+    } else {
+      for (const sub_topic of node.sub_topics) {
+        leaf_topics.push(...get_all_leaf_topics(sub_topic, current_path))
+      }
+    }
+
+    return leaf_topics
+  }
+
+  let adding_nested_topics = false
+  let nested_topics_error: KilnError | null = null
+  let add_nested_topics_dialog: Dialog | null = null
+
+  export async function open_add_nested_topics_modal() {
+    nested_topics_error = null
+    await tick()
+    add_nested_topics_dialog?.show()
+  }
+
+  async function add_nested_topics_to_all_leaf_topics() {
+    // Capture run config properties before modal closes and component is destroyed
+    const run_config_properties =
+      run_config_component_nested?.run_options_as_run_config_properties() ??
+      null
+    if (!run_config_properties) {
+      nested_topics_error = new KilnError(
+        "Run config properties not found. Please ensure model and settings are configured.",
+      )
+      return
+    }
+
+    if (!guidance_data.gen_type) {
+      nested_topics_error = new KilnError("No generation type selected.")
+      return
+    }
+
+    if (!guidance_data.task) {
+      nested_topics_error = new KilnError("Task not loaded.")
+      return
+    }
+
+    adding_nested_topics = true
+    nested_topics_error = null
+
+    try {
+      const leaf_topics = get_all_leaf_topics(data)
+
+      if (leaf_topics.length === 0) {
+        nested_topics_error = new KilnError(
+          "No leaf topics found to add subtopics to",
+        )
+        adding_nested_topics = false
+        return
+      }
+
+      const topic_guidance = get(guidance_data.topic_guidance)
+
+      for (const leaf_topic of leaf_topics) {
+        const existing_topics = leaf_topic.node.sub_topics.map((t) => t.topic)
+        const { data: generate_response, error: generate_error } =
+          await client.POST(
+            "/api/projects/{project_id}/tasks/{task_id}/generate_categories",
+            {
+              body: {
+                node_path: leaf_topic.path,
+                num_subtopics: num_subtopics_to_generate,
+                run_config_properties: run_config_properties,
+                gen_type: guidance_data.gen_type,
+                guidance: topic_guidance ? topic_guidance : null,
+                existing_topics:
+                  existing_topics.length > 0 ? existing_topics : null,
+              },
+              params: {
+                path: {
+                  project_id,
+                  task_id: guidance_data.task_id,
+                },
+              },
+            },
+          )
+
+        if (generate_error) {
+          throw generate_error
+        }
+
+        if (!generate_response?.output?.output) {
+          throw new KilnError("No output returned from server")
+        }
+
+        const response = JSON.parse(generate_response.output.output)
+        if (
+          !response ||
+          !response.subtopics ||
+          !Array.isArray(response.subtopics)
+        ) {
+          throw new KilnError("Invalid response format")
+        }
+
+        for (const topic of response.subtopics) {
+          if (!topic) continue
+          if (leaf_topic.node.sub_topics.find((t) => t.topic === topic)) {
+            continue
+          }
+          leaf_topic.node.sub_topics.push({
+            topic,
+            sub_topics: [],
+            samples: [],
+          })
+        }
+
+        // Trigger reactivity and save after each leaf topic is processed
+        // This allows partial saves if an error occurs later
+        data = data
+        triggerSave()
+      }
+
+      posthog.capture("add_nested_topics_to_all", {
+        num_leaf_topics: leaf_topics.length,
+        num_subtopics: num_subtopics_to_generate,
+      })
+
+      // Close modal on success
+      add_nested_topics_dialog?.close()
+    } catch (e) {
+      nested_topics_error = createKilnError(e)
+    } finally {
+      adding_nested_topics = false
+    }
   }
 
   function handleChildDeleteTopic(
@@ -533,7 +681,7 @@
             <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
           <RunConfigComponent
-            bind:this={run_config_component}
+            bind:this={run_config_component_modal}
             {project_id}
             requires_structured_output={true}
             hide_prompt_selector={true}
@@ -583,3 +731,60 @@
     cascade_mode={generate_samples_cascade_mode}
   />
 {/if}
+
+<Dialog
+  title="Add Subtopics to Leaf Topics"
+  sub_subtitle="Leaf topics are topics that don't have any subtopics."
+  bind:this={add_nested_topics_dialog}
+>
+  {#if adding_nested_topics}
+    <div class="flex flex-row justify-center">
+      <div class="loading loading-spinner loading-lg my-12"></div>
+    </div>
+  {:else}
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-row items-center gap-4">
+        <div class="flex-grow font-medium text-sm">
+          Subtopics per leaf topic count
+        </div>
+        <IncrementUi bind:value={num_subtopics_to_generate} />
+      </div>
+      <div>
+        <SynthDataGuidance guidance_type="topics" {guidance_data} />
+      </div>
+      {#if guidance_data.task}
+        <RunConfigComponent
+          bind:this={run_config_component_nested}
+          {project_id}
+          current_task={guidance_data.task}
+          requires_structured_output={true}
+          hide_prompt_selector={true}
+          show_tools_selector_in_advanced={true}
+          model_dropdown_settings={{
+            requires_data_gen: true,
+            requires_uncensored_data_gen:
+              guidance_data.suggest_uncensored($selected_template),
+            suggested_mode: guidance_data.suggest_uncensored($selected_template)
+              ? "uncensored_data_gen"
+              : "data_gen",
+          }}
+        />
+      {:else}
+        <div class="text-error text-sm">
+          Task not loaded. Please refresh the page.
+        </div>
+      {/if}
+      {#if nested_topics_error}
+        <div class="text-error text-sm font-medium">
+          {nested_topics_error.message}
+        </div>
+      {/if}
+      <button
+        class="btn mt-2 btn-primary"
+        on:click={add_nested_topics_to_all_leaf_topics}
+      >
+        Generate Subtopics
+      </button>
+    </div>
+  {/if}
+</Dialog>

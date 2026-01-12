@@ -818,23 +818,42 @@
                 {#if current_step == 1}
                   {@const has_topics =
                     $saved_state.root_node.sub_topics.length > 0}
-                  <button
-                    class="btn btn-sm btn-primary mr-2 {has_topics
-                      ? 'btn-outline'
-                      : ''}"
-                    on:click={() =>
-                      root_node_component?.open_generate_subtopics_modal()}
-                  >
-                    Add Topics
-                  </button>
-                  <button
-                    class="btn btn-sm btn-primary {has_topics
-                      ? ''
-                      : 'btn-outline'}"
-                    on:click={() => set_current_step(2)}
-                  >
-                    Next Step
-                  </button>
+                  {#if has_topics}
+                    <button
+                      class="btn btn-sm btn-primary mr-2 btn-outline"
+                      on:click={() =>
+                        root_node_component?.open_generate_subtopics_modal()}
+                    >
+                      Add Topics
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary mr-2 btn-outline"
+                      on:click={() =>
+                        root_node_component?.open_add_nested_topics_modal()}
+                    >
+                      Add Subtopics
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary"
+                      on:click={() => set_current_step(2)}
+                    >
+                      Next Step
+                    </button>
+                  {:else}
+                    <button
+                      class="btn btn-sm btn-primary mr-2"
+                      on:click={() =>
+                        root_node_component?.open_generate_subtopics_modal()}
+                    >
+                      Add Topics
+                    </button>
+                    <button
+                      class="btn btn-sm btn-primary btn-outline"
+                      on:click={() => set_current_step(2)}
+                    >
+                      Next Step
+                    </button>
+                  {/if}
                 {:else if current_step == 2}
                   {@const done_generating =
                     input_generated_count > 0 &&

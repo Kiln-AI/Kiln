@@ -37,7 +37,7 @@ jobs:
         run: uv run python3 -m pytest --runslow .
 
       - name: Check Python Types
-        run: uv run pyright .
+        run: uv tool install ty@0.0.8 && uvx ty check
 
       - name: Build Core
         run: uv build

@@ -36,7 +36,7 @@ jobs:
         run: uv python install 3.13
 
       - name: Install the project
-        run: uv tool install ruff
+        run: uv sync --all-extras --dev
 
       - name: Lint with ruff
         run: |
@@ -45,3 +45,7 @@ jobs:
       - name: Format with ruff
         run: |
           uvx ruff format --check .
+
+      - name: Typecheck with ty
+        run: |
+          uv tool install ty@0.0.8 && uvx ty check
