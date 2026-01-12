@@ -41,6 +41,40 @@
     return key === COST_KEY
   }
 
+  export function costToScore(
+    cost: number,
+    costs: number[],
+    {
+      padding = 10, // keep endpoints away from 0/100
+      relFull = 0.7, // when (hi-lo)/|hi| reaches this, use full spread (k=1)
+    }: {
+      padding?: number
+      relFull?: number
+    } = {},
+  ): number {
+    const lo = Math.min(...costs)
+    const hi = Math.max(...costs)
+
+    const range = hi - lo
+    if (range <= 0) return 50
+
+    // 1) range-based normalized position
+    const t = (cost - lo) / range
+
+    // 2) raw padded linear score (lower cost = higher score)
+    const raw = padding + (1 - t) * (100 - 2 * padding)
+
+    // 3) compress based on range relative to magnitude ("scale from zero")
+    const scale = Math.max(Math.abs(hi), 1e-12)
+    const relRange = range / scale // e.g. 0.02..0.03 => 0.01/0.03 ≈ 0.33
+    const k = Math.max(0, Math.min(1, relRange / relFull)) // small relRange -> k<1 -> compress
+
+    // 4) mix toward midpoint
+    const score = 50 + k * (raw - 50)
+
+    return Math.max(0, Math.min(100, score))
+  }
+
   // Get all data keys: include eval metrics + cost (but exclude token counts)
   $: dataKeys = [
     ...comparisonFeatures
@@ -101,6 +135,8 @@
     // Calculate min and max values for each data key across all selected run configs
     const maxValues: Record<string, number> = {}
     const minValues: Record<string, number> = {}
+    const allCosts: number[] = []
+
     for (const key of dataKeys) {
       let max = 0
       let min = Infinity
@@ -111,6 +147,10 @@
           hasValue = true
           if (value > max) max = value
           if (value < min) min = value
+          // Collect all cost values for the new cost scoring algorithm
+          if (isCostMetric(key)) {
+            allCosts.push(value)
+          }
         }
       }
       maxValues[key] = hasValue && max > 0 ? max : 1
@@ -119,17 +159,12 @@
 
     // Normalize a value to 0-100 scale
     // For regular metrics: higher is better, so normalize = (value / max) * 100
-    // For cost metrics: lower is better, so normalize = (1 - (value - min) / (max - min)) * 100
+    // For cost metrics: lower is better, use costToScore function
     function normalizeValue(key: string, value: number | null): number {
       if (value === null) return 0
 
       if (isCostMetric(key)) {
-        const max = maxValues[key]
-        const min = minValues[key]
-        // If all values are the same, return 100 (best score)
-        if (max === min) return 100
-        // Invert: lower cost = higher score
-        return (1 - (value - min) / (max - min)) * 100
+        return costToScore(value, allCosts)
       } else {
         const max = maxValues[key]
         if (max === 0) return 0
@@ -214,7 +249,7 @@
                 ? getModelValueRaw(config.id, key)
                 : null
               if (isCostMetric(key) && rawValue !== null) {
-                html += `<div>${label}: ${normalizedValue.toFixed(0)} <span style="color: #888;">(raw: $${rawValue.toFixed(6)})</span></div>`
+                html += `<div>${label}: ${normalizedValue.toFixed(0)} <span style="color: #888;">(Cost: $${rawValue.toFixed(6)})</span></div>`
               } else {
                 html += `<div>${label}: ${normalizedValue.toFixed(0)}</div>`
               }
