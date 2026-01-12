@@ -1516,7 +1516,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
-                suggested_for_doc_extraction=True,
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
