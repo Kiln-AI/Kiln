@@ -234,8 +234,8 @@
               : "Unknown"
 
             let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
-            html += `<div style="style="color: #888;"; margin-bottom: 4px;">Model: ${modelName}</div>`
-            html += `<div style="style="color: #888;"; margin-bottom: 4px;">Prompt: ${promptName}</div>`
+            html += `<div>Model: ${modelName}</div>`
+            html += `<div>Prompt: ${promptName}</div>`
             html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
             dataKeys.forEach((key, i) => {
               const label = getKeyLabel(key)
