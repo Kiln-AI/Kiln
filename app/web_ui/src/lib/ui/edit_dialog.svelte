@@ -5,7 +5,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "./warning.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { KilnApiBaseUrl } from "../../config"
+  import { KilnApiBaseUrl } from "$config"
 
   export let name: string
   export let subtitle: string | undefined = undefined

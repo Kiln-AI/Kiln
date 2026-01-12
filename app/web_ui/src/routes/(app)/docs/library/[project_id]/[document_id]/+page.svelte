@@ -19,7 +19,7 @@
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import { KilnApiBaseUrl } from "../../../../../../config"
+  import { KilnApiBaseUrl } from "$config"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null

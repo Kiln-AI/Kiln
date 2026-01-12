@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import createKindeClient from "@kinde-oss/kinde-auth-pkce-js"
-  import { KilnApiBaseUrl } from "../../../config"
+  import {
+    KilnApiBaseUrl,
+    KindeAccountClientId,
+    KindeAccountDomain,
+  } from "$config"
   import posthog from "posthog-js"
-  import { KindeAccountClientId, KindeAccountDomain } from "../../../config"
 
   export let onSuccess: () => void
   export let showTitle = true

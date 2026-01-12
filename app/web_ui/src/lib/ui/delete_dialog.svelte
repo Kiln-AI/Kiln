@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dialog from "./dialog.svelte"
   import { createKilnError } from "$lib/utils/error_handlers"
-  import { KilnApiBaseUrl } from "../../config"
+  import { KilnApiBaseUrl } from "$config"
   import Warning from "./warning.svelte"
 
   export let name: string

@@ -3,7 +3,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
-  import { KilnApiBaseUrl } from "../../config"
+  import { KilnApiBaseUrl } from "$config"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
   export let btn_primary: boolean = true

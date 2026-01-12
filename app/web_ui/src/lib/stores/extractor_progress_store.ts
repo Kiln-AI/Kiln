@@ -1,6 +1,6 @@
 import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
-import { KilnApiBaseUrl } from "../../config"
+import { KilnApiBaseUrl } from "$config"
 
 type ExtractorStatus =
   | "not_started"

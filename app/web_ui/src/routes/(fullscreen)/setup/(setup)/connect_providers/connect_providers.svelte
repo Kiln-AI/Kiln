@@ -15,7 +15,7 @@
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
   import { goto } from "$app/navigation"
-  import { KilnApiBaseUrl } from "../../../../../config"
+  import { KilnApiBaseUrl } from "$config"
 
   export let highlight_finetune = false
   export let required_providers: string[] = []

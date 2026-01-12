@@ -37,7 +37,7 @@
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
   import { load_task_run_configs } from "$lib/stores/run_configs_store"
-  import { KilnApiBaseUrl } from "../../../../../../config"
+  import { KilnApiBaseUrl } from "$config"
   let finetune_description = ""
   let finetune_name = ""
   const disabled_header = "disabled_header"

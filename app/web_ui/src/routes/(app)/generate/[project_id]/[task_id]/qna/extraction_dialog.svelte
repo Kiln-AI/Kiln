@@ -11,7 +11,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import CreateExtractorDialog from "../../../../docs/rag_configs/[project_id]/create_rag_config/create_extractor_dialog.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { KilnApiBaseUrl } from "../../../../../../config"
+  import { KilnApiBaseUrl } from "$config"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
