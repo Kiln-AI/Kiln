@@ -22,8 +22,8 @@
     getDetailedModelName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
-  import Output from "$lib/ui/output.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -175,7 +175,7 @@
         throw new Error("Invalid response from server")
       }
 
-      created_job_id = response.job_id as string
+      created_job_id = response.id as string
 
       goto(`/gepa/${project_id}/${task_id}/gepa_job/${created_job_id}`)
     } catch (e) {
@@ -194,7 +194,9 @@
   <AppPage
     title="Create a New GEPA Job"
     subtitle="Generate Eval Prompts and Augmented data."
-    breadcrumbs={[{ label: "Tasks", href: `/tasks/${project_id}` }]}
+    breadcrumbs={[
+      { label: "GEPA Jobs", href: `/gepa/${project_id}/${task_id}` },
+    ]}
   >
     {#if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

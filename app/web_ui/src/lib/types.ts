@@ -146,6 +146,9 @@ export type SpecType = SpecProperties["spec_type"]
 
 export type PublicGEPAJobStatusResponse =
   components["schemas"]["PublicGEPAJobStatusResponse"]
+export type GepaJob = components["schemas"]["GepaJob"]
+export type JobStatus = components["schemas"]["JobStatus"]
+
 // Type helpers for ExternalToolServerApiDescription properties
 
 type ToolPropsByType = {

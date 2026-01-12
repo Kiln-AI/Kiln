@@ -2202,8 +2202,51 @@ export interface paths {
         /**
          * Start Gepa Job
          * @description Start a GEPA job by zipping the project and sending it to the Kiln server.
+         *     Creates and saves a GepaJob datamodel to track the job.
          */
         post: operations["start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Gepa Jobs
+         * @description List all GEPA jobs for a task.
+         *     Optionally update the status of non-final jobs from the remote server.
+         */
+        get: operations["list_gepa_jobs_api_projects__project_id__tasks__task_id__gepa_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gepa Job
+         * @description Get a specific GEPA job and update its status from the remote server.
+         *     If the job has succeeded, create a prompt if one doesn't exist yet.
+         */
+        get: operations["get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4357,6 +4400,74 @@ export interface components {
             input_gen_prompt?: string | null;
             /** Judge Prompt */
             judge_prompt?: string | null;
+        };
+        /**
+         * GepaJob
+         * @description The Kiln GEPA job datamodel.
+         *
+         *     Tracks a GEPA (Generate Eval Prompts and Augmented data) job submission,
+         *     including its status and results. When complete, creates a new prompt.
+         */
+        GepaJob: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the GEPA job.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the GEPA job for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Job Id
+             * @description The ID of the job on the remote Kiln server.
+             */
+            job_id: string;
+            /**
+             * Token Budget
+             * @description The token budget for this job: 'light', 'medium', or 'heavy'.
+             */
+            token_budget: string;
+            /**
+             * Target Run Config Id
+             * @description The ID of the run configuration used for this job.
+             */
+            target_run_config_id: string;
+            /**
+             * Latest Status
+             * @description The latest known status of this GEPA job (pending, running, succeeded, failed, cancelled). Not updated in real time.
+             * @default pending
+             */
+            latest_status: string;
+            /**
+             * Optimized Prompt
+             * @description The optimized prompt result when the job succeeds.
+             */
+            optimized_prompt?: string | null;
+            /**
+             * Created Prompt Id
+             * @description The ID of the prompt created from this job's result, if any.
+             */
+            created_prompt_id?: string | null;
+            /** Model Type */
+            readonly model_type: string;
         };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
@@ -11241,9 +11352,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["GepaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_gepa_jobs_api_projects__project_id__tasks__task_id__gepa_jobs_get: {
+        parameters: {
+            query?: {
+                update_status?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GepaJob"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                gepa_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GepaJob"];
                 };
             };
             /** @description Validation Error */

@@ -42,9 +42,6 @@ def get_kiln_server_client() -> KilnServerClient:
 
 def get_authenticated_client(api_key: str) -> AuthenticatedClient:
     """Get an authenticated client for the Kiln server with the provided API key."""
-    print(f"Getting authenticated client with API key: {api_key}")
-    print(f"Base URL: {_get_base_url()}")
-    print(f"Common headers: {_get_common_headers()}")
     return AuthenticatedClient(
         base_url=_get_base_url(),
         token=api_key,
