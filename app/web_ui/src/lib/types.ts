@@ -144,6 +144,8 @@ export type SpecProperties =
   | components["schemas"]["PromptLeakageProperties"]
 export type SpecType = SpecProperties["spec_type"]
 
+export type PublicGEPAJobStatusResponse =
+  components["schemas"]["PublicGEPAJobStatusResponse"]
 // Type helpers for ExternalToolServerApiDescription properties
 
 type ToolPropsByType = {

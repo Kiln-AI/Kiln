@@ -4431,6 +4431,11 @@ export interface components {
             /** Jailbroken Examples */
             jailbroken_examples: string;
         };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -5058,6 +5063,23 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /**
+         * PublicGEPAJobResultResponse
+         * @description Public response model for GEPA job result containing only the optimized prompt.
+         */
+        PublicGEPAJobResultResponse: {
+            /** Optimized Prompt */
+            optimized_prompt: string;
+        };
+        /**
+         * PublicGEPAJobStatusResponse
+         * @description Public response model for GEPA job status.
+         */
+        PublicGEPAJobStatusResponse: {
+            /** Job Id */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
         };
         /** RagConfig */
         RagConfig: {
@@ -11252,9 +11274,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PublicGEPAJobStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11285,9 +11305,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PublicGEPAJobResultResponse"];
                 };
             };
             /** @description Validation Error */

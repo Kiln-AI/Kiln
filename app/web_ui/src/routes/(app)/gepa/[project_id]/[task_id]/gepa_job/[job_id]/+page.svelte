@@ -4,22 +4,16 @@
   import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import type { PublicGEPAJobStatusResponse } from "$lib/types"
 
   $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
   $: job_id = $page.params.job_id
 
-  interface JobStatusResponse {
-    job_id: string
-    status: "pending" | "running" | "succeeded" | "failed" | "cancelled"
-  }
-
-  let job_status: JobStatusResponse | null = null
+  let job_status: PublicGEPAJobStatusResponse["status"] | null = null
   let job_status_error: KilnError | null = null
   let job_status_loading = true
 
-  $: running =
-    job_status?.status === "pending" || job_status?.status === "running"
+  $: running = job_status === "pending" || job_status === "running"
 
   onMount(async () => {
     get_job_status()
@@ -45,7 +39,7 @@
       if (get_error) {
         throw get_error
       }
-      job_status = status_response
+      job_status = status_response.status
     } catch (error) {
       job_status_error = createKilnError(error)
     } finally {
@@ -60,12 +54,10 @@
 
   $: properties = job_status
     ? ([
-        { name: "Job ID", value: job_status.job_id },
+        { name: "Job ID", value: job_id },
         {
           name: "Status",
-          value:
-            job_status.status.charAt(0).toUpperCase() +
-            job_status.status.slice(1),
+          value: job_status.charAt(0).toUpperCase() + job_status.slice(1),
         },
       ] as Property[])
     : []
@@ -74,7 +66,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="GEPA Job"
-    subtitle={job_status_loading ? undefined : `Job ID: ${job_status?.job_id}`}
+    subtitle={job_status_loading ? undefined : `Job ID: ${job_id}`}
     breadcrumbs={[
       {
         label: "Tasks",
@@ -122,8 +114,7 @@
                 <span class="loading loading-spinner mr-2 h-[14px] w-[14px]"
                 ></span>
               {/if}
-              {job_status.status.charAt(0).toUpperCase() +
-                job_status.status.slice(1)}
+              {job_status.charAt(0).toUpperCase() + job_status.slice(1)}
               <button class="link ml-2 font-medium" on:click={get_job_status}>
                 Refresh Status
               </button>
