@@ -119,22 +119,54 @@
     return formatter
   }
 
+  // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
+  function buildRunConfigTooltip(name: string, allCosts: number[]): string {
+    const config = run_configs.find((c) => getRunConfigDisplayName(c) === name)
+    const modelName = config
+      ? getDetailedModelName(config, model_info) || "Unknown"
+      : "Unknown"
+    const promptName = config
+      ? getRunConfigPromptDisplayName(config, prompts)
+      : "Unknown"
+
+    let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
+    html += `<div>Model: ${modelName}</div>`
+    html += `<div>Prompt: ${promptName}</div>`
+    html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
+
+    dataKeys.forEach((key) => {
+      const label = getKeyLabel(key)
+      const rawValue = config?.id ? getModelValueRaw(config.id, key) : null
+      if (rawValue === null) {
+        html += `<div>${label}: N/A</div>`
+      } else if (isCostMetric(key)) {
+        const displayValue = costToScore(rawValue, allCosts)
+        html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Cost: $${rawValue.toFixed(6)})</span></div>`
+      } else {
+        html += `<div>${label}: ${rawValue.toFixed(3)}</div>`
+      }
+    })
+
+    return html
+  }
+
   function generateChartData(): {
     indicators: { name: string; max: number }[]
     series: { value: number[]; name: string }[]
     legend: string[]
+    allCosts: number[]
   } {
     const indicators: { name: string; max: number }[] = []
     const series: { value: number[]; name: string }[] = []
     const legend: string[] = []
+    const allCosts: number[] = []
 
     if (dataKeys.length === 0 || selectedRunConfigIds.length === 0) {
-      return { indicators, series, legend }
+      return { indicators, series, legend, allCosts }
     }
 
     // Calculate max values for each data key across all selected run configs
     const maxValues: Record<string, number> = {}
-    const allCosts: number[] = []
 
     for (const key of dataKeys) {
       let max = 0
@@ -189,7 +221,7 @@
       }
     }
 
-    return { indicators, series, legend }
+    return { indicators, series, legend, allCosts }
   }
 
   // Check if there's data to display (reactive, depends on dataKeys and selectedRunConfigIds)
@@ -209,7 +241,7 @@
       return
     }
 
-    const { indicators, series, legend } = generateChartData()
+    const { indicators, series, legend, allCosts } = generateChartData()
 
     const legendFormatter = buildLegendFormatter()
 
@@ -217,40 +249,8 @@
       {
         tooltip: {
           trigger: "item",
-          formatter: function (params: {
-            name: string
-            value: number[]
-            seriesName: string
-          }) {
-            const { name, value } = params
-            const config = run_configs.find(
-              (c) => getRunConfigDisplayName(c) === name,
-            )
-            const modelName = config
-              ? getDetailedModelName(config, model_info) || "Unknown"
-              : "Unknown"
-            const promptName = config
-              ? getRunConfigPromptDisplayName(config, prompts)
-              : "Unknown"
-
-            let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
-            html += `<div>Model: ${modelName}</div>`
-            html += `<div>Prompt: ${promptName}</div>`
-            html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
-            dataKeys.forEach((key, i) => {
-              const label = getKeyLabel(key)
-              const displayValue = value[i]
-              const rawValue = config?.id
-                ? getModelValueRaw(config.id, key)
-                : null
-              if (isCostMetric(key) && rawValue !== null) {
-                html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Cost: $${rawValue.toFixed(6)})</span></div>`
-              } else {
-                html += `<div>${label}: ${displayValue.toFixed(3)}</div>`
-              }
-            })
-            return html
-          },
+          formatter: (params: { name: string }) =>
+            buildRunConfigTooltip(params.name, allCosts),
         },
         legend: {
           data: legend,
@@ -259,6 +259,11 @@
           top: "middle",
           itemGap: 16,
           formatter: (name: string) => legendFormatter[name] || name,
+          tooltip: {
+            show: true,
+            formatter: (params: { name: string }) =>
+              buildRunConfigTooltip(params.name, allCosts),
+          },
           textStyle: {
             lineHeight: 16,
             rich: {
