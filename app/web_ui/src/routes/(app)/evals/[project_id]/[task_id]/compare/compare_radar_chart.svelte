@@ -33,13 +33,28 @@
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
 
-  // Get all data keys excluding cost section (which has very different scales)
-  $: dataKeys = comparisonFeatures
-    .filter((f) => f.eval_id !== "kiln_cost_section")
-    .flatMap((f) => f.items.map((item) => item.key))
+  // Cost key that should be included in radar chart (inverted, lower is better)
+  const COST_KEY = "cost::mean_cost"
+
+  // Check if a key is the cost metric (where lower is better)
+  function isCostMetric(key: string): boolean {
+    return key === COST_KEY
+  }
+
+  // Get all data keys: include eval metrics + cost (but exclude token counts)
+  $: dataKeys = [
+    ...comparisonFeatures
+      .filter((f) => f.eval_id !== "kiln_cost_section")
+      .flatMap((f) => f.items.map((item) => item.key)),
+    COST_KEY, // Add cost at the end
+  ]
 
   // Get labels for radar indicators
   function getKeyLabel(dataKey: string): string {
+    // Special handling for cost metric
+    if (dataKey === COST_KEY) {
+      return "Cost Efficiency"
+    }
     for (const feature of comparisonFeatures) {
       const item = feature.items.find((i) => i.key === dataKey)
       if (item) return item.label
@@ -83,25 +98,50 @@
       return { indicators, series, legend }
     }
 
-    // Calculate max values for each data key across all selected run configs
+    // Calculate min and max values for each data key across all selected run configs
     const maxValues: Record<string, number> = {}
+    const minValues: Record<string, number> = {}
     for (const key of dataKeys) {
       let max = 0
+      let min = Infinity
+      let hasValue = false
       for (const configId of selectedRunConfigIds) {
         const value = getModelValueRaw(configId, key)
-        if (value !== null && value > max) {
-          max = value
+        if (value !== null) {
+          hasValue = true
+          if (value > max) max = value
+          if (value < min) min = value
         }
       }
-      // Add 10% padding to max for better visualization
-      maxValues[key] = max > 0 ? max * 1.1 : 1
+      maxValues[key] = hasValue && max > 0 ? max : 1
+      minValues[key] = hasValue && min < Infinity ? min : 0
     }
 
-    // Build indicators
+    // Normalize a value to 0-100 scale
+    // For regular metrics: higher is better, so normalize = (value / max) * 100
+    // For cost metrics: lower is better, so normalize = (1 - (value - min) / (max - min)) * 100
+    function normalizeValue(key: string, value: number | null): number {
+      if (value === null) return 0
+
+      if (isCostMetric(key)) {
+        const max = maxValues[key]
+        const min = minValues[key]
+        // If all values are the same, return 100 (best score)
+        if (max === min) return 100
+        // Invert: lower cost = higher score
+        return (1 - (value - min) / (max - min)) * 100
+      } else {
+        const max = maxValues[key]
+        if (max === 0) return 0
+        return (value / max) * 100
+      }
+    }
+
+    // Build indicators - all normalized to 0-100 scale
     for (const key of dataKeys) {
       indicators.push({
         name: getKeyLabel(key),
-        max: maxValues[key],
+        max: 100,
       })
     }
 
@@ -114,9 +154,10 @@
       let hasAnyValue = false
 
       for (const key of dataKeys) {
-        const value = getModelValueRaw(configId, key)
-        values.push(value ?? 0)
-        if (value !== null) hasAnyValue = true
+        const rawValue = getModelValueRaw(configId, key)
+        const normalizedValue = normalizeValue(key, rawValue)
+        values.push(normalizedValue)
+        if (rawValue !== null) hasAnyValue = true
       }
 
       // Only include if at least one value is available
@@ -155,6 +196,31 @@
       {
         tooltip: {
           trigger: "item",
+          formatter: function (params: {
+            name: string
+            value: number[]
+            seriesName: string
+          }) {
+            const { name, value } = params
+            let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
+            dataKeys.forEach((key, i) => {
+              const label = getKeyLabel(key)
+              const normalizedValue = value[i]
+              // Find the config to get the raw value
+              const config = run_configs.find(
+                (c) => getRunConfigDisplayName(c) === name,
+              )
+              const rawValue = config?.id
+                ? getModelValueRaw(config.id, key)
+                : null
+              if (isCostMetric(key) && rawValue !== null) {
+                html += `<div>${label}: ${normalizedValue.toFixed(0)} <span style="color: #888;">(raw: $${rawValue.toFixed(6)})</span></div>`
+              } else {
+                html += `<div>${label}: ${normalizedValue.toFixed(0)}</div>`
+              }
+            })
+            return html
+          },
         },
         legend: {
           data: legend,
