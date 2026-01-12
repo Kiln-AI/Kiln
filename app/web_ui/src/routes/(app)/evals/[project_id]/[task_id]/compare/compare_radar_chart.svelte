@@ -132,51 +132,30 @@
       return { indicators, series, legend }
     }
 
-    // Calculate min and max values for each data key across all selected run configs
+    // Calculate max values for each data key across all selected run configs
     const maxValues: Record<string, number> = {}
-    const minValues: Record<string, number> = {}
     const allCosts: number[] = []
 
     for (const key of dataKeys) {
       let max = 0
-      let min = Infinity
-      let hasValue = false
       for (const configId of selectedRunConfigIds) {
         const value = getModelValueRaw(configId, key)
-        if (value !== null) {
-          hasValue = true
-          if (value > max) max = value
-          if (value < min) min = value
-          // Collect all cost values for the new cost scoring algorithm
-          if (isCostMetric(key)) {
-            allCosts.push(value)
-          }
+        if (value !== null && value > max) {
+          max = value
+        }
+        if (value !== null && isCostMetric(key)) {
+          allCosts.push(value)
         }
       }
-      maxValues[key] = hasValue && max > 0 ? max : 1
-      minValues[key] = hasValue && min < Infinity ? min : 0
+      // Add 10% padding to max for better visualization
+      maxValues[key] = max > 0 ? max * 1.1 : 1
     }
 
-    // Normalize a value to 0-100 scale
-    // For regular metrics: higher is better, so normalize = (value / max) * 100
-    // For cost metrics: lower is better, use costToScore function
-    function normalizeValue(key: string, value: number | null): number {
-      if (value === null) return 0
-
-      if (isCostMetric(key)) {
-        return costToScore(value, allCosts)
-      } else {
-        const max = maxValues[key]
-        if (max === 0) return 0
-        return (value / max) * 100
-      }
-    }
-
-    // Build indicators - all normalized to 0-100 scale
+    // Build indicators with actual max values (except cost which uses 0-100 scale)
     for (const key of dataKeys) {
       indicators.push({
         name: getKeyLabel(key),
-        max: 100,
+        max: isCostMetric(key) ? 100 : maxValues[key],
       })
     }
 
@@ -190,8 +169,15 @@
 
       for (const key of dataKeys) {
         const rawValue = getModelValueRaw(configId, key)
-        const normalizedValue = normalizeValue(key, rawValue)
-        values.push(normalizedValue)
+        let displayValue: number
+        if (rawValue === null) {
+          displayValue = 0
+        } else if (isCostMetric(key)) {
+          displayValue = costToScore(rawValue, allCosts)
+        } else {
+          displayValue = rawValue
+        }
+        values.push(displayValue)
         if (rawValue !== null) hasAnyValue = true
       }
 
@@ -237,21 +223,30 @@
             seriesName: string
           }) {
             const { name, value } = params
+            const config = run_configs.find(
+              (c) => getRunConfigDisplayName(c) === name,
+            )
+            const modelName = config
+              ? getDetailedModelName(config, model_info) || "Unknown"
+              : "Unknown"
+            const promptName = config
+              ? getRunConfigPromptDisplayName(config, prompts)
+              : "Unknown"
+
             let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
+            html += `<div style="style="color: #888;"; margin-bottom: 4px;">Model: ${modelName}</div>`
+            html += `<div style="style="color: #888;"; margin-bottom: 4px;">Prompt: ${promptName}</div>`
+            html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
             dataKeys.forEach((key, i) => {
               const label = getKeyLabel(key)
-              const normalizedValue = value[i]
-              // Find the config to get the raw value
-              const config = run_configs.find(
-                (c) => getRunConfigDisplayName(c) === name,
-              )
+              const displayValue = value[i]
               const rawValue = config?.id
                 ? getModelValueRaw(config.id, key)
                 : null
               if (isCostMetric(key) && rawValue !== null) {
-                html += `<div>${label}: ${normalizedValue.toFixed(0)} <span style="color: #888;">(Cost: $${rawValue.toFixed(6)})</span></div>`
+                html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Cost: $${rawValue.toFixed(6)})</span></div>`
               } else {
-                html += `<div>${label}: ${normalizedValue.toFixed(0)}</div>`
+                html += `<div>${label}: ${displayValue.toFixed(3)}</div>`
               }
             })
             return html
