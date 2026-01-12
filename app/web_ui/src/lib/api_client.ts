@@ -1,8 +1,7 @@
 import createClient from "openapi-fetch"
 import type { paths } from "./api_schema"
-
-export const base_url = "http://localhost:8757"
+import { KilnApiBaseUrl } from "../config"
 
 export const client = createClient<paths>({
-  baseUrl: base_url,
+  baseUrl: KilnApiBaseUrl,
 })

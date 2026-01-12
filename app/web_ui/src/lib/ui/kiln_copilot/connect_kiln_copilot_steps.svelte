@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import createKindeClient from "@kinde-oss/kinde-auth-pkce-js"
-  import { base_url } from "$lib/api_client"
+  import { KilnApiBaseUrl } from "../../../config"
   import posthog from "posthog-js"
   import { KindeAccountClientId, KindeAccountDomain } from "../../../config"
 
@@ -95,18 +95,21 @@
     submitting = true
 
     try {
-      const res = await fetch(base_url + "/api/provider/connect_api_key", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          provider: "kiln_copilot",
-          key_data: {
-            "API Key": apiKey,
+      const res = await fetch(
+        KilnApiBaseUrl + "/api/provider/connect_api_key",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        }),
-      })
+          body: JSON.stringify({
+            provider: "kiln_copilot",
+            key_data: {
+              "API Key": apiKey,
+            },
+          }),
+        },
+      )
 
       const data = await res.json()
 

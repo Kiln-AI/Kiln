@@ -1,6 +1,7 @@
 <script lang="ts">
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
 
+  import { KilnApiBaseUrl, KindeAccountClientId } from "$config"
   export let project_id: string
   export let task_id: string
 </script>
@@ -15,6 +16,8 @@
     <div class="font-medium text-lg">
       Fine-Tuning Learns from Your Dataset to Create Custom Models
     </div>
+    <div>Kinde Account Client ID: {KindeAccountClientId}</div>
+    <div>Kiln API Base URL: {KilnApiBaseUrl}</div>
     <div>
       Fine-tuned models can be faster, cheaper and more accurate than standard
       models.
