@@ -250,7 +250,7 @@ async function generateAndSaveEvalData(
         : "",
       spec_rendered_prompt_template: spec_definition,
       num_samples_per_topic: 5,
-      num_topics: 2,
+      num_topics: 4,
       enable_scoring: false,
     },
   })
