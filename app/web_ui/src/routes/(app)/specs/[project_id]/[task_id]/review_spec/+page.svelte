@@ -111,9 +111,9 @@
               ? JSON.stringify(task.output_json_schema)
               : "",
             spec_rendered_prompt_template: spec_definition,
-            num_samples_per_topic: 2,
+            num_samples_per_topic: 10,
             num_topics: 5,
-            num_exemplars: 10,
+            num_exemplars: 5,
           },
         })
 
