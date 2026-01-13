@@ -23,6 +23,7 @@ from app.desktop.studio_server.gepa_job_api import (
     PublicGEPAJobResultResponse,
     PublicGEPAJobStatusResponse,
     connect_gepa_job_api,
+    is_job_status_final,
 )
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -513,3 +514,310 @@ def test_gepa_job_only_creates_prompt_once(client, mock_api_key, tmp_path):
 
         prompts = task.prompts()
         assert len(prompts) == 1
+
+
+def test_get_gepa_job_skips_update_when_succeeded(client, mock_api_key, tmp_path):
+    """Test that getting a job that's already succeeded skips the API status update."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="succeeded",
+        optimized_prompt="Already optimized",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_status,
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_result,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "succeeded"
+        assert result["optimized_prompt"] == "Already optimized"
+
+        mock_status.assert_not_called()
+        mock_result.assert_not_called()
+
+
+def test_get_gepa_job_skips_update_when_failed(client, mock_api_key, tmp_path):
+    """Test that getting a job that's already failed skips the API status update."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="failed",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_status,
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_result,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "failed"
+
+        mock_status.assert_not_called()
+        mock_result.assert_not_called()
+
+
+def test_get_gepa_job_skips_update_when_cancelled(client, mock_api_key, tmp_path):
+    """Test that getting a job that's already cancelled skips the API status update."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="cancelled",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_status,
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_result,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "cancelled"
+
+        mock_status.assert_not_called()
+        mock_result.assert_not_called()
+
+
+def test_is_job_status_final():
+    """Test the is_job_status_final helper function."""
+    assert is_job_status_final(JobStatus.SUCCEEDED.value) is True
+    assert is_job_status_final(JobStatus.FAILED.value) is True
+    assert is_job_status_final(JobStatus.CANCELLED.value) is True
+
+    assert is_job_status_final(JobStatus.PENDING.value) is False
+    assert is_job_status_final(JobStatus.RUNNING.value) is False
+
+    assert is_job_status_final("succeeded") is True
+    assert is_job_status_final("failed") is True
+    assert is_job_status_final("cancelled") is True
+    assert is_job_status_final("pending") is False
+    assert is_job_status_final("running") is False
+
+
+def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
+    client, mock_api_key, tmp_path
+):
+    """Test that list_gepa_jobs updates statuses in parallel batches of 5."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    # Create 12 jobs with non-final statuses and 3 with final statuses
+    for i in range(12):
+        GepaJob(
+            name=f"Job {i}",
+            job_id=f"remote-job-{i}",
+            token_budget="light",
+            target_run_config_id="config-1",
+            latest_status=JobStatus.PENDING.value
+            if i % 2 == 0
+            else JobStatus.RUNNING.value,
+            parent=task,
+        ).save_to_file()
+
+    for i in range(12, 15):
+        GepaJob(
+            name=f"Job {i}",
+            job_id=f"remote-job-{i}",
+            token_budget="light",
+            target_run_config_id="config-1",
+            latest_status=JobStatus.SUCCEEDED.value,
+            parent=task,
+        ).save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    # Track calls to the update function
+    update_calls = []
+
+    async def mock_update(gepa_job, client):
+        update_calls.append(gepa_job.job_id)
+        return gepa_job
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.update_gepa_job_status_and_create_prompt",
+            new_callable=AsyncMock,
+            side_effect=mock_update,
+        ) as mock_update_fn,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            params={"update_status": True},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert len(result) == 15
+
+        # Should only update the 12 non-final jobs, not the 3 succeeded ones
+        assert mock_update_fn.call_count == 12
+        assert len(update_calls) == 12
+
+        # Verify none of the succeeded jobs were updated
+        succeeded_job_ids = {f"remote-job-{i}" for i in range(12, 15)}
+        for job_id in update_calls:
+            assert job_id not in succeeded_job_ids
+
+
+def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_path):
+    """Test that list_gepa_jobs skips updating jobs with final statuses."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    # Create jobs with final statuses
+    GepaJob(
+        name="Succeeded Job",
+        job_id="remote-job-succeeded",
+        token_budget="light",
+        target_run_config_id="config-1",
+        latest_status=JobStatus.SUCCEEDED.value,
+        parent=task,
+    ).save_to_file()
+
+    GepaJob(
+        name="Failed Job",
+        job_id="remote-job-failed",
+        token_budget="light",
+        target_run_config_id="config-1",
+        latest_status=JobStatus.FAILED.value,
+        parent=task,
+    ).save_to_file()
+
+    GepaJob(
+        name="Cancelled Job",
+        job_id="remote-job-cancelled",
+        token_budget="light",
+        target_run_config_id="config-1",
+        latest_status=JobStatus.CANCELLED.value,
+        parent=task,
+    ).save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.update_gepa_job_status_and_create_prompt",
+            new_callable=AsyncMock,
+        ) as mock_update,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            params={"update_status": True},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert len(result) == 3
+
+        # Should not call update for any of the jobs since they're all final
+        mock_update.assert_not_called()

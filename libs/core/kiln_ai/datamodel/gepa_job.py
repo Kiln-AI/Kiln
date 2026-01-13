@@ -11,9 +11,6 @@ if TYPE_CHECKING:
 class GepaJob(KilnParentedModel):
     """
     The Kiln GEPA job datamodel.
-
-    Tracks a GEPA (Generate Eval Prompts and Augmented data) job submission,
-    including its status and results. When complete, creates a new prompt.
     """
 
     name: FilenameString = Field(description="The name of the GEPA job.")

@@ -82,8 +82,8 @@
 </script>
 
 <AppPage
-  title="GEPA Jobs"
-  subtitle="Generate Eval Prompts and Augmented data jobs for the current task."
+  title="GEPA Prompt Optimization"
+  subtitle="Optimize the prompt xxx."
   action_buttons={is_empty
     ? []
     : [

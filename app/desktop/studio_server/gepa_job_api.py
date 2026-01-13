@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import zipfile
@@ -6,6 +7,8 @@ from typing import Literal, cast
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
     get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get,
+    get_job_status_v1_jobs_job_type_job_id_status_get,
+    start_gepa_job_v1_jobs_gepa_job_start_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
@@ -37,6 +40,18 @@ from kiln_server.task_api import task_from_id
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+def is_job_status_final(status: str) -> bool:
+    """
+    Check if a job status is final (succeeded, failed, or cancelled).
+    Final statuses don't need status updates from the server.
+    """
+    return status in [
+        JobStatus.SUCCEEDED,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+    ]
 
 
 class PublicGEPAJobResultResponse(BaseModel):
@@ -87,9 +102,6 @@ async def update_gepa_job_status_and_create_prompt(
     Update the status of a GepaJob from the remote server.
     If the job has succeeded and no prompt exists yet, create one.
     """
-    from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
-        get_job_status_v1_jobs_job_type_job_id_status_get,
-    )
 
     task = gepa_job.parent_task()
     if task is None:
@@ -114,8 +126,8 @@ async def update_gepa_job_status_and_create_prompt(
         gepa_job.latest_status = new_status
 
         if (
-            previous_status != "succeeded"
-            and new_status == "succeeded"
+            previous_status != JobStatus.SUCCEEDED
+            and new_status == JobStatus.SUCCEEDED
             and not gepa_job.created_prompt_id
         ):
             result_response = (
@@ -238,11 +250,6 @@ def connect_gepa_job_api(app: FastAPI):
                 project_zip=project_zip_file,
             )
 
-            # Call the SDK to start the job
-            from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
-                start_gepa_job_v1_jobs_gepa_job_start_post,
-            )
-
             server_client = get_authenticated_client(_get_api_key())
             if not isinstance(server_client, AuthenticatedClient):
                 raise HTTPException(
@@ -276,7 +283,7 @@ def connect_gepa_job_api(app: FastAPI):
                 job_id=response.job_id,
                 token_budget=request.token_budget,
                 target_run_config_id=request.target_run_config_id,
-                latest_status="pending",
+                latest_status=JobStatus.PENDING,
                 parent=task,
             )
             gepa_job.save_to_file()
@@ -318,15 +325,28 @@ def connect_gepa_job_api(app: FastAPI):
             try:
                 server_client = get_authenticated_client(_get_api_key())
                 if isinstance(server_client, AuthenticatedClient):
-                    for gepa_job in gepa_jobs:
-                        if gepa_job.latest_status not in [
-                            "succeeded",
-                            "failed",
-                            "cancelled",
-                        ]:
-                            await update_gepa_job_status_and_create_prompt(
-                                gepa_job, server_client
-                            )
+                    # Filter jobs that need status updates
+                    jobs_to_update = [
+                        job
+                        for job in gepa_jobs
+                        if not is_job_status_final(job.latest_status)
+                    ]
+
+                    # Update in batches of 5 in parallel
+                    batch_size = 5
+                    for i in range(0, len(jobs_to_update), batch_size):
+                        batch = jobs_to_update[i : i + batch_size]
+                        logger.info(
+                            f"Updating GEPA job statuses for batch of {len(batch)} jobs"
+                        )
+                        await asyncio.gather(
+                            *[
+                                update_gepa_job_status_and_create_prompt(
+                                    job, server_client
+                                )
+                                for job in batch
+                            ]
+                        )
             except Exception as e:
                 logger.error(f"Error updating GEPA job statuses: {e}", exc_info=True)
 
@@ -337,8 +357,14 @@ def connect_gepa_job_api(app: FastAPI):
         """
         Get a specific GEPA job and update its status from the remote server.
         If the job has succeeded, create a prompt if one doesn't exist yet.
+        If the job is already in a settled state (succeeded, failed, cancelled),
+        skip the status update and return the cached model.
         """
         gepa_job = gepa_job_from_id(project_id, task_id, gepa_job_id)
+
+        # Skip status update if job is already in a final state
+        if is_job_status_final(gepa_job.latest_status):
+            return gepa_job
 
         try:
             server_client = get_authenticated_client(_get_api_key())
@@ -357,10 +383,6 @@ def connect_gepa_job_api(app: FastAPI):
         Get the status of a GEPA job.
         """
         try:
-            from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
-                get_job_status_v1_jobs_job_type_job_id_status_get,
-            )
-
             server_client = get_authenticated_client(_get_api_key())
             if not isinstance(server_client, AuthenticatedClient):
                 raise HTTPException(

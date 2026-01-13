@@ -6,7 +6,7 @@
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { goto } from "$app/navigation"
+  import Completed from "$lib/ui/completed.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import type { Task, TaskRunConfig } from "$lib/types"
   import {
@@ -39,7 +39,7 @@
 
   let create_job_error: KilnError | null = null
   let create_job_loading = false
-  let created_job_id: string | null = null
+  let created_job: { id: string } | null = null
 
   let current_task: Task | null = null
   let task_loading = true
@@ -137,7 +137,7 @@
   async function create_gepa_job() {
     try {
       create_job_loading = true
-      created_job_id = null
+      created_job = null
 
       if (
         !target_run_config_id ||
@@ -169,15 +169,13 @@
       if (
         !response ||
         typeof response !== "object" ||
-        !("job_id" in response) ||
-        typeof response.job_id !== "string"
+        !("id" in response) ||
+        typeof response.id !== "string"
       ) {
         throw new Error("Invalid response from server")
       }
 
-      created_job_id = response.id as string
-
-      goto(`/gepa/${project_id}/${task_id}/gepa_job/${created_job_id}`)
+      created_job = { id: response.id }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
         create_job_error = new KilnError("Could not create a GEPA job.", null)
@@ -192,16 +190,26 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Create a New GEPA Job"
-    subtitle="Generate Eval Prompts and Augmented data."
+    title="New GEPA Optimization Job"
+    subtitle="Optimize the prompt for the current task."
     breadcrumbs={[
-      { label: "GEPA Jobs", href: `/gepa/${project_id}/${task_id}` },
+      {
+        label: "GEPA Prompt Optimization",
+        href: `/gepa/${project_id}/${task_id}`,
+      },
     ]}
   >
     {#if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
+    {:else if created_job}
+      <Completed
+        title="GEPA Job Created"
+        subtitle="It will take a while to complete optimization."
+        link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
+        button_text="View GEPA Job"
+      />
     {:else if !current_task}
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"

@@ -179,6 +179,9 @@ class Task(
     def specs(self, readonly: bool = False) -> list[Spec]:
         return super().specs(readonly=readonly)  # type: ignore
 
+    def gepa_jobs(self, readonly: bool = False) -> list[GepaJob]:
+        return super().gepa_jobs(readonly=readonly)  # type: ignore
+
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:
         if self.parent is None or self.parent.__class__.__name__ != "Project":

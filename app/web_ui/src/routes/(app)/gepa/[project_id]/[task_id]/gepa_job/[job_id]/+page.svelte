@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
+  import { onMount, onDestroy } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { GepaJob } from "$lib/types"
@@ -20,21 +20,51 @@
   let gepa_job: GepaJob | null = null
   let gepa_job_error: KilnError | null = null
   let gepa_job_loading = true
+  let polling_timer: ReturnType<typeof setTimeout> | null = null
 
   $: running =
     gepa_job?.latest_status === "pending" ||
     gepa_job?.latest_status === "running"
 
+  // Set up polling when running state changes
+  $: {
+    if (running && !polling_timer) {
+      start_polling()
+    } else if (!running && polling_timer) {
+      stop_polling()
+    }
+  }
+
+  function start_polling() {
+    stop_polling()
+    polling_timer = setInterval(() => {
+      get_gepa_job(false)
+    }, 60000)
+  }
+
+  function stop_polling() {
+    if (polling_timer) {
+      clearInterval(polling_timer)
+      polling_timer = null
+    }
+  }
+
   onMount(async () => {
     await load_task_run_configs(project_id, task_id)
-    get_gepa_job()
+    await get_gepa_job()
   })
 
-  const get_gepa_job = async () => {
+  onDestroy(() => {
+    stop_polling()
+  })
+
+  const get_gepa_job = async (show_loading = true) => {
     try {
-      gepa_job_loading = true
-      gepa_job_error = null
-      gepa_job = null
+      if (show_loading) {
+        gepa_job_loading = true
+        gepa_job_error = null
+        gepa_job = null
+      }
 
       const { data: gepa_job_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}",
@@ -55,9 +85,13 @@
       gepa_job = gepa_job_response
       build_properties()
     } catch (error) {
-      gepa_job_error = createKilnError(error)
+      if (show_loading) {
+        gepa_job_error = createKilnError(error)
+      }
     } finally {
-      gepa_job_loading = false
+      if (show_loading) {
+        gepa_job_loading = false
+      }
     }
   }
 
@@ -178,7 +212,10 @@
               {/if}
               {gepa_job.latest_status.charAt(0).toUpperCase() +
                 gepa_job.latest_status.slice(1)}
-              <button class="link ml-2 font-medium" on:click={get_gepa_job}>
+              <button
+                class="link ml-2 font-medium"
+                on:click={() => get_gepa_job(false)}
+              >
                 Reload Status
               </button>
             </div>

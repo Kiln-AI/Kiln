@@ -2243,6 +2243,8 @@ export interface paths {
          * Get Gepa Job
          * @description Get a specific GEPA job and update its status from the remote server.
          *     If the job has succeeded, create a prompt if one doesn't exist yet.
+         *     If the job is already in a settled state (succeeded, failed, cancelled),
+         *     skip the status update and return the cached model.
          */
         get: operations["get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get"];
         put?: never;
@@ -4404,9 +4406,6 @@ export interface components {
         /**
          * GepaJob
          * @description The Kiln GEPA job datamodel.
-         *
-         *     Tracks a GEPA (Generate Eval Prompts and Augmented data) job submission,
-         *     including its status and results. When complete, creates a new prompt.
          */
         GepaJob: {
             /**
