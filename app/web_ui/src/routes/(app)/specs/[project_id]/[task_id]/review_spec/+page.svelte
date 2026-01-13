@@ -23,6 +23,7 @@
   import { buildDefinitionFromProperties } from "../select_template/spec_templates"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import { client } from "$lib/api_client"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
