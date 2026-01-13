@@ -280,7 +280,7 @@
       </div>
     {:else}
       <FormContainer
-        submit_label={has_kiln_copilot ? "Refine Spec with Copilot" : "Next"}
+        submit_label={"Next"}
         on:submit={check_kiln_copilot_and_proceed}
         bind:error={next_error}
         bind:submitting
@@ -334,7 +334,7 @@
           <span class="text-xs text-gray-500">or</span>
           <button
             class="link underline text-xs text-gray-500"
-            on:click={create_spec_from_form}>Create Spec Without Copilot</button
+            on:click={create_spec_from_form}>Create without Copilot</button
           >
         </div>
       {/if}
@@ -346,10 +346,11 @@
   bind:this={copilot_v_manual_dialog}
   title={show_connect_kiln_steps
     ? "Connect Kiln Copilot"
-    : "Choose your workflow"}
+    : "Choose your Workflow"}
+  center_content={show_connect_kiln_steps ? false : true}
   sub_subtitle={show_connect_kiln_steps
     ? "Follow the steps below to setup Kiln Copilot"
-    : "Select a workflow for defining and evaluating this spec"}
+    : undefined}
   width={show_connect_kiln_steps ? "normal" : "wide"}
   on:close={() => {
     show_connect_kiln_steps = false
@@ -384,19 +385,19 @@
       </button>
     </div>
   {:else}
-    <div class="mt-4 max-w-[500px] mx-auto">
-      <div class="overflow-x-auto rounded-lg border">
+    <div class="my-4 max-w-[680px] mx-auto">
+      <div class="overflow-x-auto">
         <table class="table table-fixed w-full">
           <colgroup>
-            <col class="w-[160px]" />
-            <col class="w-[140px]" />
+            <col class="w-[240px]" />
+            <col />
             <col />
           </colgroup>
           <thead>
             <tr>
               <th></th>
               <th class="text-center">Manual</th>
-              <th class="text-center">
+              <th class="text-center border-l">
                 <div class="flex items-center justify-center gap-2">
                   <img
                     src="/images/animated_logo.svg"
@@ -410,49 +411,51 @@
           </thead>
           <tbody>
             <tr>
-              <th class="font-bold text-xs text-gray-500">Eval judge setup</th>
+              <th class="font-bold text-xs text-gray-500"
+                >Eval Judge Creation</th
+              >
               <td class="text-center">Manual</td>
-              <td class="text-center text-primary">Automatic</td>
+              <td class="text-center border-l">Automatic</td>
             </tr>
             <tr>
               <th class="font-bold text-xs text-gray-500"
-                >Edge case discovery</th
+                >Edge Case Discovery</th
               >
               <td class="text-center">Manual</td>
-              <td class="text-center text-primary">Automatic</td>
+              <td class="text-center border-l">Automatic</td>
             </tr>
             <tr>
-              <th class="font-bold text-xs text-gray-500">Eval data creation</th
+              <th class="font-bold text-xs text-gray-500">Eval Data Creation</th
               >
               <td class="text-center">Manual</td>
-              <td class="text-center text-primary">Automatic</td>
+              <td class="text-center border-l">Automatic</td>
             </tr>
             <tr>
               <th class="font-bold text-xs text-base-content/60"
-                >Eval accuracy</th
+                >Eval Accuracy</th
               >
               <td class="text-center">Varies</td>
-              <td class="text-center text-primary">High</td>
+              <td class="text-center border-l">High</td>
             </tr>
             <tr>
-              <th class="font-bold text-xs text-gray-500">Approx. effort</th>
-              <td class="text-center">~20 min</td>
-              <td class="text-center text-primary">~3 min</td>
+              <th class="font-bold text-xs text-gray-500">Approx. Effort</th>
+              <td class="text-center">20 min</td>
+              <td class="text-center border-l">3 min</td>
             </tr>
             <tr>
               <th class="font-bold text-xs text-base-content/60"
-                >Kiln account</th
+                >Kiln Account</th
               >
               <td class="text-center">Optional</td>
-              <td class="text-center text-primary">Required</td>
+              <td class="text-center border-l">Required</td>
             </tr>
           </tbody>
         </table>
       </div>
       <table class="table-fixed w-full mt-4">
         <colgroup>
-          <col class="w-[160px]" />
-          <col class="w-[140px]" />
+          <col class="w-[240px]" />
+          <col />
           <col />
         </colgroup>
         <tbody>
@@ -468,7 +471,7 @@
             </td>
             <td class="text-center">
               <button
-                class="btn btn-primary btn-sm"
+                class="btn btn-outline btn-sm"
                 on:click={() => {
                   show_connect_kiln_steps = true
                 }}
