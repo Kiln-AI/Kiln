@@ -100,42 +100,21 @@
 
         // TODO: Create a few shot prompt instead of basic prompt
         // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
-        // const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-        //   body: {
-        //     task_prompt_with_few_shot: task.instruction,
-        //     task_input_schema: task.input_json_schema
-        //       ? JSON.stringify(task.input_json_schema)
-        //       : "",
-        //     task_output_schema: task.output_json_schema
-        //       ? JSON.stringify(task.output_json_schema)
-        //       : "",
-        //     spec_rendered_prompt_template: spec_definition,
-        //     num_samples_per_topic: 2,
-        //     num_topics: 5,
-        //     num_exemplars: 10,
-        //   },
-        // })
-        const { data, error } = {
-          data: {
-            examples_for_feedback: [
-              {
-                input: "Hello, world!",
-                output: "Hello, world!",
-                exhibits_issue: false,
-                user_says_meets_spec: null,
-                feedback: "",
-              },
-              {
-                input: "Hello, world 2!",
-                output: "Hello, world 2!",
-                exhibits_issue: false,
-                user_says_meets_spec: null,
-                feedback: "",
-              },
-            ],
+        const { data, error } = await client.POST("/api/copilot/clarify_spec", {
+          body: {
+            task_prompt_with_few_shot: task.instruction,
+            task_input_schema: task.input_json_schema
+              ? JSON.stringify(task.input_json_schema)
+              : "",
+            task_output_schema: task.output_json_schema
+              ? JSON.stringify(task.output_json_schema)
+              : "",
+            spec_rendered_prompt_template: spec_definition,
+            num_samples_per_topic: 2,
+            num_topics: 5,
+            num_exemplars: 10,
           },
-          error: null,
-        }
+        })
 
         if (error) {
           throw error
