@@ -17,6 +17,7 @@
   import { getStoredReviewedExamples } from "../spec_reviewed_examples_store"
   import { load_task } from "$lib/stores"
   import { client } from "$lib/api_client"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -37,6 +38,7 @@
 
   // Track which fields have AI-generated suggestions (for badge display)
   let ai_suggested_fields: Set<string> = new Set()
+  $: ai_suggested_fields_size = ai_suggested_fields.size
 
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
 
@@ -182,6 +184,8 @@
               suggested_property_values[field_key] = edit.proposed_edit
               ai_suggested_fields.add(field_key)
             }
+            // Create new Set to trigger reactivity
+            ai_suggested_fields = new Set(ai_suggested_fields)
           }
         }
 
@@ -274,127 +278,172 @@
   }
 </script>
 
-<AppPage
-  title="Refine Spec"
-  subtitle="Refine your spec so it correctly captures your goal"
-  breadcrumbs={[
-    {
-      label: "Specs & Evals",
-      href: `/specs/${project_id}/${task_id}`,
-    },
-    {
-      label: "Spec Templates",
-      href: `/specs/${project_id}/${task_id}/select_template`,
-    },
-  ]}
+<div
+  class={!spec_loading && !spec_error && ai_suggested_fields_size > 0
+    ? "full-width"
+    : "max-w-[900px]"}
 >
-  {#if spec_loading}
-    <div class="flex justify-center items-center h-full min-h-[200px]">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if spec_error}
-    <div class="text-error text-sm">
-      {spec_error.getMessage() || "An unknown error occurred"}
-    </div>
-  {:else}
-    <FormContainer
-      submit_label={has_refinements ? "Next" : "Create Spec"}
-      on:submit={has_refinements ? analyze_spec : create_spec}
-      bind:error={submit_error}
-      bind:submitting
-      warn_before_unload={!complete}
-      compact_button={true}
-    >
-      <!-- Column Headers -->
-      <div class="grid grid-cols-2 gap-8 mb-4">
-        <div class="text-xl font-bold">Original</div>
-        <div class="text-xl font-bold">Refined</div>
+  <AppPage
+    title="Copilot: Review and Refine"
+    subtitle={spec_loading
+      ? undefined
+      : `Improve your spec and judge with AI guidance.`}
+    breadcrumbs={[
+      {
+        label: "Specs & Evals",
+        href: `/specs/${project_id}/${task_id}`,
+      },
+      {
+        label: "Spec Templates",
+        href: `/specs/${project_id}/${task_id}/select_template`,
+      },
+    ]}
+  >
+    {#if spec_loading}
+      <div class="flex justify-center items-center h-full min-h-[200px]">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-
-      <!-- Spec Name Row -->
-      <div class="grid grid-cols-2 gap-8">
-        <FormElement
-          label="Spec Name"
-          description="A short name for your own reference."
-          id="current_spec_name"
-          value={name}
-          disabled={true}
+    {:else if spec_error}
+      <div class="text-error text-sm">
+        {spec_error.getMessage() || "An unknown error occurred"}
+      </div>
+    {:else}
+      <FormContainer
+        submit_label={has_refinements ? "Next" : "Create Spec"}
+        on:submit={has_refinements ? analyze_spec : create_spec}
+        bind:error={submit_error}
+        bind:submitting
+        warn_before_unload={!complete}
+        compact_button={true}
+      >
+        <Warning
+          large_icon={true}
+          warning_icon={ai_suggested_fields_size === 0 ? "check" : "info"}
+          outline={true}
+          warning_color={ai_suggested_fields_size === 0 ? "success" : "primary"}
+          trusted={true}
+          warning_message={ai_suggested_fields_size === 0
+            ? `Kiln has not suggested any refinements, your spec is ready to be created. Edit your spec if you would like to manually refine it further.`
+            : `Kiln has suggested ${ai_suggested_fields_size} refinement${ai_suggested_fields_size === 1 ? "" : "s"}. Review and optionally edit your refined spec before continuing to review new examples.`}
         />
-        <div>
+
+        {#if ai_suggested_fields_size > 0}
+          <!-- Column Headers -->
+          <div class="grid grid-cols-2 gap-8 mb-4">
+            <div class="text-xl font-bold">Original</div>
+            <div class="text-xl font-bold">Refined</div>
+          </div>
+
+          <!-- Spec Name Row -->
+          <div class="grid grid-cols-2 gap-8">
+            <FormElement
+              label="Spec Name"
+              description="A short name for your own reference."
+              id="current_spec_name"
+              value={name}
+              disabled={true}
+            />
+            <div>
+              <FormElement
+                label="Spec Name"
+                description="A short name for your own reference."
+                id="suggested_spec_name"
+                bind:value={name}
+                disabled={true}
+              />
+            </div>
+          </div>
+
+          <!-- Field Rows -->
+          {#each field_configs as field (field.key)}
+            <div class="grid grid-cols-2 gap-8">
+              <FormElement
+                label={field.label}
+                id={`current_${field.key}`}
+                inputType="textarea"
+                disabled={true}
+                description={field.description}
+                height={bumpHeight(field.key, field.height)}
+                value={current_property_values[field.key] ?? ""}
+                optional={!field.required}
+              />
+              <FormElement
+                label={field.label}
+                id={`suggested_${field.key}`}
+                inputType="textarea"
+                description={field.description}
+                disabled={disabledKeys.has(field.key)}
+                height={bumpHeight(field.key, field.height)}
+                bind:value={suggested_property_values[field.key]}
+                optional={!field.required}
+                inline_action={disabledKeys.has(field.key) ||
+                suggested_property_values[field.key] ===
+                  original_suggested_property_values[field.key]
+                  ? undefined
+                  : { label: "Reset", handler: () => resetField(field.key) }}
+              >
+                <svelte:fragment slot="label_suffix">
+                  {#if !disabledKeys.has(field.key)}
+                    {#if !ai_suggested_fields.has(field.key)}
+                      <span
+                        class="badge badge-success badge-outline badge-sm gap-1 ml-2"
+                      >
+                        No change suggested
+                      </span>
+                    {:else}
+                      <span
+                        class="badge badge-warning badge-outline badge-sm gap-1 ml-2"
+                      >
+                        Refinement suggested
+                      </span>
+                    {/if}
+                  {/if}
+                </svelte:fragment>
+              </FormElement>
+            </div>
+          {/each}
+        {:else}
+          <!-- Spec Name Row -->
           <FormElement
             label="Spec Name"
             description="A short name for your own reference."
-            id="suggested_spec_name"
-            bind:value={name}
-            disabled={true}
+            id="current_spec_name"
+            value={name}
           />
-        </div>
-      </div>
 
-      <!-- Field Rows -->
-      {#each field_configs as field (field.key)}
-        <div class="grid grid-cols-2 gap-8">
-          <FormElement
-            label={field.label}
-            id={`current_${field.key}`}
-            inputType="textarea"
-            disabled={true}
-            description={field.description}
-            height={bumpHeight(field.key, field.height)}
-            value={current_property_values[field.key] ?? ""}
-            optional={!field.required}
-          />
-          <FormElement
-            label={field.label}
-            id={`suggested_${field.key}`}
-            inputType="textarea"
-            description={field.description}
-            disabled={disabledKeys.has(field.key)}
-            height={bumpHeight(field.key, field.height)}
-            bind:value={suggested_property_values[field.key]}
-            optional={!field.required}
-            inline_action={disabledKeys.has(field.key)
-              ? undefined
-              : { label: "Reset", handler: () => resetField(field.key) }}
+          <!-- Field Rows -->
+          {#each field_configs as field (field.key)}
+            <FormElement
+              label={field.label}
+              id={`current_${field.key}`}
+              inputType="textarea"
+              description={field.description}
+              height={bumpHeight(field.key, field.height)}
+              value={current_property_values[field.key] ?? ""}
+              optional={!field.required}
+            />
+          {/each}
+        {/if}
+        {#if !has_refinements && ai_suggested_fields_size > 0}
+          <div class="flex justify-end">
+            <Warning
+              warning_color="success"
+              warning_icon="check"
+              tight={true}
+              warning_message="No changes made. Your spec is ready to be created."
+            />
+          </div>
+        {/if}
+      </FormContainer>
+      {#if has_refinements}
+        <div class="flex flex-row gap-1 mt-2 justify-end">
+          <span class="text-xs text-gray-500">or</span>
+          <button
+            class="link underline text-xs text-gray-500"
+            on:click={create_spec}>Create Spec without Further Review</button
           >
-            <svelte:fragment slot="label_suffix">
-              {#if !disabledKeys.has(field.key)}
-                {#if !ai_suggested_fields.has(field.key)}
-                  <span
-                    class="badge badge-success badge-outline badge-sm gap-1 ml-2"
-                  >
-                    No change suggested
-                  </span>
-                {:else}
-                  <span
-                    class="badge badge-warning badge-outline badge-sm gap-1 ml-2"
-                  >
-                    Refinement suggested
-                  </span>
-                {/if}
-              {/if}
-            </svelte:fragment>
-          </FormElement>
-        </div>
-      {/each}
-      {#if !has_refinements}
-        <div class="flex justify-end">
-          <Warning
-            warning_color="success"
-            warning_icon="check"
-            warning_message="No refinements made. Your spec is ready to be created."
-          />
         </div>
       {/if}
-    </FormContainer>
-    {#if has_refinements}
-      <div class="flex flex-row gap-1 mt-2 justify-end">
-        <span class="text-xs text-gray-500">or</span>
-        <button
-          class="link underline text-xs text-gray-500"
-          on:click={create_spec}>Skip Review and Create Spec</button
-        >
-      </div>
     {/if}
-  {/if}
-</AppPage>
+  </AppPage>
+</div>

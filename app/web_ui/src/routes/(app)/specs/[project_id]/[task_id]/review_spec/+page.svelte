@@ -19,9 +19,10 @@
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
   import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
-  import { client } from "$lib/api_client"
   import { load_task } from "$lib/stores"
   import { buildDefinitionFromProperties } from "../select_template/spec_templates"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -39,7 +40,7 @@
   let complete = false
 
   $: submit_label = all_feedback_aligned ? "Create Spec" : "Next"
-  $: submit_disabled = !all_feedback_aligned && !any_feedback_provided
+  $: submit_disabled = !all_feedback_aligned && !all_examples_reviewed
 
   type ReviewRow = {
     id: string
@@ -51,11 +52,11 @@
   }
 
   let review_rows: ReviewRow[] = []
-  let expandedRows: Record<string, boolean> = {}
+  let unexpandedRows: Record<string, boolean> = {}
 
   function toggleRowExpand(row_id: string) {
-    expandedRows[row_id] = !expandedRows[row_id]
-    expandedRows = expandedRows
+    unexpandedRows[row_id] = !unexpandedRows[row_id]
+    unexpandedRows = unexpandedRows
   }
 
   function formatExpandedContent(data: string): string {
@@ -71,6 +72,8 @@
     await load_spec_data()
   })
 
+  let spec_definition: string = ""
+
   async function load_spec_data() {
     try {
       spec_loading = true
@@ -79,39 +82,60 @@
       const formData = loadSpecFormData(project_id, task_id)
 
       if (formData) {
-        spec_type = formData.spec_type
-        name = formData.name
-        property_values = { ...formData.property_values }
-        evaluate_full_trace = formData.evaluate_full_trace
-
         // Load the task to get instruction and schemas
         const task = await load_task(project_id, task_id)
         if (!task) {
           throw new Error("Failed to load task")
         }
 
-        const spec_definition = buildDefinitionFromProperties(
+        spec_type = formData.spec_type
+        name = formData.name
+        property_values = { ...formData.property_values }
+        evaluate_full_trace = formData.evaluate_full_trace
+
+        spec_definition = buildDefinitionFromProperties(
           spec_type,
           property_values,
         )
 
         // TODO: Create a few shot prompt instead of basic prompt
         // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
-        const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-          body: {
-            task_prompt_with_few_shot: task.instruction,
-            task_input_schema: task.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            task_output_schema: task.output_json_schema
-              ? JSON.stringify(task.output_json_schema)
-              : "",
-            spec_rendered_prompt_template: spec_definition,
-            num_samples_per_topic: 2,
-            num_topics: 5,
-            num_exemplars: 10,
+        // const { data, error } = await client.POST("/api/copilot/clarify_spec", {
+        //   body: {
+        //     task_prompt_with_few_shot: task.instruction,
+        //     task_input_schema: task.input_json_schema
+        //       ? JSON.stringify(task.input_json_schema)
+        //       : "",
+        //     task_output_schema: task.output_json_schema
+        //       ? JSON.stringify(task.output_json_schema)
+        //       : "",
+        //     spec_rendered_prompt_template: spec_definition,
+        //     num_samples_per_topic: 2,
+        //     num_topics: 5,
+        //     num_exemplars: 10,
+        //   },
+        // })
+        const { data, error } = {
+          data: {
+            examples_for_feedback: [
+              {
+                input: "Hello, world!",
+                output: "Hello, world!",
+                exhibits_issue: false,
+                user_says_meets_spec: null,
+                feedback: "",
+              },
+              {
+                input: "Hello, world 2!",
+                output: "Hello, world 2!",
+                exhibits_issue: false,
+                user_says_meets_spec: null,
+                feedback: "",
+              },
+            ],
           },
-        })
+          error: null,
+        }
 
         if (error) {
           throw error
@@ -157,7 +181,7 @@
       if (row.id === row_id) {
         return {
           ...row,
-          meets_spec,
+          user_says_meets_spec: meets_spec === "yes",
           feedback: meets_spec === "yes" ? "" : row.feedback,
         }
       }
@@ -216,16 +240,6 @@
         model_says_meets_spec: row.model_says_meets_spec,
       }))
   }
-
-  $: any_feedback_provided = review_rows.some((row) => {
-    // All rows must have a meets_spec answer
-    if (row.user_says_meets_spec === null) return false
-    // If the answer is misaligned with the model, feedback is required
-    if (should_show_feedback(row)) {
-      return row.feedback.trim().length > 0
-    }
-    return false
-  })
 
   function handle_submit() {
     if (all_feedback_aligned) {
@@ -288,8 +302,12 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Review Spec"
-    subtitle="Review these examples to ensure the spec accurately captures your goal by comparing your responses against our judge's."
+    title="Copilot: Review and Refine"
+    subtitle={spec_loading
+      ? undefined
+      : `Improve your spec and judge with AI guidance.`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -321,6 +339,20 @@
           {spec_error.getMessage() || "An unknown error occurred"}
         </div>
       {:else}
+        <Collapse title={name}>
+          <div class="prose prose-sm max-w-none whitespace-pre-wrap">
+            {spec_definition}
+          </div>
+        </Collapse>
+        <Warning
+          large_icon={true}
+          warning_icon="info"
+          outline={true}
+          warning_color="primary"
+          trusted={true}
+          warning_message={`Review these examples to ensure Kiln understands the goal of this spec. This will ensure Kiln's synthetic data generation, evals and judge will work effectively.
+For each row, select "Pass" if the example conforms to your spec and "Fail" if it does not.`}
+        />
         <div class="flex flex-col gap-6">
           <div class="rounded-lg border">
             <table class="table">
@@ -328,7 +360,16 @@
                 <tr>
                   <th class="w-1/2">Input</th>
                   <th class="w-1/2">Output</th>
-                  <th class="whitespace-nowrap">Meets Spec</th>
+                  <th class="whitespace-nowrap">
+                    <div class="flex flex-row items-center gap-2">
+                      <span>Meets Spec</span>
+                      <span class="font-normal">
+                        <InfoTooltip
+                          tooltip_text="Whether the example conforms to your spec. If Kiln's judge analysis is inconsistent with your response, you will be asked to provide feedback to help Kiln refine the spec. Otherwise, you will see a green checkmark."
+                        />
+                      </span>
+                    </div>
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -339,7 +380,7 @@
                     class="cursor-pointer"
                   >
                     <td class="py-2">
-                      {#if expandedRows[row.id]}
+                      {#if !unexpandedRows[row.id]}
                         <pre class="whitespace-pre-wrap">{formatExpandedContent(
                             row.input,
                           )}</pre>
@@ -348,7 +389,7 @@
                       {/if}
                     </td>
                     <td class="py-2">
-                      {#if expandedRows[row.id]}
+                      {#if !unexpandedRows[row.id]}
                         <pre class="whitespace-pre-wrap">{formatExpandedContent(
                             row.output,
                           )}</pre>
@@ -359,18 +400,20 @@
                     <td class="py-2">
                       <div class="flex gap-1">
                         <button
-                          class="btn btn-sm btn-outline hover:btn-success {row.user_says_meets_spec
+                          class="btn btn-sm btn-outline hover:btn-success {row.user_says_meets_spec ===
+                          true
                             ? 'btn-secondary'
                             : 'text-base-content/40'}"
                           on:click={(e) => set_meets_spec(row.id, "yes", e)}
-                          tabindex="0">Yes</button
+                          tabindex="0">Pass</button
                         >
                         <button
-                          class="btn btn-sm btn-outline hover:btn-warning {!row.user_says_meets_spec
+                          class="btn btn-sm btn-outline hover:btn-warning {row.user_says_meets_spec ===
+                          false
                             ? 'btn-secondary'
                             : 'text-base-content/40'}"
                           on:click={(e) => set_meets_spec(row.id, "no", e)}
-                          tabindex="0">No</button
+                          tabindex="0">Fail</button
                         >
                       </div>
                     </td>
@@ -411,21 +454,29 @@
           </div>
         </div>
 
-        {#if !all_examples_reviewed && any_feedback_provided && !submitting}
-          <div class="flex justify-center">
+        {#if !all_examples_reviewed && !submitting}
+          <div class="flex justify-end">
             <Warning
               warning_color="warning"
-              warning_message="For best results, finish reviewing all examples before continuing."
+              warning_message="Finish reviewing all examples before continuing."
               tight={true}
             />
           </div>
-        {/if}
-        {#if all_feedback_aligned}
+        {:else if all_feedback_aligned}
           <div class="flex justify-end">
             <Warning
               warning_color="success"
               warning_icon="check"
               warning_message="Our judge analysis was consistent with your responses. The spec is ready to be created."
+              tight={true}
+            />
+          </div>
+        {:else}
+          <div class="flex justify-end">
+            <Warning
+              warning_color="error"
+              warning_icon="exclaim"
+              warning_message=""
               tight={true}
             />
           </div>
@@ -444,7 +495,7 @@
           {#if submitting}
             <span class="loading loading-spinner loading-xs"></span>
           {:else}
-            Create Spec Without Refining Further
+            Skip Review and Create Spec
           {/if}
         </button>
       </div>
