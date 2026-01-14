@@ -5,21 +5,21 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...models.check_evals_request import CheckEvalsRequest
+from ...models.check_response import CheckResponse
 from ...models.http_validation_error import HTTPValidationError
-from ...models.refine_spec_input import RefineSpecInput
-from ...models.refine_spec_output import RefineSpecOutput
 from ...types import Response
 
 
 def _get_kwargs(
     *,
-    body: RefineSpecInput,
+    body: CheckEvalsRequest,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/v1/copilot/refine_spec",
+        "url": "/v1/jobs/gepa_job/check_evals",
     }
 
     _kwargs["json"] = body.to_dict()
@@ -32,9 +32,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | RefineSpecOutput | None:
+) -> CheckResponse | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = RefineSpecOutput.from_dict(response.json())
+        response_200 = CheckResponse.from_dict(response.json())
 
         return response_200
 
@@ -51,7 +51,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | RefineSpecOutput]:
+) -> Response[CheckResponse | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -63,21 +63,19 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    body: RefineSpecInput,
-) -> Response[HTTPValidationError | RefineSpecOutput]:
-    """Refine Spec
-
-     Refine a specification.
+    body: CheckEvalsRequest,
+) -> Response[CheckResponse | HTTPValidationError]:
+    """Check Evals
 
     Args:
-        body (RefineSpecInput):
+        body (CheckEvalsRequest): Request model for checking evals.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineSpecOutput]
+        Response[CheckResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -94,21 +92,19 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    body: RefineSpecInput,
-) -> HTTPValidationError | RefineSpecOutput | None:
-    """Refine Spec
-
-     Refine a specification.
+    body: CheckEvalsRequest,
+) -> CheckResponse | HTTPValidationError | None:
+    """Check Evals
 
     Args:
-        body (RefineSpecInput):
+        body (CheckEvalsRequest): Request model for checking evals.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineSpecOutput
+        CheckResponse | HTTPValidationError
     """
 
     return sync_detailed(
@@ -120,21 +116,19 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    body: RefineSpecInput,
-) -> Response[HTTPValidationError | RefineSpecOutput]:
-    """Refine Spec
-
-     Refine a specification.
+    body: CheckEvalsRequest,
+) -> Response[CheckResponse | HTTPValidationError]:
+    """Check Evals
 
     Args:
-        body (RefineSpecInput):
+        body (CheckEvalsRequest): Request model for checking evals.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineSpecOutput]
+        Response[CheckResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
@@ -149,21 +143,19 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    body: RefineSpecInput,
-) -> HTTPValidationError | RefineSpecOutput | None:
-    """Refine Spec
-
-     Refine a specification.
+    body: CheckEvalsRequest,
+) -> CheckResponse | HTTPValidationError | None:
+    """Check Evals
 
     Args:
-        body (RefineSpecInput):
+        body (CheckEvalsRequest): Request model for checking evals.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineSpecOutput
+        CheckResponse | HTTPValidationError
     """
 
     return (

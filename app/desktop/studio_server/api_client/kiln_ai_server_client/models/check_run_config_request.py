@@ -1,42 +1,37 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="SubsampleBatchOutputItem")
+if TYPE_CHECKING:
+    from ..models.check_run_config_request_run_config import CheckRunConfigRequestRunConfig
+
+
+T = TypeVar("T", bound="CheckRunConfigRequest")
 
 
 @_attrs_define
-class SubsampleBatchOutputItem:
-    """
+class CheckRunConfigRequest:
+    """Request model for checking run config.
+
     Attributes:
-        input_ (str):
-        output (str):
-        exhibits_issue (bool):
+        run_config (CheckRunConfigRequestRunConfig):
     """
 
-    input_: str
-    output: str
-    exhibits_issue: bool
+    run_config: CheckRunConfigRequestRunConfig
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        input_ = self.input_
-
-        output = self.output
-
-        exhibits_issue = self.exhibits_issue
+        run_config = self.run_config.to_dict()
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "input": input_,
-                "output": output,
-                "exhibits_issue": exhibits_issue,
+                "run_config": run_config,
             }
         )
 
@@ -44,21 +39,17 @@ class SubsampleBatchOutputItem:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.check_run_config_request_run_config import CheckRunConfigRequestRunConfig
+
         d = dict(src_dict)
-        input_ = d.pop("input")
+        run_config = CheckRunConfigRequestRunConfig.from_dict(d.pop("run_config"))
 
-        output = d.pop("output")
-
-        exhibits_issue = d.pop("exhibits_issue")
-
-        subsample_batch_output_item = cls(
-            input_=input_,
-            output=output,
-            exhibits_issue=exhibits_issue,
+        check_run_config_request = cls(
+            run_config=run_config,
         )
 
-        subsample_batch_output_item.additional_properties = d
-        return subsample_batch_output_item
+        check_run_config_request.additional_properties = d
+        return check_run_config_request
 
     @property
     def additional_keys(self) -> list[str]:

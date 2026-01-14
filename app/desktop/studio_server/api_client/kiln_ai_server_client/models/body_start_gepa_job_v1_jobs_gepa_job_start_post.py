@@ -8,8 +8,9 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from .. import types
-from ..models.body_start_gepa_job_v1_jobs_gepa_job_start_post_token_budget import \
-    BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget
+from ..models.body_start_gepa_job_v1_jobs_gepa_job_start_post_token_budget import (
+    BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget,
+)
 from ..types import File
 
 T = TypeVar("T", bound="BodyStartGepaJobV1JobsGepaJobStartPost")
