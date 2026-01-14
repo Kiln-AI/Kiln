@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.gepa_job_output import (
@@ -247,10 +247,17 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
 
     mock_start_response = JobStartResponse(job_id="remote-job-123")
 
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
     with (
         patch(
             "app.desktop.studio_server.gepa_job_api.task_from_id",
             return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
         ),
         patch(
             "app.desktop.studio_server.gepa_job_api.zip_project",

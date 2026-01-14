@@ -519,7 +519,7 @@
         bind:submitting={create_job_loading}
       >
         <div class="mb-4">
-          <Warning warning_color="info" outline={true}>
+          <Warning warning_color="primary" warning_icon="info" outline={true}>
             <div class="text-sm">
               <div class="font-medium mb-1">GEPA Requirements</div>
               <div class="text-gray-600">
@@ -665,11 +665,11 @@
                     >
                   </div>
                 {/if}
-                {#if selected_run_config.run_config_properties.top_k !== undefined && selected_run_config.run_config_properties.top_k !== null}
+                {#if selected_run_config.run_config_properties.top_p !== undefined && selected_run_config.run_config_properties.top_p !== null}
                   <div>
-                    <span class="text-gray-500">Top K:</span>
+                    <span class="text-gray-500">Top P:</span>
                     <span class="font-medium ml-1"
-                      >{selected_run_config.run_config_properties.top_k}</span
+                      >{selected_run_config.run_config_properties.top_p}</span
                     >
                   </div>
                 {/if}
