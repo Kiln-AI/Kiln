@@ -42,6 +42,7 @@
   } from "../spec_utils"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { goto } from "$app/navigation"
+  import SpecPropertiesDisplay from "../spec_properties_display.svelte"
 
   // ### Spec Details Page ###
 
@@ -400,6 +401,9 @@
 <div class="max-w-[1400px]">
   <AppPage
     title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
+    subtitle="Use evals to measure how well your task meets this specification."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -430,13 +434,11 @@
       </div>
     {:else}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
-        <div class="grow">
-          <div class="text-xl font-bold mb-4">Definition</div>
-          <div class="bg-base-200 rounded-lg p-6">
-            <div class="prose prose-sm max-w-none whitespace-pre-wrap">
-              {spec.definition}
-            </div>
-          </div>
+        <div class="grow max-w-[900px]">
+          <SpecPropertiesDisplay
+            spec_type={spec.properties.spec_type}
+            properties={spec.properties}
+          />
         </div>
         <div class="flex flex-col gap-4">
           <PropertyList
@@ -499,7 +501,7 @@
                   : undefined,
               },
               {
-                name: "Eval Dataset Size",
+                name: "Eval Dataset",
                 value: eval_progress
                   ? eval_progress.dataset_size + " items"
                   : "Loading...",

@@ -20,9 +20,9 @@
   import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
   import { load_task } from "$lib/stores"
-  import { buildDefinitionFromProperties } from "../select_template/spec_templates"
+  import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
+  import { client } from "$lib/api_client"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -72,8 +72,6 @@
     await load_spec_data()
   })
 
-  let spec_definition: string = ""
-
   async function load_spec_data() {
     try {
       spec_loading = true
@@ -93,49 +91,23 @@
         property_values = { ...formData.property_values }
         evaluate_full_trace = formData.evaluate_full_trace
 
-        spec_definition = buildDefinitionFromProperties(
-          spec_type,
-          property_values,
-        )
-
         // TODO: Create a few shot prompt instead of basic prompt
         // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
-        // const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-        //   body: {
-        //     task_prompt_with_few_shot: task.instruction,
-        //     task_input_schema: task.input_json_schema
-        //       ? JSON.stringify(task.input_json_schema)
-        //       : "",
-        //     task_output_schema: task.output_json_schema
-        //       ? JSON.stringify(task.output_json_schema)
-        //       : "",
-        //     spec_rendered_prompt_template: spec_definition,
-        //     num_samples_per_topic: 2,
-        //     num_topics: 5,
-        //     num_exemplars: 10,
-        //   },
-        // })
-        const { data, error } = {
-          data: {
-            examples_for_feedback: [
-              {
-                input: "Hello, world!",
-                output: "Hello, world!",
-                exhibits_issue: false,
-                user_says_meets_spec: null,
-                feedback: "",
-              },
-              {
-                input: "Hello, world 2!",
-                output: "Hello, world 2!",
-                exhibits_issue: false,
-                user_says_meets_spec: null,
-                feedback: "",
-              },
-            ],
+        const { data, error } = await client.POST("/api/copilot/clarify_spec", {
+          body: {
+            task_prompt_with_few_shot: task.instruction,
+            task_input_schema: task.input_json_schema
+              ? JSON.stringify(task.input_json_schema)
+              : "",
+            task_output_schema: task.output_json_schema
+              ? JSON.stringify(task.output_json_schema)
+              : "",
+            spec_rendered_prompt_template: spec_definition,
+            num_samples_per_topic: 2,
+            num_topics: 5,
+            num_exemplars: 10,
           },
-          error: null,
-        }
+        })
 
         if (error) {
           throw error
@@ -280,12 +252,14 @@
       submitting = true
 
       // createSpec will read and save the accumulated reviewed examples
+      const use_kiln_copilot = true
       const spec_id = await createSpec(
         project_id,
         task_id,
         name,
         spec_type,
         property_values,
+        use_kiln_copilot,
         evaluate_full_trace,
       )
 
@@ -297,6 +271,11 @@
     } finally {
       submitting = false
     }
+  }
+
+  let spec_details_dialog: Dialog | null = null
+  function open_details_dialog() {
+    spec_details_dialog?.show()
   }
 </script>
 
@@ -322,6 +301,9 @@
     <FormContainer
       {submit_label}
       {submit_disabled}
+      submit_data_tip={!all_examples_reviewed
+        ? "Finish reviewing all examples before continuing."
+        : undefined}
       focus_on_mount={false}
       on:submit={handle_submit}
       bind:error={create_error}
@@ -339,38 +321,39 @@
           {spec_error.getMessage() || "An unknown error occurred"}
         </div>
       {:else}
-        <Collapse title={name}>
-          <div class="prose prose-sm max-w-none whitespace-pre-wrap">
-            {spec_definition}
+        <div class="flex flex-col">
+          <div class="font-medium">Review Data Examples</div>
+          <div class="font-light text-gray-500 text-sm">
+            Review these examples to ensure Kiln understands the goal of your
+            spec: <button
+              class="link text-sm text-left text-gray-500 hover:text-gray-700"
+              on:click={open_details_dialog}
+            >
+              {name}</button
+            >. For each row, select "Pass" if the example conforms to your spec
+            and "Fail" if it does not. This will ensure Kiln's synthetic data
+            generation, evals and judge will work effectively.
           </div>
-        </Collapse>
-        <Warning
-          large_icon={true}
-          warning_icon="info"
-          outline={true}
-          warning_color="primary"
-          trusted={true}
-          warning_message={`Review these examples to ensure Kiln understands the goal of this spec. This will ensure Kiln's synthetic data generation, evals and judge will work effectively.
-For each row, select "Pass" if the example conforms to your spec and "Fail" if it does not.`}
-        />
+        </div>
         <div class="flex flex-col gap-6">
           <div class="rounded-lg border">
             <table class="table">
               <thead>
                 <tr>
-                  <th class="w-1/2">Input</th>
-                  <th class="w-1/2">Output</th>
+                  <th class="w-2/5">Input</th>
+                  <th class="w-2/5">Output</th>
                   <th class="whitespace-nowrap">
                     <div class="flex flex-row items-center gap-2">
                       <span>Meets Spec</span>
                       <span class="font-normal">
                         <InfoTooltip
-                          tooltip_text="Whether the example conforms to your spec. If Kiln's judge analysis is inconsistent with your response, you will be asked to provide feedback to help Kiln refine the spec. Otherwise, you will see a green checkmark."
+                          tooltip_text="Whether the example conforms to your spec. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help Kiln refine the spec."
+                          position="top"
                         />
                       </span>
                     </div>
                   </th>
-                  <th></th>
+                  <th class="whitespace-nowrap">Judge Correct</th>
                 </tr>
               </thead>
               <tbody>
@@ -418,19 +401,21 @@ For each row, select "Pass" if the example conforms to your spec and "Fail" if i
                       </div>
                     </td>
                     <td class="py-2">
-                      <div class="w-5 h-5">
-                        {#if row.user_says_meets_spec !== null}
+                      {#if row.user_says_meets_spec !== null}
+                        <div class="flex items-center gap-1 justify-center">
                           {#if is_row_aligned(row)}
-                            <div class="text-success w-full h-full">
+                            <div class="text-success w-5 h-5">
                               <CheckCircleIcon />
                             </div>
+                            <!-- <span class="text-sm text-gray-500">Correct</span> -->
                           {:else}
-                            <div class="text-warning w-full h-full">
+                            <div class="text-warning w-5 h-5">
                               <ExclaimCircleIcon />
                             </div>
+                            <!-- <span class="text-sm text-gray-500">Incorrect</span> -->
                           {/if}
-                        {/if}
-                      </div>
+                        </div>
+                      {/if}
                     </td>
                   </tr>
                   {#if should_show_feedback(row)}
@@ -438,7 +423,7 @@ For each row, select "Pass" if the example conforms to your spec and "Fail" if i
                       <td colspan="4" class="bg-base-200 py-4">
                         <FormElement
                           label={get_feedback_label(row)}
-                          description="Our judge analysis was inconsistent with your response. Please provide more detail to help refine the spec."
+                          description="Our judge analysis was incorrect. Please provide details to help Kiln refine the spec."
                           id="feedback-{row.id}"
                           inputType="textarea"
                           height="base"
@@ -454,29 +439,12 @@ For each row, select "Pass" if the example conforms to your spec and "Fail" if i
           </div>
         </div>
 
-        {#if !all_examples_reviewed && !submitting}
-          <div class="flex justify-end">
-            <Warning
-              warning_color="warning"
-              warning_message="Finish reviewing all examples before continuing."
-              tight={true}
-            />
-          </div>
-        {:else if all_feedback_aligned}
+        {#if all_feedback_aligned}
           <div class="flex justify-end">
             <Warning
               warning_color="success"
               warning_icon="check"
-              warning_message="Our judge analysis was consistent with your responses. The spec is ready to be created."
-              tight={true}
-            />
-          </div>
-        {:else}
-          <div class="flex justify-end">
-            <Warning
-              warning_color="error"
-              warning_icon="exclaim"
-              warning_message=""
+              warning_message="Our judge analysis was consistent with your responses. Your spec is ready to be created."
               tight={true}
             />
           </div>
@@ -485,10 +453,10 @@ For each row, select "Pass" if the example conforms to your spec and "Fail" if i
     </FormContainer>
 
     {#if !all_feedback_aligned && !spec_loading && !spec_error}
-      <div class="flex flex-row gap-1 mt-2 justify-end">
-        <span class="text-xs text-gray-500">or</span>
+      <div class="flex flex-row gap-1 mt-4 justify-end">
+        <span class="text-sm text-gray-500">or</span>
         <button
-          class="link underline text-xs text-gray-500"
+          class="link underline text-sm text-gray-500"
           disabled={submitting}
           on:click={create_spec}
         >
@@ -502,3 +470,16 @@ For each row, select "Pass" if the example conforms to your spec and "Fail" if i
     {/if}
   </AppPage>
 </div>
+
+<Dialog
+  bind:this={spec_details_dialog}
+  title={`Spec: ${name}`}
+  action_buttons={[
+    {
+      label: "Close",
+      isCancel: true,
+    },
+  ]}
+>
+  <SpecPropertiesDisplay {spec_type} properties={property_values} />
+</Dialog>

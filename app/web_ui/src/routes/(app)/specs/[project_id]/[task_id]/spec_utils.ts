@@ -78,6 +78,7 @@ export async function createSpec(
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
+  use_kiln_copilot: boolean,
   evaluate_full_trace: boolean = false,
 ): Promise<string> {
   // First create a new eval for the spec under the hood
@@ -90,32 +91,30 @@ export async function createSpec(
     evaluate_full_trace,
   )
 
-  // TODO: IF COPILOT {
-
-  // Generate eval data set
-  const tag = specEvalTag(name)
-  await generateAndSaveEvalData(
-    project_id,
-    task_id,
-    spec_type,
-    property_values,
-    tag,
-  )
-
-  // Save any accumulated reviewed examples as the golden dataset
-  const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
-  if (reviewed_examples.length > 0) {
-    const goldenTag = specEvalTag(name) + "_golden"
-    await saveReviewedExamplesAsGoldenDataset(
+  if (use_kiln_copilot) {
+    // Generate eval data set
+    const tag = specEvalTag(name)
+    await generateAndSaveEvalData(
       project_id,
       task_id,
-      reviewed_examples,
-      goldenTag,
-      spec_type, // The eval output score name matches the spec_type
+      spec_type,
+      property_values,
+      tag,
     )
-  }
 
-  // } END IF COPILOT
+    // Save any accumulated reviewed examples as the golden dataset
+    const reviewed_examples = getStoredReviewedExamples(project_id, task_id)
+    if (reviewed_examples.length > 0) {
+      const goldenTag = specEvalTag(name) + "_golden"
+      await saveReviewedExamplesAsGoldenDataset(
+        project_id,
+        task_id,
+        reviewed_examples,
+        goldenTag,
+        spec_type, // The eval output score name matches the spec_type
+      )
+    }
+  }
 
   // Build the properties object with spec_type, filtering out null values
   const filteredPropertyValues = Object.fromEntries(
