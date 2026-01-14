@@ -29,6 +29,7 @@
   } from "$lib/utils/run_config_formatters"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import Output from "$lib/ui/output.svelte"
+  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -416,6 +417,7 @@
     try {
       create_job_loading = true
       created_job = null
+      create_job_error = null
 
       if (
         !target_run_config_id ||
@@ -512,12 +514,16 @@
             label="Token Budget"
             description="This determines the number of prompt candidates that the GEPA optimizer will consider."
             info_description="A higher budget will generally result in higher quality prompts, but will take longer to complete."
-            inputType="select"
+            inputType="fancy_select"
             id="token_budget"
-            select_options={[
-              ["light", "Light (6 prompt candidates)"],
-              ["medium", "Medium (12 prompt candidates)"],
-              ["heavy", "Heavy (18 prompt candidates)"],
+            fancy_select_options={[
+              {
+                options: [
+                  { value: "light", label: "Light (6 prompt candidates)" },
+                  { value: "medium", label: "Medium (12 prompt candidates)" },
+                  { value: "heavy", label: "Heavy (18 prompt candidates)" },
+                ],
+              },
             ]}
             bind:value={token_budget}
           />
@@ -551,24 +557,27 @@
                 </span>
               </div>
             {:else if run_config_validation_status === "invalid"}
-              <div
-                class="bg-error/10 border border-error/20 rounded-lg p-4 mt-3"
-              >
-                <div class="text-error text-sm font-medium mb-2">
-                  {run_config_validation_message}
-                </div>
-                <div class="text-sm text-gray-600">
-                  GEPA only supports OpenRouter, OpenAI, Gemini, and Anthropic
-                  providers. Please select a different run configuration or
-                  <button
-                    type="button"
-                    class="link underline"
-                    on:click={() => create_new_run_config_dialog?.show()}
-                  >
-                    create a new one
-                  </button>
-                  with a supported provider.
-                </div>
+              <div class="mt-3">
+                <Warning warning_color="error" outline={true}>
+                  <div>
+                    <div class="text-error font-medium mb-2">
+                      {run_config_validation_message}
+                    </div>
+                    <div class="text-gray-600">
+                      GEPA only supports OpenRouter, OpenAI, Gemini, and
+                      Anthropic providers. Please select a different run
+                      configuration or
+                      <button
+                        type="button"
+                        class="link underline"
+                        on:click={() => create_new_run_config_dialog?.show()}
+                      >
+                        create a new one
+                      </button>
+                      with a supported provider.
+                    </div>
+                  </div>
+                </Warning>
               </div>
             {/if}
           {/if}
@@ -612,6 +621,23 @@
                     )}</span
                   >
                 </div>
+                {#if selected_run_config.run_config_properties.temperature !== undefined && selected_run_config.run_config_properties.temperature !== null}
+                  <div>
+                    <span class="text-gray-500">Temperature:</span>
+                    <span class="font-medium ml-1"
+                      >{selected_run_config.run_config_properties
+                        .temperature}</span
+                    >
+                  </div>
+                {/if}
+                {#if selected_run_config.run_config_properties.top_k !== undefined && selected_run_config.run_config_properties.top_k !== null}
+                  <div>
+                    <span class="text-gray-500">Top K:</span>
+                    <span class="font-medium ml-1"
+                      >{selected_run_config.run_config_properties.top_k}</span
+                    >
+                  </div>
+                {/if}
               </div>
 
               <div class="text-xs text-gray-500 mb-2">
@@ -664,8 +690,8 @@
               {/if}
             </div>
             <div class="text-xs text-gray-500 mb-3">
-              GEPA will optimize to maximize performance on each of these
-              evaluators.
+              GEPA will optimize the prompt to maximize performance on each of
+              these evaluators.
             </div>
 
             {#if evals_loading}
@@ -749,7 +775,7 @@
                             <a
                               href={eval_configs_url}
                               target="_blank"
-                              class="link underline text-xs text-primary"
+                              class="link text-gray-500 text-sm"
                             >
                               → Set default judge
                             </a>
@@ -759,7 +785,7 @@
                             <a
                               href={eval_configs_url}
                               target="_blank"
-                              class="link underline text-xs text-primary"
+                              class="link text-gray-500 text-sm"
                             >
                               → Change default judge
                             </a>
