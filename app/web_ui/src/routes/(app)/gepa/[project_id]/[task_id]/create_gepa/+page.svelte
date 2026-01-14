@@ -510,13 +510,14 @@
         <div>
           <FormElement
             label="Token Budget"
-            description="This determines the number of prompt candidates that the optimizer will consider."
+            description="This determines the number of prompt candidates that the GEPA optimizer will consider."
+            info_description="A higher budget will generally result in higher quality prompts, but will take longer to complete."
             inputType="select"
             id="token_budget"
             select_options={[
-              ["light", "Light"],
-              ["medium", "Medium"],
-              ["heavy", "Heavy"],
+              ["light", "Light (6 prompt candidates)"],
+              ["medium", "Medium (12 prompt candidates)"],
+              ["heavy", "Heavy (18 prompt candidates)"],
             ]}
             bind:value={token_budget}
           />
