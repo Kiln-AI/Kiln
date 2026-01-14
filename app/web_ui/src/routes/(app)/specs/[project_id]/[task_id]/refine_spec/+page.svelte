@@ -17,7 +17,6 @@
   import { getStoredReviewedExamples } from "../spec_reviewed_examples_store"
   import { load_task } from "$lib/stores"
   import { client } from "$lib/api_client"
-  import Collapse from "$lib/ui/collapse.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -27,13 +26,13 @@
 
   let name = ""
 
-  // Current values (read-only)
+  // Current/original values (read-only)
   let current_property_values: Record<string, string | null> = {}
 
   // Suggested values (editable)
   let suggested_property_values: Record<string, string | null> = {}
 
-  // Original suggested values (before user edits, for Reset functionality)
+  // Original suggested values (before user edits, for Restore Suggestion functionality)
   let original_suggested_property_values: Record<string, string | null> = {}
 
   // Track which fields have AI-generated suggestions (for badge display)
@@ -42,9 +41,14 @@
 
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
 
-  // Reset a field to its original suggested value (undo user edits)
-  function resetField(key: string) {
+  // Restore a field to its original AI-suggested value (undo user edits)
+  function restoreSuggestion(key: string) {
     suggested_property_values[key] = original_suggested_property_values[key]
+    suggested_property_values = suggested_property_values // trigger reactivity
+  }
+
+  function resetToOriginal(key: string) {
+    suggested_property_values[key] = current_property_values[key]
     suggested_property_values = suggested_property_values // trigger reactivity
   }
 
@@ -96,10 +100,7 @@
 
         name = formData.name
 
-        // Initialize current, suggested, and original suggested with the same values (temporary)
         current_property_values = { ...formData.property_values }
-        suggested_property_values = { ...formData.property_values }
-        original_suggested_property_values = { ...formData.property_values }
 
         evaluate_full_trace = formData.evaluate_full_trace
 
@@ -168,6 +169,20 @@
             },
           )
 
+          const { data, error } = {
+            data: {
+              new_proposed_spec_edits: {
+                base_instruction: {
+                  proposed_edit: "New base instruction",
+                },
+                correct_behaviour_examples: {
+                  proposed_edit: "New correct behaviour examples",
+                },
+              },
+            },
+            error: null,
+          }
+
           if (error) {
             throw error
           }
@@ -176,7 +191,8 @@
             throw new Error("Failed to refine spec")
           }
 
-          // Apply the suggested edits to suggested_property_values
+          // Build suggested_property_values: use original values, but override with AI suggestions where available
+          suggested_property_values = { ...current_property_values }
           if (data.new_proposed_spec_edits) {
             for (const [field_key, edit] of Object.entries(
               data.new_proposed_spec_edits,
@@ -187,6 +203,7 @@
             // Create new Set to trigger reactivity
             ai_suggested_fields = new Set(ai_suggested_fields)
           }
+          original_suggested_property_values = { ...suggested_property_values }
         }
 
         // Don't clear the stored data - keep it for back navigation
@@ -258,12 +275,14 @@
         }
       }
 
+      const use_kiln_copilot = true
       const spec_id = await createSpec(
         project_id,
         task_id,
         name,
         spec_type,
         suggested_property_values,
+        use_kiln_copilot,
         evaluate_full_trace,
       )
 
@@ -284,10 +303,12 @@
     : "max-w-[900px]"}
 >
   <AppPage
-    title="Copilot: Review and Refine"
+    title="Copilot: Review Suggested Refinements"
     subtitle={spec_loading
       ? undefined
-      : `Improve your spec and judge with AI guidance.`}
+      : "Polish your spec to be analyzed further."}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -316,20 +337,18 @@
         warn_before_unload={!complete}
         compact_button={true}
       >
-        <Warning
-          large_icon={true}
-          warning_icon={ai_suggested_fields_size === 0 ? "check" : "info"}
-          outline={true}
-          warning_color={ai_suggested_fields_size === 0 ? "success" : "primary"}
-          trusted={true}
-          warning_message={ai_suggested_fields_size === 0
-            ? `Kiln has not suggested any refinements, your spec is ready to be created. Edit your spec if you would like to manually refine it further.`
-            : `Kiln has suggested ${ai_suggested_fields_size} refinement${ai_suggested_fields_size === 1 ? "" : "s"}. Review and optionally edit your refined spec before continuing to review new examples.`}
-        />
-
+        <div class="flex flex-col">
+          <div class="font-medium">Refine your Spec</div>
+          <div class="font-light text-gray-500 text-sm">
+            {ai_suggested_fields_size === 0
+              ? `Kiln has not suggested any refinements, your spec is ready to be created. Edit your spec if you would like to manually refine it further.`
+              : `Kiln has suggested ${ai_suggested_fields_size} refinement${ai_suggested_fields_size === 1 ? "" : "s"}. Review and optionally edit your refined spec before continuing to review new examples.`}
+          </div>
+        </div>
+        <div class="border-t" />
         {#if ai_suggested_fields_size > 0}
           <!-- Column Headers -->
-          <div class="grid grid-cols-2 gap-8 mb-4">
+          <div class="grid grid-cols-2 gap-8">
             <div class="text-xl font-bold">Original</div>
             <div class="text-xl font-bold">Refined</div>
           </div>
@@ -349,7 +368,6 @@
                 description="A short name for your own reference."
                 id="suggested_spec_name"
                 bind:value={name}
-                disabled={true}
               />
             </div>
           </div>
@@ -365,7 +383,6 @@
                 description={field.description}
                 height={bumpHeight(field.key, field.height)}
                 value={current_property_values[field.key] ?? ""}
-                optional={!field.required}
               />
               <FormElement
                 label={field.label}
@@ -376,25 +393,28 @@
                 height={bumpHeight(field.key, field.height)}
                 bind:value={suggested_property_values[field.key]}
                 optional={!field.required}
-                inline_action={disabledKeys.has(field.key) ||
-                suggested_property_values[field.key] ===
-                  original_suggested_property_values[field.key]
-                  ? undefined
-                  : { label: "Reset", handler: () => resetField(field.key) }}
+                inline_action={suggested_property_values[field.key] !==
+                  original_suggested_property_values[field.key] &&
+                ai_suggested_fields.has(field.key)
+                  ? {
+                      label: "Restore Suggestion",
+                      handler: () => restoreSuggestion(field.key),
+                    }
+                  : suggested_property_values[field.key] !==
+                      current_property_values[field.key]
+                    ? {
+                        label: "Reset",
+                        handler: () => resetToOriginal(field.key),
+                      }
+                    : undefined}
               >
                 <svelte:fragment slot="label_suffix">
                   {#if !disabledKeys.has(field.key)}
-                    {#if !ai_suggested_fields.has(field.key)}
+                    {#if ai_suggested_fields.has(field.key)}
                       <span
-                        class="badge badge-success badge-outline badge-sm gap-1 ml-2"
+                        class="badge badge-primary badge-outline badge-sm gap-1 ml-2"
                       >
-                        No change suggested
-                      </span>
-                    {:else}
-                      <span
-                        class="badge badge-warning badge-outline badge-sm gap-1 ml-2"
-                      >
-                        Refinement suggested
+                        Refinement Suggested
                       </span>
                     {/if}
                   {/if}
@@ -436,11 +456,12 @@
         {/if}
       </FormContainer>
       {#if has_refinements}
-        <div class="flex flex-row gap-1 mt-2 justify-end">
-          <span class="text-xs text-gray-500">or</span>
+        <div class="flex flex-row gap-1 mt-4 justify-end">
+          <span class="text-sm text-gray-500">or</span>
           <button
-            class="link underline text-xs text-gray-500"
-            on:click={create_spec}>Create Spec without Further Review</button
+            class="link underline text-sm text-gray-500"
+            on:click={create_spec}
+            >Save Refined Spec without Further Review</button
           >
         </div>
       {/if}

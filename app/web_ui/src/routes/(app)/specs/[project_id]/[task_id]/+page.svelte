@@ -100,9 +100,8 @@
     sortKey?: SortableColumn
   }
   const tableColumns: TableColumn[] = [
-    { key: "name", label: "Name", sortable: true, sortKey: "name" },
-    { key: "definition", label: "Definition", sortable: false },
     { key: "template", label: "Template", sortable: true, sortKey: "template" },
+    { key: "name", label: "Name", sortable: true, sortKey: "name" },
     { key: "priority", label: "Priority", sortable: true, sortKey: "priority" },
     { key: "status", label: "Status", sortable: true, sortKey: "status" },
     { key: "tags", label: "Tags", sortable: false },
@@ -897,11 +896,10 @@
                         />
                       </td>
                     {/if}
-                    <td class="font-medium">{spec.name}</td>
-                    <td class="max-w-md truncate">{spec.definition}</td>
                     <td>
                       {formatSpecType(spec.properties.spec_type)}
                     </td>
+                    <td class="font-medium">{spec.name}</td>
                     <td>
                       <EditablePriorityField
                         {spec}
@@ -966,9 +964,8 @@
                     {#if select_mode}
                       <td></td>
                     {/if}
-                    <td class="font-medium">{eval_data.name}</td>
-                    <td class="text-gray-500">N/A</td>
                     <td>Legacy Eval</td>
+                    <td class="font-medium">{eval_data.name}</td>
                     <td class="text-gray-500 pl-6">N/A</td>
                     <td class="text-gray-500 pl-6">N/A</td>
                     <td class="text-gray-500">N/A</td>

@@ -232,12 +232,14 @@
 
       validateRequiredFields()
 
+      const use_kiln_copilot = false
       const spec_id = await createSpec(
         project_id,
         task_id,
         name,
         spec_type,
         property_values,
+        use_kiln_copilot,
         evaluate_full_trace,
       )
 
@@ -341,10 +343,10 @@
         {/if}
       </FormContainer>
       {#if has_kiln_copilot}
-        <div class="flex flex-row gap-1 mt-2 justify-end">
-          <span class="text-xs text-gray-500">or</span>
+        <div class="flex flex-row gap-1 mt-4 justify-end">
+          <span class="text-sm text-gray-500">or</span>
           <button
-            class="link underline text-xs text-gray-500"
+            class="link underline text-sm text-gray-500"
             on:click={create_spec_from_form}>Create without Copilot</button
           >
         </div>

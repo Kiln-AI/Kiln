@@ -36,6 +36,7 @@
   export let keyboard_submit = true
   export let submit_visible = true
   export let submit_disabled = false
+  export let submit_data_tip: string | undefined = undefined
   export let gap: number = 6
   export let focus_on_mount = true
   export let compact_button = false
@@ -189,34 +190,71 @@
         </div>
       {/each}
     {/if}
-    <button
-      type="submit"
-      class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
-        ? 'btn-success'
-        : ''} {submit_visible ? '' : 'hidden'} {compact_button
-        ? 'min-w-64 px-12'
-        : 'w-full'}"
-      on:click={validate_and_submit}
-      disabled={submitting || submit_disabled}
-    >
-      {#if ui_saved_indicator}
-        ✔ Saved
-      {:else if !submitting}
-        {submit_label}
-        <span
-          class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
-            ? ''
-            : 'hidden'}"
+    {#if submit_data_tip}
+      <div
+        class="tooltip tooltip-top {compact_button ? '' : 'w-full'}"
+        data-tip={submit_data_tip}
+      >
+        <button
+          type="submit"
+          class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
+            ? 'btn-success'
+            : ''} {submit_visible ? '' : 'hidden'} {compact_button
+            ? 'min-w-64 px-12'
+            : 'w-full'}"
+          on:click={validate_and_submit}
+          disabled={submitting || submit_disabled}
         >
-          {#if isMacOS()}
-            <span class="tracking-widest">⌘↵</span>
+          {#if ui_saved_indicator}
+            ✔ Saved
+          {:else if !submitting}
+            {submit_label}
+            <span
+              class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+                ? ''
+                : 'hidden'}"
+            >
+              {#if isMacOS()}
+                <span class="tracking-widest">⌘↵</span>
+              {:else}
+                <span>ctrl ↵</span>
+              {/if}
+            </span>
           {:else}
-            <span>ctrl ↵</span>
+            <span class="loading loading-spinner loading-md"></span>
           {/if}
-        </span>
-      {:else}
-        <span class="loading loading-spinner loading-md"></span>
-      {/if}
-    </button>
+        </button>
+      </div>
+    {:else}
+      <button
+        type="submit"
+        class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
+          ? 'btn-success'
+          : ''} {submit_visible ? '' : 'hidden'} {compact_button
+          ? 'min-w-64 px-12'
+          : 'w-full'}"
+        on:click={validate_and_submit}
+        disabled={submitting || submit_disabled}
+      >
+        {#if ui_saved_indicator}
+          ✔ Saved
+        {:else if !submitting}
+          {submit_label}
+          <span
+            class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+              ? ''
+              : 'hidden'}"
+          >
+            {#if isMacOS()}
+              <span class="tracking-widest">⌘↵</span>
+            {:else}
+              <span>ctrl ↵</span>
+            {/if}
+          </span>
+        {:else}
+          <span class="loading loading-spinner loading-md"></span>
+        {/if}
+      </button>
+    {/if}
   </div>
 </form>
