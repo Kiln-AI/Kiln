@@ -1,6 +1,11 @@
+import io
+import zipfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
+    AuthenticatedClient,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.gepa_job_output import (
     GEPAJobOutput,
 )
@@ -23,9 +28,12 @@ from app.desktop.studio_server.gepa_job_api import (
     PublicGEPAJobResultResponse,
     PublicGEPAJobStatusResponse,
     connect_gepa_job_api,
+    gepa_job_from_id,
     is_job_status_final,
+    update_gepa_job_status_and_create_prompt,
+    zip_project,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import GepaJob, Project, Task
 
@@ -828,3 +836,1192 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
 
         # Should not call update for any of the jobs since they're all final
         mock_update.assert_not_called()
+
+
+def test_gepa_job_from_id_not_found(client, tmp_path):
+    """Test that gepa_job_from_id raises HTTPException when job not found."""
+
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    nonexistent_job_id = "nonexistent-job-id"
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        pytest.raises(Exception) as exc_info,
+    ):
+        gepa_job_from_id(project_id, task_id, nonexistent_job_id)
+
+    assert exc_info.value.status_code == 404
+    assert "not found" in str(exc_info.value.detail)
+
+
+def test_update_gepa_job_status_no_parent_task(mock_api_key):
+    """Test update_gepa_job_status_and_create_prompt when job has no parent task."""
+
+    gepa_job = GepaJob(
+        name="Orphan Job",
+        job_id="remote-job-orphan",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="pending",
+    )
+
+    mock_client = MagicMock(spec=AuthenticatedClient)
+
+    with pytest.raises(Exception) as exc_info:
+        import asyncio
+
+        asyncio.run(update_gepa_job_status_and_create_prompt(gepa_job, mock_client))
+
+    assert exc_info.value.status_code == 500
+    assert "no parent task" in str(exc_info.value.detail)
+
+
+def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
+    """Test update_gepa_job_status_and_create_prompt when status response is None."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "pending"
+
+
+def test_update_gepa_job_status_response_validation_error(
+    client, mock_api_key, tmp_path
+):
+    """Test update_gepa_job_status_and_create_prompt when status response is HTTPValidationError."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    mock_error = HTTPValidationError(detail=[])
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "pending"
+
+
+def test_update_gepa_job_status_exception_during_update(client, mock_api_key, tmp_path):
+    """Test that update_gepa_job_status_and_create_prompt handles exceptions during status update."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            side_effect=Exception("Network error"),
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "pending"
+
+
+def test_list_gepa_jobs_exception_during_update(client, mock_api_key, tmp_path):
+    """Test that list_gepa_jobs handles exceptions during status updates gracefully."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.update_gepa_job_status_and_create_prompt",
+            new_callable=AsyncMock,
+            side_effect=Exception("Update failed"),
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            params={"update_status": True},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert len(result) == 1
+
+
+def test_zip_project_no_path():
+    """Test that zip_project raises ValueError when project path is not set."""
+
+    project = Project(name="Test Project")
+
+    with pytest.raises(ValueError, match="Project path is not set"):
+        zip_project(project)
+
+
+def test_zip_project_basic(tmp_path):
+    """Test basic zip_project functionality."""
+
+    project_dir = tmp_path / "test_project"
+    project_dir.mkdir()
+
+    (project_dir / "file1.txt").write_text("content1")
+    (project_dir / "file2.py").write_text("print('hello')")
+
+    subdir = project_dir / "subdir"
+    subdir.mkdir()
+    (subdir / "file3.txt").write_text("content3")
+
+    project = Project(name="Test Project", path=project_dir / "project.kiln")
+    project.save_to_file()
+
+    zip_bytes = zip_project(project)
+
+    assert len(zip_bytes) > 0
+    assert isinstance(zip_bytes, bytes)
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zip_file:
+        names = zip_file.namelist()
+        assert any("file1.txt" in name for name in names)
+        assert any("file2.py" in name for name in names)
+        assert any("file3.txt" in name for name in names)
+
+
+def test_zip_project_skips_ignored_directories(tmp_path):
+    """Test that zip_project skips common directories like .git, __pycache__, etc."""
+
+    project_dir = tmp_path / "test_project"
+    project_dir.mkdir()
+
+    (project_dir / "normal_file.txt").write_text("should be included")
+
+    git_dir = project_dir / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_text("git config")
+
+    pycache_dir = project_dir / "__pycache__"
+    pycache_dir.mkdir()
+    (pycache_dir / "cache.pyc").write_text("cached")
+
+    node_modules = project_dir / "node_modules"
+    node_modules.mkdir()
+    (node_modules / "package.json").write_text("{}")
+
+    venv_dir = project_dir / ".venv"
+    venv_dir.mkdir()
+    (venv_dir / "lib.py").write_text("lib")
+
+    project = Project(name="Test Project", path=project_dir / "project.kiln")
+    project.save_to_file()
+
+    zip_bytes = zip_project(project)
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zip_file:
+        names = zip_file.namelist()
+        assert any("normal_file.txt" in name for name in names)
+        assert not any(".git" in name for name in names)
+        assert not any("__pycache__" in name for name in names)
+        assert not any("node_modules" in name for name in names)
+        assert not any(".venv" in name for name in names)
+
+
+def test_zip_project_handles_unreadable_files(tmp_path):
+    """Test that zip_project handles files that cannot be read gracefully."""
+
+    project_dir = tmp_path / "test_project"
+    project_dir.mkdir()
+
+    (project_dir / "good_file.txt").write_text("readable content")
+
+    project = Project(name="Test Project", path=project_dir / "project.kiln")
+    project.save_to_file()
+
+    with patch(
+        "zipfile.ZipFile.write", side_effect=[None, Exception("Cannot read file")]
+    ):
+        zip_bytes = zip_project(project)
+
+        assert len(zip_bytes) > 0
+        assert isinstance(zip_bytes, bytes)
+
+
+def test_check_run_config_with_tools(client, mock_api_key, tmp_path):
+    """Test that check_run_config returns False when run config has tools."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    run_config_id = "test-config-id"
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config.tools = [
+        "kiln_tool::add_numbers"
+    ]
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        return_value=mock_run_config,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            params={"run_config_id": run_config_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["is_supported"] is False
+
+
+def test_check_run_config_missing_model_name(client, mock_api_key, tmp_path):
+    """Test that check_run_config returns False when model_name is missing."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+    mock_run_config.run_config_properties.model_name = None
+    mock_run_config.run_config_properties.model_provider_name = "openai"
+
+    project_id = project.id
+    task_id = task.id
+    run_config_id = "test-config-id"
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        return_value=mock_run_config,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            params={"run_config_id": run_config_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["is_supported"] is False
+
+
+def test_check_run_config_missing_model_provider(client, mock_api_key, tmp_path):
+    """Test that check_run_config returns False when model_provider is missing."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+    mock_run_config.run_config_properties.model_name = "gpt-4"
+    mock_run_config.run_config_properties.model_provider_name = None
+
+    project_id = project.id
+    task_id = task.id
+    run_config_id = "test-config-id"
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        return_value=mock_run_config,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            params={"run_config_id": run_config_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["is_supported"] is False
+
+
+def test_check_run_config_server_validation_error(client, mock_api_key, tmp_path):
+    """Test that check_run_config handles HTTPValidationError from server."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+    mock_run_config.run_config_properties.model_name = "gpt-4"
+    mock_run_config.run_config_properties.model_provider_name = MagicMock()
+    mock_run_config.run_config_properties.model_provider_name.value = "openai"
+
+    project_id = project.id
+    task_id = task.id
+    run_config_id = "test-config-id"
+
+    mock_error = HTTPValidationError(detail="Invalid model")
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            params={"run_config_id": run_config_id},
+        )
+
+        assert response.status_code == 422
+
+
+def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
+    """Test that check_run_config handles None response from server."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+    mock_run_config.run_config_properties.model_name = "gpt-4"
+    mock_run_config.run_config_properties.model_provider_name = MagicMock()
+    mock_run_config.run_config_properties.model_provider_name.value = "openai"
+
+    project_id = project.id
+    task_id = task.id
+    run_config_id = "test-config-id"
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            params={"run_config_id": run_config_id},
+        )
+
+        assert response.status_code == 500
+        assert "No response from server" in response.json()["detail"]
+
+
+def test_check_run_config_exception(client, mock_api_key, tmp_path):
+    """Test that check_run_config handles general exceptions."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    run_config_id = "test-config-id"
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        side_effect=Exception("Database error"),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            params={"run_config_id": run_config_id},
+        )
+
+        assert response.status_code == 500
+        assert "Failed to check run config" in response.json()["detail"]
+
+
+def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
+    """Test that check_eval returns False when eval has no current_config_id."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = None
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.eval_from_id",
+        return_value=mock_eval,
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["has_default_config"] is False
+        assert result["model_is_supported"] is False
+
+
+def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
+    """Test that check_eval handles HTTPException when loading config."""
+
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = "config-123"
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            side_effect=HTTPException(status_code=404, detail="Config not found"),
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["has_default_config"] is False
+        assert result["model_is_supported"] is False
+
+
+def test_check_eval_missing_model_name(client, mock_api_key, tmp_path):
+    """Test that check_eval returns False when model_name is missing."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = "config-123"
+
+    mock_config = MagicMock()
+    mock_config.model_name = None
+    mock_config.model_provider = "openai"
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            return_value=mock_config,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["has_default_config"] is True
+        assert result["model_is_supported"] is False
+
+
+def test_check_eval_missing_model_provider(client, mock_api_key, tmp_path):
+    """Test that check_eval returns False when model_provider is missing."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = "config-123"
+
+    mock_config = MagicMock()
+    mock_config.model_name = "gpt-4"
+    mock_config.model_provider = None
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            return_value=mock_config,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["has_default_config"] is True
+        assert result["model_is_supported"] is False
+
+
+def test_check_eval_server_validation_error(client, mock_api_key, tmp_path):
+    """Test that check_eval handles HTTPValidationError from server."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = "config-123"
+
+    mock_config = MagicMock()
+    mock_config.model_name = "gpt-4"
+    mock_config.model_provider = "openai"
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    mock_error = HTTPValidationError(detail="Invalid model")
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 422
+
+
+def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
+    """Test that check_eval handles None response from server."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = "config-123"
+
+    mock_config = MagicMock()
+    mock_config.model_name = "gpt-4"
+    mock_config.model_provider = "openai"
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 500
+        assert "No response from server" in response.json()["detail"]
+
+
+def test_check_eval_exception(client, mock_api_key, tmp_path):
+    """Test that check_eval handles general exceptions."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.eval_from_id",
+        side_effect=Exception("Database error"),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 500
+        assert "Failed to check eval" in response.json()["detail"]
+
+
+def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job raises HTTPException when task has no parent."""
+    task = Task(
+        name="Orphan Task",
+        instruction="Test instruction",
+    )
+
+    project_id = "test-project-id"
+    task_id = "test-task-id"
+
+    with patch(
+        "app.desktop.studio_server.gepa_job_api.task_from_id",
+        return_value=task,
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 404
+        assert "Project not found" in response.json()["detail"]
+
+
+def test_start_gepa_job_with_tools_in_run_config(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job raises HTTPException when run config has tools."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config.tools = ["tool1", "tool2"]
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 400
+        assert "does not support" in response.json()["detail"]
+        assert "tools" in response.json()["detail"]
+
+
+def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job raises HTTPException when server client is not authenticated."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.get_authenticated_client",
+            return_value=MagicMock(spec=str),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 500
+        assert "not authenticated" in response.json()["detail"]
+
+
+def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job handles HTTPValidationError from server."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    mock_error = HTTPValidationError(detail="Invalid request")
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.zip_project",
+            return_value=b"fake zip data",
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 422
+
+
+def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job handles None response from server."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.zip_project",
+            return_value=b"fake zip data",
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 500
+        assert "No response from server" in response.json()["detail"]
+
+
+def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job handles connection errors with specific message."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    class ReadError(Exception):
+        pass
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.zip_project",
+            return_value=b"fake zip data",
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            new_callable=AsyncMock,
+            side_effect=ReadError("Connection lost"),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 500
+        assert "Connection error" in response.json()["detail"]
+        assert "too large" in response.json()["detail"]
+
+
+def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job handles timeout errors with specific message."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.zip_project",
+            return_value=b"fake zip data",
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            new_callable=AsyncMock,
+            side_effect=Exception("Request timeout occurred"),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 500
+        assert "Connection error" in response.json()["detail"]
+
+
+def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
+    """Test that start_gepa_job handles general exceptions."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.zip_project",
+            side_effect=Exception("Unexpected error"),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "test-run-config-id",
+            },
+        )
+
+        assert response.status_code == 500
+        assert "Failed to start GEPA job" in response.json()["detail"]
