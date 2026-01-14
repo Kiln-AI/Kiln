@@ -24,6 +24,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { client } from "$lib/api_client"
   import Dialog from "$lib/ui/dialog.svelte"
+  import { buildDefinitionFromProperties } from "../select_template/spec_templates"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -91,6 +92,11 @@
         name = formData.name
         property_values = { ...formData.property_values }
         evaluate_full_trace = formData.evaluate_full_trace
+
+        const spec_definition = buildDefinitionFromProperties(
+          spec_type,
+          property_values,
+        )
 
         // TODO: Create a few shot prompt instead of basic prompt
         // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
