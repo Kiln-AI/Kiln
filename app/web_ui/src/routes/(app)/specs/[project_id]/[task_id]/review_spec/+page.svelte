@@ -286,7 +286,7 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<div class={spec_loading ? "" : "max-w-[1400px]"}>
   <AppPage
     title="Copilot: Review and Refine"
     subtitle={spec_loading
@@ -320,9 +320,7 @@
       compact_button={true}
     >
       {#if spec_loading}
-        <div class="flex justify-center items-center h-full min-h-[200px]">
-          <SpecAnalyzingAnimation />
-        </div>
+        <SpecAnalyzingAnimation />
       {:else if spec_error}
         <div class="text-error text-sm">
           {spec_error.getMessage() || "An unknown error occurred"}

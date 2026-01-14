@@ -316,7 +316,7 @@
       </div>
     {:else}
       <FormContainer
-        submit_label={has_refinements ? "Next" : "Create Spec"}
+        submit_label={has_refinements ? "Analyze Refined Spec" : "Create Spec"}
         on:submit={has_refinements ? analyze_spec : create_spec}
         bind:error={submit_error}
         bind:submitting
