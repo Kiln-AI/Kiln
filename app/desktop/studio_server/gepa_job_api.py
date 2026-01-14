@@ -246,6 +246,14 @@ def connect_gepa_job_api(app: FastAPI):
 
             # Extract model info from run config
             run_config_props = run_config.run_config_properties
+
+            if (
+                run_config_props.tools_config
+                and run_config_props.tools_config.tools
+                and len(run_config_props.tools_config.tools) > 0
+            ):
+                return CheckRunConfigResponse(is_supported=False)
+
             model_name = run_config_props.model_name
             model_provider = run_config_props.model_provider_name
 
@@ -382,6 +390,19 @@ def connect_gepa_job_api(app: FastAPI):
             raise HTTPException(status_code=404, detail="Project not found")
 
         try:
+            # Validate the run config doesn't use tools
+            run_config = task_run_config_from_id(
+                project_id, task_id, request.target_run_config_id
+            )
+            if (
+                run_config.run_config_properties.tools_config
+                and run_config.run_config_properties.tools_config.tools
+                and len(run_config.run_config_properties.tools_config.tools) > 0
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="GEPA does not support run configurations with tools",
+                )
             server_client = get_authenticated_client(_get_api_key())
             if not isinstance(server_client, AuthenticatedClient):
                 raise HTTPException(

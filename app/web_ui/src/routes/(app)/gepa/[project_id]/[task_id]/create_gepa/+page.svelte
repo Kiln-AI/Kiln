@@ -264,6 +264,22 @@
       run_config_validation_status = "checking"
       run_config_validation_message = null
 
+      const run_config = get_selected_run_config(
+        target_run_config_id,
+        $run_configs_by_task_composite_id,
+        project_id,
+        task_id,
+      )
+
+      if (
+        run_config?.run_config_properties.tools_config &&
+        run_config?.run_config_properties.tools_config.tools.length > 0
+      ) {
+        run_config_validation_status = "invalid"
+        run_config_validation_message = "Tools are not supported for GEPA"
+        return
+      }
+
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
         {
@@ -285,12 +301,6 @@
 
       if (data && !data.is_supported) {
         run_config_validation_status = "invalid"
-        const run_config = get_selected_run_config(
-          target_run_config_id,
-          $run_configs_by_task_composite_id,
-          project_id,
-          task_id,
-        )
         if (run_config) {
           const friendly_model = model_name(
             run_config.run_config_properties.model_name,
@@ -508,6 +518,18 @@
         bind:error={create_job_error}
         bind:submitting={create_job_loading}
       >
+        <div class="mb-4">
+          <Warning warning_color="info" outline={true}>
+            <div class="text-sm">
+              <div class="font-medium mb-1">GEPA Requirements</div>
+              <div class="text-gray-600">
+                GEPA supports OpenRouter, OpenAI, Gemini, and Anthropic
+                providers. Tool use is not currently supported.
+              </div>
+            </div>
+          </Warning>
+        </div>
+
         <div class="text-xl font-bold">Step 1: Select Token Budget</div>
         <div>
           <FormElement
@@ -564,17 +586,30 @@
                       {run_config_validation_message}
                     </div>
                     <div class="text-gray-600">
-                      GEPA only supports OpenRouter, OpenAI, Gemini, and
-                      Anthropic providers. Please select a different run
-                      configuration or
-                      <button
-                        type="button"
-                        class="link underline"
-                        on:click={() => create_new_run_config_dialog?.show()}
-                      >
-                        create a new one
-                      </button>
-                      with a supported provider.
+                      {#if run_config_validation_message?.includes("Tools")}
+                        GEPA does not support run configurations that use tools.
+                        Please select a different run configuration or
+                        <button
+                          type="button"
+                          class="link underline"
+                          on:click={() => create_new_run_config_dialog?.show()}
+                        >
+                          create a new one
+                        </button>
+                        without tools configured.
+                      {:else}
+                        GEPA only supports OpenRouter, OpenAI, Gemini, and
+                        Anthropic providers. Please select a different run
+                        configuration or
+                        <button
+                          type="button"
+                          class="link underline"
+                          on:click={() => create_new_run_config_dialog?.show()}
+                        >
+                          create a new one
+                        </button>
+                        with a supported provider.
+                      {/if}
                     </div>
                   </div>
                 </Warning>
