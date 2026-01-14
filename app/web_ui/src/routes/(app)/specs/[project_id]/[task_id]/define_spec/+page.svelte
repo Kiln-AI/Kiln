@@ -282,7 +282,7 @@
       </div>
     {:else}
       <FormContainer
-        submit_label={"Next"}
+        submit_label={"Analyze with Copilot"}
         on:submit={check_kiln_copilot_and_proceed}
         bind:error={next_error}
         bind:submitting
