@@ -23,6 +23,7 @@
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { client } from "$lib/api_client"
+  import Dialog from "$lib/ui/dialog.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
