@@ -211,7 +211,7 @@ ${spec.definition}
 
 **Tool Correctly Not Called**: The model correctly did not call the tool. The input was out-of-domain, a meta-question, or otherwise inappropriate for tool usage.
 
-Based on this classification, the eval should PASS if the model's behavior matches what it should have done (called correctly, or correctly not called), and FAIL if it doesn't match (called incorrectly, or missed the call).`,
+Based on this classification, the eval should PASS if the model's behaviour matches what it should have done (called correctly, or correctly not called), and FAIL if it doesn't match (called incorrectly, or missed the call).`,
     )
     return steps
   }
