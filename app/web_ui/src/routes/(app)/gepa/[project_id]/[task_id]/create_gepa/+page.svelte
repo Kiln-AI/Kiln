@@ -28,7 +28,6 @@
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
   import Output from "$lib/ui/output.svelte"
 
   $: project_id = $page.params.project_id
@@ -38,7 +37,6 @@
   let target_run_config_id: string | null = null
 
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
-  let prompt_dialog: Dialog | null = null
 
   $: if (target_run_config_id === "__create_new_run_config__") {
     create_new_run_config_dialog?.show()
@@ -471,7 +469,7 @@
 <div class="max-w-[900px]">
   <AppPage
     title="New GEPA Optimization Job"
-    subtitle="Optimize the prompt for the current task."
+    subtitle="Use GEPA to automatically optimize your prompt."
     breadcrumbs={[
       {
         label: "GEPA Prompt Optimization",
@@ -502,7 +500,7 @@
     {:else}
       <FormContainer
         submit_visible={true}
-        submit_label="Optimize Prompt"
+        submit_label="Run Optimization"
         {submit_disabled}
         on:submit={create_gepa_job}
         bind:error={create_job_error}
@@ -545,9 +543,11 @@
                 <span>Checking compatibility...</span>
               </div>
             {:else if run_config_validation_status === "valid"}
-              <div class="flex items-center gap-2 text-sm text-success mt-2">
-                <span>✓</span>
-                <span>Compatible with GEPA</span>
+              <div class="mt-2">
+                <span class="badge badge-success badge-sm badge-outline gap-1">
+                  <span>✓</span>
+                  <span>Compatible with GEPA</span>
+                </span>
               </div>
             {:else if run_config_validation_status === "invalid"}
               <div
@@ -582,12 +582,11 @@
             </div>
             <div class="text-xs text-gray-500 mb-3">
               GEPA will optimize the prompt to maximize performance using this
-              configuration. The current prompt will be used as a starting
-              point.
+              configuration.
             </div>
 
             <div class="bg-base-200 rounded-lg p-4">
-              <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-4">
                 <div>
                   <span class="text-gray-500">Name:</span>
                   <span class="font-medium ml-1"
@@ -612,20 +611,26 @@
                     )}</span
                   >
                 </div>
-                <div>
-                  <span class="text-gray-500">Prompt:</span>
-                  <button
-                    type="button"
-                    class="font-medium ml-1 link underline"
-                    on:click={() => prompt_dialog?.show()}
-                  >
-                    {getRunConfigPromptDisplayName(
-                      selected_run_config,
-                      task_prompts,
-                    )}
-                  </button>
-                </div>
               </div>
+
+              <div class="text-xs text-gray-500 mb-2">
+                Prompt: {getRunConfigPromptDisplayName(
+                  selected_run_config,
+                  task_prompts,
+                )} (starting point for optimization)
+              </div>
+              {#if is_dynamic_prompt}
+                <div class="text-sm text-gray-600 italic">
+                  This run configuration uses a prompt generator that creates
+                  prompts at runtime.
+                </div>
+              {:else if prompt_text}
+                <Output raw_output={prompt_text} max_height="300px" />
+              {:else}
+                <div class="text-sm text-gray-500 italic">
+                  No prompt configured.
+                </div>
+              {/if}
             </div>
           </div>
 
@@ -636,7 +641,8 @@
               <div class="flex items-center gap-2">
                 <span>Evaluator Judges</span>
                 {#if evals_with_configs.length > 0}
-                  <span class="badge badge-sm">{evals_with_configs.length}</span
+                  <span class="badge badge-sm badge-outline"
+                    >{evals_with_configs.length}</span
                   >
                 {/if}
               </div>
@@ -679,6 +685,7 @@
               <div class="bg-base-200 rounded-lg p-4 space-y-3">
                 {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, model_is_supported, validation_status, validation_message }}
                   {@const spec_id = "legacy"}
+                  {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
                   {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
                   <div
                     class={`border-l-4 pl-3 py-2 ${
@@ -697,30 +704,31 @@
                           {#if validation_status === "checking"}
                             <span class="loading loading-spinner loading-xs"
                             ></span>
-                            <span class="font-medium text-sm"
-                              >{evalItem.name}</span
-                            >
                           {:else if !has_default_config}
                             <span class="text-warning text-sm">⚠</span>
-                            <span class="font-medium text-sm"
-                              >{evalItem.name}</span
-                            >
                           {:else if !model_is_supported}
                             <span class="text-error text-sm">✗</span>
-                            <span class="font-medium text-sm"
-                              >{evalItem.name}</span
-                            >
                           {:else}
                             <span class="text-success text-sm">✓</span>
-                            <span class="font-medium text-sm"
-                              >{evalItem.name}</span
-                            >
                           {/if}
+                          <a
+                            href={eval_url}
+                            target="_blank"
+                            class="font-medium text-sm link hover:underline"
+                          >
+                            {evalItem.name}
+                          </a>
                         </div>
+
+                        {#if evalItem.description}
+                          <div class="text-xs text-gray-600 mb-1">
+                            {evalItem.description}
+                          </div>
+                        {/if}
 
                         {#if current_config}
                           <div class="text-xs text-gray-500">
-                            {current_config.name} - {model_name(
+                            Judge: {current_config.name} - {model_name(
                               current_config.model_name,
                               $model_info,
                             )} ({provider_name_from_id(
@@ -739,6 +747,7 @@
                           <div class="mt-2">
                             <a
                               href={eval_configs_url}
+                              target="_blank"
                               class="link underline text-xs text-primary"
                             >
                               → Set default judge
@@ -748,6 +757,7 @@
                           <div class="mt-2">
                             <a
                               href={eval_configs_url}
+                              target="_blank"
                               class="link underline text-xs text-primary"
                             >
                               → Change default judge
@@ -781,23 +791,3 @@
     }
   }}
 />
-
-<Dialog bind:this={prompt_dialog} title="Prompt" width="wide">
-  {#if selected_run_config}
-    {#if is_dynamic_prompt}
-      <div class="text-sm text-gray-600">
-        This run configuration uses
-        <span class="font-medium">
-          {getRunConfigPromptDisplayName(selected_run_config, task_prompts)}
-        </span>
-        generator to create prompts at runtime.
-      </div>
-    {:else if prompt_text}
-      <Output raw_output={prompt_text} max_height="500px" />
-    {:else}
-      <div class="text-sm text-gray-500">No prompt configured.</div>
-    {/if}
-  {:else}
-    <div class="text-sm text-gray-500">No run configuration selected.</div>
-  {/if}
-</Dialog>
