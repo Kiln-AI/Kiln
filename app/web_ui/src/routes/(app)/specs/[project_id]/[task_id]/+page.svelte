@@ -20,6 +20,7 @@
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
   } from "./spec_utils"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
 
   // ### Spec Table ###
 
@@ -677,8 +678,8 @@
 <AppPage
   limit_max_width={true}
   title="Specs &amp; Evals"
-  subtitle="Define the specs your task should follow and be judged against"
-  sub_subtitle={is_empty ? undefined : "Read the Docs"}
+  subtitle="Specifications describe the behaviours to enforce or avoid for your task. Adding specs let us measure and optimize quality with evals."
+  sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
     ? []
@@ -703,18 +704,29 @@
     {:else if is_empty}
       <div class="mx-auto mt-[10vh]">
         <Intro
-          title="Specs &amp; Evals"
+          title="Specs &amp; Evals Ensure AI Quality"
+          align_title_left={true}
           description_paragraphs={[
-            "Specs are used to define how you want your task to behave and can be evaluated to measure how well your task is performing.",
+            "Specify how your AI task should behave, then use evaluations to verify performance.",
           ]}
           action_buttons={[
             {
-              label: "Define a Spec",
+              label: "Create Spec",
               href: `/specs/${project_id}/${task_id}/select_template`,
               is_primary: true,
             },
+            {
+              label: "Docs & Guide",
+              href: "https://docs.kiln.tech/docs/evaluations",
+              is_primary: false,
+              new_tab: true,
+            },
           ]}
-        />
+        >
+          <div slot="icon" class="h-12 w-12">
+            <EvalIcon />
+          </div>
+        </Intro>
       </div>
     {:else if sorted_specs}
       <a
