@@ -8,6 +8,7 @@
   export let onSuccess: () => void
   export let showTitle = true
   export let showCheckmark = false
+  export let redirect_uri: string | null = null
 
   let kindeClient: Awaited<ReturnType<typeof createKindeClient>> | null = null
   let apiKey = ""
@@ -26,7 +27,8 @@
     kindeClient = await createKindeClient({
       client_id: KINDE_ACCOUNT_CLIENT_ID,
       domain: KINDE_ACCOUNT_DOMAIN,
-      redirect_uri: window.location.origin + window.location.pathname,
+      redirect_uri:
+        redirect_uri || window.location.origin + window.location.pathname,
       on_redirect_callback: () => {},
     })
 

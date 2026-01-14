@@ -98,6 +98,9 @@
           property_values,
         )
 
+        // User initiated, reload page shouldn't trigger POSTs
+        // On create_spec, trigger POST and replace form with fancy spinner instead, so if fails we show back UI and show error
+
         // TODO: Create a few shot prompt instead of basic prompt
         // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
         const { data, error } = await client.POST("/api/copilot/clarify_spec", {

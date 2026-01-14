@@ -376,6 +376,7 @@
         showTitle={false}
         onSuccess={handle_connect_success}
         showCheckmark={has_kiln_copilot}
+        redirect_uri={`${window.location.origin}/specs/create_new_spec`}
       />
       {#if show_continue_to_review}
         <button
@@ -484,7 +485,7 @@
             </td>
             <td class="text-center">
               <button
-                class="btn btn-outline btn-sm"
+                class="btn btn-primary btn-sm"
                 on:click={() => {
                   show_connect_kiln_steps = true
                 }}
