@@ -369,6 +369,7 @@
                 description={field.description}
                 height={bumpHeight(field.key, field.height)}
                 value={current_property_values[field.key] ?? ""}
+                optional={!field.required}
               />
               <FormElement
                 label={field.label}
