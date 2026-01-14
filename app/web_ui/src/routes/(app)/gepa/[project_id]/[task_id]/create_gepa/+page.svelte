@@ -509,151 +509,156 @@
         bind:submitting={create_job_loading}
       >
         <div class="text-xl font-bold">Step 1: Select Token Budget</div>
-        <FormElement
-          label="Token Budget"
-          description="This determines the number of prompt candidates that the optimizer will consider."
-          inputType="select"
-          id="token_budget"
-          select_options={[
-            ["light", "Light"],
-            ["medium", "Medium"],
-            ["heavy", "Heavy"],
-          ]}
-          bind:value={token_budget}
-        />
+        <div>
+          <FormElement
+            label="Token Budget"
+            description="This determines the number of prompt candidates that the optimizer will consider."
+            inputType="select"
+            id="token_budget"
+            select_options={[
+              ["light", "Light"],
+              ["medium", "Medium"],
+              ["heavy", "Heavy"],
+            ]}
+            bind:value={token_budget}
+          />
+        </div>
 
         <div class="text-xl font-bold">
           Step 2: Select Target Run Configuration
         </div>
-        <SavedRunConfigurationsDropdown
-          title="Target Run Configuration"
-          description="The run configuration (model, prompt, etc.) to use for the optimization."
-          {project_id}
-          {current_task}
-          bind:selected_run_config_id={target_run_config_id}
-          run_page={false}
-          auto_select_default={false}
-        />
+        <div>
+          <SavedRunConfigurationsDropdown
+            title="Target Run Configuration"
+            description="The run configuration (model, prompt, etc.) to use for the optimization."
+            {project_id}
+            {current_task}
+            bind:selected_run_config_id={target_run_config_id}
+            run_page={false}
+            auto_select_default={false}
+          />
 
-        {#if selected_run_config}
-          {#if run_config_validation_status === "checking"}
-            <div class="flex items-center gap-2 text-sm text-gray-500">
-              <span class="loading loading-spinner loading-xs"></span>
-              <span>Checking compatibility...</span>
-            </div>
-          {:else if run_config_validation_status === "valid"}
-            <div class="flex items-center gap-2 text-sm text-success">
-              <span>✓</span>
-              <span>Compatible with GEPA</span>
-            </div>
-          {:else if run_config_validation_status === "invalid"}
-            <div class="bg-error/10 border border-error/20 rounded-lg p-4">
-              <div class="text-error text-sm font-medium mb-2">
-                {run_config_validation_message}
+          {#if selected_run_config}
+            {#if run_config_validation_status === "checking"}
+              <div class="flex items-center gap-2 text-sm text-gray-500 mt-2">
+                <span class="loading loading-spinner loading-xs"></span>
+                <span>Checking compatibility...</span>
               </div>
-              <div class="text-sm text-gray-600">
-                GEPA only supports OpenRouter, OpenAI, Gemini, and Anthropic
-                providers. Please select a different run configuration or
-                <button
-                  type="button"
-                  class="link underline"
-                  on:click={() => create_new_run_config_dialog?.show()}
-                >
-                  create a new one
-                </button>
-                with a supported provider.
+            {:else if run_config_validation_status === "valid"}
+              <div class="flex items-center gap-2 text-sm text-success mt-2">
+                <span>✓</span>
+                <span>Compatible with GEPA</span>
               </div>
-            </div>
+            {:else if run_config_validation_status === "invalid"}
+              <div
+                class="bg-error/10 border border-error/20 rounded-lg p-4 mt-3"
+              >
+                <div class="text-error text-sm font-medium mb-2">
+                  {run_config_validation_message}
+                </div>
+                <div class="text-sm text-gray-600">
+                  GEPA only supports OpenRouter, OpenAI, Gemini, and Anthropic
+                  providers. Please select a different run configuration or
+                  <button
+                    type="button"
+                    class="link underline"
+                    on:click={() => create_new_run_config_dialog?.show()}
+                  >
+                    create a new one
+                  </button>
+                  with a supported provider.
+                </div>
+              </div>
+            {/if}
           {/if}
-        {/if}
+        </div>
 
         {#if step_3_visible && selected_run_config}
           <div class="text-xl font-bold">Step 3: Review Configuration</div>
 
-          <div class="bg-base-200 rounded-lg p-4">
-            <div class="text-sm font-medium text-gray-700 mb-3">
-              Run Configuration Summary
+          <div>
+            <div class="text-sm font-medium text-gray-700 mb-2">
+              Target Run Configuration
             </div>
-            <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-3">
-              <div>
-                <span class="text-gray-500">Name:</span>
-                <span class="font-medium ml-1">{selected_run_config.name}</span>
-              </div>
-              <div>
-                <span class="text-gray-500">Model:</span>
-                <span class="font-medium ml-1"
-                  >{getDetailedModelName(
-                    selected_run_config,
-                    $model_info,
-                  )}</span
-                >
-              </div>
-              <div>
-                <span class="text-gray-500">Provider:</span>
-                <span class="font-medium ml-1"
-                  >{provider_name_from_id(
-                    selected_run_config.run_config_properties
-                      .model_provider_name,
-                  )}</span
-                >
-              </div>
-              <div>
-                <span class="text-gray-500">Prompt:</span>
-                <button
-                  type="button"
-                  class="font-medium ml-1 link underline"
-                  on:click={() => prompt_dialog?.show()}
-                >
-                  {getRunConfigPromptDisplayName(
-                    selected_run_config,
-                    task_prompts,
-                  )}
-                </button>
-              </div>
-            </div>
-            <div
-              class="text-xs text-gray-500 italic pt-3 border-t border-gray-300"
-            >
+            <div class="text-xs text-gray-500 mb-3">
               GEPA will optimize the prompt to maximize performance using this
-              configuration. The current prompt will be used as a starting point.
+              configuration. The current prompt will be used as a starting
+              point.
+            </div>
+
+            <div class="bg-base-200 rounded-lg p-4">
+              <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                <div>
+                  <span class="text-gray-500">Name:</span>
+                  <span class="font-medium ml-1"
+                    >{selected_run_config.name}</span
+                  >
+                </div>
+                <div>
+                  <span class="text-gray-500">Model:</span>
+                  <span class="font-medium ml-1"
+                    >{getDetailedModelName(
+                      selected_run_config,
+                      $model_info,
+                    )}</span
+                  >
+                </div>
+                <div>
+                  <span class="text-gray-500">Provider:</span>
+                  <span class="font-medium ml-1"
+                    >{provider_name_from_id(
+                      selected_run_config.run_config_properties
+                        .model_provider_name,
+                    )}</span
+                  >
+                </div>
+                <div>
+                  <span class="text-gray-500">Prompt:</span>
+                  <button
+                    type="button"
+                    class="font-medium ml-1 link underline"
+                    on:click={() => prompt_dialog?.show()}
+                  >
+                    {getRunConfigPromptDisplayName(
+                      selected_run_config,
+                      task_prompts,
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="mt-4">
-            <div class="mb-3">
-              <div
-                class="text-sm font-medium text-gray-700 flex items-center justify-between mb-1"
-              >
-                <div class="flex items-center gap-2">
-                  <span>Evaluator Judges</span>
-                  {#if evals_with_configs.length > 0}
-                    <span class="badge badge-sm"
-                      >{evals_with_configs.length}</span
-                    >
-                  {/if}
-                </div>
+          <div>
+            <div
+              class="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2">
+                <span>Evaluator Judges</span>
                 {#if evals_with_configs.length > 0}
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-outline"
-                    on:click={refresh_evaluators}
-                    disabled={is_validating}
+                  <span class="badge badge-sm">{evals_with_configs.length}</span
                   >
-                    {#if is_validating}
-                      <span class="loading loading-spinner loading-xs"></span>
-                    {:else}
-                      ↻
-                    {/if}
-                    Refresh
-                  </button>
                 {/if}
               </div>
               {#if evals_with_configs.length > 0}
-                <div class="text-xs text-gray-500 italic">
-                  GEPA will optimize to maximize performance on each of these
-                  evaluators.
-                </div>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline"
+                  on:click={refresh_evaluators}
+                  disabled={is_validating}
+                >
+                  {#if is_validating}
+                    <span class="loading loading-spinner loading-xs"></span>
+                  {:else}
+                    ↻
+                  {/if}
+                  Refresh
+                </button>
               {/if}
+            </div>
+            <div class="text-xs text-gray-500 mb-3">
+              GEPA will optimize to maximize performance on each of these
+              evaluators.
             </div>
 
             {#if evals_loading}
@@ -715,7 +720,7 @@
 
                         {#if current_config}
                           <div class="text-xs text-gray-500">
-                            Default Judge: {current_config.name} - {model_name(
+                            {current_config.name} - {model_name(
                               current_config.model_name,
                               $model_info,
                             )} ({provider_name_from_id(
