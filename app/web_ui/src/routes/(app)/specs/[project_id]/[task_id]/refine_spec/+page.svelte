@@ -169,20 +169,6 @@
             },
           )
 
-          const { data, error } = {
-            data: {
-              new_proposed_spec_edits: {
-                base_instruction: {
-                  proposed_edit: "New base instruction",
-                },
-                correct_behaviour_examples: {
-                  proposed_edit: "New correct behaviour examples",
-                },
-              },
-            },
-            error: null,
-          }
-
           if (error) {
             throw error
           }
