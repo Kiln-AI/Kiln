@@ -44,6 +44,13 @@
   let loading = false
   let loading_error: KilnError | null = null
 
+  function spec_type_to_name(spec_type: SpecType): string {
+    if (spec_type === "desired_behaviour" || spec_type === "issue") {
+      return ""
+    }
+    return formatSpecTypeName(spec_type)
+  }
+
   onMount(async () => {
     loading = true
 
@@ -95,7 +102,7 @@
     if (spec_type_param) {
       spec_type = spec_type_param as SpecType
     }
-    name = formatSpecTypeName(spec_type)
+    name = spec_type_to_name(spec_type)
 
     // Initialize property values from field configs
     // Fields with default_value are pre-filled, others start empty
@@ -199,7 +206,7 @@
 
   function has_form_changes(): boolean {
     if (!initialized) return false
-    if (name !== formatSpecTypeName(spec_type)) return true
+    if (name !== spec_type_to_name(spec_type)) return true
     for (const key of Object.keys(property_values)) {
       if (property_values[key] !== initial_property_values[key]) return true
     }
@@ -237,6 +244,7 @@
       )
 
       complete = true
+      warn_before_unload = false
       // Replace history so browser back goes to templates
       goto(`/specs/${project_id}/${task_id}/${spec_id}`, { replaceState: true })
     } catch (error) {
@@ -259,8 +267,9 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Define Spec"
-    subtitle={`Template: ${formatSpecTypeName(spec_type)}`}
+    title="Create Spec"
+    subtitle="A specification describes a behaviour to enforce or avoid for your task. Adding specs lets us measure and optimze quality."
+    sub_subtitle={`Template: ${formatSpecTypeName(spec_type)}`}
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -303,10 +312,12 @@
             inputType="textarea"
             disabled={field.disabled || false}
             description={field.description}
+            info_description={field.info_description}
             height={field.height || "base"}
             bind:value={property_values[field.key]}
             optional={!field.required}
-            inline_action={initial_property_values[field.key]
+            inline_action={initial_property_values[field.key] &&
+            property_values[field.key] !== initial_property_values[field.key]
               ? {
                   handler: () => reset_field(field.key),
                   label: "Reset",

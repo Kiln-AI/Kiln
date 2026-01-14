@@ -175,7 +175,7 @@
       />
       <FormElement
         label="Description"
-        description="A description of the reranker config for you and your team. This will have no effect on the reranker config's behavior."
+        description="A description of the reranker config for you and your team. This will have no effect on the reranker config's behaviour."
         optional={true}
         inputType="textarea"
         id="description"
