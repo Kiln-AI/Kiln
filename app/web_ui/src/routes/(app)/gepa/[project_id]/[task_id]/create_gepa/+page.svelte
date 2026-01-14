@@ -574,7 +574,7 @@
             <div class="text-sm font-medium text-gray-700 mb-3">
               Run Configuration Summary
             </div>
-            <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-3">
               <div>
                 <span class="text-gray-500">Name:</span>
                 <span class="font-medium ml-1">{selected_run_config.name}</span>
@@ -611,33 +611,48 @@
                 </button>
               </div>
             </div>
+            <div
+              class="text-xs text-gray-500 italic pt-3 border-t border-gray-300"
+            >
+              GEPA will optimize the prompt to maximize performance using this
+              configuration. The current prompt will be used as a starting point.
+            </div>
           </div>
 
           <div class="mt-4">
-            <div
-              class="text-sm font-medium text-gray-700 mb-3 flex items-center justify-between"
-            >
-              <div class="flex items-center gap-2">
-                <span>Evaluator Judges</span>
+            <div class="mb-3">
+              <div
+                class="text-sm font-medium text-gray-700 flex items-center justify-between mb-1"
+              >
+                <div class="flex items-center gap-2">
+                  <span>Evaluator Judges</span>
+                  {#if evals_with_configs.length > 0}
+                    <span class="badge badge-sm"
+                      >{evals_with_configs.length}</span
+                    >
+                  {/if}
+                </div>
                 {#if evals_with_configs.length > 0}
-                  <span class="badge badge-sm">{evals_with_configs.length}</span
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline"
+                    on:click={refresh_evaluators}
+                    disabled={is_validating}
                   >
+                    {#if is_validating}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else}
+                      ↻
+                    {/if}
+                    Refresh
+                  </button>
                 {/if}
               </div>
               {#if evals_with_configs.length > 0}
-                <button
-                  type="button"
-                  class="btn btn-xs btn-outline"
-                  on:click={refresh_evaluators}
-                  disabled={is_validating}
-                >
-                  {#if is_validating}
-                    <span class="loading loading-spinner loading-xs"></span>
-                  {:else}
-                    ↻
-                  {/if}
-                  Refresh
-                </button>
+                <div class="text-xs text-gray-500 italic">
+                  GEPA will optimize to maximize performance on each of these
+                  evaluators.
+                </div>
               {/if}
             </div>
 
