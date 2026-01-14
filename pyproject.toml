@@ -61,5 +61,5 @@ extend-select = ["I","F401","RUF","FAST","TID"]
 
 [tool.coverage.run]
 omit = [
-    "app/desktop/studio_server/api_client/kiln_ai_server_client/*",
+    "app/desktop/studio_server/api_client/kiln_ai_server_client/**",
 ]
