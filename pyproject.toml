@@ -58,3 +58,8 @@ extend-select = ["I","F401","RUF","FAST","TID"]
 
 [tool.pytest.ini_options]
  addopts="-n auto"
+
+[tool.coverage.run]
+omit = [
+    "app/desktop/studio_server/api_client/kiln_ai_server_client/*",
+]
