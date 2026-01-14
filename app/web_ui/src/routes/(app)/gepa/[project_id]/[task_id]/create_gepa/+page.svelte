@@ -28,8 +28,8 @@
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import Output from "$lib/ui/output.svelte"
-  import Warning from "$lib/ui/warning.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -38,10 +38,40 @@
   let target_run_config_id: string | null = null
 
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
+  let prompt_dialog: Dialog | null = null
 
   $: if (target_run_config_id === "__create_new_run_config__") {
     create_new_run_config_dialog?.show()
   }
+
+  function get_prompt_text_from_id(
+    prompt_id: string | null | undefined,
+  ): string | null {
+    if (!prompt_id || !task_prompts) {
+      return null
+    }
+
+    const saved_prompt = task_prompts.prompts.find((p) => p.id === prompt_id)
+    if (saved_prompt?.prompt) {
+      return saved_prompt.prompt
+    }
+
+    const is_generator = task_prompts.generators.some((g) => g.id === prompt_id)
+    if (is_generator) {
+      return null
+    }
+
+    return null
+  }
+
+  $: prompt_text =
+    selected_run_config?.prompt?.prompt ||
+    get_prompt_text_from_id(
+      selected_run_config?.run_config_properties.prompt_id,
+    )
+
+  $: is_dynamic_prompt =
+    selected_run_config?.run_config_properties.prompt_id && !prompt_text
 
   let create_job_error: KilnError | null = null
   let create_job_loading = false
@@ -91,6 +121,8 @@
     evals_with_configs.some((item) => item.validation_status === "unchecked") ||
     task_loading
 
+  $: step_3_visible = run_config_validation_status === "valid"
+
   $: selected_run_config = get_selected_run_config(
     target_run_config_id,
     $run_configs_by_task_composite_id,
@@ -101,34 +133,6 @@
   $: task_prompts =
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
     null
-
-  function get_prompt_text_from_id(
-    prompt_id: string | null | undefined,
-  ): string | null {
-    if (!prompt_id || !task_prompts) {
-      return null
-    }
-
-    // Check if it's in the saved prompts first
-    const saved_prompt = task_prompts.prompts.find((p) => p.id === prompt_id)
-    if (saved_prompt?.prompt) {
-      return saved_prompt.prompt
-    }
-
-    // If it's a generator ID, we can't show the text (it's generated at runtime)
-    const is_generator = task_prompts.generators.some((g) => g.id === prompt_id)
-    if (is_generator) {
-      return null
-    }
-
-    return null
-  }
-
-  $: prompt_text =
-    selected_run_config?.prompt?.prompt ||
-    get_prompt_text_from_id(
-      selected_run_config?.run_config_properties.prompt_id,
-    )
 
   function get_selected_run_config(
     run_config_id: string | null,
@@ -402,6 +406,14 @@
     ])
   })
 
+  function refresh_evaluators() {
+    evals_with_configs = evals_with_configs.map((item) => ({
+      ...item,
+      validation_status: "unchecked" as const,
+      validation_message: null,
+    }))
+  }
+
   async function create_gepa_job() {
     try {
       create_job_loading = true
@@ -490,22 +502,16 @@
     {:else}
       <FormContainer
         submit_visible={true}
-        submit_label="Start GEPA Job"
+        submit_label="Optimize Prompt"
         {submit_disabled}
         on:submit={create_gepa_job}
         bind:error={create_job_error}
         bind:submitting={create_job_loading}
       >
-        <Warning
-          large_icon
-          outline
-          warning_color="primary"
-          warning_message="GEPA only supports OpenRouter, OpenAI, Gemini, and Anthropic providers. Ensure your run configuration and evaluators use one of these providers."
-        />
-
+        <div class="text-xl font-bold">Step 1: Select Token Budget</div>
         <FormElement
           label="Token Budget"
-          description="Select the token budget for this GEPA job. Light uses fewer tokens but is faster, Heavy uses more tokens but is more thorough."
+          description="This determines the number of prompt candidates that the optimizer will consider."
           inputType="select"
           id="token_budget"
           select_options={[
@@ -516,9 +522,12 @@
           bind:value={token_budget}
         />
 
+        <div class="text-xl font-bold">
+          Step 2: Select Target Run Configuration
+        </div>
         <SavedRunConfigurationsDropdown
           title="Target Run Configuration"
-          description="Select the run configuration to use for this GEPA job."
+          description="The run configuration (model, prompt, etc.) to use for the optimization."
           {project_id}
           {current_task}
           bind:selected_run_config_id={target_run_config_id}
@@ -527,186 +536,212 @@
         />
 
         {#if selected_run_config}
-          <div class="mt-6">
-            <div
-              class="text-sm font-medium text-gray-500 mb-3 flex items-center gap-3"
-            >
-              Configuration Overview
-              {#if run_config_validation_status === "checking"}
-                <span class="loading loading-spinner loading-xs"></span>
-              {:else if run_config_validation_status === "valid"}
-                <span class="text-success text-sm">✓ Valid</span>
-              {:else if run_config_validation_status === "invalid"}
-                <span class="text-error text-sm">✗ Invalid</span>
-              {/if}
+          {#if run_config_validation_status === "checking"}
+            <div class="flex items-center gap-2 text-sm text-gray-500">
+              <span class="loading loading-spinner loading-xs"></span>
+              <span>Checking compatibility...</span>
             </div>
-
-            {#if run_config_validation_message}
-              <div
-                class={`mb-3 border rounded-lg p-3 ${run_config_validation_status === "invalid" ? "bg-error/10 border-error/20" : "bg-info/10 border-info/20"}`}
-              >
-                <div
-                  class={`text-sm ${run_config_validation_status === "invalid" ? "text-error" : "text-info"}`}
-                >
-                  {run_config_validation_message}
-                </div>
-              </div>
-            {/if}
-
-            <div class="bg-base-200 rounded-lg p-5">
-              <div class="flex flex-wrap gap-6 mb-5">
-                <div class="flex-1 min-w-[180px]">
-                  <div class="text-xs text-gray-500 mb-1">Name</div>
-                  <div class="font-medium">{selected_run_config.name}</div>
-                </div>
-
-                <div class="flex-1 min-w-[180px]">
-                  <div class="text-xs text-gray-500 mb-1">Model</div>
-                  <div class="font-medium">
-                    {getDetailedModelName(selected_run_config, $model_info)}
-                  </div>
-                </div>
-
-                <div class="flex-1 min-w-[180px]">
-                  <div class="text-xs text-gray-500 mb-1">Prompt</div>
-                  <div class="font-medium">
-                    {getRunConfigPromptDisplayName(
-                      selected_run_config,
-                      task_prompts,
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div class="flex flex-wrap gap-6">
-                <div class="min-w-[100px]">
-                  <div class="text-xs text-gray-500 mb-1">Temperature</div>
-                  <div class="font-medium">
-                    {selected_run_config.run_config_properties.temperature}
-                  </div>
-                </div>
-
-                <div class="min-w-[100px]">
-                  <div class="text-xs text-gray-500 mb-1">Top P</div>
-                  <div class="font-medium">
-                    {selected_run_config.run_config_properties.top_p}
-                  </div>
-                </div>
-
-                {#if selected_run_config.run_config_properties.tools_config?.tools?.length}
-                  <div class="min-w-[100px]">
-                    <div class="text-xs text-gray-500 mb-1">Tools</div>
-                    <div class="font-medium">
-                      {selected_run_config.run_config_properties.tools_config
-                        .tools.length} configured
-                    </div>
-                  </div>
-                {/if}
-              </div>
-
-              {#if prompt_text}
-                <div class="mt-5 pt-5 border-t border-base-300">
-                  <div class="text-xs text-gray-500 mb-2">Prompt Text</div>
-                  <Output raw_output={prompt_text} max_height="300px" />
-                </div>
-              {:else if selected_run_config.run_config_properties.prompt_id}
-                <div class="mt-5 pt-5 border-t border-base-300">
-                  <div class="text-xs text-gray-500 mb-2">Dynamic Prompt</div>
-                  <div class="text-sm">
-                    Uses {getRunConfigPromptDisplayName(
-                      selected_run_config,
-                      task_prompts,
-                    )} generator to create prompts at runtime.
-                  </div>
-                </div>
-              {/if}
+          {:else if run_config_validation_status === "valid"}
+            <div class="flex items-center gap-2 text-sm text-success">
+              <span>✓</span>
+              <span>Compatible with GEPA</span>
             </div>
-          </div>
-        {/if}
-
-        <div class="mt-6">
-          <div class="text-sm font-medium text-gray-500 mb-3">
-            Evaluators Configuration
-          </div>
-
-          {#if evals_loading}
-            <div class="flex justify-center items-center py-8">
-              <div class="loading loading-spinner loading-md"></div>
-            </div>
-          {:else if evals_error}
+          {:else if run_config_validation_status === "invalid"}
             <div class="bg-error/10 border border-error/20 rounded-lg p-4">
-              <div class="text-error text-sm">
-                {evals_error.getMessage() || "Failed to load evaluators"}
+              <div class="text-error text-sm font-medium mb-2">
+                {run_config_validation_message}
               </div>
-            </div>
-          {:else if evals_with_configs.length === 0}
-            <div class="bg-base-200 rounded-lg p-5 text-center text-gray-500">
-              No evaluators configured for this task.
-            </div>
-          {:else}
-            <div class="bg-base-200 rounded-lg p-5">
-              <div class="space-y-4">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, model_is_supported, validation_status, validation_message }}
-                  <div class="border-l-2 border-base-300 pl-4 py-2">
-                    <div class="flex items-center justify-between mb-2">
-                      <div class="flex items-center gap-3">
-                        <div class="font-medium">{evalItem.name}</div>
-                        {#if validation_status === "checking"}
-                          <span class="loading loading-spinner loading-xs"
-                          ></span>
-                        {:else if !has_default_config}
-                          <div
-                            class="flex items-center gap-2 text-sm text-warning"
-                          >
-                            <span class="text-xl">⚠️</span>
-                            <span>No default config</span>
-                          </div>
-                        {:else if !model_is_supported}
-                          <span class="text-error text-sm"
-                            >✗ Model not supported</span
-                          >
-                        {:else if validation_status === "valid"}
-                          <span class="text-success text-sm">✓</span>
-                        {/if}
-                      </div>
-                    </div>
-
-                    {#if current_config}
-                      <div class="ml-1 text-sm text-gray-500">
-                        <div class="mb-1">
-                          Default:
-                          <span class="font-medium text-gray-700"
-                            >{current_config.name}</span
-                          >
-                        </div>
-                        <div class="flex gap-4 text-xs">
-                          <div>
-                            <span class="font-medium">Provider:</span>
-                            {provider_name_from_id(
-                              current_config.model_provider,
-                            )}
-                          </div>
-                          <div>
-                            <span class="font-medium">Model:</span>
-                            {model_name(current_config.model_name, $model_info)}
-                          </div>
-                        </div>
-                      </div>
-                    {/if}
-
-                    {#if validation_message}
-                      <div
-                        class={`ml-1 mt-2 text-xs ${!has_default_config || !model_is_supported ? "text-error" : "text-info"}`}
-                      >
-                        {validation_message}
-                      </div>
-                    {/if}
-                  </div>
-                {/each}
+              <div class="text-sm text-gray-600">
+                GEPA only supports OpenRouter, OpenAI, Gemini, and Anthropic
+                providers. Please select a different run configuration or
+                <button
+                  type="button"
+                  class="link underline"
+                  on:click={() => create_new_run_config_dialog?.show()}
+                >
+                  create a new one
+                </button>
+                with a supported provider.
               </div>
             </div>
           {/if}
-        </div>
+        {/if}
+
+        {#if step_3_visible && selected_run_config}
+          <div class="text-xl font-bold">Step 3: Review Configuration</div>
+
+          <div class="bg-base-200 rounded-lg p-4">
+            <div class="text-sm font-medium text-gray-700 mb-3">
+              Run Configuration Summary
+            </div>
+            <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <div>
+                <span class="text-gray-500">Name:</span>
+                <span class="font-medium ml-1">{selected_run_config.name}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Model:</span>
+                <span class="font-medium ml-1"
+                  >{getDetailedModelName(
+                    selected_run_config,
+                    $model_info,
+                  )}</span
+                >
+              </div>
+              <div>
+                <span class="text-gray-500">Provider:</span>
+                <span class="font-medium ml-1"
+                  >{provider_name_from_id(
+                    selected_run_config.run_config_properties
+                      .model_provider_name,
+                  )}</span
+                >
+              </div>
+              <div>
+                <span class="text-gray-500">Prompt:</span>
+                <button
+                  type="button"
+                  class="font-medium ml-1 link underline"
+                  on:click={() => prompt_dialog?.show()}
+                >
+                  {getRunConfigPromptDisplayName(
+                    selected_run_config,
+                    task_prompts,
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <div
+              class="text-sm font-medium text-gray-700 mb-3 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2">
+                <span>Evaluator Judges</span>
+                {#if evals_with_configs.length > 0}
+                  <span class="badge badge-sm">{evals_with_configs.length}</span
+                  >
+                {/if}
+              </div>
+              {#if evals_with_configs.length > 0}
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline"
+                  on:click={refresh_evaluators}
+                  disabled={is_validating}
+                >
+                  {#if is_validating}
+                    <span class="loading loading-spinner loading-xs"></span>
+                  {:else}
+                    ↻
+                  {/if}
+                  Refresh
+                </button>
+              {/if}
+            </div>
+
+            {#if evals_loading}
+              <div class="flex justify-center items-center py-8">
+                <div class="loading loading-spinner loading-md"></div>
+              </div>
+            {:else if evals_error}
+              <div class="bg-error/10 border border-error/20 rounded-lg p-4">
+                <div class="text-error text-sm">
+                  {evals_error.getMessage() || "Failed to load evaluators"}
+                </div>
+              </div>
+            {:else if evals_with_configs.length === 0}
+              <div class="bg-base-200 rounded-lg p-4 text-center text-gray-500">
+                No evaluators configured for this task.
+              </div>
+            {:else}
+              <div class="bg-base-200 rounded-lg p-4 space-y-3">
+                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, model_is_supported, validation_status, validation_message }}
+                  {@const spec_id = "legacy"}
+                  {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
+                  <div
+                    class={`border-l-4 pl-3 py-2 ${
+                      validation_status === "checking"
+                        ? "border-gray-300"
+                        : !has_default_config
+                          ? "border-warning"
+                          : !model_is_supported
+                            ? "border-error"
+                            : "border-success"
+                    }`}
+                  >
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                          {#if validation_status === "checking"}
+                            <span class="loading loading-spinner loading-xs"
+                            ></span>
+                            <span class="font-medium text-sm"
+                              >{evalItem.name}</span
+                            >
+                          {:else if !has_default_config}
+                            <span class="text-warning text-sm">⚠</span>
+                            <span class="font-medium text-sm"
+                              >{evalItem.name}</span
+                            >
+                          {:else if !model_is_supported}
+                            <span class="text-error text-sm">✗</span>
+                            <span class="font-medium text-sm"
+                              >{evalItem.name}</span
+                            >
+                          {:else}
+                            <span class="text-success text-sm">✓</span>
+                            <span class="font-medium text-sm"
+                              >{evalItem.name}</span
+                            >
+                          {/if}
+                        </div>
+
+                        {#if current_config}
+                          <div class="text-xs text-gray-500">
+                            Default Judge: {current_config.name} - {model_name(
+                              current_config.model_name,
+                              $model_info,
+                            )} ({provider_name_from_id(
+                              current_config.model_provider,
+                            )})
+                          </div>
+                        {/if}
+
+                        {#if validation_message}
+                          <div class="text-xs text-gray-600 mt-1">
+                            {validation_message}
+                          </div>
+                        {/if}
+
+                        {#if !has_default_config}
+                          <div class="mt-2">
+                            <a
+                              href={eval_configs_url}
+                              class="link underline text-xs text-primary"
+                            >
+                              → Set default judge
+                            </a>
+                          </div>
+                        {:else if !model_is_supported}
+                          <div class="mt-2">
+                            <a
+                              href={eval_configs_url}
+                              class="link underline text-xs text-primary"
+                            >
+                              → Change default judge
+                            </a>
+                          </div>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
       </FormContainer>
     {/if}
   </AppPage>
@@ -726,3 +761,23 @@
     }
   }}
 />
+
+<Dialog bind:this={prompt_dialog} title="Prompt" width="wide">
+  {#if selected_run_config}
+    {#if is_dynamic_prompt}
+      <div class="text-sm text-gray-600">
+        This run configuration uses
+        <span class="font-medium">
+          {getRunConfigPromptDisplayName(selected_run_config, task_prompts)}
+        </span>
+        generator to create prompts at runtime.
+      </div>
+    {:else if prompt_text}
+      <Output raw_output={prompt_text} max_height="500px" />
+    {:else}
+      <div class="text-sm text-gray-500">No prompt configured.</div>
+    {/if}
+  {:else}
+    <div class="text-sm text-gray-500">No run configuration selected.</div>
+  {/if}
+</Dialog>

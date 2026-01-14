@@ -83,12 +83,12 @@
 
 <AppPage
   title="GEPA Prompt Optimization"
-  subtitle="Optimize the prompt xxx."
+  subtitle="Use GEPA to automatically optimize your prompts."
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "Create GEPA Job",
+          label: "Optimize Prompt",
           href: `/gepa/${project_id}/${task_id}/create_gepa`,
           primary: true,
         },
