@@ -5,36 +5,38 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.check_response import CheckResponse
-from ...models.check_run_config_request import CheckRunConfigRequest
+from ...models.check_model_supported_response import CheckModelSupportedResponse
 from ...models.http_validation_error import HTTPValidationError
-from ...types import Response
+from ...types import UNSET, Response
 
 
 def _get_kwargs(
     *,
-    body: CheckRunConfigRequest,
+    model_name: str,
+    model_provider_name: str,
 ) -> dict[str, Any]:
-    headers: dict[str, Any] = {}
+    params: dict[str, Any] = {}
+
+    params["model_name"] = model_name
+
+    params["model_provider_name"] = model_provider_name
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
-        "method": "post",
-        "url": "/v1/jobs/gepa_job/check_run_config",
+        "method": "get",
+        "url": "/v1/jobs/gepa_job/check_model_supported",
+        "params": params,
     }
 
-    _kwargs["json"] = body.to_dict()
-
-    headers["Content-Type"] = "application/json"
-
-    _kwargs["headers"] = headers
     return _kwargs
 
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> CheckResponse | HTTPValidationError | None:
+) -> CheckModelSupportedResponse | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = CheckResponse.from_dict(response.json())
+        response_200 = CheckModelSupportedResponse.from_dict(response.json())
 
         return response_200
 
@@ -51,7 +53,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[CheckResponse | HTTPValidationError]:
+) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -63,23 +65,26 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    body: CheckRunConfigRequest,
-) -> Response[CheckResponse | HTTPValidationError]:
-    """Check Run Config
+    model_name: str,
+    model_provider_name: str,
+) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+    """Check Model Supported
 
     Args:
-        body (CheckRunConfigRequest): Request model for checking run config.
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[CheckResponse | HTTPValidationError]
+        Response[CheckModelSupportedResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        body=body,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     )
 
     response = client.get_httpx_client().request(
@@ -92,47 +97,53 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    body: CheckRunConfigRequest,
-) -> CheckResponse | HTTPValidationError | None:
-    """Check Run Config
+    model_name: str,
+    model_provider_name: str,
+) -> CheckModelSupportedResponse | HTTPValidationError | None:
+    """Check Model Supported
 
     Args:
-        body (CheckRunConfigRequest): Request model for checking run config.
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        CheckResponse | HTTPValidationError
+        CheckModelSupportedResponse | HTTPValidationError
     """
 
     return sync_detailed(
         client=client,
-        body=body,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     ).parsed
 
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    body: CheckRunConfigRequest,
-) -> Response[CheckResponse | HTTPValidationError]:
-    """Check Run Config
+    model_name: str,
+    model_provider_name: str,
+) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+    """Check Model Supported
 
     Args:
-        body (CheckRunConfigRequest): Request model for checking run config.
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[CheckResponse | HTTPValidationError]
+        Response[CheckModelSupportedResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        body=body,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -143,24 +154,27 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    body: CheckRunConfigRequest,
-) -> CheckResponse | HTTPValidationError | None:
-    """Check Run Config
+    model_name: str,
+    model_provider_name: str,
+) -> CheckModelSupportedResponse | HTTPValidationError | None:
+    """Check Model Supported
 
     Args:
-        body (CheckRunConfigRequest): Request model for checking run config.
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        CheckResponse | HTTPValidationError
+        CheckModelSupportedResponse | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
             client=client,
-            body=body,
+            model_name=model_name,
+            model_provider_name=model_provider_name,
         )
     ).parsed

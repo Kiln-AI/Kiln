@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
+    check_model_supported_v1_jobs_gepa_job_check_model_supported_get,
     get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get,
     get_job_status_v1_jobs_job_type_job_id_status_get,
     start_gepa_job_v1_jobs_gepa_job_start_post,
@@ -31,6 +32,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_type 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import File
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
+)
+from app.desktop.studio_server.eval_api import (
+    eval_config_from_id,
+    eval_from_id,
+    task_run_config_from_id,
 )
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import GepaJob, Project, Prompt
@@ -65,6 +71,19 @@ class PublicGEPAJobStatusResponse(BaseModel):
 
     job_id: str
     status: JobStatus
+
+
+class CheckRunConfigResponse(BaseModel):
+    """Response model for check_run_config endpoint."""
+
+    is_supported: bool
+
+
+class CheckEvalResponse(BaseModel):
+    """Response model for check_eval endpoint."""
+
+    has_default_config: bool
+    model_is_supported: bool
 
 
 def _get_api_key() -> str:
@@ -215,6 +234,139 @@ def zip_project(project: Project) -> bytes:
 
 
 def connect_gepa_job_api(app: FastAPI):
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config")
+    async def check_run_config(
+        project_id: str, task_id: str, run_config_id: str
+    ) -> CheckRunConfigResponse:
+        """
+        Check if a run config is valid for a GEPA job by validating the model is supported.
+        """
+        try:
+            run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+
+            # Extract model info from run config
+            run_config_props = run_config.run_config_properties
+            model_name = run_config_props.model_name
+            model_provider = run_config_props.model_provider_name
+
+            if not model_name or not model_provider:
+                return CheckRunConfigResponse(is_supported=False)
+
+            server_client = get_authenticated_client(_get_api_key())
+            if not isinstance(server_client, AuthenticatedClient):
+                raise HTTPException(
+                    status_code=500, detail="Server client not authenticated"
+                )
+
+            response = await check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio(
+                client=server_client,
+                model_name=model_name,
+                model_provider_name=model_provider.value,
+            )
+
+            if isinstance(response, HTTPValidationError):
+                error_detail = (
+                    str(response.detail)
+                    if hasattr(response, "detail")
+                    else "Validation error"
+                )
+                raise HTTPException(status_code=422, detail=error_detail)
+
+            if response is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to check run config: No response from server",
+                )
+
+            return CheckRunConfigResponse(is_supported=response.is_model_supported)
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error checking run config: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"Failed to check run config: {str(e)}"
+            )
+
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval")
+    async def check_eval(
+        project_id: str, task_id: str, eval_id: str
+    ) -> CheckEvalResponse:
+        """
+        Check if an eval is valid for a GEPA job.
+        Validates that the eval has a default config and that the model is supported.
+        """
+        try:
+            eval = eval_from_id(project_id, task_id, eval_id)
+
+            # Check if eval has a default config
+            if not eval.current_config_id:
+                return CheckEvalResponse(
+                    has_default_config=False,
+                    model_is_supported=False,
+                )
+
+            # Try to load the current config
+            try:
+                config = eval_config_from_id(
+                    project_id, task_id, eval_id, eval.current_config_id
+                )
+            except HTTPException:
+                return CheckEvalResponse(
+                    has_default_config=False,
+                    model_is_supported=False,
+                )
+
+            # Extract model info from config
+            model_name = config.model_name
+            model_provider = config.model_provider
+
+            if not model_name or not model_provider:
+                return CheckEvalResponse(
+                    has_default_config=True,
+                    model_is_supported=False,
+                )
+
+            server_client = get_authenticated_client(_get_api_key())
+            if not isinstance(server_client, AuthenticatedClient):
+                raise HTTPException(
+                    status_code=500, detail="Server client not authenticated"
+                )
+
+            # EvalConfig.model_provider is already a string, no need for .value
+            response = await check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio(
+                client=server_client,
+                model_name=model_name,
+                model_provider_name=model_provider,
+            )
+
+            if isinstance(response, HTTPValidationError):
+                error_detail = (
+                    str(response.detail)
+                    if hasattr(response, "detail")
+                    else "Validation error"
+                )
+                raise HTTPException(status_code=422, detail=error_detail)
+
+            if response is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to check eval: No response from server",
+                )
+
+            return CheckEvalResponse(
+                has_default_config=True,
+                model_is_supported=response.is_model_supported,
+            )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error checking eval: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"Failed to check eval: {str(e)}"
+            )
+
     @app.post("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start")
     async def start_gepa_job(
         project_id: str,
@@ -230,6 +382,14 @@ def connect_gepa_job_api(app: FastAPI):
             raise HTTPException(status_code=404, detail="Project not found")
 
         try:
+            server_client = get_authenticated_client(_get_api_key())
+            if not isinstance(server_client, AuthenticatedClient):
+                raise HTTPException(
+                    status_code=500, detail="Server client not authenticated"
+                )
+
+            logger.info(f"Starting GEPA job for task {task_id}")
+
             # Create ZIP file of the project
             project_zip_bytes = zip_project(cast(Project, task.parent))
 
@@ -249,12 +409,6 @@ def connect_gepa_job_api(app: FastAPI):
                 target_run_config_id=request.target_run_config_id,
                 project_zip=project_zip_file,
             )
-
-            server_client = get_authenticated_client(_get_api_key())
-            if not isinstance(server_client, AuthenticatedClient):
-                raise HTTPException(
-                    status_code=500, detail="Server client not authenticated"
-                )
 
             logger.info(
                 f"Starting GEPA job upload for task {task_id}, project ZIP size: {len(project_zip_bytes)} bytes"

@@ -2139,6 +2139,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Run Config
+         * @description Check if a run config is valid for a GEPA job by validating the model is supported.
+         */
+        get: operations["check_run_config_api_projects__project_id__tasks__task_id__gepa_jobs_check_run_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Eval
+         * @description Check if an eval is valid for a GEPA job.
+         *     Validates that the eval has a default config and that the model is supported.
+         */
+        get: operations["check_eval_api_projects__project_id__tasks__task_id__gepa_jobs_check_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start": {
         parameters: {
             query?: never;
@@ -2599,6 +2640,24 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
+        /**
+         * CheckEvalResponse
+         * @description Response model for check_eval endpoint.
+         */
+        CheckEvalResponse: {
+            /** Has Default Config */
+            has_default_config: boolean;
+            /** Model Is Supported */
+            model_is_supported: boolean;
+        };
+        /**
+         * CheckRunConfigResponse
+         * @description Response model for check_run_config endpoint.
+         */
+        CheckRunConfigResponse: {
+            /** Is Supported */
+            is_supported: boolean;
+        };
         /** ChunkerConfig */
         ChunkerConfig: {
             /**
@@ -11014,6 +11073,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_run_config_api_projects__project_id__tasks__task_id__gepa_jobs_check_run_config_get: {
+        parameters: {
+            query: {
+                run_config_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckRunConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_eval_api_projects__project_id__tasks__task_id__gepa_jobs_check_eval_get: {
+        parameters: {
+            query: {
+                eval_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckEvalResponse"];
                 };
             };
             /** @description Validation Error */
