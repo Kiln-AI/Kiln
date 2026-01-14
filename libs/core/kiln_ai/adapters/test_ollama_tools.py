@@ -15,6 +15,7 @@ from kiln_ai.adapters.ollama_tools import (
     ollama_embedding_model_installed,
     ollama_model_installed,
     parse_ollama_tags,
+    resolve_ollama_model_variant,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 
@@ -378,3 +379,121 @@ def test_parse_ollama_tags_mixed_models_and_embeddings():
     # Unknown embedding models should appear in untested_models (since they're not recognized as embeddings)
     assert "unknown_embedding:latest" not in conn.supported_models
     assert "unknown_embedding:latest" in conn.untested_models
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_primary_installed(mock_get):
+    """Test that primary model_id is returned when it's installed"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"model": "nemotron-3-nano"},
+            {"model": "phi3.5:latest"},
+        ]
+    }
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+    assert result == "nemotron-3-nano"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_alias_installed(mock_get):
+    """Test that alias is returned when primary is not installed but alias is"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"model": "nemotron-3-nano:30b"},
+            {"model": "phi3.5:latest"},
+        ]
+    }
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+    assert result == "nemotron-3-nano:30b"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_latest_tag(mock_get):
+    """Test that :latest tag matching works"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"model": "nemotron-3-nano:latest"},
+            {"model": "phi3.5:latest"},
+        ]
+    }
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+    assert result == "nemotron-3-nano"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_none_installed(mock_get):
+    """Test that original model_id is returned when nothing is installed"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"model": "phi3.5:latest"},
+            {"model": "llama3.1:latest"},
+        ]
+    }
+
+    result = resolve_ollama_model_variant(
+        "nemotron-3-nano", ["nemotron-3-nano:30b", "nemotron-3-nano:70b"]
+    )
+    assert result == "nemotron-3-nano"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_no_aliases(mock_get):
+    """Test with no aliases provided"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"model": "phi3.5:latest"},
+        ]
+    }
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", None)
+    assert result == "nemotron-3-nano"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_connection_error(mock_get):
+    """Test that original model_id is returned on connection error"""
+    mock_get.side_effect = Exception("Connection failed")
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+    assert result == "nemotron-3-nano"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_bad_response(mock_get):
+    """Test that original model_id is returned on bad response"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 500
+
+    result = resolve_ollama_model_variant("nemotron-3-nano", ["nemotron-3-nano:30b"])
+    assert result == "nemotron-3-nano"
+
+
+@patch("kiln_ai.adapters.ollama_tools.requests.get")
+def test_resolve_ollama_model_variant_first_alias_wins(mock_get):
+    """Test that first matching alias is returned"""
+    mock_response = mock_get.return_value
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "models": [
+            {"model": "model:alias1"},
+            {"model": "model:alias2"},
+        ]
+    }
+
+    result = resolve_ollama_model_variant(
+        "model:primary", ["model:alias1", "model:alias2"]
+    )
+    assert result == "model:alias1"
