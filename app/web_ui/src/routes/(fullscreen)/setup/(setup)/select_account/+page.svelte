@@ -18,7 +18,7 @@
       }
 
       if (type === "personal") {
-        goto("/setup/subscribe")
+        goto("/setup/register_personal")
       } else {
         goto("/setup/register_work")
       }
@@ -44,10 +44,15 @@
       }
       const user_type = data.user_type
       const work_use_contact = data.work_use_contact
+      const personal_use_contact = data.personal_use_contact
 
       // Check if they have already selected an account type
       if (user_type === "personal") {
-        goto("/setup/connect_providers", { replaceState: true })
+        if (!personal_use_contact) {
+          goto("/setup/register_personal", { replaceState: true })
+        } else {
+          goto("/setup/connect_providers", { replaceState: true })
+        }
       } else if (user_type === "work") {
         if (!work_use_contact) {
           goto("/setup/register_work", { replaceState: true })
@@ -102,12 +107,8 @@
           </li>
           <li class="flex items-start">
             <CheckmarkListIcon />
-            <span>No Signup Required</span>
-          </li>
-          <li class="flex items-start">
-            <CheckmarkListIcon />
             <div>
-              <div>For Personal Use</div>
+              <div>Personal Use Only</div>
               <div class="text-sm text-gray-500">
                 Not licensed for commercial use
               </div>
@@ -132,13 +133,18 @@
           <li class="flex items-start">
             <CheckmarkListIcon />
             <div>
-              <div>Work Email Required</div>
-              <div class="text-sm text-gray-500">Only takes 10 seconds</div>
+              <span>For Work and Enterprise</span>
+              <div class="text-sm text-gray-500">
+                Licensed for commercial use
+              </div>
             </div>
           </li>
           <li class="flex items-start">
             <CheckmarkListIcon />
-            <span>For Work and Enterprise Projects</span>
+            <div>
+              <div>Work Email Required</div>
+              <div class="text-sm text-gray-500">Only takes 10 seconds</div>
+            </div>
           </li>
         </ul>
         <div class="btn btn-outline btn-primary w-full pointer-events-none">
