@@ -9,7 +9,7 @@ from attrs import field as _attrs_field
 from ..models.model_provider_name import ModelProviderName
 
 if TYPE_CHECKING:
-    from ..models.subsample_batch_output_item import SubsampleBatchOutputItem
+    from ..models.examples_for_feedback_item import ExamplesForFeedbackItem
 
 
 T = TypeVar("T", bound="ClarifySpecOutput")
@@ -19,13 +19,13 @@ T = TypeVar("T", bound="ClarifySpecOutput")
 class ClarifySpecOutput:
     """
     Attributes:
-        examples_for_feedback (list[SubsampleBatchOutputItem]):
+        examples_for_feedback (list[ExamplesForFeedbackItem]):
         model_id (str):
         model_provider (ModelProviderName): Enumeration of supported AI model providers.
         judge_prompt (str):
     """
 
-    examples_for_feedback: list[SubsampleBatchOutputItem]
+    examples_for_feedback: list[ExamplesForFeedbackItem]
     model_id: str
     model_provider: ModelProviderName
     judge_prompt: str
@@ -58,13 +58,13 @@ class ClarifySpecOutput:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.subsample_batch_output_item import SubsampleBatchOutputItem
+        from ..models.examples_for_feedback_item import ExamplesForFeedbackItem
 
         d = dict(src_dict)
         examples_for_feedback = []
         _examples_for_feedback = d.pop("examples_for_feedback")
         for examples_for_feedback_item_data in _examples_for_feedback:
-            examples_for_feedback_item = SubsampleBatchOutputItem.from_dict(examples_for_feedback_item_data)
+            examples_for_feedback_item = ExamplesForFeedbackItem.from_dict(examples_for_feedback_item_data)
 
             examples_for_feedback.append(examples_for_feedback_item)
 

@@ -7,7 +7,7 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
-    from ..models.spec_edit import SpecEdit
+    from ..models.new_proposed_spec_edits import NewProposedSpecEdits
 
 
 T = TypeVar("T", bound="RefineSpecOutputNewProposedSpecEdits")
@@ -17,7 +17,7 @@ T = TypeVar("T", bound="RefineSpecOutputNewProposedSpecEdits")
 class RefineSpecOutputNewProposedSpecEdits:
     """ """
 
-    additional_properties: dict[str, SpecEdit] = _attrs_field(init=False, factory=dict)
+    additional_properties: dict[str, NewProposedSpecEdits] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         field_dict: dict[str, Any] = {}
@@ -28,14 +28,14 @@ class RefineSpecOutputNewProposedSpecEdits:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.spec_edit import SpecEdit
+        from ..models.new_proposed_spec_edits import NewProposedSpecEdits
 
         d = dict(src_dict)
         refine_spec_output_new_proposed_spec_edits = cls()
 
         additional_properties = {}
         for prop_name, prop_dict in d.items():
-            additional_property = SpecEdit.from_dict(prop_dict)
+            additional_property = NewProposedSpecEdits.from_dict(prop_dict)
 
             additional_properties[prop_name] = additional_property
 
@@ -46,10 +46,10 @@ class RefineSpecOutputNewProposedSpecEdits:
     def additional_keys(self) -> list[str]:
         return list(self.additional_properties.keys())
 
-    def __getitem__(self, key: str) -> SpecEdit:
+    def __getitem__(self, key: str) -> NewProposedSpecEdits:
         return self.additional_properties[key]
 
-    def __setitem__(self, key: str, value: SpecEdit) -> None:
+    def __setitem__(self, key: str, value: NewProposedSpecEdits) -> None:
         self.additional_properties[key] = value
 
     def __delitem__(self, key: str) -> None:

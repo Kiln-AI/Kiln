@@ -49,6 +49,7 @@ def clarify_spec_input():
         "spec_rendered_prompt_template": "Test template",
         "num_samples_per_topic": 5,
         "num_topics": 3,
+        "providers": ["openai"],
         "num_exemplars": 10,
     }
 
@@ -86,7 +87,6 @@ def generate_batch_input():
         "spec_rendered_prompt_template": "Test template",
         "num_samples_per_topic": 5,
         "num_topics": 3,
-        "enable_scoring": False,
     }
 
 
@@ -270,20 +270,3 @@ class TestGenerateBatch:
             )
             assert response.status_code == 422
             assert "Validation error" in response.json()["detail"]
-
-    def test_generate_batch_with_scoring(
-        self, client, generate_batch_input, mock_api_key
-    ):
-        generate_batch_input["enable_scoring"] = True
-        mock_output = MagicMock(spec=GenerateBatchOutput)
-        mock_output.to_dict.return_value = {"data_by_topic": {}}
-
-        with patch(
-            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
-            new_callable=AsyncMock,
-            return_value=mock_output,
-        ):
-            response = client.post(
-                "/api/copilot/generate_batch", json=generate_batch_input
-            )
-            assert response.status_code == 200

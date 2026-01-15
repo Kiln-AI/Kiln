@@ -6,37 +6,28 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="SubsampleBatchOutputItem")
+T = TypeVar("T", bound="GEPAJobOutput")
 
 
 @_attrs_define
-class SubsampleBatchOutputItem:
-    """
+class GEPAJobOutput:
+    """Output from the GEPA job.
+
     Attributes:
-        input_ (str):
-        output (str):
-        exhibits_issue (bool):
+        optimized_prompt (str):
     """
 
-    input_: str
-    output: str
-    exhibits_issue: bool
+    optimized_prompt: str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        input_ = self.input_
-
-        output = self.output
-
-        exhibits_issue = self.exhibits_issue
+        optimized_prompt = self.optimized_prompt
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "input": input_,
-                "output": output,
-                "exhibits_issue": exhibits_issue,
+                "optimized_prompt": optimized_prompt,
             }
         )
 
@@ -45,20 +36,14 @@ class SubsampleBatchOutputItem:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        input_ = d.pop("input")
+        optimized_prompt = d.pop("optimized_prompt")
 
-        output = d.pop("output")
-
-        exhibits_issue = d.pop("exhibits_issue")
-
-        subsample_batch_output_item = cls(
-            input_=input_,
-            output=output,
-            exhibits_issue=exhibits_issue,
+        gepa_job_output = cls(
+            optimized_prompt=optimized_prompt,
         )
 
-        subsample_batch_output_item.additional_properties = d
-        return subsample_batch_output_item
+        gepa_job_output.additional_properties = d
+        return gepa_job_output
 
     @property
     def additional_keys(self) -> list[str]:

@@ -6,6 +6,7 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..models.model_provider_name import ModelProviderName
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="ClarifySpecInput")
@@ -21,6 +22,7 @@ class ClarifySpecInput:
         spec_rendered_prompt_template (str):
         num_samples_per_topic (int):
         num_topics (int):
+        providers (list[ModelProviderName]):
         num_exemplars (int | Unset):  Default: 10.
     """
 
@@ -30,6 +32,7 @@ class ClarifySpecInput:
     spec_rendered_prompt_template: str
     num_samples_per_topic: int
     num_topics: int
+    providers: list[ModelProviderName]
     num_exemplars: int | Unset = 10
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -46,6 +49,11 @@ class ClarifySpecInput:
 
         num_topics = self.num_topics
 
+        providers = []
+        for providers_item_data in self.providers:
+            providers_item = providers_item_data.value
+            providers.append(providers_item)
+
         num_exemplars = self.num_exemplars
 
         field_dict: dict[str, Any] = {}
@@ -58,6 +66,7 @@ class ClarifySpecInput:
                 "spec_rendered_prompt_template": spec_rendered_prompt_template,
                 "num_samples_per_topic": num_samples_per_topic,
                 "num_topics": num_topics,
+                "providers": providers,
             }
         )
         if num_exemplars is not UNSET:
@@ -80,6 +89,13 @@ class ClarifySpecInput:
 
         num_topics = d.pop("num_topics")
 
+        providers = []
+        _providers = d.pop("providers")
+        for providers_item_data in _providers:
+            providers_item = ModelProviderName(providers_item_data)
+
+            providers.append(providers_item)
+
         num_exemplars = d.pop("num_exemplars", UNSET)
 
         clarify_spec_input = cls(
@@ -89,6 +105,7 @@ class ClarifySpecInput:
             spec_rendered_prompt_template=spec_rendered_prompt_template,
             num_samples_per_topic=num_samples_per_topic,
             num_topics=num_topics,
+            providers=providers,
             num_exemplars=num_exemplars,
         )
 

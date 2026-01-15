@@ -2602,6 +2602,8 @@ export interface components {
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
+            /** Providers */
+            providers: components["schemas"]["ModelProviderName"][];
             /**
              * Num Exemplars
              * @default 10
@@ -4277,24 +4279,13 @@ export interface components {
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
-            /**
-             * Enable Scoring
-             * @default false
-             */
-            enable_scoring: boolean;
         };
         /** GenerateBatchApiOutput */
         GenerateBatchApiOutput: {
             /** Data By Topic */
             data_by_topic: {
-                [key: string]: (components["schemas"]["SampleApi"] | components["schemas"]["ScoredSampleApi"])[];
+                [key: string]: components["schemas"]["SampleApi"][];
             };
-            /** Topic Gen Prompt */
-            topic_gen_prompt?: string | null;
-            /** Input Gen Prompt */
-            input_gen_prompt?: string | null;
-            /** Judge Prompt */
-            judge_prompt?: string | null;
         };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
@@ -5488,17 +5479,6 @@ export interface components {
         ScoreSummary: {
             /** Mean Score */
             mean_score: number;
-        };
-        /** ScoredSampleApi */
-        ScoredSampleApi: {
-            /** Input */
-            input: string;
-            /** Output */
-            output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
-            /** Reasoning */
-            reasoning: string;
         };
         /** SearchResult */
         SearchResult: {

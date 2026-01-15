@@ -50,6 +50,7 @@ class ClarifySpecApiInput(BaseModel):
     spec_rendered_prompt_template: str
     num_samples_per_topic: int
     num_topics: int
+    providers: list[ModelProviderName]
     num_exemplars: int = Field(default=10)
 
 
@@ -69,7 +70,6 @@ class GenerateBatchApiInput(BaseModel):
     spec_rendered_prompt_template: str
     num_samples_per_topic: int
     num_topics: int
-    enable_scoring: bool = Field(default=False)
 
 
 class SubsampleBatchOutputItemApi(BaseModel):
@@ -101,18 +101,8 @@ class SampleApi(BaseModel):
     output: str
 
 
-class ScoredSampleApi(BaseModel):
-    input: str = Field(alias="input")
-    output: str
-    exhibits_issue: bool
-    reasoning: str
-
-
 class GenerateBatchApiOutput(BaseModel):
-    data_by_topic: dict[str, list[SampleApi | ScoredSampleApi]]
-    topic_gen_prompt: str | None = None
-    input_gen_prompt: str | None = None
-    judge_prompt: str | None = None
+    data_by_topic: dict[str, list[SampleApi]]
 
 
 def _get_api_key() -> str:
@@ -132,7 +122,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        clarify_input = ClarifySpecInput(**input.model_dump())
+        clarify_input = ClarifySpecInput.from_dict(input.model_dump())
 
         result = await clarify_spec_v1_copilot_clarify_spec_post.asyncio(
             client=client,

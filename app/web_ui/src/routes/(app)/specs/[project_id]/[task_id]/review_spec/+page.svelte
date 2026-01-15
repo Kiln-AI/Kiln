@@ -4,7 +4,7 @@
   import { onMount } from "svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
-  import type { SpecType } from "$lib/types"
+  import type { SpecType, ModelProviderName } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import {
@@ -19,7 +19,11 @@
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
   import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
-  import { load_task } from "$lib/stores"
+  import {
+    load_task,
+    available_models,
+    load_available_models,
+  } from "$lib/stores"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { client } from "$lib/api_client"
@@ -71,6 +75,8 @@
   }
 
   onMount(async () => {
+    // Load available models to get connected providers
+    await load_available_models()
     await load_spec_data()
   })
 
@@ -87,6 +93,10 @@
         if (!task) {
           throw new Error("Failed to load task")
         }
+
+        const providers = $available_models.map(
+          (m) => m.provider_id as ModelProviderName,
+        )
 
         spec_type = formData.spec_type
         name = formData.name
@@ -115,6 +125,7 @@
             spec_rendered_prompt_template: spec_definition,
             num_samples_per_topic: 10,
             num_topics: 5,
+            providers: providers,
             num_exemplars: 5,
           },
         })

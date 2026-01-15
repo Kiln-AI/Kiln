@@ -7,8 +7,8 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
-    from ..models.example_with_feedback import ExampleWithFeedback
-    from ..models.spec_info import SpecInfo
+    from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
+    from ..models.spec import Spec
     from ..models.task_info import TaskInfo
 
 
@@ -23,16 +23,16 @@ class RefineSpecInput:
         task_input_schema (str):
         task_output_schema (str):
         task_info (TaskInfo):
-        spec (SpecInfo):
-        examples_with_feedback (list[ExampleWithFeedback]):
+        spec (Spec):
+        examples_with_feedback (list[ExamplesWithFeedbackItem]):
     """
 
     task_prompt_with_few_shot: str
     task_input_schema: str
     task_output_schema: str
     task_info: TaskInfo
-    spec: SpecInfo
-    examples_with_feedback: list[ExampleWithFeedback]
+    spec: Spec
+    examples_with_feedback: list[ExamplesWithFeedbackItem]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -68,8 +68,8 @@ class RefineSpecInput:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.example_with_feedback import ExampleWithFeedback
-        from ..models.spec_info import SpecInfo
+        from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
+        from ..models.spec import Spec
         from ..models.task_info import TaskInfo
 
         d = dict(src_dict)
@@ -81,12 +81,12 @@ class RefineSpecInput:
 
         task_info = TaskInfo.from_dict(d.pop("task_info"))
 
-        spec = SpecInfo.from_dict(d.pop("spec"))
+        spec = Spec.from_dict(d.pop("spec"))
 
         examples_with_feedback = []
         _examples_with_feedback = d.pop("examples_with_feedback")
         for examples_with_feedback_item_data in _examples_with_feedback:
-            examples_with_feedback_item = ExampleWithFeedback.from_dict(examples_with_feedback_item_data)
+            examples_with_feedback_item = ExamplesWithFeedbackItem.from_dict(examples_with_feedback_item_data)
 
             examples_with_feedback.append(examples_with_feedback_item)
 

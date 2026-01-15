@@ -6,8 +6,6 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
 T = TypeVar("T", bound="GenerateBatchInput")
 
 
@@ -22,7 +20,6 @@ class GenerateBatchInput:
         spec_rendered_prompt_template (str):
         num_samples_per_topic (int):
         num_topics (int):
-        enable_scoring (bool | Unset):  Default: False.
     """
 
     task_prompt_with_few_shot: str
@@ -31,7 +28,6 @@ class GenerateBatchInput:
     spec_rendered_prompt_template: str
     num_samples_per_topic: int
     num_topics: int
-    enable_scoring: bool | Unset = False
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -47,8 +43,6 @@ class GenerateBatchInput:
 
         num_topics = self.num_topics
 
-        enable_scoring = self.enable_scoring
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -61,8 +55,6 @@ class GenerateBatchInput:
                 "num_topics": num_topics,
             }
         )
-        if enable_scoring is not UNSET:
-            field_dict["enable_scoring"] = enable_scoring
 
         return field_dict
 
@@ -81,8 +73,6 @@ class GenerateBatchInput:
 
         num_topics = d.pop("num_topics")
 
-        enable_scoring = d.pop("enable_scoring", UNSET)
-
         generate_batch_input = cls(
             task_prompt_with_few_shot=task_prompt_with_few_shot,
             task_input_schema=task_input_schema,
@@ -90,7 +80,6 @@ class GenerateBatchInput:
             spec_rendered_prompt_template=spec_rendered_prompt_template,
             num_samples_per_topic=num_samples_per_topic,
             num_topics=num_topics,
-            enable_scoring=enable_scoring,
         )
 
         generate_batch_input.additional_properties = d

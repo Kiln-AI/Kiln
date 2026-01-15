@@ -6,12 +6,12 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="SpecInfoSpecFields")
+T = TypeVar("T", bound="SpecSpecFields")
 
 
 @_attrs_define
-class SpecInfoSpecFields:
-    """ """
+class SpecSpecFields:
+    """Dictionary mapping field names to their descriptions/purposes"""
 
     additional_properties: dict[str, str] = _attrs_field(init=False, factory=dict)
 
@@ -24,10 +24,10 @@ class SpecInfoSpecFields:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        spec_info_spec_fields = cls()
+        spec_spec_fields = cls()
 
-        spec_info_spec_fields.additional_properties = d
-        return spec_info_spec_fields
+        spec_spec_fields.additional_properties = d
+        return spec_spec_fields
 
     @property
     def additional_keys(self) -> list[str]:
