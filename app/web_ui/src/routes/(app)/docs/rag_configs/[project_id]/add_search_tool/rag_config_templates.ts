@@ -90,15 +90,15 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Best Quality",
     preview_subtitle: "Spare No Expense",
     preview_description:
-      "The best quality search configuration. Uses Gemini 2.5 Pro with hybrid search.",
+      "The best quality search configuration. Uses Gemini 3 Pro with hybrid search.",
     preview_tooltip:
-      "Gemini 2.5 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "Gemini 3 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "GeminiOrOpenRouter",
     extractor: {
-      config_name: "Gemini 2p5 Pro w Default Prompts",
-      description: "Gemini 2.5 Pro",
+      config_name: "Gemini 3 Pro w Default Prompts",
+      description: "Gemini 3 Pro",
       model_provider_name: "gemini_api",
-      model_name: "gemini_2_5_pro",
+      model_name: "gemini_3_pro_preview",
     },
     chunker: default_chunker,
     embedding: default_embedding,
@@ -176,16 +176,16 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "We suggest Gemini, but if you need to use OpenAI try this template.",
     preview_tooltip:
-      "GPT-5 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "GPT-5.2 extraction, OpenAI Embedding 3 Large (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "OpenaiOrOpenRouter",
     notice_text: "Does not support audio or video files.",
     notice_tooltip:
-      "GPT 5 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
+      "GPT-5.2 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
     extractor: {
-      config_name: "GPT-5 w Default Prompts",
-      description: "GPT-5",
+      config_name: "GPT-5.2 w Default Prompts",
+      description: "GPT-5.2",
       model_provider_name: "openai",
-      model_name: "gpt_5",
+      model_name: "gpt_5_2",
     },
     chunker: default_chunker,
     embedding: {
@@ -196,7 +196,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     },
     vector_store: default_vector_store,
     reranker: null,
-    rag_config_name: "OpenAI Based - GPT-5 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-5.2 Hybrid Search",
   },
 }
 

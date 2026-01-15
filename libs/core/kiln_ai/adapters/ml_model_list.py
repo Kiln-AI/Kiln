@@ -93,9 +93,16 @@ class ModelName(str, Enum):
     phi_4_5p6b = "phi_4_5p6b"
     phi_4_mini = "phi_4_mini"
     mistral_large = "mistral_large"
+    mistral_3_large_2512 = "mistral_3_large_2512"
     mistral_nemo = "mistral_nemo"
     mistral_small_3 = "mistral_small_3"
     mistral_medium_3_1 = "mistral_medium_3_1"
+    mistral_small_creative = (
+        "mistral_small_creative"  # mistralai/mistral-small-creative
+    )
+    ministral_3_14b_2512 = "ministral_3_14b_2512"
+    ministral_3_8b_2512 = "ministral_3_8b_2512"
+    ministral_3_3b_2512 = "ministral_3_3b_2512"
     magistral_medium = "magistral_medium"
     magistral_medium_thinking = "magistral_medium_thinking"
     gemma_2_2b = "gemma_2_2b"
@@ -195,6 +202,7 @@ class ModelName(str, Enum):
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_4_7 = "glm_4_7"
     glm_4_6 = "glm_4_6"
     glm_4_6v = "glm_4_6v"
     glm_4_5v = "glm_4_5v"
@@ -208,8 +216,11 @@ class ModelName(str, Enum):
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
     minimax_m2 = "minimax_m2"
+    minimax_m2_1 = "minimax_m2_1"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
+    bytedance_seed_1_6 = "bytedance_seed_1_6"
+    bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     stepfun_step3 = "stepfun_step3"
 
 
@@ -335,6 +346,7 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -353,6 +365,7 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -379,6 +392,7 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-5.2-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -397,6 +411,7 @@ built_in_models: List[KilnModel] = [
                 model_id="openai/gpt-5.2-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -466,8 +481,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -485,8 +498,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -512,8 +523,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -531,8 +540,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1389,12 +1396,16 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.5",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-5-20251101",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
             ),
         ],
     ),
@@ -1446,7 +1457,10 @@ built_in_models: List[KilnModel] = [
                 model_id="google/gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -1466,7 +1480,10 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -1586,11 +1603,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-2.5-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 reasoning_capable=True,
                 supports_doc_extraction=True,
-                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -1611,10 +1625,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-2.5-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_doc_extraction=True,
-                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
@@ -1644,8 +1655,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-2.5-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
@@ -2319,6 +2328,64 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Mistral Small Creative
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_small_creative,
+        friendly_name="Mistral Small Creative",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-small-creative",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+            ),
+        ],
+    ),
+    # Ministral 3 14B 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.ministral_3_14b_2512,
+        friendly_name="Ministral 3 14B 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/ministral-14b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="mistralai/Ministral-3-14B-Instruct-2512",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Ministral 3 8B 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.ministral_3_8b_2512,
+        friendly_name="Ministral 3 8B 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/ministral-8b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Ministral 3 3B 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.ministral_3_3b_2512,
+        friendly_name="Ministral 3 3B 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/ministral-3b-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
     # Mistral Medium 3.1
     KilnModel(
         family=ModelFamily.mistral,
@@ -2374,6 +2441,19 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/mistral-nemo:12B-Q4_K_M",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+        ],
+    ),
+    # Mistral Large 2512
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_3_large_2512,
+        friendly_name="Mistral Large 3 2512",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-large-2512",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -5103,6 +5183,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 4.7
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_7,
+        friendly_name="GLM 4.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/zai-org/GLM-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="zai-glm-4.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 4.6V
     KilnModel(
         family=ModelFamily.glm,
@@ -5167,6 +5274,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-4.6",
                 structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.cerebras,
+                model_id="zai-glm-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
             ),
         ],
     ),
@@ -5534,6 +5647,32 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Minimax M2.1
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m2_1,
+        friendly_name="Minimax M2.1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m2.1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m2p1",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
     # Minimax M2
     KilnModel(
         family=ModelFamily.minimax,
@@ -5558,6 +5697,14 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
+            ),
         ],
     ),
     # Pangu Pro MOE
@@ -5576,7 +5723,7 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Bytedance
+    # Bytedance Seed OSS 36B
     KilnModel(
         family=ModelFamily.bytedance,
         name=ModelName.bytedance_seed_oss_36b,
@@ -5598,6 +5745,36 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 supports_function_calling=False,
                 reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # Bytedance Seed 1.6
+    KilnModel(
+        family=ModelFamily.bytedance,
+        name=ModelName.bytedance_seed_1_6,
+        friendly_name="ByteDance Seed 1.6",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="bytedance-seed/seed-1.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Bytedance Seed 1.6 Flash
+    KilnModel(
+        family=ModelFamily.bytedance,
+        name=ModelName.bytedance_seed_1_6_flash,
+        friendly_name="ByteDance Seed 1.6 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="bytedance-seed/seed-1.6-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
             ),
         ],
     ),
