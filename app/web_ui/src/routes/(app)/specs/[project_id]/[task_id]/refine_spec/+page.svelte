@@ -370,6 +370,7 @@
                 height={bumpHeight(field.key, field.height)}
                 value={current_property_values[field.key] ?? ""}
                 optional={!field.required}
+                hide_optional_badge={true}
               />
               <FormElement
                 label={field.label}

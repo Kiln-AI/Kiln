@@ -291,7 +291,7 @@
       </div>
     {:else}
       <FormContainer
-        submit_label={"Analyze with Copilot"}
+        submit_label={has_kiln_copilot ? "Analyze with Copilot" : "Next"}
         on:submit={check_kiln_copilot_and_proceed}
         bind:error={next_error}
         bind:submitting
@@ -334,7 +334,7 @@
               inputType="checkbox"
               bind:value={evaluate_full_trace}
               disabled={full_trace_disabled}
-              description="When enabled, this spec will be judged on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+              description="When enabled, this spec will be evaluated on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
               info_description={full_trace_disabled
                 ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
                 : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
