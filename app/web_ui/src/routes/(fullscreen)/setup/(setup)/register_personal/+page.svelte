@@ -2,9 +2,12 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { setup_ph_user } from "$lib/utils/connect_ph"
+  import {
+    redirect_to_work,
+    redirect_after_registration,
+  } from "../registration_helpers"
 
   let email = ""
   let full_name = ""
@@ -24,7 +27,7 @@
       if (settings_error) {
         throw settings_error
       }
-      goto("/setup/register_work")
+      redirect_to_work()
     } catch (e) {
       console.error("Error switching to work", e)
       error = createKilnError(e)
@@ -67,7 +70,7 @@
       // No need to await this
       setup_ph_user()
 
-      goto("/setup/support")
+      redirect_after_registration()
     } catch (e) {
       error = createKilnError(e)
     } finally {
