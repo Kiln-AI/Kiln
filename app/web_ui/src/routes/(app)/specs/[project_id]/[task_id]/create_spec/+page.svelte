@@ -15,9 +15,7 @@
     navigateToReviewSpec,
     loadSpecFormData,
   } from "../spec_utils"
-  import Dialog from "$lib/ui/dialog.svelte"
   import { client } from "$lib/api_client"
-  import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -131,15 +129,12 @@
   })
 
   let next_error: KilnError | null = null
-  let create_error: KilnError | null = null
 
   let submitting = false
   let complete = false
   let warn_before_unload = false
 
-  let copilot_v_manual_dialog: Dialog | null = null
   let has_kiln_copilot = false
-  let show_connect_kiln_steps = false
 
   $: void (name, property_values, initialized, update_warn_before_unload())
 
@@ -162,11 +157,10 @@
 
       validateRequiredFields()
 
-      if (!has_kiln_copilot) {
-        submitting = false
-        copilot_v_manual_dialog?.show()
-      } else {
+      if (has_kiln_copilot) {
         await proceed_to_review()
+      } else {
+        do_create_spec((e) => (next_error = e))
       }
     } catch (error) {
       next_error = createKilnError(error)
@@ -192,12 +186,6 @@
       warn_before_unload = true
       next_error = createKilnError(error)
     }
-  }
-
-  let show_continue_to_review = false
-  async function handle_connect_success() {
-    has_kiln_copilot = true
-    show_continue_to_review = true
   }
 
   function reset_field(key: string) {
@@ -254,11 +242,6 @@
     }
   }
 
-  // For dialog - errors show in the card
-  function create_spec_from_dialog() {
-    do_create_spec((e) => (create_error = e))
-  }
-
   // For main form - errors show in FormContainer
   function create_spec_from_form() {
     do_create_spec((e) => (next_error = e))
@@ -269,7 +252,8 @@
   <AppPage
     title="Create Spec"
     subtitle="A specification describes a behaviour to enforce or avoid for your task. Adding specs lets us measure and optimze quality."
-    sub_subtitle={`Template: ${formatSpecTypeName(spec_type)}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -291,7 +275,7 @@
       </div>
     {:else}
       <FormContainer
-        submit_label={has_kiln_copilot ? "Analyze with Copilot" : "Next"}
+        submit_label={has_kiln_copilot ? "Analyze with Copilot" : "Create Spec"}
         on:submit={check_kiln_copilot_and_proceed}
         bind:error={next_error}
         bind:submitting
@@ -354,154 +338,3 @@
     {/if}
   </AppPage>
 </div>
-
-<Dialog
-  bind:this={copilot_v_manual_dialog}
-  title={show_connect_kiln_steps
-    ? "Connect Kiln Copilot"
-    : "Choose your Workflow"}
-  center_content={show_connect_kiln_steps ? false : true}
-  sub_subtitle={show_connect_kiln_steps
-    ? "Follow the steps below to setup Kiln Copilot"
-    : undefined}
-  width={show_connect_kiln_steps ? "normal" : "wide"}
-  on:close={() => {
-    show_connect_kiln_steps = false
-    create_error = null
-  }}
->
-  {#if show_connect_kiln_steps}
-    <div class="flex flex-col">
-      <ConnectKilnCopilotSteps
-        showTitle={false}
-        onSuccess={handle_connect_success}
-        showCheckmark={has_kiln_copilot}
-        redirect_uri={`${window.location.origin}/specs/create_new_spec`}
-      />
-      {#if show_continue_to_review}
-        <button
-          class="btn btn-primary mt-4 w-full"
-          on:click={async () => {
-            await proceed_to_review()
-            copilot_v_manual_dialog?.close()
-          }}
-        >
-          Continue to Refine Spec
-        </button>
-      {/if}
-      <button
-        class="link text-center text-sm mt-8"
-        on:click={() => {
-          show_connect_kiln_steps = false
-        }}
-      >
-        Cancel setting up Kiln Copilot
-      </button>
-    </div>
-  {:else}
-    <div class="my-4 max-w-[680px] mx-auto">
-      <div class="overflow-x-auto">
-        <table class="table table-fixed w-full">
-          <colgroup>
-            <col class="w-[240px]" />
-            <col />
-            <col />
-          </colgroup>
-          <thead>
-            <tr>
-              <th></th>
-              <th class="text-center">Manual</th>
-              <th class="text-center border-l">
-                <div class="flex items-center justify-center gap-2">
-                  <img
-                    src="/images/animated_logo.svg"
-                    alt="Kiln Copilot"
-                    class="size-4"
-                  />
-                  <span>Kiln Copilot</span>
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th class="font-bold text-xs text-gray-500"
-                >Eval Judge Creation</th
-              >
-              <td class="text-center">Manual</td>
-              <td class="text-center border-l">Automatic</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-gray-500"
-                >Edge Case Discovery</th
-              >
-              <td class="text-center">Manual</td>
-              <td class="text-center border-l">Automatic</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-gray-500">Eval Data Creation</th
-              >
-              <td class="text-center">Manual</td>
-              <td class="text-center border-l">Automatic</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-base-content/60"
-                >Eval Accuracy</th
-              >
-              <td class="text-center">Varies</td>
-              <td class="text-center border-l">High</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-gray-500">Approx. Effort</th>
-              <td class="text-center">20 min</td>
-              <td class="text-center border-l">3 min</td>
-            </tr>
-            <tr>
-              <th class="font-bold text-xs text-base-content/60"
-                >Kiln Account</th
-              >
-              <td class="text-center">Optional</td>
-              <td class="text-center border-l">Required</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <table class="table-fixed w-full mt-4">
-        <colgroup>
-          <col class="w-[240px]" />
-          <col />
-          <col />
-        </colgroup>
-        <tbody>
-          <tr>
-            <td></td>
-            <td class="text-center">
-              <button
-                class="btn btn-outline btn-sm"
-                on:click={create_spec_from_dialog}
-              >
-                Create Manually
-              </button>
-            </td>
-            <td class="text-center">
-              <button
-                class="btn btn-primary btn-sm"
-                on:click={() => {
-                  show_connect_kiln_steps = true
-                }}
-              >
-                Connect Kiln Copilot
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      {#if create_error}
-        <div class="alert alert-error mt-4">
-          <span>{create_error.message}</span>
-        </div>
-      {/if}
-    </div>
-  {/if}
-</Dialog>

@@ -2235,8 +2235,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "appropriate_tool_use";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Tool Id */
             tool_id: string;
             /** Tool Function Name */
@@ -2302,8 +2302,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "bias";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Bias Examples */
             bias_examples: string;
         };
@@ -2633,8 +2633,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "completeness";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Complete Examples */
             complete_examples: string;
             /** Incomplete Examples */
@@ -3226,8 +3226,6 @@ export interface components {
              * @enum {string}
              */
             spec_type: "desired_behaviour";
-            /** Base Instruction */
-            base_instruction: string;
             /** Desired Behaviour Description */
             desired_behaviour_description: string;
             /** Correct Behaviour Examples */
@@ -3940,8 +3938,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "factual_correctness";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
         };
@@ -4242,8 +4240,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "formatting";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Formatting Requirements */
             formatting_requirements: string;
             /** Proper Formatting Examples */
@@ -4318,8 +4316,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "hallucinations";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Hallucinations Examples */
             hallucinations_examples: string;
         };
@@ -4350,8 +4348,6 @@ export interface components {
              * @enum {string}
              */
             spec_type: "issue";
-            /** Base Instruction */
-            base_instruction: string;
             /** Issue Description */
             issue_description: string;
             /** Issue Examples */
@@ -4366,8 +4362,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "jailbreak";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Jailbroken Examples */
             jailbroken_examples: string;
         };
@@ -4620,8 +4616,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "localization";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Localization Requirements */
             localization_requirements: string;
             /** Violation Examples */
@@ -4648,8 +4644,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "maliciousness";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Malicious Examples */
             malicious_examples: string;
         };
@@ -4723,8 +4719,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "nsfw";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Nsfw Examples */
             nsfw_examples: string;
         };
@@ -4952,8 +4948,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "prompt_leakage";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Leakage Examples */
             leakage_examples: string;
         };
@@ -5711,8 +5707,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "taboo";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
         };
@@ -6150,8 +6146,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "tone";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Tone Description */
             tone_description: string;
             /** Acceptable Examples */
@@ -6222,8 +6218,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "toxicity";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
         };

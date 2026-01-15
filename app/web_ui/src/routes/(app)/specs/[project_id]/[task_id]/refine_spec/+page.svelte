@@ -148,26 +148,40 @@
           }
 
           // Call the refine API
-          const { data, error } = await client.POST(
-            "/api/copilot/refine_spec",
-            {
-              body: {
-                task_prompt_with_few_shot: task.instruction || "",
-                task_input_schema: task.input_json_schema
-                  ? JSON.stringify(task.input_json_schema)
-                  : "",
-                task_output_schema: task.output_json_schema
-                  ? JSON.stringify(task.output_json_schema)
-                  : "",
-                task_info,
-                spec: {
-                  spec_fields,
-                  spec_field_current_values,
+          // const { data, error } = await client.POST(
+          //   "/api/copilot/refine_spec",
+          //   {
+          //     body: {
+          //       task_prompt_with_few_shot: task.instruction || "",
+          //       task_input_schema: task.input_json_schema
+          //         ? JSON.stringify(task.input_json_schema)
+          //         : "",
+          //       task_output_schema: task.output_json_schema
+          //         ? JSON.stringify(task.output_json_schema)
+          //         : "",
+          //       task_info,
+          //       spec: {
+          //         spec_fields,
+          //         spec_field_current_values,
+          //       },
+          //       examples_with_feedback,
+          //     },
+          //   },
+          // )
+
+          const { data, error } = {
+            data: {
+              new_proposed_spec_edits: {
+                core_requirement: {
+                  proposed_edit: "New base instruction",
                 },
-                examples_with_feedback,
+                correct_behaviour_examples: {
+                  proposed_edit: "New correct behaviour examples",
+                },
               },
             },
-          )
+            error: null,
+          }
 
           if (error) {
             throw error

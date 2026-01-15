@@ -93,31 +93,54 @@
         property_values = { ...formData.property_values }
         evaluate_full_trace = formData.evaluate_full_trace
 
-        const spec_definition = buildDefinitionFromProperties(
-          spec_type,
-          property_values,
-        )
+        // const spec_definition = buildDefinitionFromProperties(
+        //   spec_type,
+        //   property_values,
+        // )
 
         // User initiated, reload page shouldn't trigger POSTs
         // On create_spec, trigger POST and replace form with fancy spinner instead, so if fails we show back UI and show error
 
         // TODO: Create a few shot prompt instead of basic prompt
         // TODO: What should task input/output schemas be exactly? Especially for plaintext tasks?
-        const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-          body: {
-            task_prompt_with_few_shot: task.instruction,
-            task_input_schema: task.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            task_output_schema: task.output_json_schema
-              ? JSON.stringify(task.output_json_schema)
-              : "",
-            spec_rendered_prompt_template: spec_definition,
-            num_samples_per_topic: 10,
-            num_topics: 5,
-            num_exemplars: 5,
+        // const { data, error } = await client.POST("/api/copilot/clarify_spec", {
+        //   body: {
+        //     task_prompt_with_few_shot: task.instruction,
+        //     task_input_schema: task.input_json_schema
+        //       ? JSON.stringify(task.input_json_schema)
+        //       : "",
+        //     task_output_schema: task.output_json_schema
+        //       ? JSON.stringify(task.output_json_schema)
+        //       : "",
+        //     spec_rendered_prompt_template: spec_definition,
+        //     num_samples_per_topic: 10,
+        //     num_topics: 5,
+        //     num_exemplars: 5,
+        //   },
+        // })
+        const { data, error } = {
+          data: {
+            examples_for_feedback: [
+              {
+                input: "What is the capital of France?",
+                output: "Paris",
+                exhibits_issue: false,
+                user_says_meets_spec: null,
+                user_feedback: "",
+              },
+              {
+                input:
+                  "This is a super long input that should be multiple lines.",
+                output:
+                  "This is a super long output that should be multiple lines. This is a super long output that should be multiple lines.",
+                exhibits_issue: true,
+                user_says_meets_spec: null,
+                user_feedback: "",
+              },
+            ],
           },
-        })
+          error: null,
+        }
 
         if (error) {
           throw error
@@ -181,7 +204,7 @@
     return !is_row_aligned(row)
   }
 
-  function get_feedback_label(row: ReviewRow): string {
+  function get_feedback_empty_label(row: ReviewRow): string {
     if (row.user_says_meets_spec) {
       return "Describe why this meets the spec"
     } else {
@@ -430,13 +453,14 @@
                     <tr on:click={(e) => e.stopPropagation()}>
                       <td colspan="4" class="bg-base-200 py-4">
                         <FormElement
-                          label={get_feedback_label(row)}
-                          description="Our judge analysis was incorrect. Please provide details to help Kiln refine the spec."
+                          label="Help us improve!"
+                          description={`Our judge's analysis was incorrect, please provide a detailed description of why this example ${row.user_says_meets_spec ? "meets" : "does not meet"} the spec to help us improve our judge.`}
                           id="feedback-{row.id}"
                           inputType="textarea"
                           height="base"
                           bind:value={row.feedback}
                           optional={false}
+                          placeholder={get_feedback_empty_label(row)}
                         />
                       </td>
                     </tr>

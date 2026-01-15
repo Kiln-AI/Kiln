@@ -6,9 +6,7 @@
   import { env } from "$env/dynamic/public"
 
   export let onSuccess: () => void
-  export let showTitle = true
   export let showCheckmark = false
-  export let redirect_uri: string | null = null
 
   let kindeClient: Awaited<ReturnType<typeof createKindeClient>> | null = null
   let apiKey = ""
@@ -27,8 +25,7 @@
     kindeClient = await createKindeClient({
       client_id: KINDE_ACCOUNT_CLIENT_ID,
       domain: KINDE_ACCOUNT_DOMAIN,
-      redirect_uri:
-        redirect_uri || window.location.origin + window.location.pathname,
+      redirect_uri: window.location.origin + window.location.pathname,
       on_redirect_callback: () => {},
     })
 
@@ -150,9 +147,7 @@
   })
 </script>
 
-{#if showTitle}
-  <h1 class="text-xl font-medium text-center mb-2">Connect Kiln Copilot</h1>
-{/if}
+<h1 class="text-xl font-medium text-center mb-2">Connect Kiln Copilot</h1>
 
 <ol class="mb-2 text-gray-700">
   <li class="list-decimal pl-1 mx-8 mb-4">

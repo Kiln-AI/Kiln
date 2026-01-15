@@ -86,7 +86,6 @@ def validate_string_properties(
 
 class DesiredBehaviourProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.desired_behaviour]
-    base_instruction: str
     desired_behaviour_description: str
     correct_behaviour_examples: NotRequired[str]
     incorrect_behaviour_examples: NotRequired[str]
@@ -97,7 +96,7 @@ def validate_desired_behaviour_properties(
 ) -> DesiredBehaviourProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "desired_behaviour_description"],
+        required_fields=["desired_behaviour_description"],
         optional_fields=["correct_behaviour_examples", "incorrect_behaviour_examples"],
     )
 
@@ -110,7 +109,6 @@ DesiredBehaviourPropertiesValidator = Annotated[
 
 class IssueProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.issue]
-    base_instruction: str
     issue_description: str
     issue_examples: NotRequired[str]
     non_issue_examples: NotRequired[str]
@@ -121,7 +119,7 @@ def validate_issue_properties(
 ) -> IssueProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "issue_description"],
+        required_fields=["issue_description"],
         optional_fields=["issue_examples", "non_issue_examples"],
     )
 
@@ -134,7 +132,7 @@ IssuePropertiesValidator = Annotated[
 
 class ToneProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.tone]
-    base_instruction: str
+    core_requirement: str
     tone_description: str
     acceptable_examples: NotRequired[str]
     unacceptable_examples: NotRequired[str]
@@ -143,7 +141,7 @@ class ToneProperties(TypedDict, total=True):
 def validate_tone_properties(properties: ToneProperties) -> ToneProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "tone_description"],
+        required_fields=["core_requirement", "tone_description"],
         optional_fields=["acceptable_examples", "unacceptable_examples"],
     )
 
@@ -156,7 +154,7 @@ TonePropertiesValidator = Annotated[
 
 class FormattingProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.formatting]
-    base_instruction: str
+    core_requirement: str
     formatting_requirements: str
     proper_formatting_examples: NotRequired[str]
     improper_formatting_examples: NotRequired[str]
@@ -167,7 +165,7 @@ def validate_formatting_properties(
 ) -> FormattingProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "formatting_requirements"],
+        required_fields=["core_requirement", "formatting_requirements"],
         optional_fields=["proper_formatting_examples", "improper_formatting_examples"],
     )
 
@@ -180,7 +178,7 @@ FormattingPropertiesValidator = Annotated[
 
 class LocalizationProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.localization]
-    base_instruction: str
+    core_requirement: str
     localization_requirements: str
     violation_examples: str
 
@@ -191,7 +189,7 @@ def validate_localization_properties(
     return validate_string_properties(
         properties,
         required_fields=[
-            "base_instruction",
+            "core_requirement",
             "localization_requirements",
             "violation_examples",
         ],
@@ -206,7 +204,7 @@ LocalizationPropertiesValidator = Annotated[
 
 class AppropriateToolUseProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.appropriate_tool_use]
-    base_instruction: str
+    core_requirement: str
     tool_id: str
     tool_function_name: str
     tool_use_guidelines: str
@@ -220,7 +218,7 @@ def validate_appropriate_tool_use_properties(
     return validate_string_properties(
         properties,
         required_fields=[
-            "base_instruction",
+            "core_requirement",
             "tool_id",
             "tool_function_name",
             "tool_use_guidelines",
@@ -266,7 +264,7 @@ ReferenceAnswerAccuracyPropertiesValidator = Annotated[
 
 class FactualCorrectnessProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.factual_correctness]
-    base_instruction: str
+    core_requirement: str
     factually_inaccurate_examples: str
 
 
@@ -275,7 +273,7 @@ def validate_factual_correctness_properties(
 ) -> FactualCorrectnessProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "factually_inaccurate_examples"],
+        required_fields=["core_requirement", "factually_inaccurate_examples"],
     )
 
 
@@ -287,7 +285,7 @@ FactualCorrectnessPropertiesValidator = Annotated[
 
 class HallucinationsProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.hallucinations]
-    base_instruction: str
+    core_requirement: str
     hallucinations_examples: str
 
 
@@ -296,7 +294,7 @@ def validate_hallucinations_properties(
 ) -> HallucinationsProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "hallucinations_examples"],
+        required_fields=["core_requirement", "hallucinations_examples"],
     )
 
 
@@ -308,7 +306,7 @@ HallucinationsPropertiesValidator = Annotated[
 
 class CompletenessProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.completeness]
-    base_instruction: str
+    core_requirement: str
     complete_examples: str
     incomplete_examples: str
 
@@ -319,7 +317,7 @@ def validate_completeness_properties(
     return validate_string_properties(
         properties,
         required_fields=[
-            "base_instruction",
+            "core_requirement",
             "complete_examples",
             "incomplete_examples",
         ],
@@ -334,7 +332,7 @@ CompletenessPropertiesValidator = Annotated[
 
 class ToxicityProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.toxicity]
-    base_instruction: str
+    core_requirement: str
     toxicity_examples: str
 
 
@@ -343,7 +341,7 @@ def validate_toxicity_properties(
 ) -> ToxicityProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "toxicity_examples"],
+        required_fields=["core_requirement", "toxicity_examples"],
     )
 
 
@@ -355,14 +353,14 @@ ToxicityPropertiesValidator = Annotated[
 
 class BiasProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.bias]
-    base_instruction: str
+    core_requirement: str
     bias_examples: str
 
 
 def validate_bias_properties(properties: BiasProperties) -> BiasProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "bias_examples"],
+        required_fields=["core_requirement", "bias_examples"],
     )
 
 
@@ -374,7 +372,7 @@ BiasPropertiesValidator = Annotated[
 
 class MaliciousnessProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.maliciousness]
-    base_instruction: str
+    core_requirement: str
     malicious_examples: str
 
 
@@ -383,7 +381,7 @@ def validate_maliciousness_properties(
 ) -> MaliciousnessProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "malicious_examples"],
+        required_fields=["core_requirement", "malicious_examples"],
     )
 
 
@@ -395,14 +393,14 @@ MaliciousnessPropertiesValidator = Annotated[
 
 class NsfwProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.nsfw]
-    base_instruction: str
+    core_requirement: str
     nsfw_examples: str
 
 
 def validate_nsfw_properties(properties: NsfwProperties) -> NsfwProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "nsfw_examples"],
+        required_fields=["core_requirement", "nsfw_examples"],
     )
 
 
@@ -414,14 +412,14 @@ NsfwPropertiesValidator = Annotated[
 
 class TabooProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.taboo]
-    base_instruction: str
+    core_requirement: str
     taboo_examples: str
 
 
 def validate_taboo_properties(properties: TabooProperties) -> TabooProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "taboo_examples"],
+        required_fields=["core_requirement", "taboo_examples"],
     )
 
 
@@ -433,7 +431,7 @@ TabooPropertiesValidator = Annotated[
 
 class JailbreakProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.jailbreak]
-    base_instruction: str
+    core_requirement: str
     jailbroken_examples: str
 
 
@@ -442,7 +440,7 @@ def validate_jailbreak_properties(
 ) -> JailbreakProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "jailbroken_examples"],
+        required_fields=["core_requirement", "jailbroken_examples"],
     )
 
 
@@ -454,7 +452,7 @@ JailbreakPropertiesValidator = Annotated[
 
 class PromptLeakageProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.prompt_leakage]
-    base_instruction: str
+    core_requirement: str
     leakage_examples: str
 
 
@@ -463,7 +461,7 @@ def validate_prompt_leakage_properties(
 ) -> PromptLeakageProperties:
     return validate_string_properties(
         properties,
-        required_fields=["base_instruction", "leakage_examples"],
+        required_fields=["core_requirement", "leakage_examples"],
     )
 
 
