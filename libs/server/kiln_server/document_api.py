@@ -952,7 +952,9 @@ def connect_document_api(app: FastAPI):
 
                 document = Document(
                     parent=project,
-                    name=string_to_valid_name(document_name),
+                    name=string_to_valid_name(
+                        document_name, truncate_to_max_length=True
+                    ),
                     name_override=document_name,
                     description="",  # No description support in bulk upload
                     kind=kind,

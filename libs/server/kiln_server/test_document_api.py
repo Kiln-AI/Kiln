@@ -4336,6 +4336,82 @@ async def test_create_documents_bulk_with_invalid_tags_failure(
     )
 
 
+async def test_create_documents_bulk_long_filename_truncation(client, mock_project):
+    """Test bulk upload with long filenames that should be truncated to MAX_FILENAME_LENGTH"""
+    project = mock_project
+    test_content = b"test file content"
+
+    # Create a filename longer than MAX_FILENAME_LENGTH (120 chars)
+    long_filename = "a" * 130 + ".txt"  # 134 characters total
+    expected_truncated_name = "a" * 120  # Should be truncated to exactly 120 chars
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", (long_filename, io.BytesIO(test_content), "text/plain")),
+        ]
+        # Don't provide custom names, so it should use the filename and truncate it
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 1
+    assert len(result["failed_files"]) == 0
+
+    # Check that the document name was truncated
+    created_doc = result["created_documents"][0]
+    assert created_doc["name"] == expected_truncated_name
+    assert len(created_doc["name"]) == 120  # MAX_FILENAME_LENGTH
+    assert created_doc["kind"] == "document"
+    assert (
+        created_doc["original_file"]["filename"] == long_filename
+    )  # Original filename preserved in metadata
+
+
+async def test_create_documents_bulk_custom_name_truncation(client, mock_project):
+    """Test bulk upload with custom long names that should be truncated"""
+    project = mock_project
+    test_content = b"test file content"
+
+    # Create a custom name longer than MAX_FILENAME_LENGTH
+    long_custom_name = "a" * 130  # 130 characters
+    expected_truncated_name = "a" * 120  # Should be truncated to exactly 120 chars
+
+    with (
+        patch("kiln_server.document_api.project_from_id") as mock_project_from_id,
+    ):
+        mock_project_from_id.return_value = project
+
+        files = [
+            ("files", ("test.txt", io.BytesIO(test_content), "text/plain")),
+        ]
+        data = {"names": [long_custom_name]}
+
+        response = client.post(
+            f"/api/projects/{project.id}/documents/bulk", files=files, data=data
+        )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert "created_documents" in result
+    assert "failed_files" in result
+    assert len(result["created_documents"]) == 1
+    assert len(result["failed_files"]) == 0
+
+    # Check that the custom name was truncated
+    created_doc = result["created_documents"][0]
+    assert created_doc["name"] == expected_truncated_name
+    assert len(created_doc["name"]) == 120  # MAX_FILENAME_LENGTH
+    assert created_doc["kind"] == "document"
+
+
 async def test_delete_extraction_extractor_config_not_found(
     client, mock_project, mock_document
 ):
