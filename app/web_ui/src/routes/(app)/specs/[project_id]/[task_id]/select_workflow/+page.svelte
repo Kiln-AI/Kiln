@@ -112,7 +112,7 @@
               <button
                 class="btn btn-primary btn-sm"
                 on:click={() =>
-                  goto(`/specs/create_new_spec`, {
+                  goto(`/specs/copilot_auth`, {
                     replaceState: true,
                   })}
               >
