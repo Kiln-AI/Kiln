@@ -533,21 +533,3 @@ export const spec_categories: SpecCategoryData[] = [
     ],
   },
 ]
-
-// Helper function to build a definition string from properties
-export function buildDefinitionFromProperties(
-  specType: SpecType,
-  properties: Record<string, string | null>,
-): string {
-  const fieldConfigs = spec_field_configs[specType]
-  const parts: string[] = []
-
-  for (const field of fieldConfigs) {
-    const value = properties[field.key]
-    if (value && value.trim()) {
-      parts.push(`## ${field.label}\n${value}`)
-    }
-  }
-
-  return parts.join("\n\n")
-}

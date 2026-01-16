@@ -43,7 +43,7 @@
       current_params.set("tool_function_name", tool_function_name)
     }
     goto(
-      `/specs/${project_id}/${task_id}/create_spec?${current_params.toString()}`,
+      `/specs/${project_id}/${task_id}/spec_builder?${current_params.toString()}`,
     )
   }
 
