@@ -1,3 +1,4 @@
+import logging
 from typing import Any, List
 
 import httpx
@@ -7,6 +8,8 @@ from pydantic import BaseModel, Field
 from kiln_ai.adapters.ml_embedding_model_list import built_in_embedding_models
 from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.utils.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 def ollama_base_url() -> str:
@@ -170,3 +173,41 @@ def ollama_embedding_model_installed(conn: OllamaConnection, model_name: str) ->
         model_name in all_embedding_models
         or f"{model_name}:latest" in all_embedding_models
     )
+
+
+def resolve_ollama_model_variant(model_id: str, model_aliases: list[str] | None) -> str:
+    """
+    Determines which variant of an Ollama model is actually installed - different slugs
+    may point to the same underlying model via aliases.
+
+    Checks the primary model_id first, then each alias, and returns the first match.
+    If none are installed, returns the original model_id (so error messages are clear).
+
+    Returns:
+        The model variant that is installed, or the original model_id if none found
+    """
+    try:
+        tags_response = requests.get(ollama_base_url() + "/api/tags", timeout=5)
+        if tags_response.status_code != 200:
+            return model_id
+
+        tags = tags_response.json()
+        if "models" not in tags or not isinstance(tags["models"], list):
+            return model_id
+
+        installed_models = {model["model"] for model in tags["models"]}
+
+        # check model_id (with and without :latest tag)
+        if model_id in installed_models or f"{model_id}:latest" in installed_models:
+            return model_id
+
+        # check each alias
+        if model_aliases:
+            for alias in model_aliases:
+                if alias in installed_models or f"{alias}:latest" in installed_models:
+                    return alias
+
+    except Exception:
+        logger.error(f"Error resolving Ollama model variant: {model_id}", exc_info=True)
+
+    return model_id

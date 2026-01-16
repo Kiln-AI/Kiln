@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 
 from kiln_ai.adapters.ml_embedding_model_list import KilnEmbeddingModelProvider
@@ -218,3 +220,84 @@ class TestGetLitellmProviderInfo:
         assert result.provider_name == "together_ai"
         assert result.is_custom is False
         assert result.litellm_model_id == f"together_ai/{sample_model_id}"
+
+    @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
+    def test_ollama_resolves_model_variant_with_primary_installed(
+        self, mock_resolve_variant
+    ):
+        """Test that Ollama providers resolve to the installed model variant - primary"""
+        mock_resolve_variant.return_value = "nemotron-3-nano"
+
+        provider = KilnModelProvider(
+            name=ModelProviderName.ollama,
+            model_id="nemotron-3-nano",
+            ollama_model_aliases=["nemotron-3-nano:30b"],
+        )
+
+        result = get_litellm_provider_info(provider)
+
+        # Verify resolve_ollama_model_variant was called with correct args
+        mock_resolve_variant.assert_called_once_with(
+            "nemotron-3-nano", ["nemotron-3-nano:30b"]
+        )
+
+        # Verify the resolved model ID is used
+        assert result.litellm_model_id == "openai/nemotron-3-nano"
+
+    @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
+    def test_ollama_resolves_model_variant_with_alias_installed(
+        self, mock_resolve_variant
+    ):
+        """Test that Ollama providers resolve to the installed model variant - alias"""
+        mock_resolve_variant.return_value = "nemotron-3-nano:30b"
+
+        provider = KilnModelProvider(
+            name=ModelProviderName.ollama,
+            model_id="nemotron-3-nano",
+            ollama_model_aliases=["nemotron-3-nano:30b"],
+        )
+
+        result = get_litellm_provider_info(provider)
+
+        # Verify resolve_ollama_model_variant was called with correct args
+        mock_resolve_variant.assert_called_once_with(
+            "nemotron-3-nano", ["nemotron-3-nano:30b"]
+        )
+
+        # Verify the resolved model ID (alias) is used
+        assert result.litellm_model_id == "openai/nemotron-3-nano:30b"
+
+    @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
+    def test_ollama_resolves_model_variant_with_no_aliases(self, mock_resolve_variant):
+        """Test that Ollama providers work without aliases"""
+        mock_resolve_variant.return_value = "phi3.5"
+
+        provider = KilnModelProvider(
+            name=ModelProviderName.ollama,
+            model_id="phi3.5",
+            ollama_model_aliases=None,
+        )
+
+        result = get_litellm_provider_info(provider)
+
+        # Verify resolve_ollama_model_variant was called with None for aliases
+        mock_resolve_variant.assert_called_once_with("phi3.5", None)
+
+        # Verify the resolved model ID is used
+        assert result.litellm_model_id == "openai/phi3.5"
+
+    @patch("kiln_ai.utils.litellm.resolve_ollama_model_variant")
+    def test_non_ollama_providers_dont_resolve_variants(self, mock_resolve_variant):
+        """Test that non-Ollama providers don't trigger variant resolution"""
+        provider = KilnModelProvider(
+            name=ModelProviderName.openai,
+            model_id="gpt-4",
+        )
+
+        result = get_litellm_provider_info(provider)
+
+        # Verify resolve was NOT called for non-Ollama providers
+        mock_resolve_variant.assert_not_called()
+
+        # Verify the original model ID is used
+        assert result.litellm_model_id == "openai/gpt-4"

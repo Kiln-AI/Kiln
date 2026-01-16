@@ -71,7 +71,7 @@ class BaseAdapter(metaclass=ABCMeta):
         config: AdapterConfig | None = None,
     ):
         self.task = task
-        self.run_config = run_config
+        self.run_config: RunConfigProperties = run_config
         self.update_run_config_unknown_structured_output_mode()
         self.base_adapter_config = config or AdapterConfig()
 
