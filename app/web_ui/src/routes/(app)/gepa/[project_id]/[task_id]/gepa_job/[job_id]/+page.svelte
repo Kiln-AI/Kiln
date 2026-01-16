@@ -142,11 +142,11 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="GEPA Job"
+    title="Kiln Prompt Optimization Job"
     subtitle={gepa_job_loading ? undefined : `Name: ${gepa_job?.name}`}
     breadcrumbs={[
       {
-        label: "GEPA Jobs",
+        label: "Kiln Prompt Optimization Jobs",
         href: `/gepa/${project_id}/${task_id}`,
       },
     ]}
@@ -167,7 +167,9 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">Error Loading GEPA Job</div>
+        <div class="font-medium">
+          Error Loading Kiln Prompt Optimization Job
+        </div>
         <div class="text-error text-sm">
           {gepa_job_error?.getMessage() || "An unknown error occurred"}
         </div>

@@ -13,17 +13,17 @@
       </div>
     </div>
     <div class="font-medium text-lg">
-      GEPA Generates Eval Prompts and Augmented Data
+      Kiln Prompt Optimizer automatically optimizes your prompts.
     </div>
     <div>
-      Use GEPA to automatically optimize your prompts and generate high-quality
-      evaluation data for your tasks.
+      Kiln Prompt Optimizer automatically optimizes your prompts to improve
+      performance on your evals.
     </div>
     <a
       href={`/gepa/${project_id}/${task_id}/create_gepa`}
       class="btn btn-primary mt-2"
     >
-      Create a GEPA Job
+      Run Kiln Prompt Optimization
     </a>
   </div>
 </div>

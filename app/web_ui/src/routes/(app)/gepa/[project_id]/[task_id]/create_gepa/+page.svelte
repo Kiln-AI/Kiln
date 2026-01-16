@@ -276,7 +276,8 @@
         run_config?.run_config_properties.tools_config.tools.length > 0
       ) {
         run_config_validation_status = "invalid"
-        run_config_validation_message = "Tools are not supported for GEPA"
+        run_config_validation_message =
+          "Tools are not supported for Kiln Prompt Optimization"
         return
       }
 
@@ -309,9 +310,10 @@
           const friendly_provider = provider_name_from_id(
             run_config.run_config_properties.model_provider_name,
           )
-          run_config_validation_message = `${friendly_model} (${friendly_provider}) is not supported for GEPA`
+          run_config_validation_message = `${friendly_model} (${friendly_provider}) is not supported for Kiln Prompt Optimization`
         } else {
-          run_config_validation_message = "Model is not supported for GEPA"
+          run_config_validation_message =
+            "Model is not supported for Kiln Prompt Optimization"
         }
       } else {
         run_config_validation_status = "valid"
@@ -368,10 +370,10 @@
               config.model_provider,
             )
             evals_with_configs[index].validation_message =
-              `${friendly_model} (${friendly_provider}) is not supported for GEPA`
+              `${friendly_model} (${friendly_provider}) is not supported for Kiln Prompt Optimization`
           } else {
             evals_with_configs[index].validation_message =
-              "Model is not supported for GEPA"
+              "Model is not supported for Kiln Prompt Optimization"
           }
           evals_with_configs[index].validation_status = "invalid"
         } else {
@@ -468,7 +470,10 @@
       created_job = { id: response.id }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
-        create_job_error = new KilnError("Could not create a GEPA job.", null)
+        create_job_error = new KilnError(
+          "Could not create a Kiln Prompt Optimization job.",
+          null,
+        )
       } else {
         create_job_error = createKilnError(e)
       }
@@ -480,11 +485,11 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="New GEPA Optimization Job"
-    subtitle="Use GEPA to automatically optimize your prompt."
+    title="New Kiln Prompt Optimization Job"
+    subtitle="Use Kiln Prompt Optimizer to automatically optimize your prompt."
     breadcrumbs={[
       {
-        label: "GEPA Prompt Optimization",
+        label: "Kiln Prompt Optimization",
         href: `/gepa/${project_id}/${task_id}`,
       },
     ]}
@@ -495,10 +500,10 @@
       </div>
     {:else if created_job}
       <Completed
-        title="GEPA Job Created"
-        subtitle="It will take a while to complete optimization."
+        title="Kiln Prompt Optimization Job Created"
+        subtitle="It will take a while to optimize your prompt."
         link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
-        button_text="View GEPA Job"
+        button_text="View Kiln Prompt Optimization Job"
       />
     {:else if !current_task}
       <div
@@ -521,10 +526,12 @@
         <div class="mb-4">
           <Warning warning_color="primary" warning_icon="info" outline={true}>
             <div class="text-sm">
-              <div class="font-medium mb-1">GEPA Requirements</div>
+              <div class="font-medium mb-1">
+                Kiln Prompt Optimization Requirements
+              </div>
               <div class="text-gray-600">
-                GEPA supports OpenRouter, OpenAI, Gemini, and Anthropic
-                providers. Tool use is not currently supported.
+                Kiln Prompt Optimization supports OpenRouter, OpenAI, Gemini,
+                and Anthropic providers. Tool use is not currently supported.
               </div>
             </div>
           </Warning>
@@ -534,7 +541,7 @@
         <div>
           <FormElement
             label="Token Budget"
-            description="This determines the number of prompt candidates that the GEPA optimizer will consider."
+            description="This determines the number of prompt candidates that the Kiln Prompt Optimizer will consider."
             info_description="A higher budget will generally result in higher quality prompts, but will take longer to complete."
             inputType="fancy_select"
             id="token_budget"
@@ -575,7 +582,7 @@
               <div class="mt-2">
                 <span class="badge badge-success badge-sm badge-outline gap-1">
                   <span>✓</span>
-                  <span>Compatible with GEPA</span>
+                  <span>Compatible with Kiln Prompt Optimization</span>
                 </span>
               </div>
             {:else if run_config_validation_status === "invalid"}
@@ -587,8 +594,9 @@
                     </div>
                     <div class="text-gray-600">
                       {#if run_config_validation_message?.includes("Tools")}
-                        GEPA does not support run configurations that use tools.
-                        Please select a different run configuration or
+                        Kiln Prompt Optimization does not support run
+                        configurations that use tools. Please select a different
+                        run configuration or
                         <button
                           type="button"
                           class="link underline"
@@ -598,9 +606,9 @@
                         </button>
                         without tools configured.
                       {:else}
-                        GEPA only supports OpenRouter, OpenAI, Gemini, and
-                        Anthropic providers. Please select a different run
-                        configuration or
+                        Kiln Prompt Optimization only supports OpenRouter,
+                        OpenAI, Gemini, and Anthropic providers. Please select a
+                        different run configuration or
                         <button
                           type="button"
                           class="link underline"
@@ -626,8 +634,8 @@
               Target Run Configuration
             </div>
             <div class="text-xs text-gray-500 mb-3">
-              GEPA will optimize the prompt to maximize performance using this
-              configuration.
+              Kiln Prompt Optimization will optimize the prompt to maximize
+              performance using this configuration.
             </div>
 
             <div class="bg-base-200 rounded-lg p-4">
@@ -725,8 +733,8 @@
               {/if}
             </div>
             <div class="text-xs text-gray-500 mb-3">
-              GEPA will optimize the prompt to maximize performance on each of
-              these evaluators.
+              Kiln Prompt Optimization will optimize the prompt to maximize
+              performance on each of these evaluators.
             </div>
 
             {#if evals_loading}

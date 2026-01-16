@@ -82,13 +82,13 @@
 </script>
 
 <AppPage
-  title="GEPA Prompt Optimization"
-  subtitle="Use GEPA to automatically optimize your prompts."
+  title="Kiln Prompt Optimization"
+  subtitle="Use Kiln Prompt Optimization to automatically optimize your prompts."
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "Optimize Prompt",
+          label: "Run Kiln Prompt Optimization",
           href: `/gepa/${project_id}/${task_id}/create_gepa`,
           primary: true,
         },
@@ -140,7 +140,7 @@
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading GEPA Jobs</div>
+      <div class="font-medium">Error Loading Kiln Prompt Optimization Jobs</div>
       <div class="text-error text-sm">
         {gepa_jobs_error.getMessage() || "An unknown error occurred"}
       </div>
