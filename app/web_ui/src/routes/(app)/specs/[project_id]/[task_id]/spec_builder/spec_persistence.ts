@@ -65,11 +65,20 @@ export async function createSpec(
     name,
     spec_type,
     evaluate_full_trace,
-    judge_info,
   )
 
   try {
     if (use_kiln_copilot) {
+      if (judge_info) {
+        await createJudgeAndSetAsDefault(
+          project_id,
+          task_id,
+          task_description,
+          eval_id,
+          judge_info,
+        )
+      }
+
       // Generate eval data set
       const tag = specEvalTag(name)
       await generateAndSaveEvalData(
@@ -134,56 +143,19 @@ export async function createSpec(
     }
     return spec_id
   } catch (error) {
-    // TODO: Cleanup the data we created too?
+    // TODO: Cleanup the other data we created too?
     await cleanupEval(project_id, task_id, eval_id)
     throw error
   }
 }
 
-async function createEval(
+async function createJudgeAndSetAsDefault(
   project_id: string,
   task_id: string,
   task_description: string,
-  spec_name: string,
-  spec_type: SpecType,
-  evaluate_full_trace: boolean = false,
-  judge_info: JudgeInfo | null = null,
-): Promise<string> {
-  const name = spec_name
-  const description = `An eval to measure if the model's behaviour meets the spec: ${spec_name}.`
-  const template = specEvalTemplate(spec_type)
-  const output_scores = [specEvalOutputScore(spec_type)]
-  const tag = specEvalTag(spec_name)
-  const eval_set_filter_id = `tag::${tag}`
-  const eval_configs_filter_id = `tag::${tag}_golden`
-  const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
-  const { data, error } = await client.POST(
-    "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
-    {
-      params: {
-        path: { project_id, task_id },
-      },
-      body: {
-        name,
-        description,
-        template,
-        output_scores,
-        eval_set_filter_id,
-        eval_configs_filter_id,
-        template_properties: null,
-        evaluation_data_type,
-      },
-    },
-  )
-  if (error) {
-    throw error
-  }
-
-  const eval_id = data.id
-  if (!eval_id) {
-    throw new Error("Failed to create eval for spec")
-  }
-
+  eval_id: string,
+  judge_info: JudgeInfo,
+): Promise<void> {
   if (judge_info) {
     // Create a new eval config for the judge
     const { data: evalConfigData, error: evalConfigError } = await client.POST(
@@ -239,6 +211,50 @@ async function createEval(
     if (!setDefaultData) {
       throw new Error("Failed to set eval config as default")
     }
+  }
+}
+
+async function createEval(
+  project_id: string,
+  task_id: string,
+  task_description: string,
+  spec_name: string,
+  spec_type: SpecType,
+  evaluate_full_trace: boolean = false,
+): Promise<string> {
+  const name = spec_name
+  const description = `An eval to measure if the model's behaviour meets the spec: ${spec_name}.`
+  const template = specEvalTemplate(spec_type)
+  const output_scores = [specEvalOutputScore(spec_type)]
+  const tag = specEvalTag(spec_name)
+  const eval_set_filter_id = `tag::${tag}`
+  const eval_configs_filter_id = `tag::${tag}_golden`
+  const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
+    {
+      params: {
+        path: { project_id, task_id },
+      },
+      body: {
+        name,
+        description,
+        template,
+        output_scores,
+        eval_set_filter_id,
+        eval_configs_filter_id,
+        template_properties: null,
+        evaluation_data_type,
+      },
+    },
+  )
+  if (error) {
+    throw error
+  }
+
+  const eval_id = data.id
+  if (!eval_id) {
+    throw new Error("Failed to create eval for spec")
   }
 
   return eval_id
