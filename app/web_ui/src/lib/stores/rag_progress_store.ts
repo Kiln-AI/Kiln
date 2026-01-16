@@ -1,6 +1,5 @@
 import { get, writable, derived } from "svelte/store"
-import { client } from "$lib/api_client"
-import { KilnApiBaseUrl } from "../../config"
+import { base_url, client } from "$lib/api_client"
 import type { LogMessage, RagConfigWithSubConfigs, RagProgress } from "../types"
 import { createKilnError, type KilnError } from "../utils/error_handlers"
 import { progress_ui_state } from "./progress_ui_store"
@@ -219,7 +218,7 @@ function createRagProgressStore() {
   ): Promise<void> {
     // browsers have a limit on the number of concurrent connections, so we need to make sure
     // we don't ever exceed that limit - you should use run_rag_config instead
-    const run_url = `${KilnApiBaseUrl}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
+    const run_url = `${base_url}/api/projects/${project_id}/rag_configs/${rag_config_id}/run`
     const eventSource = new EventSource(run_url)
 
     return new Promise<void>((resolve) => {

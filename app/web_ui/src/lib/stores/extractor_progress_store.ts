@@ -1,6 +1,5 @@
 import { writable } from "svelte/store"
-import { client } from "$lib/api_client"
-import { KilnApiBaseUrl } from "$config"
+import { base_url, client } from "$lib/api_client"
 
 type ExtractorStatus =
   | "not_started"
@@ -74,7 +73,7 @@ function createExtractorProgressStore() {
     let total_count = 0
     let error_count = 0
 
-    const run_url = `${KilnApiBaseUrl}/api/projects/${project_id}/extractor_configs/${extractor_config_id}/run_extractor_config`
+    const run_url = `${base_url}/api/projects/${project_id}/extractor_configs/${extractor_config_id}/run_extractor_config`
     update((state) => ({
       ...state,
       status: { ...state.status, [extractor_config_id]: "running" },

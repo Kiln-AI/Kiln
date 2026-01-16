@@ -7,9 +7,6 @@ const config = {
     adapter: adapter({
       fallback: "404.html",
     }),
-    alias: {
-      $config: "./src/config.ts",
-    },
   },
   prerender: {
     default: true,

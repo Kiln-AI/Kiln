@@ -3,7 +3,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { page } from "$app/stores"
-  import { client } from "$lib/api_client"
+  import { client, base_url } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import type { ChatStrategy } from "$lib/types"
@@ -37,7 +37,6 @@
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
   import { load_task_run_configs } from "$lib/stores/run_configs_store"
-  import { KilnApiBaseUrl } from "$config"
   let finetune_description = ""
   let finetune_name = ""
   const disabled_header = "disabled_header"
@@ -602,7 +601,7 @@
       .map(([key, value]) => `${key}=${encodeURIComponent(value || "")}`)
       .join("&")
 
-    window.open(KilnApiBaseUrl + "/api/download_dataset_jsonl?" + query_string)
+    window.open(base_url + "/api/download_dataset_jsonl?" + query_string)
   }
 
   let data_strategy_select_options: [ChatStrategy, string][] = []
