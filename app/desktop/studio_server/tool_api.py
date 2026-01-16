@@ -638,7 +638,7 @@ def connect_tool_servers_api(app: FastAPI):
 
         existing_tool_server.name = tool_data.name
         existing_tool_server.description = tool_data.description
-        existing_tool_server.properties = {
+        existing_tool_server.properties: KilnTaskServerProperties = {
             "name": tool_data.name,
             "description": tool_data.description,
             "task_id": tool_data.task_id,

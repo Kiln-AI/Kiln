@@ -525,6 +525,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 supports_vision=True,
+                supports_logprobs=False,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     # documents
@@ -701,7 +702,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_logprobs=True,
+                # OpenRouter does not return the logprobs for this model
+                supports_logprobs=False,
+                # logprobs_openrouter_options does not help this particular
+                # model at the moment
+                # logprobs_openrouter_options=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -754,7 +759,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_logprobs=True,
+                # OpenRouter does not return the logprobs for this model
+                supports_logprobs=False,
+                # logprobs_openrouter_options does not help this particular
+                # model at the moment
+                # logprobs_openrouter_options=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -803,7 +812,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_logprobs=True,
+                # OpenRouter does not return the logprobs for this model
+                supports_logprobs=False,
+                # logprobs_openrouter_options does not help this particular
+                # model at the moment
+                # logprobs_openrouter_options=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,

@@ -48,4 +48,4 @@ jobs:
 
       - name: Typecheck with ty
         run: |
-          uv tool install ty@0.0.8 && uvx ty check
+          uvx ty check

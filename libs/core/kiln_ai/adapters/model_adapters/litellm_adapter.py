@@ -307,7 +307,9 @@ class LiteLlmAdapter(BaseAdapter):
         if not self.has_structured_output():
             return {}
 
-        structured_output_mode = self.run_config.structured_output_mode
+        structured_output_mode: StructuredOutputMode = (
+            self.run_config.structured_output_mode
+        )
 
         match structured_output_mode:
             case StructuredOutputMode.json_mode:
