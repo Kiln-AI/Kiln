@@ -351,7 +351,7 @@ def test_task_specs_relationship(tmp_path):
 
     properties = DesiredBehaviourProperties(
         spec_type=SpecType.desired_behaviour,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         desired_behaviour_description="The system should behave correctly",
         correct_behaviour_examples="Example 1",
         incorrect_behaviour_examples="Example 1",
@@ -381,7 +381,7 @@ def test_task_specs_readonly(tmp_path):
 
     properties = ToxicityProperties(
         spec_type=SpecType.toxicity,
-        base_instruction="The system should avoid toxic language",
+        core_requirement="The system should avoid toxic language",
         toxicity_examples="Example 1",
     )
     spec = Spec(

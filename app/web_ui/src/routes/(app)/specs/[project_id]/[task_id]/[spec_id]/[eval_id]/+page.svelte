@@ -160,6 +160,14 @@
         tooltip: "The template used to create this eval.",
       })
     }
+    if (evaluator.evaluation_data_type === "full_trace") {
+      properties.push({
+        name: "Conversation History",
+        value: "Included",
+        tooltip:
+          "When included, your task runs will be evaluated on their full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated.",
+      })
+    }
     properties.push({
       name: "ID",
       value: evaluator.id || "unknown",

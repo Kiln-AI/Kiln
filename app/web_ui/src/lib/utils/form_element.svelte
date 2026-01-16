@@ -27,6 +27,7 @@
   export let info_description: string = ""
   export let placeholder: string | null = null
   export let optional: boolean = false
+  export let hide_optional_badge: boolean = false
   export let max_length: number | null = null
   export let error_message: string | null = null // start null because they haven't had a chance to edit it yet
   export let light_label: boolean = false // styling
@@ -170,7 +171,8 @@
               <slot name="label_suffix" />
               <span class="grow"></span>
               <span class="pl-1 text-xs text-gray-500 flex-none"
-                >{info_msg || (optional ? "Optional" : "")}</span
+                >{info_msg ||
+                  (optional && !hide_optional_badge ? "Optional" : "")}</span
               >
             {:else}
               <span class="grow"></span>
@@ -178,7 +180,7 @@
             {#if inline_action}
               <button
                 type="button"
-                class="link font-normal text-gray-500"
+                class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
                 on:click|stopPropagation={inline_action.handler}
                 >{inline_action.label}</button
               >

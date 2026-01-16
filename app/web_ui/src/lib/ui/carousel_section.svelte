@@ -26,11 +26,13 @@
           role="button"
           aria-label="Create {item.name}"
         >
-          <div class="card-body p-4 flex flex-col flex-1">
+          <div class="p-4">
             <h3 class="card-title text-lg font-semibold leading-tight">
               {item.name}
             </h3>
-            <p class="text-base-content/70 text-xs leading-relaxed mt-1 flex-1">
+            <p
+              class="text-gray-500 text-xs font-medium leading-relaxed mt-1 flex-1"
+            >
               {item.description}
             </p>
           </div>

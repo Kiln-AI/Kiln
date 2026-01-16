@@ -1,5 +1,7 @@
 # kiln-ai-server-client
 
+**Important**: This folder is automatically generated. Do not make any edits, they will be replaced on next generation.
+
 A client library for accessing Kiln AI FastAPI Service
 
 ## Usage

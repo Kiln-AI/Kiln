@@ -5,9 +5,7 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.health_health_get_response_health_health_get import (
-    HealthHealthGetResponseHealthHealthGet,
-)
+from ...models.health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from ...types import Response
 
 

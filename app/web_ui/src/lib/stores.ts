@@ -471,6 +471,10 @@ export function model_name(
     return "Unknown"
   }
 
+  if (model_id === "kiln-copilot") {
+    return "Kiln Copilot"
+  }
+
   const model = get_model_info(model_id, provider_models)
   if (model?.name) {
     return model.name
@@ -548,6 +552,10 @@ const provider_name_map: Record<ModelProviderName, string> = {
 export function provider_name_from_id(provider_id: string): string {
   if (!provider_id) {
     return "Unknown"
+  }
+  // Special case for Kiln internal provider
+  if (provider_id === "kiln") {
+    return "Kiln"
   }
   // Prefer the provider name from the available models list
   const provider = get(available_models).find(
@@ -700,6 +708,9 @@ export function rating_options_for_sample(
 }
 
 export function get_model_friendly_name(model_id: string): string {
+  if (model_id === "kiln-copilot") {
+    return "Kiln Copilot"
+  }
   const model = get_model_info(model_id, get(model_info))
   if (model?.name) {
     return model.name
