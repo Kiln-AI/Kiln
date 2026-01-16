@@ -4,6 +4,7 @@
   import { onMount, onDestroy } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { filename_string_short_validator } from "$lib/utils/input_validators"
   import type { SpecType, ModelProviderName, Task } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
@@ -71,17 +72,18 @@
   let judge_info: JudgeInfo | null = null
 
   // Refine state
-  let suggested_property_values: Record<string, string | null> = {}
-  let original_suggested_property_values: Record<string, string | null> = {}
-  let ai_suggested_fields: Set<string> = new Set()
+  let refined_property_values: Record<string, string | null> = {}
+  let starting_refined_property_values: Record<string, string | null> = {}
+  let suggested_fields: Set<string> = new Set()
 
   // Loading/error state
   let loading = true
   let loading_error: KilnError | null = null
-  let api_error: KilnError | null = null
+  let error: KilnError | null = null
 
   // Submission state
   let submitting = false
+  let saving_spec = false // Full-page loading when saving spec directly (via secondary buttons)
   let complete = false
 
   // AbortController for cancelling in-flight Copilot API requests
@@ -195,6 +197,14 @@
     }
   }
 
+  function validateSpecName() {
+    name = name.trim()
+    const name_validation_error = filename_string_short_validator(name)
+    if (name_validation_error) {
+      throw new Error(`Please correct the spec name: ${name_validation_error}`)
+    }
+  }
+
   // Shared logic for analyzing spec with clarify_spec API
   // If values_to_use is provided, property_values will be updated to match on success
   async function analyzeSpecForReview(
@@ -211,22 +221,25 @@
       values_to_use,
     )
 
-    const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-      body: {
-        task_prompt_with_few_shot,
-        task_input_schema,
-        task_output_schema,
-        spec_rendered_prompt_template,
-        num_samples_per_topic: 10,
-        num_topics: 5,
-        providers: providers,
-        num_exemplars: 5,
+    const { data, error: api_error } = await client.POST(
+      "/api/copilot/clarify_spec",
+      {
+        body: {
+          task_prompt_with_few_shot,
+          task_input_schema,
+          task_output_schema,
+          spec_rendered_prompt_template,
+          num_samples_per_topic: 10,
+          num_topics: 5,
+          providers: providers,
+          num_exemplars: 5,
+        },
+        signal: new_copilot_abort_signal(),
       },
-      signal: new_copilot_abort_signal(),
-    })
+    )
 
-    if (error) {
-      throw error
+    if (api_error) {
+      throw api_error
     }
 
     if (!data) {
@@ -256,17 +269,22 @@
 
   // Handler for "Analyze with Copilot" button
   async function handle_analyze_with_copilot() {
+    error = null
     try {
-      api_error = null
-      submitting = true
+      validateSpecName()
       validateRequiredFields()
+    } catch (e) {
+      error = createKilnError(e)
+      return
+    }
+
+    try {
+      submitting = true
       await analyzeSpecForReview()
-    } catch (error) {
-      if (is_abort_error(error)) return
-      console.error("Kiln Copilot failed to analyze spec:", error)
-      api_error = new KilnError(
-        "Kiln Copilot failed to analyze. Please try again.",
-      )
+    } catch (e) {
+      if (is_abort_error(e)) return
+      console.error("Kiln Copilot failed to analyze spec:", e)
+      error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
       current_state = "create"
     } finally {
       submitting = false
@@ -291,6 +309,7 @@
     values: Record<string, string | null>,
     use_kiln_copilot: boolean,
     examples: ReviewedExample[],
+    signal?: AbortSignal,
   ) {
     const spec_id = await createSpec(
       project_id,
@@ -303,6 +322,7 @@
       evaluate_full_trace,
       examples,
       judge_info,
+      signal,
     )
 
     complete = true
@@ -312,36 +332,59 @@
   // Handler for creating spec without copilot
   async function handle_create_spec_without_copilot() {
     try {
-      api_error = null
-      submitting = true
-      validateRequiredFields()
+      error = null
+      validateSpecName()
+      validateRequiredFields(property_values)
+      saving_spec = true
       await saveSpec(property_values, false, [])
-    } catch (error) {
-      api_error = createKilnError(error)
+    } catch (e) {
+      error = createKilnError(e)
     } finally {
-      submitting = false
+      saving_spec = false
     }
   }
 
   // Handler for creating spec from review (all feedback aligned)
-  async function handle_create_spec_from_review() {
+  async function handle_create_spec_from_review(skip_review = false) {
+    error = null
     try {
-      api_error = null
-      submitting = true
-      const currentExamples = currentReviewedExamples()
-      const allExamples = [...reviewed_examples, ...currentExamples]
-      await saveSpec(property_values, true, allExamples)
-    } catch (error) {
-      api_error = createKilnError(error)
+      validateSpecName()
+      validateRequiredFields(property_values)
+    } catch (e) {
+      error = createKilnError(e)
+      return
+    }
+
+    try {
+      // Use full-page spinner for skip_review (secondary button), form spinner otherwise
+      if (skip_review) {
+        saving_spec = true
+      } else {
+        submitting = true
+      }
+
+      await saveSpec(
+        property_values,
+        true,
+        reviewed_examples,
+        new_copilot_abort_signal(),
+      )
+    } catch (e) {
+      if (is_abort_error(e)) return
+      console.error("Kiln Copilot failed to create spec:", e)
+      error = new KilnError(
+        "Kiln Copilot failed to create spec. Please try again.",
+      )
     } finally {
       submitting = false
+      saving_spec = false
     }
   }
 
   // Handler for continuing to refine (feedback misaligned)
   async function handle_continue_to_refine() {
     try {
-      api_error = null
+      error = null
       submitting = true
       current_state = "refining"
 
@@ -378,56 +421,57 @@
         )
       }
 
-      const { data, error } = await client.POST("/api/copilot/refine_spec", {
-        body: {
-          task_prompt_with_few_shot,
-          task_input_schema: task.input_json_schema
-            ? JSON.stringify(task.input_json_schema)
-            : "",
-          task_output_schema: task.output_json_schema
-            ? JSON.stringify(task.output_json_schema)
-            : "",
-          task_info: {
-            task_prompt: task.instruction || "",
-            few_shot_examples: "",
+      const { data, error: api_error } = await client.POST(
+        "/api/copilot/refine_spec",
+        {
+          body: {
+            task_prompt_with_few_shot,
+            task_input_schema: task.input_json_schema
+              ? JSON.stringify(task.input_json_schema)
+              : "",
+            task_output_schema: task.output_json_schema
+              ? JSON.stringify(task.output_json_schema)
+              : "",
+            task_info: {
+              task_prompt: task.instruction || "",
+              few_shot_examples: "",
+            },
+            spec: {
+              spec_fields,
+              spec_field_current_values,
+            },
+            examples_with_feedback,
           },
-          spec: {
-            spec_fields,
-            spec_field_current_values,
-          },
-          examples_with_feedback,
+          signal: new_copilot_abort_signal(),
         },
-        signal: new_copilot_abort_signal(),
-      })
+      )
 
-      if (error) {
-        throw error
+      if (api_error) {
+        throw api_error
       }
 
       if (!data) {
         throw new Error("Failed to refine spec")
       }
 
-      // Build suggested_property_values
-      suggested_property_values = { ...property_values }
-      ai_suggested_fields = new Set()
+      // Build refined_property_values
+      refined_property_values = { ...property_values }
+      suggested_fields = new Set()
       if (data.new_proposed_spec_edits) {
         for (const [field_key, edit] of Object.entries(
           data.new_proposed_spec_edits,
         )) {
-          suggested_property_values[field_key] = edit.proposed_edit
-          ai_suggested_fields.add(field_key)
+          refined_property_values[field_key] = edit.proposed_edit
+          suggested_fields.add(field_key)
         }
       }
-      original_suggested_property_values = { ...suggested_property_values }
+      starting_refined_property_values = { ...refined_property_values }
 
       current_state = "refine"
-    } catch (error) {
-      if (is_abort_error(error)) return
-      console.error("Kiln Copilot failed to refine spec:", error)
-      api_error = new KilnError(
-        "Kiln Copilot failed to refine. Please try again.",
-      )
+    } catch (e) {
+      if (is_abort_error(e)) return
+      console.error("Kiln Copilot failed to refine spec:", e)
+      error = new KilnError("Kiln Copilot failed to refine. Please try again.")
       current_state = "review"
     } finally {
       submitting = false
@@ -436,20 +480,23 @@
 
   // Handler for analyzing refined spec (go back to review with updated values)
   async function handle_analyze_refined_spec() {
+    error = null
     try {
-      api_error = null
+      validateSpecName()
+      validateRequiredFields(refined_property_values)
+    } catch (e) {
+      error = createKilnError(e)
+      return
+    }
+
+    try {
       submitting = true
-
-      validateRequiredFields(suggested_property_values)
-
       // Pass suggested values - property_values will be updated on success
-      await analyzeSpecForReview(suggested_property_values)
-    } catch (error) {
-      if (is_abort_error(error)) return
-      console.error("Kiln Copilot failed to analyze refined spec:", error)
-      api_error = new KilnError(
-        "Kiln Copilot failed to analyze. Please try again.",
-      )
+      await analyzeSpecForReview(refined_property_values)
+    } catch (e) {
+      if (is_abort_error(e)) return
+      console.error("Kiln Copilot failed to analyze refined spec:", e)
+      error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
       current_state = "refine"
     } finally {
       submitting = false
@@ -457,17 +504,38 @@
   }
 
   // Handler for creating spec from refine (skip further review)
-  async function handle_create_spec_from_refine() {
+  async function handle_create_spec_from_refine(secondary_button = false) {
+    error = null
     try {
-      api_error = null
-      submitting = true
+      validateSpecName()
+      validateRequiredFields(refined_property_values)
+    } catch (e) {
+      error = createKilnError(e)
+      return
+    }
 
-      validateRequiredFields(suggested_property_values)
-      await saveSpec(suggested_property_values, true, reviewed_examples)
-    } catch (error) {
-      api_error = createKilnError(error)
+    try {
+      // Use full-page spinner for secondary button, form spinner otherwise
+      if (secondary_button) {
+        saving_spec = true
+      } else {
+        submitting = true
+      }
+      await saveSpec(
+        refined_property_values,
+        true,
+        reviewed_examples,
+        new_copilot_abort_signal(),
+      )
+    } catch (e) {
+      if (is_abort_error(e)) return
+      console.error("Kiln Copilot failed to create spec:", e)
+      error = new KilnError(
+        "Kiln Copilot failed to create spec. Please try again.",
+      )
     } finally {
       submitting = false
+      saving_spec = false
     }
   }
 
@@ -501,8 +569,7 @@
 
   function getPageClass(state: BuilderState): string {
     if (state === "review") return "max-w-[1400px]"
-    if (state === "refine" && ai_suggested_fields.size > 0)
-      return "max-w-[1400px]"
+    if (state === "refine" && suggested_fields.size > 0) return "max-w-[1400px]"
     if (state === "analyzing_for_review" || state === "refining") return ""
     return "max-w-[900px]"
   }
@@ -532,7 +599,7 @@
       },
     ]}
   >
-    {#if loading}
+    {#if loading || saving_spec}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -550,7 +617,7 @@
         {has_kiln_copilot}
         {show_advanced_options}
         {full_trace_disabled}
-        bind:error={api_error}
+        bind:error
         bind:submitting
         {warn_before_unload}
         on:analyze_with_copilot={handle_analyze_with_copilot}
@@ -568,26 +635,27 @@
         {spec_type}
         {property_values}
         bind:review_rows
-        bind:error={api_error}
+        bind:error
         bind:submitting
         {warn_before_unload}
-        on:create_spec={handle_create_spec_from_review}
+        on:create_spec={() => handle_create_spec_from_review(false)}
         on:continue_to_refine={handle_continue_to_refine}
-        on:skip_review={() => handle_create_spec_from_review()}
+        on:create_spec_secondary={() => handle_create_spec_from_review(true)}
       />
     {:else if current_state === "refine"}
       <RefineSpec
         bind:name
         original_property_values={property_values}
-        bind:refined_property_values={suggested_property_values}
-        starting_refined_property_values={original_suggested_property_values}
-        suggested_fields={ai_suggested_fields}
+        bind:refined_property_values
+        {starting_refined_property_values}
+        {suggested_fields}
         {field_configs}
-        bind:error={api_error}
+        bind:error
         bind:submitting
         {warn_before_unload}
         on:analyze_refined={handle_analyze_refined_spec}
-        on:create_spec={handle_create_spec_from_refine}
+        on:create_spec={() => handle_create_spec_from_refine(false)}
+        on:create_spec_secondary={() => handle_create_spec_from_refine(true)}
       />
     {/if}
   </AppPage>

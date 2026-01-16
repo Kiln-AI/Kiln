@@ -55,6 +55,7 @@ export async function createSpec(
   evaluate_full_trace: boolean = false,
   reviewed_examples: ReviewedExample[] = [],
   judge_info: JudgeInfo | null = null,
+  signal?: AbortSignal,
 ): Promise<string> {
   // First create a new eval for the spec under the hood
   const eval_id = await createEval(
@@ -77,6 +78,7 @@ export async function createSpec(
         spec_type,
         property_values,
         tag,
+        signal,
       )
 
       // Save any provided reviewed examples as the golden dataset
@@ -251,6 +253,7 @@ async function generateAndSaveEvalData(
   spec_type: SpecType,
   property_values: Record<string, string | null>,
   tag: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   // Load the task to get instruction and schemas
   const task = await load_task(project_id, task_id)
@@ -277,6 +280,7 @@ async function generateAndSaveEvalData(
       num_samples_per_topic: 5,
       num_topics: 4,
     },
+    signal,
   })
 
   if (error) {

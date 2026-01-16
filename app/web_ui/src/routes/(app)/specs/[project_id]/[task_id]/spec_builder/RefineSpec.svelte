@@ -19,6 +19,7 @@
   const dispatch = createEventDispatcher<{
     analyze_refined: void
     create_spec: void
+    create_spec_secondary: void
   }>()
 
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
@@ -204,7 +205,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_spec")}
+      on:click={() => dispatch("create_spec_secondary")}
     >
       Save Refined Spec without Further Review
     </button>

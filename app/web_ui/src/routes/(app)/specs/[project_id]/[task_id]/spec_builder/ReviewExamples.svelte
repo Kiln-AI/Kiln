@@ -26,7 +26,7 @@
   const dispatch = createEventDispatcher<{
     create_spec: void
     continue_to_refine: void
-    skip_review: void
+    create_spec_secondary: void
   }>()
 
   let unexpandedRows: Record<string, boolean> = {}
@@ -251,7 +251,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("skip_review")}
+      on:click={() => dispatch("create_spec_secondary")}
     >
       {#if submitting}
         <span class="loading loading-spinner loading-xs"></span>
