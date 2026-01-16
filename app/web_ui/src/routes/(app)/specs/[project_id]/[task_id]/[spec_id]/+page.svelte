@@ -582,6 +582,7 @@
             {sorted_task_run_configs}
             {score_summary}
             {score_summary_error}
+            current_eval_config_id={evaluator?.current_config_id}
             bind:eval_state
             interactive={false}
             title="Compare Run Configurations"
