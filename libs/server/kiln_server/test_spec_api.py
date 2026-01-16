@@ -1116,15 +1116,15 @@ def test_create_spec_with_empty_core_requirement(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Desired Behaviour Spec",
-        "definition": "Desired behaviour validation test",
+        "name": "Tone Spec",
+        "definition": "Tone validation test",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": {
-            "spec_type": "desired_behaviour",
+            "spec_type": "tone",
             "core_requirement": "",
-            "desired_behaviour_description": "Avoid toxic content",
+            "tone_description": "Professional and friendly",
         },
         "eval_id": None,
     }

@@ -25,7 +25,7 @@
 
   $: has_suggested_refinements = suggested_fields.size > 0
 
-  // Check if any refinements were made
+  // Check if any refinements were made from the original
   $: has_refinements = Object.keys(refined_property_values).some(
     (key) => refined_property_values[key] !== original_property_values[key],
   )

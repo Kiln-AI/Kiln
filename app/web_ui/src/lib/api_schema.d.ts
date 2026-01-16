@@ -5208,8 +5208,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "reference_answer_accuracy";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Reference Answer Accuracy Description */
             reference_answer_accuracy_description: string;
             /** Accurate Examples */

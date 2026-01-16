@@ -236,7 +236,7 @@ AppropriateToolUsePropertiesValidator = Annotated[
 
 class ReferenceAnswerAccuracyProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.reference_answer_accuracy]
-    base_instruction: str
+    core_requirement: str
     reference_answer_accuracy_description: str
     accurate_examples: str
     inaccurate_examples: str
@@ -248,7 +248,7 @@ def validate_reference_answer_accuracy_properties(
     return validate_string_properties(
         properties,
         required_fields=[
-            "base_instruction",
+            "core_requirement",
             "reference_answer_accuracy_description",
             "accurate_examples",
             "inaccurate_examples",
