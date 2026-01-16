@@ -236,7 +236,7 @@
           num_samples_per_topic: 10,
           num_topics: 5,
           providers: providers,
-          num_exemplars: 5,
+          num_exemplars: 5, // TODO: 10 topics, 10 samples per topic, 10 exemplars
         },
         signal: new_copilot_abort_signal(),
       },

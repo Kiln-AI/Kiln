@@ -169,7 +169,7 @@ async function createJudgeAndSetAsDefault(
           },
         },
         body: {
-          type: "g_eval",
+          type: "llm_as_judge",
           model_name: judge_info.model_id,
           provider: judge_info.model_provider,
           properties: {
@@ -294,7 +294,7 @@ async function generateAndSaveEvalData(
         : "",
       spec_rendered_prompt_template: spec_definition,
       num_samples_per_topic: 5,
-      num_topics: 4,
+      num_topics: 4, // TODO: 10 topics, 10 samples per topic
     },
     signal,
   })
