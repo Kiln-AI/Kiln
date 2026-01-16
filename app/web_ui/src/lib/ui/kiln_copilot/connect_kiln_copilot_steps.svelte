@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import createKindeClient from "@kinde-oss/kinde-auth-pkce-js"
-  import { base_url } from "$lib/api_client"
+  import {
+    KilnApiBaseUrl,
+    KindeAccountClientId,
+    KindeAccountDomain,
+  } from "$config"
   import posthog from "posthog-js"
-  import { env } from "$env/dynamic/public"
 
   export let onSuccess: () => void
   export let showCheckmark = false
@@ -14,17 +17,12 @@
   let apiKeyMessage: string | null = null
   let submitting = false
 
-  const KINDE_ACCOUNT_DOMAIN =
-    env.PUBLIC_KINDE_ACCOUNT_DOMAIN || "https://account.kiln.tech"
-  const KINDE_ACCOUNT_CLIENT_ID =
-    env.PUBLIC_KINDE_ACCOUNT_CLIENT_ID || "2428f47a1e0b404b82e68400a2d580c6"
-
   async function initKindeClient() {
     if (kindeClient) return kindeClient
 
     kindeClient = await createKindeClient({
-      client_id: KINDE_ACCOUNT_CLIENT_ID,
-      domain: KINDE_ACCOUNT_DOMAIN,
+      client_id: KindeAccountClientId,
+      domain: KindeAccountDomain,
       redirect_uri: window.location.origin + window.location.pathname,
       on_redirect_callback: () => {},
     })
@@ -66,7 +64,7 @@
       }
 
       const response = await fetch(
-        `${KINDE_ACCOUNT_DOMAIN}/account_api/v1/portal_link`,
+        `${KindeAccountDomain}/account_api/v1/portal_link`,
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -99,18 +97,21 @@
     submitting = true
 
     try {
-      const res = await fetch(base_url + "/api/provider/connect_api_key", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          provider: "kiln_copilot",
-          key_data: {
-            "API Key": apiKey,
+      const res = await fetch(
+        KilnApiBaseUrl + "/api/provider/connect_api_key",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        }),
-      })
+          body: JSON.stringify({
+            provider: "kiln_copilot",
+            key_data: {
+              "API Key": apiKey,
+            },
+          }),
+        },
+      )
 
       const data = await res.json()
 

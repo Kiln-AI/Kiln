@@ -2,8 +2,8 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import { base_url } from "$lib/api_client"
   import posthog from "posthog-js"
+  import { KilnApiBaseUrl } from "$config"
 
   export let btn_size: "normal" | "mid" | "small" | "xs" = "mid"
   export let btn_primary: boolean = true
@@ -37,11 +37,11 @@
         })
       }
 
-      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/eval/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_task_run_eval?${params.toString()}`
+      run_url = `${KilnApiBaseUrl}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/eval/${encodeURIComponent(eval_id)}/eval_config/${encodeURIComponent(current_eval_config_id!)}/run_task_run_eval?${params.toString()}`
     } else if (eval_type === "eval_config") {
       // Eval config only supports running all evals for now
       run_all = true
-      run_url = `${base_url}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/eval/${encodeURIComponent(eval_id)}/run_eval_config_eval`
+      run_url = `${KilnApiBaseUrl}/api/projects/${encodeURIComponent(project_id)}/tasks/${encodeURIComponent(task_id)}/eval/${encodeURIComponent(eval_id)}/run_eval_config_eval`
     }
   }
 

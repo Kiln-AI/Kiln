@@ -8,13 +8,14 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
   import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
   import { goto } from "$app/navigation"
+  import { KilnApiBaseUrl } from "$config"
 
   export let onboarding = false
   export let highlight_finetune = false
@@ -649,7 +650,7 @@
     api_key_submitting = true
     try {
       const provider_id = api_key_provider ? api_key_provider.id : ""
-      let res = await fetch(base_url + "/api/provider/connect_api_key", {
+      let res = await fetch(KilnApiBaseUrl + "/api/provider/connect_api_key", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -700,7 +701,7 @@
   let custom_openai_compatible_providers: CustomOpenAICompatibleProvider[] = []
   const check_existing_providers = async () => {
     try {
-      let res = await fetch(base_url + "/api/settings")
+      let res = await fetch(KilnApiBaseUrl + "/api/settings")
       let data = await res.json()
       if (data["open_ai_api_key"]) {
         status.openai.connected = true

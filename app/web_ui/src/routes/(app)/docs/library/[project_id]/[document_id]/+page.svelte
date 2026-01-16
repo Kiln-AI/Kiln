@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import { base_url, client } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import type { ExtractionSummary, KilnDocument } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -19,6 +19,7 @@
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { KilnApiBaseUrl } from "$config"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -36,7 +37,7 @@
 
   let edit_dialog: EditDialog | null = null
 
-  $: download_document_url = `${base_url}/api/projects/${project_id}/documents/${document_id}/download`
+  $: download_document_url = `${KilnApiBaseUrl}/api/projects/${project_id}/documents/${document_id}/download`
 
   onMount(async () => {
     get_document()
@@ -407,7 +408,7 @@
           return false
         }
         window.open(
-          `${base_url}/api/projects/${project_id}/documents/${document_id}/download_extraction/${dialog_extraction.id}`,
+          `${KilnApiBaseUrl}/api/projects/${project_id}/documents/${document_id}/download_extraction/${dialog_extraction.id}`,
           "_blank",
         )
         return false

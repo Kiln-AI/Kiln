@@ -5,7 +5,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "./warning.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { base_url } from "$lib/api_client"
+  import { KilnApiBaseUrl } from "$config"
 
   export let name: string
   export let subtitle: string | undefined = undefined
@@ -45,7 +45,7 @@
         },
         {} as Record<string, string>,
       )
-      const response = await fetch(base_url + patch_url, {
+      const response = await fetch(KilnApiBaseUrl + patch_url, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

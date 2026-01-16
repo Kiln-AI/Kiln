@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dialog from "./dialog.svelte"
   import { createKilnError } from "$lib/utils/error_handlers"
-  import { base_url } from "$lib/api_client"
+  import { KilnApiBaseUrl } from "$config"
   import Warning from "./warning.svelte"
 
   export let name: string
@@ -14,7 +14,7 @@
 
   async function delete_item(): Promise<boolean> {
     try {
-      const response = await fetch(base_url + delete_url, {
+      const response = await fetch(KilnApiBaseUrl + delete_url, {
         method: "DELETE",
       })
       if (!response.ok) {

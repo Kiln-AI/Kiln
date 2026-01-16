@@ -6,11 +6,12 @@
   import { extractor_output_format } from "$lib/utils/formatters"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { page } from "$app/stores"
-  import { base_url, client } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import CreateExtractorDialog from "../../../../docs/rag_configs/[project_id]/create_rag_config/create_extractor_dialog.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { KilnApiBaseUrl } from "$config"
 
   export let dialog: Dialog | null = null
   export let keyboard_submit: boolean = false
@@ -128,7 +129,7 @@
       }
 
       const url = new URL(
-        `${base_url}/api/projects/${project_id}/${"extractor_configs"}/${selected_extractor_id}/run_extractor_config`,
+        `${KilnApiBaseUrl}/api/projects/${project_id}/${"extractor_configs"}/${selected_extractor_id}/run_extractor_config`,
       )
 
       if (target_tags.length > 0) {
