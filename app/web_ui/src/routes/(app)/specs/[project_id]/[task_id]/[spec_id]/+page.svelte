@@ -515,6 +515,7 @@
               },
             ]}
           >
+            <!-- @ts-ignore - PropertyList has custom_value slot but lacks $$Slots typing -->
             <svelte:fragment slot="custom_value" let:property>
               {#if property.name === "Priority"}
                 <EditablePriorityField
@@ -584,7 +585,7 @@
             {score_summary_error}
             current_eval_config_id={evaluator?.current_config_id}
             bind:eval_state
-            interactive={false}
+            interactive={true}
             title="Compare Run Configurations"
             on_add_run_config={() => {
               create_new_run_config_dialog?.show()
