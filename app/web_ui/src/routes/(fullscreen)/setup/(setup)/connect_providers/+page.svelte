@@ -23,6 +23,7 @@
   class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col w-full mx-auto"
 >
   <ConnectProviders
+    onboarding={true}
     bind:has_connected_providers
     bind:intermediate_step
     bind:centered

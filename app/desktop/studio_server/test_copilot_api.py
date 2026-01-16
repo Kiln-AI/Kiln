@@ -1,0 +1,272 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
+    ClarifySpecOutput,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_batch_output import (
+    GenerateBatchOutput,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
+    HTTPValidationError,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_output import (
+    RefineSpecOutput,
+)
+from app.desktop.studio_server.copilot_api import connect_copilot_api
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def app():
+    app = FastAPI()
+    connect_copilot_api(app)
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return TestClient(app)
+
+
+@pytest.fixture
+def mock_api_key():
+    with patch(
+        "app.desktop.studio_server.copilot_api.Config.shared"
+    ) as mock_config_shared:
+        mock_config = mock_config_shared.return_value
+        mock_config.kiln_copilot_api_key = "test_api_key"
+        yield mock_config
+
+
+@pytest.fixture
+def clarify_spec_input():
+    return {
+        "task_prompt_with_few_shot": "Test task prompt",
+        "task_input_schema": '{"type": "string"}',
+        "task_output_schema": '{"type": "string"}',
+        "spec_rendered_prompt_template": "Test template",
+        "num_samples_per_topic": 5,
+        "num_topics": 3,
+        "providers": ["openai"],
+        "num_exemplars": 10,
+    }
+
+
+@pytest.fixture
+def refine_spec_input():
+    return {
+        "task_prompt_with_few_shot": "Test task prompt",
+        "task_input_schema": '{"type": "string"}',
+        "task_output_schema": '{"type": "string"}',
+        "task_info": {
+            "task_prompt": "Test prompt",
+        },
+        "spec": {
+            "spec_fields": {},
+            "spec_field_current_values": {},
+        },
+        "examples_with_feedback": [
+            {
+                "user_rating_exhibits_issue_correct": True,
+                "input": "test input",
+                "output": "test output",
+                "exhibits_issue": False,
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def generate_batch_input():
+    return {
+        "task_prompt_with_few_shot": "Test task prompt",
+        "task_input_schema": '{"type": "string"}',
+        "task_output_schema": '{"type": "string"}',
+        "spec_rendered_prompt_template": "Test template",
+        "num_samples_per_topic": 5,
+        "num_topics": 3,
+    }
+
+
+class TestClarifySpec:
+    def test_clarify_spec_no_api_key(self, client, clarify_spec_input):
+        with patch(
+            "app.desktop.studio_server.copilot_api.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["detail"]
+
+    def test_clarify_spec_success(self, client, clarify_spec_input, mock_api_key):
+        mock_output = MagicMock(spec=ClarifySpecOutput)
+        mock_output.to_dict.return_value = {
+            "examples_for_feedback": [
+                {
+                    "input": "test input",
+                    "output": "test output",
+                    "exhibits_issue": False,
+                }
+            ],
+            "model_id": "gpt-4",
+            "model_provider": "openai",
+            "judge_prompt": "Test judge prompt",
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_output,
+        ):
+            response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
+            assert response.status_code == 200
+            result = response.json()
+            assert "examples_for_feedback" in result
+            assert result["model_id"] == "gpt-4"
+
+    def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
+        with patch(
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
+            assert response.status_code == 500
+            assert "No response" in response.json()["detail"]
+
+    def test_clarify_spec_validation_error(
+        self, client, clarify_spec_input, mock_api_key
+    ):
+        mock_error = MagicMock(spec=HTTPValidationError)
+        mock_error.to_dict.return_value = {"detail": []}
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ):
+            response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
+            assert response.status_code == 422
+            assert "Validation error" in response.json()["detail"]
+
+
+class TestRefineSpec:
+    def test_refine_spec_no_api_key(self, client, refine_spec_input):
+        with patch(
+            "app.desktop.studio_server.copilot_api.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["detail"]
+
+    def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
+        mock_output = MagicMock(spec=RefineSpecOutput)
+        mock_output.to_dict.return_value = {
+            "new_proposed_spec_edits": {},
+            "out_of_scope_feedback": "No out of scope feedback",
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_output,
+        ):
+            response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
+            assert response.status_code == 200
+            result = response.json()
+            assert "new_proposed_spec_edits" in result
+            assert "out_of_scope_feedback" in result
+
+    def test_refine_spec_no_response(self, client, refine_spec_input, mock_api_key):
+        with patch(
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
+            assert response.status_code == 500
+            assert "No response" in response.json()["detail"]
+
+    def test_refine_spec_validation_error(
+        self, client, refine_spec_input, mock_api_key
+    ):
+        mock_error = MagicMock(spec=HTTPValidationError)
+        mock_error.to_dict.return_value = {"detail": []}
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ):
+            response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
+            assert response.status_code == 422
+            assert "Validation error" in response.json()["detail"]
+
+
+class TestGenerateBatch:
+    def test_generate_batch_no_api_key(self, client, generate_batch_input):
+        with patch(
+            "app.desktop.studio_server.copilot_api.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post(
+                "/api/copilot/generate_batch", json=generate_batch_input
+            )
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["detail"]
+
+    def test_generate_batch_success(self, client, generate_batch_input, mock_api_key):
+        mock_output = MagicMock(spec=GenerateBatchOutput)
+        mock_output.to_dict.return_value = {"data_by_topic": {}}
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_output,
+        ):
+            response = client.post(
+                "/api/copilot/generate_batch", json=generate_batch_input
+            )
+            assert response.status_code == 200
+            result = response.json()
+            assert "data_by_topic" in result
+
+    def test_generate_batch_no_response(
+        self, client, generate_batch_input, mock_api_key
+    ):
+        with patch(
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            response = client.post(
+                "/api/copilot/generate_batch", json=generate_batch_input
+            )
+            assert response.status_code == 500
+            assert "No response" in response.json()["detail"]
+
+    def test_generate_batch_validation_error(
+        self, client, generate_batch_input, mock_api_key
+    ):
+        mock_error = MagicMock(spec=HTTPValidationError)
+        mock_error.to_dict.return_value = {"detail": []}
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_error,
+        ):
+            response = client.post(
+                "/api/copilot/generate_batch", json=generate_batch_input
+            )
+            assert response.status_code == 422
+            assert "Validation error" in response.json()["detail"]

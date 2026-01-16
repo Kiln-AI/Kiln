@@ -34,6 +34,13 @@
   let evals_error: KilnError | null = null
   let evals_loading = true
 
+  let settings_loading = true
+  let settings_error: KilnError | null = null
+  let has_kiln_copilot = false
+
+  $: loading = specs_loading || evals_loading || settings_loading
+  $: error = specs_error || evals_error || settings_error
+
   type TableRow =
     | { type: "spec"; data: Spec }
     | { type: "legacy_eval"; data: Eval }
@@ -101,7 +108,6 @@
   }
   const tableColumns: TableColumn[] = [
     { key: "name", label: "Name", sortable: true, sortKey: "name" },
-    { key: "definition", label: "Definition", sortable: false },
     { key: "template", label: "Template", sortable: true, sortKey: "template" },
     { key: "priority", label: "Priority", sortable: true, sortKey: "priority" },
     { key: "status", label: "Status", sortable: true, sortKey: "status" },
@@ -126,8 +132,28 @@
     : false
 
   onMount(async () => {
-    await Promise.all([load_specs(), load_evals()])
+    await Promise.all([load_specs(), load_evals(), load_has_kiln_copilot()])
   })
+
+  async function load_has_kiln_copilot() {
+    try {
+      settings_loading = true
+      settings_error = null
+      const { data, error } = await client.GET("/api/settings")
+      if (error) {
+        throw error
+      }
+      if (data["kiln_copilot_api_key"]) {
+        has_kiln_copilot = true
+      } else {
+        has_kiln_copilot = false
+      }
+    } catch (e) {
+      settings_error = createKilnError(e)
+    } finally {
+      settings_loading = false
+    }
+  }
 
   async function load_specs() {
     try {
@@ -673,6 +699,14 @@
   function handleStatusUpdate(spec: Spec, value: SpecStatus) {
     updateSpecStatus(spec, value)
   }
+
+  async function check_kiln_copilot_and_proceed() {
+    if (!has_kiln_copilot) {
+      goto(`/specs/${project_id}/${task_id}/select_workflow`)
+    } else {
+      goto(`/specs/${project_id}/${task_id}/select_template`)
+    }
+  }
 </script>
 
 <AppPage
@@ -686,20 +720,21 @@
     : [
         {
           label: "New Spec",
-          href: `/specs/${project_id}/${task_id}/select_template`,
+          handler: async () => {
+            await check_kiln_copilot_and_proceed()
+          },
           primary: true,
         },
       ]}
 >
   <div class="flex flex-col gap-4">
-    {#if specs_loading || evals_loading}
+    {#if loading}
       <div class="flex justify-center items-center h-full">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if specs_error || evals_error}
+    {:else if error}
       <div class="text-error text-sm">
-        {(specs_error || evals_error)?.getMessage() ||
-          "An unknown error occurred"}
+        {error?.getMessage() || "An unknown error occurred"}
       </div>
     {:else if is_empty}
       <div class="mx-auto mt-[10vh]">
@@ -898,7 +933,6 @@
                       </td>
                     {/if}
                     <td class="font-medium">{spec.name}</td>
-                    <td class="max-w-md truncate">{spec.definition}</td>
                     <td>
                       {formatSpecType(spec.properties.spec_type)}
                     </td>
@@ -967,7 +1001,6 @@
                       <td></td>
                     {/if}
                     <td class="font-medium">{eval_data.name}</td>
-                    <td class="text-gray-500">N/A</td>
                     <td>Legacy Eval</td>
                     <td class="text-gray-500 pl-6">N/A</td>
                     <td class="text-gray-500 pl-6">N/A</td>

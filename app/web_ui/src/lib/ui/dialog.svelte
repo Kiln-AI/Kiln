@@ -5,6 +5,7 @@
   const dispatch = createEventDispatcher()
 
   export let title: string
+  export let center_content: boolean = false
   export let subtitle: string | null = null
   export let sub_subtitle: string | null = null
   export let sub_subtitle_link: string | null = null
@@ -82,7 +83,11 @@
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
     <div class="flex flex-row gap-2 items-start">
-      <div class="grow flex flex-col">
+      <div
+        class="grow flex flex-col {center_content
+          ? 'items-center'
+          : 'items-start'}"
+      >
         <h3 class="text-lg font-medium">
           {title}
         </h3>
