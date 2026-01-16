@@ -6,6 +6,7 @@ from .body_start_gepa_job_v1_jobs_gepa_job_start_post_token_budget import (
     BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget,
 )
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
+from .check_model_supported_response import CheckModelSupportedResponse
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .examples_for_feedback_item import ExamplesForFeedbackItem
@@ -41,6 +42,7 @@ __all__ = (
     "BodyStartGepaJobV1JobsGepaJobStartPost",
     "BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
+    "CheckModelSupportedResponse",
     "ClarifySpecInput",
     "ClarifySpecOutput",
     "ExamplesForFeedbackItem",
