@@ -123,6 +123,10 @@
   $: show_advanced_options = !is_reference_answer_spec
   $: if (is_tool_use_spec) evaluate_full_trace = true
 
+  // Tool call and RAG specs don't support copilot
+  $: copilot_enabled =
+    has_kiln_copilot && !is_tool_use_spec && !is_reference_answer_spec
+
   // Initialize form from URL params
   async function initialize() {
     loading = true
@@ -614,7 +618,7 @@
         {initial_property_values}
         bind:evaluate_full_trace
         {field_configs}
-        {has_kiln_copilot}
+        {copilot_enabled}
         {show_advanced_options}
         {full_trace_disabled}
         bind:error

@@ -11,7 +11,7 @@
   export let initial_property_values: Record<string, string | null>
   export let evaluate_full_trace: boolean
   export let field_configs: FieldConfig[]
-  export let has_kiln_copilot: boolean
+  export let copilot_enabled: boolean
   export let show_advanced_options: boolean
   export let full_trace_disabled: boolean
   export let error: KilnError | null
@@ -37,7 +37,7 @@
   $: computed_warn_before_unload = warn_before_unload && has_form_changes()
 
   function handle_submit() {
-    if (has_kiln_copilot) {
+    if (copilot_enabled) {
       dispatch("analyze_with_copilot")
     } else {
       dispatch("create_without_copilot")
@@ -46,7 +46,7 @@
 </script>
 
 <FormContainer
-  submit_label={has_kiln_copilot ? "Analyze with Copilot" : "Create Spec"}
+  submit_label={copilot_enabled ? "Analyze with Copilot" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -98,7 +98,7 @@
   {/if}
 </FormContainer>
 
-{#if has_kiln_copilot}
+{#if copilot_enabled}
   <div class="flex flex-row gap-1 mt-4 justify-end">
     <span class="text-sm text-gray-500">or</span>
     <button
