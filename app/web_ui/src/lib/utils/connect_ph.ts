@@ -1,22 +1,18 @@
 import posthog from "posthog-js"
 import { client } from "$lib/api_client"
 
-export async function setup_ph_work_user() {
+export async function setup_ph_user() {
   try {
     const { data, error } = await client.GET("/api/settings")
     if (error) {
       throw error
     }
 
-    // Only identify the user if the user explicitly registered as a work user (for commercial use) during setup.
-    // Users who specify they are using Kiln for personal use are not identified.
-    if (
-      data.user_type === "work" &&
-      typeof data.work_use_contact === "string" &&
-      data.work_use_contact.length > 0
-    ) {
-      posthog.identify(data.work_use_contact, {
-        email: data.work_use_contact,
+    // Only identify the user if the user explicitly registered with Kiln using their email
+    const email = data.work_use_contact || data.personal_use_contact
+    if (typeof email === "string" && email.length > 0) {
+      posthog.identify(email, {
+        email: email,
         user_type: data.user_type,
       })
     } else {
