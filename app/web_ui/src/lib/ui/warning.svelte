@@ -51,7 +51,7 @@
   }
 </script>
 
-{#if warning_message}
+{#if warning_message || $$slots.default}
   <div
     class="text-sm text-gray-500 flex flex-row items-center {outline
       ? `border-2 ${get_color('border')} rounded-lg px-4 py-2 mb-6`
@@ -98,7 +98,9 @@
     {/if}
 
     <div class="{tight ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
-      {#if trusted}
+      {#if $$slots.default}
+        <slot />
+      {:else if trusted}
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html html_warning_message()}
       {:else}
