@@ -178,7 +178,7 @@
             {#if inline_action}
               <button
                 type="button"
-                class="link font-normal text-gray-500"
+                class="link font-normal text-gray-500 hover:text-gray-700"
                 on:click|stopPropagation={inline_action.handler}
                 >{inline_action.label}</button
               >
