@@ -1,7 +1,7 @@
 import time
 from pathlib import Path
 from unittest import mock
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import openai
 import pytest
@@ -16,8 +16,9 @@ from kiln_ai.datamodel import (
     Task,
 )
 from kiln_ai.datamodel import Finetune as FinetuneModel
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.dataset_split import Train80Test20SplitDefinition
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -224,7 +225,7 @@ async def test_generate_and_upload_jsonl_success(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the file response
     mock_file_response = MagicMock()
@@ -273,7 +274,7 @@ async def test_generate_and_upload_jsonl_schema_success(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the file response
     mock_file_response = MagicMock()
@@ -319,7 +320,7 @@ async def test_generate_and_upload_jsonl_upload_failure(
     mock_path = Path("mock_path.jsonl")
 
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock response with no ID
     mock_file_response = MagicMock()
@@ -345,7 +346,7 @@ async def test_generate_and_upload_jsonl_api_error(
     mock_path = Path("mock_path.jsonl")
 
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
     mock_openai_client.files.create.side_effect = openai.APIError(
         message="API error", request=MagicMock(), body={}
     )
@@ -386,6 +387,16 @@ async def test_start_success(
     openai_finetune.datamodel.parent = mock_task
 
     mock_task.output_json_schema = output_schema
+
+    # Set up run_config
+    openai_finetune.datamodel.run_config = RunConfigProperties(
+        model_name="gpt-4o-mini-2024-07-18",
+        model_provider_name=ModelProviderName.openai,
+        prompt_id="simple_prompt_builder",
+        temperature=0.7,
+        top_p=0.9,
+        structured_output_mode=StructuredOutputMode.default,
+    )
 
     # Mock parameters
     openai_finetune.datamodel.parameters = {
@@ -437,7 +448,14 @@ async def test_start_success(
         # Verify model updates
         assert openai_finetune.datamodel.provider_id == "ft-123"
         assert openai_finetune.datamodel.base_model_id == "gpt-4o-mini-2024-07-18"
-        assert openai_finetune.datamodel.structured_output_mode == expected_mode
+        # Verify run_config.structured_output_mode is set correctly
+        expected_run_config_mode = (
+            expected_mode if expected_mode is not None else StructuredOutputMode.default
+        )
+        assert (
+            openai_finetune.datamodel.run_config.structured_output_mode
+            == expected_run_config_mode
+        )
 
 
 async def test_start_with_validation(
@@ -575,7 +593,7 @@ async def test_generate_and_upload_jsonl_with_data_strategy(
 
     # Mock the formatter
     mock_formatter = MagicMock(spec=DatasetFormatter)
-    mock_formatter.dump_to_file.return_value = mock_path
+    mock_formatter.dump_to_file = AsyncMock(return_value=mock_path)
 
     # Mock the file response
     mock_file_response = MagicMock()
@@ -591,8 +609,6 @@ async def test_generate_and_upload_jsonl_with_data_strategy(
         ) as mock_get_client,
         patch("builtins.open"),
     ):
-        from unittest.mock import AsyncMock
-
         mock_client = MagicMock()
         mock_client.files.create = AsyncMock(return_value=mock_file_response)
         mock_get_client.return_value = mock_client

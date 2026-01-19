@@ -98,7 +98,7 @@ class VectorStoreConfig(KilnParentedModel):
             raise ValueError(
                 f"Lancedb vector properties are only available for LanceDB vector store type. Got {self.properties.get('store_type')}"
             )
-        return self.properties
+        return self.properties  # type: ignore[return-value]
 
     @property
     def lancedb_hybrid_properties(self) -> LanceDBConfigHybridProperties:
@@ -106,7 +106,7 @@ class VectorStoreConfig(KilnParentedModel):
             raise ValueError(
                 f"Lancedb hybrid properties are only available for LanceDB hybrid store type. Got {self.properties.get('store_type')}"
             )
-        return self.properties
+        return self.properties  # type: ignore[return-value]
 
     @property
     def lancedb_fts_properties(self) -> LanceDBConfigFTSProperties:
@@ -114,7 +114,7 @@ class VectorStoreConfig(KilnParentedModel):
             raise ValueError(
                 f"Lancedb FTS properties are only available for LanceDB FTS store type. Got {self.properties.get('store_type')}"
             )
-        return self.properties
+        return self.properties  # type: ignore[return-value]
 
     # Workaround to return typed parent without importing Project
     def parent_project(self) -> Union["Project", None]:

@@ -1170,7 +1170,7 @@ async def test_array_input_converted_to_json(tmp_path, config):
     task.save_to_file()
 
     config.run_config_properties.model_name = "gpt-4o-mini"
-    config.run_config_properties.model_provider_name = "openai"
+    config.run_config_properties.model_provider_name = ModelProviderName.openai
     adapter = LiteLlmAdapter(config=config, kiln_task=task)
 
     mock_response = ModelResponse(
@@ -1240,7 +1240,7 @@ async def test_dict_input_converted_to_json(tmp_path, config):
     task.save_to_file()
 
     config.run_config_properties.model_name = "gpt-4o-mini"
-    config.run_config_properties.model_provider_name = "openai"
+    config.run_config_properties.model_provider_name = ModelProviderName.openai
     adapter = LiteLlmAdapter(config=config, kiln_task=task)
 
     mock_response = ModelResponse(

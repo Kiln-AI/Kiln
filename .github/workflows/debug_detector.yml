@@ -17,7 +17,7 @@ jobs:
           found=0
 
           echo "Checking for python print statements"
-          prints=$(grep -nR --include='*.py' --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github --exclude-dir=build --exclude-dir=dist --exclude-dir=.svelte-kit -e 'print(' . || true)
+          prints=$(grep -nRP --include='*.py' --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github --exclude-dir=build --exclude-dir=dist --exclude-dir=.svelte-kit -e '(?<!\.)\bprint\(' . || true)
           if [ -n "$prints" ]; then
             echo "$prints"
             found=1

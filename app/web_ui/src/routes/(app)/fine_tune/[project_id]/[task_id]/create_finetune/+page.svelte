@@ -26,10 +26,17 @@
     DatasetSplit,
     Finetune,
     FineTuneParameter,
+    RunConfigProperties,
+    ModelProviderName,
   } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import { writable, type Writable } from "svelte/store"
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
   let finetune_description = ""
   let finetune_name = ""
   const disabled_header = "disabled_header"
@@ -42,16 +49,157 @@
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
 
+  let run_config_component: RunConfigComponent | null = null
+
+  let provider_id: ModelProviderName | null = null
   $: provider_id = $model_provider?.includes("/")
-    ? $model_provider?.split("/")[0]
+    ? ($model_provider?.split("/")[0] as ModelProviderName)
     : null
   $: base_model_id = $model_provider?.includes("/")
     ? $model_provider?.split("/").slice(1).join("/")
     : null
 
-  let available_model_select: [string, string][] = []
+  $: selected_model = $available_tuning_models
+    ?.flatMap((provider) =>
+      provider.models.map((model) => ({
+        provider,
+        model,
+      })),
+    )
+    .find(
+      ({ provider, model }) =>
+        provider.id === provider_id && model.id === base_model_id,
+    )
+
+  $: if (
+    selected_model &&
+    !selected_model.model.supports_function_calling &&
+    run_config_component
+  ) {
+    // Clear tools if the model doesn't support function calling
+    run_config_component.clear_tools()
+  }
+
+  $: disabled_tools_selector =
+    selected_model && !selected_model.model.supports_function_calling
+
+  let selected_tool_ids: string[] = []
+
+  let available_model_select: OptionGroup[] = []
 
   let selected_dataset: DatasetSplit | null = null
+
+  interface SavedFinetuneState {
+    name?: string
+    description?: string
+    provider?: string
+    base_model_id?: string
+    dataset_split_id?: string
+    parameters?: Record<string, string>
+    system_message?: string
+    thinking_instructions?: string
+    data_strategy?: ChatStrategy
+    system_prompt_method?: string
+    tools?: string[]
+  }
+
+  // IndexedDB-backed store for persisting form state
+  let saved_state: Writable<SavedFinetuneState> = writable({})
+  let state_initialized = false
+  let saved_dataset_id: string | null = null
+
+  // Track saved dataset ID reactively, this is used to restore the selected dataset when user leaves the page.
+  $: saved_dataset_id = $saved_state.dataset_split_id || null
+
+  // Initialize form from saved state
+  export function initialize_from_finetune(state: SavedFinetuneState) {
+    // Model selection (via store)
+    if (state.provider && state.base_model_id) {
+      $model_provider = `${state.provider}/${state.base_model_id}`
+    }
+
+    // Name and description
+    finetune_name = state.name || ""
+    finetune_description = state.description || ""
+
+    // System prompt - restore the method that was selected
+    if (state.system_prompt_method) {
+      system_prompt_method = state.system_prompt_method
+    }
+    if (state.system_message) {
+      finetune_custom_system_prompt = state.system_message
+    }
+    if (state.thinking_instructions) {
+      finetune_custom_thinking_instructions = state.thinking_instructions
+    }
+
+    // Data strategy
+    data_strategy = state.data_strategy || "final_only"
+
+    // Hyperparameters
+    hyperparameter_values = {}
+    if (state.parameters) {
+      for (const [key, value] of Object.entries(state.parameters)) {
+        hyperparameter_values[key] = String(value)
+      }
+    }
+
+    // Tools
+    selected_tool_ids = state.tools || []
+  }
+
+  // Reactively update saved_state when form values change
+  $: if (state_initialized) {
+    saved_state.set({
+      name: finetune_name || undefined,
+      description: finetune_description || undefined,
+      provider: provider_id || undefined,
+      base_model_id: base_model_id || undefined,
+      dataset_split_id: selected_dataset?.id || undefined,
+      parameters:
+        Object.keys(hyperparameter_values).length > 0
+          ? hyperparameter_values
+          : undefined,
+      system_message: finetune_custom_system_prompt || undefined,
+      thinking_instructions: finetune_custom_thinking_instructions || undefined,
+      system_prompt_method: system_prompt_method,
+      data_strategy: data_strategy,
+      tools: selected_tool_ids.length > 0 ? selected_tool_ids : undefined,
+    })
+  }
+
+  function clear_and_reload() {
+    let msg =
+      "Are you sure you want to clear current selections? This cannot be undone."
+
+    if (confirm(msg)) {
+      clear_saved_state()
+      // reload the window keeping the same URL
+      window.location.reload()
+    }
+  }
+
+  function clear_saved_state() {
+    // Prevent the reactive block from immediately repopulating the store
+    state_initialized = false
+
+    // Clear the saved state in IndexedDB by saving the defaults
+    saved_state.update((s) => ({
+      ...s,
+      name: undefined,
+      description: undefined,
+      provider: undefined,
+      base_model_id: undefined,
+      dataset_split_id: undefined,
+      parameters: undefined,
+      system_message: undefined,
+      thinking_instructions: undefined,
+      data_strategy: "final_only",
+      system_prompt_method: "simple_prompt_builder",
+      tools: undefined,
+    }))
+  }
+
   $: selecting_thinking_dataset =
     selected_dataset?.filter?.includes("thinking_model")
   $: selected_dataset_has_val = selected_dataset?.splits?.find(
@@ -65,15 +213,34 @@
       ? "all"
       : null
 
-  $: step_2_visible = $model_provider && $model_provider !== disabled_header
   $: step_3_visible =
+    ($model_provider && $model_provider !== disabled_header) ||
+    !!selected_dataset ||
+    !!saved_dataset_id
+  $: step_4_visible =
     $model_provider && $model_provider !== disabled_header && !!selected_dataset
   $: is_download = !!$model_provider?.startsWith("download_")
-  $: step_4_download_visible = step_3_visible && is_download
-  $: submit_visible = !!(step_3_visible && !is_download)
+  $: step_5_download_visible = step_4_visible && is_download
+  $: submit_visible = !!(step_4_visible && !is_download)
 
   onMount(async () => {
     get_available_models()
+
+    // Initialize IndexedDB-backed store for state persistence
+    const state_key = `create_finetune_state_${project_id}_${task_id}`
+    const { store, initialized } = indexedDBStore<SavedFinetuneState>(
+      state_key,
+      {},
+    )
+    await initialized
+    saved_state = store
+
+    // Load saved state if it exists
+    if ($saved_state && Object.keys($saved_state).length > 0) {
+      initialize_from_finetune($saved_state)
+    }
+
+    state_initialized = true
   })
 
   $: build_available_model_select($available_tuning_models)
@@ -83,56 +250,103 @@
       return
     }
     available_model_select = []
-    available_model_select.push([
-      disabled_header,
-      "Select a model to fine-tune",
-    ])
+
+    const models_with_tools: Option[] = []
+    const models_without_tools: Option[] = []
+    const disabled_providers: Option[] = []
+
     for (const provider of models) {
       for (const model of provider.models) {
-        available_model_select.push([
-          (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id,
-          provider.name +
-            ": " +
-            model.name +
-            (provider.enabled ? "" : " --- Requires API Key in Settings"),
-        ])
+        const model_key =
+          (provider.enabled ? "" : "disabled_") + provider.id + "/" + model.id
+        const model_label = provider.name + ": " + model.name
+
+        const option: Option = {
+          value: model_key,
+          label: model_label,
+        }
+
+        if (!provider.enabled) {
+          // if the provider is disabled, add a badge
+          option.badge = "Requires API Key"
+          option.badge_color = "primary"
+          option.disabled = true
+          disabled_providers.push(option)
+        } else if (!model.supports_function_calling) {
+          models_without_tools.push(option)
+        } else {
+          models_with_tools.push(option)
+        }
       }
-      // Providers with zero models should still appear and be disabled. Logging in will typically load their models
+
       if (!provider.enabled && provider.models.length === 0) {
-        available_model_select.push([
-          "disabled_" + provider.id,
-          provider.name + " --- Requires API Key in Settings",
-        ])
+        disabled_providers.push({
+          value: "disabled_" + provider.id,
+          label: provider.name,
+          badge: "Requires API Key",
+          badge_color: "primary",
+          disabled: true,
+        })
       }
     }
-    available_model_select.push([
-      "download_jsonl_msg",
-      "Download: OpenAI chat format (JSONL)",
-    ])
-    available_model_select.push([
-      "download_jsonl_json_schema_msg",
-      "Download: OpenAI chat format with JSON response (JSONL)",
-    ])
-    available_model_select.push([
-      "download_jsonl_toolcall",
-      "Download: OpenAI chat format with tool call response (JSONL)",
-    ])
-    available_model_select.push([
-      "download_huggingface_chat_template",
-      "Download: HuggingFace chat template (JSONL)",
-    ])
-    available_model_select.push([
-      "download_huggingface_chat_template_toolcall",
-      "Download: HuggingFace chat template with tool calls (JSONL)",
-    ])
-    available_model_select.push([
-      "download_vertex_gemini",
-      "Download: Google Vertex-AI Gemini format (JSONL)",
-    ])
+
+    if (models_with_tools.length > 0) {
+      available_model_select.push({
+        label: "Models with Tool Calling Support",
+        options: models_with_tools,
+      })
+    }
+
+    if (models_without_tools.length > 0) {
+      available_model_select.push({
+        label: "Models without Tool Calling Support",
+        options: models_without_tools,
+      })
+    }
+
+    if (disabled_providers.length > 0) {
+      available_model_select.push({
+        label: "Requires API Key Configuration",
+        options: disabled_providers,
+      })
+    }
+
+    available_model_select.push({
+      label: "Download Dataset",
+      options: [
+        {
+          value: "download_jsonl_msg",
+          label: "OpenAI chat format (JSONL)",
+        },
+        {
+          value: "download_jsonl_json_schema_msg",
+          label: "OpenAI chat format with JSON response (JSONL)",
+        },
+        {
+          value: "download_jsonl_toolcall",
+          label: "OpenAI chat format with tool call response (JSONL)",
+        },
+        {
+          value: "download_huggingface_chat_template",
+          label: "HuggingFace chat template (JSONL)",
+        },
+        {
+          value: "download_huggingface_chat_template_toolcall",
+          label: "HuggingFace chat template with tool calls (JSONL)",
+        },
+        {
+          value: "download_vertex_gemini",
+          label: "Google Vertex-AI Gemini format (JSONL)",
+        },
+      ],
+    })
 
     // Check if the model provider is in the available model select
     // If not, reset to disabled header. The list can change over time.
-    if (!available_model_select.find((m) => m[0] === $model_provider)) {
+    const all_values = available_model_select.flatMap((g) =>
+      g.options.map((o) => o.value),
+    )
+    if (!all_values.includes($model_provider)) {
       $model_provider = disabled_header
     }
   }
@@ -230,6 +444,18 @@
       // Filter out empty strings from hyperparameter_values, and parse/validate types
       const hyperparameter_values = build_parsed_hyperparameters()
 
+      // Create a run config object based on the UI
+      // Extract just the model name from the full path (e.g., "accounts/fireworks/models/qwen3-1p7b" -> "qwen3-1p7b")
+      const model_name = base_model_id?.split("/").pop() || base_model_id
+      const run_config_properties: RunConfigProperties | undefined =
+        run_config_component && model_name && provider_id
+          ? {
+              ...run_config_component.run_options_as_run_config_properties(),
+              model_name: model_name,
+              model_provider_name: provider_id,
+            }
+          : undefined
+
       const { data: create_finetune_response, error: post_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/finetunes",
@@ -258,6 +484,7 @@
               validation_split_name: selected_dataset_has_val
                 ? "val"
                 : undefined,
+              run_config_properties: run_config_properties,
             },
           },
         )
@@ -271,8 +498,21 @@
         base_model: base_model_id,
         provider: provider_id,
         prompt_method: system_prompt_method,
+        supports_tools: disabled_tools_selector ? "no" : "yes",
+        tool_count: selected_tool_ids.length,
       })
       created_finetune = create_finetune_response
+
+      // Reload run configs to include the new finetune run config
+      load_task_run_configs(project_id, task_id, true).catch((err) => {
+        console.warn(
+          "Failed to reload run configs store after finetune creation",
+          err,
+        )
+      })
+
+      // Clear the saved state now that fine-tune is created
+      clear_saved_state()
       progress_ui_state.set({
         title: "Creating Fine-Tune",
         body: "In progress,  ",
@@ -439,12 +679,24 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<div class="max-w-[900px]">
   <AppPage
     title="Create a New Fine Tune"
     subtitle="Fine-tuned models learn from your dataset."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
     breadcrumbs={[
       { label: "Fine Tunes", href: `/fine_tune/${project_id}/${task_id}` },
+    ]}
+    action_buttons={[
+      {
+        label: "Reset",
+        handler: clear_and_reload,
+      },
+      {
+        label: "Docs & Guide",
+        href: "https://docs.kiln.tech/docs/fine-tuning-guide",
+      },
     ]}
   >
     {#if $available_models_loading}
@@ -484,10 +736,9 @@
           <FormElement
             label="Model & Provider"
             description="Select which model to fine-tune. Alternatively, download a JSONL file to fine-tune using any infrastructure."
-            info_description="Connect providers in settings for 1-click fine-tuning. Alternatively, download a JSONL file to fine-tune using any infrastructure, like Unsloth or Axolotl."
-            inputType="select"
+            inputType="fancy_select"
             id="provider"
-            select_options={available_model_select}
+            fancy_select_options={available_model_select}
             bind:value={$model_provider}
           />
           <button
@@ -502,29 +753,14 @@
             />
           </button>
         </div>
-        {#if step_2_visible}
-          <div>
-            <div class="text-xl font-bold">
-              Step 2: Select Fine-Tuning Dataset
-            </div>
-            <div class="font-light">
-              Select a dataset to use for this fine-tune.
-              <InfoTooltip
-                tooltip_text="A fine-tuning dataset is a subset of your dataset which is used to train and validate the fine-tuned model. This is typically a subset of your dataset, which is intentionally kept separate from your eval data."
-                position="bottom"
-                no_pad={true}
-              />
-            </div>
-          </div>
-          <SelectFinetuneDataset {project_id} {task_id} bind:selected_dataset />
-        {/if}
-
-        {#if step_3_visible}
-          <div class="text-xl font-bold">Step 3: Options</div>
+        <div class="text-xl font-bold">
+          Step 2: Configure Fine-Tuning Run Configuration
+        </div>
+        <div>
           <PromptTypeSelector
             bind:prompt_method={system_prompt_method}
             description="The system message to use for fine-tuning. Choose the prompt you want to use with your fine-tuned model."
-            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+            info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: [OpenAI Docs](https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts)."
             exclude_cot={true}
             custom_prompt_name="Custom Fine Tuning Prompt"
           />
@@ -533,7 +769,7 @@
               <FormElement
                 label="Custom System Prompt"
                 description="Enter a custom system prompt to use during fine-tuning."
-                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts"
+                info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: [OpenAI Docs](https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts)."
                 inputType="textarea"
                 id="finetune_custom_system_prompt"
                 bind:value={finetune_custom_system_prompt}
@@ -551,34 +787,82 @@
               {/if}
             </div>
           {/if}
+        </div>
+        <div>
+          <FormElement
+            label="Reasoning"
+            description="Should the model be trained on reasoning/thinking content?"
+            info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
+            inputType="select"
+            id="data_strategy"
+            select_options={data_strategy_select_options}
+            bind:value={data_strategy}
+          />
+        </div>
+        <div>
+          <RunConfigComponent
+            bind:this={run_config_component}
+            bind:tools={selected_tool_ids}
+            {project_id}
+            tools_selector_settings={{
+              hide_create_kiln_task_tool_button: true,
+              hide_info_description: true,
+              disabled: disabled_tools_selector,
+              empty_label: disabled_tools_selector
+                ? "Tool calling not supported on this model"
+                : undefined,
+              description:
+                "Choose which tools the model should learn to call during fine-tuning.",
+            }}
+            hide_model_selector={true}
+            hide_prompt_selector={true}
+          />
+        </div>
+
+        {#if step_3_visible}
           <div>
-            <FormElement
-              label="Reasoning"
-              description="Should the model be trained on reasoning/thinking content?"
-              info_description="If you select 'Thinking', the model training will include thinking such as reasoning or chain of thought. Use this if you want to call the tuned model with a chain-of-thought prompt for additional inference time compute."
-              inputType="select"
-              id="data_strategy"
-              select_options={data_strategy_select_options}
-              bind:value={data_strategy}
+            <div class="text-xl font-bold">
+              Step 3: Select Fine-Tuning Dataset
+            </div>
+            <div class="font-light">
+              Select a dataset to use for this fine-tune.
+              <InfoTooltip
+                tooltip_text="A fine-tuning dataset is a subset of your dataset which is used to train and validate the fine-tuned model. This is typically a subset of your dataset, which is intentionally kept separate from your eval data."
+                position="bottom"
+                no_pad={true}
+              />
+            </div>
+          </div>
+          {#if state_initialized}
+            <SelectFinetuneDataset
+              {project_id}
+              {task_id}
+              required_tool_ids={selected_tool_ids.length > 0
+                ? selected_tool_ids
+                : undefined}
+              {saved_dataset_id}
+              bind:selected_dataset
             />
-            {#if data_strategy === "two_message_cot" && !selecting_thinking_dataset}
+            {#if selected_dataset && data_strategy === "two_message_cot" && !selecting_thinking_dataset}
               <Warning
                 warning_message="You are training a model for inference-time thinking, but are not using a dataset filtered to samples with reasoning or chain-of-thought training data. This is not recommended, as it may lead to poor performance. We suggest creating a new dataset with a thinking filter."
                 large_icon={true}
               />
             {/if}
-            {#if data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
+            {#if selected_dataset && data_strategy === "final_and_intermediate_r1_compatible" && !selecting_thinking_dataset}
               <Warning
                 warning_message="You are training a 'thinking' model, but did not explicitly select a dataset filtered to samples with reasoning or chain-of-thought training data. If any of your training samples are missing reasoning data, it will error. If your data contains reasoning, you can ignore this warning."
                 large_icon={true}
               />
             {/if}
-          </div>
+          {/if}
+        {/if}
+
+        {#if step_4_visible}
+          <div class="text-xl font-bold">Step 4: Advanced Options</div>
           {#if !is_download}
-            <div class="collapse collapse-arrow bg-base-200">
-              <input type="checkbox" class="peer" />
-              <div class="collapse-title font-medium">Advanced Options</div>
-              <div class="collapse-content flex flex-col gap-4">
+            <div>
+              <Collapse title="Advanced Options">
                 <FormElement
                   label="Name"
                   description="A name to identify this fine-tune. Leave blank and we'll generate one for you."
@@ -620,15 +904,15 @@
                     />
                   {/each}
                 {/if}
-              </div>
+              </Collapse>
             </div>
           {/if}
         {/if}
       </FormContainer>
     {/if}
-    {#if step_4_download_visible}
+    {#if step_5_download_visible}
       <div>
-        <div class="text-xl font-bold">Step 4: Download JSONL</div>
+        <div class="text-xl font-bold">Step 5: Download JSONL</div>
         <div class="text-sm">
           Download JSONL files to fine-tune using any infrastructure, such as
           <a

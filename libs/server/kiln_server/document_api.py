@@ -10,7 +10,6 @@ from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
 from kiln_ai.adapters.ml_embedding_model_list import (
-    EmbeddingModelName,
     built_in_embedding_models_from_provider,
 )
 from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
@@ -256,6 +255,7 @@ class ExtractionSummary(BaseModel):
     source: str
     output_content: str
     extractor: ExtractorSummary
+    output_content_truncated: bool
 
 
 class RagConfigWithSubConfigs(BaseModel):
@@ -365,17 +365,17 @@ class CreateChunkerConfigRequest(BaseModel):
             case ChunkerType.SEMANTIC:
                 return SemanticChunkerProperties(
                     chunker_type=ChunkerType.SEMANTIC,
-                    embedding_config_id=properties.embedding_config_id,
-                    buffer_size=properties.buffer_size,
-                    breakpoint_percentile_threshold=properties.breakpoint_percentile_threshold,
+                    embedding_config_id=properties.embedding_config_id,  # type: ignore[possibly-missing-attribute]
+                    buffer_size=properties.buffer_size,  # type: ignore[possibly-missing-attribute]
+                    breakpoint_percentile_threshold=properties.breakpoint_percentile_threshold,  # type: ignore[possibly-missing-attribute]
                     include_metadata=False,
                     include_prev_next_rel=False,
                 )
             case ChunkerType.FIXED_WINDOW:
                 return FixedWindowChunkerProperties(
                     chunker_type=ChunkerType.FIXED_WINDOW,
-                    chunk_size=properties.chunk_size,
-                    chunk_overlap=properties.chunk_overlap,
+                    chunk_size=properties.chunk_size,  # type: ignore[possibly-missing-attribute]
+                    chunk_overlap=properties.chunk_overlap,  # type: ignore[possibly-missing-attribute]
                 )
         raise_exhaustive_enum_error(properties.chunker_type)
 
@@ -392,7 +392,7 @@ class CreateEmbeddingConfigRequest(BaseModel):
     model_provider_name: ModelProviderName = Field(
         description="The provider of the embedding model",
     )
-    model_name: EmbeddingModelName = Field(
+    model_name: str = Field(
         description="The name of the embedding model",
     )
     properties: EmbeddingProperties = Field(
@@ -689,17 +689,31 @@ class UpdateRagConfigRequest(BaseModel):
     is_archived: bool | None = None
 
 
+def truncate_output_content(
+    output_content: str | None, max_length: int = 100_000
+) -> str:
+    if output_content is None:
+        return ""
+    if len(output_content) > max_length:
+        return output_content[:max_length]
+    return output_content
+
+
 def build_extraction_summary(
     extraction: Extraction,
     output_content: str | None,
     extractor_config: ExtractorConfig,
+    max_length: int = 100_000,
 ) -> ExtractionSummary:
+    # we truncate the output content to avoid crashing the UI with large amounts of text
+    truncated_output_content = truncate_output_content(output_content, max_length)
+
     return ExtractionSummary(
         id=str(extraction.id),
         created_at=extraction.created_at,
         created_by=extraction.created_by,
         source=extraction.source,
-        output_content=output_content or "",
+        output_content=truncated_output_content,
         extractor=ExtractorSummary(
             id=str(extractor_config.id),
             name=extractor_config.name,
@@ -708,6 +722,7 @@ def build_extraction_summary(
             passthrough_mimetypes=extractor_config.passthrough_mimetypes,
             extractor_type=extractor_config.extractor_type,
         ),
+        output_content_truncated=len(output_content or "") > max_length,
     )
 
 
@@ -1340,6 +1355,43 @@ def connect_document_api(app: FastAPI):
 
         return FileResponse(path=path, filename=document.original_file.filename)
 
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}"
+    )
+    async def download_extraction(
+        project_id: str,
+        document_id: str,
+        extraction_id: str,
+    ) -> FileResponse:
+        project = project_from_id(project_id)
+        document = Document.from_id_and_parent_path(document_id, project.path)
+        if not document:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document {document_id} not found",
+            )
+        extraction = Extraction.from_id_and_parent_path(extraction_id, document.path)
+        if not extraction:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Extraction {extraction_id} not found",
+            )
+        if not extraction.output.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Extraction output path not found",
+            )
+        if not extraction.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Extraction path not found",
+            )
+        path = extraction.output.resolve_path(extraction.path.parent).resolve()
+        return FileResponse(
+            path=path,
+            filename=extraction.output.path.name,
+        )
+
     @app.post(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder"
     )
@@ -1580,12 +1632,13 @@ def connect_document_api(app: FastAPI):
         # if semantic, validate that the referenced embedding config exists
         if request.properties.chunker_type == ChunkerType.SEMANTIC:
             embedding_config = EmbeddingConfig.from_id_and_parent_path(
-                request.properties.embedding_config_id, project.path
+                request.properties.embedding_config_id,  # type: ignore[possibly-missing-attribute]
+                project.path,
             )
             if not embedding_config:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Embedding config {request.properties.embedding_config_id} not found",
+                    detail=f"Embedding config {request.properties.embedding_config_id} not found",  # type: ignore[possibly-missing-attribute]
                 )
 
         chunker_config = ChunkerConfig(
@@ -2096,11 +2149,11 @@ def connect_document_api(app: FastAPI):
         chunker_config = ChunkerConfig(
             name="ephemeral-fixed-window",
             chunker_type=ChunkerType.FIXED_WINDOW,
-            properties={
-                "chunker_type": ChunkerType.FIXED_WINDOW,
-                "chunk_size": request.chunk_size,
-                "chunk_overlap": request.chunk_overlap or 0,
-            },
+            properties=FixedWindowChunkerProperties(
+                chunker_type=ChunkerType.FIXED_WINDOW,
+                chunk_size=request.chunk_size,
+                chunk_overlap=request.chunk_overlap or 0,
+            ),
         )
 
         chunker = chunker_adapter_from_type(ChunkerType.FIXED_WINDOW, chunker_config)

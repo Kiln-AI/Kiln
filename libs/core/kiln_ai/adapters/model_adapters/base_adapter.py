@@ -12,7 +12,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
 from kiln_ai.adapters.parsers.request_formatters import request_formatter_from_id
-from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import (
@@ -44,6 +44,13 @@ class AdapterConfig:
     top_logprobs: int | None = None
     default_tags: list[str] | None = None
 
+    """
+    A custom prompt builder can be injected to override the system prompt building process.
+    If not provided, the prompt builder will be created from the run_config.prompt_id which
+    may load additional files from disk.
+    """
+    prompt_builder: BasePromptBuilder | None = None
+
 
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.
@@ -51,6 +58,10 @@ class BaseAdapter(metaclass=ABCMeta):
     This abstract class provides the foundation for implementing model-specific adapters
     that can process tasks with structured or unstructured inputs/outputs. It handles
     input/output validation, prompt building, and run tracking.
+
+    Prompt building is handled internally by the adapter, which uses a prompt builder
+    based on the run config. To override the prompt building behavior, pass a custom prompt
+    builder to the adapter config.
     """
 
     def __init__(
@@ -60,14 +71,18 @@ class BaseAdapter(metaclass=ABCMeta):
         config: AdapterConfig | None = None,
     ):
         self.task = task
-        self.run_config = run_config
+        self.run_config: RunConfigProperties = run_config
         self.update_run_config_unknown_structured_output_mode()
-        self.prompt_builder = prompt_builder_from_id(run_config.prompt_id, task)
+        self.base_adapter_config = config or AdapterConfig()
+
+        self.prompt_builder = (
+            self.base_adapter_config.prompt_builder
+            or prompt_builder_from_id(run_config.prompt_id, task)
+        )
         self._model_provider: KilnModelProvider | None = None
 
         self.output_schema = task.output_json_schema
         self.input_schema = task.input_json_schema
-        self.base_adapter_config = config or AdapterConfig()
 
     def model_provider(self) -> KilnModelProvider:
         """

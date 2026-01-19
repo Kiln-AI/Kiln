@@ -606,13 +606,13 @@ def connect_tool_servers_api(app: FastAPI):
             name=tool_data.name,
             type=ToolServerType.kiln_task,
             description=tool_data.description,
-            properties={
-                "name": tool_data.name,
-                "description": tool_data.description,
-                "task_id": tool_data.task_id,
-                "run_config_id": tool_data.run_config_id,
-                "is_archived": tool_data.is_archived,
-            },
+            properties=KilnTaskServerProperties(
+                name=tool_data.name,
+                description=tool_data.description,
+                task_id=tool_data.task_id,
+                run_config_id=tool_data.run_config_id,
+                is_archived=tool_data.is_archived,
+            ),
             parent=project,
         )
 
@@ -638,7 +638,7 @@ def connect_tool_servers_api(app: FastAPI):
 
         existing_tool_server.name = tool_data.name
         existing_tool_server.description = tool_data.description
-        existing_tool_server.properties = {
+        existing_tool_server.properties: KilnTaskServerProperties = {
             "name": tool_data.name,
             "description": tool_data.description,
             "task_id": tool_data.task_id,

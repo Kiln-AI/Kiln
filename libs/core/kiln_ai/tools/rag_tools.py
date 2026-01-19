@@ -89,7 +89,7 @@ class RagTool(KilnToolInterface):
             raise ValueError(
                 f"Vector store config not found: {self._rag_config.vector_store_config_id}"
             )
-        self._vector_store_config = vector_store_config
+        self._vector_store_config: VectorStoreConfig = vector_store_config
         self._vector_store_adapter: BaseVectorStoreAdapter | None = None
 
         self._reranker_adapter: BaseReranker | None = None
@@ -227,7 +227,7 @@ class RagTool(KilnToolInterface):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        kwargs = RagParams(**kwargs)
+        kwargs = RagParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         query = kwargs["query"]
 
         search_results = await self.search(query)

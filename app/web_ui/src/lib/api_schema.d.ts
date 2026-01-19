@@ -634,6 +634,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Extraction */
+        get: operations["download_extraction_api_projects__project_id__documents__document_id__download_extraction__extraction_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder": {
         parameters: {
             query?: never;
@@ -1558,15 +1575,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/task_run_configs": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Task Run Configs */
-        get: operations["get_task_run_configs_api_projects__project_id__tasks__task_id__task_run_configs_get"];
+        /** Get Run Configs */
+        get: operations["get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2518,8 +2535,11 @@ export interface components {
             description?: string | null;
             /** @description The provider of the embedding model */
             model_provider_name: components["schemas"]["ModelProviderName"];
-            /** @description The name of the embedding model */
-            model_name: components["schemas"]["EmbeddingModelName"];
+            /**
+             * Model Name
+             * @description The name of the embedding model
+             */
+            model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
         };
@@ -2614,6 +2634,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
+            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -3119,7 +3140,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "baai_bge_m3" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "multilingual_e5_large" | "e5_base_v2" | "e5_large_v2" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505" | "sentence_transformers_all_minilm_l6_v2" | "sentence_transformers_all_mpnet_base_v2" | "sentence_transformers_multi_qa_mpnet_base_dot_v1" | "sentence_transformers_all_minilm_l12_v2" | "sentence_transformers_paraphrase_minilm_l6_v2";
         /** EmbeddingProperties */
         EmbeddingProperties: {
             /** Dimensions */
@@ -3594,6 +3615,8 @@ export interface components {
             /** Output Content */
             output_content: string;
             extractor: components["schemas"]["ExtractorSummary"];
+            /** Output Content Truncated */
+            output_content_truncated: boolean;
         };
         /** ExtractorConfig */
         ExtractorConfig: {
@@ -3787,7 +3810,7 @@ export interface components {
              * @description A description of the fine-tune for you and your team. Not used in training.
              */
             description?: string | null;
-            /** @description The mode to use to train the model for structured output, if it was trained with structured output. Will determine how we call the tuned model, so we call with the matching mode. */
+            /** @description Legacy field -- replaced by run_config.structured_output_mode. The mode to use to train the model for structured output, if it was trained with structured output. We should call the tuned model with this mode if set. */
             structured_output_mode?: components["schemas"]["StructuredOutputMode"] | null;
             /**
              * Provider
@@ -3861,6 +3884,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["RunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -3875,6 +3900,10 @@ export interface components {
             existing_finetunes: components["schemas"]["Finetune"][];
             /** Finetune Tags */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
+            /** Eligible Datasets */
+            eligible_datasets: components["schemas"]["DatasetSplit"][];
+            /** Eligible Finetune Tags */
+            eligible_finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
         };
         /**
          * FinetuneDatasetTagInfo
@@ -3917,6 +3946,11 @@ export interface components {
             id: string;
             /** Data Strategies Supported */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
+            /**
+             * Supports Function Calling
+             * @default true
+             */
+            supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus
@@ -4313,6 +4347,8 @@ export interface components {
             untested_model: boolean;
             /** Task Filter */
             task_filter?: string[] | null;
+            /** Model Specific Run Config */
+            model_specific_run_config?: string | null;
         };
         /**
          * ModelProviderName
@@ -7206,6 +7242,39 @@ export interface operations {
             };
         };
     };
+    download_extraction_api_projects__project_id__documents__document_id__download_extraction__extraction_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+                extraction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     open_document_enclosing_folder_api_projects__project_id__documents__document_id__open_enclosing_folder_post: {
         parameters: {
             query?: never;
@@ -8987,7 +9056,9 @@ export interface operations {
     };
     finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tool_ids?: string[] | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -9092,7 +9163,7 @@ export interface operations {
             };
         };
     };
-    get_task_run_configs_api_projects__project_id__tasks__task_id__task_run_configs_get: {
+    get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get: {
         parameters: {
             query?: never;
             header?: never;
