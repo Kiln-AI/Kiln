@@ -14,7 +14,7 @@ T = TypeVar("T", bound="TaskInfo")
 class TaskInfo:
     """
     Attributes:
-        task_prompt (str): Kiln task description
+        task_prompt (str): The Target Task prompt
         few_shot_examples (None | str | Unset): Optional few-shot examples if used in task_prompt
     """
 

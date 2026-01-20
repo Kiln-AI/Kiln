@@ -17,7 +17,7 @@ class ExamplesWithFeedbackItem:
         user_agrees_with_judge (bool): Whether the user agrees with the judge's assessment
         input_ (str):
         output (str):
-        fails_specification (bool): Whether the output fails the specification
+        fails_specification (bool): Judge's verdict - whether the output fails the Target Specification
         user_feedback (None | str | Unset): Optional text feedback from the user
     """
 
