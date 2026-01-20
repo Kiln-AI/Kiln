@@ -3715,14 +3715,14 @@ export interface components {
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /** ExampleWithFeedbackApi */
         ExampleWithFeedbackApi: {
-            /** User Rating Exhibits Issue Correct */
-            user_rating_exhibits_issue_correct: boolean;
+            /** User Agrees With Judge */
+            user_agrees_with_judge: boolean;
             /** Input */
             input: string;
             /** Output */
             output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
+            /** Fails Specification */
+            fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
         };
@@ -5677,8 +5677,8 @@ export interface components {
             input: string;
             /** Output */
             output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
+            /** Fails Specification */
+            fails_specification: boolean;
         };
         /** TabooProperties */
         TabooProperties: {

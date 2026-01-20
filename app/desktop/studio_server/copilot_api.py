@@ -33,10 +33,10 @@ class SpecInfoApi(BaseModel):
 
 
 class ExampleWithFeedbackApi(BaseModel):
-    user_rating_exhibits_issue_correct: bool
+    user_agrees_with_judge: bool
     input: str = Field(alias="input")
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
     user_feedback: str | None = None
 
     class Config:
@@ -75,7 +75,7 @@ class GenerateBatchApiInput(BaseModel):
 class SubsampleBatchOutputItemApi(BaseModel):
     input: str = Field(alias="input")
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
 
 
 class ClarifySpecApiOutput(BaseModel):

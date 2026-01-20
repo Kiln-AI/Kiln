@@ -69,10 +69,10 @@ def refine_spec_input():
         },
         "examples_with_feedback": [
             {
-                "user_rating_exhibits_issue_correct": True,
+                "user_agrees_with_judge": True,
                 "input": "test input",
                 "output": "test output",
-                "exhibits_issue": False,
+                "fails_specification": False,
             }
         ],
     }
@@ -109,7 +109,7 @@ class TestClarifySpec:
                 {
                     "input": "test input",
                     "output": "test output",
-                    "exhibits_issue": False,
+                    "fails_specification": False,
                 }
             ],
             "model_id": "gpt-4",

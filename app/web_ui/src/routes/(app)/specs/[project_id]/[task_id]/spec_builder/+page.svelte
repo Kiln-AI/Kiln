@@ -260,7 +260,7 @@
       id: String(index + 1),
       input: example.input,
       output: example.output,
-      model_says_meets_spec: !example.exhibits_issue,
+      model_says_meets_spec: !example.fails_specification,
       user_says_meets_spec: undefined,
       feedback: "",
     }))
@@ -411,12 +411,12 @@
 
       // Convert reviewed examples to API format
       const examples_with_feedback = currentExamples.map((example) => ({
-        user_rating_exhibits_issue_correct:
+        user_agrees_with_judge:
           example.model_says_meets_spec === example.user_says_meets_spec,
         user_feedback: example.feedback,
         input: example.input,
         output: example.output,
-        exhibits_issue: !example.user_says_meets_spec,
+        fails_specification: !example.user_says_meets_spec,
       }))
 
       if (examples_with_feedback.length === 0) {
