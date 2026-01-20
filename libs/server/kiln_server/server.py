@@ -10,6 +10,7 @@ from .custom_errors import connect_custom_errors
 from .document_api import connect_document_api
 from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
+from .question_api import connect_question_api
 from .run_api import connect_run_api
 from .spec_api import connect_spec_api
 from .task_api import connect_task_api
@@ -43,6 +44,7 @@ def make_app(lifespan=None):
     connect_spec_api(app)
     connect_run_api(app)
     connect_document_api(app)
+    connect_question_api(app)
     connect_custom_errors(app)
 
     allowed_origins = [

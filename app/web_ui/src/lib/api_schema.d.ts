@@ -1075,6 +1075,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/demo_question_set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Demo Question Set */
+        get: operations["get_demo_question_set_api_demo_question_set_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/submit_spec_question_answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Question Answers */
+        post: operations["submit_question_answers_api_submit_spec_question_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -2194,6 +2228,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerOption */
+        AnswerOption: {
+            /** Answer Title */
+            answer_title: string;
+            /** Answer Description */
+            answer_description: string;
+        };
         /** ApiPrompt */
         ApiPrompt: {
             /**
@@ -4986,6 +5027,34 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
         };
+        /** Question */
+        Question: {
+            /** Question Title */
+            question_title: string;
+            /** Question Body */
+            question_body: string;
+            /** Answer Options */
+            answer_options: components["schemas"]["AnswerOption"][];
+        };
+        /**
+         * QuestionAnswer
+         * @description An answer to a single question. Must provide exactly one of:
+         *     - selected_option_index: index of the chosen AnswerOption (0-indexed)
+         *     - other_feedback: plaintext feedback when none of the predefined options fit
+         */
+        QuestionAnswer: {
+            /** Question Index */
+            question_index: number;
+            /** Selected Option Index */
+            selected_option_index?: number | null;
+            /** Other Feedback */
+            other_feedback?: string | null;
+        };
+        /** QuestionSet */
+        QuestionSet: {
+            /** Questions */
+            questions: components["schemas"]["Question"][];
+        };
         /** RagConfig */
         RagConfig: {
             /**
@@ -5671,6 +5740,16 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /**
+         * SubmitAnswersRequest
+         * @description Request to submit answers to a question set.
+         */
+        SubmitAnswersRequest: {
+            /** Questions */
+            questions: components["schemas"]["Question"][];
+            /** Answers */
+            answers: components["schemas"]["QuestionAnswer"][];
+        };
         /** SubsampleBatchOutputItemApi */
         SubsampleBatchOutputItemApi: {
             /** Input */
@@ -8785,6 +8864,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EphemeralSplitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_demo_question_set_api_demo_question_set_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+        };
+    };
+    submit_question_answers_api_submit_spec_question_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

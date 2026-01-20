@@ -143,6 +143,8 @@ export type SpecProperties =
   | components["schemas"]["JailbreakProperties"]
   | components["schemas"]["PromptLeakageProperties"]
 export type SpecType = SpecProperties["spec_type"]
+export type QuestionSet = components["schemas"]["QuestionSet"]
+export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 
