@@ -78,11 +78,15 @@ class SubsampleBatchOutputItemApi(BaseModel):
     fails_specification: bool
 
 
-class ClarifySpecApiOutput(BaseModel):
-    examples_for_feedback: list[SubsampleBatchOutputItemApi]
+class JudgeInfoApi(BaseModel):
     model_id: str
     model_provider: ModelProviderName
     judge_prompt: str
+
+
+class ClarifySpecApiOutput(BaseModel):
+    examples_for_feedback: list[SubsampleBatchOutputItemApi]
+    judge_info: JudgeInfoApi
 
 
 class SpecEditApi(BaseModel):

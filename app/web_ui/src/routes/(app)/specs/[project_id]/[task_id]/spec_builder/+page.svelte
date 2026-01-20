@@ -251,9 +251,9 @@
     }
 
     judge_info = {
-      prompt: data.judge_prompt,
-      model_id: data.model_id,
-      model_provider: data.model_provider,
+      prompt: data.judge_info.judge_prompt,
+      model_id: data.judge_info.model_id,
+      model_provider: data.judge_info.model_provider,
     }
 
     review_rows = data.examples_for_feedback.map((example, index) => ({

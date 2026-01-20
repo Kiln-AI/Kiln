@@ -19,6 +19,7 @@ from .gepa_job_result_response import GEPAJobResultResponse
 from .health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from .http_validation_error import HTTPValidationError
 from .job_start_response import JobStartResponse
+from .judge_info import JudgeInfo
 from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
@@ -56,6 +57,7 @@ __all__ = (
     "HTTPValidationError",
     "JobStartResponse",
     "JobStatus",
+    "JudgeInfo",
     "JobStatusResponse",
     "JobType",
     "ModelProviderName",

@@ -2614,11 +2614,7 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            /** Model Id */
-            model_id: string;
-            model_provider: components["schemas"]["ModelProviderName"];
-            /** Judge Prompt */
-            judge_prompt: string;
+            judge_info: components["schemas"]["JudgeInfoApi"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -4357,6 +4353,14 @@ export interface components {
             core_requirement: string;
             /** Jailbroken Examples */
             jailbroken_examples: string;
+        };
+        /** JudgeInfoApi */
+        JudgeInfoApi: {
+            /** Model Id */
+            model_id: string;
+            model_provider: components["schemas"]["ModelProviderName"];
+            /** Judge Prompt */
+            judge_prompt: string;
         };
         KilnAttachmentModel: {
             [key: string]: string;
