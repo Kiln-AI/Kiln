@@ -63,7 +63,11 @@ export async function checkDefaultRunConfigHasTools(
   project_id: string,
   task: Task,
 ): Promise<boolean> {
-  if (!task.id || !task.default_run_config_id) {
+  if (!task.id) {
+    throw new Error("Task ID is required")
+  }
+
+  if (!task.default_run_config_id) {
     return false
   }
 
