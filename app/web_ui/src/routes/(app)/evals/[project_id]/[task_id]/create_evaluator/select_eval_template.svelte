@@ -34,8 +34,8 @@
   export let task: Task | null | undefined
   let overall_task_performance_dialog: Dialog | undefined
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let recommended_tool_call_eval: boolean = false
 

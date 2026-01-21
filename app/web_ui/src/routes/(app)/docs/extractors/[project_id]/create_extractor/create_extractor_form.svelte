@@ -15,7 +15,7 @@
     default_extractor_audio_prompts,
   } from "./default_extractor_prompts"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let loading: boolean = false
   let error: KilnError | null = null

@@ -21,6 +21,10 @@
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
 
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
+
   let combined_model_name: string | undefined = undefined
   let model_name: string | undefined = undefined
   let provider_name: string | undefined = undefined
@@ -58,7 +62,7 @@
     }
     try {
       loading_task = true
-      task = await load_task($page.params.project_id, $page.params.task_id)
+      task = await load_task(project_id, task_id)
       if (!task) {
         throw new Error("Task not found")
       }
@@ -94,9 +98,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -155,9 +159,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
           body: {
@@ -185,9 +189,9 @@
       if (data.id && save_as_default === "true") {
         try {
           evaluator = await set_current_eval_config(
-            $page.params.project_id,
-            $page.params.task_id,
-            $page.params.eval_id,
+            project_id,
+            task_id,
+            eval_id,
             data.id,
           )
         } catch (e) {

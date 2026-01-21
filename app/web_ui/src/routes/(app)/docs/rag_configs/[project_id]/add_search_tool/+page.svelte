@@ -16,7 +16,7 @@
   } from "./rag_config_templates"
   import posthog from "posthog-js"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let selected_template_id: string | null = null
   let selected_template: RagConfigTemplate | null = null

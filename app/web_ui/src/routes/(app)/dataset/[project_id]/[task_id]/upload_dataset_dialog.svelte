@@ -8,8 +8,8 @@
 
   let selected_file: File | null = null
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   function handleFileSelect(event: Event) {
     const input = event.target as HTMLInputElement

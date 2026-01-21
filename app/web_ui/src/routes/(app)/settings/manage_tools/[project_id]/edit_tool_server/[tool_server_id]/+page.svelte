@@ -8,8 +8,8 @@
   import EditLocalTool from "../../add_tools/local_mcp/edit_local_tool.svelte"
   import EditRemoteTool from "../../add_tools/remote_mcp/edit_remote_tool.svelte"
 
-  $: tool_server_id = $page.params.tool_server_id
-  $: project_id = $page.params.project_id
+  $: tool_server_id = $page.params.tool_server_id!
+  $: project_id = $page.params.project_id!
 
   let loading = true
   let error: KilnError | null = null

@@ -13,6 +13,12 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
+
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
+  $: eval_config_id = $page.params.eval_config_id!
+  $: run_config_id = $page.params.run_config_id!
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import {
@@ -55,11 +61,11 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
-              eval_config_id: $page.params.eval_config_id,
-              run_config_id: $page.params.run_config_id,
+              project_id,
+              task_id,
+              eval_id,
+              eval_config_id,
+              run_config_id,
             },
           },
         },

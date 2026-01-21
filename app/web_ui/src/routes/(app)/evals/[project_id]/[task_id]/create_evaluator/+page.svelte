@@ -24,6 +24,9 @@
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
 
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+
   // Loading
   let loading_task = true
   let loading_error: KilnError | undefined = undefined
@@ -33,7 +36,7 @@
     // Need to wait for the page params to be available
     await tick()
     try {
-      task = await load_task($page.params.project_id, $page.params.task_id)
+      task = await load_task(project_id, task_id)
       eval_dataset_custom_tag = suggested_eval_set_tag
       config_dataset_custom_tag = suggested_config_set_tag
     } catch (e) {
@@ -116,8 +119,8 @@
           {
             params: {
               path: {
-                project_id: $page.params.project_id,
-                task_id: $page.params.task_id,
+                project_id,
+                task_id,
               },
             },
             body: {
