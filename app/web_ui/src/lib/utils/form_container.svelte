@@ -197,42 +197,12 @@
         </div>
       {/each}
     {/if}
-    {#if submit_data_tip}
-      <div
-        class="tooltip tooltip-top {compact_button ? '' : 'w-full'}"
-        data-tip={submit_data_tip}
-      >
-        <button
-          type="submit"
-          class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
-            ? 'btn-success'
-            : ''} {submit_visible ? '' : 'hidden'} {compact_button
-            ? 'min-w-64 px-12'
-            : 'w-full'}"
-          on:click={validate_and_submit}
-          disabled={submitting || submit_disabled}
-        >
-          {#if ui_saved_indicator}
-            ✔ Saved
-          {:else if !submitting}
-            {submit_label}
-            <span
-              class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
-                ? ''
-                : 'hidden'}"
-            >
-              {#if isMacOS()}
-                <span class="tracking-widest">⌘↵</span>
-              {:else}
-                <span>ctrl ↵</span>
-              {/if}
-            </span>
-          {:else}
-            <span class="loading loading-spinner loading-md"></span>
-          {/if}
-        </button>
-      </div>
-    {:else}
+    <div
+      class="{submit_data_tip ? 'tooltip tooltip-top' : ''} {compact_button
+        ? ''
+        : 'w-full'}"
+      data-tip={submit_data_tip}
+    >
       <button
         type="submit"
         class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
@@ -262,6 +232,6 @@
           <span class="loading loading-spinner loading-md"></span>
         {/if}
       </button>
-    {/if}
+    </div>
   </div>
 </form>
