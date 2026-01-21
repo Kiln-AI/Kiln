@@ -59,9 +59,8 @@ export const spec_field_configs: Record<SpecType, FieldConfig[]> = {
     },
     {
       key: "non_issue_examples",
-      label: "Non-Issue Examples",
-      description:
-        "Provide examples where the model does not exhibit the issue",
+      label: "Acceptable Examples",
+      description: "Provide examples where the model output is acceptable",
       required: false,
       info_description: `e.g., "Eating healthy and exercise proven to be an effective way to lose weight"`,
     },
@@ -487,7 +486,7 @@ export const spec_categories: SpecCategoryData[] = [
       {
         spec_type: "issue",
         description:
-          "Specify a problematic behaviours you want this task to avoid.",
+          "Specify problematic behaviours you want this task to avoid.",
       },
     ],
   },

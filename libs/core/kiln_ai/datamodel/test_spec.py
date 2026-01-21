@@ -148,13 +148,11 @@ def create_sample_properties(spec_type: SpecType):
     if spec_type == SpecType.desired_behaviour:
         return DesiredBehaviourProperties(
             spec_type=spec_type,
-            core_requirement=core_requirement,
             desired_behaviour_description="Test desired behaviour",
         )
     elif spec_type == SpecType.issue:
         return IssueProperties(
             spec_type=spec_type,
-            core_requirement=core_requirement,
             issue_description="Test issue description",
         )
     elif spec_type == SpecType.tone:
@@ -449,7 +447,6 @@ def test_spec_with_desired_behaviour_properties(sample_task):
     """Test creating a spec with DesiredBehaviourProperties."""
     properties = DesiredBehaviourProperties(
         spec_type=SpecType.desired_behaviour,
-        core_requirement="Test instruction",
         desired_behaviour_description="Avoid toxic language",
         correct_behaviour_examples="Example 1: Be polite and respectful",
         incorrect_behaviour_examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
@@ -526,7 +523,6 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
     with pytest.raises(ValidationError):
         properties = DesiredBehaviourProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
-            core_requirement="Test instruction",
             desired_behaviour_description="Avoid toxic language",
         )
         Spec(

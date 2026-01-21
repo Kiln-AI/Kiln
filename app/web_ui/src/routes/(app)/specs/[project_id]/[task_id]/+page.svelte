@@ -19,6 +19,7 @@
   import {
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
+    checkKilnCopilotAvailable,
   } from "./spec_utils"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
 
@@ -139,15 +140,7 @@
     try {
       settings_loading = true
       settings_error = null
-      const { data, error } = await client.GET("/api/settings")
-      if (error) {
-        throw error
-      }
-      if (data["kiln_copilot_api_key"]) {
-        has_kiln_copilot = true
-      } else {
-        has_kiln_copilot = false
-      }
+      has_kiln_copilot = await checkKilnCopilotAvailable()
     } catch (e) {
       settings_error = createKilnError(e)
     } finally {
@@ -712,14 +705,14 @@
 <AppPage
   limit_max_width={true}
   title="Specs &amp; Evals"
-  subtitle="Specifications describe the behaviours to enforce or avoid for your task. Adding specs let us measure and optimize quality with evals."
+  subtitle="Specifications describe the behaviours to enforce or avoid for your task. Adding specs lets us measure and optimize quality with evals."
   sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "New Spec",
+          label: "Create Spec",
           handler: async () => {
             await check_kiln_copilot_and_proceed()
           },
@@ -747,7 +740,9 @@
           action_buttons={[
             {
               label: "Create Spec",
-              href: `/specs/${project_id}/${task_id}/select_template`,
+              onClick: async () => {
+                await check_kiln_copilot_and_proceed()
+              },
               is_primary: true,
             },
             {

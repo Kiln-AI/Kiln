@@ -137,7 +137,7 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 
 class CreateEvaluatorRequest(BaseModel):
     name: str
-    description: str
+    description: str | None = None
     template: EvalTemplateId | None
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId

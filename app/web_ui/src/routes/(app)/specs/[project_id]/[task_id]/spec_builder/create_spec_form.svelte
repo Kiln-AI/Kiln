@@ -5,6 +5,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
+  import { filename_string_short_validator } from "$lib/utils/input_validators"
 
   export let name: string
   export let property_values: Record<string, string | null>
@@ -18,6 +19,8 @@
   export let submitting: boolean
   export let warn_before_unload: boolean
 
+  let form_container: FormContainer
+
   const dispatch = createEventDispatcher<{
     analyze_with_copilot: void
     create_without_copilot: void
@@ -25,16 +28,22 @@
 
   function reset_field(key: string) {
     property_values[key] = initial_property_values[key] ?? null
+    property_values = { ...property_values }
   }
 
-  function has_form_changes(): boolean {
-    for (const key of Object.keys(property_values)) {
-      if (property_values[key] !== initial_property_values[key]) return true
+  function has_form_changes(
+    current: Record<string, string | null>,
+    initial: Record<string, string | null>,
+  ): boolean {
+    for (const key of Object.keys(current)) {
+      if (current[key] !== initial[key]) return true
     }
     return false
   }
 
-  $: computed_warn_before_unload = warn_before_unload && has_form_changes()
+  $: computed_warn_before_unload =
+    warn_before_unload &&
+    has_form_changes(property_values, initial_property_values)
 
   function handle_submit() {
     if (copilot_enabled) {
@@ -43,9 +52,16 @@
       dispatch("create_without_copilot")
     }
   }
+
+  async function handle_secondary_click() {
+    if (await form_container.validate_only()) {
+      dispatch("create_without_copilot")
+    }
+  }
 </script>
 
 <FormContainer
+  bind:this={form_container}
   submit_label={copilot_enabled ? "Analyze with Copilot" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
@@ -58,6 +74,7 @@
     description="A short name for your own reference."
     id="spec_name"
     bind:value={name}
+    validator={filename_string_short_validator}
   />
 
   {#each field_configs as field (field.key)}
@@ -104,7 +121,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_without_copilot")}
+      on:click={handle_secondary_click}
     >
       Create without Copilot
     </button>

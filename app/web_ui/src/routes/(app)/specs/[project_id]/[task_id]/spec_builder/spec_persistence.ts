@@ -61,7 +61,6 @@ export async function createSpec(
   const eval_id = await createEval(
     project_id,
     task_id,
-    task_description,
     name,
     spec_type,
     evaluate_full_trace,
@@ -80,32 +79,34 @@ export async function createSpec(
       }
 
       // Generate eval data set
-      const tag = specEvalTag(name)
+      const evalTag = "eval_" + snakeCase(name)
       await generateAndSaveEvalData(
         project_id,
         task_id,
         spec_type,
         property_values,
-        tag,
+        evalTag,
         signal,
       )
 
       // Save any provided reviewed examples as the golden dataset
       if (reviewed_examples.length > 0) {
-        const goldenTag = specEvalTag(name) + "_golden"
+        const goldenTag = "eval_golden_" + snakeCase(name)
         await saveReviewedExamplesAsGoldenDataset(
           project_id,
           task_id,
           reviewed_examples,
           goldenTag,
-          spec_type, // The eval output score name matches the spec_type
+          name,
         )
       }
     }
 
-    // Build the properties object with spec_type, filtering out null values
+    // Build the properties object with spec_type, filtering out null and empty values
     const filteredPropertyValues = Object.fromEntries(
-      Object.entries(property_values).filter(([_, value]) => value !== null),
+      Object.entries(property_values).filter(
+        ([_, value]) => value !== null && value.trim() !== "",
+      ),
     )
     const properties = {
       spec_type: spec_type,
@@ -217,18 +218,16 @@ async function createJudgeAndSetAsDefault(
 async function createEval(
   project_id: string,
   task_id: string,
-  task_description: string,
   spec_name: string,
   spec_type: SpecType,
   evaluate_full_trace: boolean = false,
 ): Promise<string> {
   const name = spec_name
-  const description = `An eval to measure if the model's behaviour meets the spec: ${spec_name}.`
   const template = specEvalTemplate(spec_type)
-  const output_scores = [specEvalOutputScore(spec_type)]
-  const tag = specEvalTag(spec_name)
-  const eval_set_filter_id = `tag::${tag}`
-  const eval_configs_filter_id = `tag::${tag}_golden`
+  const output_scores = [specEvalOutputScore(spec_name)]
+  const snake_case_name = snakeCase(spec_name)
+  const eval_set_filter_id = `tag::eval_${snake_case_name}`
+  const eval_configs_filter_id = `tag::eval_golden_${snake_case_name}`
   const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
@@ -238,7 +237,7 @@ async function createEval(
       },
       body: {
         name,
-        description,
+        description: null,
         template,
         output_scores,
         eval_set_filter_id,
@@ -309,8 +308,17 @@ async function generateAndSaveEvalData(
 
   const examples = Object.values(data.data_by_topic).flat()
 
-  // Save each example as a TaskRun with the eval tag
-  for (const example of examples) {
+  // Split examples 50/50 - first half for eval, second half for training
+  const midpoint = Math.ceil(examples.length / 2)
+  const trainTag = tag.replace(/^eval_/, "eval_train_")
+
+  // Map each example with the appropriate tag based on index
+  const allExamplesWithTags = examples.map((example, index) => ({
+    example,
+    tag: index < midpoint ? tag : trainTag,
+  }))
+
+  for (const { example, tag: exampleTag } of allExamplesWithTags) {
     const taskRun: TaskRun = {
       v: 1,
       id: generate_id(),
@@ -337,7 +345,7 @@ async function generateAndSaveEvalData(
           model_provider: "kiln",
         },
       },
-      tags: [tag],
+      tags: [exampleTag],
     }
 
     // Save the run
@@ -366,13 +374,12 @@ async function saveReviewedExamplesAsGoldenDataset(
   task_id: string,
   examples: ReviewedExample[],
   goldenTag: string,
-  evalScoreName: string,
+  spec_name: string,
 ): Promise<void> {
   // Create a TaskRun for each reviewed example with the golden tag
-  // The human rating is stored in requirement_ratings with key "named::<evalScoreName>"
-  // to match the eval's output score
+  // The human rating is stored in requirement_ratings with key "named::<spec_name>" (using spec name for eval output score name)
   for (const example of examples) {
-    const ratingKey = `named::${evalScoreName}`
+    const ratingKey = `named::${spec_name}`
     const { error } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/runs",
       {
@@ -413,11 +420,11 @@ function generate_id(): string {
   return randomInt.toString().padStart(12, "0")
 }
 
-function specEvalOutputScore(spec_type: SpecType): EvalOutputScore {
+function specEvalOutputScore(spec_name: string): EvalOutputScore {
   return {
-    name: spec_type,
+    name: spec_name,
     type: "pass_fail",
-    instruction: "Evaluate if the model's behaviour meets the spec.",
+    instruction: `Evaluate if the model's behaviour meets the spec: ${spec_name}.`,
   }
 }
 
@@ -473,15 +480,8 @@ function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
   }
 }
 
-function specEvalTag(spec_name: string): string {
-  const tag = spec_name.toLowerCase().replace(/ /g, "_")
-  if (tag.length === 0) {
-    return "eval_" + (Math.floor(Math.random() * (99999 - 10000 + 1)) + 10000)
-  }
-  if (tag.length > 32) {
-    return tag.slice(0, 32)
-  }
-  return tag
+function snakeCase(spec_name: string): string {
+  return spec_name.toLowerCase().replace(/ /g, "_")
 }
 
 async function cleanupEval(
