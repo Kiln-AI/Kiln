@@ -65,7 +65,7 @@
   $: task_output_schema = task?.output_json_schema
     ? JSON.stringify(task.output_json_schema)
     : ""
-  $: task_prompt_with_few_shot = task?.instruction || ""
+  $: target_task_prompt = task?.instruction || ""
 
   // Review state
   type ReviewRow = ReviewedExample & { id: string }
@@ -222,7 +222,7 @@
       "/api/copilot/clarify_spec",
       {
         body: {
-          task_prompt_with_few_shot,
+          target_task_prompt,
           task_input_schema,
           task_output_schema,
           spec_rendered_prompt_template,
@@ -401,7 +401,7 @@
         "/api/copilot/refine_spec",
         {
           body: {
-            task_prompt_with_few_shot,
+            target_task_prompt,
             task_input_schema: task.input_json_schema
               ? JSON.stringify(task.input_json_schema)
               : "",

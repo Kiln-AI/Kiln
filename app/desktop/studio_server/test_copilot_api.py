@@ -43,7 +43,7 @@ def mock_api_key():
 @pytest.fixture
 def clarify_spec_input():
     return {
-        "task_prompt_with_few_shot": "Test task prompt",
+        "target_task_prompt": "Test task prompt",
         "task_input_schema": '{"type": "string"}',
         "task_output_schema": '{"type": "string"}',
         "spec_rendered_prompt_template": "Test template",
@@ -57,7 +57,7 @@ def clarify_spec_input():
 @pytest.fixture
 def refine_spec_input():
     return {
-        "task_prompt_with_few_shot": "Test task prompt",
+        "target_task_prompt": "Test task prompt",
         "task_input_schema": '{"type": "string"}',
         "task_output_schema": '{"type": "string"}',
         "task_info": {
@@ -81,7 +81,7 @@ def refine_spec_input():
 @pytest.fixture
 def generate_batch_input():
     return {
-        "task_prompt_with_few_shot": "Test task prompt",
+        "target_task_prompt": "Test task prompt",
         "task_input_schema": '{"type": "string"}',
         "task_output_schema": '{"type": "string"}',
         "spec_rendered_prompt_template": "Test template",

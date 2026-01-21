@@ -2590,8 +2590,8 @@ export interface components {
         ChunkerType: "fixed_window" | "semantic";
         /** ClarifySpecApiInput */
         ClarifySpecApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */
@@ -4263,8 +4263,8 @@ export interface components {
         };
         /** GenerateBatchApiInput */
         GenerateBatchApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */
@@ -5223,8 +5223,8 @@ export interface components {
         };
         /** RefineSpecApiInput */
         RefineSpecApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */

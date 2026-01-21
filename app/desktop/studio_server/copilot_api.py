@@ -42,7 +42,7 @@ class ExampleWithFeedbackApi(BaseModel):
 
 
 class ClarifySpecApiInput(BaseModel):
-    target_task_prompt: str = Field(alias="task_prompt_with_few_shot")
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -51,29 +51,23 @@ class ClarifySpecApiInput(BaseModel):
     providers: list[ModelProviderName]
     num_exemplars: int = Field(default=10)
 
-    model_config = {"populate_by_name": True}
-
 
 class RefineSpecApiInput(BaseModel):
-    target_task_prompt: str = Field(alias="task_prompt_with_few_shot")
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     task_info: TaskInfoApi
     spec: SpecInfoApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
-    model_config = {"populate_by_name": True}
-
 
 class GenerateBatchApiInput(BaseModel):
-    target_task_prompt: str = Field(alias="task_prompt_with_few_shot")
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
     num_samples_per_topic: int
     num_topics: int
-
-    model_config = {"populate_by_name": True}
 
 
 class SubsampleBatchOutputItemApi(BaseModel):
