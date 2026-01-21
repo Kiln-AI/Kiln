@@ -42,7 +42,7 @@ class ExampleWithFeedbackApi(BaseModel):
 
 
 class ClarifySpecApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str = Field(alias="task_prompt_with_few_shot")
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -51,23 +51,29 @@ class ClarifySpecApiInput(BaseModel):
     providers: list[ModelProviderName]
     num_exemplars: int = Field(default=10)
 
+    model_config = {"populate_by_name": True}
+
 
 class RefineSpecApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str = Field(alias="task_prompt_with_few_shot")
     task_input_schema: str
     task_output_schema: str
     task_info: TaskInfoApi
     spec: SpecInfoApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
+    model_config = {"populate_by_name": True}
+
 
 class GenerateBatchApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str = Field(alias="task_prompt_with_few_shot")
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
     num_samples_per_topic: int
     num_topics: int
+
+    model_config = {"populate_by_name": True}
 
 
 class SubsampleBatchOutputItemApi(BaseModel):
@@ -124,9 +130,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        input_dict = input.model_dump()
-        input_dict["target_task_prompt"] = input_dict.pop("task_prompt_with_few_shot")
-        clarify_input = ClarifySpecInput.from_dict(input_dict)
+        clarify_input = ClarifySpecInput.from_dict(input.model_dump())
 
         result = await clarify_spec_v1_copilot_clarify_spec_post.asyncio(
             client=client,
@@ -157,7 +161,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        refine_input = RefineSpecInput.from_dict(input.model_dump(by_alias=True))
+        refine_input = RefineSpecInput.from_dict(input.model_dump())
 
         result = await refine_spec_v1_copilot_refine_spec_post.asyncio(
             client=client,
@@ -188,9 +192,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        input_dict = input.model_dump()
-        input_dict["target_task_prompt"] = input_dict.pop("task_prompt_with_few_shot")
-        generate_input = GenerateBatchInput.from_dict(input_dict)
+        generate_input = GenerateBatchInput.from_dict(input.model_dump())
 
         result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
             client=client,
