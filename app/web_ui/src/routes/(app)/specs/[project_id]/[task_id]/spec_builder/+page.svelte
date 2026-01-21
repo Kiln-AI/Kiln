@@ -252,7 +252,7 @@
 
     judge_info = {
       prompt: data.judge_info.judge_prompt,
-      model_id: data.judge_info.model_id,
+      model_id: data.judge_info.model_name,
       model_provider: data.judge_info.model_provider,
     }
 

@@ -4356,8 +4356,8 @@ export interface components {
         };
         /** JudgeInfoApi */
         JudgeInfoApi: {
-            /** Model Id */
-            model_id: string;
+            /** Model Name */
+            model_name: string;
             model_provider: components["schemas"]["ModelProviderName"];
             /** Judge Prompt */
             judge_prompt: string;

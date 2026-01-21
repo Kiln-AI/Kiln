@@ -113,7 +113,7 @@ class TestClarifySpec:
                 }
             ],
             "judge_info": {
-                "model_id": "gpt-4",
+                "model_name": "gpt-4",
                 "model_provider": "openai",
                 "judge_prompt": "Test judge prompt",
             },
@@ -128,7 +128,7 @@ class TestClarifySpec:
             assert response.status_code == 200
             result = response.json()
             assert "examples_for_feedback" in result
-            assert result["judge_info"]["model_id"] == "gpt-4"
+            assert result["judge_info"]["model_name"] == "gpt-4"
 
     def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
         with patch(

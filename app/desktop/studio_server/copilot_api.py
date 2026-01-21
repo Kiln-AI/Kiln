@@ -79,7 +79,7 @@ class SubsampleBatchOutputItemApi(BaseModel):
 
 
 class JudgeInfoApi(BaseModel):
-    model_id: str
+    model_name: str
     model_provider: ModelProviderName
     judge_prompt: str
 
