@@ -3,6 +3,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     generate_batch_v1_copilot_generate_batch_post,
     question_spec_v1_copilot_question_spec_post,
     refine_spec_v1_copilot_refine_spec_post,
+    refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecInput,
@@ -17,7 +18,13 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     QuestionSet as QuestionSetServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    RefineSpecWithQuestionAnswersResponse as RefineSpecWithQuestionAnswersResponseServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SpecQuestionerInput as SpecQuestionerInputServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SubmitAnswersRequest as SubmitAnswersRequestServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
@@ -26,6 +33,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.questions import (
     QuestionSet,
+    RefineSpecWithQuestionAnswersResponse,
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
@@ -255,13 +263,38 @@ def connect_copilot_api(app: FastAPI):
             detail=f"Failed to generate questions: Unexpected response type {type(result)}",
         )
 
-    # TODO P0 - this should be implemented.
     @app.post("/api/refine_spec_with_question_answers")
     async def submit_question_answers(
         request: SubmitAnswersRequest,
-    ):
-        # Validation is handled by Pydantic model validators
-        # Here you would process the answers (e.g., update spec, store responses, etc.)
+    ) -> RefineSpecWithQuestionAnswersResponse:
+        api_key = _get_api_key()
+        client = get_authenticated_client(api_key)
 
-        # TODO: implement answer processing logic
-        return
+        submit_input = SubmitAnswersRequestServerApi.from_dict(request.model_dump())
+
+        result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio(
+            client=client,
+            body=submit_input,
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to refine spec with question answers: No response",
+            )
+
+        if isinstance(result, HTTPValidationError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Validation error: {result.to_dict()}",
+            )
+
+        if isinstance(result, RefineSpecWithQuestionAnswersResponseServerApi):
+            return RefineSpecWithQuestionAnswersResponse.model_validate(
+                result.to_dict()
+            )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refine spec with question answers: Unexpected response type {type(result)}",
+        )
