@@ -27,6 +27,8 @@
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import type { FewShotExample } from "$lib/utils/few_shot_example"
+  import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
 
   $: project_id = $page.params.project_id
   $: task_id = $page.params.task_id
@@ -65,7 +67,34 @@
   $: task_output_schema = task?.output_json_schema
     ? JSON.stringify(task.output_json_schema)
     : ""
-  $: task_prompt_with_few_shot = task?.instruction || ""
+
+  // Few-shot example for improving API calls
+  let few_shot_example: FewShotExample | null = null
+  let task_prompt_with_few_shot: string = ""
+
+  // Update the prompt when few_shot_example or task changes
+  async function update_task_prompt_with_few_shot() {
+    if (!task) {
+      task_prompt_with_few_shot = ""
+      return
+    }
+    try {
+      const examples = few_shot_example ? [few_shot_example] : []
+      task_prompt_with_few_shot = await build_prompt_with_few_shot(
+        project_id,
+        task_id,
+        examples,
+      )
+    } catch (e) {
+      console.error("Failed to build prompt with few-shot:", e)
+      // TODO: Do we need to show error to user?
+      // Fallback to just the instruction
+      task_prompt_with_few_shot = task?.instruction || ""
+    }
+  }
+
+  // Reactively update when example changes
+  $: void (few_shot_example && update_task_prompt_with_few_shot())
 
   // Review state
   type ReviewRow = ReviewedExample & { id: string }
@@ -577,6 +606,9 @@
         bind:error
         bind:submitting
         {warn_before_unload}
+        {project_id}
+        {task_id}
+        bind:few_shot_example
         on:analyze_with_copilot={handle_analyze_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />

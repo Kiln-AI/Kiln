@@ -6,6 +6,8 @@
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
+  import FewShotSelector from "$lib/utils/few_shot_selector.svelte"
+  import type { FewShotExample } from "$lib/utils/few_shot_example"
 
   export let name: string
   export let property_values: Record<string, string | null>
@@ -18,6 +20,9 @@
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
+  export let project_id: string
+  export let task_id: string
+  export let few_shot_example: FewShotExample | null = null
 
   let form_container: FormContainer
 
@@ -76,6 +81,26 @@
     bind:value={name}
     validator={filename_string_short_validator}
   />
+
+  {#if copilot_enabled}
+    <div class="mt-4">
+      <label class="text-sm font-medium" for="few_shot_selector">
+        Example Input/Output
+        <span class="text-xs text-gray-500 ml-1">Optional</span>
+      </label>
+      <p class="text-xs text-gray-500 mb-2">
+        Providing an example helps the AI better understand your task when
+        generating test data.
+      </p>
+      <FewShotSelector
+        {project_id}
+        {task_id}
+        bind:selected_example={few_shot_example}
+        optional={true}
+        on:change={(e) => (few_shot_example = e.detail.example)}
+      />
+    </div>
+  {/if}
 
   {#each field_configs as field (field.key)}
     <FormElement

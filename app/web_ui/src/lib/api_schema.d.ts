@@ -251,6 +251,28 @@ export interface paths {
         patch: operations["update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build Prompt With Examples
+         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         *
+         *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         */
+        post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/spec": {
         parameters: {
             query?: never;
@@ -2344,6 +2366,19 @@ export interface components {
             /** Remove Tags */
             remove_tags?: string[] | null;
         };
+        /** BuildPromptRequest */
+        BuildPromptRequest: {
+            /**
+             * Examples
+             * @default []
+             */
+            examples: components["schemas"]["FewShotExample"][];
+        };
+        /** BuildPromptResponse */
+        BuildPromptResponse: {
+            /** Prompt */
+            prompt: string;
+        };
         /** BulkCreateDocumentsResponse */
         BulkCreateDocumentsResponse: {
             /** Created Documents */
@@ -3944,6 +3979,13 @@ export interface components {
             core_requirement: string;
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
+        };
+        /** FewShotExample */
+        FewShotExample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
         };
         /** File */
         File: {
@@ -6851,6 +6893,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Prompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildPromptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildPromptResponse"];
                 };
             };
             /** @description Validation Error */
