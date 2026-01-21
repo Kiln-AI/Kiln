@@ -308,8 +308,17 @@ async function generateAndSaveEvalData(
 
   const examples = Object.values(data.data_by_topic).flat()
 
-  // Save each example as a TaskRun with the eval tag
-  for (const example of examples) {
+  // Split examples 50/50 - first half for eval, second half for training
+  const midpoint = Math.ceil(examples.length / 2)
+  const trainTag = tag.replace(/^eval_/, "eval_train_")
+
+  // Map each example with the appropriate tag based on index
+  const allExamplesWithTags = examples.map((example, index) => ({
+    example,
+    tag: index < midpoint ? tag : trainTag,
+  }))
+
+  for (const { example, tag: exampleTag } of allExamplesWithTags) {
     const taskRun: TaskRun = {
       v: 1,
       id: generate_id(),
@@ -336,7 +345,7 @@ async function generateAndSaveEvalData(
           model_provider: "kiln",
         },
       },
-      tags: [tag],
+      tags: [exampleTag],
     }
 
     // Save the run
