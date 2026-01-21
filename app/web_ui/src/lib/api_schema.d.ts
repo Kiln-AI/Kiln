@@ -2729,7 +2729,7 @@ export interface components {
             /** Name */
             name: string;
             /** Description */
-            description: string;
+            description?: string | null;
             template: components["schemas"]["EvalTemplateId"] | null;
             /** Output Scores */
             output_scores: components["schemas"]["EvalOutputScore"][];

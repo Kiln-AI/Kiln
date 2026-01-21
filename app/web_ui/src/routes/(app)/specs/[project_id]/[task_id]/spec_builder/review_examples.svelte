@@ -23,6 +23,8 @@
   export let submitting: boolean
   export let warn_before_unload: boolean
 
+  let form_container: FormContainer
+
   const dispatch = createEventDispatcher<{
     create_spec: void
     continue_to_refine: void
@@ -105,9 +107,16 @@
   function open_details_dialog() {
     spec_details_dialog?.show()
   }
+
+  async function handle_secondary_click() {
+    if (await form_container.validate_only()) {
+      dispatch("create_spec_secondary")
+    }
+  }
 </script>
 
 <FormContainer
+  bind:this={form_container}
   {submit_label}
   {submit_disabled}
   submit_data_tip={!all_examples_reviewed
@@ -251,7 +260,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_spec_secondary")}
+      on:click={handle_secondary_click}
     >
       {#if submitting}
         <span class="loading loading-spinner loading-xs"></span>

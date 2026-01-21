@@ -90,14 +90,21 @@
 
   const dispatch = createEventDispatcher()
 
-  export async function validate_and_submit() {
+  export async function validate_only(): Promise<boolean> {
     await trigger_validation()
     const firstError = first_error()
     if (firstError) {
       has_validation_errors = true
       focus_field(firstError.id)
-    } else {
-      has_validation_errors = false
+      return false
+    }
+    has_validation_errors = false
+    return true
+  }
+
+  export async function validate_and_submit() {
+    const valid = await validate_only()
+    if (valid) {
       // No errors, submit. The wrapper should handle the event
       submitting = true
       dispatch("submit")

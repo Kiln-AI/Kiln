@@ -4,7 +4,6 @@
   import { onMount, onDestroy } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { filename_string_short_validator } from "$lib/utils/input_validators"
   import type { SpecType, ModelProviderName, Task } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
@@ -20,9 +19,9 @@
     available_models,
     load_available_models,
   } from "$lib/stores"
-  import CreateSpecForm from "./CreateSpecForm.svelte"
-  import ReviewExamples from "./ReviewExamples.svelte"
-  import RefineSpec from "./RefineSpec.svelte"
+  import CreateSpecForm from "./create_spec_form.svelte"
+  import ReviewExamples from "./review_examples.svelte"
+  import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
 
   $: project_id = $page.params.project_id
@@ -188,27 +187,6 @@
     initialize()
   })
 
-  function validateRequiredFields(
-    values: Record<string, string | null> = property_values,
-  ) {
-    for (const field of field_configs) {
-      if (field.required) {
-        const value = values[field.key]
-        if (!value || !value.trim()) {
-          throw new Error(`${field.label} is required`)
-        }
-      }
-    }
-  }
-
-  function validateSpecName() {
-    name = name.trim()
-    const name_validation_error = filename_string_short_validator(name)
-    if (name_validation_error) {
-      throw new Error(`Please correct the spec name: ${name_validation_error}`)
-    }
-  }
-
   // Shared logic for analyzing spec with clarify_spec API
   // If values_to_use is provided, property_values will be updated to match on success
   async function analyzeSpecForReview(
@@ -275,15 +253,6 @@
   async function handle_analyze_with_copilot() {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields()
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
-      submitting = true
       await analyzeSpecForReview()
     } catch (e) {
       if (is_abort_error(e)) return
@@ -335,15 +304,14 @@
 
   // Handler for creating spec without copilot
   async function handle_create_spec_without_copilot() {
+    error = null
     try {
-      error = null
-      validateSpecName()
-      validateRequiredFields(property_values)
       saving_spec = true
       await saveSpec(property_values, false, [])
     } catch (e) {
       error = createKilnError(e)
     } finally {
+      submitting = false
       saving_spec = false
     }
   }
@@ -352,19 +320,9 @@
   async function handle_create_spec_from_review(skip_review = false) {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields(property_values)
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
       // Use full-page spinner for skip_review (secondary button), form spinner otherwise
       if (skip_review) {
         saving_spec = true
-      } else {
-        submitting = true
       }
 
       await saveSpec(
@@ -389,7 +347,6 @@
   async function handle_continue_to_refine() {
     try {
       error = null
-      submitting = true
       current_state = "refining"
 
       if (!task) {
@@ -486,15 +443,6 @@
   async function handle_analyze_refined_spec() {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields(refined_property_values)
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
-      submitting = true
       // Pass suggested values - property_values will be updated on success
       await analyzeSpecForReview(refined_property_values)
     } catch (e) {
@@ -511,19 +459,9 @@
   async function handle_create_spec_from_refine(secondary_button = false) {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields(refined_property_values)
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
       // Use full-page spinner for secondary button, form spinner otherwise
       if (secondary_button) {
         saving_spec = true
-      } else {
-        submitting = true
       }
       await saveSpec(
         refined_property_values,

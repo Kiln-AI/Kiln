@@ -5,6 +5,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
+  import { filename_string_short_validator } from "$lib/utils/input_validators"
 
   export let name: string
   export let original_property_values: Record<string, string | null>
@@ -15,6 +16,8 @@
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
+
+  let form_container: FormContainer
 
   const dispatch = createEventDispatcher<{
     analyze_refined: void
@@ -69,9 +72,16 @@
       dispatch("create_spec")
     }
   }
+
+  async function handle_secondary_click() {
+    if (await form_container.validate_only()) {
+      dispatch("create_spec_secondary")
+    }
+  }
 </script>
 
 <FormContainer
+  bind:this={form_container}
   {submit_label}
   on:submit={handle_submit}
   bind:error
@@ -110,6 +120,7 @@
           description="A short name for your own reference."
           id="suggested_spec_name"
           bind:value={name}
+          validator={filename_string_short_validator}
         />
       </div>
     </div>
@@ -173,6 +184,7 @@
       description="A short name for your own reference."
       id="current_spec_name"
       bind:value={name}
+      validator={filename_string_short_validator}
     />
 
     <!-- Field Rows -->
@@ -205,7 +217,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_spec_secondary")}
+      on:click={handle_secondary_click}
     >
       Save Refined Spec without Further Review
     </button>

@@ -148,13 +148,11 @@ def create_sample_properties(spec_type: SpecType):
     if spec_type == SpecType.desired_behaviour:
         return DesiredBehaviourProperties(
             spec_type=spec_type,
-            core_requirement=core_requirement,
             desired_behaviour_description="Test desired behaviour",
         )
     elif spec_type == SpecType.issue:
         return IssueProperties(
             spec_type=spec_type,
-            core_requirement=core_requirement,
             issue_description="Test issue description",
         )
     elif spec_type == SpecType.tone:

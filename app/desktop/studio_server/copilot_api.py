@@ -33,14 +33,13 @@ class SpecInfoApi(BaseModel):
 
 
 class ExampleWithFeedbackApi(BaseModel):
+    model_config = {"populate_by_name": True}
+
     user_rating_exhibits_issue_correct: bool
     input: str = Field(alias="input")
     output: str
     exhibits_issue: bool
     user_feedback: str | None = None
-
-    class Config:
-        populate_by_name = True
 
 
 class ClarifySpecApiInput(BaseModel):
