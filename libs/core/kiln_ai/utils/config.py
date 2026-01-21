@@ -182,6 +182,10 @@ class Config:
             "work_use_contact": ConfigProperty(
                 str,
             ),
+            # if the user has provided their personal contact
+            "personal_use_contact": ConfigProperty(
+                str,
+            ),
         }
         self._lock = threading.Lock()
         self._settings = self.load_settings()
