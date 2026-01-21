@@ -2241,6 +2241,27 @@ export interface components {
              */
             answer_description: string;
         };
+        /**
+         * AnswerOptionWithSelection
+         * @description An answer option with user selection state.
+         */
+        AnswerOptionWithSelection: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+            /**
+             * selected
+             * @description Whether the user selected this answer option
+             */
+            selected: boolean;
+        };
         /** ApiPrompt */
         ApiPrompt: {
             /**
@@ -5051,20 +5072,6 @@ export interface components {
              */
             answer_options: components["schemas"]["AnswerOption"][];
         };
-        /**
-         * QuestionAnswer
-         * @description An answer to a single question. Must provide exactly one of:
-         *     - selected_option_index: index of the chosen AnswerOption (0-indexed)
-         *     - other_feedback: plaintext feedback when none of the predefined options fit
-         */
-        QuestionAnswer: {
-            /** Question Index */
-            question_index: number;
-            /** Selected Option Index */
-            selected_option_index?: number | null;
-            /** Other Feedback */
-            other_feedback?: string | null;
-        };
         /** QuestionSet */
         QuestionSet: {
             /**
@@ -5072,6 +5079,32 @@ export interface components {
              * @description A set of questions to ask about the specification
              */
             questions: components["schemas"]["Question"][];
+        };
+        /**
+         * QuestionWithAnswer
+         * @description A question with user-provided answer.
+         */
+        QuestionWithAnswer: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description Possible answers the user was asked to select from
+             */
+            answer_options: components["schemas"]["AnswerOptionWithSelection"][];
+            /**
+             * custom_answer
+             * @description User-provided text feedback when predefined answer options don't fit
+             */
+            custom_answer?: string | null;
         };
         /** RagConfig */
         RagConfig: {
@@ -5786,10 +5819,11 @@ export interface components {
          * @description Request to submit answers to a question set.
          */
         SubmitAnswersRequest: {
-            /** Questions */
-            questions: components["schemas"]["Question"][];
-            /** Answers */
-            answers: components["schemas"]["QuestionAnswer"][];
+            /**
+             * questions_and_answers
+             * @description Questions about the specification with user-provided answers
+             */
+            questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
         };
         /** SubsampleBatchOutputItemApi */
         SubsampleBatchOutputItemApi: {

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -66,77 +66,71 @@ class QuestionSet(BaseModel):
 
 
 # Answer submission models
-class QuestionAnswer(BaseModel):
-    """
-    An answer to a single question. Must provide exactly one of:
-    - selected_option_index: index of the chosen AnswerOption (0-indexed)
-    - other_feedback: plaintext feedback when none of the predefined options fit
-    """
+class AnswerOptionWithSelection(AnswerOption):
+    """An answer option with user selection state."""
 
-    question_index: int  # 0-indexed position in the QuestionSet
-    selected_option_index: Optional[int] = None
-    other_feedback: Optional[str] = None
+    selected: bool = Field(
+        ...,
+        description="Whether the user selected this answer option",
+        title="selected",
+    )
+
+
+class QuestionWithAnswer(BaseModel):
+    """A question with user-provided answer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_title: str = Field(
+        ...,
+        description="A short title for this question",
+        title="question_title",
+    )
+    question_body: str = Field(
+        ...,
+        description="The full question text",
+        title="question_body",
+    )
+    answer_options: list[AnswerOptionWithSelection] = Field(
+        ...,
+        description="Possible answers the user was asked to select from",
+        title="answer_options",
+    )
+    custom_answer: Optional[str] = Field(
+        None,
+        description="User-provided text feedback when predefined answer options don't fit",
+        title="custom_answer",
+    )
 
     @model_validator(mode="after")
-    def validate_answer_type(self) -> "QuestionAnswer":
-        has_selection = self.selected_option_index is not None
-        has_feedback = self.other_feedback is not None
+    def validate_answer(self) -> "QuestionWithAnswer":
+        selected_count = sum(1 for opt in self.answer_options if opt.selected)
+        has_custom = self.custom_answer is not None
 
-        if has_selection and has_feedback:
+        if selected_count > 1:
+            raise ValueError("Only one answer option can be selected")
+        if selected_count > 0 and has_custom:
+            raise ValueError("Cannot have both a selected option and custom_answer")
+        if selected_count == 0 and not has_custom:
             raise ValueError(
-                "Cannot provide both selected_option_index and other_feedback - choose one"
+                "Must either select an answer option or provide custom_answer"
             )
-        if not has_selection and not has_feedback:
-            raise ValueError(
-                "Must provide either selected_option_index or other_feedback"
-            )
-        if self.other_feedback is not None and not self.other_feedback.strip():
-            raise ValueError("other_feedback cannot be empty")
+        if (
+            has_custom
+            and self.custom_answer is not None
+            and not self.custom_answer.strip()
+        ):
+            raise ValueError("custom_answer cannot be empty")
         return self
 
 
 class SubmitAnswersRequest(BaseModel):
     """Request to submit answers to a question set."""
 
-    questions: List[Question]
-    answers: List[QuestionAnswer]
+    model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def validate_answers(self) -> "SubmitAnswersRequest":
-        num_questions = len(self.questions)
-        answered_indices = set()
-
-        for answer in self.answers:
-            # Validate question_index is in range
-            if answer.question_index < 0 or answer.question_index >= num_questions:
-                raise ValueError(
-                    f"question_index {answer.question_index} is out of range (0-{num_questions - 1})"
-                )
-
-            # Check for duplicate answers to same question
-            if answer.question_index in answered_indices:
-                raise ValueError(
-                    f"Duplicate answer for question_index {answer.question_index}"
-                )
-            answered_indices.add(answer.question_index)
-
-            # Validate selected_option_index is in range for the question
-            if answer.selected_option_index is not None:
-                question = self.questions[answer.question_index]
-                num_options = len(question.answer_options)
-                if (
-                    answer.selected_option_index < 0
-                    or answer.selected_option_index >= num_options
-                ):
-                    raise ValueError(
-                        f"selected_option_index {answer.selected_option_index} is out of range "
-                        f"for question {answer.question_index} (0-{num_options - 1})"
-                    )
-
-        # Ensure all questions are answered
-        if len(self.answers) != num_questions:
-            raise ValueError(
-                f"Expected {num_questions} answers, got {len(self.answers)}"
-            )
-
-        return self
+    questions_and_answers: list[QuestionWithAnswer] = Field(
+        ...,
+        description="Questions about the specification with user-provided answers",
+        title="questions_and_answers",
+    )

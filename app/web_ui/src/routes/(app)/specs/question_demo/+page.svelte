@@ -31,6 +31,7 @@
       )
       if (get_error) {
         error = createKilnError(get_error)
+        return
       }
       if (!data) {
         error = createKilnError("No question set returned")
@@ -52,9 +53,9 @@
   }
 </script>
 
-<AppPage title="Questions Demo" subtitle="Demos a static set of questions">
+<AppPage title="Questions Demo" subtitle="Demos of the spec questioner">
   {#if !submitted_question_request}
-    <div class="max-w-xl mx-auto flex flex-col gap-4">
+    <div class="max-w-xl flex flex-col gap-4">
       <div class="form-control w-full">
         <label class="label" for="task-prompt">
           <span class="label-text font-medium">Task Prompt</span>

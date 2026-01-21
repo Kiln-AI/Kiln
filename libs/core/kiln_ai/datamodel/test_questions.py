@@ -3,9 +3,10 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.questions import (
     AnswerOption,
+    AnswerOptionWithSelection,
     Question,
-    QuestionAnswer,
     QuestionSet,
+    QuestionWithAnswer,
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
@@ -18,6 +19,21 @@ def sample_answer_options():
         AnswerOption(answer_title="Option A", answer_description="Description A"),
         AnswerOption(answer_title="Option B", answer_description="Description B"),
         AnswerOption(answer_title="Option C", answer_description="Description C"),
+    ]
+
+
+@pytest.fixture
+def sample_answer_options_with_selection():
+    return [
+        AnswerOptionWithSelection(
+            answer_title="Option A", answer_description="Description A", selected=False
+        ),
+        AnswerOptionWithSelection(
+            answer_title="Option B", answer_description="Description B", selected=True
+        ),
+        AnswerOptionWithSelection(
+            answer_title="Option C", answer_description="Description C", selected=False
+        ),
     ]
 
 
@@ -99,6 +115,48 @@ class TestAnswerOption:
             AnswerOption(answer_description="Description")
 
 
+# Tests for AnswerOptionWithSelection
+class TestAnswerOptionWithSelection:
+    def test_valid_answer_option_selected(self):
+        option = AnswerOptionWithSelection(
+            answer_title="Yes",
+            answer_description="Affirmative response",
+            selected=True,
+        )
+        assert option.answer_title == "Yes"
+        assert option.answer_description == "Affirmative response"
+        assert option.selected is True
+
+    def test_valid_answer_option_not_selected(self):
+        option = AnswerOptionWithSelection(
+            answer_title="No",
+            answer_description="Negative response",
+            selected=False,
+        )
+        assert option.answer_title == "No"
+        assert option.answer_description == "Negative response"
+        assert option.selected is False
+
+    def test_missing_required_fields(self):
+        with pytest.raises(ValidationError):
+            AnswerOptionWithSelection(answer_title="Yes", answer_description="Desc")
+
+        with pytest.raises(ValidationError):
+            AnswerOptionWithSelection(answer_title="Yes", selected=True)
+
+        with pytest.raises(ValidationError):
+            AnswerOptionWithSelection(answer_description="Description", selected=True)
+
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            AnswerOptionWithSelection(
+                answer_title="Yes",
+                answer_description="Desc",
+                selected=True,
+                extra_field="not allowed",
+            )
+
+
 # Tests for Question
 class TestQuestion:
     def test_valid_question(self, sample_answer_options):
@@ -131,227 +189,314 @@ class TestQuestionSet:
         assert len(question_set.questions) == 0
 
 
-# Tests for QuestionAnswer
-class TestQuestionAnswer:
-    def test_valid_with_selected_option(self):
-        answer = QuestionAnswer(
-            question_index=0,
-            selected_option_index=1,
+# Tests for QuestionWithAnswer
+class TestQuestionWithAnswer:
+    def test_valid_with_selected_option(self, sample_answer_options_with_selection):
+        qa = QuestionWithAnswer(
+            question_title="Test Question",
+            question_body="What do you think?",
+            answer_options=sample_answer_options_with_selection,
         )
-        assert answer.question_index == 0
-        assert answer.selected_option_index == 1
-        assert answer.other_feedback is None
+        assert qa.question_title == "Test Question"
+        assert qa.question_body == "What do you think?"
+        assert len(qa.answer_options) == 3
+        assert qa.answer_options[1].selected is True
+        assert qa.custom_answer is None
 
-    def test_valid_with_other_feedback(self):
-        answer = QuestionAnswer(
-            question_index=0,
-            other_feedback="Custom feedback here",
+    def test_valid_with_custom_answer(self):
+        qa = QuestionWithAnswer(
+            question_title="Test Question",
+            question_body="What do you think?",
+            answer_options=[
+                AnswerOptionWithSelection(
+                    answer_title="A", answer_description="Desc A", selected=False
+                ),
+                AnswerOptionWithSelection(
+                    answer_title="B", answer_description="Desc B", selected=False
+                ),
+            ],
+            custom_answer="My custom feedback here",
         )
-        assert answer.question_index == 0
-        assert answer.selected_option_index is None
-        assert answer.other_feedback == "Custom feedback here"
+        assert qa.custom_answer == "My custom feedback here"
+        assert all(not opt.selected for opt in qa.answer_options)
 
-    def test_invalid_both_selected_and_feedback(self):
+    def test_invalid_multiple_selected_options(self):
         with pytest.raises(ValidationError) as exc_info:
-            QuestionAnswer(
-                question_index=0,
-                selected_option_index=1,
-                other_feedback="Some feedback",
+            QuestionWithAnswer(
+                question_title="Test",
+                question_body="Body",
+                answer_options=[
+                    AnswerOptionWithSelection(
+                        answer_title="A", answer_description="Desc A", selected=True
+                    ),
+                    AnswerOptionWithSelection(
+                        answer_title="B", answer_description="Desc B", selected=True
+                    ),
+                ],
             )
-        assert "Cannot provide both selected_option_index and other_feedback" in str(
+        assert "Only one answer option can be selected" in str(exc_info.value)
+
+    def test_invalid_both_selected_and_custom_answer(self):
+        with pytest.raises(ValidationError) as exc_info:
+            QuestionWithAnswer(
+                question_title="Test",
+                question_body="Body",
+                answer_options=[
+                    AnswerOptionWithSelection(
+                        answer_title="A", answer_description="Desc A", selected=True
+                    ),
+                    AnswerOptionWithSelection(
+                        answer_title="B", answer_description="Desc B", selected=False
+                    ),
+                ],
+                custom_answer="Custom feedback",
+            )
+        assert "Cannot have both a selected option and custom_answer" in str(
             exc_info.value
         )
 
-    def test_invalid_neither_selected_nor_feedback(self):
+    def test_invalid_no_answer_provided(self):
         with pytest.raises(ValidationError) as exc_info:
-            QuestionAnswer(question_index=0)
-        assert "Must provide either selected_option_index or other_feedback" in str(
+            QuestionWithAnswer(
+                question_title="Test",
+                question_body="Body",
+                answer_options=[
+                    AnswerOptionWithSelection(
+                        answer_title="A", answer_description="Desc A", selected=False
+                    ),
+                    AnswerOptionWithSelection(
+                        answer_title="B", answer_description="Desc B", selected=False
+                    ),
+                ],
+            )
+        assert "Must either select an answer option or provide custom_answer" in str(
             exc_info.value
         )
 
-    def test_invalid_empty_feedback(self):
+    def test_invalid_empty_custom_answer(self):
         with pytest.raises(ValidationError) as exc_info:
-            QuestionAnswer(
-                question_index=0,
-                other_feedback="",
+            QuestionWithAnswer(
+                question_title="Test",
+                question_body="Body",
+                answer_options=[
+                    AnswerOptionWithSelection(
+                        answer_title="A", answer_description="Desc A", selected=False
+                    ),
+                ],
+                custom_answer="",
             )
-        assert "other_feedback cannot be empty" in str(exc_info.value)
+        assert "custom_answer cannot be empty" in str(exc_info.value)
 
-    def test_invalid_whitespace_only_feedback(self):
+    def test_invalid_whitespace_only_custom_answer(self):
         with pytest.raises(ValidationError) as exc_info:
-            QuestionAnswer(
-                question_index=0,
-                other_feedback="   ",
+            QuestionWithAnswer(
+                question_title="Test",
+                question_body="Body",
+                answer_options=[
+                    AnswerOptionWithSelection(
+                        answer_title="A", answer_description="Desc A", selected=False
+                    ),
+                ],
+                custom_answer="   ",
             )
-        assert "other_feedback cannot be empty" in str(exc_info.value)
+        assert "custom_answer cannot be empty" in str(exc_info.value)
 
-    def test_valid_feedback_with_whitespace(self):
-        answer = QuestionAnswer(
-            question_index=0,
-            other_feedback="  Valid feedback with spaces  ",
+    def test_valid_custom_answer_with_whitespace(self):
+        qa = QuestionWithAnswer(
+            question_title="Test",
+            question_body="Body",
+            answer_options=[
+                AnswerOptionWithSelection(
+                    answer_title="A", answer_description="Desc A", selected=False
+                ),
+            ],
+            custom_answer="  Valid feedback with spaces  ",
         )
-        assert answer.other_feedback == "  Valid feedback with spaces  "
+        assert qa.custom_answer == "  Valid feedback with spaces  "
+
+    def test_empty_answer_options_with_custom_answer(self):
+        qa = QuestionWithAnswer(
+            question_title="Test",
+            question_body="Body",
+            answer_options=[],
+            custom_answer="My custom answer",
+        )
+        assert len(qa.answer_options) == 0
+        assert qa.custom_answer == "My custom answer"
+
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            QuestionWithAnswer(
+                question_title="Test",
+                question_body="Body",
+                answer_options=[
+                    AnswerOptionWithSelection(
+                        answer_title="A", answer_description="Desc A", selected=True
+                    ),
+                ],
+                extra_field="not allowed",
+            )
 
 
 # Tests for SubmitAnswersRequest
 class TestSubmitAnswersRequest:
-    def test_valid_request_all_selected_options(self, sample_questions):
+    def test_valid_request_single_question(self):
         request = SubmitAnswersRequest(
-            questions=sample_questions,
-            answers=[
-                QuestionAnswer(question_index=0, selected_option_index=0),
-                QuestionAnswer(question_index=1, selected_option_index=1),
-            ],
+            questions_and_answers=[
+                QuestionWithAnswer(
+                    question_title="Question 1",
+                    question_body="First question body",
+                    answer_options=[
+                        AnswerOptionWithSelection(
+                            answer_title="A",
+                            answer_description="Desc A",
+                            selected=True,
+                        ),
+                        AnswerOptionWithSelection(
+                            answer_title="B",
+                            answer_description="Desc B",
+                            selected=False,
+                        ),
+                    ],
+                ),
+            ]
         )
-        assert len(request.answers) == 2
+        assert len(request.questions_and_answers) == 1
+        assert request.questions_and_answers[0].answer_options[0].selected is True
 
-    def test_valid_request_with_feedback(self, sample_questions):
+    def test_valid_request_multiple_questions(self):
         request = SubmitAnswersRequest(
-            questions=sample_questions,
-            answers=[
-                QuestionAnswer(question_index=0, other_feedback="Custom answer"),
-                QuestionAnswer(question_index=1, selected_option_index=0),
-            ],
+            questions_and_answers=[
+                QuestionWithAnswer(
+                    question_title="Question 1",
+                    question_body="First question body",
+                    answer_options=[
+                        AnswerOptionWithSelection(
+                            answer_title="A",
+                            answer_description="Desc A",
+                            selected=False,
+                        ),
+                        AnswerOptionWithSelection(
+                            answer_title="B",
+                            answer_description="Desc B",
+                            selected=True,
+                        ),
+                    ],
+                ),
+                QuestionWithAnswer(
+                    question_title="Question 2",
+                    question_body="Second question body",
+                    answer_options=[
+                        AnswerOptionWithSelection(
+                            answer_title="X",
+                            answer_description="Desc X",
+                            selected=True,
+                        ),
+                        AnswerOptionWithSelection(
+                            answer_title="Y",
+                            answer_description="Desc Y",
+                            selected=False,
+                        ),
+                    ],
+                ),
+            ]
         )
-        assert request.answers[0].other_feedback == "Custom answer"
-        assert request.answers[1].selected_option_index == 0
+        assert len(request.questions_and_answers) == 2
 
-    def test_invalid_question_index_negative(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=-1, selected_option_index=0),
-                    QuestionAnswer(question_index=1, selected_option_index=0),
-                ],
-            )
-        assert "question_index -1 is out of range" in str(exc_info.value)
-
-    def test_invalid_question_index_too_high(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=0, selected_option_index=0),
-                    QuestionAnswer(question_index=5, selected_option_index=0),
-                ],
-            )
-        assert "question_index 5 is out of range" in str(exc_info.value)
-
-    def test_invalid_duplicate_answers(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=0, selected_option_index=0),
-                    QuestionAnswer(question_index=0, selected_option_index=1),
-                ],
-            )
-        assert "Duplicate answer for question_index 0" in str(exc_info.value)
-
-    def test_invalid_selected_option_index_negative(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=0, selected_option_index=-1),
-                    QuestionAnswer(question_index=1, selected_option_index=0),
-                ],
-            )
-        assert "selected_option_index -1 is out of range" in str(exc_info.value)
-
-    def test_invalid_selected_option_index_too_high(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=0, selected_option_index=0),
-                    QuestionAnswer(
-                        question_index=1, selected_option_index=5
-                    ),  # Question 1 has only 2 options
-                ],
-            )
-        assert "selected_option_index 5 is out of range for question 1" in str(
-            exc_info.value
+    def test_valid_request_with_custom_answer(self):
+        request = SubmitAnswersRequest(
+            questions_and_answers=[
+                QuestionWithAnswer(
+                    question_title="Question 1",
+                    question_body="First question body",
+                    answer_options=[
+                        AnswerOptionWithSelection(
+                            answer_title="A",
+                            answer_description="Desc A",
+                            selected=False,
+                        ),
+                    ],
+                    custom_answer="My custom feedback",
+                ),
+            ]
         )
+        assert request.questions_and_answers[0].custom_answer == "My custom feedback"
 
-    def test_invalid_wrong_answer_count_too_few(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=0, selected_option_index=0),
-                    # Missing answer for question 1
-                ],
-            )
-        assert "Expected 2 answers, got 1" in str(exc_info.value)
-
-    def test_invalid_wrong_answer_count_too_many(self, sample_questions):
-        with pytest.raises(ValidationError) as exc_info:
-            SubmitAnswersRequest(
-                questions=sample_questions,
-                answers=[
-                    QuestionAnswer(question_index=0, selected_option_index=0),
-                    QuestionAnswer(question_index=1, selected_option_index=0),
-                    QuestionAnswer(
-                        question_index=0, other_feedback="Extra"
-                    ),  # Extra answer
-                ],
-            )
-        # This will fail on duplicate before count check
-        assert "Duplicate answer for question_index 0" in str(exc_info.value)
+    def test_valid_request_mixed_answers(self):
+        request = SubmitAnswersRequest(
+            questions_and_answers=[
+                QuestionWithAnswer(
+                    question_title="Question 1",
+                    question_body="First question body",
+                    answer_options=[
+                        AnswerOptionWithSelection(
+                            answer_title="A",
+                            answer_description="Desc A",
+                            selected=True,
+                        ),
+                    ],
+                ),
+                QuestionWithAnswer(
+                    question_title="Question 2",
+                    question_body="Second question body",
+                    answer_options=[
+                        AnswerOptionWithSelection(
+                            answer_title="X",
+                            answer_description="Desc X",
+                            selected=False,
+                        ),
+                    ],
+                    custom_answer="Custom answer for question 2",
+                ),
+            ]
+        )
+        assert request.questions_and_answers[0].custom_answer is None
+        assert (
+            request.questions_and_answers[1].custom_answer
+            == "Custom answer for question 2"
+        )
 
     def test_empty_questions_and_answers(self):
-        request = SubmitAnswersRequest(
-            questions=[],
-            answers=[],
-        )
-        assert len(request.questions) == 0
-        assert len(request.answers) == 0
+        request = SubmitAnswersRequest(questions_and_answers=[])
+        assert len(request.questions_and_answers) == 0
 
-    def test_single_question_single_answer(self, sample_answer_options):
-        questions = [
-            Question(
-                question_title="Only Question",
-                question_body="Body",
-                answer_options=sample_answer_options,
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            SubmitAnswersRequest(
+                questions_and_answers=[
+                    QuestionWithAnswer(
+                        question_title="Q",
+                        question_body="B",
+                        answer_options=[
+                            AnswerOptionWithSelection(
+                                answer_title="A",
+                                answer_description="Desc",
+                                selected=True,
+                            ),
+                        ],
+                    ),
+                ],
+                extra_field="not allowed",
             )
-        ]
-        request = SubmitAnswersRequest(
-            questions=questions,
-            answers=[QuestionAnswer(question_index=0, selected_option_index=2)],
-        )
-        assert len(request.answers) == 1
-        assert request.answers[0].selected_option_index == 2
 
-    def test_boundary_option_indices(self, sample_answer_options):
-        questions = [
-            Question(
-                question_title="Q",
-                question_body="B",
-                answer_options=sample_answer_options,  # 3 options: indices 0, 1, 2
-            )
-        ]
-        # Test first valid index
-        request = SubmitAnswersRequest(
-            questions=questions,
-            answers=[QuestionAnswer(question_index=0, selected_option_index=0)],
-        )
-        assert request.answers[0].selected_option_index == 0
-
-        # Test last valid index
-        request = SubmitAnswersRequest(
-            questions=questions,
-            answers=[QuestionAnswer(question_index=0, selected_option_index=2)],
-        )
-        assert request.answers[0].selected_option_index == 2
-
-        # Test just past last valid index
+    def test_invalid_question_propagates_error(self):
         with pytest.raises(ValidationError) as exc_info:
             SubmitAnswersRequest(
-                questions=questions,
-                answers=[QuestionAnswer(question_index=0, selected_option_index=3)],
+                questions_and_answers=[
+                    QuestionWithAnswer(
+                        question_title="Q",
+                        question_body="B",
+                        answer_options=[
+                            AnswerOptionWithSelection(
+                                answer_title="A",
+                                answer_description="Desc",
+                                selected=False,
+                            ),
+                        ],
+                        # No answer provided - should fail validation
+                    ),
+                ]
             )
-        assert "selected_option_index 3 is out of range for question 0 (0-2)" in str(
+        assert "Must either select an answer option or provide custom_answer" in str(
             exc_info.value
         )

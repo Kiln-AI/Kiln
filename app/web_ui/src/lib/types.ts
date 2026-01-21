@@ -145,7 +145,9 @@ export type SpecProperties =
 export type SpecType = SpecProperties["spec_type"]
 export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
 export type QuestionSet = components["schemas"]["QuestionSet"]
-export type QuestionAnswer = components["schemas"]["QuestionAnswer"]
+export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
+export type AnswerOptionWithSelection =
+  components["schemas"]["AnswerOptionWithSelection"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 

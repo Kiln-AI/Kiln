@@ -1,7 +1,8 @@
 <script lang="ts">
   import type {
-    QuestionAnswer,
+    AnswerOptionWithSelection,
     QuestionSet,
+    QuestionWithAnswer,
     SubmitAnswersRequest,
   } from "$lib/types"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -41,24 +42,33 @@
   }
 
   function build_submit_request(): SubmitAnswersRequest {
-    const answers: QuestionAnswer[] = question_set.questions.map((_, index) => {
-      const selection = selections[index]
-      if (selection === "other") {
-        return {
-          question_index: index,
-          other_feedback: other_texts[index].trim(),
+    const questions_and_answers: QuestionWithAnswer[] =
+      question_set.questions.map((question, q_index) => {
+        const selection = selections[q_index]
+        const is_other = selection === "other"
+
+        const answer_options: AnswerOptionWithSelection[] =
+          question.answer_options.map((option, o_index) => ({
+            answer_title: option.answer_title,
+            answer_description: option.answer_description,
+            selected: !is_other && selection === o_index,
+          }))
+
+        const result: QuestionWithAnswer = {
+          question_title: question.question_title,
+          question_body: question.question_body,
+          answer_options,
         }
-      } else {
-        return {
-          question_index: index,
-          selected_option_index: selection as number,
+
+        if (is_other) {
+          result.custom_answer = other_texts[q_index].trim()
         }
-      }
-    })
+
+        return result
+      })
 
     return {
-      questions: question_set.questions,
-      answers,
+      questions_and_answers,
     }
   }
 
@@ -102,7 +112,7 @@
       {#each question_set.questions as question, q_index}
         <div class="flex flex-col">
           <!-- Header row -->
-          <h3 class="text-lg font-medium">
+          <h3 class="text-lg font-medium pb-2">
             Question {q_index + 1}: {question.question_title}
           </h3>
 
