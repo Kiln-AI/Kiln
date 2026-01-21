@@ -178,7 +178,7 @@
       />
       <FormElement
         label="Description"
-        description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
+        description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behaviour."
         optional={true}
         inputType="textarea"
         id="description"

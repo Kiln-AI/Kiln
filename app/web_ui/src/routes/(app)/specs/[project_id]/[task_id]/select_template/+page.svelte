@@ -26,12 +26,12 @@
       if (template_data.spec_type === "appropriate_tool_use") {
         tool_selection_dialog?.show()
       } else {
-        go_to_define_spec(current_template_data)
+        go_to_create_spec(current_template_data)
       }
     }
   }
 
-  async function go_to_define_spec(template_data: SpecTemplateData) {
+  async function go_to_create_spec(template_data: SpecTemplateData) {
     current_params = new URLSearchParams()
     current_params.set("type", template_data.spec_type)
     if (template_data.spec_type === "appropriate_tool_use" && selected_tool) {
@@ -43,7 +43,7 @@
       current_params.set("tool_function_name", tool_function_name)
     }
     goto(
-      `/specs/${project_id}/${task_id}/define_spec?${current_params.toString()}`,
+      `/specs/${project_id}/${task_id}/spec_builder?${current_params.toString()}`,
     )
   }
 
@@ -65,8 +65,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Select a Template"
-    subtitle="Start by choosing the template that best fits the spec you want to create."
+    title="Select a Spec Template"
+    subtitle="Select a template for what you want this task to enforce or avoid."
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -92,7 +92,7 @@
           if (!current_template_data) {
             return false
           }
-          await go_to_define_spec(current_template_data)
+          await go_to_create_spec(current_template_data)
           return true
         },
       },

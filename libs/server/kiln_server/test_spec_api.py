@@ -54,7 +54,7 @@ def create_tone_properties_dict():
     """Helper to create valid tone properties for API tests."""
     return {
         "spec_type": SpecType.tone.value,
-        "base_instruction": "Test instruction",
+        "core_requirement": "Test instruction",
         "tone_description": "Professional and friendly",
     }
 
@@ -63,7 +63,7 @@ def create_toxicity_properties_dict():
     """Helper to create valid toxicity properties for API tests."""
     return {
         "spec_type": SpecType.toxicity.value,
-        "base_instruction": "Test instruction",
+        "core_requirement": "Test instruction",
         "toxicity_examples": "Example toxicity content",
     }
 
@@ -72,7 +72,7 @@ def create_reference_answer_accuracy_properties_dict():
     """Helper to create valid reference answer accuracy properties for API tests."""
     return {
         "spec_type": SpecType.reference_answer_accuracy.value,
-        "base_instruction": "Test instruction",
+        "core_requirement": "Test instruction",
         "reference_answer_accuracy_description": "Must match reference",
         "accurate_examples": "Accurate example",
         "inaccurate_examples": "Inaccurate example",
@@ -84,7 +84,7 @@ def sample_tone_properties():
     """Fixture for creating complete ToneProperties objects for direct Spec creation."""
     return ToneProperties(
         spec_type=SpecType.tone,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         tone_description="Professional and friendly",
     )
 
@@ -94,7 +94,7 @@ def sample_hallucinations_properties():
     """Fixture for creating complete HallucinationsProperties objects."""
     return HallucinationsProperties(
         spec_type=SpecType.hallucinations,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         hallucinations_examples="Example hallucination",
     )
 
@@ -104,7 +104,7 @@ def sample_toxicity_properties():
     """Fixture for creating complete ToxicityProperties objects."""
     return ToxicityProperties(
         spec_type=SpecType.toxicity,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         toxicity_examples="Example toxicity",
     )
 
@@ -114,7 +114,7 @@ def sample_desired_behaviour_properties():
     """Fixture for creating complete DesiredBehaviourProperties objects."""
     return DesiredBehaviourProperties(
         spec_type=SpecType.desired_behaviour,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         desired_behaviour_description="Avoid toxic content",
         correct_behaviour_examples=None,
         incorrect_behaviour_examples=None,
@@ -530,7 +530,7 @@ def test_create_spec_with_properties(client, project_and_task):
         "tags": [],
         "properties": {
             "spec_type": SpecType.desired_behaviour.value,
-            "base_instruction": "Test instruction",
+            "core_requirement": "Test instruction",
             "desired_behaviour_description": "Avoid toxic language and offensive content",
             "incorrect_behaviour_examples": "Example 1: Don't use slurs\nExample 2: Don't be rude",
         },
@@ -1018,7 +1018,7 @@ def test_create_spec_with_empty_tool_function_name(client, project_and_task):
         "tags": [],
         "properties": {
             "spec_type": "appropriate_tool_use",
-            "base_instruction": "Test instruction",
+            "core_requirement": "Test instruction",
             "tool_id": "test_tool",
             "tool_function_name": "",
             "tool_use_guidelines": "Use this tool when needed",
@@ -1054,7 +1054,7 @@ def test_create_spec_with_empty_tool_use_guidelines(client, project_and_task):
         "tags": [],
         "properties": {
             "spec_type": "appropriate_tool_use",
-            "base_instruction": "Test instruction",
+            "core_requirement": "Test instruction",
             "tool_id": "test_tool",
             "tool_function_name": "test_tool_function",
             "tool_use_guidelines": "",
@@ -1090,7 +1090,7 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
         "tags": [],
         "properties": {
             "spec_type": "desired_behaviour",
-            "base_instruction": "Test instruction",
+            "core_requirement": "Test instruction",
             "desired_behaviour_description": "",
             "incorrect_behaviour_examples": "Example 1: Don't do this",
         },
@@ -1112,19 +1112,19 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
     )
 
 
-def test_create_spec_with_empty_base_instruction(client, project_and_task):
+def test_create_spec_with_empty_core_requirement(client, project_and_task):
     project, task = project_and_task
 
     spec_data = {
-        "name": "Desired Behaviour Spec",
-        "definition": "Desired behaviour validation test",
+        "name": "Tone Spec",
+        "definition": "Tone validation test",
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": {
-            "spec_type": "desired_behaviour",
-            "base_instruction": "",
-            "desired_behaviour_description": "Avoid toxic content",
+            "spec_type": "tone",
+            "core_requirement": "",
+            "tone_description": "Professional and friendly",
         },
         "eval_id": None,
     }
@@ -1139,7 +1139,7 @@ def test_create_spec_with_empty_base_instruction(client, project_and_task):
     res = response.json()
     assert "source_errors" in res
     assert any(
-        "base_instruction" in error.get("msg", "").lower()
+        "core_requirement" in error.get("msg", "").lower()
         for error in res["source_errors"]
     )
 

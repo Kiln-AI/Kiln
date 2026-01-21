@@ -1,6 +1,7 @@
 <script lang="ts">
   export let title: string
   export let description_paragraphs: string[]
+  export let align_title_left: boolean = false
 
   type ActionButton = {
     label: string
@@ -17,7 +18,9 @@
   <div class="flex justify-center items-center">
     <slot name="icon" />
   </div>
-  <div class="font-medium text-lg text-center">
+  <div
+    class="font-medium text-lg {align_title_left ? 'text-left' : 'text-center'}"
+  >
     {title}
   </div>
   {#each description_paragraphs as paragraph}

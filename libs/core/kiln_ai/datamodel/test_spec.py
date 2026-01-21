@@ -35,7 +35,7 @@ def sample_task():
 def sample_tone_properties():
     return ToneProperties(
         spec_type=SpecType.tone,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         tone_description="Professional and friendly",
     )
 
@@ -44,7 +44,7 @@ def test_spec_valid_creation(sample_task):
     """Test creating a spec with all required fields."""
     properties = ToneProperties(
         spec_type=SpecType.tone,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         tone_description="Professional and friendly",
     )
     spec = Spec(
@@ -67,7 +67,7 @@ def test_spec_with_custom_values(sample_task):
     """Test creating a spec with custom priority, status, and tags."""
     properties = ToxicityProperties(
         spec_type=SpecType.toxicity,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         toxicity_examples="Example: offensive language",
     )
     spec = Spec(
@@ -143,43 +143,41 @@ def test_spec_empty_definition(sample_task, sample_tone_properties):
 
 def create_sample_properties(spec_type: SpecType):
     """Helper to create sample properties for testing."""
-    base_instruction = "Test instruction"
+    core_requirement = "Test instruction"
 
     if spec_type == SpecType.desired_behaviour:
         return DesiredBehaviourProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
             desired_behaviour_description="Test desired behaviour",
         )
     elif spec_type == SpecType.issue:
         return IssueProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
             issue_description="Test issue description",
         )
     elif spec_type == SpecType.tone:
         return ToneProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             tone_description="Professional",
         )
     elif spec_type == SpecType.formatting:
         return FormattingProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             formatting_requirements="Use markdown",
         )
     elif spec_type == SpecType.localization:
         return LocalizationProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             localization_requirements="Support en-US",
             violation_examples="Example: using wrong language",
         )
     elif spec_type == SpecType.appropriate_tool_use:
         return AppropriateToolUseProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             tool_id="test_tool_id",
             tool_function_name="test_tool",
             tool_use_guidelines="Use when needed",
@@ -189,7 +187,7 @@ def create_sample_properties(spec_type: SpecType):
     elif spec_type == SpecType.reference_answer_accuracy:
         return ReferenceAnswerAccuracyProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             reference_answer_accuracy_description="Must match reference",
             accurate_examples="Example: accurate answer",
             inaccurate_examples="Example: inaccurate answer",
@@ -197,62 +195,62 @@ def create_sample_properties(spec_type: SpecType):
     elif spec_type == SpecType.factual_correctness:
         return FactualCorrectnessProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             factually_inaccurate_examples="Example: wrong date",
         )
     elif spec_type == SpecType.hallucinations:
         return HallucinationsProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             hallucinations_examples="Example: made up fact",
         )
     elif spec_type == SpecType.completeness:
         return CompletenessProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             complete_examples="Example: complete answer",
             incomplete_examples="Example: incomplete answer",
         )
     elif spec_type == SpecType.toxicity:
         return ToxicityProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             toxicity_examples="Example: offensive language",
         )
     elif spec_type == SpecType.bias:
         return BiasProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             bias_examples="Example: biased statement",
         )
     elif spec_type == SpecType.maliciousness:
         return MaliciousnessProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             malicious_examples="Example: harmful advice",
         )
     elif spec_type == SpecType.nsfw:
         return NsfwProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             nsfw_examples="Example: inappropriate content",
         )
     elif spec_type == SpecType.taboo:
         return TabooProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             taboo_examples="Example: taboo content",
         )
     elif spec_type == SpecType.jailbreak:
         return JailbreakProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             jailbroken_examples="Example: bypassing safety",
         )
     elif spec_type == SpecType.prompt_leakage:
         return PromptLeakageProperties(
             spec_type=spec_type,
-            base_instruction=base_instruction,
+            core_requirement=core_requirement,
             leakage_examples="Example: revealing system prompt",
         )
     else:
@@ -393,7 +391,7 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
     """Test creating a spec with AppropriateToolUseProperties."""
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         tool_id="tool_123",
         tool_function_name="tool_function_123",
         tool_use_guidelines="Use the tool when needed",
@@ -420,7 +418,7 @@ def test_spec_with_appropriate_tool_use_properties_all_fields(sample_task):
     """Test creating a spec with AppropriateToolUseProperties with all fields."""
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         tool_id="tool_456",
         tool_function_name="tool_function_456",
         tool_use_guidelines="Use the tool when needed",
@@ -449,7 +447,6 @@ def test_spec_with_desired_behaviour_properties(sample_task):
     """Test creating a spec with DesiredBehaviourProperties."""
     properties = DesiredBehaviourProperties(
         spec_type=SpecType.desired_behaviour,
-        base_instruction="Test instruction",
         desired_behaviour_description="Avoid toxic language",
         correct_behaviour_examples="Example 1: Be polite and respectful",
         incorrect_behaviour_examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
@@ -480,7 +477,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         properties = {
             "spec_type": SpecType.appropriate_tool_use,
-            "base_instruction": "Test instruction",
+            "core_requirement": "Test instruction",
             "tool_function_name": "tool_function_123",
         }
         Spec(
@@ -494,7 +491,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
     with pytest.raises(ValidationError) as exc_info:
         properties = {
             "spec_type": SpecType.desired_behaviour,
-            "base_instruction": "Test instruction",
+            "core_requirement": "Test instruction",
         }
         Spec(
             name="Test Spec",
@@ -510,7 +507,7 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
     with pytest.raises(ValidationError):
         properties = AppropriateToolUseProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
-            base_instruction="Test instruction",
+            core_requirement="Test instruction",
             tool_function_name="tool_function_123",
             tool_use_guidelines="Use the tool when needed",
             appropriate_tool_use_examples="Example: correct",
@@ -526,7 +523,6 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
     with pytest.raises(ValidationError):
         properties = DesiredBehaviourProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
-            base_instruction="Test instruction",
             desired_behaviour_description="Avoid toxic language",
         )
         Spec(
@@ -552,7 +548,7 @@ def test_spec_with_properties_and_definition(sample_task):
     """Test that definition field works correctly with properties."""
     properties = AppropriateToolUseProperties(
         spec_type=SpecType.appropriate_tool_use,
-        base_instruction="Test instruction",
+        core_requirement="Test instruction",
         tool_id="tool_123",
         tool_function_name="tool_function_123",
         tool_use_guidelines="Use the tool when needed",

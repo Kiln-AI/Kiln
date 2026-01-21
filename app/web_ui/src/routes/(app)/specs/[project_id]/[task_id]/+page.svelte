@@ -19,7 +19,9 @@
   import {
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
+    checkKilnCopilotAvailable,
   } from "./spec_utils"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
 
   // ### Spec Table ###
 
@@ -32,6 +34,13 @@
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
   let evals_loading = true
+
+  let settings_loading = true
+  let settings_error: KilnError | null = null
+  let has_kiln_copilot = false
+
+  $: loading = specs_loading || evals_loading || settings_loading
+  $: error = specs_error || evals_error || settings_error
 
   type TableRow =
     | { type: "spec"; data: Spec }
@@ -100,7 +109,6 @@
   }
   const tableColumns: TableColumn[] = [
     { key: "name", label: "Name", sortable: true, sortKey: "name" },
-    { key: "definition", label: "Definition", sortable: false },
     { key: "template", label: "Template", sortable: true, sortKey: "template" },
     { key: "priority", label: "Priority", sortable: true, sortKey: "priority" },
     { key: "status", label: "Status", sortable: true, sortKey: "status" },
@@ -125,8 +133,20 @@
     : false
 
   onMount(async () => {
-    await Promise.all([load_specs(), load_evals()])
+    await Promise.all([load_specs(), load_evals(), load_has_kiln_copilot()])
   })
+
+  async function load_has_kiln_copilot() {
+    try {
+      settings_loading = true
+      settings_error = null
+      has_kiln_copilot = await checkKilnCopilotAvailable()
+    } catch (e) {
+      settings_error = createKilnError(e)
+    } finally {
+      settings_loading = false
+    }
+  }
 
   async function load_specs() {
     try {
@@ -672,49 +692,71 @@
   function handleStatusUpdate(spec: Spec, value: SpecStatus) {
     updateSpecStatus(spec, value)
   }
+
+  async function check_kiln_copilot_and_proceed() {
+    if (!has_kiln_copilot) {
+      goto(`/specs/${project_id}/${task_id}/select_workflow`)
+    } else {
+      goto(`/specs/${project_id}/${task_id}/select_template`)
+    }
+  }
 </script>
 
 <AppPage
   limit_max_width={true}
   title="Specs &amp; Evals"
-  subtitle="Define the specs your task should follow and be judged against"
-  sub_subtitle={is_empty ? undefined : "Read the Docs"}
+  subtitle="Specifications describe the behaviours to enforce or avoid for your task. Adding specs lets us measure and optimize quality with evals."
+  sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "New Spec",
-          href: `/specs/${project_id}/${task_id}/select_template`,
+          label: "Create Spec",
+          handler: async () => {
+            await check_kiln_copilot_and_proceed()
+          },
           primary: true,
         },
       ]}
 >
   <div class="flex flex-col gap-4">
-    {#if specs_loading || evals_loading}
+    {#if loading}
       <div class="flex justify-center items-center h-full">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if specs_error || evals_error}
+    {:else if error}
       <div class="text-error text-sm">
-        {(specs_error || evals_error)?.getMessage() ||
-          "An unknown error occurred"}
+        {error?.getMessage() || "An unknown error occurred"}
       </div>
     {:else if is_empty}
       <div class="mx-auto mt-[10vh]">
         <Intro
-          title="Specs &amp; Evals"
+          title="Specs &amp; Evals Ensure AI Quality"
+          align_title_left={true}
           description_paragraphs={[
-            "Specs are used to define how you want your task to behave and can be evaluated to measure how well your task is performing.",
+            "Specify how your AI task should behave, then use evaluations to verify performance.",
           ]}
           action_buttons={[
             {
-              label: "Define a Spec",
-              href: `/specs/${project_id}/${task_id}/select_template`,
+              label: "Create Spec",
+              onClick: async () => {
+                await check_kiln_copilot_and_proceed()
+              },
               is_primary: true,
             },
+            {
+              label: "Docs & Guide",
+              href: "https://docs.kiln.tech/docs/evaluations",
+              is_primary: false,
+              new_tab: true,
+            },
           ]}
-        />
+        >
+          <div slot="icon" class="h-12 w-12">
+            <EvalIcon />
+          </div>
+        </Intro>
       </div>
     {:else if sorted_specs}
       <a
@@ -886,7 +928,6 @@
                       </td>
                     {/if}
                     <td class="font-medium">{spec.name}</td>
-                    <td class="max-w-md truncate">{spec.definition}</td>
                     <td>
                       {formatSpecType(spec.properties.spec_type)}
                     </td>
@@ -955,7 +996,6 @@
                       <td></td>
                     {/if}
                     <td class="font-medium">{eval_data.name}</td>
-                    <td class="text-gray-500">N/A</td>
                     <td>Legacy Eval</td>
                     <td class="text-gray-500 pl-6">N/A</td>
                     <td class="text-gray-500 pl-6">N/A</td>

@@ -6,7 +6,6 @@
   import { env } from "$env/dynamic/public"
 
   export let onSuccess: () => void
-  export let showTitle = true
   export let showCheckmark = false
 
   let kindeClient: Awaited<ReturnType<typeof createKindeClient>> | null = null
@@ -148,9 +147,7 @@
   })
 </script>
 
-{#if showTitle}
-  <h1 class="text-xl font-medium text-center mb-2">Connect Kiln Copilot</h1>
-{/if}
+<h1 class="text-xl font-medium text-center mb-2">Connect Kiln Copilot</h1>
 
 <ol class="mb-2 text-gray-700">
   <li class="list-decimal pl-1 mx-8 mb-4">

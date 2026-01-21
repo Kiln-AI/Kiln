@@ -2139,6 +2139,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/copilot/clarify_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clarify Spec */
+        post: operations["clarify_spec_api_copilot_clarify_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/refine_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Spec */
+        post: operations["refine_spec_api_copilot_refine_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/generate_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Batch */
+        post: operations["generate_batch_api_copilot_generate_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2184,8 +2235,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "appropriate_tool_use";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Tool Id */
             tool_id: string;
             /** Tool Function Name */
@@ -2251,8 +2302,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "bias";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Bias Examples */
             bias_examples: string;
         };
@@ -2537,6 +2588,38 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
+        /** ClarifySpecApiInput */
+        ClarifySpecApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Spec Rendered Prompt Template */
+            spec_rendered_prompt_template: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            /** Providers */
+            providers: components["schemas"]["ModelProviderName"][];
+            /**
+             * Num Exemplars
+             * @default 10
+             */
+            num_exemplars: number;
+        };
+        /** ClarifySpecApiOutput */
+        ClarifySpecApiOutput: {
+            /** Examples For Feedback */
+            examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
+            /** Model Id */
+            model_id: string;
+            model_provider: components["schemas"]["ModelProviderName"];
+            /** Judge Prompt */
+            judge_prompt: string;
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -2552,8 +2635,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "completeness";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Complete Examples */
             complete_examples: string;
             /** Incomplete Examples */
@@ -2646,7 +2729,7 @@ export interface components {
             /** Name */
             name: string;
             /** Description */
-            description: string;
+            description?: string | null;
             template: components["schemas"]["EvalTemplateId"] | null;
             /** Output Scores */
             output_scores: components["schemas"]["EvalOutputScore"][];
@@ -3145,8 +3228,6 @@ export interface components {
              * @enum {string}
              */
             spec_type: "desired_behaviour";
-            /** Base Instruction */
-            base_instruction: string;
             /** Desired Behaviour Description */
             desired_behaviour_description: string;
             /** Correct Behaviour Examples */
@@ -3632,6 +3713,19 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /** ExampleWithFeedbackApi */
+        ExampleWithFeedbackApi: {
+            /** User Rating Exhibits Issue Correct */
+            user_rating_exhibits_issue_correct: boolean;
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Exhibits Issue */
+            exhibits_issue: boolean;
+            /** User Feedback */
+            user_feedback?: string | null;
+        };
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -3846,8 +3940,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "factual_correctness";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
         };
@@ -4148,8 +4242,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "formatting";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Formatting Requirements */
             formatting_requirements: string;
             /** Proper Formatting Examples */
@@ -4171,6 +4265,28 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** GenerateBatchApiInput */
+        GenerateBatchApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            /** Spec Rendered Prompt Template */
+            spec_rendered_prompt_template: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+        };
+        /** GenerateBatchApiOutput */
+        GenerateBatchApiOutput: {
+            /** Data By Topic */
+            data_by_topic: {
+                [key: string]: components["schemas"]["SampleApi"][];
+            };
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -4191,8 +4307,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "hallucinations";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Hallucinations Examples */
             hallucinations_examples: string;
         };
@@ -4223,8 +4339,6 @@ export interface components {
              * @enum {string}
              */
             spec_type: "issue";
-            /** Base Instruction */
-            base_instruction: string;
             /** Issue Description */
             issue_description: string;
             /** Issue Examples */
@@ -4239,8 +4353,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "jailbreak";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Jailbroken Examples */
             jailbroken_examples: string;
         };
@@ -4493,8 +4607,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "localization";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Localization Requirements */
             localization_requirements: string;
             /** Violation Examples */
@@ -4521,8 +4635,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "maliciousness";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Malicious Examples */
             malicious_examples: string;
         };
@@ -4596,8 +4710,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "nsfw";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Nsfw Examples */
             nsfw_examples: string;
         };
@@ -4825,8 +4939,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "prompt_leakage";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Leakage Examples */
             leakage_examples: string;
         };
@@ -5094,14 +5208,36 @@ export interface components {
              * @enum {string}
              */
             spec_type: "reference_answer_accuracy";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Reference Answer Accuracy Description */
             reference_answer_accuracy_description: string;
             /** Accurate Examples */
             accurate_examples: string;
             /** Inaccurate Examples */
             inaccurate_examples: string;
+        };
+        /** RefineSpecApiInput */
+        RefineSpecApiInput: {
+            /** Task Prompt With Few Shot */
+            task_prompt_with_few_shot: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+            task_info: components["schemas"]["TaskInfoApi"];
+            spec: components["schemas"]["SpecInfoApi"];
+            /** Examples With Feedback */
+            examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
+        };
+        /** RefineSpecApiOutput */
+        RefineSpecApiOutput: {
+            /** New Proposed Spec Edits */
+            new_proposed_spec_edits: {
+                [key: string]: components["schemas"]["SpecEditApi"];
+            };
+            /** Out Of Scope Feedback */
+            out_of_scope_feedback: string;
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5304,6 +5440,13 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** SampleApi */
+        SampleApi: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -5487,6 +5630,26 @@ export interface components {
             /** Eval Id */
             eval_id: string | null;
         };
+        /** SpecEditApi */
+        SpecEditApi: {
+            /** Old Value */
+            old_value: string;
+            /** Proposed Edit */
+            proposed_edit: string;
+            /** Reason For Edit */
+            reason_for_edit: string;
+        };
+        /** SpecInfoApi */
+        SpecInfoApi: {
+            /** Spec Fields */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /** Spec Field Current Values */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
         /**
          * SpecStatus
          * @description Defines the status of a spec.
@@ -5508,6 +5671,15 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /** SubsampleBatchOutputItemApi */
+        SubsampleBatchOutputItemApi: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Exhibits Issue */
+            exhibits_issue: boolean;
+        };
         /** TabooProperties */
         TabooProperties: {
             /**
@@ -5515,8 +5687,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "taboo";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
         };
@@ -5580,6 +5752,13 @@ export interface components {
             default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** TaskInfoApi */
+        TaskInfoApi: {
+            /** Task Prompt */
+            task_prompt: string;
+            /** Few Shot Examples */
+            few_shot_examples?: string | null;
         };
         /**
          * TaskOutput
@@ -5947,8 +6126,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "tone";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Tone Description */
             tone_description: string;
             /** Acceptable Examples */
@@ -6019,8 +6198,8 @@ export interface components {
              * @enum {string}
              */
             spec_type: "toxicity";
-            /** Base Instruction */
-            base_instruction: string;
+            /** Core Requirement */
+            core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
         };
@@ -10812,6 +10991,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clarify_spec_api_copilot_clarify_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClarifySpecApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarifySpecApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_spec_api_copilot_refine_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefineSpecApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_batch_api_copilot_generate_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateBatchApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateBatchApiOutput"];
                 };
             };
             /** @description Validation Error */

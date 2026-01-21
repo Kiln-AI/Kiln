@@ -1949,7 +1949,7 @@ async def test_get_run_config_eval_scores_includes_spec_id(
         definition="Test spec definition",
         properties=DesiredBehaviourProperties(
             spec_type=SpecType.desired_behaviour,
-            base_instruction="test instruction",
+            core_requirement="test instruction",
             desired_behaviour_description="test desired behaviour",
         ),
         eval_id=mock_eval.id,  # Associate this spec with the eval
