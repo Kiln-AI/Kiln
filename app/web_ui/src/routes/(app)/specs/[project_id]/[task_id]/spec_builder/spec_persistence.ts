@@ -26,7 +26,7 @@ export type ReviewedExample = {
 
 export type JudgeInfo = {
   prompt: string
-  model_id: string
+  model_name: string
   model_provider: ModelProviderName
 }
 
@@ -171,7 +171,7 @@ async function createJudgeAndSetAsDefault(
         },
         body: {
           type: "llm_as_judge",
-          model_name: judge_info.model_id,
+          model_name: judge_info.model_name,
           provider: judge_info.model_provider,
           properties: {
             eval_steps: [judge_info.prompt],
