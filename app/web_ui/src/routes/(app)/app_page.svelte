@@ -86,7 +86,7 @@
       <div>
         <button
           on:click={() => run_action_button(action_button)}
-          class="btn btn-xs md:btn-md whitespace-nowrap {!action_button.icon
+          class="btn btn-xs md:btn-md md:whitespace-nowrap {!action_button.icon
             ? 'md:px-6'
             : ''} {action_button.primary ? 'btn-primary' : ''}"
           disabled={action_button.disabled ?? false}
