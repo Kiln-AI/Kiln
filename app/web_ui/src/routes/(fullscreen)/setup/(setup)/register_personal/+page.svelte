@@ -63,7 +63,7 @@
           "Content-Type": "application/json",
         },
       })
-      if (res.status !== 200) {
+      if (!res.ok) {
         throw new Error("Failed to register")
       }
 
@@ -111,7 +111,7 @@
       <FormElement
         id="email"
         inputType="input"
-        label="Work Email"
+        label="Email"
         bind:value={email}
       />
     </FormContainer>
