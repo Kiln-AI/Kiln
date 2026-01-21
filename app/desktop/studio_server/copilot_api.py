@@ -126,7 +126,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        clarify_input = ClarifySpecInput.from_dict(input.model_dump())
+        input_dict = input.model_dump()
+        input_dict["target_task_prompt"] = input_dict.pop("task_prompt_with_few_shot")
+        clarify_input = ClarifySpecInput.from_dict(input_dict)
 
         result = await clarify_spec_v1_copilot_clarify_spec_post.asyncio(
             client=client,
@@ -188,7 +190,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        generate_input = GenerateBatchInput(**input.model_dump())
+        input_dict = input.model_dump()
+        input_dict["target_task_prompt"] = input_dict.pop("task_prompt_with_few_shot")
+        generate_input = GenerateBatchInput.from_dict(input_dict)
 
         result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
             client=client,

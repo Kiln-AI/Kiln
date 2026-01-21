@@ -6,39 +6,28 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.model_provider_name import ModelProviderName
-
-T = TypeVar("T", bound="JudgeInfo")
+T = TypeVar("T", bound="CheckModelSupportedResponse")
 
 
 @_attrs_define
-class JudgeInfo:
-    """
+class CheckModelSupportedResponse:
+    """Response model for check_model_supported endpoint.
+
     Attributes:
-        model_name (str):
-        model_provider (ModelProviderName): Enumeration of supported AI model providers.
-        judge_prompt (str):
+        is_model_supported (bool):
     """
 
-    model_name: str
-    model_provider: ModelProviderName
-    judge_prompt: str
+    is_model_supported: bool
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        model_name = self.model_name
-
-        model_provider = self.model_provider.value
-
-        judge_prompt = self.judge_prompt
+        is_model_supported = self.is_model_supported
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "model_name": model_name,
-                "model_provider": model_provider,
-                "judge_prompt": judge_prompt,
+                "is_model_supported": is_model_supported,
             }
         )
 
@@ -47,20 +36,14 @@ class JudgeInfo:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        model_name = d.pop("model_name")
+        is_model_supported = d.pop("is_model_supported")
 
-        model_provider = ModelProviderName(d.pop("model_provider"))
-
-        judge_prompt = d.pop("judge_prompt")
-
-        judge_info = cls(
-            model_name=model_name,
-            model_provider=model_provider,
-            judge_prompt=judge_prompt,
+        check_model_supported_response = cls(
+            is_model_supported=is_model_supported,
         )
 
-        judge_info.additional_properties = d
-        return judge_info
+        check_model_supported_response.additional_properties = d
+        return check_model_supported_response
 
     @property
     def additional_keys(self) -> list[str]:
