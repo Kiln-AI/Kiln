@@ -1,3 +1,9 @@
+"""
+Data models for asking questions about a specification to refine it.
+
+Typically not used directly by SDK consumers, but by the Kiln app and service.
+"""
+
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -133,4 +139,38 @@ class SubmitAnswersRequest(BaseModel):
         ...,
         description="Questions about the specification with user-provided answers",
         title="questions_and_answers",
+    )
+
+
+class ProposedSpecEdit(BaseModel):
+    """A proposed edit to a spec field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec_field_name: str = Field(
+        ...,
+        description="The name of the spec field that is being edited",
+        title="spec_field_name",
+    )
+    proposed_edit: str = Field(
+        ...,
+        description="A new value for this spec field incorporating the feedback",
+        title="proposed_edit",
+    )
+    reason_for_edit: str = Field(
+        ...,
+        description="The reason for editing this spec field",
+        title="reason_for_edit",
+    )
+
+
+class RefineSpecWithQuestionAnswersResponse(BaseModel):
+    """Response containing proposed spec edits based on question answers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    new_proposed_spec_edits: list[ProposedSpecEdit] = Field(
+        ...,
+        description="A list of proposed edits to spec fields",
+        title="new_proposed_spec_edits",
     )

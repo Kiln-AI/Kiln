@@ -4,9 +4,11 @@ from pydantic import ValidationError
 from kiln_ai.datamodel.questions import (
     AnswerOption,
     AnswerOptionWithSelection,
+    ProposedSpecEdit,
     Question,
     QuestionSet,
     QuestionWithAnswer,
+    RefineSpecWithQuestionAnswersResponse,
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
@@ -498,5 +500,128 @@ class TestSubmitAnswersRequest:
                 ]
             )
         assert "Must either select an answer option or provide custom_answer" in str(
+            exc_info.value
+        )
+
+
+# Tests for ProposedSpecEdit
+class TestProposedSpecEdit:
+    def test_valid_proposed_spec_edit(self):
+        edit = ProposedSpecEdit(
+            spec_field_name="description",
+            proposed_edit="Updated description text",
+            reason_for_edit="User feedback indicated more detail needed",
+        )
+        assert edit.spec_field_name == "description"
+        assert edit.proposed_edit == "Updated description text"
+        assert edit.reason_for_edit == "User feedback indicated more detail needed"
+
+    def test_missing_spec_field_name(self):
+        with pytest.raises(ValidationError) as exc_info:
+            ProposedSpecEdit(
+                proposed_edit="Updated text",
+                reason_for_edit="Some reason",
+            )
+        assert "spec_field_name" in str(exc_info.value)
+
+    def test_missing_proposed_edit(self):
+        with pytest.raises(ValidationError) as exc_info:
+            ProposedSpecEdit(
+                spec_field_name="description",
+                reason_for_edit="Some reason",
+            )
+        assert "proposed_edit" in str(exc_info.value)
+
+    def test_missing_reason_for_edit(self):
+        with pytest.raises(ValidationError) as exc_info:
+            ProposedSpecEdit(
+                spec_field_name="description",
+                proposed_edit="Updated text",
+            )
+        assert "reason_for_edit" in str(exc_info.value)
+
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            ProposedSpecEdit(
+                spec_field_name="description",
+                proposed_edit="Updated text",
+                reason_for_edit="Some reason",
+                extra_field="not allowed",
+            )
+
+
+# Tests for RefineSpecWithQuestionAnswersResponse
+class TestRefineSpecWithQuestionAnswersResponse:
+    def test_valid_response_single_edit(self):
+        response = RefineSpecWithQuestionAnswersResponse(
+            new_proposed_spec_edits=[
+                ProposedSpecEdit(
+                    spec_field_name="description",
+                    proposed_edit="Updated description",
+                    reason_for_edit="User wanted more detail",
+                ),
+            ]
+        )
+        assert len(response.new_proposed_spec_edits) == 1
+        assert response.new_proposed_spec_edits[0].spec_field_name == "description"
+
+    def test_valid_response_multiple_edits(self):
+        response = RefineSpecWithQuestionAnswersResponse(
+            new_proposed_spec_edits=[
+                ProposedSpecEdit(
+                    spec_field_name="description",
+                    proposed_edit="Updated description",
+                    reason_for_edit="User wanted more detail",
+                ),
+                ProposedSpecEdit(
+                    spec_field_name="output_format",
+                    proposed_edit="JSON with nested objects",
+                    reason_for_edit="User specified structured output requirement",
+                ),
+                ProposedSpecEdit(
+                    spec_field_name="constraints",
+                    proposed_edit="Max 500 tokens",
+                    reason_for_edit="User indicated length limit",
+                ),
+            ]
+        )
+        assert len(response.new_proposed_spec_edits) == 3
+        assert response.new_proposed_spec_edits[0].spec_field_name == "description"
+        assert response.new_proposed_spec_edits[1].spec_field_name == "output_format"
+        assert response.new_proposed_spec_edits[2].spec_field_name == "constraints"
+
+    def test_empty_edits_list(self):
+        response = RefineSpecWithQuestionAnswersResponse(new_proposed_spec_edits=[])
+        assert len(response.new_proposed_spec_edits) == 0
+
+    def test_missing_new_proposed_spec_edits(self):
+        with pytest.raises(ValidationError) as exc_info:
+            RefineSpecWithQuestionAnswersResponse()
+        assert "new_proposed_spec_edits" in str(exc_info.value)
+
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            RefineSpecWithQuestionAnswersResponse(
+                new_proposed_spec_edits=[
+                    ProposedSpecEdit(
+                        spec_field_name="description",
+                        proposed_edit="Updated text",
+                        reason_for_edit="Some reason",
+                    ),
+                ],
+                extra_field="not allowed",
+            )
+
+    def test_invalid_edit_propagates_error(self):
+        with pytest.raises(ValidationError) as exc_info:
+            RefineSpecWithQuestionAnswersResponse(
+                new_proposed_spec_edits=[
+                    ProposedSpecEdit(
+                        spec_field_name="description",
+                        # Missing proposed_edit and reason_for_edit
+                    ),
+                ]
+            )
+        assert "proposed_edit" in str(exc_info.value) or "reason_for_edit" in str(
             exc_info.value
         )
