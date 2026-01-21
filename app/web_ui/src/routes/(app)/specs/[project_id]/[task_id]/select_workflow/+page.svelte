@@ -36,10 +36,9 @@
   }
 </script>
 
-<div class="max-w-[1400px]">
+<div class="max-w-[900px]">
   <AppPage
     title="Create Spec"
-    subtitle="Choose your Spec Creation Workflow"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[
@@ -58,13 +57,16 @@
         {error.getMessage() || "An unknown error occurred"}
       </div>
     {:else}
-      <div class="my-4 max-w-[680px]">
-        <div class="overflow-x-auto border-b">
-          <table class="table table-fixed w-full">
+      <div class="my-4 max-w-[680px] mx-auto">
+        <div class="font-medium text-xl text-center">
+          Choose your Spec Creation Workflow
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table w-full mt-4">
             <colgroup>
-              <col class="w-[240px]" />
-              <col />
-              <col />
+              <col class="w-[50%]" />
+              <col class="w-[25%]" />
+              <col class="w-[25%]" />
             </colgroup>
             <thead>
               <tr class="border-b-0">
@@ -116,55 +118,46 @@
                 <td class="text-center">20 min</td>
                 <td class="text-center border-l">3 min</td>
               </tr>
-              <tr>
+              <tr class="border-b">
                 <th class="font-bold text-xs text-base-content/60"
                   >Kiln Account</th
                 >
                 <td class="text-center">Optional</td>
                 <td class="text-center border-l">Required</td>
               </tr>
+              <tr>
+                <th></th>
+                <td class="text-center pt-4">
+                  <button
+                    class="btn btn-outline btn-sm whitespace-nowrap"
+                    on:click={proceed_to_select_template}
+                  >
+                    Create Manually
+                  </button>
+                </td>
+                <td class="text-center pt-4">
+                  <div
+                    class="tooltip"
+                    data-tip={default_run_config_has_tools
+                      ? "Tool calling is not yet supported in Kiln Copilot. Please create the spec manually for now."
+                      : undefined}
+                  >
+                    <button
+                      class="btn btn-primary btn-sm whitespace-nowrap"
+                      disabled={loading || default_run_config_has_tools}
+                      on:click={() =>
+                        goto(`/specs/copilot_auth`, {
+                          replaceState: true,
+                        })}
+                    >
+                      Connect Kiln Copilot
+                    </button>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
-        <table class="table-fixed w-full mt-4">
-          <colgroup>
-            <col class="w-[240px]" />
-            <col />
-            <col />
-          </colgroup>
-          <tbody>
-            <tr>
-              <td></td>
-              <td class="text-center">
-                <button
-                  class="btn btn-outline btn-sm"
-                  on:click={proceed_to_select_template}
-                >
-                  Create Manually
-                </button>
-              </td>
-              <td class="text-center">
-                <div
-                  class="tooltip"
-                  data-tip={default_run_config_has_tools
-                    ? "Tool calling is not yet supported in Kiln Copilot. Please create the spec manually for now."
-                    : undefined}
-                >
-                  <button
-                    class="btn btn-primary btn-sm"
-                    disabled={loading || default_run_config_has_tools}
-                    on:click={() =>
-                      goto(`/specs/copilot_auth`, {
-                        replaceState: true,
-                      })}
-                  >
-                    Connect Kiln Copilot
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     {/if}
   </AppPage>
