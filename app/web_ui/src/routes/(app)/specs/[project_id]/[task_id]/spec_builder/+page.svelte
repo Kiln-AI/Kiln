@@ -7,7 +7,11 @@
   import type { SpecType, ModelProviderName, Task } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { checkKilnCopilotAvailable, buildSpecDefinition } from "../spec_utils"
+  import {
+    checkKilnCopilotAvailable,
+    checkDefaultRunConfigHasTools,
+    buildSpecDefinition,
+  } from "../spec_utils"
   import {
     createSpec,
     type JudgeInfo,
@@ -51,6 +55,7 @@
 
   // Copilot availability
   let has_kiln_copilot = false
+  let default_run_config_has_tools = false
 
   // Task data (loaded once in initialize)
   let task: Task | null = null
@@ -123,8 +128,12 @@
   $: if (is_tool_use_spec) evaluate_full_trace = true
 
   // Tool call and RAG specs don't support copilot
+  // Also disable copilot when the default run config has tools (tool calling not supported yet)
   $: copilot_enabled =
-    has_kiln_copilot && !is_tool_use_spec && !is_reference_answer_spec
+    has_kiln_copilot &&
+    !is_tool_use_spec &&
+    !is_reference_answer_spec &&
+    !default_run_config_has_tools
 
   // Initialize form from URL params
   async function initialize() {
@@ -143,6 +152,12 @@
       if (!task) {
         throw new Error("Failed to load task")
       }
+
+      // Check if default run config has tools (copilot doesn't support tool calling)
+      default_run_config_has_tools = await checkDefaultRunConfigHasTools(
+        project_id,
+        task,
+      )
 
       // Get spec type from URL params
       const spec_type_param = $page.url.searchParams.get("type")
