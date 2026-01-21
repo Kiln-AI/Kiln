@@ -79,25 +79,25 @@ export async function createSpec(
       }
 
       // Generate eval data set
-      const tag = specEvalTag(name)
+      const evalTag = "eval_" + snakeCase(name)
       await generateAndSaveEvalData(
         project_id,
         task_id,
         spec_type,
         property_values,
-        tag,
+        evalTag,
         signal,
       )
 
       // Save any provided reviewed examples as the golden dataset
       if (reviewed_examples.length > 0) {
-        const goldenTag = specEvalTag(name) + "_golden"
+        const goldenTag = "eval_golden_" + snakeCase(name)
         await saveReviewedExamplesAsGoldenDataset(
           project_id,
           task_id,
           reviewed_examples,
           goldenTag,
-          name, // The eval output score name matches the spec name
+          name,
         )
       }
     }
@@ -225,9 +225,9 @@ async function createEval(
   const name = spec_name
   const template = specEvalTemplate(spec_type)
   const output_scores = [specEvalOutputScore(spec_name)]
-  const tag = specEvalTag(spec_name)
-  const eval_set_filter_id = `tag::${tag}`
-  const eval_configs_filter_id = `tag::${tag}_golden`
+  const snake_case_name = snakeCase(spec_name)
+  const eval_set_filter_id = `tag::eval_${snake_case_name}`
+  const eval_configs_filter_id = `tag::eval_golden_${snake_case_name}`
   const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
@@ -368,7 +368,7 @@ async function saveReviewedExamplesAsGoldenDataset(
   spec_name: string,
 ): Promise<void> {
   // Create a TaskRun for each reviewed example with the golden tag
-  // The human rating is stored in requirement_ratings with key "named::<spec_name>"
+  // The human rating is stored in requirement_ratings with key "named::<spec_name>" (using spec name for eval output score name)
   for (const example of examples) {
     const ratingKey = `named::${spec_name}`
     const { error } = await client.POST(
@@ -471,15 +471,8 @@ function specEvalTemplate(spec_type: SpecType): EvalTemplateId | null {
   }
 }
 
-function specEvalTag(spec_name: string): string {
-  const tag = spec_name.toLowerCase().replace(/ /g, "_")
-  if (tag.length === 0) {
-    return "eval_" + (Math.floor(Math.random() * (99999 - 10000 + 1)) + 10000)
-  }
-  if (tag.length > 32) {
-    return tag.slice(0, 32)
-  }
-  return tag
+function snakeCase(spec_name: string): string {
+  return spec_name.toLowerCase().replace(/ /g, "_")
 }
 
 async function cleanupEval(

@@ -28,6 +28,7 @@
 
   function reset_field(key: string) {
     property_values[key] = initial_property_values[key] ?? null
+    property_values = { ...property_values }
   }
 
   function has_form_changes(
