@@ -5,38 +5,36 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.check_model_supported_response import CheckModelSupportedResponse
 from ...models.http_validation_error import HTTPValidationError
-from ...types import UNSET, Response
+from ...models.question_set import QuestionSet
+from ...models.spec_questioner_input import SpecQuestionerInput
+from ...types import Response
 
 
 def _get_kwargs(
     *,
-    model_name: str,
-    model_provider_name: str,
+    body: SpecQuestionerInput,
 ) -> dict[str, Any]:
-    params: dict[str, Any] = {}
-
-    params["model_name"] = model_name
-
-    params["model_provider_name"] = model_provider_name
-
-    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+    headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/v1/jobs/gepa_job/check_model_supported",
-        "params": params,
+        "method": "post",
+        "url": "/v1/copilot/question_spec",
     }
 
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
     return _kwargs
 
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> CheckModelSupportedResponse | HTTPValidationError | None:
+) -> HTTPValidationError | QuestionSet | None:
     if response.status_code == 200:
-        response_200 = CheckModelSupportedResponse.from_dict(response.json())
+        response_200 = QuestionSet.from_dict(response.json())
 
         return response_200
 
@@ -53,7 +51,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+) -> Response[HTTPValidationError | QuestionSet]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -65,26 +63,25 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    model_name: str,
-    model_provider_name: str,
-) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
-    """Check Model Supported
+    body: SpecQuestionerInput,
+) -> Response[HTTPValidationError | QuestionSet]:
+    """Question Spec
+
+     Generate questions to help clarify a specification.
 
     Args:
-        model_name (str):
-        model_provider_name (str):
+        body (SpecQuestionerInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[CheckModelSupportedResponse | HTTPValidationError]
+        Response[HTTPValidationError | QuestionSet]
     """
 
     kwargs = _get_kwargs(
-        model_name=model_name,
-        model_provider_name=model_provider_name,
+        body=body,
     )
 
     response = client.get_httpx_client().request(
@@ -97,53 +94,51 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    model_name: str,
-    model_provider_name: str,
-) -> CheckModelSupportedResponse | HTTPValidationError | None:
-    """Check Model Supported
+    body: SpecQuestionerInput,
+) -> HTTPValidationError | QuestionSet | None:
+    """Question Spec
+
+     Generate questions to help clarify a specification.
 
     Args:
-        model_name (str):
-        model_provider_name (str):
+        body (SpecQuestionerInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        CheckModelSupportedResponse | HTTPValidationError
+        HTTPValidationError | QuestionSet
     """
 
     return sync_detailed(
         client=client,
-        model_name=model_name,
-        model_provider_name=model_provider_name,
+        body=body,
     ).parsed
 
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    model_name: str,
-    model_provider_name: str,
-) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
-    """Check Model Supported
+    body: SpecQuestionerInput,
+) -> Response[HTTPValidationError | QuestionSet]:
+    """Question Spec
+
+     Generate questions to help clarify a specification.
 
     Args:
-        model_name (str):
-        model_provider_name (str):
+        body (SpecQuestionerInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[CheckModelSupportedResponse | HTTPValidationError]
+        Response[HTTPValidationError | QuestionSet]
     """
 
     kwargs = _get_kwargs(
-        model_name=model_name,
-        model_provider_name=model_provider_name,
+        body=body,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -154,27 +149,26 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    model_name: str,
-    model_provider_name: str,
-) -> CheckModelSupportedResponse | HTTPValidationError | None:
-    """Check Model Supported
+    body: SpecQuestionerInput,
+) -> HTTPValidationError | QuestionSet | None:
+    """Question Spec
+
+     Generate questions to help clarify a specification.
 
     Args:
-        model_name (str):
-        model_provider_name (str):
+        body (SpecQuestionerInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        CheckModelSupportedResponse | HTTPValidationError
+        HTTPValidationError | QuestionSet
     """
 
     return (
         await asyncio_detailed(
             client=client,
-            model_name=model_name,
-            model_provider_name=model_provider_name,
+            body=body,
         )
     ).parsed

@@ -1,11 +1,12 @@
 <script lang="ts">
-  import type { QuestionSet, SubmitAnswersRequest } from "$lib/types"
-  import type { components } from "$lib/api_schema"
+  import type {
+    QuestionAnswer,
+    QuestionSet,
+    SubmitAnswersRequest,
+  } from "$lib/types"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
-
-  type QuestionAnswer = components["schemas"]["QuestionAnswer"]
 
   export let question_set: QuestionSet
   export let on_submit: (

@@ -1075,40 +1075,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/demo_question_set": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Demo Question Set */
-        get: operations["get_demo_question_set_api_demo_question_set_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/submit_spec_question_answers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Submit Question Answers */
-        post: operations["submit_question_answers_api_submit_spec_question_answers_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/providers/models": {
         parameters: {
             query?: never;
@@ -2224,15 +2190,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/copilot/question_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Question Spec */
+        post: operations["question_spec_api_copilot_question_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/refine_spec_with_question_answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Question Answers */
+        post: operations["submit_question_answers_api_refine_spec_with_question_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /** AnswerOption */
         AnswerOption: {
-            /** Answer Title */
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
             answer_title: string;
-            /** Answer Description */
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
             answer_description: string;
         };
         /** ApiPrompt */
@@ -5029,11 +5035,20 @@ export interface components {
         };
         /** Question */
         Question: {
-            /** Question Title */
+            /**
+             * question_title
+             * @description A short title for this question
+             */
             question_title: string;
-            /** Question Body */
+            /**
+             * question_body
+             * @description The full question text
+             */
             question_body: string;
-            /** Answer Options */
+            /**
+             * answer_options
+             * @description A list of possible answers to this question for the user to select from
+             */
             answer_options: components["schemas"]["AnswerOption"][];
         };
         /**
@@ -5052,7 +5067,10 @@ export interface components {
         };
         /** QuestionSet */
         QuestionSet: {
-            /** Questions */
+            /**
+             * questions
+             * @description A set of questions to ask about the specification
+             */
             questions: components["schemas"]["Question"][];
         };
         /** RagConfig */
@@ -5718,6 +5736,29 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /** SpecQuestionerInput */
+        SpecQuestionerInput: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * task_input_schema
+             * @description If the task's input must conform to a specific input schema, it will be provided here
+             */
+            task_input_schema?: string | null;
+            /**
+             * task_output_schema
+             * @description If the task's output must conform to a specific schema, it will be provided here
+             */
+            task_output_schema?: string | null;
+            /**
+             * specification
+             * @description The specification to analyze
+             */
+            specification: string;
         };
         /**
          * SpecStatus
@@ -8877,59 +8918,6 @@ export interface operations {
             };
         };
     };
-    get_demo_question_set_api_demo_question_set_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuestionSet"];
-                };
-            };
-        };
-    };
-    submit_question_answers_api_submit_spec_question_answers_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubmitAnswersRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_providers_models_api_providers_models_get: {
         parameters: {
             query?: never;
@@ -11222,6 +11210,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateBatchApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_spec_api_copilot_question_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecQuestionerInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_question_answers_api_refine_spec_with_question_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

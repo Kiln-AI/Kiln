@@ -1,12 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_server.question_api import (
+from kiln_ai.datamodel.questions import (
     AnswerOption,
     Question,
     QuestionAnswer,
     QuestionSet,
-    SpecificationAnalysisInput,
+    SpecQuestionerInput,
     SubmitAnswersRequest,
 )
 
@@ -49,7 +49,7 @@ def sample_questions(sample_answer_options):
 # Tests for SpecificationAnalysisInput
 class TestSpecificationAnalysisInput:
     def test_with_all_fields(self):
-        input_model = SpecificationAnalysisInput(
+        input_model = SpecQuestionerInput(
             task_prompt="Summarize the text",
             task_input_schema='{"type": "string"}',
             task_output_schema='{"type": "string"}',
@@ -61,7 +61,7 @@ class TestSpecificationAnalysisInput:
         assert input_model.specification == "The output should be concise."
 
     def test_with_required_fields_only(self):
-        input_model = SpecificationAnalysisInput(
+        input_model = SpecQuestionerInput(
             task_prompt="Summarize the text",
             specification="The output should be concise.",
         )
@@ -72,12 +72,12 @@ class TestSpecificationAnalysisInput:
 
     def test_missing_required_field_task_prompt(self):
         with pytest.raises(ValidationError) as exc_info:
-            SpecificationAnalysisInput(specification="Some spec")
+            SpecQuestionerInput(specification="Some spec")
         assert "task_prompt" in str(exc_info.value)
 
     def test_missing_required_field_specification(self):
         with pytest.raises(ValidationError) as exc_info:
-            SpecificationAnalysisInput(task_prompt="Some prompt")
+            SpecQuestionerInput(task_prompt="Some prompt")
         assert "specification" in str(exc_info.value)
 
 
