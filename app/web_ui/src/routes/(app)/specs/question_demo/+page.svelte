@@ -3,7 +3,12 @@
   import AppPage from "../../app_page.svelte"
   import Questions from "../questions.svelte"
   import { client } from "$lib/api_client"
-  import type { QuestionSet, SubmitAnswersRequest } from "$lib/types"
+  import type {
+    QuestionSet,
+    QuestionWithAnswer,
+    SpecificationInput,
+    SubmitAnswersRequest,
+  } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
 
   let question_set: QuestionSet | null = null
@@ -13,8 +18,15 @@
   let submitted_question_request = false
   let task_prompt: string =
     "You are a helpful assistant that generates headlines for news articles when provided a news article."
-  let specification: string =
+  let spec_goal: string =
     "The headline should be a single sentence that captures the main idea of the news article."
+
+  $: specification_input = {
+    spec_fields: {
+      spec_goal: "The main goal or objective for this specification",
+    },
+    spec_field_current_values: { spec_goal },
+  } satisfies SpecificationInput
 
   async function get_question_set() {
     submitted_question_request = true
@@ -25,7 +37,7 @@
         {
           body: {
             task_prompt,
-            specification,
+            specification: spec_goal,
           },
         },
       )
@@ -44,8 +56,13 @@
   }
 
   async function handle_submit_question_answers(
-    request: SubmitAnswersRequest,
+    questions_and_answers: QuestionWithAnswer[],
   ): Promise<string | null> {
+    const request: SubmitAnswersRequest = {
+      task_prompt,
+      specification: specification_input,
+      questions_and_answers,
+    }
     console.info("Submitted answers:", request)
     // Demo just logs the request
     submitted_question_answers = true
@@ -68,14 +85,14 @@
         ></textarea>
       </div>
       <div class="form-control w-full">
-        <label class="label" for="specification">
-          <span class="label-text font-medium">Specification</span>
+        <label class="label" for="spec-goal">
+          <span class="label-text font-medium">Spec Goal</span>
         </label>
         <textarea
-          id="specification"
+          id="spec-goal"
           class="textarea textarea-bordered w-full"
           rows="3"
-          bind:value={specification}
+          bind:value={spec_goal}
         ></textarea>
       </div>
       <button class="btn btn-primary mt-2" on:click={get_question_set}>

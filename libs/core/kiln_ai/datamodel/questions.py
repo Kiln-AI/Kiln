@@ -130,11 +130,38 @@ class QuestionWithAnswer(BaseModel):
         return self
 
 
+class SpecificationInput(BaseModel):
+    """The specification to refine."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec_fields: dict[str, str] = Field(
+        ...,
+        description="Dictionary mapping field names to their descriptions/purposes",
+        title="spec_fields",
+    )
+    spec_field_current_values: dict[str, str] = Field(
+        ...,
+        description="Dictionary mapping field names to their current values",
+        title="spec_field_current_values",
+    )
+
+
 class SubmitAnswersRequest(BaseModel):
     """Request to submit answers to a question set."""
 
     model_config = ConfigDict(extra="forbid")
 
+    task_prompt: str = Field(
+        ...,
+        description="The task's prompt",
+        title="task_prompt",
+    )
+    specification: SpecificationInput = Field(
+        ...,
+        description="The specification to refine",
+        title="specification",
+    )
     questions_and_answers: list[QuestionWithAnswer] = Field(
         ...,
         description="Questions about the specification with user-provided answers",

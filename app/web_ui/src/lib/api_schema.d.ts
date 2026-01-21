@@ -5800,6 +5800,26 @@ export interface components {
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
         /**
+         * SpecificationInput
+         * @description The specification to refine.
+         */
+        SpecificationInput: {
+            /**
+             * spec_fields
+             * @description Dictionary mapping field names to their descriptions/purposes
+             */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /**
+             * spec_field_current_values
+             * @description Dictionary mapping field names to their current values
+             */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
+        /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
          *
@@ -5819,6 +5839,16 @@ export interface components {
          * @description Request to submit answers to a question set.
          */
         SubmitAnswersRequest: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * specification
+             * @description The specification to refine
+             */
+            specification: components["schemas"]["SpecificationInput"];
             /**
              * questions_and_answers
              * @description Questions about the specification with user-provided answers

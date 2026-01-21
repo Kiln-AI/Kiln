@@ -144,6 +144,7 @@ export type SpecProperties =
   | components["schemas"]["PromptLeakageProperties"]
 export type SpecType = SpecProperties["spec_type"]
 export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
+export type SpecificationInput = components["schemas"]["SpecificationInput"]
 export type QuestionSet = components["schemas"]["QuestionSet"]
 export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
 export type AnswerOptionWithSelection =

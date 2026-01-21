@@ -9,6 +9,7 @@ from kiln_ai.datamodel.questions import (
     QuestionSet,
     QuestionWithAnswer,
     RefineSpecWithQuestionAnswersResponse,
+    SpecificationInput,
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
@@ -344,6 +345,11 @@ class TestQuestionWithAnswer:
 class TestSubmitAnswersRequest:
     def test_valid_request_single_question(self):
         request = SubmitAnswersRequest(
+            task_prompt="Test task prompt",
+            specification=SpecificationInput(
+                spec_fields={"field1": "Description of field1"},
+                spec_field_current_values={"field1": "Current value"},
+            ),
             questions_and_answers=[
                 QuestionWithAnswer(
                     question_title="Question 1",
@@ -361,13 +367,20 @@ class TestSubmitAnswersRequest:
                         ),
                     ],
                 ),
-            ]
+            ],
         )
         assert len(request.questions_and_answers) == 1
         assert request.questions_and_answers[0].answer_options[0].selected is True
+        assert request.task_prompt == "Test task prompt"
+        assert request.specification.spec_fields == {"field1": "Description of field1"}
 
     def test_valid_request_multiple_questions(self):
         request = SubmitAnswersRequest(
+            task_prompt="Test task prompt",
+            specification=SpecificationInput(
+                spec_fields={"field1": "Description"},
+                spec_field_current_values={"field1": "Value"},
+            ),
             questions_and_answers=[
                 QuestionWithAnswer(
                     question_title="Question 1",
@@ -401,12 +414,17 @@ class TestSubmitAnswersRequest:
                         ),
                     ],
                 ),
-            ]
+            ],
         )
         assert len(request.questions_and_answers) == 2
 
     def test_valid_request_with_custom_answer(self):
         request = SubmitAnswersRequest(
+            task_prompt="Test task prompt",
+            specification=SpecificationInput(
+                spec_fields={"field1": "Description"},
+                spec_field_current_values={"field1": "Value"},
+            ),
             questions_and_answers=[
                 QuestionWithAnswer(
                     question_title="Question 1",
@@ -420,12 +438,17 @@ class TestSubmitAnswersRequest:
                     ],
                     custom_answer="My custom feedback",
                 ),
-            ]
+            ],
         )
         assert request.questions_and_answers[0].custom_answer == "My custom feedback"
 
     def test_valid_request_mixed_answers(self):
         request = SubmitAnswersRequest(
+            task_prompt="Test task prompt",
+            specification=SpecificationInput(
+                spec_fields={"field1": "Description"},
+                spec_field_current_values={"field1": "Value"},
+            ),
             questions_and_answers=[
                 QuestionWithAnswer(
                     question_title="Question 1",
@@ -450,7 +473,7 @@ class TestSubmitAnswersRequest:
                     ],
                     custom_answer="Custom answer for question 2",
                 ),
-            ]
+            ],
         )
         assert request.questions_and_answers[0].custom_answer is None
         assert (
@@ -459,12 +482,24 @@ class TestSubmitAnswersRequest:
         )
 
     def test_empty_questions_and_answers(self):
-        request = SubmitAnswersRequest(questions_and_answers=[])
+        request = SubmitAnswersRequest(
+            task_prompt="Test task prompt",
+            specification=SpecificationInput(
+                spec_fields={"field1": "Description"},
+                spec_field_current_values={"field1": "Value"},
+            ),
+            questions_and_answers=[],
+        )
         assert len(request.questions_and_answers) == 0
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
             SubmitAnswersRequest(
+                task_prompt="Test task prompt",
+                specification=SpecificationInput(
+                    spec_fields={"field1": "Description"},
+                    spec_field_current_values={"field1": "Value"},
+                ),
                 questions_and_answers=[
                     QuestionWithAnswer(
                         question_title="Q",
@@ -484,6 +519,11 @@ class TestSubmitAnswersRequest:
     def test_invalid_question_propagates_error(self):
         with pytest.raises(ValidationError) as exc_info:
             SubmitAnswersRequest(
+                task_prompt="Test task prompt",
+                specification=SpecificationInput(
+                    spec_fields={"field1": "Description"},
+                    spec_field_current_values={"field1": "Value"},
+                ),
                 questions_and_answers=[
                     QuestionWithAnswer(
                         question_title="Q",
@@ -497,11 +537,56 @@ class TestSubmitAnswersRequest:
                         ],
                         # No answer provided - should fail validation
                     ),
-                ]
+                ],
             )
         assert "Must either select an answer option or provide custom_answer" in str(
             exc_info.value
         )
+
+
+# Tests for SpecificationInput
+class TestSpecificationInput:
+    def test_valid_specification_input(self):
+        spec = SpecificationInput(
+            spec_fields={"field1": "Description of field1", "field2": "Description 2"},
+            spec_field_current_values={"field1": "Value 1", "field2": "Value 2"},
+        )
+        assert spec.spec_fields == {
+            "field1": "Description of field1",
+            "field2": "Description 2",
+        }
+        assert spec.spec_field_current_values == {
+            "field1": "Value 1",
+            "field2": "Value 2",
+        }
+
+    def test_empty_dictionaries(self):
+        spec = SpecificationInput(
+            spec_fields={},
+            spec_field_current_values={},
+        )
+        assert spec.spec_fields == {}
+        assert spec.spec_field_current_values == {}
+
+    def test_missing_spec_fields(self):
+        with pytest.raises(ValidationError):
+            SpecificationInput(
+                spec_field_current_values={"field1": "Value"},
+            )
+
+    def test_missing_spec_field_current_values(self):
+        with pytest.raises(ValidationError):
+            SpecificationInput(
+                spec_fields={"field1": "Description"},
+            )
+
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            SpecificationInput(
+                spec_fields={"field1": "Description"},
+                spec_field_current_values={"field1": "Value"},
+                extra_field="not allowed",
+            )
 
 
 # Tests for ProposedSpecEdit

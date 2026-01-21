@@ -3,7 +3,6 @@
     AnswerOptionWithSelection,
     QuestionSet,
     QuestionWithAnswer,
-    SubmitAnswersRequest,
   } from "$lib/types"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
@@ -11,7 +10,7 @@
 
   export let question_set: QuestionSet
   export let on_submit: (
-    request: SubmitAnswersRequest,
+    questions_and_answers: QuestionWithAnswer[],
   ) => Promise<string | null>
 
   // Track the selected option for each question
@@ -41,35 +40,30 @@
     return null
   }
 
-  function build_submit_request(): SubmitAnswersRequest {
-    const questions_and_answers: QuestionWithAnswer[] =
-      question_set.questions.map((question, q_index) => {
-        const selection = selections[q_index]
-        const is_other = selection === "other"
+  function build_question_answers(): QuestionWithAnswer[] {
+    return question_set.questions.map((question, q_index) => {
+      const selection = selections[q_index]
+      const is_other = selection === "other"
 
-        const answer_options: AnswerOptionWithSelection[] =
-          question.answer_options.map((option, o_index) => ({
-            answer_title: option.answer_title,
-            answer_description: option.answer_description,
-            selected: !is_other && selection === o_index,
-          }))
+      const answer_options: AnswerOptionWithSelection[] =
+        question.answer_options.map((option, o_index) => ({
+          answer_title: option.answer_title,
+          answer_description: option.answer_description,
+          selected: !is_other && selection === o_index,
+        }))
 
-        const result: QuestionWithAnswer = {
-          question_title: question.question_title,
-          question_body: question.question_body,
-          answer_options,
-        }
+      const result: QuestionWithAnswer = {
+        question_title: question.question_title,
+        question_body: question.question_body,
+        answer_options,
+      }
 
-        if (is_other) {
-          result.custom_answer = other_texts[q_index].trim()
-        }
+      if (is_other) {
+        result.custom_answer = other_texts[q_index].trim()
+      }
 
-        return result
-      })
-
-    return {
-      questions_and_answers,
-    }
+      return result
+    })
   }
 
   async function handle_submit() {
@@ -81,8 +75,8 @@
     }
 
     error = null
-    const request = build_submit_request()
-    const result = await on_submit(request)
+    const questions_and_answers = build_question_answers()
+    const result = await on_submit(questions_and_answers)
     if (result) {
       error = new KilnError(result, null)
     }
