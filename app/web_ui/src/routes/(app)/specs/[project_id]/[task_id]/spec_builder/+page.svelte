@@ -87,7 +87,6 @@
       )
     } catch (e) {
       console.error("Failed to build prompt with few-shot:", e)
-      // TODO: Do we need to show error to user?
       // Fallback to just the instruction
       task_prompt_with_few_shot = task?.instruction || ""
     }
