@@ -13,8 +13,8 @@
 
   // ### Spec Template Select ###
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let current_params = new URLSearchParams()
 

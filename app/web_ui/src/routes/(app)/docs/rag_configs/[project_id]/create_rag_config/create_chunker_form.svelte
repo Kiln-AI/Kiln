@@ -18,7 +18,7 @@
   import { embedding_model_name, provider_name_from_id } from "$lib/stores"
   import { chunker_type_format } from "$lib/utils/formatters"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let loading: boolean = false
   let error: KilnError | null = null

@@ -29,8 +29,8 @@
   import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   // State machine for the spec builder flow
   //  create - Initial form for spec creation

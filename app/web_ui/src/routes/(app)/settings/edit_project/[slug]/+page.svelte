@@ -5,7 +5,7 @@
 
   import EditProject from "../../../../(fullscreen)/setup/(setup)/create_project/edit_project.svelte"
 
-  $: project_id = $page.params.slug
+  $: project_id = $page.params.slug!
   $: project = $projects?.projects.find((p) => p.id == project_id)
 </script>
 

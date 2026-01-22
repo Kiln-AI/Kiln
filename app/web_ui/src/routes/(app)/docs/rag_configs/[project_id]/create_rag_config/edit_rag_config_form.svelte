@@ -50,7 +50,7 @@
     success: { rag_config_id: string }
   }>()
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
   export let template: RagConfigTemplate | null = null
   export let initial_rag_config: RagConfigWithSubConfigs | null = null
   let customize_template_mode = false

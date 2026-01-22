@@ -5,7 +5,7 @@
   import { rag_config_templates } from "../add_search_tool/rag_config_templates"
   import EditRagConfigForm from "./edit_rag_config_form.svelte"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
   const template_id = $page.url.searchParams.get("template_id")
   const template = template_id ? rag_config_templates[template_id] : null
 

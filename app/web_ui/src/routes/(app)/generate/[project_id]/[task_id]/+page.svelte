@@ -13,8 +13,8 @@
   type SynthReasonQueryParam = "eval" | "fine_tune" | "qna"
 
   let loading = true
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let cachedQnaStore: QnaStore | null = null
   let cachedQnaProjectId: string | null = null

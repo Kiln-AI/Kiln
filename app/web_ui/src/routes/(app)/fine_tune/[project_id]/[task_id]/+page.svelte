@@ -11,8 +11,8 @@
   import { provider_name_from_id, load_available_models } from "$lib/stores"
   import { data_strategy_name } from "$lib/utils/formatters"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
   $: is_empty = !finetunes || finetunes.length == 0
 
   let finetunes: Finetune[] | null = null
