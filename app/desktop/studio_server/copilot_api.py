@@ -70,21 +70,30 @@ class GenerateBatchApiInput(BaseModel):
     num_topics: int
 
 
+# API Output models - mirror server models for type safety
+
+
+class TaskMetadataApi(BaseModel):
+    model_name: str
+    model_provider_name: ModelProviderName
+
+
+class PromptGenerationResultApi(BaseModel):
+    task_metadata: TaskMetadataApi
+    prompt: str
+
+
 class SubsampleBatchOutputItemApi(BaseModel):
     input: str = Field(alias="input")
     output: str
     fails_specification: bool
 
 
-class JudgeInfoApi(BaseModel):
-    model_name: str
-    model_provider: ModelProviderName
-    judge_prompt: str
-
-
 class ClarifySpecApiOutput(BaseModel):
     examples_for_feedback: list[SubsampleBatchOutputItemApi]
-    judge_info: JudgeInfoApi
+    judge_result: PromptGenerationResultApi
+    topic_generation_result: PromptGenerationResultApi
+    input_generation_result: PromptGenerationResultApi
 
 
 class SpecEditApi(BaseModel):

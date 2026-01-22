@@ -2614,7 +2614,9 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_info: components["schemas"]["JudgeInfoApi"];
+            judge_result: components["schemas"]["PromptGenerationResultApi"];
+            topic_generation_result: components["schemas"]["PromptGenerationResultApi"];
+            input_generation_result: components["schemas"]["PromptGenerationResultApi"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -4354,14 +4356,6 @@ export interface components {
             /** Jailbroken Examples */
             jailbroken_examples: string;
         };
-        /** JudgeInfoApi */
-        JudgeInfoApi: {
-            /** Model Name */
-            model_name: string;
-            model_provider: components["schemas"]["ModelProviderName"];
-            /** Judge Prompt */
-            judge_prompt: string;
-        };
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -4922,6 +4916,12 @@ export interface components {
             prompt: string;
             /** Chain Of Thought Instructions */
             chain_of_thought_instructions?: string | null;
+        };
+        /** PromptGenerationResultApi */
+        PromptGenerationResultApi: {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
         };
         /** PromptGenerator */
         PromptGenerator: {
@@ -5763,6 +5763,12 @@ export interface components {
             task_prompt: string;
             /** Few Shot Examples */
             few_shot_examples?: string | null;
+        };
+        /** TaskMetadataApi */
+        TaskMetadataApi: {
+            /** Model Name */
+            model_name: string;
+            model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
          * TaskOutput

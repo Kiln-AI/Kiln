@@ -112,10 +112,26 @@ class TestClarifySpec:
                     "fails_specification": False,
                 }
             ],
-            "judge_info": {
-                "model_name": "gpt-4",
-                "model_provider": "openai",
-                "judge_prompt": "Test judge prompt",
+            "judge_result": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test judge prompt",
+            },
+            "topic_generation_result": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test topic generation prompt",
+            },
+            "input_generation_result": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test input generation prompt",
             },
         }
 
@@ -128,7 +144,10 @@ class TestClarifySpec:
             assert response.status_code == 200
             result = response.json()
             assert "examples_for_feedback" in result
-            assert result["judge_info"]["model_name"] == "gpt-4"
+            assert "judge_result" in result
+            assert result["judge_result"]["task_metadata"]["model_name"] == "gpt-4"
+            assert "topic_generation_result" in result
+            assert "input_generation_result" in result
 
     def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
         with patch(
