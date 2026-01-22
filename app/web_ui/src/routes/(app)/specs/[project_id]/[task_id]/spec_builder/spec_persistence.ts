@@ -11,6 +11,15 @@ import type {
 import { buildSpecDefinition } from "../spec_utils"
 import { load_task } from "$lib/stores"
 
+const NUM_SAMPLES_PER_TOPIC = 5 // TODO: Make this 15
+const NUM_TOPICS = 10 // TODO: Make this 15
+const MIN_EVAL_EXAMPLES = 20 // TODO: Make this 100
+const MIN_TRAIN_EXAMPLES = 20 // TODO: Make this 100
+const MIN_GOLDEN_EXAMPLES = 10 // TODO: Make this 25
+const KILN_COPILOT_MODEL_NAME = "kiln-copilot"
+const KILN_COPILOT_MODEL_PROVIDER = "kiln"
+const KILN_ADAPTER_NAME = "kiln-adapter"
+
 /**
  * A reviewed example from the spec review process.
  * These examples form the golden dataset for the spec's eval.
@@ -294,15 +303,6 @@ type GeneratedExample = {
   output: string
 }
 
-const NUM_SAMPLES_PER_TOPIC = 5 // TODO: Make this 15
-const NUM_TOPICS = 10 // TODO: Make this 15
-const MIN_EVAL_EXAMPLES = 20 // TODO: Make this 100
-const MIN_TRAIN_EXAMPLES = 20 // TODO: Make this 100
-const MIN_GOLDEN_EXAMPLES = 10 // TODO: Make this 25
-const KILN_COPILOT_MODEL_NAME = "kiln-copilot"
-const KILN_COPILOT_MODEL_PROVIDER = "kiln"
-const KILN_ADAPTER_NAME = "kiln-adapter"
-
 /**
  * Generate eval data using the generate_batch API.
  * Returns the generated examples.
@@ -455,7 +455,7 @@ async function saveReviewedExamples(
 }
 
 /**
- * Randomly sample and remove n items from an array using Fisher-Yates shuffle.
+ * Randomly sample and remove n items from an array using swap-and-pop for O(1) removal.
  * Mutates the input array by removing the sampled elements.
  */
 function sampleAndRemove<T>(array: T[], n: number): T[] {
@@ -463,8 +463,13 @@ function sampleAndRemove<T>(array: T[], n: number): T[] {
   const count = Math.min(n, array.length)
   for (let i = 0; i < count; i++) {
     const randomIndex = Math.floor(Math.random() * array.length)
-    sampled.push(array[randomIndex])
-    array.splice(randomIndex, 1)
+    // Swap with last element and pop - O(1) removal
+    const lastIndex = array.length - 1
+    ;[array[randomIndex], array[lastIndex]] = [
+      array[lastIndex],
+      array[randomIndex],
+    ]
+    sampled.push(array.pop()!)
   }
   return sampled
 }

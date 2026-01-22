@@ -11,6 +11,7 @@
     checkKilnCopilotAvailable,
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
+    type SuggestedEdit,
   } from "../spec_utils"
   import {
     createSpec,
@@ -76,10 +77,6 @@
   let judge_info: JudgeInfo | null = null
 
   // Refine state
-  type SuggestedEdit = {
-    proposed_value: string
-    reason_for_edit: string
-  }
   let refined_property_values: Record<string, string | null> = {}
   // Keys are field keys
   let suggested_edits: Record<string, SuggestedEdit> = {}

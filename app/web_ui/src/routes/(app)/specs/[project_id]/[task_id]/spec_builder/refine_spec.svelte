@@ -7,11 +7,7 @@
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
-
-  type SuggestedEdit = {
-    proposed_value: string
-    reason_for_edit: string
-  }
+  import type { SuggestedEdit } from "../spec_utils"
 
   export let name: string
   export let original_property_values: Record<string, string | null>
