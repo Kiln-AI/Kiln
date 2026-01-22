@@ -61,6 +61,7 @@ export async function createSpec(
   project_id: string,
   task_id: string,
   task_description: string,
+  task_prompt_with_few_shot: string,
   name: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
@@ -97,6 +98,7 @@ export async function createSpec(
       const evalDataBatch = await generateEvalDataBatch(
         project_id,
         task_id,
+        task_prompt_with_few_shot,
         spec_type,
         property_values,
         signal,
@@ -310,6 +312,7 @@ type GeneratedExample = {
 async function generateEvalDataBatch(
   project_id: string,
   task_id: string,
+  task_prompt_with_few_shot: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
   signal?: AbortSignal,
@@ -327,7 +330,7 @@ async function generateEvalDataBatch(
   // TODO: Fix task input/output schemas?
   const { data, error } = await client.POST("/api/copilot/generate_batch", {
     body: {
-      target_task_prompt: task.instruction || "",
+      target_task_prompt: task_prompt_with_few_shot,
       task_input_schema: task.input_json_schema
         ? JSON.stringify(task.input_json_schema)
         : "",
