@@ -112,15 +112,15 @@ class TestClarifySpec:
                 }
             ],
             "judge_result": {
-                "task_metadata": {"model_id": "gpt-4", "model_provider": "openai"},
+                "task_metadata": {"model_name": "gpt-4", "model_provider": "openai"},
                 "prompt": "Test judge prompt",
             },
             "topic_generation_result": {
-                "task_metadata": {"model_id": "gpt-4", "model_provider": "openai"},
+                "task_metadata": {"model_name": "gpt-4", "model_provider": "openai"},
                 "prompt": "Test topic prompt",
             },
             "input_generation_result": {
-                "task_metadata": {"model_id": "gpt-4", "model_provider": "openai"},
+                "task_metadata": {"model_name": "gpt-4", "model_provider": "openai"},
                 "prompt": "Test input prompt",
             },
         }
@@ -134,7 +134,7 @@ class TestClarifySpec:
             assert response.status_code == 200
             result = response.json()
             assert "examples_for_feedback" in result
-            assert result["judge_result"]["task_metadata"]["model_id"] == "gpt-4"
+            assert result["judge_result"]["task_metadata"]["model_name"] == "gpt-4"
 
     def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
         with patch(

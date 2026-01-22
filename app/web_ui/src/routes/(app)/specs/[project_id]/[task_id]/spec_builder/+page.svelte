@@ -11,6 +11,7 @@
     checkKilnCopilotAvailable,
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
+    type SuggestedEdit,
   } from "../spec_utils"
   import {
     createSpec,
@@ -105,8 +106,9 @@
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
-  let starting_refined_property_values: Record<string, string | null> = {}
-  let suggested_fields: Set<string> = new Set()
+  // Keys are field keys
+  let suggested_edits: Record<string, SuggestedEdit> = {}
+  let not_incorporated_feedback: string = ""
 
   // Loading/error state
   let loading = true
@@ -273,7 +275,7 @@
 
     judge_info = {
       prompt: data.judge_result.prompt,
-      model_id: data.judge_result.task_metadata.model_id,
+      model_name: data.judge_result.task_metadata.model_name,
       model_provider: data.judge_result.task_metadata.model_provider,
     }
 
@@ -405,6 +407,7 @@
       const spec_field_current_values: Record<string, string> = {}
 
       for (const field of field_configs) {
+        if (field.key === "tool_function_name") continue
         spec_fields[field.key] = field.description
         spec_field_current_values[field.key] = property_values[field.key] || ""
       }
@@ -452,20 +455,19 @@
         throw api_error
       }
 
-      if (!data) {
-        throw new Error("Failed to refine spec")
-      }
-
-      // Build refined_property_values
+      // Build refined_property_values and suggested_edits
       refined_property_values = { ...property_values }
-      suggested_fields = new Set()
+      suggested_edits = {}
+      not_incorporated_feedback = data.not_incorporated_feedback || ""
       if (data.new_proposed_spec_edits) {
         for (const edit of data.new_proposed_spec_edits) {
           refined_property_values[edit.spec_field_name] = edit.proposed_edit
-          suggested_fields.add(edit.spec_field_name)
+          suggested_edits[edit.spec_field_name] = {
+            proposed_value: edit.proposed_edit,
+            reason_for_edit: edit.reason_for_edit || "",
+          }
         }
       }
-      starting_refined_property_values = { ...refined_property_values }
 
       current_state = "refine"
     } catch (e) {
@@ -548,9 +550,11 @@
     }
   }
 
+  $: num_suggested_edits = Object.keys(suggested_edits).length
+
   function getPageClass(state: BuilderState): string {
     if (state === "review") return "max-w-[1400px]"
-    if (state === "refine" && suggested_fields.size > 0) return "max-w-[1400px]"
+    if (state === "refine" && num_suggested_edits > 0) return "max-w-[1400px]"
     if (state === "analyzing_for_review" || state === "refining") return ""
     return "max-w-[900px]"
   }
@@ -631,8 +635,8 @@
         bind:name
         original_property_values={property_values}
         bind:refined_property_values
-        {starting_refined_property_values}
-        {suggested_fields}
+        {suggested_edits}
+        {not_incorporated_feedback}
         {field_configs}
         bind:error
         bind:submitting

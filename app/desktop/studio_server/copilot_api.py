@@ -76,7 +76,7 @@ class SubsampleBatchOutputItemApi(BaseModel):
 
 
 class TaskMetadataApi(BaseModel):
-    model_id: str
+    model_name: str
     model_provider: ModelProviderName
 
 
