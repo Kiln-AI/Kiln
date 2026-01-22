@@ -1545,7 +1545,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3-flash-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
@@ -1591,7 +1592,8 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 thinking_level="medium",
             ),
             KilnModelProvider(
@@ -1600,7 +1602,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
