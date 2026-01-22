@@ -23,10 +23,10 @@
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: spec_id = $page.params.spec_id
-  $: eval_id = $page.params.eval_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: spec_id = $page.params.spec_id!
+  $: eval_id = $page.params.eval_id!
   $: is_legacy_eval = spec_id === "legacy"
 
   let spec: Spec | null = null

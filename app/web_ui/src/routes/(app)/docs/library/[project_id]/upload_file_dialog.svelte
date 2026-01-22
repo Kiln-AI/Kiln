@@ -33,7 +33,7 @@
     ".ogg",
   ]
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   function handleFileSelect(event: Event) {
     const input = event.target as HTMLInputElement

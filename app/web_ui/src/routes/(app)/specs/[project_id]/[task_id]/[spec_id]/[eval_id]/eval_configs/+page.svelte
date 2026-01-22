@@ -27,12 +27,15 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
 
-  $: eval_id = $page.params.eval_id
-  $: spec_id = $page.params.spec_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
+  $: spec_id = $page.params.spec_id!
 
   let spec: Spec | null = null
   let spec_loading = true
   let spec_error: KilnError | null = null
+
   let score_legend_dialog: Dialog | null = null
 
   let evaluator: Eval | null = null
@@ -210,8 +213,8 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
+              project_id: project_id,
+              task_id: task_id,
               spec_id: spec_id,
             },
           },
@@ -236,9 +239,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -271,9 +274,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -300,9 +303,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -389,8 +392,8 @@
   async function handle_set_current_eval_config(eval_config_id: string | null) {
     try {
       evaluator = await set_current_eval_config(
-        $page.params.project_id,
-        $page.params.task_id,
+        project_id,
+        task_id,
         eval_id,
         eval_config_id,
       )
@@ -440,25 +443,25 @@
     ? [
         {
           label: "Specs & Evals",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+          href: `/specs/${project_id}/${task_id}`,
         },
         {
           label: "Eval",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
         },
       ]
     : [
         {
           label: "Specs & Evals",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+          href: `/specs/${project_id}/${task_id}`,
         },
         {
           label: spec?.name || "Spec",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}`,
         },
         {
           label: "Eval",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
         },
       ]}
   action_buttons={eval_configs?.length
@@ -471,7 +474,7 @@
         },
         {
           label: "Add Judge",
-          href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
+          href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
         },
       ]
     : []}
@@ -554,8 +557,8 @@
               <RunEval
                 btn_size="normal"
                 bind:eval_state
-                project_id={$page.params.project_id}
-                task_id={$page.params.task_id}
+                {project_id}
+                {task_id}
                 {eval_id}
                 run_all={true}
                 btn_primary={!focus_select_eval_config}
@@ -768,7 +771,7 @@
           action_buttons={[
             {
               label: "Add Judge",
-              href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
+              href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/create_eval_config?next_page=eval_configs`,
               is_primary: true,
             },
           ]}
