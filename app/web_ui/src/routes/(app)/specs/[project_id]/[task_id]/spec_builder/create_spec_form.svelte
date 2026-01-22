@@ -15,7 +15,7 @@
   export let evaluate_full_trace: boolean
   export let field_configs: FieldConfig[]
   export let copilot_enabled: boolean
-  export let show_advanced_options: boolean
+  export let hide_include_conversation_history: boolean
   export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
@@ -82,26 +82,6 @@
     validator={filename_string_short_validator}
   />
 
-  {#if copilot_enabled}
-    <div class="mt-4">
-      <label class="text-sm font-medium" for="few_shot_selector">
-        Example Input/Output
-        <span class="text-xs text-gray-500 ml-1">Optional</span>
-      </label>
-      <p class="text-xs text-gray-500 mb-2">
-        Providing an example helps the AI better understand your task when
-        generating test data.
-      </p>
-      <FewShotSelector
-        {project_id}
-        {task_id}
-        bind:selected_example={few_shot_example}
-        optional={true}
-        on:change={(e) => (few_shot_example = e.detail.example)}
-      />
-    </div>
-  {/if}
-
   {#each field_configs as field (field.key)}
     <FormElement
       label={field.label}
@@ -123,7 +103,16 @@
     />
   {/each}
 
-  {#if show_advanced_options}
+  {#if copilot_enabled}
+    <FewShotSelector
+      {project_id}
+      {task_id}
+      bind:selected_example={few_shot_example}
+      on:change={(e) => (few_shot_example = e.detail.example)}
+    />
+  {/if}
+
+  {#if !hide_include_conversation_history}
     <Collapse title="Advanced Options">
       <FormElement
         label="Include conversation history"

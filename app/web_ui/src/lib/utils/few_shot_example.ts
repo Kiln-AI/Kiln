@@ -10,19 +10,15 @@ export type FewShotExample = {
 }
 
 /**
- * Status of the few-shot example fetching process.
+ * How the example was auto-selected (data label, not UI state).
  */
-export type FewShotStatus =
-  | "loading"
-  | "auto_selected" // A 5-star sample was found and auto-selected
-  | "user_select" // Samples exist but none are 5-star, user must select
-  | "manual_entry" // No samples exist, user must enter manually
+export type AutoSelectType = "highly_rated" | "most_recent" | null
 
 /**
  * Result of fetching few-shot examples from the dataset.
  */
 export type FewShotFetchResult = {
-  status: Exclude<FewShotStatus, "loading">
+  auto_select_type: AutoSelectType
   selected_example: FewShotExample | null
   available_runs: TaskRun[]
 }
@@ -60,8 +56,8 @@ export function task_run_to_example(run: TaskRun): FewShotExample {
  * Fetches task runs and determines the few-shot selection status.
  *
  * Priority:
- * 1. If a 5-star rated sample exists, auto-select it
- * 2. If samples exist but none are 5-star, return them for user selection
+ * 1. If a 5-star rated sample exists, auto-select it (confident)
+ * 2. If samples exist but none are 5-star, auto-select the most recent
  * 3. If no samples exist, indicate manual entry is needed
  *
  * @throws Error if fetching fails
@@ -89,44 +85,35 @@ export async function fetch_few_shot_candidates(
 
   if (!runs || runs.length === 0) {
     return {
-      status: "manual_entry",
+      auto_select_type: null,
       selected_example: null,
       available_runs: [],
     }
   }
 
-  // First, look for 5-star rated samples
-  const five_star_runs = runs.filter(is_five_star_rated)
-  if (five_star_runs.length > 0) {
-    // Sort by ID for consistency (pick the first one)
-    five_star_runs.sort((a, b) => (a.id ?? "").localeCompare(b.id ?? ""))
-    const selected = five_star_runs[0]
+  // Sort runs by recency (most recent first)
+  const sorted_runs = [...runs].sort((a, b) => {
+    const a_date = a.created_at ? new Date(a.created_at).getTime() : 0
+    const b_date = b.created_at ? new Date(b.created_at).getTime() : 0
+    return b_date - a_date
+  })
+
+  // First, look for 5-star rated samples (most recent 5-star)
+  const five_star_run = sorted_runs.find(is_five_star_rated)
+  if (five_star_run) {
     return {
-      status: "auto_selected",
-      selected_example: task_run_to_example(selected),
-      available_runs: runs,
+      auto_select_type: "highly_rated",
+      selected_example: task_run_to_example(five_star_run),
+      available_runs: sorted_runs,
     }
   }
 
-  // No 5-star samples, but samples exist - user must select
-  // Sort runs by rating (highest first), then by whether they have repaired output
-  const sorted_runs = [...runs].sort((a, b) => {
-    // Repaired outputs first
-    if (a.repaired_output && !b.repaired_output) return -1
-    if (!a.repaired_output && b.repaired_output) return 1
-
-    // Then by rating value
-    const a_rating = a.output?.rating?.value ?? 0
-    const b_rating = b.output?.rating?.value ?? 0
-    if (b_rating !== a_rating) return b_rating - a_rating
-
-    // Finally by ID for stability
-    return (a.id ?? "").localeCompare(b.id ?? "")
-  })
+  // No 5-star samples, but samples exist - auto-select the most recent
+  const most_recent = sorted_runs[0]
 
   return {
-    status: "user_select",
-    selected_example: null,
+    auto_select_type: "most_recent",
+    selected_example: task_run_to_example(most_recent),
     available_runs: sorted_runs,
   }
 }
