@@ -22,9 +22,10 @@ from pydantic import BaseModel, Field
 
 
 # Pydantic input models (replacing attrs-based client models)
-class TaskInfoApi(BaseModel):
-    task_prompt: str
-    few_shot_examples: str | None = None
+class TargetTaskInfoApi(BaseModel):
+    target_task_prompt: str
+    target_task_input_schema: str
+    target_task_output_schema: str
 
 
 class SpecInfoApi(BaseModel):
@@ -53,10 +54,7 @@ class ClarifySpecApiInput(BaseModel):
 
 
 class RefineSpecApiInput(BaseModel):
-    target_task_prompt: str
-    task_input_schema: str
-    task_output_schema: str
-    task_info: TaskInfoApi
+    target_task_info: TargetTaskInfoApi
     spec: SpecInfoApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
@@ -96,15 +94,15 @@ class ClarifySpecApiOutput(BaseModel):
     input_generation_result: PromptGenerationResultApi
 
 
-class SpecEditApi(BaseModel):
-    old_value: str
+class NewProposedSpecEditApi(BaseModel):
+    spec_field_name: str
     proposed_edit: str
     reason_for_edit: str
 
 
 class RefineSpecApiOutput(BaseModel):
-    new_proposed_spec_edits: dict[str, SpecEditApi]
-    out_of_scope_feedback: str
+    new_proposed_spec_edits: list[NewProposedSpecEditApi]
+    not_incorporated_feedback: str | None
 
 
 class SampleApi(BaseModel):

@@ -401,16 +401,14 @@
         "/api/copilot/refine_spec",
         {
           body: {
-            target_task_prompt,
-            task_input_schema: task.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            task_output_schema: task.output_json_schema
-              ? JSON.stringify(task.output_json_schema)
-              : "",
-            task_info: {
-              task_prompt: task.instruction || "",
-              few_shot_examples: "",
+            target_task_info: {
+              target_task_prompt,
+              target_task_input_schema: task.input_json_schema
+                ? JSON.stringify(task.input_json_schema)
+                : "",
+              target_task_output_schema: task.output_json_schema
+                ? JSON.stringify(task.output_json_schema)
+                : "",
             },
             spec: {
               spec_fields,
@@ -434,11 +432,9 @@
       refined_property_values = { ...property_values }
       suggested_fields = new Set()
       if (data.new_proposed_spec_edits) {
-        for (const [field_key, edit] of Object.entries(
-          data.new_proposed_spec_edits,
-        )) {
-          refined_property_values[field_key] = edit.proposed_edit
-          suggested_fields.add(field_key)
+        for (const edit of data.new_proposed_spec_edits) {
+          refined_property_values[edit.spec_field_name] = edit.proposed_edit
+          suggested_fields.add(edit.spec_field_name)
         }
       }
       starting_refined_property_values = { ...refined_property_values }

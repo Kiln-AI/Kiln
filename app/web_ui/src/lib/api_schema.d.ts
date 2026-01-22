@@ -4701,6 +4701,15 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        /** NewProposedSpecEditApi */
+        NewProposedSpecEditApi: {
+            /** Spec Field Name */
+            spec_field_name: string;
+            /** Proposed Edit */
+            proposed_edit: string;
+            /** Reason For Edit */
+            reason_for_edit: string;
+        };
         /** NsfwProperties */
         NsfwProperties: {
             /**
@@ -5223,13 +5232,7 @@ export interface components {
         };
         /** RefineSpecApiInput */
         RefineSpecApiInput: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            task_info: components["schemas"]["TaskInfoApi"];
+            target_task_info: components["schemas"]["TargetTaskInfoApi"];
             spec: components["schemas"]["SpecInfoApi"];
             /** Examples With Feedback */
             examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
@@ -5237,11 +5240,9 @@ export interface components {
         /** RefineSpecApiOutput */
         RefineSpecApiOutput: {
             /** New Proposed Spec Edits */
-            new_proposed_spec_edits: {
-                [key: string]: components["schemas"]["SpecEditApi"];
-            };
-            /** Out Of Scope Feedback */
-            out_of_scope_feedback: string;
+            new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
+            /** Not Incorporated Feedback */
+            not_incorporated_feedback: string | null;
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5634,15 +5635,6 @@ export interface components {
             /** Eval Id */
             eval_id: string | null;
         };
-        /** SpecEditApi */
-        SpecEditApi: {
-            /** Old Value */
-            old_value: string;
-            /** Proposed Edit */
-            proposed_edit: string;
-            /** Reason For Edit */
-            reason_for_edit: string;
-        };
         /** SpecInfoApi */
         SpecInfoApi: {
             /** Spec Fields */
@@ -5695,6 +5687,15 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
+        };
+        /** TargetTaskInfoApi */
+        TargetTaskInfoApi: {
+            /** Target Task Prompt */
+            target_task_prompt: string;
+            /** Target Task Input Schema */
+            target_task_input_schema: string;
+            /** Target Task Output Schema */
+            target_task_output_schema: string;
         };
         /**
          * Task
@@ -5756,13 +5757,6 @@ export interface components {
             default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
-        };
-        /** TaskInfoApi */
-        TaskInfoApi: {
-            /** Task Prompt */
-            task_prompt: string;
-            /** Few Shot Examples */
-            few_shot_examples?: string | null;
         };
         /** TaskMetadataApi */
         TaskMetadataApi: {

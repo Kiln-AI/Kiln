@@ -57,11 +57,10 @@ def clarify_spec_input():
 @pytest.fixture
 def refine_spec_input():
     return {
-        "target_task_prompt": "Test task prompt",
-        "task_input_schema": '{"type": "string"}',
-        "task_output_schema": '{"type": "string"}',
-        "task_info": {
-            "task_prompt": "Test prompt",
+        "target_task_info": {
+            "target_task_prompt": "Test task prompt",
+            "target_task_input_schema": '{"type": "string"}',
+            "target_task_output_schema": '{"type": "string"}',
         },
         "spec": {
             "spec_fields": {},
@@ -190,8 +189,8 @@ class TestRefineSpec:
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
         mock_output = MagicMock(spec=RefineSpecOutput)
         mock_output.to_dict.return_value = {
-            "new_proposed_spec_edits": {},
-            "out_of_scope_feedback": "No out of scope feedback",
+            "new_proposed_spec_edits": [],
+            "not_incorporated_feedback": None,
         }
 
         with patch(
@@ -203,7 +202,7 @@ class TestRefineSpec:
             assert response.status_code == 200
             result = response.json()
             assert "new_proposed_spec_edits" in result
-            assert "out_of_scope_feedback" in result
+            assert "not_incorporated_feedback" in result
 
     def test_refine_spec_no_response(self, client, refine_spec_input, mock_api_key):
         with patch(

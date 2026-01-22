@@ -9,7 +9,7 @@ from attrs import field as _attrs_field
 if TYPE_CHECKING:
     from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
     from ..models.spec import Spec
-    from ..models.task_info import TaskInfo
+    from ..models.target_task_info import TargetTaskInfo
 
 
 T = TypeVar("T", bound="RefineSpecInput")
@@ -19,18 +19,18 @@ T = TypeVar("T", bound="RefineSpecInput")
 class RefineSpecInput:
     """
     Attributes:
-        task_info (TaskInfo):
+        target_task_info (TargetTaskInfo):
         spec (Spec):
         examples_with_feedback (list[ExamplesWithFeedbackItem]):
     """
 
-    task_info: TaskInfo
+    target_task_info: TargetTaskInfo
     spec: Spec
     examples_with_feedback: list[ExamplesWithFeedbackItem]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        task_info = self.task_info.to_dict()
+        target_task_info = self.target_task_info.to_dict()
 
         spec = self.spec.to_dict()
 
@@ -43,7 +43,7 @@ class RefineSpecInput:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "task_info": task_info,
+                "target_task_info": target_task_info,
                 "spec": spec,
                 "examples_with_feedback": examples_with_feedback,
             }
@@ -55,10 +55,10 @@ class RefineSpecInput:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
         from ..models.spec import Spec
-        from ..models.task_info import TaskInfo
+        from ..models.target_task_info import TargetTaskInfo
 
         d = dict(src_dict)
-        task_info = TaskInfo.from_dict(d.pop("task_info"))
+        target_task_info = TargetTaskInfo.from_dict(d.pop("target_task_info"))
 
         spec = Spec.from_dict(d.pop("spec"))
 
@@ -70,7 +70,7 @@ class RefineSpecInput:
             examples_with_feedback.append(examples_with_feedback_item)
 
         refine_spec_input = cls(
-            task_info=task_info,
+            target_task_info=target_task_info,
             spec=spec,
             examples_with_feedback=examples_with_feedback,
         )
