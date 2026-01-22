@@ -13,9 +13,9 @@
   import { ui_state } from "$lib/stores"
   import { goto } from "$app/navigation"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: finetune_id = $page.params.finetune_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: finetune_id = $page.params.finetune_id!
   $: running =
     finetune?.status.status === "pending" ||
     finetune?.status.status === "running"

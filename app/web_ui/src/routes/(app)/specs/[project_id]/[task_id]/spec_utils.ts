@@ -1,6 +1,23 @@
 import { client } from "$lib/api_client"
-import type { Spec, SpecStatus, SpecType } from "$lib/types"
+import type {
+  Spec,
+  SpecStatus,
+  SpecType,
+  Task,
+  TaskRunConfig,
+} from "$lib/types"
 import { spec_field_configs } from "./select_template/spec_templates"
+import {
+  load_task_run_configs,
+  run_configs_by_task_composite_id,
+} from "$lib/stores/run_configs_store"
+import { get_task_composite_id } from "$lib/stores"
+import { get } from "svelte/store"
+
+export type SuggestedEdit = {
+  proposed_value: string
+  reason_for_edit: string
+}
 
 /**
  * Build a definition string from properties
@@ -39,6 +56,42 @@ export async function checkKilnCopilotAvailable(): Promise<boolean> {
     throw new Error("Failed to load Kiln settings")
   }
   return !!data["kiln_copilot_api_key"]
+}
+
+/**
+ * Check if the task's default run config has any tools configured
+ * @param project_id - The project ID
+ * @param task - The task to check
+ * @returns true if the default run config has tools, false otherwise
+ */
+export async function checkDefaultRunConfigHasTools(
+  project_id: string,
+  task: Task,
+): Promise<boolean> {
+  if (!task.id) {
+    throw new Error("Task ID is required")
+  }
+
+  if (!task.default_run_config_id) {
+    return false
+  }
+
+  await load_task_run_configs(project_id, task.id)
+  const run_configs =
+    get(run_configs_by_task_composite_id)[
+      get_task_composite_id(project_id, task.id)
+    ] ?? []
+
+  const default_config = run_configs.find(
+    (config: TaskRunConfig) => config.id === task.default_run_config_id,
+  )
+
+  if (!default_config) {
+    return false
+  }
+
+  const tools = default_config.run_config_properties?.tools_config?.tools ?? []
+  return tools.length > 0
 }
 
 /**

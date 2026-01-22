@@ -5,6 +5,9 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
+  import { filename_string_short_validator } from "$lib/utils/input_validators"
+  import FewShotSelector from "$lib/utils/few_shot_selector.svelte"
+  import type { FewShotExample } from "$lib/utils/few_shot_example"
 
   export let name: string
   export let property_values: Record<string, string | null>
@@ -12,11 +15,16 @@
   export let evaluate_full_trace: boolean
   export let field_configs: FieldConfig[]
   export let copilot_enabled: boolean
-  export let show_advanced_options: boolean
+  export let hide_full_trace_option: boolean
   export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
+  export let project_id: string
+  export let task_id: string
+  export let few_shot_example: FewShotExample | null = null
+
+  let form_container: FormContainer
 
   const dispatch = createEventDispatcher<{
     analyze_with_copilot: void
@@ -25,16 +33,22 @@
 
   function reset_field(key: string) {
     property_values[key] = initial_property_values[key] ?? null
+    property_values = { ...property_values }
   }
 
-  function has_form_changes(): boolean {
-    for (const key of Object.keys(property_values)) {
-      if (property_values[key] !== initial_property_values[key]) return true
+  function has_form_changes(
+    current: Record<string, string | null>,
+    initial: Record<string, string | null>,
+  ): boolean {
+    for (const key of Object.keys(current)) {
+      if (current[key] !== initial[key]) return true
     }
     return false
   }
 
-  $: computed_warn_before_unload = warn_before_unload && has_form_changes()
+  $: computed_warn_before_unload =
+    warn_before_unload &&
+    has_form_changes(property_values, initial_property_values)
 
   function handle_submit() {
     if (copilot_enabled) {
@@ -43,9 +57,16 @@
       dispatch("create_without_copilot")
     }
   }
+
+  async function handle_secondary_click() {
+    if (await form_container.validate_only()) {
+      dispatch("create_without_copilot")
+    }
+  }
 </script>
 
 <FormContainer
+  bind:this={form_container}
   submit_label={copilot_enabled ? "Analyze with Copilot" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
@@ -58,6 +79,7 @@
     description="A short name for your own reference."
     id="spec_name"
     bind:value={name}
+    validator={filename_string_short_validator}
   />
 
   {#each field_configs as field (field.key)}
@@ -81,15 +103,24 @@
     />
   {/each}
 
-  {#if show_advanced_options}
+  {#if copilot_enabled}
+    <FewShotSelector
+      {project_id}
+      {task_id}
+      bind:selected_example={few_shot_example}
+      on:change={(e) => (few_shot_example = e.detail.example)}
+    />
+  {/if}
+
+  {#if !hide_full_trace_option}
     <Collapse title="Advanced Options">
       <FormElement
-        label="Include conversation history"
+        label="Evaluate Complete Agent History"
         id="evaluate_full_trace"
         inputType="checkbox"
         bind:value={evaluate_full_trace}
         disabled={full_trace_disabled}
-        description="When enabled, this spec will be evaluated on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+        description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
         info_description={full_trace_disabled
           ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
           : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
@@ -104,7 +135,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_without_copilot")}
+      on:click={handle_secondary_click}
     >
       Create without Copilot
     </button>

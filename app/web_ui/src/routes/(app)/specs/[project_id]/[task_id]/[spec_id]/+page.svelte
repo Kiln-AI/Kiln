@@ -46,9 +46,9 @@
 
   // ### Spec Details Page ###
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: spec_id = $page.params.spec_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: spec_id = $page.params.spec_id!
 
   let spec: Spec | null = null
   let spec_error: KilnError | null = null

@@ -35,8 +35,8 @@
   import FixedWindowChunkerPropertyList from "./fixed_window_chunker_property_list.svelte"
   import SemanticChunkerPropertyList from "./semantic_chunker_property_list.svelte"
 
-  $: project_id = $page.params.project_id
-  $: rag_config_id = $page.params.rag_config_id
+  $: project_id = $page.params.project_id!
+  $: rag_config_id = $page.params.rag_config_id!
 
   let loading: boolean = false
   let error: KilnError | null = null

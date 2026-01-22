@@ -4,7 +4,7 @@
   import EditTask from "../../../../(fullscreen)/setup/(setup)/create_task/edit_task.svelte"
 
   let project_target_name: string | null = null
-  $: project_id = $page.params.slug
+  $: project_id = $page.params.slug!
 </script>
 
 <div class="max-w-[900px]">

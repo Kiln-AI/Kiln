@@ -16,7 +16,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import { number_validator } from "$lib/utils/input_validators"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let loading: boolean = false
   let loadingModels = true
@@ -178,7 +178,7 @@
       />
       <FormElement
         label="Description"
-        description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behavior."
+        description="A description of the embedding config for you and your team. This will have no effect on the embedding config's behaviour."
         optional={true}
         inputType="textarea"
         id="description"

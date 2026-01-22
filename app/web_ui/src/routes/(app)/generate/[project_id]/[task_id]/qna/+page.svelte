@@ -36,8 +36,8 @@
   let ui_show_errors = false
   let ui_show_generation_errors = false
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let qna: QnaStore
   $: qnaCurrentStep = qna?.currentStep

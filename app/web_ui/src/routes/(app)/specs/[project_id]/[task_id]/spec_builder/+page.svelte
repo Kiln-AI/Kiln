@@ -4,11 +4,15 @@
   import { onMount, onDestroy } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { filename_string_short_validator } from "$lib/utils/input_validators"
   import type { SpecType, ModelProviderName, Task } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
-  import { checkKilnCopilotAvailable, buildSpecDefinition } from "../spec_utils"
+  import {
+    checkKilnCopilotAvailable,
+    checkDefaultRunConfigHasTools,
+    buildSpecDefinition,
+    type SuggestedEdit,
+  } from "../spec_utils"
   import {
     createSpec,
     type JudgeInfo,
@@ -20,13 +24,15 @@
     available_models,
     load_available_models,
   } from "$lib/stores"
-  import CreateSpecForm from "./CreateSpecForm.svelte"
-  import ReviewExamples from "./ReviewExamples.svelte"
-  import RefineSpec from "./RefineSpec.svelte"
+  import CreateSpecForm from "./create_spec_form.svelte"
+  import ReviewExamples from "./review_examples.svelte"
+  import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import type { FewShotExample } from "$lib/utils/few_shot_example"
+  import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   // State machine for the spec builder flow
   //  create - Initial form for spec creation
@@ -52,6 +58,7 @@
 
   // Copilot availability
   let has_kiln_copilot = false
+  let default_run_config_has_tools = false
 
   // Task data (loaded once in initialize)
   let task: Task | null = null
@@ -61,7 +68,33 @@
   $: task_output_schema = task?.output_json_schema
     ? JSON.stringify(task.output_json_schema)
     : ""
-  $: task_prompt_with_few_shot = task?.instruction || ""
+
+  // Few-shot example for improving API calls
+  let few_shot_example: FewShotExample | null = null
+  let task_prompt_with_few_shot: string = ""
+
+  // Update the prompt when few_shot_example or task changes
+  async function update_task_prompt_with_few_shot() {
+    if (!task) {
+      task_prompt_with_few_shot = ""
+      return
+    }
+    try {
+      const examples = few_shot_example ? [few_shot_example] : []
+      task_prompt_with_few_shot = await build_prompt_with_few_shot(
+        project_id,
+        task_id,
+        examples,
+      )
+    } catch (e) {
+      console.error("Failed to build prompt with few-shot:", e)
+      // Fallback to just the instruction
+      task_prompt_with_few_shot = task?.instruction || ""
+    }
+  }
+
+  // Reactively update when example changes
+  $: void (few_shot_example && update_task_prompt_with_few_shot())
 
   // Review state
   type ReviewRow = ReviewedExample & { id: string }
@@ -73,8 +106,9 @@
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
-  let starting_refined_property_values: Record<string, string | null> = {}
-  let suggested_fields: Set<string> = new Set()
+  // Keys are field keys
+  let suggested_edits: Record<string, SuggestedEdit> = {}
+  let not_incorporated_feedback: string = ""
 
   // Loading/error state
   let loading = true
@@ -120,12 +154,16 @@
   $: is_tool_use_spec = spec_type === "appropriate_tool_use"
   $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
   $: full_trace_disabled = is_tool_use_spec
-  $: show_advanced_options = !is_reference_answer_spec
+  $: hide_full_trace_option = is_reference_answer_spec
   $: if (is_tool_use_spec) evaluate_full_trace = true
 
   // Tool call and RAG specs don't support copilot
+  // Also disable copilot when the default run config has tools (tool calling not supported yet)
   $: copilot_enabled =
-    has_kiln_copilot && !is_tool_use_spec && !is_reference_answer_spec
+    has_kiln_copilot &&
+    !is_tool_use_spec &&
+    !is_reference_answer_spec &&
+    !default_run_config_has_tools
 
   // Initialize form from URL params
   async function initialize() {
@@ -144,6 +182,12 @@
       if (!task) {
         throw new Error("Failed to load task")
       }
+
+      // Check if default run config has tools (copilot doesn't support tool calling)
+      default_run_config_has_tools = await checkDefaultRunConfigHasTools(
+        project_id,
+        task,
+      )
 
       // Get spec type from URL params
       const spec_type_param = $page.url.searchParams.get("type")
@@ -188,27 +232,6 @@
     initialize()
   })
 
-  function validateRequiredFields(
-    values: Record<string, string | null> = property_values,
-  ) {
-    for (const field of field_configs) {
-      if (field.required) {
-        const value = values[field.key]
-        if (!value || !value.trim()) {
-          throw new Error(`${field.label} is required`)
-        }
-      }
-    }
-  }
-
-  function validateSpecName() {
-    name = name.trim()
-    const name_validation_error = filename_string_short_validator(name)
-    if (name_validation_error) {
-      throw new Error(`Please correct the spec name: ${name_validation_error}`)
-    }
-  }
-
   // Shared logic for analyzing spec with clarify_spec API
   // If values_to_use is provided, property_values will be updated to match on success
   async function analyzeSpecForReview(
@@ -229,7 +252,7 @@
       "/api/copilot/clarify_spec",
       {
         body: {
-          task_prompt_with_few_shot,
+          target_task_prompt: task_prompt_with_few_shot,
           task_input_schema,
           task_output_schema,
           spec_rendered_prompt_template,
@@ -251,16 +274,16 @@
     }
 
     judge_info = {
-      prompt: data.judge_prompt,
-      model_id: data.model_id,
-      model_provider: data.model_provider,
+      prompt: data.judge_result.prompt,
+      model_name: data.judge_result.task_metadata.model_name,
+      model_provider: data.judge_result.task_metadata.model_provider_name,
     }
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
       id: String(index + 1),
       input: example.input,
       output: example.output,
-      model_says_meets_spec: !example.exhibits_issue,
+      model_says_meets_spec: !example.fails_specification,
       user_says_meets_spec: undefined,
       feedback: "",
     }))
@@ -275,15 +298,6 @@
   async function handle_analyze_with_copilot() {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields()
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
-      submitting = true
       await analyzeSpecForReview()
     } catch (e) {
       if (is_abort_error(e)) return
@@ -319,6 +333,7 @@
       project_id,
       task_id,
       task?.instruction || "",
+      task_prompt_with_few_shot,
       name,
       spec_type,
       values,
@@ -335,37 +350,23 @@
 
   // Handler for creating spec without copilot
   async function handle_create_spec_without_copilot() {
+    error = null
     try {
-      error = null
-      validateSpecName()
-      validateRequiredFields(property_values)
-      saving_spec = true
       await saveSpec(property_values, false, [])
     } catch (e) {
       error = createKilnError(e)
     } finally {
+      submitting = false
       saving_spec = false
     }
   }
 
   // Handler for creating spec from review (all feedback aligned)
-  async function handle_create_spec_from_review(skip_review = false) {
+  async function handle_create_spec_from_review() {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields(property_values)
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
-      // Use full-page spinner for skip_review (secondary button), form spinner otherwise
-      if (skip_review) {
-        saving_spec = true
-      } else {
-        submitting = true
-      }
+      // Use full-page spinner for creating spec because it takes a while
+      saving_spec = true
 
       await saveSpec(
         property_values,
@@ -389,7 +390,6 @@
   async function handle_continue_to_refine() {
     try {
       error = null
-      submitting = true
       current_state = "refining"
 
       if (!task) {
@@ -405,18 +405,19 @@
       const spec_field_current_values: Record<string, string> = {}
 
       for (const field of field_configs) {
+        if (field.key === "tool_function_name") continue
         spec_fields[field.key] = field.description
         spec_field_current_values[field.key] = property_values[field.key] || ""
       }
 
       // Convert reviewed examples to API format
       const examples_with_feedback = currentExamples.map((example) => ({
-        user_rating_exhibits_issue_correct:
+        user_agrees_with_judge:
           example.model_says_meets_spec === example.user_says_meets_spec,
         user_feedback: example.feedback,
         input: example.input,
         output: example.output,
-        exhibits_issue: !example.user_says_meets_spec,
+        fails_specification: !example.user_says_meets_spec,
       }))
 
       if (examples_with_feedback.length === 0) {
@@ -429,16 +430,14 @@
         "/api/copilot/refine_spec",
         {
           body: {
-            task_prompt_with_few_shot,
-            task_input_schema: task.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            task_output_schema: task.output_json_schema
-              ? JSON.stringify(task.output_json_schema)
-              : "",
-            task_info: {
-              task_prompt: task.instruction || "",
-              few_shot_examples: "",
+            target_task_info: {
+              target_task_prompt: task_prompt_with_few_shot,
+              target_task_input_schema: task.input_json_schema
+                ? JSON.stringify(task.input_json_schema)
+                : "",
+              target_task_output_schema: task.output_json_schema
+                ? JSON.stringify(task.output_json_schema)
+                : "",
             },
             spec: {
               spec_fields,
@@ -454,22 +453,19 @@
         throw api_error
       }
 
-      if (!data) {
-        throw new Error("Failed to refine spec")
-      }
-
-      // Build refined_property_values
+      // Build refined_property_values and suggested_edits
       refined_property_values = { ...property_values }
-      suggested_fields = new Set()
+      suggested_edits = {}
+      not_incorporated_feedback = data.not_incorporated_feedback || ""
       if (data.new_proposed_spec_edits) {
-        for (const [field_key, edit] of Object.entries(
-          data.new_proposed_spec_edits,
-        )) {
-          refined_property_values[field_key] = edit.proposed_edit
-          suggested_fields.add(field_key)
+        for (const edit of data.new_proposed_spec_edits) {
+          refined_property_values[edit.spec_field_name] = edit.proposed_edit
+          suggested_edits[edit.spec_field_name] = {
+            proposed_value: edit.proposed_edit,
+            reason_for_edit: edit.reason_for_edit || "",
+          }
         }
       }
-      starting_refined_property_values = { ...refined_property_values }
 
       current_state = "refine"
     } catch (e) {
@@ -486,15 +482,6 @@
   async function handle_analyze_refined_spec() {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields(refined_property_values)
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
-      submitting = true
       // Pass suggested values - property_values will be updated on success
       await analyzeSpecForReview(refined_property_values)
     } catch (e) {
@@ -508,23 +495,11 @@
   }
 
   // Handler for creating spec from refine (skip further review)
-  async function handle_create_spec_from_refine(secondary_button = false) {
+  async function handle_create_spec_from_refine() {
     error = null
     try {
-      validateSpecName()
-      validateRequiredFields(refined_property_values)
-    } catch (e) {
-      error = createKilnError(e)
-      return
-    }
-
-    try {
-      // Use full-page spinner for secondary button, form spinner otherwise
-      if (secondary_button) {
-        saving_spec = true
-      } else {
-        submitting = true
-      }
+      // Use full-page spinner for creating spec because it takes a while
+      saving_spec = true
       await saveSpec(
         refined_property_values,
         true,
@@ -571,9 +546,11 @@
     }
   }
 
+  $: num_suggested_edits = Object.keys(suggested_edits).length
+
   function getPageClass(state: BuilderState): string {
     if (state === "review") return "max-w-[1400px]"
-    if (state === "refine" && suggested_fields.size > 0) return "max-w-[1400px]"
+    if (state === "refine" && num_suggested_edits > 0) return "max-w-[1400px]"
     if (state === "analyzing_for_review" || state === "refining") return ""
     return "max-w-[900px]"
   }
@@ -619,11 +596,14 @@
         bind:evaluate_full_trace
         {field_configs}
         {copilot_enabled}
-        {show_advanced_options}
+        {hide_full_trace_option}
         {full_trace_disabled}
         bind:error
         bind:submitting
         {warn_before_unload}
+        {project_id}
+        {task_id}
+        bind:few_shot_example
         on:analyze_with_copilot={handle_analyze_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />
@@ -642,24 +622,24 @@
         bind:error
         bind:submitting
         {warn_before_unload}
-        on:create_spec={() => handle_create_spec_from_review(false)}
+        on:create_spec={() => handle_create_spec_from_review()}
         on:continue_to_refine={handle_continue_to_refine}
-        on:create_spec_secondary={() => handle_create_spec_from_review(true)}
+        on:create_spec_secondary={() => handle_create_spec_from_review()}
       />
     {:else if current_state === "refine"}
       <RefineSpec
         bind:name
         original_property_values={property_values}
         bind:refined_property_values
-        {starting_refined_property_values}
-        {suggested_fields}
+        {suggested_edits}
+        {not_incorporated_feedback}
         {field_configs}
         bind:error
         bind:submitting
         {warn_before_unload}
         on:analyze_refined={handle_analyze_refined_spec}
-        on:create_spec={() => handle_create_spec_from_refine(false)}
-        on:create_spec_secondary={() => handle_create_spec_from_refine(true)}
+        on:create_spec={() => handle_create_spec_from_refine()}
+        on:create_spec_secondary={() => handle_create_spec_from_refine()}
       />
     {/if}
   </AppPage>

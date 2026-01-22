@@ -3,18 +3,23 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import Output from "$lib/ui/output.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
+  import { filename_string_short_validator } from "$lib/utils/input_validators"
+  import type { SuggestedEdit } from "../spec_utils"
 
   export let name: string
   export let original_property_values: Record<string, string | null>
   export let refined_property_values: Record<string, string | null>
-  export let starting_refined_property_values: Record<string, string | null>
-  export let suggested_fields: Set<string>
+  export let suggested_edits: Record<string, SuggestedEdit>
+  export let not_incorporated_feedback: string = ""
   export let field_configs: FieldConfig[]
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
+
+  let form_container: FormContainer
 
   const dispatch = createEventDispatcher<{
     analyze_refined: void
@@ -24,7 +29,8 @@
 
   let disabledKeys: Set<string> = new Set(["tool_function_name"])
 
-  $: has_suggested_refinements = suggested_fields.size > 0
+  $: num_suggested_edits = Object.keys(suggested_edits).length
+  $: has_suggested_refinements = num_suggested_edits > 0
 
   // Check if any refinements were made from the original
   $: has_refinements = Object.keys(refined_property_values).some(
@@ -32,7 +38,7 @@
   )
 
   function restoreSuggestion(key: string) {
-    refined_property_values[key] = starting_refined_property_values[key]
+    refined_property_values[key] = suggested_edits[key].proposed_value
     refined_property_values = refined_property_values
   }
 
@@ -69,9 +75,16 @@
       dispatch("create_spec")
     }
   }
+
+  async function handle_secondary_click() {
+    if (await form_container.validate_only()) {
+      dispatch("create_spec_secondary")
+    }
+  }
 </script>
 
 <FormContainer
+  bind:this={form_container}
   {submit_label}
   on:submit={handle_submit}
   bind:error
@@ -83,7 +96,7 @@
     <div class="font-medium">Refine your Spec</div>
     <div class="font-light text-gray-500 text-sm">
       {has_suggested_refinements
-        ? `Kiln has suggested ${suggested_fields.size} refinement${suggested_fields.size === 1 ? "" : "s"}. Review and optionally edit your refined spec before continuing to review new examples.`
+        ? `Kiln has suggested ${num_suggested_edits} refinement${num_suggested_edits === 1 ? "" : "s"}. Review and optionally edit your refined spec before continuing to review new examples.`
         : `Kiln has not suggested any refinements, your spec is ready to be created. Edit your spec if you would like to manually refine it further.`}
     </div>
   </div>
@@ -110,6 +123,7 @@
           description="A short name for your own reference."
           id="suggested_spec_name"
           bind:value={name}
+          validator={filename_string_short_validator}
         />
       </div>
     </div>
@@ -137,9 +151,9 @@
           height={bumpHeight(field.key, field.height)}
           bind:value={refined_property_values[field.key]}
           optional={!field.required}
-          inline_action={refined_property_values[field.key] !==
-            starting_refined_property_values[field.key] &&
-          suggested_fields.has(field.key)
+          inline_action={field.key in suggested_edits &&
+          refined_property_values[field.key] !==
+            suggested_edits[field.key].proposed_value
             ? {
                 label: "Restore Suggestion",
                 handler: () => restoreSuggestion(field.key),
@@ -154,9 +168,14 @@
         >
           <svelte:fragment slot="label_suffix">
             {#if !disabledKeys.has(field.key)}
-              {#if suggested_fields.has(field.key)}
+              {#if field.key in suggested_edits}
                 <span
-                  class="badge badge-primary badge-outline badge-sm gap-1 ml-2"
+                  class="badge badge-primary badge-outline badge-sm ml-2 {suggested_edits[
+                    field.key
+                  ].reason_for_edit
+                    ? 'tooltip tooltip-top'
+                    : ''}"
+                  data-tip={suggested_edits[field.key].reason_for_edit ?? ""}
                 >
                   Refinement Suggested
                 </span>
@@ -166,6 +185,16 @@
         </FormElement>
       </div>
     {/each}
+    {#if not_incorporated_feedback}
+      <div class="col-span-2 flex flex-col gap-1">
+        <div class="font-medium text-sm">Out of Scope Feedback</div>
+        <div class="text-xs text-gray-500">
+          Feedback that was outside the scope of this spec and couldn't be
+          incorporated into refinements.
+        </div>
+        <Output raw_output={not_incorporated_feedback} />
+      </div>
+    {/if}
   {:else}
     <!-- Spec Name Row -->
     <FormElement
@@ -173,6 +202,7 @@
       description="A short name for your own reference."
       id="current_spec_name"
       bind:value={name}
+      validator={filename_string_short_validator}
     />
 
     <!-- Field Rows -->
@@ -205,7 +235,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_spec_secondary")}
+      on:click={handle_secondary_click}
     >
       Save Refined Spec without Further Review
     </button>

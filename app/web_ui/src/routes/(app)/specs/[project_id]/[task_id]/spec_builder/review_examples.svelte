@@ -4,7 +4,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
-  import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
+  import XCircleIcon from "$lib/ui/icons/x_circle_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
@@ -23,18 +23,13 @@
   export let submitting: boolean
   export let warn_before_unload: boolean
 
+  let form_container: FormContainer
+
   const dispatch = createEventDispatcher<{
     create_spec: void
     continue_to_refine: void
     create_spec_secondary: void
   }>()
-
-  let unexpandedRows: Record<string, boolean> = {}
-
-  function toggleRowExpand(row_id: string) {
-    unexpandedRows[row_id] = !unexpandedRows[row_id]
-    unexpandedRows = unexpandedRows
-  }
 
   function formatExpandedContent(data: string): string {
     try {
@@ -105,9 +100,16 @@
   function open_details_dialog() {
     spec_details_dialog?.show()
   }
+
+  async function handle_secondary_click() {
+    if (await form_container.validate_only()) {
+      dispatch("create_spec_secondary")
+    }
+  }
 </script>
 
 <FormContainer
+  bind:this={form_container}
   {submit_label}
   {submit_disabled}
   submit_data_tip={!all_examples_reviewed
@@ -156,24 +158,16 @@
         </thead>
         <tbody>
           {#each review_rows as row (row.id)}
-            <tr on:click={() => toggleRowExpand(row.id)} class="cursor-pointer">
+            <tr>
               <td class="py-2">
-                {#if !unexpandedRows[row.id]}
-                  <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                      row.input,
-                    )}</pre>
-                {:else}
-                  <div class="truncate w-0 min-w-full">{row.input}</div>
-                {/if}
+                <pre class="whitespace-pre-wrap">{formatExpandedContent(
+                    row.input,
+                  )}</pre>
               </td>
               <td class="py-2">
-                {#if !unexpandedRows[row.id]}
-                  <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                      row.output,
-                    )}</pre>
-                {:else}
-                  <div class="truncate w-0 min-w-full">{row.output}</div>
-                {/if}
+                <pre class="whitespace-pre-wrap">{formatExpandedContent(
+                    row.output,
+                  )}</pre>
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
@@ -203,8 +197,8 @@
                         <CheckCircleIcon />
                       </div>
                     {:else}
-                      <div class="text-warning w-5 h-5">
-                        <ExclaimCircleIcon />
+                      <div class="text-error w-5 h-5">
+                        <XCircleIcon />
                       </div>
                     {/if}
                   </div>
@@ -215,8 +209,9 @@
               <tr on:click={(e) => e.stopPropagation()}>
                 <td colspan="4" class="bg-base-200 py-4">
                   <FormElement
-                    label="Help us improve!"
-                    description={`Our judge's analysis was incorrect, please provide a detailed description of why this example ${row.user_says_meets_spec ? "meets" : "does not meet"} the spec to help us improve our judge.`}
+                    label="Teach the Judge"
+                    description={`Describe why this result ${row.user_says_meets_spec ? "passes" : "fails"}. Detailed explanations will improve the judge.`}
+                    info_description={`Our automated judge got this one wrong. That's okay, we're here to learn and improve!\nProvide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge.`}
                     id="feedback-{row.id}"
                     inputType="textarea"
                     height="base"
@@ -251,7 +246,7 @@
     <button
       class="link underline text-sm text-gray-500"
       disabled={submitting}
-      on:click={() => dispatch("create_spec_secondary")}
+      on:click={handle_secondary_click}
     >
       {#if submitting}
         <span class="loading loading-spinner loading-xs"></span>

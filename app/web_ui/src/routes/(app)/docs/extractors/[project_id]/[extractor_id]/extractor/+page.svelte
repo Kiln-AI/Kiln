@@ -10,8 +10,8 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
-  $: project_id = $page.params.project_id
-  $: extractor_id = $page.params.extractor_id
+  $: project_id = $page.params.project_id!
+  $: extractor_id = $page.params.extractor_id!
 
   let loading: boolean = false
   let error: KilnError | null = null

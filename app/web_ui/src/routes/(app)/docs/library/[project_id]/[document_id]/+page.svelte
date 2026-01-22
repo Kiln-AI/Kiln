@@ -27,8 +27,8 @@
   let loading = true
   let results: ExtractionSummary[] | null = null
 
-  $: project_id = $page.params.project_id
-  $: document_id = $page.params.document_id
+  $: project_id = $page.params.project_id!
+  $: document_id = $page.params.document_id!
 
   // dialog state
   let output_dialog: Dialog | null = null

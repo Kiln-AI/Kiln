@@ -27,7 +27,11 @@
   } from "$lib/stores"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
 
-  $: eval_id = $page.params.eval_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
+  $: eval_config_id = $page.params.eval_config_id!
+  $: run_config_id = $page.params.run_config_id!
 
   let results: EvalRunResult | null = null
   let results_error: KilnError | null = null
@@ -57,11 +61,11 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: eval_id,
-              eval_config_id: $page.params.eval_config_id,
-              run_config_id: $page.params.run_config_id,
+              project_id,
+              task_id,
+              eval_id,
+              eval_config_id,
+              run_config_id,
             },
           },
         },

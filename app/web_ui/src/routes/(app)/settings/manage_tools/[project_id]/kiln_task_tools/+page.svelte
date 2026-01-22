@@ -9,7 +9,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { formatDate } from "$lib/utils/formatters"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let kiln_task_tools: KilnTaskToolDescription[] | null = null
   let loading = true
