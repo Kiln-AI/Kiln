@@ -21,6 +21,7 @@
   import posthog from "posthog-js"
   import { browser } from "$app/environment"
   import { beforeNavigate, afterNavigate } from "$app/navigation"
+  import { client } from "$lib/api_client"
 
   function sanitize_route_id(route_id: string | null | undefined) {
     if (!route_id) {
@@ -63,6 +64,9 @@
   // This function checks if we have them, and redirects to the setup flow if not.
   const check_needs_setup = async () => {
     try {
+      // Start settings fetch early to parallelize with load_projects
+      const settingsPromise = client.GET("/api/settings")
+
       await load_projects()
       const all_projects = get(projects)
       if (all_projects?.error) {
@@ -83,6 +87,25 @@
       await load_current_task($current_project?.id)
       if (!$current_task) {
         goto("/setup/select_task")
+        return
+      }
+
+      // Check if the user hasn't yet registered (most likely users who have used older version before we added registration)
+      const { data, error } = await settingsPromise
+      if (error) {
+        // Non critical error, just log it
+        console.error(
+          "Error loading settings. Continuing without checking registration status.",
+          error,
+        )
+        return
+      }
+      if (
+        !data.user_type ||
+        (data.user_type === "personal" && !data.personal_use_contact) ||
+        (data.user_type === "work" && !data.work_use_contact)
+      ) {
+        goto("/setup/select_account?home_after_registration=true")
         return
       }
     } catch (e: unknown) {
