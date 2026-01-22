@@ -76,9 +76,14 @@
   let judge_info: JudgeInfo | null = null
 
   // Refine state
+  type SuggestedEdit = {
+    proposed_value: string
+    reason_for_edit: string
+  }
   let refined_property_values: Record<string, string | null> = {}
-  let starting_refined_property_values: Record<string, string | null> = {}
-  let suggested_fields: Set<string> = new Set()
+  // Keys are field keys
+  let suggested_edits: Record<string, SuggestedEdit> = {}
+  let out_of_scope_feedback: string = ""
 
   // Loading/error state
   let loading = true
@@ -426,22 +431,21 @@
         throw api_error
       }
 
-      if (!data) {
-        throw new Error("Failed to refine spec")
-      }
-
-      // Build refined_property_values
+      // Build refined_property_values and suggested_edits
       refined_property_values = { ...property_values }
-      suggested_fields = new Set()
+      suggested_edits = {}
+      out_of_scope_feedback = data.out_of_scope_feedback || ""
       if (data.new_proposed_spec_edits) {
         for (const [field_key, edit] of Object.entries(
           data.new_proposed_spec_edits,
         )) {
           refined_property_values[field_key] = edit.proposed_edit
-          suggested_fields.add(field_key)
+          suggested_edits[field_key] = {
+            proposed_value: edit.proposed_edit,
+            reason_for_edit: edit.reason_for_edit || "",
+          }
         }
       }
-      starting_refined_property_values = { ...refined_property_values }
 
       current_state = "refine"
     } catch (e) {
@@ -524,9 +528,11 @@
     }
   }
 
+  $: num_suggested_edits = Object.keys(suggested_edits).length
+
   function getPageClass(state: BuilderState): string {
     if (state === "review") return "max-w-[1400px]"
-    if (state === "refine" && suggested_fields.size > 0) return "max-w-[1400px]"
+    if (state === "refine" && num_suggested_edits > 0) return "max-w-[1400px]"
     if (state === "analyzing_for_review" || state === "refining") return ""
     return "max-w-[900px]"
   }
@@ -604,8 +610,8 @@
         bind:name
         original_property_values={property_values}
         bind:refined_property_values
-        {starting_refined_property_values}
-        {suggested_fields}
+        {suggested_edits}
+        {out_of_scope_feedback}
         {field_configs}
         bind:error
         bind:submitting
