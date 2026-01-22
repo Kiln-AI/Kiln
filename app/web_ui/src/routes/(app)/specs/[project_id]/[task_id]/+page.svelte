@@ -25,8 +25,8 @@
 
   // ### Spec Table ###
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let specs: Spec[] | null = null
   let specs_error: KilnError | null = null

@@ -7,8 +7,8 @@
   import { ui_state } from "$lib/stores"
   import { get } from "svelte/store"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let delete_dialog: DeleteDialog | null = null
   let saved: boolean = false

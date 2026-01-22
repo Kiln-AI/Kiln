@@ -7,8 +7,8 @@
   import { checkDefaultRunConfigHasTools } from "../spec_utils"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let loading = true
   let default_run_config_has_tools = false

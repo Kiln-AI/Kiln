@@ -54,7 +54,7 @@
     sortDocuments()
   }
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   const columns = [
     { key: "kind", label: "Type" },

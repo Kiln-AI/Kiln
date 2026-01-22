@@ -3,7 +3,7 @@
   import { page } from "$app/stores"
   import MultiIntro from "$lib/ui/multi_intro.svelte"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 </script>
 
 <AppPage

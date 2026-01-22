@@ -169,11 +169,9 @@
   }
 
   function handleFormSubmit(event: SubmitEvent) {
-    // Only allow submission from the submit button. Without this, all buttons in the form become submit buttons.
-    const submitter = event.submitter as HTMLElement
-    if (!submitter || submitter.getAttribute("type") !== "submit") {
-      event.preventDefault()
-    }
+    // Always prevent native form submission - we handle submission via the custom event dispatch in validate_and_submit()
+    // Without this all buttons on the form will submit by default.
+    event.preventDefault()
   }
 </script>
 

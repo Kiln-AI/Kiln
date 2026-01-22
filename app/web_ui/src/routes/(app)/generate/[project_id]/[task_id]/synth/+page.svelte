@@ -44,8 +44,8 @@
 
   let synth_data_loading = false
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
   let is_setup = false
 
   let run_config_component: RunConfigComponent | null = null

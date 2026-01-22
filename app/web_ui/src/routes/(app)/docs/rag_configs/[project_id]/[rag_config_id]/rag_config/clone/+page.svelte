@@ -8,8 +8,8 @@
   import { onMount } from "svelte"
   import EditRagConfigForm from "../../../create_rag_config/edit_rag_config_form.svelte"
 
-  $: project_id = $page.params.project_id
-  $: rag_config_id = $page.params.rag_config_id
+  $: project_id = $page.params.project_id!
+  $: rag_config_id = $page.params.rag_config_id!
 
   let loading: boolean = true
   let error: KilnError | null = null
