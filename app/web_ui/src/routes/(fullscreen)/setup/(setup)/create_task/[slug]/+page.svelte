@@ -2,7 +2,7 @@
   import { page } from "$app/stores"
   import EditTask from "../edit_task.svelte"
 
-  $: project_id = $page.params.slug
+  $: project_id = $page.params.slug!
 </script>
 
 <div class="grow"></div>

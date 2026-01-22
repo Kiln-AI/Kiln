@@ -4,8 +4,8 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 </script>
 
 <div class="max-w-[1400px]">

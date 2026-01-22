@@ -14,7 +14,7 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import { number_validator } from "$lib/utils/input_validators"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let loading: boolean = false
   let loadingRerankers = true

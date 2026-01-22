@@ -22,9 +22,9 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: eval_id = $page.params.eval_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
 
   let evaluator: Eval | null = null
   let eval_error: KilnError | null = null

@@ -16,7 +16,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { SearchToolApiDescription } from "$lib/types"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
   $: is_empty =
     !demo_tools_enabled &&
     (!tools || tools.length == 0) &&

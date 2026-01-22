@@ -33,8 +33,8 @@
   } from "$lib/stores/prompts_store"
   import type { UiProperty } from "$lib/ui/property_list"
 
-  $: project_id = $page.params.project_id
-  $: tool_server_id = $page.params.tool_server_id
+  $: project_id = $page.params.project_id!
+  $: tool_server_id = $page.params.tool_server_id!
   $: is_archived = tool_server
     ? (tool_server.properties as KilnTaskServerProperties).is_archived
     : false
@@ -260,8 +260,8 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              tool_server_id: tool_server_id,
+              project_id,
+              tool_server_id,
             },
           },
           body: {

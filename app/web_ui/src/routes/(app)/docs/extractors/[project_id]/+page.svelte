@@ -25,7 +25,7 @@
     page_number = parseInt(url.searchParams.get("page") || "1", 10)
   }
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   onMount(async () => {
     get_extractor_configs()
