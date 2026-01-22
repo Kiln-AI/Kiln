@@ -105,14 +105,31 @@ export async function createSpec(
       await saveGeneratedExamples(project_id, task_id, trainExamples, trainTag)
 
       // Persist unrated golden examples from remaining pool if needed
-      const unratedGoldenExampleCount = Math.max(0, MIN_GOLDEN_EXAMPLES - reviewed_examples.length)
+      const unratedGoldenExampleCount = Math.max(
+        0,
+        MIN_GOLDEN_EXAMPLES - reviewed_examples.length,
+      )
       if (unratedGoldenExampleCount > 0) {
-        const unratedGoldenExamples = sampleAndRemove(evalDataBatch, unratedGoldenExampleCount)
-        await saveGeneratedExamples(project_id, task_id, unratedGoldenExamples, goldenTag)
+        const unratedGoldenExamples = sampleAndRemove(
+          evalDataBatch,
+          unratedGoldenExampleCount,
+        )
+        await saveGeneratedExamples(
+          project_id,
+          task_id,
+          unratedGoldenExamples,
+          goldenTag,
+        )
       }
-      
+
       // Save reviewed golden examples with ratings
-      await saveReviewedExamples(project_id, task_id, reviewed_examples, goldenTag, name)
+      await saveReviewedExamples(
+        project_id,
+        task_id,
+        reviewed_examples,
+        goldenTag,
+        name,
+      )
     }
 
     // Build the properties object with spec_type, filtering out null and empty values

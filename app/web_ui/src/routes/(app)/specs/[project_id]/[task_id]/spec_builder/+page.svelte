@@ -245,7 +245,7 @@
 
     judge_info = {
       prompt: data.judge_prompt,
-      model_name: data.model_name,
+      model_name: data.model_id,
       model_provider: data.model_provider,
     }
 
