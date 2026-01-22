@@ -4,7 +4,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import CheckCircleIcon from "$lib/ui/icons/check_circle_icon.svelte"
-  import ExclaimCircleIcon from "$lib/ui/icons/exclaim_circle_icon.svelte"
+  import XCircleIcon from "$lib/ui/icons/x_circle_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
@@ -212,8 +212,8 @@
                         <CheckCircleIcon />
                       </div>
                     {:else}
-                      <div class="text-warning w-5 h-5">
-                        <ExclaimCircleIcon />
+                      <div class="text-error w-5 h-5">
+                        <XCircleIcon />
                       </div>
                     {/if}
                   </div>
@@ -224,8 +224,9 @@
               <tr on:click={(e) => e.stopPropagation()}>
                 <td colspan="4" class="bg-base-200 py-4">
                   <FormElement
-                    label="Help us improve!"
-                    description={`Our judge's analysis was incorrect, please provide a detailed description of why this example ${row.user_says_meets_spec ? "meets" : "does not meet"} the spec to help us improve our judge.`}
+                    label="Teach the Judge"
+                    description={`Describe why this result ${row.user_says_meets_spec ? "passes" : "fails"}. Detailed explanations will improve the judge.`}
+                    info_description={`Our automated judge got this one wrong. That's okay, we're here to learn and improve!\nProvide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge.`}
                     id="feedback-{row.id}"
                     inputType="textarea"
                     height="base"

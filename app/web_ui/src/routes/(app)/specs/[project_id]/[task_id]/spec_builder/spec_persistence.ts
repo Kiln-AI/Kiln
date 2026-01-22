@@ -11,6 +11,15 @@ import type {
 import { buildSpecDefinition } from "../spec_utils"
 import { load_task } from "$lib/stores"
 
+const NUM_SAMPLES_PER_TOPIC = 5 // TODO: Make this 15
+const NUM_TOPICS = 10 // TODO: Make this 15
+const MIN_EVAL_EXAMPLES = 20 // TODO: Make this 100
+const MIN_TRAIN_EXAMPLES = 20 // TODO: Make this 100
+const MIN_GOLDEN_EXAMPLES = 10 // TODO: Make this 25
+const KILN_COPILOT_MODEL_NAME = "kiln-copilot"
+const KILN_COPILOT_MODEL_PROVIDER = "kiln"
+const KILN_ADAPTER_NAME = "kiln-adapter"
+
 /**
  * A reviewed example from the spec review process.
  * These examples form the golden dataset for the spec's eval.
@@ -26,8 +35,12 @@ export type ReviewedExample = {
 
 export type JudgeInfo = {
   prompt: string
-  model_id: string
+  model_name: string
   model_provider: ModelProviderName
+}
+
+function evalTagSuffix(spec_name: string): string {
+  return snakeCase(spec_name) + "_" + generate_id()
 }
 
 /**
@@ -58,12 +71,14 @@ export async function createSpec(
   signal?: AbortSignal,
 ): Promise<string> {
   // First create a new eval for the spec under the hood
+  const eval_tag_suffix = evalTagSuffix(name)
   const eval_id = await createEval(
     project_id,
     task_id,
     name,
     spec_type,
     evaluate_full_trace,
+    eval_tag_suffix,
   )
 
   try {
@@ -78,28 +93,52 @@ export async function createSpec(
         )
       }
 
-      // Generate eval data set
-      const evalTag = "eval_" + snakeCase(name)
-      await generateAndSaveEvalData(
+      // Generate all examples
+      const evalDataBatch = await generateEvalDataBatch(
         project_id,
         task_id,
         spec_type,
         property_values,
-        evalTag,
         signal,
       )
 
-      // Save any provided reviewed examples as the golden dataset
-      if (reviewed_examples.length > 0) {
-        const goldenTag = "eval_golden_" + snakeCase(name)
-        await saveReviewedExamplesAsGoldenDataset(
+      const evalTag = "eval_" + eval_tag_suffix
+      const trainTag = "eval_train_" + eval_tag_suffix
+      const goldenTag = "eval_golden_" + eval_tag_suffix
+
+      // Randomly sample examples for each set, removing from pool to avoid overlap
+      const evalExamples = sampleAndRemove(evalDataBatch, MIN_EVAL_EXAMPLES)
+      await saveGeneratedExamples(project_id, task_id, evalExamples, evalTag)
+
+      const trainExamples = sampleAndRemove(evalDataBatch, MIN_TRAIN_EXAMPLES)
+      await saveGeneratedExamples(project_id, task_id, trainExamples, trainTag)
+
+      // Persist unrated golden examples from remaining pool if needed
+      const unratedGoldenExampleCount = Math.max(
+        0,
+        MIN_GOLDEN_EXAMPLES - reviewed_examples.length,
+      )
+      if (unratedGoldenExampleCount > 0) {
+        const unratedGoldenExamples = sampleAndRemove(
+          evalDataBatch,
+          unratedGoldenExampleCount,
+        )
+        await saveGeneratedExamples(
           project_id,
           task_id,
-          reviewed_examples,
+          unratedGoldenExamples,
           goldenTag,
-          name,
         )
       }
+
+      // Save reviewed golden examples with ratings
+      await saveReviewedExamples(
+        project_id,
+        task_id,
+        reviewed_examples,
+        goldenTag,
+        name,
+      )
     }
 
     // Build the properties object with spec_type, filtering out null and empty values
@@ -171,7 +210,7 @@ async function createJudgeAndSetAsDefault(
         },
         body: {
           type: "llm_as_judge",
-          model_name: judge_info.model_id,
+          model_name: judge_info.model_name,
           provider: judge_info.model_provider,
           properties: {
             eval_steps: [judge_info.prompt],
@@ -221,13 +260,13 @@ async function createEval(
   spec_name: string,
   spec_type: SpecType,
   evaluate_full_trace: boolean = false,
+  evalTagSuffix: string,
 ): Promise<string> {
   const name = spec_name
   const template = specEvalTemplate(spec_type)
   const output_scores = [specEvalOutputScore(spec_name)]
-  const snake_case_name = snakeCase(spec_name)
-  const eval_set_filter_id = `tag::eval_${snake_case_name}`
-  const eval_configs_filter_id = `tag::eval_golden_${snake_case_name}`
+  const eval_set_filter_id = `tag::eval_${evalTagSuffix}`
+  const eval_configs_filter_id = `tag::eval_golden_${evalTagSuffix}`
   const evaluation_data_type = specEvalDataType(spec_type, evaluate_full_trace)
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
@@ -259,18 +298,22 @@ async function createEval(
   return eval_id
 }
 
+type GeneratedExample = {
+  input: string
+  output: string
+}
+
 /**
- * Generate eval data using the generate_batch API and save as TaskRuns
+ * Generate eval data using the generate_batch API.
+ * Returns the generated examples.
  */
-async function generateAndSaveEvalData(
+async function generateEvalDataBatch(
   project_id: string,
   task_id: string,
   spec_type: SpecType,
   property_values: Record<string, string | null>,
-  tag: string,
   signal?: AbortSignal,
-): Promise<void> {
-  // Load the task to get instruction and schemas
+): Promise<GeneratedExample[]> {
   const task = await load_task(project_id, task_id)
   if (!task) {
     throw new Error("Failed to load task")
@@ -292,8 +335,8 @@ async function generateAndSaveEvalData(
         ? JSON.stringify(task.output_json_schema)
         : "",
       spec_rendered_prompt_template: spec_definition,
-      num_samples_per_topic: 5,
-      num_topics: 4, // TODO: 10 topics, 10 samples per topic
+      num_samples_per_topic: NUM_SAMPLES_PER_TOPIC,
+      num_topics: NUM_TOPICS,
     },
     signal,
   })
@@ -306,19 +349,19 @@ async function generateAndSaveEvalData(
     throw new Error("Failed to generate batch")
   }
 
-  const examples = Object.values(data.data_by_topic).flat()
+  return Object.values(data.data_by_topic).flat()
+}
 
-  // Split examples 50/50 - first half for eval, second half for training
-  const midpoint = Math.ceil(examples.length / 2)
-  const trainTag = tag.replace(/^eval_/, "eval_train_")
-
-  // Map each example with the appropriate tag based on index
-  const allExamplesWithTags = examples.map((example, index) => ({
-    example,
-    tag: index < midpoint ? tag : trainTag,
-  }))
-
-  for (const { example, tag: exampleTag } of allExamplesWithTags) {
+/**
+ * Save generated examples as TaskRuns with the given tag.
+ */
+async function saveGeneratedExamples(
+  project_id: string,
+  task_id: string,
+  examples: GeneratedExample[],
+  tag: string,
+): Promise<void> {
+  for (const example of examples) {
     const taskRun: TaskRun = {
       v: 1,
       id: generate_id(),
@@ -331,25 +374,24 @@ async function generateAndSaveEvalData(
         source: {
           type: "synthetic",
           properties: {
-            adapter_name: "kiln-adapter",
-            model_name: "kiln-copilot",
-            model_provider: "kiln",
+            adapter_name: KILN_ADAPTER_NAME,
+            model_name: KILN_COPILOT_MODEL_NAME,
+            model_provider: KILN_COPILOT_MODEL_PROVIDER,
           },
         },
       },
       input_source: {
         type: "synthetic",
         properties: {
-          adapter_name: "kiln-adapter",
-          model_name: "kiln-copilot",
-          model_provider: "kiln",
+          adapter_name: KILN_ADAPTER_NAME,
+          model_name: KILN_COPILOT_MODEL_NAME,
+          model_provider: KILN_COPILOT_MODEL_PROVIDER,
         },
       },
-      tags: [exampleTag],
+      tags: [tag],
     }
 
-    // Save the run
-    const { error: saveError } = await client.POST(
+    const { error } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/save_sample",
       {
         params: {
@@ -359,21 +401,20 @@ async function generateAndSaveEvalData(
       },
     )
 
-    if (saveError) {
-      throw saveError
+    if (error) {
+      throw error
     }
   }
 }
 
 /**
- * Save reviewed examples as golden dataset by creating new TaskRuns
- * with the golden tag and human ratings.
+ * Save reviewed examples by creating new TaskRuns with human ratings.
  */
-async function saveReviewedExamplesAsGoldenDataset(
+async function saveReviewedExamples(
   project_id: string,
   task_id: string,
   examples: ReviewedExample[],
-  goldenTag: string,
+  tag: string,
   spec_name: string,
 ): Promise<void> {
   // Create a TaskRun for each reviewed example with the golden tag
@@ -389,7 +430,7 @@ async function saveReviewedExamplesAsGoldenDataset(
         body: {
           input: example.input,
           output: example.output,
-          tags: [goldenTag],
+          tags: [tag],
           rating: {
             v: 1,
             type: "five_star",
@@ -400,9 +441,9 @@ async function saveReviewedExamplesAsGoldenDataset(
               },
             },
           },
-          model_name: "kiln-copilot",
-          model_provider: "kiln",
-          adapter_name: "kiln-adapter",
+          model_name: KILN_COPILOT_MODEL_NAME,
+          model_provider: KILN_COPILOT_MODEL_PROVIDER,
+          adapter_name: KILN_ADAPTER_NAME,
         },
       },
     )
@@ -411,6 +452,26 @@ async function saveReviewedExamplesAsGoldenDataset(
       throw error
     }
   }
+}
+
+/**
+ * Randomly sample and remove n items from an array using swap-and-pop for O(1) removal.
+ * Mutates the input array by removing the sampled elements.
+ */
+function sampleAndRemove<T>(array: T[], n: number): T[] {
+  const sampled: T[] = []
+  const count = Math.min(n, array.length)
+  for (let i = 0; i < count; i++) {
+    const randomIndex = Math.floor(Math.random() * array.length)
+    // Swap with last element and pop - O(1) removal
+    const lastIndex = array.length - 1
+    ;[array[randomIndex], array[lastIndex]] = [
+      array[lastIndex],
+      array[randomIndex],
+    ]
+    sampled.push(array.pop()!)
+  }
+  return sampled
 }
 
 function generate_id(): string {

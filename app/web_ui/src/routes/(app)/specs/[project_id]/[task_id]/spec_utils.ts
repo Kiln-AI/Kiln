@@ -14,6 +14,11 @@ import {
 import { get_task_composite_id } from "$lib/stores"
 import { get } from "svelte/store"
 
+export type SuggestedEdit = {
+  proposed_value: string
+  reason_for_edit: string
+}
+
 /**
  * Build a definition string from properties
  * @param specType - The type of spec
