@@ -77,7 +77,7 @@ class SubsampleBatchOutputItemApi(BaseModel):
 
 class TaskMetadataApi(BaseModel):
     model_name: str
-    model_provider: ModelProviderName
+    model_provider_name: ModelProviderName
 
 
 class PromptGenerationResultApi(BaseModel):

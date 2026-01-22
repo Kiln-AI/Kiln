@@ -112,15 +112,24 @@ class TestClarifySpec:
                 }
             ],
             "judge_result": {
-                "task_metadata": {"model_name": "gpt-4", "model_provider": "openai"},
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
                 "prompt": "Test judge prompt",
             },
             "topic_generation_result": {
-                "task_metadata": {"model_name": "gpt-4", "model_provider": "openai"},
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
                 "prompt": "Test topic prompt",
             },
             "input_generation_result": {
-                "task_metadata": {"model_name": "gpt-4", "model_provider": "openai"},
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
                 "prompt": "Test input prompt",
             },
         }

@@ -5804,7 +5804,7 @@ export interface components {
         TaskMetadataApi: {
             /** Model Name */
             model_name: string;
-            model_provider: components["schemas"]["ModelProviderName"];
+            model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
          * TaskOutput
