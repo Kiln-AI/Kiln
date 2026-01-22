@@ -154,7 +154,7 @@
   $: is_tool_use_spec = spec_type === "appropriate_tool_use"
   $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
   $: full_trace_disabled = is_tool_use_spec
-  $: hide_include_conversation_history = is_reference_answer_spec
+  $: hide_full_trace_option = is_reference_answer_spec
   $: if (is_tool_use_spec) evaluate_full_trace = true
 
   // Tool call and RAG specs don't support copilot
@@ -601,7 +601,7 @@
         bind:evaluate_full_trace
         {field_configs}
         {copilot_enabled}
-        {hide_include_conversation_history}
+        {hide_full_trace_option}
         {full_trace_disabled}
         bind:error
         bind:submitting

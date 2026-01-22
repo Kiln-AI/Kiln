@@ -15,7 +15,7 @@
   export let evaluate_full_trace: boolean
   export let field_configs: FieldConfig[]
   export let copilot_enabled: boolean
-  export let hide_include_conversation_history: boolean
+  export let hide_full_trace_option: boolean
   export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
@@ -112,15 +112,15 @@
     />
   {/if}
 
-  {#if !hide_include_conversation_history}
+  {#if !hide_full_trace_option}
     <Collapse title="Advanced Options">
       <FormElement
-        label="Include conversation history"
+        label="Evaluate Complete Agent History"
         id="evaluate_full_trace"
         inputType="checkbox"
         bind:value={evaluate_full_trace}
         disabled={full_trace_disabled}
-        description="When enabled, this spec will be evaluated on the full conversation history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+        description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
         info_description={full_trace_disabled
           ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
           : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
