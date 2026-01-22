@@ -43,7 +43,7 @@ def mock_api_key():
 @pytest.fixture
 def clarify_spec_input():
     return {
-        "task_prompt_with_few_shot": "Test task prompt",
+        "target_task_prompt": "Test task prompt",
         "task_input_schema": '{"type": "string"}',
         "task_output_schema": '{"type": "string"}',
         "spec_rendered_prompt_template": "Test template",
@@ -57,11 +57,10 @@ def clarify_spec_input():
 @pytest.fixture
 def refine_spec_input():
     return {
-        "task_prompt_with_few_shot": "Test task prompt",
-        "task_input_schema": '{"type": "string"}',
-        "task_output_schema": '{"type": "string"}',
-        "task_info": {
-            "task_prompt": "Test prompt",
+        "target_task_info": {
+            "target_task_prompt": "Test task prompt",
+            "target_task_input_schema": '{"type": "string"}',
+            "target_task_output_schema": '{"type": "string"}',
         },
         "spec": {
             "spec_fields": {},
@@ -69,10 +68,10 @@ def refine_spec_input():
         },
         "examples_with_feedback": [
             {
-                "user_rating_exhibits_issue_correct": True,
+                "user_agrees_with_judge": True,
                 "input": "test input",
                 "output": "test output",
-                "exhibits_issue": False,
+                "fails_specification": False,
             }
         ],
     }
@@ -81,7 +80,7 @@ def refine_spec_input():
 @pytest.fixture
 def generate_batch_input():
     return {
-        "task_prompt_with_few_shot": "Test task prompt",
+        "target_task_prompt": "Test task prompt",
         "task_input_schema": '{"type": "string"}',
         "task_output_schema": '{"type": "string"}',
         "spec_rendered_prompt_template": "Test template",
@@ -109,12 +108,21 @@ class TestClarifySpec:
                 {
                     "input": "test input",
                     "output": "test output",
-                    "exhibits_issue": False,
+                    "fails_specification": False,
                 }
             ],
-            "model_id": "gpt-4",
-            "model_provider": "openai",
-            "judge_prompt": "Test judge prompt",
+            "judge_result": {
+                "task_metadata": {"model_id": "gpt-4", "model_provider": "openai"},
+                "prompt": "Test judge prompt",
+            },
+            "topic_generation_result": {
+                "task_metadata": {"model_id": "gpt-4", "model_provider": "openai"},
+                "prompt": "Test topic prompt",
+            },
+            "input_generation_result": {
+                "task_metadata": {"model_id": "gpt-4", "model_provider": "openai"},
+                "prompt": "Test input prompt",
+            },
         }
 
         with patch(
@@ -126,7 +134,7 @@ class TestClarifySpec:
             assert response.status_code == 200
             result = response.json()
             assert "examples_for_feedback" in result
-            assert result["model_id"] == "gpt-4"
+            assert result["judge_result"]["task_metadata"]["model_id"] == "gpt-4"
 
     def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
         with patch(
@@ -169,8 +177,8 @@ class TestRefineSpec:
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
         mock_output = MagicMock(spec=RefineSpecOutput)
         mock_output.to_dict.return_value = {
-            "new_proposed_spec_edits": {},
-            "out_of_scope_feedback": "No out of scope feedback",
+            "new_proposed_spec_edits": [],
+            "not_incorporated_feedback": None,
         }
 
         with patch(
@@ -182,7 +190,7 @@ class TestRefineSpec:
             assert response.status_code == 200
             result = response.json()
             assert "new_proposed_spec_edits" in result
-            assert "out_of_scope_feedback" in result
+            assert "not_incorporated_feedback" in result
 
     def test_refine_spec_no_response(self, client, refine_spec_input, mock_api_key):
         with patch(

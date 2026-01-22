@@ -23,18 +23,19 @@ from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
 from .model_provider_name import ModelProviderName
-from .new_proposed_spec_edits import NewProposedSpecEdits
+from .new_proposed_spec_edit import NewProposedSpecEdit
 from .output_file_info import OutputFileInfo
+from .prompt_generation_result import PromptGenerationResult
 from .refine_spec_input import RefineSpecInput
 from .refine_spec_output import RefineSpecOutput
-from .refine_spec_output_new_proposed_spec_edits import RefineSpecOutputNewProposedSpecEdits
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
 from .spec import Spec
 from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
 from .spec_spec_fields import SpecSpecFields
-from .task_info import TaskInfo
+from .target_task_info import TargetTaskInfo
+from .task_metadata import TaskMetadata
 from .validation_error import ValidationError
 
 __all__ = (
@@ -59,17 +60,18 @@ __all__ = (
     "JobStatusResponse",
     "JobType",
     "ModelProviderName",
-    "NewProposedSpecEdits",
+    "NewProposedSpecEdit",
     "OutputFileInfo",
+    "PromptGenerationResult",
     "RefineSpecInput",
     "RefineSpecOutput",
-    "RefineSpecOutputNewProposedSpecEdits",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
     "Spec",
     "SpecSpecFieldCurrentValues",
     "SpecSpecFields",
-    "TaskInfo",
+    "TargetTaskInfo",
+    "TaskMetadata",
     "ValidationError",
 )

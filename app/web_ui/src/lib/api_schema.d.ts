@@ -2625,8 +2625,8 @@ export interface components {
         ChunkerType: "fixed_window" | "semantic";
         /** ClarifySpecApiInput */
         ClarifySpecApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */
@@ -2649,11 +2649,9 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            /** Model Id */
-            model_id: string;
-            model_provider: components["schemas"]["ModelProviderName"];
-            /** Judge Prompt */
-            judge_prompt: string;
+            judge_result: components["schemas"]["PromptGenerationResultApi"];
+            topic_generation_result: components["schemas"]["PromptGenerationResultApi"];
+            input_generation_result: components["schemas"]["PromptGenerationResultApi"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3750,14 +3748,14 @@ export interface components {
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /** ExampleWithFeedbackApi */
         ExampleWithFeedbackApi: {
-            /** User Rating Exhibits Issue Correct */
-            user_rating_exhibits_issue_correct: boolean;
+            /** User Agrees With Judge */
+            user_agrees_with_judge: boolean;
             /** Input */
             input: string;
             /** Output */
             output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
+            /** Fails Specification */
+            fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
         };
@@ -4309,8 +4307,8 @@ export interface components {
         };
         /** GenerateBatchApiInput */
         GenerateBatchApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */
@@ -4745,6 +4743,15 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        /** NewProposedSpecEditApi */
+        NewProposedSpecEditApi: {
+            /** Spec Field Name */
+            spec_field_name: string;
+            /** Proposed Edit */
+            proposed_edit: string;
+            /** Reason For Edit */
+            reason_for_edit: string;
+        };
         /** NsfwProperties */
         NsfwProperties: {
             /**
@@ -4960,6 +4967,12 @@ export interface components {
             prompt: string;
             /** Chain Of Thought Instructions */
             chain_of_thought_instructions?: string | null;
+        };
+        /** PromptGenerationResultApi */
+        PromptGenerationResultApi: {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
         };
         /** PromptGenerator */
         PromptGenerator: {
@@ -5261,13 +5274,7 @@ export interface components {
         };
         /** RefineSpecApiInput */
         RefineSpecApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            task_info: components["schemas"]["TaskInfoApi"];
+            target_task_info: components["schemas"]["TargetTaskInfoApi"];
             spec: components["schemas"]["SpecInfoApi"];
             /** Examples With Feedback */
             examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
@@ -5275,11 +5282,9 @@ export interface components {
         /** RefineSpecApiOutput */
         RefineSpecApiOutput: {
             /** New Proposed Spec Edits */
-            new_proposed_spec_edits: {
-                [key: string]: components["schemas"]["SpecEditApi"];
-            };
-            /** Out Of Scope Feedback */
-            out_of_scope_feedback: string;
+            new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
+            /** Not Incorporated Feedback */
+            not_incorporated_feedback: string | null;
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5672,15 +5677,6 @@ export interface components {
             /** Eval Id */
             eval_id: string | null;
         };
-        /** SpecEditApi */
-        SpecEditApi: {
-            /** Old Value */
-            old_value: string;
-            /** Proposed Edit */
-            proposed_edit: string;
-            /** Reason For Edit */
-            reason_for_edit: string;
-        };
         /** SpecInfoApi */
         SpecInfoApi: {
             /** Spec Fields */
@@ -5719,8 +5715,8 @@ export interface components {
             input: string;
             /** Output */
             output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
+            /** Fails Specification */
+            fails_specification: boolean;
         };
         /** TabooProperties */
         TabooProperties: {
@@ -5733,6 +5729,15 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
+        };
+        /** TargetTaskInfoApi */
+        TargetTaskInfoApi: {
+            /** Target Task Prompt */
+            target_task_prompt: string;
+            /** Target Task Input Schema */
+            target_task_input_schema: string;
+            /** Target Task Output Schema */
+            target_task_output_schema: string;
         };
         /**
          * Task
@@ -5795,12 +5800,11 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** TaskInfoApi */
-        TaskInfoApi: {
-            /** Task Prompt */
-            task_prompt: string;
-            /** Few Shot Examples */
-            few_shot_examples?: string | null;
+        /** TaskMetadataApi */
+        TaskMetadataApi: {
+            /** Model Id */
+            model_id: string;
+            model_provider: components["schemas"]["ModelProviderName"];
         };
         /**
          * TaskOutput

@@ -250,7 +250,7 @@
       "/api/copilot/clarify_spec",
       {
         body: {
-          task_prompt_with_few_shot,
+          target_task_prompt: task_prompt_with_few_shot,
           task_input_schema,
           task_output_schema,
           spec_rendered_prompt_template,
@@ -272,16 +272,16 @@
     }
 
     judge_info = {
-      prompt: data.judge_prompt,
-      model_id: data.model_id,
-      model_provider: data.model_provider,
+      prompt: data.judge_result.prompt,
+      model_id: data.judge_result.task_metadata.model_id,
+      model_provider: data.judge_result.task_metadata.model_provider,
     }
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
       id: String(index + 1),
       input: example.input,
       output: example.output,
-      model_says_meets_spec: !example.exhibits_issue,
+      model_says_meets_spec: !example.fails_specification,
       user_says_meets_spec: undefined,
       feedback: "",
     }))
@@ -411,12 +411,12 @@
 
       // Convert reviewed examples to API format
       const examples_with_feedback = currentExamples.map((example) => ({
-        user_rating_exhibits_issue_correct:
+        user_agrees_with_judge:
           example.model_says_meets_spec === example.user_says_meets_spec,
         user_feedback: example.feedback,
         input: example.input,
         output: example.output,
-        exhibits_issue: !example.user_says_meets_spec,
+        fails_specification: !example.user_says_meets_spec,
       }))
 
       if (examples_with_feedback.length === 0) {
@@ -429,16 +429,14 @@
         "/api/copilot/refine_spec",
         {
           body: {
-            task_prompt_with_few_shot,
-            task_input_schema: task.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            task_output_schema: task.output_json_schema
-              ? JSON.stringify(task.output_json_schema)
-              : "",
-            task_info: {
-              task_prompt: task.instruction || "",
-              few_shot_examples: "",
+            target_task_info: {
+              target_task_prompt: task_prompt_with_few_shot,
+              target_task_input_schema: task.input_json_schema
+                ? JSON.stringify(task.input_json_schema)
+                : "",
+              target_task_output_schema: task.output_json_schema
+                ? JSON.stringify(task.output_json_schema)
+                : "",
             },
             spec: {
               spec_fields,
@@ -462,11 +460,9 @@
       refined_property_values = { ...property_values }
       suggested_fields = new Set()
       if (data.new_proposed_spec_edits) {
-        for (const [field_key, edit] of Object.entries(
-          data.new_proposed_spec_edits,
-        )) {
-          refined_property_values[field_key] = edit.proposed_edit
-          suggested_fields.add(field_key)
+        for (const edit of data.new_proposed_spec_edits) {
+          refined_property_values[edit.spec_field_name] = edit.proposed_edit
+          suggested_fields.add(edit.spec_field_name)
         }
       }
       starting_refined_property_values = { ...refined_property_values }

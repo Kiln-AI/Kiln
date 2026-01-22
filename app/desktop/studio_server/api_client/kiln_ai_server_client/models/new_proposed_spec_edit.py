@@ -5,24 +5,24 @@ from typing import Any, TypeVar
 
 from attrs import define as _attrs_define
 
-T = TypeVar("T", bound="NewProposedSpecEdits")
+T = TypeVar("T", bound="NewProposedSpecEdit")
 
 
 @_attrs_define
-class NewProposedSpecEdits:
+class NewProposedSpecEdit:
     """
     Attributes:
-        old_value (str):
-        proposed_edit (str):
-        reason_for_edit (str):
+        spec_field_name (str): The name of the spec field that is being edited
+        proposed_edit (str): A new value for this spec field incorporating the feedback
+        reason_for_edit (str): The reason for editing this spec field
     """
 
-    old_value: str
+    spec_field_name: str
     proposed_edit: str
     reason_for_edit: str
 
     def to_dict(self) -> dict[str, Any]:
-        old_value = self.old_value
+        spec_field_name = self.spec_field_name
 
         proposed_edit = self.proposed_edit
 
@@ -32,7 +32,7 @@ class NewProposedSpecEdits:
 
         field_dict.update(
             {
-                "old_value": old_value,
+                "spec_field_name": spec_field_name,
                 "proposed_edit": proposed_edit,
                 "reason_for_edit": reason_for_edit,
             }
@@ -43,16 +43,16 @@ class NewProposedSpecEdits:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        old_value = d.pop("old_value")
+        spec_field_name = d.pop("spec_field_name")
 
         proposed_edit = d.pop("proposed_edit")
 
         reason_for_edit = d.pop("reason_for_edit")
 
-        new_proposed_spec_edits = cls(
-            old_value=old_value,
+        new_proposed_spec_edit = cls(
+            spec_field_name=spec_field_name,
             proposed_edit=proposed_edit,
             reason_for_edit=reason_for_edit,
         )
 
-        return new_proposed_spec_edits
+        return new_proposed_spec_edit
