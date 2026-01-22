@@ -333,6 +333,7 @@
       project_id,
       task_id,
       task?.instruction || "",
+      task_prompt_with_few_shot,
       name,
       spec_type,
       values,
