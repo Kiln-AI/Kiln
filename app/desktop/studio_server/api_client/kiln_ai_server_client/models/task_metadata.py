@@ -8,37 +8,33 @@ from attrs import field as _attrs_field
 
 from ..models.model_provider_name import ModelProviderName
 
-T = TypeVar("T", bound="JudgeInfo")
+T = TypeVar("T", bound="TaskMetadata")
 
 
 @_attrs_define
-class JudgeInfo:
-    """
+class TaskMetadata:
+    """Metadata about a task invocation.
+
     Attributes:
         model_name (str):
-        model_provider (ModelProviderName): Enumeration of supported AI model providers.
-        judge_prompt (str):
+        model_provider_name (ModelProviderName): Enumeration of supported AI model providers.
     """
 
     model_name: str
-    model_provider: ModelProviderName
-    judge_prompt: str
+    model_provider_name: ModelProviderName
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         model_name = self.model_name
 
-        model_provider = self.model_provider.value
-
-        judge_prompt = self.judge_prompt
+        model_provider_name = self.model_provider_name.value
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
                 "model_name": model_name,
-                "model_provider": model_provider,
-                "judge_prompt": judge_prompt,
+                "model_provider_name": model_provider_name,
             }
         )
 
@@ -49,18 +45,15 @@ class JudgeInfo:
         d = dict(src_dict)
         model_name = d.pop("model_name")
 
-        model_provider = ModelProviderName(d.pop("model_provider"))
+        model_provider_name = ModelProviderName(d.pop("model_provider_name"))
 
-        judge_prompt = d.pop("judge_prompt")
-
-        judge_info = cls(
+        task_metadata = cls(
             model_name=model_name,
-            model_provider=model_provider,
-            judge_prompt=judge_prompt,
+            model_provider_name=model_provider_name,
         )
 
-        judge_info.additional_properties = d
-        return judge_info
+        task_metadata.additional_properties = d
+        return task_metadata
 
     @property
     def additional_keys(self) -> list[str]:

@@ -22,10 +22,10 @@ from .job_start_response import JobStartResponse
 from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
-from .judge_info import JudgeInfo
 from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edits import NewProposedSpecEdits
 from .output_file_info import OutputFileInfo
+from .prompt_generation_result import PromptGenerationResult
 from .refine_spec_input import RefineSpecInput
 from .refine_spec_output import RefineSpecOutput
 from .refine_spec_output_new_proposed_spec_edits import RefineSpecOutputNewProposedSpecEdits
@@ -36,6 +36,7 @@ from .spec import Spec
 from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
 from .spec_spec_fields import SpecSpecFields
 from .task_info import TaskInfo
+from .task_metadata import TaskMetadata
 from .validation_error import ValidationError
 
 __all__ = (
@@ -59,10 +60,10 @@ __all__ = (
     "JobStatus",
     "JobStatusResponse",
     "JobType",
-    "JudgeInfo",
     "ModelProviderName",
     "NewProposedSpecEdits",
     "OutputFileInfo",
+    "PromptGenerationResult",
     "RefineSpecInput",
     "RefineSpecOutput",
     "RefineSpecOutputNewProposedSpecEdits",
@@ -73,5 +74,6 @@ __all__ = (
     "SpecSpecFieldCurrentValues",
     "SpecSpecFields",
     "TaskInfo",
+    "TaskMetadata",
     "ValidationError",
 )
