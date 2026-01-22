@@ -158,7 +158,7 @@
         </thead>
         <tbody>
           {#each review_rows as row (row.id)}
-            <tr class="cursor-pointer">
+            <tr>
               <td class="py-2">
                 <pre class="whitespace-pre-wrap">{formatExpandedContent(
                     row.input,

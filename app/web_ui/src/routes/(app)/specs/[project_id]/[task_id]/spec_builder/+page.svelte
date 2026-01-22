@@ -352,7 +352,6 @@
   async function handle_create_spec_without_copilot() {
     error = null
     try {
-      saving_spec = true
       await saveSpec(property_values, false, [])
     } catch (e) {
       error = createKilnError(e)
@@ -363,13 +362,11 @@
   }
 
   // Handler for creating spec from review (all feedback aligned)
-  async function handle_create_spec_from_review(skip_review = false) {
+  async function handle_create_spec_from_review() {
     error = null
     try {
-      // Use full-page spinner for skip_review (secondary button), form spinner otherwise
-      if (skip_review) {
-        saving_spec = true
-      }
+      // Use full-page spinner for creating spec because it takes a while
+      saving_spec = true
 
       await saveSpec(
         property_values,
@@ -498,13 +495,11 @@
   }
 
   // Handler for creating spec from refine (skip further review)
-  async function handle_create_spec_from_refine(secondary_button = false) {
+  async function handle_create_spec_from_refine() {
     error = null
     try {
-      // Use full-page spinner for secondary button, form spinner otherwise
-      if (secondary_button) {
-        saving_spec = true
-      }
+      // Use full-page spinner for creating spec because it takes a while
+      saving_spec = true
       await saveSpec(
         refined_property_values,
         true,
@@ -627,9 +622,9 @@
         bind:error
         bind:submitting
         {warn_before_unload}
-        on:create_spec={() => handle_create_spec_from_review(false)}
+        on:create_spec={() => handle_create_spec_from_review()}
         on:continue_to_refine={handle_continue_to_refine}
-        on:create_spec_secondary={() => handle_create_spec_from_review(true)}
+        on:create_spec_secondary={() => handle_create_spec_from_review()}
       />
     {:else if current_state === "refine"}
       <RefineSpec
@@ -643,8 +638,8 @@
         bind:submitting
         {warn_before_unload}
         on:analyze_refined={handle_analyze_refined_spec}
-        on:create_spec={() => handle_create_spec_from_refine(false)}
-        on:create_spec_secondary={() => handle_create_spec_from_refine(true)}
+        on:create_spec={() => handle_create_spec_from_refine()}
+        on:create_spec_secondary={() => handle_create_spec_from_refine()}
       />
     {/if}
   </AppPage>

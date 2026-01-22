@@ -40,7 +40,7 @@ export type JudgeInfo = {
 }
 
 function evalTagSuffix(spec_name: string): string {
-  return snakeCase(spec_name) + "_" + generate_id()
+  return snakeCase(spec_name)
 }
 
 /**
