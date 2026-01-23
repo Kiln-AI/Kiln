@@ -11,6 +11,9 @@
     QuestionSet,
     SubmitAnswersRequest,
     QuestionWithAnswer,
+    SpecProperties,
+    PromptGenerationResultApi,
+    ReviewedExample,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
@@ -20,11 +23,6 @@
     buildSpecDefinition,
     type SuggestedEdit,
   } from "../spec_utils"
-  import {
-    createSpec,
-    type JudgeInfo,
-    type ReviewedExample,
-  } from "./spec_persistence"
   import { client } from "$lib/api_client"
   import {
     load_task,
@@ -38,6 +36,7 @@
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
+  import type { ReviewRow } from "./spec_utils.ts"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -113,12 +112,10 @@
   let question_set: QuestionSet | null = null
 
   // Review state
-  type ReviewRow = ReviewedExample & { id: string }
-
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: JudgeInfo | null = null
+  let judge_info: PromptGenerationResultApi | null = null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
@@ -289,14 +286,11 @@
       throw new Error("Failed to analyze spec for review. Please try again.")
     }
 
-    judge_info = {
-      prompt: data.judge_result.prompt,
-      model_name: data.judge_result.task_metadata.model_name,
-      model_provider: data.judge_result.task_metadata.model_provider_name,
-    }
+    // Use judge_result directly as it already matches PromptGenerationResultApi
+    judge_info = data.judge_result
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
-      id: String(index + 1),
+      row_id: String(index + 1),
       input: example.input,
       output: example.output,
       model_says_meets_spec: !example.fails_specification,
@@ -349,20 +343,71 @@
     examples: ReviewedExample[],
     signal?: AbortSignal,
   ) {
-    const spec_id = await createSpec(
-      project_id,
-      task_id,
-      task?.instruction || "",
-      task_prompt_with_few_shot,
-      name,
-      spec_type,
-      values,
-      use_kiln_copilot,
-      evaluate_full_trace,
-      examples,
-      judge_info,
-      signal,
+    // Build definition and properties on the client side
+    const definition = buildSpecDefinition(spec_type, values)
+
+    // Build properties object with spec_type, filtering out null and empty values
+    const filteredValues = Object.fromEntries(
+      Object.entries(values).filter(
+        ([_, value]) => value !== null && value.trim() !== "",
+      ),
     )
+    const properties = {
+      spec_type: spec_type,
+      ...filteredValues,
+    } as SpecProperties
+
+    // Call the appropriate endpoint based on whether copilot is being used
+    let spec_id: string | null | undefined
+    if (use_kiln_copilot) {
+      if (!judge_info) {
+        throw new Error("Judge info is required for copilot spec creation")
+      }
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition,
+            properties,
+            evaluate_full_trace,
+            reviewed_examples: examples.map((e) => ({
+              ...e,
+              user_says_meets_spec: e.user_says_meets_spec ?? false,
+            })),
+            judge_info,
+            task_description: task?.instruction || "",
+            task_prompt_with_few_shot,
+          },
+          signal,
+        },
+      )
+      if (api_error) throw api_error
+      spec_id = data?.id
+    } else {
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition,
+            properties,
+            priority: 1,
+            status: "active",
+            tags: [],
+            eval_id: null,
+          },
+        },
+      )
+      if (api_error) throw api_error
+      spec_id = data?.id
+    }
+
+    if (!spec_id) {
+      throw new Error("Failed to create spec")
+    }
 
     complete = true
     goto(`/specs/${project_id}/${task_id}/${spec_id}`)

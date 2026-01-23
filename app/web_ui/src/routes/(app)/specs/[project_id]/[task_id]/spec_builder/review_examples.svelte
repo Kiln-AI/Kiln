@@ -10,13 +10,11 @@
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
-  import type { ReviewedExample } from "./spec_persistence"
+  import type { ReviewRow } from "./spec_utils.ts"
 
   export let name: string
   export let spec_type: SpecType
   export let property_values: Record<string, string | null>
-
-  type ReviewRow = ReviewedExample & { id: string }
 
   export let review_rows: ReviewRow[]
   export let error: KilnError | null
@@ -40,10 +38,10 @@
     }
   }
 
-  function set_meets_spec(row_id: string, meets_spec: boolean, event: Event) {
+  function set_meets_spec(id: string, meets_spec: boolean, event: Event) {
     event.stopPropagation()
     review_rows = review_rows.map((row) => {
-      if (row.id === row_id) {
+      if (row.row_id === id) {
         return {
           ...row,
           user_says_meets_spec: meets_spec,
@@ -157,7 +155,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each review_rows as row (row.id)}
+          {#each review_rows as row (row.row_id)}
             <tr>
               <td class="py-2">
                 <pre class="whitespace-pre-wrap">{formatExpandedContent(
@@ -176,7 +174,7 @@
                     true
                       ? 'btn-secondary'
                       : 'text-base-content/40'}"
-                    on:click={(e) => set_meets_spec(row.id, true, e)}
+                    on:click={(e) => set_meets_spec(row.row_id, true, e)}
                     tabindex="0">Pass</button
                   >
                   <button
@@ -184,7 +182,7 @@
                     false
                       ? 'btn-secondary'
                       : 'text-base-content/40'}"
-                    on:click={(e) => set_meets_spec(row.id, false, e)}
+                    on:click={(e) => set_meets_spec(row.row_id, false, e)}
                     tabindex="0">Fail</button
                   >
                 </div>
@@ -212,7 +210,7 @@
                     label="Teach the Judge"
                     description={`Describe why this result ${row.user_says_meets_spec ? "passes" : "fails"}. Detailed explanations will improve the judge.`}
                     info_description={`Our automated judge got this one wrong. That's okay, we're here to learn and improve!\nProvide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge.`}
-                    id="feedback-{row.id}"
+                    id="feedback-{row.row_id}"
                     inputType="textarea"
                     height="base"
                     bind:value={row.feedback}

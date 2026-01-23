@@ -326,6 +326,37 @@ export interface paths {
         patch: operations["update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Spec With Copilot
+         * @description Create a spec using Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to create a spec with:
+         *     1. An eval for the spec with appropriate template
+         *     2. Batch examples via copilot API for eval, train, and golden datasets
+         *     3. A judge eval config (if judge_info provided)
+         *     4. The spec itself
+         *
+         *     If you don't need copilot, use POST /spec instead.
+         *
+         *     All models are validated before any saves occur. If validation fails,
+         *     no data is persisted.
+         */
+        post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -2717,9 +2748,9 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_result: components["schemas"]["PromptGenerationResultApi"];
-            topic_generation_result: components["schemas"]["PromptGenerationResultApi"];
-            input_generation_result: components["schemas"]["PromptGenerationResultApi"];
+            judge_result: components["schemas"]["PromptGenerationResultApi-Output"];
+            topic_generation_result: components["schemas"]["PromptGenerationResultApi-Output"];
+            input_generation_result: components["schemas"]["PromptGenerationResultApi-Output"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -2989,6 +3020,54 @@ export interface components {
              *     }
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+        };
+        /**
+         * CreateSpecWithCopilotRequest
+         * @description Request model for creating a spec with Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to:
+         *     - Generate batch examples for eval, train, and golden datasets
+         *     - Create a judge eval config
+         *     - Create an eval with appropriate template/output scores
+         *     - Create and save the spec
+         *
+         *     If you don't want to use copilot, use the regular POST /spec endpoint instead.
+         *
+         *     The client is responsible for building:
+         *     - definition: The spec definition string (use buildSpecDefinition on client)
+         *     - properties: The spec properties object (filtered, with spec_type included)
+         */
+        CreateSpecWithCopilotRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Definition
+             * @description The spec definition string, built by client using buildSpecDefinition()
+             */
+            definition: string;
+            /**
+             * Properties
+             * @description The spec properties object, pre-built by client with spec_type included
+             */
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /**
+             * Evaluate Full Trace
+             * @default false
+             */
+            evaluate_full_trace: boolean;
+            /** Reviewed Examples */
+            reviewed_examples?: components["schemas"]["ReviewedExample"][];
+            judge_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            /**
+             * Task Description
+             * @default
+             */
+            task_description: string;
+            /**
+             * Task Prompt With Few Shot
+             * @default
+             */
+            task_prompt_with_few_shot: string;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -5037,7 +5116,13 @@ export interface components {
             chain_of_thought_instructions?: string | null;
         };
         /** PromptGenerationResultApi */
-        PromptGenerationResultApi: {
+        "PromptGenerationResultApi-Input": {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
+        };
+        /** PromptGenerationResultApi */
+        "PromptGenerationResultApi-Output": {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
@@ -5544,6 +5629,25 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["RerankerModelDetails"][];
+        };
+        /**
+         * ReviewedExample
+         * @description A reviewed example from the spec review process.
+         *
+         *     Extends SampleApi with review-specific fields for tracking
+         *     model and user judgments on spec compliance.
+         */
+        ReviewedExample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Model Says Meets Spec */
+            model_says_meets_spec: boolean;
+            /** User Says Meets Spec */
+            user_says_meets_spec: boolean;
+            /** Feedback */
+            feedback: string;
         };
         /** RunConfigEvalResult */
         RunConfigEvalResult: {
@@ -7310,6 +7414,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateSpecRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpecWithCopilotRequest"];
             };
         };
         responses: {
