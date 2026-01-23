@@ -12,6 +12,7 @@
   export let on_submit: (questions_and_answers: QuestionWithAnswer[]) => void
   export let error: KilnError | null
   export let submitting: boolean
+  export let warn_before_unload: boolean
 
   // Track the selected option for each question
   // "other" means the user selected the "Other" option
@@ -94,6 +95,7 @@
     bind:error
     bind:submitting
     focus_on_mount={false}
+    {warn_before_unload}
   >
     <div class="flex flex-col gap-14">
       {#each question_set.questions as question, q_index}

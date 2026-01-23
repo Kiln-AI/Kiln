@@ -773,6 +773,7 @@
         on_submit={handle_submit_question_answers}
         bind:error
         bind:submitting
+        {warn_before_unload}
       />
     {/if}
   </AppPage>
