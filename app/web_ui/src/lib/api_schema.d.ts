@@ -2229,7 +2229,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/refine_spec_with_question_answers": {
+    "/api/copilot/refine_spec_with_question_answers": {
         parameters: {
             query?: never;
             header?: never;
@@ -2239,7 +2239,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Submit Question Answers */
-        post: operations["submit_question_answers_api_refine_spec_with_question_answers_post"];
+        post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11434,7 +11434,7 @@ export interface operations {
             };
         };
     };
-    submit_question_answers_api_refine_spec_with_question_answers_post: {
+    submit_question_answers_api_copilot_refine_spec_with_question_answers_post: {
         parameters: {
             query?: never;
             header?: never;
