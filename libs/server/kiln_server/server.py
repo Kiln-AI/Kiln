@@ -53,7 +53,8 @@ def make_app(lifespan=None):
     ]
 
     app.add_middleware(
-        CORSMiddleware,
+        # Type issue https://github.com/astral-sh/ty/issues/1635
+        CORSMiddleware,  # type: ignore[arg-type]
         allow_credentials=True,
         allow_origins=allowed_origins,
         allow_methods=["*"],
