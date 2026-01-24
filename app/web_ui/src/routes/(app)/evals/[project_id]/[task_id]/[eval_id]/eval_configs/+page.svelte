@@ -27,6 +27,10 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
 
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
+
   let score_legend_dialog: Dialog | null = null
 
   let evaluator: Eval | null = null
@@ -198,9 +202,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -233,9 +237,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -261,9 +265,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: $page.params.eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -350,9 +354,9 @@
   async function handle_set_current_eval_config(eval_config_id: string | null) {
     try {
       evaluator = await set_current_eval_config(
-        $page.params.project_id,
-        $page.params.task_id,
-        $page.params.eval_id,
+        project_id,
+        task_id,
+        eval_id,
         eval_config_id,
       )
     } catch (error) {
@@ -500,9 +504,9 @@
               <RunEval
                 btn_size="normal"
                 bind:eval_state
-                project_id={$page.params.project_id}
-                task_id={$page.params.task_id}
-                eval_id={$page.params.eval_id}
+                {project_id}
+                {task_id}
+                {eval_id}
                 run_all={true}
                 btn_primary={!focus_select_eval_config}
                 eval_type="eval_config"

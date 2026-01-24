@@ -10,8 +10,8 @@
   import { load_model_info } from "$lib/stores"
   import { load_task_run_configs } from "$lib/stores/run_configs_store"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null

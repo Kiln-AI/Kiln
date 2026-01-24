@@ -9,7 +9,7 @@
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
   import posthog from "posthog-js"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   type BaseMcpServer = {
     name: string

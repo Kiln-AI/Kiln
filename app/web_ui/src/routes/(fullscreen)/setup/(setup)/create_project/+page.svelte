@@ -22,9 +22,6 @@
   Create a Project
 </h1>
 <h3 class="text-base font-medium text-center mt-3 max-w-[600px] mx-auto">
-  "Example" is fine if you're just trying things out.
-</h3>
-<h3 class="text-sm text-center mt-1 max-w-[600px] mx-auto">
   Just exploring?
   <button class="link text-primary" on:click={example_project}
     >Create an example</button

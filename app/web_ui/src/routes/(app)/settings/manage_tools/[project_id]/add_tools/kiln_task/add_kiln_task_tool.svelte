@@ -26,7 +26,7 @@
   // Modal for creating new run config
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let selected_task: Task | null = null
   $: selected_task = tasks.find((t) => t.id === selected_task_id) || null
@@ -196,7 +196,7 @@
       await client.POST("/api/projects/{project_id}/kiln_task_tool", {
         params: {
           path: {
-            project_id: $page.params.project_id,
+            project_id,
           },
         },
         body: {
@@ -209,14 +209,14 @@
       })
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
-      uncache_available_tools($page.params.project_id)
+      uncache_available_tools(project_id)
 
       posthog.capture("added_kiln_task_tool", {
         created_run_config_in_page: created_run_config_in_page,
       })
 
       // Navigate to the manage tools page for the created tool
-      goto(`/settings/manage_tools/${$page.params.project_id}/kiln_task_tools`)
+      goto(`/settings/manage_tools/${project_id}/kiln_task_tools`)
     } catch (e) {
       error = createKilnError(e)
     } finally {

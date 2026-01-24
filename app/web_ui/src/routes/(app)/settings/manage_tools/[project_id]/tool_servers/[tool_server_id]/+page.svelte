@@ -16,8 +16,8 @@
   import { load_available_tools } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
 
-  $: project_id = $page.params.project_id
-  $: tool_server_id = $page.params.tool_server_id
+  $: project_id = $page.params.project_id!
+  $: tool_server_id = $page.params.tool_server_id!
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null

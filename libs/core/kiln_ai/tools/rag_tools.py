@@ -89,7 +89,7 @@ class RagTool(KilnToolInterface):
             raise ValueError(
                 f"Vector store config not found: {self._rag_config.vector_store_config_id}"
             )
-        self._vector_store_config = vector_store_config
+        self._vector_store_config: VectorStoreConfig = vector_store_config
         self._vector_store_adapter: BaseVectorStoreAdapter | None = None
 
         self._reranker_adapter: BaseReranker | None = None

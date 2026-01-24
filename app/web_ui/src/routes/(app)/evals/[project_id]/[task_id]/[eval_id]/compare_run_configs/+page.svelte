@@ -45,9 +45,9 @@
   import Intro from "$lib/ui/intro.svelte"
   import RunConfigSummary from "$lib/ui/run_config_component/run_config_summary.svelte"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: eval_id = $page.params.eval_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
 
   let task: Task | null = null
   let loading_task = true
@@ -410,9 +410,9 @@
     try {
       set_current_eval_config_error = null
       evaluator = await set_current_eval_config(
-        $page.params.project_id,
-        $page.params.task_id,
-        $page.params.eval_id,
+        project_id,
+        task_id,
+        eval_id,
         current_eval_config_id,
       )
     } catch (error) {
