@@ -108,8 +108,6 @@ def string_to_valid_name(name: str, truncate_to_max_length: bool = False) -> str
     # Remove leading and trailing underscores or whitespace
     valid_name = valid_name.strip("_").strip()
     if truncate_to_max_length and len(valid_name) > MAX_FILENAME_LENGTH:
-    valid_name = valid_name.strip("_").strip()
-    if truncate_to_max_length and len(valid_name) > MAX_FILENAME_LENGTH:
         valid_name = valid_name[:MAX_FILENAME_LENGTH]
         # After truncating, we might have new trailing whitespace, dots, or underscores, so strip again.
         valid_name = valid_name.strip("_").strip().rstrip(".")
