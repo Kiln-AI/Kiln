@@ -188,9 +188,10 @@
   async function fetch_eval_scores(run_config_id: string) {
     if (
       eval_scores_cache[run_config_id] ||
-      eval_scores_loading[run_config_id]
+      eval_scores_loading[run_config_id] ||
+      eval_scores_errors[run_config_id]
     ) {
-      return // Already cached or loading
+      return // Already cached, loading, or errored
     }
 
     try {
@@ -228,7 +229,8 @@
         modelId &&
         modelId !== "__create_new_run_config__" &&
         !eval_scores_cache[modelId] &&
-        !eval_scores_loading[modelId]
+        !eval_scores_loading[modelId] &&
+        !eval_scores_errors[modelId]
       ) {
         fetch_eval_scores(modelId)
       }
@@ -241,7 +243,8 @@
       if (
         config.id &&
         !eval_scores_cache[config.id] &&
-        !eval_scores_loading[config.id]
+        !eval_scores_loading[config.id] &&
+        !eval_scores_errors[config.id]
       ) {
         fetch_eval_scores(config.id)
       }
@@ -261,9 +264,10 @@
   async function fetch_eval_template(eval_id: string) {
     if (
       eval_templates_cache[eval_id] !== undefined ||
-      eval_templates_loading[eval_id]
+      eval_templates_loading[eval_id] ||
+      eval_templates_errors[eval_id]
     ) {
-      return // Already cached or loading
+      return // Already cached, loading, or errored
     }
 
     try {

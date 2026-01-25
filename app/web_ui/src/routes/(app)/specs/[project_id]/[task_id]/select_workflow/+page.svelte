@@ -115,8 +115,8 @@
               </tr>
               <tr>
                 <th class="font-bold text-xs text-gray-500">Approx. Effort</th>
-                <td class="text-center">20 min</td>
-                <td class="text-center border-l">3 min</td>
+                <td class="text-center">30 min</td>
+                <td class="text-center border-l">5 min</td>
               </tr>
               <tr class="border-b">
                 <th class="font-bold text-xs text-base-content/60"

@@ -133,7 +133,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each sorted_task_run_configs as task_run_config}
+      {#each sorted_task_run_configs as task_run_config (task_run_config.id)}
         {@const percent_complete =
           score_summary?.run_config_percent_complete?.[
             "" + task_run_config.id

@@ -31,13 +31,6 @@
     create_spec_secondary: void
   }>()
 
-  let unexpandedRows: Record<string, boolean> = {}
-
-  function toggleRowExpand(row_id: string) {
-    unexpandedRows[row_id] = !unexpandedRows[row_id]
-    unexpandedRows = unexpandedRows
-  }
-
   function formatExpandedContent(data: string): string {
     try {
       const json = JSON.parse(data)
@@ -165,24 +158,16 @@
         </thead>
         <tbody>
           {#each review_rows as row (row.id)}
-            <tr on:click={() => toggleRowExpand(row.id)} class="cursor-pointer">
+            <tr>
               <td class="py-2">
-                {#if !unexpandedRows[row.id]}
-                  <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                      row.input,
-                    )}</pre>
-                {:else}
-                  <div class="truncate w-0 min-w-full">{row.input}</div>
-                {/if}
+                <pre class="whitespace-pre-wrap">{formatExpandedContent(
+                    row.input,
+                  )}</pre>
               </td>
               <td class="py-2">
-                {#if !unexpandedRows[row.id]}
-                  <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                      row.output,
-                    )}</pre>
-                {:else}
-                  <div class="truncate w-0 min-w-full">{row.output}</div>
-                {/if}
+                <pre class="whitespace-pre-wrap">{formatExpandedContent(
+                    row.output,
+                  )}</pre>
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
