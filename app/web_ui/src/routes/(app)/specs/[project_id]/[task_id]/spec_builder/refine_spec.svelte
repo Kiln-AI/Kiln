@@ -13,7 +13,7 @@
   export let original_property_values: Record<string, string | null>
   export let refined_property_values: Record<string, string | null>
   export let suggested_edits: Record<string, SuggestedEdit>
-  export let out_of_scope_feedback: string = ""
+  export let not_incorporated_feedback: string = ""
   export let field_configs: FieldConfig[]
   export let error: KilnError | null
   export let submitting: boolean
@@ -185,14 +185,14 @@
         </FormElement>
       </div>
     {/each}
-    {#if out_of_scope_feedback}
+    {#if not_incorporated_feedback}
       <div class="col-span-2 flex flex-col gap-1">
-        <div class="font-medium text-sm">Out of Scope Feedback</div>
+        <div class="font-medium text-sm">Unincorporated Feedback</div>
         <div class="text-xs text-gray-500">
           Feedback that was outside the scope of this spec and couldn't be
           incorporated into refinements.
         </div>
-        <Output raw_output={out_of_scope_feedback} />
+        <Output raw_output={not_incorporated_feedback} />
       </div>
     {/if}
   {:else}

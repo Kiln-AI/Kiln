@@ -22,9 +22,10 @@ from pydantic import BaseModel, Field
 
 
 # Pydantic input models (replacing attrs-based client models)
-class TaskInfoApi(BaseModel):
-    task_prompt: str
-    few_shot_examples: str | None = None
+class TargetTaskInfoApi(BaseModel):
+    target_task_prompt: str
+    target_task_input_schema: str
+    target_task_output_schema: str
 
 
 class SpecInfoApi(BaseModel):
@@ -35,15 +36,15 @@ class SpecInfoApi(BaseModel):
 class ExampleWithFeedbackApi(BaseModel):
     model_config = {"populate_by_name": True}
 
-    user_rating_exhibits_issue_correct: bool
+    user_agrees_with_judge: bool
     input: str = Field(alias="input")
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
     user_feedback: str | None = None
 
 
 class ClarifySpecApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -54,16 +55,13 @@ class ClarifySpecApiInput(BaseModel):
 
 
 class RefineSpecApiInput(BaseModel):
-    task_prompt_with_few_shot: str
-    task_input_schema: str
-    task_output_schema: str
-    task_info: TaskInfoApi
+    target_task_info: TargetTaskInfoApi
     spec: SpecInfoApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
 
 class GenerateBatchApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -74,25 +72,35 @@ class GenerateBatchApiInput(BaseModel):
 class SubsampleBatchOutputItemApi(BaseModel):
     input: str = Field(alias="input")
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
+
+
+class TaskMetadataApi(BaseModel):
+    model_name: str
+    model_provider_name: ModelProviderName
+
+
+class PromptGenerationResultApi(BaseModel):
+    task_metadata: TaskMetadataApi
+    prompt: str
 
 
 class ClarifySpecApiOutput(BaseModel):
     examples_for_feedback: list[SubsampleBatchOutputItemApi]
-    model_id: str
-    model_provider: ModelProviderName
-    judge_prompt: str
+    judge_result: PromptGenerationResultApi
+    topic_generation_result: PromptGenerationResultApi
+    input_generation_result: PromptGenerationResultApi
 
 
-class SpecEditApi(BaseModel):
-    old_value: str
+class NewProposedSpecEditApi(BaseModel):
+    spec_field_name: str
     proposed_edit: str
     reason_for_edit: str
 
 
 class RefineSpecApiOutput(BaseModel):
-    new_proposed_spec_edits: dict[str, SpecEditApi]
-    out_of_scope_feedback: str
+    new_proposed_spec_edits: list[NewProposedSpecEditApi]
+    not_incorporated_feedback: str | None
 
 
 class SampleApi(BaseModel):
@@ -152,7 +160,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        refine_input = RefineSpecInput.from_dict(input.model_dump(by_alias=True))
+        refine_input = RefineSpecInput.from_dict(input.model_dump())
 
         result = await refine_spec_v1_copilot_refine_spec_post.asyncio(
             client=client,
@@ -183,7 +191,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        generate_input = GenerateBatchInput(**input.model_dump())
+        generate_input = GenerateBatchInput.from_dict(input.model_dump())
 
         result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
             client=client,

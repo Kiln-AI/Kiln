@@ -6,10 +6,9 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.model_provider_name import ModelProviderName
-
 if TYPE_CHECKING:
     from ..models.examples_for_feedback_item import ExamplesForFeedbackItem
+    from ..models.prompt_generation_result import PromptGenerationResult
 
 
 T = TypeVar("T", bound="ClarifySpecOutput")
@@ -20,15 +19,15 @@ class ClarifySpecOutput:
     """
     Attributes:
         examples_for_feedback (list[ExamplesForFeedbackItem]):
-        model_id (str):
-        model_provider (ModelProviderName): Enumeration of supported AI model providers.
-        judge_prompt (str):
+        judge_result (PromptGenerationResult): Information about a prompt generation run.
+        topic_generation_result (PromptGenerationResult): Information about a prompt generation run.
+        input_generation_result (PromptGenerationResult): Information about a prompt generation run.
     """
 
     examples_for_feedback: list[ExamplesForFeedbackItem]
-    model_id: str
-    model_provider: ModelProviderName
-    judge_prompt: str
+    judge_result: PromptGenerationResult
+    topic_generation_result: PromptGenerationResult
+    input_generation_result: PromptGenerationResult
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -37,20 +36,20 @@ class ClarifySpecOutput:
             examples_for_feedback_item = examples_for_feedback_item_data.to_dict()
             examples_for_feedback.append(examples_for_feedback_item)
 
-        model_id = self.model_id
+        judge_result = self.judge_result.to_dict()
 
-        model_provider = self.model_provider.value
+        topic_generation_result = self.topic_generation_result.to_dict()
 
-        judge_prompt = self.judge_prompt
+        input_generation_result = self.input_generation_result.to_dict()
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
                 "examples_for_feedback": examples_for_feedback,
-                "model_id": model_id,
-                "model_provider": model_provider,
-                "judge_prompt": judge_prompt,
+                "judge_result": judge_result,
+                "topic_generation_result": topic_generation_result,
+                "input_generation_result": input_generation_result,
             }
         )
 
@@ -59,6 +58,7 @@ class ClarifySpecOutput:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.examples_for_feedback_item import ExamplesForFeedbackItem
+        from ..models.prompt_generation_result import PromptGenerationResult
 
         d = dict(src_dict)
         examples_for_feedback = []
@@ -68,17 +68,17 @@ class ClarifySpecOutput:
 
             examples_for_feedback.append(examples_for_feedback_item)
 
-        model_id = d.pop("model_id")
+        judge_result = PromptGenerationResult.from_dict(d.pop("judge_result"))
 
-        model_provider = ModelProviderName(d.pop("model_provider"))
+        topic_generation_result = PromptGenerationResult.from_dict(d.pop("topic_generation_result"))
 
-        judge_prompt = d.pop("judge_prompt")
+        input_generation_result = PromptGenerationResult.from_dict(d.pop("input_generation_result"))
 
         clarify_spec_output = cls(
             examples_for_feedback=examples_for_feedback,
-            model_id=model_id,
-            model_provider=model_provider,
-            judge_prompt=judge_prompt,
+            judge_result=judge_result,
+            topic_generation_result=topic_generation_result,
+            input_generation_result=input_generation_result,
         )
 
         clarify_spec_output.additional_properties = d

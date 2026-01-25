@@ -14,19 +14,19 @@ class ExamplesForFeedbackItem:
     Attributes:
         input_ (str):
         output (str):
-        exhibits_issue (bool):
+        fails_specification (bool):
     """
 
     input_: str
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
 
     def to_dict(self) -> dict[str, Any]:
         input_ = self.input_
 
         output = self.output
 
-        exhibits_issue = self.exhibits_issue
+        fails_specification = self.fails_specification
 
         field_dict: dict[str, Any] = {}
 
@@ -34,7 +34,7 @@ class ExamplesForFeedbackItem:
             {
                 "input": input_,
                 "output": output,
-                "exhibits_issue": exhibits_issue,
+                "fails_specification": fails_specification,
             }
         )
 
@@ -47,12 +47,12 @@ class ExamplesForFeedbackItem:
 
         output = d.pop("output")
 
-        exhibits_issue = d.pop("exhibits_issue")
+        fails_specification = d.pop("fails_specification")
 
         examples_for_feedback_item = cls(
             input_=input_,
             output=output,
-            exhibits_issue=exhibits_issue,
+            fails_specification=fails_specification,
         )
 
         return examples_for_feedback_item

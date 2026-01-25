@@ -112,7 +112,7 @@
   let refined_property_values: Record<string, string | null> = {}
   // Keys are field keys
   let suggested_edits: Record<string, SuggestedEdit> = {}
-  let out_of_scope_feedback: string = ""
+  let not_incorporated_feedback: string = ""
 
   // Loading/error state
   let loading = true
@@ -256,7 +256,7 @@
       "/api/copilot/clarify_spec",
       {
         body: {
-          task_prompt_with_few_shot,
+          target_task_prompt: task_prompt_with_few_shot,
           task_input_schema,
           task_output_schema,
           spec_rendered_prompt_template,
@@ -278,16 +278,16 @@
     }
 
     judge_info = {
-      prompt: data.judge_prompt,
-      model_name: data.model_id,
-      model_provider: data.model_provider,
+      prompt: data.judge_result.prompt,
+      model_name: data.judge_result.task_metadata.model_name,
+      model_provider: data.judge_result.task_metadata.model_provider_name,
     }
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
       id: String(index + 1),
       input: example.input,
       output: example.output,
-      model_says_meets_spec: !example.exhibits_issue,
+      model_says_meets_spec: !example.fails_specification,
       user_says_meets_spec: undefined,
       feedback: "",
     }))
@@ -412,18 +412,19 @@
       const spec_field_current_values: Record<string, string> = {}
 
       for (const field of field_configs) {
+        if (field.key === "tool_function_name") continue
         spec_fields[field.key] = field.description
         spec_field_current_values[field.key] = property_values[field.key] || ""
       }
 
       // Convert reviewed examples to API format
       const examples_with_feedback = currentExamples.map((example) => ({
-        user_rating_exhibits_issue_correct:
+        user_agrees_with_judge:
           example.model_says_meets_spec === example.user_says_meets_spec,
         user_feedback: example.feedback,
         input: example.input,
         output: example.output,
-        exhibits_issue: !example.user_says_meets_spec,
+        fails_specification: !example.user_says_meets_spec,
       }))
 
       if (examples_with_feedback.length === 0) {
@@ -436,16 +437,14 @@
         "/api/copilot/refine_spec",
         {
           body: {
-            task_prompt_with_few_shot,
-            task_input_schema: task.input_json_schema
-              ? JSON.stringify(task.input_json_schema)
-              : "",
-            task_output_schema: task.output_json_schema
-              ? JSON.stringify(task.output_json_schema)
-              : "",
-            task_info: {
-              task_prompt: task.instruction || "",
-              few_shot_examples: "",
+            target_task_info: {
+              target_task_prompt: task_prompt_with_few_shot,
+              target_task_input_schema: task.input_json_schema
+                ? JSON.stringify(task.input_json_schema)
+                : "",
+              target_task_output_schema: task.output_json_schema
+                ? JSON.stringify(task.output_json_schema)
+                : "",
             },
             spec: {
               spec_fields,
@@ -464,13 +463,11 @@
       // Build refined_property_values and suggested_edits
       refined_property_values = { ...property_values }
       suggested_edits = {}
-      out_of_scope_feedback = data.out_of_scope_feedback || ""
+      not_incorporated_feedback = data.not_incorporated_feedback || ""
       if (data.new_proposed_spec_edits) {
-        for (const [field_key, edit] of Object.entries(
-          data.new_proposed_spec_edits,
-        )) {
-          refined_property_values[field_key] = edit.proposed_edit
-          suggested_edits[field_key] = {
+        for (const edit of data.new_proposed_spec_edits) {
+          refined_property_values[edit.spec_field_name] = edit.proposed_edit
+          suggested_edits[edit.spec_field_name] = {
             proposed_value: edit.proposed_edit,
             reason_for_edit: edit.reason_for_edit || "",
           }
@@ -645,7 +642,7 @@
         original_property_values={property_values}
         bind:refined_property_values
         {suggested_edits}
-        {out_of_scope_feedback}
+        {not_incorporated_feedback}
         {field_configs}
         bind:error
         bind:submitting

@@ -330,7 +330,7 @@ async function generateEvalDataBatch(
   // TODO: Fix task input/output schemas?
   const { data, error } = await client.POST("/api/copilot/generate_batch", {
     body: {
-      task_prompt_with_few_shot: task_prompt_with_few_shot,
+      target_task_prompt: task_prompt_with_few_shot,
       task_input_schema: task.input_json_schema
         ? JSON.stringify(task.input_json_schema)
         : "",
