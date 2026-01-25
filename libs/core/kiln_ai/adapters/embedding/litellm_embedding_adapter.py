@@ -136,9 +136,10 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             usage=combined_usage,
         )
 
-    def _apply_instructions_to_texts(self, input_texts: List[str]) -> List[str]:
+    def _apply_instructions_to_texts(
+        self, input_texts: List[str], instructions: str | None
+    ) -> List[str]:
         """Apply instructions to input texts in the format expected by the model."""
-        instructions = self.embedding_config.properties.get("instructions", None)
         if not instructions:
             return input_texts
 
@@ -154,8 +155,12 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 f"Too many input texts, max batch size is {MAX_BATCH_SIZE}, got {len(input_texts)}"
             )
 
-        # Apply instructions to input texts if present
-        processed_texts = self._apply_instructions_to_texts(input_texts)
+        # Validate once and reuse the same instructions everywhere
+        options = self.build_options()
+        # Apply instructions to input texts if present (validated)
+        processed_texts = self._apply_instructions_to_texts(
+            input_texts, options.instructions
+        )
 
         completion_kwargs: Dict[str, Any] = {}
         if self.litellm_core_config.additional_body_options:
@@ -170,7 +175,6 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             )
 
         # Get options excluding instructions since they're applied to text
-        options = self.build_options()
         embedding_options = options.model_dump(
             exclude_none=True, exclude={"instructions"}
         )
