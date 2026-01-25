@@ -218,7 +218,7 @@
         <FormElement
           label="Custom Instructions"
           description="Optional instructions to guide the embedding generation process."
-          info_description="Не все модели поддерживают инструкции. Оставьте пустым, если не уверены."
+          info_description="Not all models support instructions. Leave blank if unsure."
           optional={true}
           inputType="textarea"
           id="custom_instructions"
