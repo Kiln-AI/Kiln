@@ -9,9 +9,10 @@
   import { KilnError } from "$lib/utils/error_handlers"
 
   export let question_set: QuestionSet
-  export let on_submit: (
-    questions_and_answers: QuestionWithAnswer[],
-  ) => Promise<string | null>
+  export let on_submit: (questions_and_answers: QuestionWithAnswer[]) => void
+  export let error: KilnError | null
+  export let submitting: boolean
+  export let warn_before_unload: boolean
 
   // Track the selected option for each question
   // "other" means the user selected the "Other" option
@@ -23,9 +24,6 @@
 
   // Track the "Other" text for each question
   let other_texts: string[] = question_set.questions.map(() => "")
-
-  let error: KilnError | null = null
-  let submitting = false
 
   function validate(): string | null {
     for (let i = 0; i < question_set.questions.length; i++) {
@@ -74,13 +72,8 @@
       return
     }
 
-    error = null
     const questions_and_answers = build_question_answers()
-    const result = await on_submit(questions_and_answers)
-    if (result) {
-      error = new KilnError(result, null)
-    }
-    submitting = false
+    await on_submit(questions_and_answers)
   }
 
   function select_option(question_index: number, option_index: number) {
@@ -97,10 +90,12 @@
 <div class="max-w-4xl">
   <FormContainer
     submit_label="Continue"
+    compact_button={true}
     on:submit={handle_submit}
     bind:error
     bind:submitting
     focus_on_mount={false}
+    {warn_before_unload}
   >
     <div class="flex flex-col gap-14">
       {#each question_set.questions as question, q_index}

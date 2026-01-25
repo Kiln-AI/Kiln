@@ -2229,7 +2229,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/refine_spec_with_question_answers": {
+    "/api/copilot/refine_spec_with_question_answers": {
         parameters: {
             query?: never;
             header?: never;
@@ -2239,7 +2239,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Submit Question Answers */
-        post: operations["submit_question_answers_api_refine_spec_with_question_answers_post"];
+        post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5808,7 +5808,7 @@ export interface components {
             tags: string[];
             /**
              * Eval Id
-             * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
+             * @description The id of the eval to use for this spec.
              */
             eval_id: string | null;
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
@@ -11453,7 +11453,7 @@ export interface operations {
             };
         };
     };
-    submit_question_answers_api_refine_spec_with_question_answers_post: {
+    submit_question_answers_api_copilot_refine_spec_with_question_answers_post: {
         parameters: {
             query?: never;
             header?: never;

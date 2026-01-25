@@ -270,7 +270,7 @@ def connect_copilot_api(app: FastAPI):
             detail=f"Failed to generate questions: Unexpected response type {type(result)}",
         )
 
-    @app.post("/api/refine_spec_with_question_answers")
+    @app.post("/api/copilot/refine_spec_with_question_answers")
     async def submit_question_answers(
         request: SubmitAnswersRequest,
     ) -> RefineSpecWithQuestionAnswersResponse:

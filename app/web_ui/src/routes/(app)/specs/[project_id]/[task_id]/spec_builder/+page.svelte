@@ -4,7 +4,14 @@
   import { onMount, onDestroy } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { SpecType, ModelProviderName, Task } from "$lib/types"
+  import type {
+    SpecType,
+    ModelProviderName,
+    Task,
+    QuestionSet,
+    SubmitAnswersRequest,
+    QuestionWithAnswer,
+  } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
   import {
@@ -30,24 +37,30 @@
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
+  import Questions from "./questions.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
   // State machine for the spec builder flow
   //  create - Initial form for spec creation
+  //  questioning - Loading state while calling question_spec API
+  //  questions - Showing the questions to the user
   //  analyzing_for_review - Loading state while calling clarify_spec API
   //  review - Review examples table with pass/fail buttons
   //  refining - Loading state while calling refine_spec API
   //  refine - Review AI-suggested refinements side-by-side
   type BuilderState =
     | "create"
+    | "questioning"
+    | "questions"
     | "analyzing_for_review"
     | "review"
     | "refining"
     | "refine"
 
   let current_state: BuilderState = "create"
+  let has_questioned_spec = false
 
   // Form state (shared across all states)
   let spec_type: SpecType = "desired_behaviour"
@@ -99,6 +112,9 @@
 
   // Reactively update when example or task changes
   $: void (few_shot_example, task, update_task_prompt_with_few_shot())
+
+  // Question state
+  let question_set: QuestionSet | null = null
 
   // Review state
   type ReviewRow = ReviewedExample & { id: string }
@@ -302,7 +318,11 @@
   async function handle_analyze_with_copilot() {
     error = null
     try {
-      await analyzeSpecForReview()
+      if (!has_questioned_spec) {
+        await get_question_set()
+      } else {
+        await analyzeSpecForReview()
+      }
     } catch (e) {
       if (is_abort_error(e)) return
       console.error("Kiln Copilot failed to analyze spec:", e)
@@ -390,6 +410,27 @@
     }
   }
 
+  type SpecInfoForRefine = {
+    spec_fields: Record<string, string>
+    spec_field_current_values: Record<string, string>
+  }
+
+  function spec_info_for_refine(): SpecInfoForRefine {
+    // Build spec info
+    const spec_fields: Record<string, string> = {}
+    const spec_field_current_values: Record<string, string> = {}
+
+    for (const field of field_configs) {
+      if (field.key === "tool_function_name") continue
+      spec_fields[field.key] = field.description
+      spec_field_current_values[field.key] = property_values[field.key] || ""
+    }
+    return {
+      spec_fields,
+      spec_field_current_values,
+    }
+  }
+
   // Handler for continuing to refine (feedback misaligned)
   async function handle_continue_to_refine() {
     try {
@@ -405,14 +446,7 @@
       reviewed_examples = [...reviewed_examples, ...currentExamples]
 
       // Build spec info
-      const spec_fields: Record<string, string> = {}
-      const spec_field_current_values: Record<string, string> = {}
-
-      for (const field of field_configs) {
-        if (field.key === "tool_function_name") continue
-        spec_fields[field.key] = field.description
-        spec_field_current_values[field.key] = property_values[field.key] || ""
-      }
+      const spec_info = spec_info_for_refine()
 
       // Convert reviewed examples to API format
       const examples_with_feedback = currentExamples.map((example) => ({
@@ -444,8 +478,8 @@
                 : "",
             },
             spec: {
-              spec_fields,
-              spec_field_current_values,
+              spec_fields: spec_info.spec_fields,
+              spec_field_current_values: spec_info.spec_field_current_values,
             },
             examples_with_feedback,
           },
@@ -457,19 +491,14 @@
         throw api_error
       }
 
-      // Build refined_property_values and suggested_edits
-      refined_property_values = { ...property_values }
-      suggested_edits = {}
-      not_incorporated_feedback = data.not_incorporated_feedback || ""
-      if (data.new_proposed_spec_edits) {
-        for (const edit of data.new_proposed_spec_edits) {
-          refined_property_values[edit.spec_field_name] = edit.proposed_edit
-          suggested_edits[edit.spec_field_name] = {
-            proposed_value: edit.proposed_edit,
-            reason_for_edit: edit.reason_for_edit || "",
-          }
-        }
-      }
+      const processed = processProposedSpecEdits(
+        data.new_proposed_spec_edits,
+        property_values,
+        data.not_incorporated_feedback || "",
+      )
+      refined_property_values = processed.refined_property_values
+      suggested_edits = processed.suggested_edits
+      not_incorporated_feedback = processed.not_incorporated_feedback
 
       current_state = "refine"
     } catch (e) {
@@ -522,11 +551,90 @@
     }
   }
 
+  async function get_question_set() {
+    has_questioned_spec = true
+    current_state = "questioning"
+
+    const specification = buildSpecDefinition(spec_type, property_values)
+    const { data, error } = await client.POST("/api/copilot/question_spec", {
+      body: {
+        task_prompt: task_prompt_with_few_shot,
+        specification,
+      },
+      signal: new_copilot_abort_signal(),
+    })
+    if (error) {
+      throw error
+    }
+    if (data === undefined) {
+      throw new Error("Failed to create questions")
+    }
+    if (data.questions.length === 0) {
+      await analyzeSpecForReview()
+    } else {
+      question_set = data
+      current_state = "questions"
+    }
+  }
+
+  async function handle_submit_question_answers(
+    questions_and_answers: QuestionWithAnswer[],
+  ) {
+    error = null
+    current_state = "refining"
+    const spec_info = spec_info_for_refine()
+
+    const request: SubmitAnswersRequest = {
+      task_prompt: task_prompt_with_few_shot,
+      specification: {
+        spec_fields: spec_info.spec_fields,
+        spec_field_current_values: spec_info.spec_field_current_values,
+      },
+      questions_and_answers,
+    }
+
+    try {
+      const { data, error: post_error } = await client.POST(
+        "/api/copilot/refine_spec_with_question_answers",
+        {
+          body: request,
+          signal: new_copilot_abort_signal(),
+        },
+      )
+
+      if (post_error) {
+        throw post_error
+      }
+      if (!data) {
+        throw new Error("No response returned")
+      }
+
+      const processed = processProposedSpecEdits(
+        data.new_proposed_spec_edits,
+        property_values,
+      )
+      refined_property_values = processed.refined_property_values
+      suggested_edits = processed.suggested_edits
+      not_incorporated_feedback = processed.not_incorporated_feedback
+      current_state = "refine"
+    } catch (e) {
+      if (is_abort_error(e)) return
+      console.error("Kiln Copilot failed to refine spec:", e)
+      error = new KilnError("Kiln Copilot failed to refine. Please try again.")
+      current_state = "questions"
+    } finally {
+      submitting = false
+    }
+  }
+
   // Page layout helpers based on current state
   function getPageTitle(state: BuilderState): string {
     switch (state) {
       case "create":
         return "Create Spec"
+      case "questioning":
+      case "questions":
+        return "Copilot: Clarify Spec"
       case "analyzing_for_review":
       case "review":
         return "Copilot: Review and Refine"
@@ -542,11 +650,51 @@
         return "A specification describes a behaviour to enforce or avoid for your task. Adding specs lets us measure and optimize quality."
       case "analyzing_for_review":
       case "refining":
+      case "questioning":
         return undefined
+      case "questions":
+        return "Answer these questions to help clarify your spec."
       case "review":
         return "Improve your spec and judge with AI guidance."
       case "refine":
         return "Polish your spec to be analyzed further."
+    }
+  }
+
+  // Helper to process proposed spec edits from API responses
+  // Used by both handle_continue_to_refine and handle_submit_question_answers
+  type ProposedSpecEdit = {
+    spec_field_name: string
+    proposed_edit: string
+    reason_for_edit?: string | null
+  }
+
+  function processProposedSpecEdits(
+    new_proposed_spec_edits: ProposedSpecEdit[] | null | undefined,
+    current_property_values: Record<string, string | null>,
+    feedback: string = "",
+  ): {
+    refined_property_values: Record<string, string | null>
+    suggested_edits: Record<string, SuggestedEdit>
+    not_incorporated_feedback: string
+  } {
+    const refined_values = { ...current_property_values }
+    const edits: Record<string, SuggestedEdit> = {}
+
+    if (new_proposed_spec_edits) {
+      for (const edit of new_proposed_spec_edits) {
+        refined_values[edit.spec_field_name] = edit.proposed_edit
+        edits[edit.spec_field_name] = {
+          proposed_value: edit.proposed_edit,
+          reason_for_edit: edit.reason_for_edit || "",
+        }
+      }
+    }
+
+    return {
+      refined_property_values: refined_values,
+      suggested_edits: edits,
+      not_incorporated_feedback: feedback,
     }
   }
 
@@ -555,7 +703,12 @@
   function getPageClass(state: BuilderState): string {
     if (state === "review") return "max-w-[1400px]"
     if (state === "refine" && num_suggested_edits > 0) return "max-w-[1400px]"
-    if (state === "analyzing_for_review" || state === "refining") return ""
+    if (
+      state === "analyzing_for_review" ||
+      state === "refining" ||
+      state === "questioning"
+    )
+      return ""
     return "max-w-[900px]"
   }
 
@@ -614,7 +767,7 @@
       />
     {:else if current_state === "analyzing_for_review"}
       <SpecAnalyzingAnimation />
-    {:else if current_state === "refining"}
+    {:else if current_state === "refining" || current_state === "questioning"}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -645,6 +798,14 @@
         on:analyze_refined={handle_analyze_refined_spec}
         on:create_spec={() => handle_create_spec_from_refine()}
         on:create_spec_secondary={() => handle_create_spec_from_refine()}
+      />
+    {:else if current_state === "questions" && question_set}
+      <Questions
+        {question_set}
+        on_submit={handle_submit_question_answers}
+        bind:error
+        bind:submitting
+        {warn_before_unload}
       />
     {/if}
   </AppPage>
