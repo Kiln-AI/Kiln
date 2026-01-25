@@ -19,6 +19,7 @@
   export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
+  export let is_prompt_building: boolean = false
   export let warn_before_unload: boolean
   export let project_id: string
   export let task_id: string
@@ -108,7 +109,7 @@
       {project_id}
       {task_id}
       bind:selected_example={few_shot_example}
-      on:change={(e) => (few_shot_example = e.detail.example)}
+      {is_prompt_building}
     />
   {/if}
 

@@ -5914,7 +5914,9 @@ export interface components {
              * Eval Id
              * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
              */
-            eval_id?: string | null;
+            eval_id: string | null;
+            /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
+            task_sample?: components["schemas"]["TaskSample"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5931,7 +5933,8 @@ export interface components {
             /** Tags */
             tags: string[];
             /** Eval Id */
-            eval_id: string | null;
+            eval_id: string;
+            task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /** SpecInfoApi */
         SpecInfoApi: {
@@ -6484,6 +6487,22 @@ export interface components {
             prompt?: components["schemas"]["BasePrompt"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * TaskSample
+         * @description An example task input/output pair used to demonstrate expected behavior.
+         */
+        TaskSample: {
+            /**
+             * Input
+             * @description The example input for the task.
+             */
+            input: string;
+            /**
+             * Output
+             * @description The expected output for the task.
+             */
+            output: string;
         };
         /** ToneProperties */
         ToneProperties: {

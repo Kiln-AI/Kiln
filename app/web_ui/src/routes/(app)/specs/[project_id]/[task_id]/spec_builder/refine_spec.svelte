@@ -187,7 +187,7 @@
     {/each}
     {#if not_incorporated_feedback}
       <div class="col-span-2 flex flex-col gap-1">
-        <div class="font-medium text-sm">Out of Scope Feedback</div>
+        <div class="font-medium text-sm">Unincorporated Feedback</div>
         <div class="text-xs text-gray-500">
           Feedback that was outside the scope of this spec and couldn't be
           incorporated into refinements.
