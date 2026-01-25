@@ -72,6 +72,7 @@
   // Few-shot example for improving API calls
   let few_shot_example: FewShotExample | null = null
   let task_prompt_with_few_shot: string = ""
+  let is_prompt_building: boolean = false
 
   // Update the prompt when few_shot_example or task changes
   async function update_task_prompt_with_few_shot() {
@@ -79,6 +80,7 @@
       task_prompt_with_few_shot = ""
       return
     }
+    is_prompt_building = true
     try {
       const examples = few_shot_example ? [few_shot_example] : []
       task_prompt_with_few_shot = await build_prompt_with_few_shot(
@@ -90,11 +92,13 @@
       console.error("Failed to build prompt with few-shot:", e)
       // Fallback to just the instruction
       task_prompt_with_few_shot = task?.instruction || ""
+    } finally {
+      is_prompt_building = false
     }
   }
 
-  // Reactively update when example changes
-  $: void (few_shot_example && update_task_prompt_with_few_shot())
+  // Reactively update when example or task changes
+  $: void (few_shot_example, task, update_task_prompt_with_few_shot())
 
   // Review state
   type ReviewRow = ReviewedExample & { id: string }
@@ -600,6 +604,7 @@
         {full_trace_disabled}
         bind:error
         bind:submitting
+        {is_prompt_building}
         {warn_before_unload}
         {project_id}
         {task_id}
