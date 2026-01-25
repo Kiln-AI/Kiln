@@ -26,6 +26,7 @@
   let description: string = ""
   let selectedModel: EmbeddingOptionValue | null = null
   let customDimensions: number | null = null
+  let customInstructions: string = ""
   let embeddingModels: OptionGroup[] = []
   export let keyboard_submit: boolean = false
 
@@ -35,6 +36,7 @@
     n_dimensions: number | null
     max_input_tokens: number | null
     supports_custom_dimensions: boolean | null
+    supports_instructions: boolean | null
   }
 
   const dispatch = createEventDispatcher<{
@@ -69,6 +71,7 @@
               n_dimensions: model.n_dimensions,
               max_input_tokens: model.max_input_tokens,
               supports_custom_dimensions: model.supports_custom_dimensions,
+              supports_instructions: model.supports_instructions,
               suggested_for_chunk_embedding:
                 model.suggested_for_chunk_embedding,
             },
@@ -88,10 +91,17 @@
   function get_properties(
     selectedModel: EmbeddingOptionValue,
   ): Record<never, never> | EmbeddingProperties {
+    const properties: EmbeddingProperties = {}
+
     if (customDimensions && selectedModel.supports_custom_dimensions) {
-      return { dimensions: customDimensions }
+      properties.dimensions = customDimensions
     }
-    return {}
+
+    if (customInstructions.trim() && selectedModel.supports_instructions) {
+      properties.instructions = customInstructions.trim()
+    }
+
+    return properties
   }
 
   async function create_embedding_config() {
@@ -201,6 +211,19 @@
             label: "Custom Dimensions",
             optional: true,
           })}
+        />
+      {/if}
+
+      {#if selectedModel && selectedModel.supports_instructions}
+        <FormElement
+          label="Custom Instructions"
+          description="Optional instructions to guide the embedding generation process."
+          info_description="Не все модели поддерживают инструкции. Оставьте пустым, если не уверены."
+          optional={true}
+          inputType="textarea"
+          id="custom_instructions"
+          bind:value={customInstructions}
+          placeholder="Enter custom instructions for the embedding model..."
         />
       {/if}
     </Collapse>

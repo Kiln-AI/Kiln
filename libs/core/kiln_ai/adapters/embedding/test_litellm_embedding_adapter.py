@@ -606,6 +606,48 @@ class TestLitellmEmbeddingAdapter:
         )
         assert adapter.embedding_config == mock_embedding_config
 
+    def test_apply_instructions_to_texts_no_instructions(self, mock_litellm_adapter):
+        """Test _apply_instructions_to_texts when no instructions are provided."""
+        input_texts = ["text1", "text2", "text3"]
+        result = mock_litellm_adapter._apply_instructions_to_texts(input_texts)
+        assert result == input_texts
+
+    def test_apply_instructions_to_texts_with_instructions(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
+        """Test _apply_instructions_to_texts when instructions are provided."""
+        # Set instructions in the config
+        mock_embedding_config.properties = {"instructions": "Use semantic similarity"}
+
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
+
+        input_texts = ["What is AI?", "How does ML work?"]
+        result = adapter._apply_instructions_to_texts(input_texts)
+
+        expected = [
+            "Instruct: Use semantic similarity\nQuery: What is AI?",
+            "Instruct: Use semantic similarity\nQuery: How does ML work?",
+        ]
+        assert result == expected
+
+    def test_apply_instructions_to_texts_empty_instructions(
+        self, mock_embedding_config, mock_litellm_core_config
+    ):
+        """Test _apply_instructions_to_texts when instructions are empty string."""
+        # Set empty instructions in the config
+        mock_embedding_config.properties = {"instructions": ""}
+
+        adapter = LitellmEmbeddingAdapter(
+            mock_embedding_config, litellm_core_config=mock_litellm_core_config
+        )
+
+        input_texts = ["text1", "text2"]
+        result = adapter._apply_instructions_to_texts(input_texts)
+        # Empty instructions should be treated as no instructions
+        assert result == input_texts
+
     async def test_generate_embeddings_method_integration(self, mock_litellm_adapter):
         """Test the public embed method integration."""
         mock_response = AsyncMock(spec=EmbeddingResponse)

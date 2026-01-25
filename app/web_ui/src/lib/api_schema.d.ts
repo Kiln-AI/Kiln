@@ -4119,6 +4119,8 @@ export interface components {
             supports_custom_dimensions: boolean;
             /** Suggested For Chunk Embedding */
             suggested_for_chunk_embedding: boolean;
+            /** Supports Instructions */
+            supports_instructions: boolean;
         };
         /**
          * EmbeddingModelName
@@ -4130,6 +4132,8 @@ export interface components {
         EmbeddingProperties: {
             /** Dimensions */
             dimensions?: number;
+            /** Instructions */
+            instructions?: string;
         };
         /** EmbeddingProvider */
         EmbeddingProvider: {

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 class EmbeddingProperties(TypedDict, total=False):
     dimensions: PositiveInt
+    instructions: str
 
 
 class EmbeddingConfig(KilnParentedModel):
