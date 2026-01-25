@@ -5808,7 +5808,7 @@ export interface components {
             tags: string[];
             /**
              * Eval Id
-             * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
+             * @description The id of the eval to use for this spec.
              */
             eval_id: string | null;
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
