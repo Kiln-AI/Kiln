@@ -1,7 +1,9 @@
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
+    question_spec_v1_copilot_question_spec_post,
     refine_spec_v1_copilot_refine_spec_post,
+    refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecInput,
@@ -12,11 +14,29 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     RefineSpecInput,
     RefineSpecOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    QuestionSet as QuestionSetServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    RefineSpecWithQuestionAnswersResponse as RefineSpecWithQuestionAnswersResponseServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SpecQuestionerInput as SpecQuestionerInputServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SubmitAnswersRequest as SubmitAnswersRequestServerApi,
+)
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.questions import (
+    QuestionSet,
+    RefineSpecWithQuestionAnswersResponse,
+    SpecQuestionerInput,
+    SubmitAnswersRequest,
+)
 from kiln_ai.utils.config import Config
 from pydantic import BaseModel, Field
 
@@ -215,4 +235,73 @@ def connect_copilot_api(app: FastAPI):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+        )
+
+    @app.post("/api/copilot/question_spec")
+    async def question_spec(
+        input: SpecQuestionerInput,
+    ) -> QuestionSet:
+        api_key = _get_api_key()
+        client = get_authenticated_client(api_key)
+
+        questioner_input = SpecQuestionerInputServerApi.from_dict(input.model_dump())
+
+        result = await question_spec_v1_copilot_question_spec_post.asyncio(
+            client=client,
+            body=questioner_input,
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate questions: No response"
+            )
+
+        if isinstance(result, HTTPValidationError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Validation error: {result.to_dict()}",
+            )
+
+        if isinstance(result, QuestionSetServerApi):
+            return QuestionSet.model_validate(result.to_dict())
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate questions: Unexpected response type {type(result)}",
+        )
+
+    @app.post("/api/copilot/refine_spec_with_question_answers")
+    async def submit_question_answers(
+        request: SubmitAnswersRequest,
+    ) -> RefineSpecWithQuestionAnswersResponse:
+        api_key = _get_api_key()
+        client = get_authenticated_client(api_key)
+
+        submit_input = SubmitAnswersRequestServerApi.from_dict(request.model_dump())
+
+        result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio(
+            client=client,
+            body=submit_input,
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to refine spec with question answers: No response",
+            )
+
+        if isinstance(result, HTTPValidationError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Validation error: {result.to_dict()}",
+            )
+
+        if isinstance(result, RefineSpecWithQuestionAnswersResponseServerApi):
+            return RefineSpecWithQuestionAnswersResponse.model_validate(
+                result.to_dict()
+            )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refine spec with question answers: Unexpected response type {type(result)}",
         )

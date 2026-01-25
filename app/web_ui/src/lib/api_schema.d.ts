@@ -2212,10 +2212,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/copilot/question_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Question Spec */
+        post: operations["question_spec_api_copilot_question_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/refine_spec_with_question_answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Question Answers */
+        post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerOption */
+        AnswerOption: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+        };
+        /**
+         * AnswerOptionWithSelection
+         * @description An answer option with user selection state.
+         */
+        AnswerOptionWithSelection: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+            /**
+             * selected
+             * @description Whether the user selected this answer option
+             */
+            selected: boolean;
+        };
         /** ApiPrompt */
         ApiPrompt: {
             /**
@@ -5013,6 +5081,27 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /**
+         * ProposedSpecEdit
+         * @description A proposed edit to a spec field.
+         */
+        ProposedSpecEdit: {
+            /**
+             * spec_field_name
+             * @description The name of the spec field that is being edited
+             */
+            spec_field_name: string;
+            /**
+             * proposed_edit
+             * @description A new value for this spec field incorporating the feedback
+             */
+            proposed_edit: string;
+            /**
+             * reason_for_edit
+             * @description The reason for editing this spec field
+             */
+            reason_for_edit: string;
+        };
         /** ProviderEmbeddingModels */
         ProviderEmbeddingModels: {
             /** Models */
@@ -5040,6 +5129,58 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /** Question */
+        Question: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description A list of possible answers to this question for the user to select from
+             */
+            answer_options: components["schemas"]["AnswerOption"][];
+        };
+        /** QuestionSet */
+        QuestionSet: {
+            /**
+             * questions
+             * @description A set of questions to ask about the specification
+             */
+            questions: components["schemas"]["Question"][];
+        };
+        /**
+         * QuestionWithAnswer
+         * @description A question with user-provided answer.
+         */
+        QuestionWithAnswer: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description Possible answers the user was asked to select from
+             */
+            answer_options: components["schemas"]["AnswerOptionWithSelection"][];
+            /**
+             * custom_answer
+             * @description User-provided text feedback when predefined answer options don't fit
+             */
+            custom_answer?: string | null;
         };
         /** RagConfig */
         RagConfig: {
@@ -5285,6 +5426,17 @@ export interface components {
             new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
             /** Not Incorporated Feedback */
             not_incorporated_feedback: string | null;
+        };
+        /**
+         * RefineSpecWithQuestionAnswersResponse
+         * @description Response containing proposed spec edits based on question answers.
+         */
+        RefineSpecWithQuestionAnswersResponse: {
+            /**
+             * new_proposed_spec_edits
+             * @description A list of proposed edits to spec fields
+             */
+            new_proposed_spec_edits: components["schemas"]["ProposedSpecEdit"][];
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5656,7 +5808,7 @@ export interface components {
             tags: string[];
             /**
              * Eval Id
-             * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
+             * @description The id of the eval to use for this spec.
              */
             eval_id: string | null;
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
@@ -5691,12 +5843,55 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** SpecQuestionerInput */
+        SpecQuestionerInput: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * task_input_schema
+             * @description If the task's input must conform to a specific input schema, it will be provided here
+             */
+            task_input_schema?: string | null;
+            /**
+             * task_output_schema
+             * @description If the task's output must conform to a specific schema, it will be provided here
+             */
+            task_output_schema?: string | null;
+            /**
+             * specification
+             * @description The specification to analyze
+             */
+            specification: string;
+        };
         /**
          * SpecStatus
          * @description Defines the status of a spec.
          * @enum {string}
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
+        /**
+         * SpecificationInput
+         * @description The specification to refine.
+         */
+        SpecificationInput: {
+            /**
+             * spec_fields
+             * @description Dictionary mapping field names to their descriptions/purposes
+             */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /**
+             * spec_field_current_values
+             * @description Dictionary mapping field names to their current values
+             */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
         /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
@@ -5712,6 +5907,27 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /**
+         * SubmitAnswersRequest
+         * @description Request to submit answers to a question set.
+         */
+        SubmitAnswersRequest: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * specification
+             * @description The specification to refine
+             */
+            specification: components["schemas"]["SpecificationInput"];
+            /**
+             * questions_and_answers
+             * @description Questions about the specification with user-provided answers
+             */
+            questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
+        };
         /** SubsampleBatchOutputItemApi */
         SubsampleBatchOutputItemApi: {
             /** Input */
@@ -11191,6 +11407,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateBatchApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_spec_api_copilot_question_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecQuestionerInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_question_answers_api_copilot_refine_spec_with_question_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineSpecWithQuestionAnswersResponse"];
                 };
             };
             /** @description Validation Error */
