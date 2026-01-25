@@ -12,13 +12,13 @@ export type FewShotExample = {
 /**
  * How the example was auto-selected (data label, not UI state).
  */
-export type AutoSelectType = "highly_rated" | "most_recent" | null
+export type AutoSelectType = "highly_rated" | "most_recent"
 
 /**
  * Result of fetching few-shot examples from the dataset.
  */
 export type FewShotFetchResult = {
-  auto_select_type: AutoSelectType
+  auto_select_type: AutoSelectType | null
   selected_example: FewShotExample | null
   available_runs: TaskRun[]
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, createEventDispatcher } from "svelte"
+  import { onMount } from "svelte"
   import type { TaskRun } from "$lib/types"
   import {
     type FewShotExample,
@@ -15,14 +15,11 @@
   export let project_id: string
   export let task_id: string
   export let selected_example: FewShotExample | null = null
-
-  const dispatch = createEventDispatcher<{
-    change: { example: FewShotExample | null }
-  }>()
+  export let is_prompt_building: boolean = false
 
   // Data from API
   let available_runs: TaskRun[] = []
-  let auto_select_type: AutoSelectType = null
+  let auto_select_type: AutoSelectType | null = null
   let error: string | null = null
 
   // UI states
@@ -31,27 +28,7 @@
   let manual_output: string = ""
   let show_manual_entry: boolean = false
   let is_changing_selection: boolean = false
-  let user_made_selection: boolean = false // tracks if user explicitly selected/entered
-
-  // Selection status for badge display (derived from state)
-  type SelectionStatus =
-    | "auto_selected_highly_rated"
-    | "auto_selected_recent"
-    | "user_selected"
-    | "manual_entry"
-    | null
-
-  $: selection_status = ((): SelectionStatus => {
-    if (!selected_example) return null
-    if (user_made_selection) {
-      return show_manual_entry || !available_runs.length
-        ? "manual_entry"
-        : "user_selected"
-    }
-    if (auto_select_type === "highly_rated") return "auto_selected_highly_rated"
-    if (auto_select_type === "most_recent") return "auto_selected_recent"
-    return null
-  })()
+  let user_verification_desired: boolean = false // tracks if user should verify the selection before continuing (open collapse for them)
 
   // Pagination
   const PAGE_SIZE = 5
@@ -77,8 +54,6 @@
     selected_example = task_run_to_example(run)
     show_manual_entry = false
     is_changing_selection = false
-    user_made_selection = true
-    dispatch("change", { example: selected_example })
   }
 
   // Start changing selection (shows table without clearing current selection)
@@ -111,8 +86,6 @@
       }
       is_changing_selection = false
       show_manual_entry = true // keep this true so we know it was manual entry
-      user_made_selection = true
-      dispatch("change", { example: selected_example })
     }
   }
 
@@ -121,53 +94,56 @@
       const result = await fetch_few_shot_candidates(project_id, task_id)
       auto_select_type = result.auto_select_type
       available_runs = result.available_runs
-      selected_example = result.selected_example
+
+      // Only auto-select if no example was pre-populated by parent
+      if (!selected_example) {
+        selected_example = result.selected_example
+      }
 
       // Auto-show manual entry when no samples exist
       if (available_runs.length === 0) {
         show_manual_entry = true
       }
-
-      if (result.selected_example) {
-        dispatch("change", { example: result.selected_example })
-      }
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load dataset samples"
     } finally {
+      user_verification_desired = auto_select_type !== "highly_rated"
       loading = false
     }
   })
 
   $: has_valid_manual_entry = manual_input.trim() && manual_output.trim()
 
-  function badge_for_status(status: SelectionStatus): string | null {
-    switch (status) {
-      case "auto_selected_highly_rated":
+  function badge(auto_select_type: AutoSelectType | null): string | null {
+    if (!auto_select_type) return null
+    switch (auto_select_type) {
+      case "highly_rated":
         return "Autoselected Highly Rated"
-      case "auto_selected_recent":
+      case "most_recent":
         return "Autoselected Recent"
     }
-    return null
   }
 
-  function badge_data_tip_for_status(status: SelectionStatus): string | null {
-    switch (status) {
-      case "auto_selected_highly_rated":
-        return "A 5-star rated sample was found and selected automatically."
-      case "auto_selected_recent":
+  function badge_data_tip(
+    auto_select_type: AutoSelectType | null,
+  ): string | null {
+    if (!auto_select_type) return null
+    switch (auto_select_type) {
+      case "highly_rated":
+        return "A 5-star rated sample was found in your dataset and selected automatically."
+      case "most_recent":
         return "Your most recent dataset sample was selected automatically."
     }
-    return null
   }
 </script>
 
 <Collapse
-  title="Input & Output Example"
-  badge={badge_for_status(selection_status)}
+  title="Task Sample"
+  badge={badge(auto_select_type)}
   badge_position="right"
-  badge_data_tip={badge_data_tip_for_status(selection_status)}
-  description="This example will be used to help our AI better understand your task when generating synthetic data."
-  open={!loading && selection_status !== "auto_selected_highly_rated"}
+  badge_data_tip={badge_data_tip(auto_select_type)}
+  description="An example of the task running properly. It's used to help understand expected behaviour."
+  open={user_verification_desired}
 >
   <div class="few-shot-selector">
     {#if loading}
@@ -181,7 +157,14 @@
       </div>
     {:else if selected_example && !is_changing_selection}
       <!-- Selected example view - shared across all statuses -->
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-4 relative">
+        {#if is_prompt_building}
+          <div
+            class="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg"
+          >
+            <div class="loading loading-spinner loading-sm"></div>
+          </div>
+        {/if}
         <div>
           <div class="text-sm font-medium text-left">Input</div>
           <div class="mt-1">
@@ -295,7 +278,7 @@
                         <button
                           type="button"
                           class="btn btn-xs btn-outline"
-                          on:click={() => select_run(run)}
+                          on:click|stopPropagation={() => select_run(run)}
                         >
                           Select
                         </button>

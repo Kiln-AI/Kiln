@@ -38,7 +38,7 @@
       {/if}
     </div>
     {#if description}
-      <div class="text-{small ? 'xs' : 'sm'} text-gray-500">
+      <div class="{small ? 'text-xs' : 'text-sm'} text-gray-500">
         {description}
       </div>
     {/if}

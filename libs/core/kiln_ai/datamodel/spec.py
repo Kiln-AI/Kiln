@@ -1,12 +1,19 @@
 from enum import Enum
 from typing import List
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec_properties import SpecProperties
+
+
+class TaskSample(BaseModel):
+    """An example task input/output pair used to demonstrate expected behavior."""
+
+    input: str = Field(description="The example input for the task.")
+    output: str = Field(description="The expected output for the task.")
 
 
 class SpecStatus(str, Enum):
@@ -41,9 +48,12 @@ class Spec(KilnParentedModel):
         default=[],
         description="The tags of the spec.",
     )
-    eval_id: ID_TYPE | None = Field(
-        default=None,
+    eval_id: ID_TYPE = Field(
         description="The id of the eval to use for this spec. If None, the spec is not associated with an eval.",
+    )
+    task_sample: TaskSample | None = Field(
+        default=None,
+        description="An example task input/output pair used to demonstrate expected behavior for this spec.",
     )
 
     @model_validator(mode="after")
