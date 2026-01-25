@@ -49,7 +49,7 @@ class Spec(KilnParentedModel):
         description="The tags of the spec.",
     )
     eval_id: ID_TYPE = Field(
-        description="The id of the eval to use for this spec. If None, the spec is not associated with an eval.",
+        description="The id of the eval to use for this spec.",
     )
     task_sample: TaskSample | None = Field(
         default=None,
