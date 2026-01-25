@@ -536,25 +536,21 @@
         throw api_error
       }
 
-      // Build refined_property_values and suggested_edits
-      refined_property_values = { ...property_values }
-      suggested_edits = {}
-      not_incorporated_feedback = data.not_incorporated_feedback || ""
-      if (data.new_proposed_spec_edits) {
-        for (const edit of data.new_proposed_spec_edits) {
-          refined_property_values[edit.spec_field_name] = edit.proposed_edit
-          suggested_edits[edit.spec_field_name] = {
-            proposed_value: edit.proposed_edit,
-            reason_for_edit: edit.reason_for_edit || "",
-          }
-        }
-      }
+      const processed = processProposedSpecEdits(
+        data.new_proposed_spec_edits,
+        property_values,
+        data.not_incorporated_feedback || "",
+      )
+      refined_property_values = processed.refined_property_values
+      suggested_edits = processed.suggested_edits
+      not_incorporated_feedback = processed.not_incorporated_feedback
 
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
       console.error("Kiln Copilot failed to refine spec:", e)
       error = new KilnError("Kiln Copilot failed to refine. Please try again.")
+      current_state = "review"
     } finally {
       submitting = false
     }
@@ -658,19 +654,13 @@
         throw new Error("No response returned")
       }
 
-      // Build refined_property_values and suggested_edits
-      refined_property_values = { ...property_values }
-      suggested_edits = {}
-      not_incorporated_feedback = ""
-      if (data.new_proposed_spec_edits) {
-        for (const edit of data.new_proposed_spec_edits) {
-          refined_property_values[edit.spec_field_name] = edit.proposed_edit
-          suggested_edits[edit.spec_field_name] = {
-            proposed_value: edit.proposed_edit,
-            reason_for_edit: edit.reason_for_edit || "",
-          }
-        }
-      }
+      const processed = processProposedSpecEdits(
+        data.new_proposed_spec_edits,
+        property_values,
+      )
+      refined_property_values = processed.refined_property_values
+      suggested_edits = processed.suggested_edits
+      not_incorporated_feedback = processed.not_incorporated_feedback
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
@@ -713,6 +703,43 @@
         return "Improve your spec and judge with AI guidance."
       case "refine":
         return "Polish your spec to be analyzed further."
+    }
+  }
+
+  // Helper to process proposed spec edits from API responses
+  // Used by both handle_continue_to_refine and handle_submit_question_answers
+  type ProposedSpecEdit = {
+    spec_field_name: string
+    proposed_edit: string
+    reason_for_edit?: string | null
+  }
+
+  function processProposedSpecEdits(
+    new_proposed_spec_edits: ProposedSpecEdit[] | null | undefined,
+    current_property_values: Record<string, string | null>,
+    feedback: string = "",
+  ): {
+    refined_property_values: Record<string, string | null>
+    suggested_edits: Record<string, SuggestedEdit>
+    not_incorporated_feedback: string
+  } {
+    const refined_values = { ...current_property_values }
+    const edits: Record<string, SuggestedEdit> = {}
+
+    if (new_proposed_spec_edits) {
+      for (const edit of new_proposed_spec_edits) {
+        refined_values[edit.spec_field_name] = edit.proposed_edit
+        edits[edit.spec_field_name] = {
+          proposed_value: edit.proposed_edit,
+          reason_for_edit: edit.reason_for_edit || "",
+        }
+      }
+    }
+
+    return {
+      refined_property_values: refined_values,
+      suggested_edits: edits,
+      not_incorporated_feedback: feedback,
     }
   }
 
