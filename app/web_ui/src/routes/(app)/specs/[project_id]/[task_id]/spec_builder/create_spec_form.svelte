@@ -6,6 +6,8 @@
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
+  import FewShotSelector from "$lib/utils/few_shot_selector.svelte"
+  import type { FewShotExample } from "$lib/utils/few_shot_example"
 
   export let name: string
   export let property_values: Record<string, string | null>
@@ -13,11 +15,15 @@
   export let evaluate_full_trace: boolean
   export let field_configs: FieldConfig[]
   export let copilot_enabled: boolean
-  export let show_advanced_options: boolean
+  export let hide_include_conversation_history: boolean
   export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
+  export let is_prompt_building: boolean = false
   export let warn_before_unload: boolean
+  export let project_id: string
+  export let task_id: string
+  export let few_shot_example: FewShotExample | null = null
 
   let form_container: FormContainer
 
@@ -98,7 +104,16 @@
     />
   {/each}
 
-  {#if show_advanced_options}
+  {#if copilot_enabled}
+    <FewShotSelector
+      {project_id}
+      {task_id}
+      bind:selected_example={few_shot_example}
+      {is_prompt_building}
+    />
+  {/if}
+
+  {#if !hide_include_conversation_history}
     <Collapse title="Advanced Options">
       <FormElement
         label="Include conversation history"

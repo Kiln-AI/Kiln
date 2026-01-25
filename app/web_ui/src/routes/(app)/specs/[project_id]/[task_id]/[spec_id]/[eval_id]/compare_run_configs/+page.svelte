@@ -405,8 +405,8 @@
     try {
       set_current_eval_config_error = null
       evaluator = await set_current_eval_config(
-        $page.params.project_id,
-        $page.params.task_id,
+        project_id,
+        task_id,
         eval_id,
         current_eval_config_id,
       )

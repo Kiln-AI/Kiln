@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
-from kiln_ai.datamodel.spec import Spec, SpecStatus
+from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import (
     DesiredBehaviourProperties,
     HallucinationsProperties,
@@ -48,6 +48,14 @@ def project_and_task(tmp_path):
     task.save_to_file()
 
     return project, task
+
+
+def create_task_sample_dict():
+    """Helper to create a valid task sample for API tests."""
+    return {
+        "input": "Example input",
+        "output": "Example output",
+    }
 
 
 def create_tone_properties_dict():
@@ -131,7 +139,8 @@ def test_create_spec_success(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": ["test", "important"],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -159,7 +168,8 @@ def test_create_spec_success(client, project_and_task):
     assert specs[0].status == SpecStatus.active
 
 
-def test_create_spec_with_eval_id_none(client, project_and_task):
+def test_create_spec_minimal(client, project_and_task):
+    """Test creating a spec with minimal required fields."""
     project, task = project_and_task
 
     spec_data = {
@@ -169,7 +179,8 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_toxicity_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -186,7 +197,7 @@ def test_create_spec_with_eval_id_none(client, project_and_task):
     assert res["priority"] == 1
     assert res["status"] == "active"
     assert res["tags"] == []
-    assert res["eval_id"] is None
+    assert res["eval_id"] == "test_eval_id"
 
 
 def test_create_spec_task_not_found(client):
@@ -197,7 +208,8 @@ def test_create_spec_task_not_found(client):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     response = client.post(
@@ -215,6 +227,7 @@ def test_get_specs_success(
         name="Spec 1",
         definition="System should respond appropriately",
         properties=sample_tone_properties,
+        eval_id="test_eval_id_1",
         parent=task,
     )
     spec1.save_to_file()
@@ -224,6 +237,7 @@ def test_get_specs_success(
         definition="No toxic responses",
         priority=Priority.p3,
         properties=sample_toxicity_properties,
+        eval_id="test_eval_id_2",
         parent=task,
     )
     spec2.save_to_file()
@@ -268,6 +282,7 @@ def test_get_spec_success(client, project_and_task, sample_hallucinations_proper
         status=SpecStatus.active,
         tags=["validation", "safety"],
         properties=sample_hallucinations_properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -311,6 +326,7 @@ def test_update_spec_success(client, project_and_task, sample_tone_properties):
         status=SpecStatus.active,
         tags=["old_tag"],
         properties=sample_tone_properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -442,6 +458,7 @@ def test_update_spec_status_only(client, project_and_task, sample_tone_propertie
         status=SpecStatus.active,
         tags=["test"],
         properties=sample_tone_properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -502,6 +519,7 @@ def test_create_spec_with_eval_id(client, project_and_task):
         "tags": [],
         "properties": create_reference_answer_accuracy_properties_dict(),
         "eval_id": "test_eval_123",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -534,7 +552,8 @@ def test_create_spec_with_properties(client, project_and_task):
             "desired_behaviour_description": "Avoid toxic language and offensive content",
             "incorrect_behaviour_examples": "Example 1: Don't use slurs\nExample 2: Don't be rude",
         },
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -573,7 +592,8 @@ def test_create_spec_with_archived_status(client, project_and_task):
         "status": SpecStatus.archived.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -603,6 +623,7 @@ def test_get_spec_with_archived_status(
         definition="This spec is archived",
         status=SpecStatus.archived,
         properties=sample_tone_properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -631,7 +652,8 @@ def test_create_spec_missing_name(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -658,7 +680,8 @@ def test_create_spec_missing_definition(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -686,7 +709,8 @@ def test_create_spec_missing_properties(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": None,
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -711,7 +735,8 @@ def test_create_spec_missing_priority(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -738,7 +763,8 @@ def test_create_spec_missing_status(client, project_and_task):
         "priority": Priority.p1,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -765,7 +791,8 @@ def test_create_spec_missing_tags(client, project_and_task):
         "priority": Priority.p1,
         "status": SpecStatus.active.value,
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -793,7 +820,8 @@ def test_create_spec_invalid_spec_type_in_properties(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": {"spec_type": "invalid_type_value"},
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -821,7 +849,8 @@ def test_create_spec_invalid_priority_enum(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -849,7 +878,8 @@ def test_create_spec_invalid_status_enum(client, project_and_task):
         "status": "pending",
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -877,7 +907,8 @@ def test_create_spec_invalid_name_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -902,7 +933,8 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": "not_a_list",
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -927,7 +959,8 @@ def test_create_spec_empty_string_in_tags(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": [""],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -955,7 +988,8 @@ def test_create_spec_tag_with_space(client, project_and_task):
         "status": SpecStatus.active.value,
         "tags": ["tag with space"],
         "properties": create_tone_properties_dict(),
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -986,6 +1020,7 @@ def test_update_spec_invalid_name_type(
         name="Test Spec",
         definition="System should behave correctly",
         properties=sample_tone_properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -1025,7 +1060,8 @@ def test_create_spec_with_empty_tool_function_name(client, project_and_task):
             "appropriate_tool_use_examples": "examples",
             "inappropriate_tool_use_examples": "examples",
         },
-        "eval_id": None,
+        "eval_id": "test_eval_id",
+        "task_sample": create_task_sample_dict(),
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -1061,7 +1097,7 @@ def test_create_spec_with_empty_tool_use_guidelines(client, project_and_task):
             "appropriate_tool_use_examples": "examples",
             "inappropriate_tool_use_examples": "examples",
         },
-        "eval_id": None,
+        "eval_id": "test_eval_id",
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -1094,7 +1130,7 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
             "desired_behaviour_description": "",
             "incorrect_behaviour_examples": "Example 1: Don't do this",
         },
-        "eval_id": None,
+        "eval_id": "test_eval_id",
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -1126,7 +1162,7 @@ def test_create_spec_with_empty_core_requirement(client, project_and_task):
             "core_requirement": "",
             "tone_description": "Professional and friendly",
         },
-        "eval_id": None,
+        "eval_id": "test_eval_id",
     }
 
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
@@ -1151,6 +1187,7 @@ def test_delete_spec_success(client, project_and_task, sample_tone_properties):
         name="Test Spec",
         definition="System should behave correctly",
         properties=sample_tone_properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -1240,14 +1277,14 @@ def test_delete_spec_with_associated_eval(
 def test_delete_spec_without_associated_eval(
     client, project_and_task, sample_tone_properties
 ):
-    """Test that deleting a spec without an eval works correctly."""
+    """Test that deleting a spec with a non-existent eval works correctly."""
     project, task = project_and_task
 
     spec = Spec(
         name="Test Spec",
         definition="System should behave correctly",
         properties=sample_tone_properties,
-        eval_id=None,
+        eval_id="nonexistent_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -1265,3 +1302,102 @@ def test_delete_spec_without_associated_eval(
 
     specs = task.specs()
     assert len(specs) == 0
+
+
+def test_create_spec_with_task_sample(client, project_and_task):
+    """Test creating a spec with a task sample."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Spec With Sample",
+        "definition": "Test spec with task sample",
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": create_tone_properties_dict(),
+        "eval_id": "test_eval_id",
+        "task_sample": {
+            "input": "What is the capital of France?",
+            "output": "The capital of France is Paris.",
+        },
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["name"] == "Spec With Sample"
+    assert res["task_sample"] is not None
+    assert res["task_sample"]["input"] == "What is the capital of France?"
+    assert res["task_sample"]["output"] == "The capital of France is Paris."
+
+    specs = task.specs()
+    assert len(specs) == 1
+    assert specs[0].task_sample is not None
+    assert specs[0].task_sample.input == "What is the capital of France?"
+    assert specs[0].task_sample.output == "The capital of France is Paris."
+
+
+def test_create_spec_without_task_sample(client, project_and_task):
+    """Test creating a spec without a task sample (should default to None)."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Spec Without Sample",
+        "definition": "Test spec without task sample",
+        "priority": Priority.p1,
+        "status": SpecStatus.active.value,
+        "tags": [],
+        "properties": create_tone_properties_dict(),
+        "eval_id": "test_eval_id",
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["name"] == "Spec Without Sample"
+    assert res["task_sample"] is None
+
+    specs = task.specs()
+    assert len(specs) == 1
+    assert specs[0].task_sample is None
+
+
+def test_get_spec_with_task_sample(client, project_and_task, sample_tone_properties):
+    """Test getting a spec with a task sample."""
+    project, task = project_and_task
+
+    sample = TaskSample(
+        input="Example input for get test",
+        output="Example output for get test",
+    )
+    spec = Spec(
+        name="Test Spec With Sample",
+        definition="System should behave correctly",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        task_sample=sample,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}"
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["task_sample"] is not None
+    assert res["task_sample"]["input"] == "Example input for get test"
+    assert res["task_sample"]["output"] == "Example output for get test"

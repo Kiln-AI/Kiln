@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval
-from kiln_ai.datamodel.spec import Spec, SpecStatus
+from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
@@ -44,7 +44,8 @@ class SpecCreationRequest(BaseModel):
     priority: Priority
     status: SpecStatus
     tags: List[str]
-    eval_id: str | None
+    eval_id: str
+    task_sample: TaskSample | None = None
 
 
 def connect_spec_api(app: FastAPI):
@@ -62,6 +63,7 @@ def connect_spec_api(app: FastAPI):
             status=spec_data.status,
             tags=spec_data.tags,
             eval_id=spec_data.eval_id,
+            task_sample=spec_data.task_sample,
         )
         spec.save_to_file()
         return spec

@@ -7,6 +7,8 @@
   export let raw_output: string
   export let max_height: string | null = null
   export let hide_toggle: boolean = false
+  export let show_border: boolean = false
+  export let background_color: "default" | "white" = "default"
 
   export let no_padding: boolean = false
   let formatted_json_html: string | null = null
@@ -87,11 +89,14 @@
   <link rel="stylesheet" href="/styles/highlightjs.min.css" />
 </head>
 
-<div class="relative" translate="no">
+<div class="relative {show_border ? 'border rounded-lg' : ''}" translate="no">
   <div
-    class="flex flex-row gap-2 bg-base-200 p-1 rounded-lg {no_padding
-      ? ''
-      : 'p-1'} {max_height && !is_expanded ? 'overflow-hidden' : ''}"
+    class="flex flex-row gap-2 {background_color === 'white'
+      ? 'bg-white'
+      : 'bg-base-200'} p-1 rounded-lg {no_padding ? '' : 'p-1'} {max_height &&
+    !is_expanded
+      ? 'overflow-hidden'
+      : ''}"
     style={max_height && !is_expanded ? `max-height: ${max_height}` : ""}
   >
     <!-- eslint-disable svelte/no-at-html-tags -->

@@ -28,6 +28,8 @@
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import type { FewShotExample } from "$lib/utils/few_shot_example"
+  import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -66,7 +68,37 @@
   $: task_output_schema = task?.output_json_schema
     ? JSON.stringify(task.output_json_schema)
     : ""
-  $: task_prompt_with_few_shot = task?.instruction || ""
+
+  // Few-shot example for improving API calls
+  let few_shot_example: FewShotExample | null = null
+  let task_prompt_with_few_shot: string = ""
+  let is_prompt_building: boolean = false
+
+  // Update the prompt when few_shot_example or task changes
+  async function update_task_prompt_with_few_shot() {
+    if (!task) {
+      task_prompt_with_few_shot = ""
+      return
+    }
+    is_prompt_building = true
+    try {
+      const examples = few_shot_example ? [few_shot_example] : []
+      task_prompt_with_few_shot = await build_prompt_with_few_shot(
+        project_id,
+        task_id,
+        examples,
+      )
+    } catch (e) {
+      console.error("Failed to build prompt with few-shot:", e)
+      // Fallback to just the instruction
+      task_prompt_with_few_shot = task?.instruction || ""
+    } finally {
+      is_prompt_building = false
+    }
+  }
+
+  // Reactively update when example or task changes
+  $: void (few_shot_example, task, update_task_prompt_with_few_shot())
 
   // Review state
   type ReviewRow = ReviewedExample & { id: string }
@@ -126,7 +158,7 @@
   $: is_tool_use_spec = spec_type === "appropriate_tool_use"
   $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
   $: full_trace_disabled = is_tool_use_spec
-  $: show_advanced_options = !is_reference_answer_spec
+  $: hide_include_conversation_history = is_reference_answer_spec
   $: if (is_tool_use_spec) evaluate_full_trace = true
 
   // Tool call and RAG specs don't support copilot
@@ -305,6 +337,7 @@
       project_id,
       task_id,
       task?.instruction || "",
+      task_prompt_with_few_shot,
       name,
       spec_type,
       values,
@@ -575,11 +608,15 @@
         bind:evaluate_full_trace
         {field_configs}
         {copilot_enabled}
-        {show_advanced_options}
+        {hide_include_conversation_history}
         {full_trace_disabled}
         bind:error
         bind:submitting
+        {is_prompt_building}
         {warn_before_unload}
+        {project_id}
+        {task_id}
+        bind:few_shot_example
         on:analyze_with_copilot={handle_analyze_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />

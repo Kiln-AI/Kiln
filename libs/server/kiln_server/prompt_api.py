@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
+from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
 from pydantic import BaseModel
 
@@ -54,6 +55,19 @@ class PromptResponse(BaseModel):
 class PromptUpdateRequest(BaseModel):
     name: str
     description: str | None = None
+
+
+class FewShotExample(BaseModel):
+    input: str
+    output: str
+
+
+class BuildPromptRequest(BaseModel):
+    examples: list[FewShotExample] = []
+
+
+class BuildPromptResponse(BaseModel):
+    prompt: str
 
 
 def connect_prompt_api(app: FastAPI):
@@ -112,6 +126,22 @@ def connect_prompt_api(app: FastAPI):
     async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.delete()
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples")
+    async def build_prompt_with_examples(
+        project_id: str, task_id: str, request: BuildPromptRequest
+    ) -> BuildPromptResponse:
+        """Build a prompt with task instruction, requirements, and optional custom examples.
+
+        Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+        """
+        task = task_from_id(project_id, task_id)
+        examples = [
+            PromptExample(input=e.input, output=e.output) for e in request.examples
+        ]
+        builder = CustomExamplePromptBuilder(task, examples)
+        prompt = builder.build_prompt(include_json_instructions=False)
+        return BuildPromptResponse(prompt=prompt)
 
 
 # User friendly descriptions of the prompt generators
