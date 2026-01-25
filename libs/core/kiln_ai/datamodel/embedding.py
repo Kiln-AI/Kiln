@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Annotated, List, Union
 
 from pydantic import BaseModel, Field, PositiveInt
 from typing_extensions import TypedDict
@@ -13,7 +13,13 @@ if TYPE_CHECKING:
 
 class EmbeddingProperties(TypedDict, total=False):
     dimensions: PositiveInt
-    instructions: str
+    instructions: Annotated[
+        str,
+        Field(
+            description="Optional instructions to prepend/format embedding inputs.",
+            max_length=1000,
+        ),
+    ]
 
 
 class EmbeddingConfig(KilnParentedModel):

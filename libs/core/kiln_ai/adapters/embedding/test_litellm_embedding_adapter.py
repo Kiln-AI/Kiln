@@ -609,22 +609,15 @@ class TestLitellmEmbeddingAdapter:
     def test_apply_instructions_to_texts_no_instructions(self, mock_litellm_adapter):
         """Test _apply_instructions_to_texts when no instructions are provided."""
         input_texts = ["text1", "text2", "text3"]
-        result = mock_litellm_adapter._apply_instructions_to_texts(input_texts)
+        result = mock_litellm_adapter._apply_instructions_to_texts(input_texts, None)
         assert result == input_texts
 
-    def test_apply_instructions_to_texts_with_instructions(
-        self, mock_embedding_config, mock_litellm_core_config
-    ):
+    def test_apply_instructions_to_texts_with_instructions(self, mock_litellm_adapter):
         """Test _apply_instructions_to_texts when instructions are provided."""
-        # Set instructions in the config
-        mock_embedding_config.properties = {"instructions": "Use semantic similarity"}
-
-        adapter = LitellmEmbeddingAdapter(
-            mock_embedding_config, litellm_core_config=mock_litellm_core_config
-        )
-
         input_texts = ["What is AI?", "How does ML work?"]
-        result = adapter._apply_instructions_to_texts(input_texts)
+        result = mock_litellm_adapter._apply_instructions_to_texts(
+            input_texts, "Use semantic similarity"
+        )
 
         expected = [
             "Instruct: Use semantic similarity\nQuery: What is AI?",
@@ -632,19 +625,10 @@ class TestLitellmEmbeddingAdapter:
         ]
         assert result == expected
 
-    def test_apply_instructions_to_texts_empty_instructions(
-        self, mock_embedding_config, mock_litellm_core_config
-    ):
+    def test_apply_instructions_to_texts_empty_instructions(self, mock_litellm_adapter):
         """Test _apply_instructions_to_texts when instructions are empty string."""
-        # Set empty instructions in the config
-        mock_embedding_config.properties = {"instructions": ""}
-
-        adapter = LitellmEmbeddingAdapter(
-            mock_embedding_config, litellm_core_config=mock_litellm_core_config
-        )
-
         input_texts = ["text1", "text2"]
-        result = adapter._apply_instructions_to_texts(input_texts)
+        result = mock_litellm_adapter._apply_instructions_to_texts(input_texts, "")
         # Empty instructions should be treated as no instructions
         assert result == input_texts
 
