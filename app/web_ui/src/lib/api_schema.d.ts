@@ -2722,16 +2722,14 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
-        /** ClarifySpecApiInput */
+        /**
+         * ClarifySpecApiInput
+         * @description Input for clarifying a spec with copilot.
+         */
         ClarifySpecApiInput: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            /** Spec Rendered Prompt Template */
-            spec_rendered_prompt_template: string;
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            /** Target Specification */
+            target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
@@ -2744,7 +2742,10 @@ export interface components {
              */
             num_exemplars: number;
         };
-        /** ClarifySpecApiOutput */
+        /**
+         * ClarifySpecApiOutput
+         * @description Output from clarifying a spec.
+         */
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
@@ -3058,6 +3059,8 @@ export interface components {
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
             judge_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            topic_generation_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            input_generation_info: components["schemas"]["PromptGenerationResultApi-Input"];
             /**
              * Task Description
              * @default
@@ -3893,7 +3896,10 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
-        /** ExampleWithFeedbackApi */
+        /**
+         * ExampleWithFeedbackApi
+         * @description An example with user feedback for spec refinement.
+         */
         ExampleWithFeedbackApi: {
             /** User Agrees With Judge */
             user_agrees_with_judge: boolean;
@@ -4452,22 +4458,25 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** GenerateBatchApiInput */
+        /**
+         * GenerateBatchApiInput
+         * @description Input for generating a batch of examples.
+         */
         GenerateBatchApiInput: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            /** Spec Rendered Prompt Template */
-            spec_rendered_prompt_template: string;
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            topic_generation_task_info: components["schemas"]["TaskInfoApi"];
+            input_generation_task_info: components["schemas"]["TaskInfoApi"];
+            /** Target Specification */
+            target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
         };
-        /** GenerateBatchApiOutput */
+        /**
+         * GenerateBatchApiOutput
+         * @description Output from generating a batch of examples.
+         */
         GenerateBatchApiOutput: {
             /** Data By Topic */
             data_by_topic: {
@@ -4890,7 +4899,10 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
-        /** NewProposedSpecEditApi */
+        /**
+         * NewProposedSpecEditApi
+         * @description A proposed edit to a spec field.
+         */
         NewProposedSpecEditApi: {
             /** Spec Field Name */
             spec_field_name: string;
@@ -5115,13 +5127,19 @@ export interface components {
             /** Chain Of Thought Instructions */
             chain_of_thought_instructions?: string | null;
         };
-        /** PromptGenerationResultApi */
+        /**
+         * PromptGenerationResultApi
+         * @description Result from a prompt generation task.
+         */
         "PromptGenerationResultApi-Input": {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
         };
-        /** PromptGenerationResultApi */
+        /**
+         * PromptGenerationResultApi
+         * @description Result from a prompt generation task.
+         */
         "PromptGenerationResultApi-Output": {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
@@ -5498,14 +5516,20 @@ export interface components {
             /** Inaccurate Examples */
             inaccurate_examples: string;
         };
-        /** RefineSpecApiInput */
+        /**
+         * RefineSpecApiInput
+         * @description Input for refining a spec based on feedback.
+         */
         RefineSpecApiInput: {
-            target_task_info: components["schemas"]["TargetTaskInfoApi"];
+            target_task_info: components["schemas"]["TaskInfoApi"];
             spec: components["schemas"]["SpecInfoApi"];
             /** Examples With Feedback */
             examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
         };
-        /** RefineSpecApiOutput */
+        /**
+         * RefineSpecApiOutput
+         * @description Output from refining a spec.
+         */
         RefineSpecApiOutput: {
             /** New Proposed Spec Edits */
             new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
@@ -5939,7 +5963,10 @@ export interface components {
             eval_id: string;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
-        /** SpecInfoApi */
+        /**
+         * SpecInfoApi
+         * @description Spec field information for refinement.
+         */
         SpecInfoApi: {
             /** Spec Fields */
             spec_fields: {
@@ -6035,7 +6062,10 @@ export interface components {
              */
             questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
         };
-        /** SubsampleBatchOutputItemApi */
+        /**
+         * SubsampleBatchOutputItemApi
+         * @description A single item from batch output for feedback.
+         */
         SubsampleBatchOutputItemApi: {
             /** Input */
             input: string;
@@ -6055,15 +6085,6 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
-        };
-        /** TargetTaskInfoApi */
-        TargetTaskInfoApi: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Target Task Input Schema */
-            target_task_input_schema: string;
-            /** Target Task Output Schema */
-            target_task_output_schema: string;
         };
         /**
          * Task
@@ -6126,7 +6147,22 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** TaskMetadataApi */
+        /**
+         * TaskInfoApi
+         * @description Task information for copilot API calls.
+         */
+        TaskInfoApi: {
+            /** Task Prompt */
+            task_prompt: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+        };
+        /**
+         * TaskMetadataApi
+         * @description Metadata about the model used for a task.
+         */
         TaskMetadataApi: {
             /** Model Name */
             model_name: string;

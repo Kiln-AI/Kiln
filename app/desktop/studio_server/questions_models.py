@@ -1,7 +1,7 @@
 """
 Data models for asking questions about a specification to refine it.
 
-Typically not used directly by SDK consumers, but by the Kiln app and service.
+These are API DTOs for the copilot questioner flow, not core domain models.
 """
 
 from typing import Optional

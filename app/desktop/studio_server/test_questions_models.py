@@ -1,7 +1,5 @@
 import pytest
-from pydantic import ValidationError
-
-from kiln_ai.datamodel.questions import (
+from app.desktop.studio_server.questions_models import (
     AnswerOption,
     AnswerOptionWithSelection,
     ProposedSpecEdit,
@@ -13,6 +11,7 @@ from kiln_ai.datamodel.questions import (
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
+from pydantic import ValidationError
 
 
 # Fixtures for reusable test data

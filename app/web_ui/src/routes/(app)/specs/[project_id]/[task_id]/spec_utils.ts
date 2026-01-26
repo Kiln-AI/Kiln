@@ -19,7 +19,6 @@ export type SuggestedEdit = {
   reason_for_edit: string
 }
 
-
 /**
  * A reviewed example from the spec review process.
  * These examples form the golden dataset for the spec's eval.

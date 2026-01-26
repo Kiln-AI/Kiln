@@ -10,7 +10,7 @@
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
-  import type { ReviewRow } from "./spec_utils.ts"
+  import type { ReviewRow } from "../spec_utils"
 
   export let name: string
   export let spec_type: SpecType

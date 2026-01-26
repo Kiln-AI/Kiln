@@ -41,10 +41,12 @@ def mock_api_key():
 @pytest.fixture
 def clarify_spec_input():
     return {
-        "target_task_prompt": "Test task prompt",
-        "task_input_schema": '{"type": "string"}',
-        "task_output_schema": '{"type": "string"}',
-        "spec_rendered_prompt_template": "Test template",
+        "target_task_info": {
+            "task_prompt": "Test task prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "target_specification": "Test template",
         "num_samples_per_topic": 5,
         "num_topics": 3,
         "providers": ["openai"],
@@ -56,9 +58,9 @@ def clarify_spec_input():
 def refine_spec_input():
     return {
         "target_task_info": {
-            "target_task_prompt": "Test task prompt",
-            "target_task_input_schema": '{"type": "string"}',
-            "target_task_output_schema": '{"type": "string"}',
+            "task_prompt": "Test task prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
         },
         "spec": {
             "spec_fields": {},
@@ -78,10 +80,22 @@ def refine_spec_input():
 @pytest.fixture
 def generate_batch_input():
     return {
-        "target_task_prompt": "Test task prompt",
-        "task_input_schema": '{"type": "string"}',
-        "task_output_schema": '{"type": "string"}',
-        "spec_rendered_prompt_template": "Test template",
+        "target_task_info": {
+            "task_prompt": "Test task prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "topic_generation_task_info": {
+            "task_prompt": "Test topic generation prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "input_generation_task_info": {
+            "task_prompt": "Test input generation prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "target_specification": "Test template",
         "num_samples_per_topic": 5,
         "num_topics": 3,
     }
