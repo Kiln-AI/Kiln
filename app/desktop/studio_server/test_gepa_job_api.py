@@ -282,6 +282,7 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": ["eval-1", "eval-2"],
             },
         )
 
@@ -291,12 +292,14 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
         assert result["token_budget"] == "medium"
         assert result["target_run_config_id"] == "test-run-config-id"
         assert result["latest_status"] == "pending"
+        assert result["eval_ids"] == ["eval-1", "eval-2"]
         assert "id" in result
         assert "name" in result
 
         gepa_jobs = task.gepa_jobs()
         assert len(gepa_jobs) == 1
         assert gepa_jobs[0].job_id == "remote-job-123"
+        assert gepa_jobs[0].eval_ids == ["eval-1", "eval-2"]
 
 
 def test_list_gepa_jobs(client, mock_api_key, tmp_path):
@@ -1689,6 +1692,7 @@ def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -1730,6 +1734,7 @@ def test_start_gepa_job_with_tools_in_run_config(client, mock_api_key, tmp_path)
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -1775,6 +1780,7 @@ def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path)
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -1826,6 +1832,7 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -1874,6 +1881,7 @@ def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -1926,6 +1934,7 @@ def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -1976,6 +1985,7 @@ def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 
@@ -2020,6 +2030,7 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
             json={
                 "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
+                "eval_ids": [],
             },
         )
 

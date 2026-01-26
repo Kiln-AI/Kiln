@@ -4621,6 +4621,11 @@ export interface components {
              * @description The ID of the prompt created from this job's result, if any.
              */
             created_prompt_id?: string | null;
+            /**
+             * Eval Ids
+             * @description List of eval IDs used for this job.
+             */
+            eval_ids?: string[];
             /** Model Type */
             readonly model_type: string;
         };
@@ -6152,6 +6157,8 @@ export interface components {
             token_budget: "light" | "medium" | "heavy";
             /** Target Run Config Id */
             target_run_config_id: string;
+            /** Eval Ids */
+            eval_ids: string[];
         };
         /**
          * StructuredOutputMode

@@ -133,6 +133,13 @@
         name: "Target Run Config",
         value: get_run_config_name(gepa_job.target_run_config_id),
       },
+      {
+        name: "Eval IDs",
+        value:
+          gepa_job.eval_ids && gepa_job.eval_ids.length > 0
+            ? gepa_job.eval_ids.join(", ")
+            : "None",
+      },
       { name: "Created At", value: formatDate(gepa_job.created_at) },
       { name: "Created By", value: gepa_job.created_by },
     ]

@@ -100,6 +100,7 @@ def _get_api_key() -> str:
 class StartGepaJobRequest(BaseModel):
     token_budget: Literal["light", "medium", "heavy"]
     target_run_config_id: str
+    eval_ids: list[str]
 
 
 def gepa_job_from_id(project_id: str, task_id: str, gepa_job_id: str) -> GepaJob:
@@ -429,6 +430,7 @@ def connect_gepa_job_api(app: FastAPI):
                 task_id=task_id,
                 target_run_config_id=request.target_run_config_id,
                 project_zip=project_zip_file,
+                eval_ids=request.eval_ids,
             )
 
             logger.info(
@@ -459,6 +461,7 @@ def connect_gepa_job_api(app: FastAPI):
                 token_budget=request.token_budget,
                 target_run_config_id=request.target_run_config_id,
                 latest_status=JobStatus.PENDING,
+                eval_ids=request.eval_ids,
                 parent=task,
             )
             gepa_job.save_to_file()

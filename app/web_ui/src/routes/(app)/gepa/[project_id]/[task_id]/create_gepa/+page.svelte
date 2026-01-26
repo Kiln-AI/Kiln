@@ -92,6 +92,7 @@
   let evals_with_configs: EvalWithConfig[] = []
   let evals_loading = false
   let evals_error: KilnError | null = null
+  let selected_eval_ids: Set<string> = new Set()
 
   let run_config_validation_status:
     | "unchecked"
@@ -101,23 +102,41 @@
   let run_config_validation_message: string | null = null
 
   $: has_evals_without_config = evals_with_configs.some(
-    (item) => !item.has_default_config,
+    (item) =>
+      item.eval.id &&
+      selected_eval_ids.has(item.eval.id) &&
+      !item.has_default_config,
   )
   $: has_unsupported_models =
     run_config_validation_status === "invalid" ||
     evals_with_configs.some(
-      (item) => item.has_default_config && !item.model_is_supported,
+      (item) =>
+        item.eval.id &&
+        selected_eval_ids.has(item.eval.id) &&
+        item.has_default_config &&
+        !item.model_is_supported,
     )
   $: is_validating =
     run_config_validation_status === "checking" ||
-    evals_with_configs.some((item) => item.validation_status === "checking")
+    evals_with_configs.some(
+      (item) =>
+        item.eval.id &&
+        selected_eval_ids.has(item.eval.id) &&
+        item.validation_status === "checking",
+    )
   $: submit_disabled =
+    selected_eval_ids.size === 0 ||
     has_evals_without_config ||
     evals_loading ||
     has_unsupported_models ||
     is_validating ||
     run_config_validation_status === "unchecked" ||
-    evals_with_configs.some((item) => item.validation_status === "unchecked") ||
+    evals_with_configs.some(
+      (item) =>
+        item.eval.id &&
+        selected_eval_ids.has(item.eval.id) &&
+        item.validation_status === "unchecked",
+    ) ||
     task_loading
 
   $: step_3_visible = run_config_validation_status === "valid"
@@ -250,6 +269,12 @@
       })
 
       evals_with_configs = await Promise.all(evals_with_configs_promises)
+
+      selected_eval_ids = new Set(
+        evals_with_configs
+          .map((item) => item.eval.id)
+          .filter((id): id is string => id !== null && id !== undefined),
+      )
     } catch (e) {
       evals_error = createKilnError(e)
     } finally {
@@ -329,6 +354,10 @@
     const item = evals_with_configs[index]
     if (!item.eval.id) return
 
+    if (!selected_eval_ids.has(item.eval.id)) {
+      return
+    }
+
     try {
       evals_with_configs[index].validation_status = "checking"
       evals_with_configs[index].validation_message = null
@@ -402,7 +431,12 @@
 
   $: if (evals_with_configs.length > 0 && !evals_loading) {
     evals_with_configs.forEach((_, index) => {
-      if (evals_with_configs[index].validation_status === "unchecked") {
+      const item = evals_with_configs[index]
+      if (
+        item.eval.id &&
+        selected_eval_ids.has(item.eval.id) &&
+        item.validation_status === "unchecked"
+      ) {
         check_eval_validation(index)
       }
     })
@@ -451,6 +485,7 @@
           body: {
             token_budget,
             target_run_config_id,
+            eval_ids: Array.from(selected_eval_ids),
           },
         },
       )
@@ -757,34 +792,59 @@
                   {@const spec_id = "legacy"}
                   {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
                   {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
+                  {@const is_selected = evalItem.id
+                    ? selected_eval_ids.has(evalItem.id)
+                    : false}
                   <div
                     class={`border-l-4 pl-3 py-2 ${
-                      validation_status === "checking"
-                        ? "border-gray-300"
-                        : !has_default_config
-                          ? "border-warning"
-                          : !model_is_supported
-                            ? "border-error"
-                            : "border-success"
+                      !is_selected
+                        ? "opacity-50 text-gray-400"
+                        : validation_status === "checking"
+                          ? "border-gray-300"
+                          : !has_default_config
+                            ? "border-warning"
+                            : !model_is_supported
+                              ? "border-error"
+                              : "border-success"
                     }`}
                   >
                     <div class="flex items-start justify-between gap-2">
                       <div class="flex-1">
                         <div class="flex items-center gap-2 mb-1">
-                          {#if validation_status === "checking"}
-                            <span class="loading loading-spinner loading-xs"
-                            ></span>
-                          {:else if !has_default_config}
-                            <span class="text-warning text-sm">⚠</span>
-                          {:else if !model_is_supported}
-                            <span class="text-error text-sm">✗</span>
-                          {:else}
-                            <span class="text-success text-sm">✓</span>
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-sm"
+                            checked={is_selected}
+                            on:change={(e) => {
+                              if (evalItem.id) {
+                                const newSet = new Set(selected_eval_ids)
+                                if (e.currentTarget.checked) {
+                                  newSet.add(evalItem.id)
+                                } else {
+                                  newSet.delete(evalItem.id)
+                                }
+                                selected_eval_ids = newSet
+                              }
+                            }}
+                          />
+                          {#if is_selected}
+                            {#if validation_status === "checking"}
+                              <span class="loading loading-spinner loading-xs"
+                              ></span>
+                            {:else if !has_default_config}
+                              <span class="text-warning text-sm">⚠</span>
+                            {:else if !model_is_supported}
+                              <span class="text-error text-sm">✗</span>
+                            {:else}
+                              <span class="text-success text-sm">✓</span>
+                            {/if}
                           {/if}
                           <a
                             href={eval_url}
                             target="_blank"
-                            class="font-medium text-sm link hover:underline"
+                            class={`font-medium text-sm link hover:underline ${
+                              !is_selected ? "text-gray-400" : ""
+                            }`}
                           >
                             {evalItem.name}
                           </a>
@@ -838,6 +898,37 @@
                     </div>
                   </div>
                 {/each}
+              </div>
+            {/if}
+
+            {#if selected_eval_ids.size === 0}
+              <div class="mt-3">
+                <Warning
+                  warning_color="gray"
+                  warning_icon="info"
+                  outline={true}
+                  tight={true}
+                >
+                  <div class="text-sm text-gray-600">
+                    No evaluators selected. Please select at least one
+                    evaluator.
+                  </div>
+                </Warning>
+              </div>
+            {:else if selected_eval_ids.size < evals_with_configs.length}
+              <div class="mt-3">
+                <Warning
+                  warning_color="gray"
+                  warning_icon="info"
+                  outline={true}
+                  tight={true}
+                >
+                  <div class="text-sm text-gray-600">
+                    Some evaluators are disabled and won't be used for
+                    optimization. This may cause the optimization to not fulfill
+                    all of your requirements.
+                  </div>
+                </Warning>
               </div>
             {/if}
           </div>

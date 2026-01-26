@@ -37,6 +37,10 @@ class GepaJob(KilnParentedModel):
         default=None,
         description="The ID of the prompt created from this job's result, if any.",
     )
+    eval_ids: list[str] = Field(
+        default_factory=list,
+        description="List of eval IDs used for this job.",
+    )
 
     def parent_task(self) -> "Task | None":
         """Get the parent task, with proper typing."""
