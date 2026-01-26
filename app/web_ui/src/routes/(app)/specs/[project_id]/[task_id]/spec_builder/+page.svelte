@@ -22,6 +22,7 @@
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
     type SuggestedEdit,
+    type ReviewRow,
   } from "../spec_utils"
   import { client } from "$lib/api_client"
   import {
@@ -36,7 +37,6 @@
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
-  import type { ReviewRow } from "./spec_utils.ts"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -120,6 +120,8 @@
   let reviewed_examples: ReviewedExample[] = []
 
   let judge_info: PromptGenerationResultApi | null = null
+  let topic_generation_info: PromptGenerationResultApi | null = null
+  let input_generation_info: PromptGenerationResultApi | null = null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
@@ -260,19 +262,18 @@
 
     current_state = "analyzing_for_review"
 
-    const spec_rendered_prompt_template = buildSpecDefinition(
-      spec_type,
-      values_to_use,
-    )
+    const target_specification = buildSpecDefinition(spec_type, values_to_use)
 
     const { data, error: api_error } = await client.POST(
       "/api/copilot/clarify_spec",
       {
         body: {
-          target_task_prompt: task_prompt_with_few_shot,
-          task_input_schema,
-          task_output_schema,
-          spec_rendered_prompt_template,
+          target_task_info: {
+            task_prompt: task_prompt_with_few_shot,
+            task_input_schema,
+            task_output_schema,
+          },
+          target_specification,
           num_samples_per_topic: 10,
           num_topics: 5,
           providers: providers,
@@ -290,8 +291,10 @@
       throw new Error("Failed to analyze spec for review. Please try again.")
     }
 
-    // Use judge_result directly as it already matches PromptGenerationResultApi
+    // Save generation results - they match PromptGenerationResultApi
     judge_info = data.judge_result
+    topic_generation_info = data.topic_generation_result
+    input_generation_info = data.input_generation_result
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
       row_id: String(index + 1),
@@ -364,12 +367,10 @@
     // Call the appropriate endpoint based on whether copilot is being used
     let spec_id: string | null | undefined
     if (use_kiln_copilot) {
-      console.log("use_kiln_copilot", use_kiln_copilot)
       // TODO: judge_info is null here, need to fix.
-      if (!judge_info) {
-        throw new Error("Judge info is required for copilot spec creation")
+      if (!judge_info || !topic_generation_info || !input_generation_info) {
+        throw new Error("Generation info is required for copilot spec creation")
       }
-      console.log("judge_info", judge_info)
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
         {
@@ -381,14 +382,16 @@
             evaluate_full_trace,
             reviewed_examples,
             judge_info,
+            topic_generation_info,
+            input_generation_info,
             task_description: task?.instruction || "",
             task_prompt_with_few_shot,
           },
           signal,
         },
       )
-      console.log("data", data)
-      console.log("api_error", api_error)
+      // console.log("data", data)
+      // console.log("api_error", api_error)
       if (api_error) throw api_error
       spec_id = data?.id
     } else {
@@ -516,11 +519,11 @@
         {
           body: {
             target_task_info: {
-              target_task_prompt: task_prompt_with_few_shot,
-              target_task_input_schema: task.input_json_schema
+              task_prompt: task_prompt_with_few_shot,
+              task_input_schema: task.input_json_schema
                 ? JSON.stringify(task.input_json_schema)
                 : "",
-              target_task_output_schema: task.output_json_schema
+              task_output_schema: task.output_json_schema
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },

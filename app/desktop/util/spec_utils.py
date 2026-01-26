@@ -18,6 +18,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
+from app.desktop.studio_server.copilot_models import (
+    ReviewedExample,
+    SampleApi,
+    TaskInfoApi,
+)
 from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -31,7 +36,6 @@ from kiln_ai.datamodel.task_output import (
     TaskOutputRating,
 )
 from kiln_ai.utils.config import Config
-from pydantic import BaseModel, Field
 
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
@@ -55,20 +59,13 @@ def get_copilot_api_key() -> str:
     return api_key
 
 
-class SampleApi(BaseModel):
-    """A sample input/output pair."""
-
-    input: str = Field(alias="input")
-    output: str
-
-
 async def generate_copilot_examples(
     api_key: str,
-    task_prompt_with_few_shot: str,
-    task_input_schema: str,
-    task_output_schema: str,
+    target_task_info: TaskInfoApi,
+    topic_generation_task_info: TaskInfoApi,
+    input_generation_task_info: TaskInfoApi,
     spec_definition: str,
-) -> list["SampleApi"]:
+) -> list[SampleApi]:
     """Generate examples via the Kiln Copilot API.
 
     Calls the copilot generate_batch endpoint and returns a flat list of SampleApi objects.
@@ -76,19 +73,19 @@ async def generate_copilot_examples(
 
     Args:
         api_key: The Kiln Copilot API key
-        task_prompt_with_few_shot: The task prompt with few-shot examples
-        task_input_schema: The task input JSON schema as a string
-        task_output_schema: The task output JSON schema as a string
+        target_task_info: Task info for the target task
+        topic_generation_task_info: Task info for topic generation
+        input_generation_task_info: Task info for input generation
         spec_definition: The rendered spec definition
     """
     client = get_authenticated_client(api_key)
 
     generate_input = GenerateBatchInput.from_dict(
         {
-            "target_task_prompt": task_prompt_with_few_shot,
-            "task_input_schema": task_input_schema,
-            "task_output_schema": task_output_schema,
-            "spec_rendered_prompt_template": spec_definition,
+            "target_task_info": target_task_info.model_dump(),
+            "topic_generation_task_info": topic_generation_task_info.model_dump(),
+            "input_generation_task_info": input_generation_task_info.model_dump(),
+            "target_specification": spec_definition,
             "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
             "num_topics": NUM_TOPICS,
         }
@@ -129,22 +126,6 @@ async def generate_copilot_examples(
             )
 
     return examples
-
-
-class ReviewedExample(BaseModel):
-    """A reviewed example from the spec review process.
-
-    Extends SampleApi with review-specific fields for tracking
-    model and user judgments on spec compliance.
-    """
-
-    input: str = Field(alias="input")
-    output: str
-    model_says_meets_spec: bool
-    user_says_meets_spec: bool
-    feedback: str
-
-    model_config = {"populate_by_name": True}
 
 
 def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
