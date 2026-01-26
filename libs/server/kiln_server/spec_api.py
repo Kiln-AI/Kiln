@@ -1,3 +1,4 @@
+import logging
 from typing import List
 
 from fastapi import FastAPI, HTTPException
@@ -9,6 +10,15 @@ from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.spec_utils import (
+    generate_spec_eval_filter_ids,
+    generate_spec_eval_tags,
+    spec_eval_data_type,
+    spec_eval_output_score,
+    spec_eval_template,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class UpdateSpecRequest(BaseModel):
@@ -41,22 +51,46 @@ class SpecCreationRequest(BaseModel):
     properties: SpecProperties = Field(
         discriminator="spec_type",
     )
-    priority: Priority
-    status: SpecStatus
-    tags: List[str]
-    eval_id: str
+    priority: Priority = Field(default=Priority.p1)
+    status: SpecStatus = Field(default=SpecStatus.active)
+    tags: List[str] = Field(default_factory=list)
+    evaluate_full_trace: bool = Field(default=False)
     task_sample: TaskSample | None = None
 
 
-# TODO: this endpoint doesn't make the eval with the eval tags etc. like we did with the other endpoint. Need to fix.
-# Probably just remove this endpoint and use the other endpoint instead. And add back "use copilot"?
-# Or wait we probably need to expose this as a public API so people can use it?
 def connect_spec_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/tasks/{task_id}/spec")
     async def create_spec(
         project_id: str, task_id: str, spec_data: SpecCreationRequest
     ) -> Spec:
         task = task_from_id(project_id, task_id)
+
+        spec_type = spec_data.properties["spec_type"]
+
+        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(spec_data.name)
+        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
+            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
+        )
+
+        template = spec_eval_template(spec_type)
+        output_scores = [spec_eval_output_score(spec_data.name)]
+        evaluation_data_type = spec_eval_data_type(
+            spec_type, spec_data.evaluate_full_trace
+        )
+
+        eval_model = Eval(
+            parent=task,
+            name=spec_data.name,
+            description=None,
+            template=template,
+            output_scores=output_scores,
+            eval_set_filter_id=eval_set_filter_id,
+            train_set_filter_id=train_set_filter_id,
+            eval_configs_filter_id=eval_configs_filter_id,
+            template_properties=None,
+            evaluation_data_type=evaluation_data_type,
+        )
+
         spec = Spec(
             parent=task,
             name=spec_data.name,
@@ -65,10 +99,17 @@ def connect_spec_api(app: FastAPI):
             priority=spec_data.priority,
             status=spec_data.status,
             tags=spec_data.tags,
-            eval_id=spec_data.eval_id,
+            eval_id=eval_model.id,
             task_sample=spec_data.task_sample,
         )
-        spec.save_to_file()
+
+        eval_model.save_to_file()
+        try:
+            spec.save_to_file()
+        except Exception:
+            eval_model.delete()
+            raise
+
         return spec
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/specs")

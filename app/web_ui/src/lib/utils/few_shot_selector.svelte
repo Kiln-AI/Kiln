@@ -114,6 +114,13 @@
 
   $: has_valid_manual_entry = manual_input.trim() && manual_output.trim()
 
+  // Expose whether there's an unsaved manual entry (user typed but didn't save)
+  export let has_unsaved_manual_entry: boolean = false
+  $: has_unsaved_manual_entry =
+    show_manual_entry &&
+    is_changing_selection &&
+    (manual_input.trim().length > 0 || manual_output.trim().length > 0)
+
   function badge(auto_select_type: AutoSelectType | null): string | null {
     if (!auto_select_type) return null
     switch (auto_select_type) {

@@ -83,19 +83,20 @@
 
   // Few-shot example for improving API calls
   let few_shot_example: FewShotExample | null = null
-  let task_prompt_with_few_shot: string = ""
+  let has_unsaved_manual_entry: boolean = false
+  let task_prompt_with_example: string = ""
   let is_prompt_building: boolean = false
 
   // Update the prompt when few_shot_example or task changes
-  async function update_task_prompt_with_few_shot() {
+  async function update_task_prompt_with_example() {
     if (!task) {
-      task_prompt_with_few_shot = ""
+      task_prompt_with_example = ""
       return
     }
     is_prompt_building = true
     try {
       const examples = few_shot_example ? [few_shot_example] : []
-      task_prompt_with_few_shot = await build_prompt_with_few_shot(
+      task_prompt_with_example = await build_prompt_with_few_shot(
         project_id,
         task_id,
         examples,
@@ -103,14 +104,14 @@
     } catch (e) {
       console.error("Failed to build prompt with few-shot:", e)
       // Fallback to just the instruction
-      task_prompt_with_few_shot = task?.instruction || ""
+      task_prompt_with_example = task?.instruction || ""
     } finally {
       is_prompt_building = false
     }
   }
 
   // Reactively update when example or task changes
-  $: void (few_shot_example, task, update_task_prompt_with_few_shot())
+  $: void (few_shot_example, task, update_task_prompt_with_example())
 
   // Question state
   let question_set: QuestionSet | null = null
@@ -269,7 +270,7 @@
       {
         body: {
           target_task_info: {
-            task_prompt: task_prompt_with_few_shot,
+            task_prompt: task_prompt_with_example,
             task_input_schema,
             task_output_schema,
           },
@@ -314,6 +315,13 @@
   // Handler for "Analyze with Copilot" button
   async function handle_analyze_with_copilot() {
     error = null
+
+    // Check for unsaved manual entry
+    if (has_unsaved_manual_entry) {
+      error = new KilnError("Please save your task sample before analyzing.")
+      return
+    }
+
     try {
       if (!has_questioned_spec) {
         await get_question_set()
@@ -367,9 +375,17 @@
     // Call the appropriate endpoint based on whether copilot is being used
     let spec_id: string | null | undefined
     if (use_kiln_copilot) {
-      // TODO: judge_info is null here, need to fix.
-      if (!judge_info || !topic_generation_info || !input_generation_info) {
-        throw new Error("Generation info is required for copilot spec creation")
+      if (!judge_info) {
+        console.error("Missing judge info for spec creation")
+        throw new Error("Something went wrong")
+      }
+      if (!topic_generation_info) {
+        console.error("Missing topic generation info for spec creation")
+        throw new Error("Something went wrong")
+      }
+      if (!input_generation_info) {
+        console.error("Missing input generation info for spec creation")
+        throw new Error("Something went wrong")
       }
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -385,16 +401,26 @@
             topic_generation_info,
             input_generation_info,
             task_description: task?.instruction || "",
-            task_prompt_with_few_shot,
+            task_prompt_with_example,
+            task_sample: few_shot_example
+              ? {
+                  input: few_shot_example.input,
+                  output: few_shot_example.output,
+                }
+              : null,
           },
           signal,
         },
       )
-      // console.log("data", data)
-      // console.log("api_error", api_error)
       if (api_error) throw api_error
       spec_id = data?.id
     } else {
+      // If there's an unsaved manual entry, don't include it - just pass null
+      const task_sample =
+        has_unsaved_manual_entry || !few_shot_example
+          ? null
+          : { input: few_shot_example.input, output: few_shot_example.output }
+
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec",
         {
@@ -403,10 +429,10 @@
             name,
             definition,
             properties,
+            evaluate_full_trace,
             priority: 1,
             status: "active",
-            tags: [],
-            eval_id: "", // TODO: this endpoint doesn't make the eval with the eval tags etc. like we did with the other endpoint. Need to fix.
+            task_sample,
           },
         },
       )
@@ -519,7 +545,7 @@
         {
           body: {
             target_task_info: {
-              task_prompt: task_prompt_with_few_shot,
+              task_prompt: task_prompt_with_example,
               task_input_schema: task.input_json_schema
                 ? JSON.stringify(task.input_json_schema)
                 : "",
@@ -608,7 +634,7 @@
     const specification = buildSpecDefinition(spec_type, property_values)
     const { data, error } = await client.POST("/api/copilot/question_spec", {
       body: {
-        task_prompt: task_prompt_with_few_shot,
+        task_prompt: task_prompt_with_example,
         specification,
       },
       signal: new_copilot_abort_signal(),
@@ -635,7 +661,7 @@
     const spec_info = spec_info_for_refine()
 
     const request: SubmitAnswersRequest = {
-      task_prompt: task_prompt_with_few_shot,
+      task_prompt: task_prompt_with_example,
       specification: {
         spec_fields: spec_info.spec_fields,
         spec_field_current_values: spec_info.spec_field_current_values,
@@ -812,6 +838,7 @@
         {project_id}
         {task_id}
         bind:few_shot_example
+        bind:has_unsaved_manual_entry
         on:analyze_with_copilot={handle_analyze_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />

@@ -1,5 +1,5 @@
 import pytest
-from app.desktop.studio_server.questions_models import (
+from app.desktop.studio_server.api_models.questions_models import (
     AnswerOption,
     AnswerOptionWithSelection,
     ProposedSpecEdit,

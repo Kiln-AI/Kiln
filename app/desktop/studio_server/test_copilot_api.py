@@ -32,7 +32,9 @@ def client(app):
 
 @pytest.fixture
 def mock_api_key():
-    with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
+    with patch(
+        "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+    ) as mock_config_shared:
         mock_config = mock_config_shared.return_value
         mock_config.kiln_copilot_api_key = "test_api_key"
         yield mock_config
@@ -103,7 +105,9 @@ def generate_batch_input():
 
 class TestClarifySpec:
     def test_clarify_spec_no_api_key(self, client, clarify_spec_input):
-        with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
             mock_config = mock_config_shared.return_value
             mock_config.kiln_copilot_api_key = None
 
@@ -183,7 +187,9 @@ class TestClarifySpec:
 
 class TestRefineSpec:
     def test_refine_spec_no_api_key(self, client, refine_spec_input):
-        with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
             mock_config = mock_config_shared.return_value
             mock_config.kiln_copilot_api_key = None
 
@@ -237,7 +243,9 @@ class TestRefineSpec:
 
 class TestGenerateBatch:
     def test_generate_batch_no_api_key(self, client, generate_batch_input):
-        with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
             mock_config = mock_config_shared.return_value
             mock_config.kiln_copilot_api_key = None
 

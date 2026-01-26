@@ -3067,10 +3067,11 @@ export interface components {
              */
             task_description: string;
             /**
-             * Task Prompt With Few Shot
+             * Task Prompt With Example
              * @default
              */
-            task_prompt_with_few_shot: string;
+            task_prompt_with_example: string;
+            task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -3621,7 +3622,7 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id.
              */
             eval_set_filter_id: string;
             /**
@@ -3629,6 +3630,11 @@ export interface components {
              * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
              */
             eval_configs_filter_id?: string | null;
+            /**
+             * Train Set Filter Id
+             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             */
+            train_set_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -5128,6 +5134,27 @@ export interface components {
             chain_of_thought_instructions?: string | null;
         };
         /**
+         * PromptGenerationInfo
+         * @description Information about a prompt generation step during copilot spec creation.
+         */
+        PromptGenerationInfo: {
+            /**
+             * Model Name
+             * @description The model used for generation.
+             */
+            model_name: string;
+            /**
+             * Provider Name
+             * @description The provider of the model used for generation.
+             */
+            provider_name: string;
+            /**
+             * Prompt
+             * @description The prompt used for generation.
+             */
+            prompt: string;
+        };
+        /**
          * PromptGenerationResultApi
          * @description Result from a prompt generation task.
          */
@@ -5944,6 +5971,10 @@ export interface components {
             eval_id: string | null;
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
             task_sample?: components["schemas"]["TaskSample"] | null;
+            /** @description Information about topic generation during copilot spec creation. */
+            topic_generation_info?: components["schemas"]["PromptGenerationInfo"] | null;
+            /** @description Information about input generation during copilot spec creation. */
+            input_generation_info?: components["schemas"]["PromptGenerationInfo"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5955,12 +5986,17 @@ export interface components {
             definition: string;
             /** Properties */
             properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /** @default 1 */
             priority: components["schemas"]["Priority"];
+            /** @default active */
             status: components["schemas"]["SpecStatus"];
             /** Tags */
-            tags: string[];
-            /** Eval Id */
-            eval_id: string;
+            tags?: string[];
+            /**
+             * Evaluate Full Trace
+             * @default false
+             */
+            evaluate_full_trace: boolean;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /**

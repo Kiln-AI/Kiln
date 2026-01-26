@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
+from kiln_ai.datamodel.spec import PromptGenerationInfo, Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import (
     AppropriateToolUseProperties,
     BiasProperties,
@@ -673,3 +673,103 @@ def test_spec_task_sample_serialization(sample_tone_properties, tmp_path):
     assert loaded_spec.task_sample is not None
     assert loaded_spec.task_sample.input == "Serialize me"
     assert loaded_spec.task_sample.output == "I am serialized"
+
+
+def test_prompt_generation_info_model():
+    """Test creating a PromptGenerationInfo model."""
+    info = PromptGenerationInfo(
+        model_name="gpt-4",
+        provider_name="openai",
+        prompt="Generate topics for testing",
+    )
+    assert info.model_name == "gpt-4"
+    assert info.provider_name == "openai"
+    assert info.prompt == "Generate topics for testing"
+
+
+def test_spec_with_generation_info(sample_task, sample_tone_properties):
+    """Test creating a spec with topic and input generation info."""
+    topic_info = PromptGenerationInfo(
+        model_name="gpt-4",
+        provider_name="openai",
+        prompt="Generate topics",
+    )
+    input_info = PromptGenerationInfo(
+        model_name="claude-3",
+        provider_name="anthropic",
+        prompt="Generate inputs",
+    )
+    spec = Spec(
+        name="Test Spec",
+        definition="Test definition",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        topic_generation_info=topic_info,
+        input_generation_info=input_info,
+        parent=sample_task,
+    )
+    assert spec.topic_generation_info is not None
+    assert spec.topic_generation_info.model_name == "gpt-4"
+    assert spec.topic_generation_info.provider_name == "openai"
+    assert spec.topic_generation_info.prompt == "Generate topics"
+    assert spec.input_generation_info is not None
+    assert spec.input_generation_info.model_name == "claude-3"
+    assert spec.input_generation_info.provider_name == "anthropic"
+    assert spec.input_generation_info.prompt == "Generate inputs"
+
+
+def test_spec_without_generation_info(sample_task, sample_tone_properties):
+    """Test that generation info fields default to None."""
+    spec = Spec(
+        name="Test Spec",
+        definition="Test definition",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        parent=sample_task,
+    )
+    assert spec.topic_generation_info is None
+    assert spec.input_generation_info is None
+
+
+def test_spec_generation_info_serialization(sample_tone_properties, tmp_path):
+    """Test that generation info is properly serialized and deserialized."""
+    from kiln_ai.datamodel import Project
+
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    topic_info = PromptGenerationInfo(
+        model_name="gpt-4",
+        provider_name="openai",
+        prompt="Topic generation prompt",
+    )
+    input_info = PromptGenerationInfo(
+        model_name="claude-3",
+        provider_name="anthropic",
+        prompt="Input generation prompt",
+    )
+    spec = Spec(
+        name="Generation Info Test",
+        definition="Test definition",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        topic_generation_info=topic_info,
+        input_generation_info=input_info,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    loaded_spec = Spec.from_id_and_parent_path(spec.id, task.path)
+    assert loaded_spec is not None
+    assert loaded_spec.topic_generation_info is not None
+    assert loaded_spec.topic_generation_info.model_name == "gpt-4"
+    assert loaded_spec.topic_generation_info.provider_name == "openai"
+    assert loaded_spec.topic_generation_info.prompt == "Topic generation prompt"
+    assert loaded_spec.input_generation_info is not None
+    assert loaded_spec.input_generation_info.model_name == "claude-3"
+    assert loaded_spec.input_generation_info.provider_name == "anthropic"
+    assert loaded_spec.input_generation_info.prompt == "Input generation prompt"
