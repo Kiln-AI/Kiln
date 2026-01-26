@@ -566,48 +566,28 @@
           </div>
         </div>
         <div class="mt-16">
-          {#if current_task_run_configs?.length}
-            <RunConfigComparisonTable
-              {project_id}
-              {task_id}
-              {spec_id}
-              {eval_id}
-              {evaluator}
-              {task}
-              {sorted_task_run_configs}
-              {score_summary}
-              {score_summary_error}
-              {current_eval_config_id}
-              bind:eval_state
-              interactive={true}
-              current_eval_config_name={current_eval_config?.name ||
-                "select above"}
-              on_add_run_config={() => {
-                create_new_run_config_dialog?.show()
-              }}
-              on_eval_complete={() => {
-                get_score_summary()
-              }}
-            />
-          {:else}
-            <div class="text-xl font-bold">Compare Run Configurations</div>
-            <div class="text-sm text-gray-500">
-              Find the best way of running your task comparing various prompts,
-              models, tools, fine-tunes, and more. Add one or more task run
-              configurations to get started.
-            </div>
-
-            <button
-              class="btn min-w-[200px] mt-4 {has_default_eval_config
-                ? 'btn-primary'
-                : ''}"
-              on:click={() => {
-                create_new_run_config_dialog?.show()
-              }}
-            >
-              Add Run Configuration
-            </button>
-          {/if}
+          <RunConfigComparisonTable
+            {project_id}
+            {task_id}
+            {spec_id}
+            {eval_id}
+            {evaluator}
+            {task}
+            {sorted_task_run_configs}
+            {score_summary}
+            {score_summary_error}
+            {current_eval_config_id}
+            bind:eval_state
+            interactive={true}
+            current_eval_config_name={current_eval_config?.name ||
+              "select above"}
+            on_add_run_config={() => {
+              create_new_run_config_dialog?.show()
+            }}
+            on_eval_complete={() => {
+              get_score_summary()
+            }}
+          />
         </div>
       {/if}
     {/if}

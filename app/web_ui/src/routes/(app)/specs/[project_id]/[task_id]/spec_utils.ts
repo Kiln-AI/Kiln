@@ -13,6 +13,7 @@ import {
 } from "$lib/stores/run_configs_store"
 import { get_task_composite_id } from "$lib/stores"
 import { get } from "svelte/store"
+import posthog from "posthog-js"
 
 export type SuggestedEdit = {
   proposed_value: string
@@ -143,6 +144,11 @@ export async function updateSpecPriority(
     throw error
   }
 
+  posthog.capture("update_spec_priority", {
+    old_priority: spec.priority,
+    new_priority: newPriority,
+  })
+
   return data
 }
 
@@ -180,6 +186,11 @@ export async function updateSpecStatus(
   if (error) {
     throw error
   }
+
+  posthog.capture("update_spec_status", {
+    old_status: spec.status,
+    new_status: newStatus,
+  })
 
   return data
 }

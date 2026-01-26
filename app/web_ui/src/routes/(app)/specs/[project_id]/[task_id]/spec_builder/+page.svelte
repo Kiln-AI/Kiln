@@ -37,6 +37,7 @@
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -306,6 +307,10 @@
       feedback: "",
     }))
 
+    posthog.capture("copilot_clarify_spec", {
+      spec_type: spec_type,
+    })
+
     // Update property_values on success (important for refined spec flow)
     property_values = { ...values_to_use }
 
@@ -415,6 +420,9 @@
       )
       if (api_error) throw api_error
       spec_id = data?.id
+      posthog.capture("create_spec_with_copilot", {
+        spec_type: spec_type,
+      })
     } else {
       // If there's an unsaved manual entry, don't include it - just pass null
       const task_sample =
@@ -439,6 +447,9 @@
       )
       if (api_error) throw api_error
       spec_id = data?.id
+      posthog.capture("create_spec", {
+        spec_type: spec_type,
+      })
     }
 
     if (!spec_id) {
@@ -577,6 +588,10 @@
       suggested_edits = processed.suggested_edits
       not_incorporated_feedback = processed.not_incorporated_feedback
 
+      posthog.capture("copilot_refine_spec", {
+        spec_type: spec_type,
+      })
+
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
@@ -646,6 +661,10 @@
     if (data === undefined) {
       throw new Error("Failed to create questions")
     }
+    posthog.capture("copilot_question_spec", {
+      spec_type: spec_type,
+      num_questions: data.questions.length,
+    })
     if (data.questions.length === 0) {
       await analyzeSpecForReview()
     } else {
@@ -693,6 +712,12 @@
       refined_property_values = processed.refined_property_values
       suggested_edits = processed.suggested_edits
       not_incorporated_feedback = processed.not_incorporated_feedback
+
+      posthog.capture("copilot_refine_spec_with_answers", {
+        spec_type: spec_type,
+        num_answers: questions_and_answers.length,
+      })
+
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
