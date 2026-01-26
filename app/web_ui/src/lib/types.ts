@@ -143,6 +143,15 @@ export type SpecProperties =
   | components["schemas"]["JailbreakProperties"]
   | components["schemas"]["PromptLeakageProperties"]
 export type SpecType = SpecProperties["spec_type"]
+export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
+export type SpecificationInput = components["schemas"]["SpecificationInput"]
+export type QuestionSet = components["schemas"]["QuestionSet"]
+export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
+export type AnswerOptionWithSelection =
+  components["schemas"]["AnswerOptionWithSelection"]
+export type RefineSpecWithQuestionAnswersResponse =
+  components["schemas"]["RefineSpecWithQuestionAnswersResponse"]
+export type ProposedSpecEdit = components["schemas"]["ProposedSpecEdit"]
 
 export type PublicGEPAJobStatusResponse =
   components["schemas"]["PublicGEPAJobStatusResponse"]

@@ -14,27 +14,27 @@ T = TypeVar("T", bound="ExamplesWithFeedbackItem")
 class ExamplesWithFeedbackItem:
     """
     Attributes:
-        user_rating_exhibits_issue_correct (bool): Whether the user's pass/fail rating was correct
+        user_agrees_with_judge (bool): Whether the user agrees with the judge's assessment
         input_ (str):
         output (str):
-        exhibits_issue (bool): Whether the output actually exhibits the issue
+        fails_specification (bool): Judge's verdict - whether the output fails the Target Specification
         user_feedback (None | str | Unset): Optional text feedback from the user
     """
 
-    user_rating_exhibits_issue_correct: bool
+    user_agrees_with_judge: bool
     input_: str
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
     user_feedback: None | str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        user_rating_exhibits_issue_correct = self.user_rating_exhibits_issue_correct
+        user_agrees_with_judge = self.user_agrees_with_judge
 
         input_ = self.input_
 
         output = self.output
 
-        exhibits_issue = self.exhibits_issue
+        fails_specification = self.fails_specification
 
         user_feedback: None | str | Unset
         if isinstance(self.user_feedback, Unset):
@@ -46,10 +46,10 @@ class ExamplesWithFeedbackItem:
 
         field_dict.update(
             {
-                "user_rating_exhibits_issue_correct": user_rating_exhibits_issue_correct,
+                "user_agrees_with_judge": user_agrees_with_judge,
                 "input": input_,
                 "output": output,
-                "exhibits_issue": exhibits_issue,
+                "fails_specification": fails_specification,
             }
         )
         if user_feedback is not UNSET:
@@ -60,13 +60,13 @@ class ExamplesWithFeedbackItem:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        user_rating_exhibits_issue_correct = d.pop("user_rating_exhibits_issue_correct")
+        user_agrees_with_judge = d.pop("user_agrees_with_judge")
 
         input_ = d.pop("input")
 
         output = d.pop("output")
 
-        exhibits_issue = d.pop("exhibits_issue")
+        fails_specification = d.pop("fails_specification")
 
         def _parse_user_feedback(data: object) -> None | str | Unset:
             if data is None:
@@ -78,10 +78,10 @@ class ExamplesWithFeedbackItem:
         user_feedback = _parse_user_feedback(d.pop("user_feedback", UNSET))
 
         examples_with_feedback_item = cls(
-            user_rating_exhibits_issue_correct=user_rating_exhibits_issue_correct,
+            user_agrees_with_judge=user_agrees_with_judge,
             input_=input_,
             output=output,
-            exhibits_issue=exhibits_issue,
+            fails_specification=fails_specification,
             user_feedback=user_feedback,
         )
 

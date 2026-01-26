@@ -203,6 +203,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_7 = "glm_4_7"
+    glm_4_7_flash = "glm_4_7_flash"
     glm_4_6 = "glm_4_6"
     glm_4_6v = "glm_4_6v"
     glm_4_5v = "glm_4_5v"
@@ -525,6 +526,7 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 supports_vision=True,
+                supports_logprobs=False,
                 multimodal_capable=True,
                 multimodal_mime_types=[
                     # documents
@@ -701,7 +703,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_logprobs=True,
+                # OpenRouter does not return the logprobs for this model
+                supports_logprobs=False,
+                # logprobs_openrouter_options does not help this particular
+                # model at the moment
+                # logprobs_openrouter_options=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -754,7 +760,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_logprobs=True,
+                # OpenRouter does not return the logprobs for this model
+                supports_logprobs=False,
+                # logprobs_openrouter_options does not help this particular
+                # model at the moment
+                # logprobs_openrouter_options=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -803,7 +813,11 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-4.1-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_logprobs=True,
+                # OpenRouter does not return the logprobs for this model
+                supports_logprobs=False,
+                # logprobs_openrouter_options does not help this particular
+                # model at the moment
+                # logprobs_openrouter_options=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1532,7 +1546,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3-flash-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
@@ -1578,7 +1593,8 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 thinking_level="medium",
             ),
             KilnModelProvider(
@@ -1587,7 +1603,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
@@ -5206,6 +5223,20 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.cerebras,
                 model_id="zai-glm-4.7",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
+    # GLM 4.7 Flash. Not available on siliconflow cn yet.
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_4_7_flash,
+        friendly_name="GLM 4.7 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-4.7-flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
         ],

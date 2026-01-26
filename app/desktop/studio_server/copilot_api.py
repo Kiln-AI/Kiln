@@ -1,7 +1,9 @@
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
+    question_spec_v1_copilot_question_spec_post,
     refine_spec_v1_copilot_refine_spec_post,
+    refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecInput,
@@ -12,19 +14,38 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     RefineSpecInput,
     RefineSpecOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    QuestionSet as QuestionSetServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    RefineSpecWithQuestionAnswersResponse as RefineSpecWithQuestionAnswersResponseServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SpecQuestionerInput as SpecQuestionerInputServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SubmitAnswersRequest as SubmitAnswersRequestServerApi,
+)
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from kiln_ai.datamodel.questions import (
+    QuestionSet,
+    RefineSpecWithQuestionAnswersResponse,
+    SpecQuestionerInput,
+    SubmitAnswersRequest,
+)
 from kiln_ai.utils.config import Config
 from pydantic import BaseModel, Field
 
 
 # Pydantic input models (replacing attrs-based client models)
-class TaskInfoApi(BaseModel):
-    task_prompt: str
-    few_shot_examples: str | None = None
+class TargetTaskInfoApi(BaseModel):
+    target_task_prompt: str
+    target_task_input_schema: str
+    target_task_output_schema: str
 
 
 class SpecInfoApi(BaseModel):
@@ -33,18 +54,17 @@ class SpecInfoApi(BaseModel):
 
 
 class ExampleWithFeedbackApi(BaseModel):
-    user_rating_exhibits_issue_correct: bool
+    model_config = {"populate_by_name": True}
+
+    user_agrees_with_judge: bool
     input: str = Field(alias="input")
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
     user_feedback: str | None = None
-
-    class Config:
-        populate_by_name = True
 
 
 class ClarifySpecApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -55,16 +75,13 @@ class ClarifySpecApiInput(BaseModel):
 
 
 class RefineSpecApiInput(BaseModel):
-    task_prompt_with_few_shot: str
-    task_input_schema: str
-    task_output_schema: str
-    task_info: TaskInfoApi
+    target_task_info: TargetTaskInfoApi
     spec: SpecInfoApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
 
 class GenerateBatchApiInput(BaseModel):
-    task_prompt_with_few_shot: str
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -75,25 +92,35 @@ class GenerateBatchApiInput(BaseModel):
 class SubsampleBatchOutputItemApi(BaseModel):
     input: str = Field(alias="input")
     output: str
-    exhibits_issue: bool
+    fails_specification: bool
+
+
+class TaskMetadataApi(BaseModel):
+    model_name: str
+    model_provider_name: ModelProviderName
+
+
+class PromptGenerationResultApi(BaseModel):
+    task_metadata: TaskMetadataApi
+    prompt: str
 
 
 class ClarifySpecApiOutput(BaseModel):
     examples_for_feedback: list[SubsampleBatchOutputItemApi]
-    model_id: str
-    model_provider: ModelProviderName
-    judge_prompt: str
+    judge_result: PromptGenerationResultApi
+    topic_generation_result: PromptGenerationResultApi
+    input_generation_result: PromptGenerationResultApi
 
 
-class SpecEditApi(BaseModel):
-    old_value: str
+class NewProposedSpecEditApi(BaseModel):
+    spec_field_name: str
     proposed_edit: str
     reason_for_edit: str
 
 
 class RefineSpecApiOutput(BaseModel):
-    new_proposed_spec_edits: dict[str, SpecEditApi]
-    out_of_scope_feedback: str
+    new_proposed_spec_edits: list[NewProposedSpecEditApi]
+    not_incorporated_feedback: str | None
 
 
 class SampleApi(BaseModel):
@@ -153,7 +180,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        refine_input = RefineSpecInput.from_dict(input.model_dump(by_alias=True))
+        refine_input = RefineSpecInput.from_dict(input.model_dump())
 
         result = await refine_spec_v1_copilot_refine_spec_post.asyncio(
             client=client,
@@ -184,7 +211,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = _get_api_key()
         client = get_authenticated_client(api_key)
 
-        generate_input = GenerateBatchInput(**input.model_dump())
+        generate_input = GenerateBatchInput.from_dict(input.model_dump())
 
         result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
             client=client,
@@ -208,4 +235,73 @@ def connect_copilot_api(app: FastAPI):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+        )
+
+    @app.post("/api/copilot/question_spec")
+    async def question_spec(
+        input: SpecQuestionerInput,
+    ) -> QuestionSet:
+        api_key = _get_api_key()
+        client = get_authenticated_client(api_key)
+
+        questioner_input = SpecQuestionerInputServerApi.from_dict(input.model_dump())
+
+        result = await question_spec_v1_copilot_question_spec_post.asyncio(
+            client=client,
+            body=questioner_input,
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate questions: No response"
+            )
+
+        if isinstance(result, HTTPValidationError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Validation error: {result.to_dict()}",
+            )
+
+        if isinstance(result, QuestionSetServerApi):
+            return QuestionSet.model_validate(result.to_dict())
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate questions: Unexpected response type {type(result)}",
+        )
+
+    @app.post("/api/copilot/refine_spec_with_question_answers")
+    async def submit_question_answers(
+        request: SubmitAnswersRequest,
+    ) -> RefineSpecWithQuestionAnswersResponse:
+        api_key = _get_api_key()
+        client = get_authenticated_client(api_key)
+
+        submit_input = SubmitAnswersRequestServerApi.from_dict(request.model_dump())
+
+        result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio(
+            client=client,
+            body=submit_input,
+        )
+
+        if result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to refine spec with question answers: No response",
+            )
+
+        if isinstance(result, HTTPValidationError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Validation error: {result.to_dict()}",
+            )
+
+        if isinstance(result, RefineSpecWithQuestionAnswersResponseServerApi):
+            return RefineSpecWithQuestionAnswersResponse.model_validate(
+                result.to_dict()
+            )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to refine spec with question answers: Unexpected response type {type(result)}",
         )

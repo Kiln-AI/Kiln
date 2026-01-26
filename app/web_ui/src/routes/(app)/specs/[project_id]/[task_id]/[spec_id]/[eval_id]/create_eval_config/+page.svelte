@@ -21,8 +21,10 @@
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
 
-  $: eval_id = $page.params.eval_id
-  $: spec_id = $page.params.spec_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: eval_id = $page.params.eval_id!
+  $: spec_id = $page.params.spec_id!
 
   let spec: Spec | null = null
   let spec_loading = true
@@ -69,8 +71,8 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
+              project_id: project_id,
+              task_id: task_id,
               spec_id: spec_id,
             },
           },
@@ -96,13 +98,14 @@
         )
         return
       }
-      task = await load_task($page.params.project_id, $page.params.task_id)
+
+      task = await load_task(project_id, task_id)
       if (!task) {
         throw new Error("Task not found")
       }
 
       // Setup the evaluator template for a task requirements (if template is task requirements)
-      if (evaluator?.template === "kiln_requirements") {
+      if (evaluator.template === "kiln_requirements") {
         eval_steps = []
         for (const requirement of task.requirements) {
           eval_steps.push(
@@ -113,7 +116,7 @@
           "Given prior thinking and priorities, what would be an appropriate overall score for this task, from 1 to 5, with 1 being the worst and 5 being the best?",
         )
       }
-      eval_steps = get_eval_steps(evaluator?.template, task, evaluator, spec)
+      eval_steps = get_eval_steps(evaluator.template, task, evaluator, spec)
 
       // Use the task instruction as the task description starter point
       task_description = task.instruction
@@ -132,9 +135,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
         },
@@ -193,9 +196,9 @@
         {
           params: {
             path: {
-              project_id: $page.params.project_id,
-              task_id: $page.params.task_id,
-              eval_id: eval_id,
+              project_id,
+              task_id,
+              eval_id,
             },
           },
           body: {
@@ -223,8 +226,8 @@
       if (data.id && save_as_default === "true") {
         try {
           evaluator = await set_current_eval_config(
-            $page.params.project_id,
-            $page.params.task_id,
+            project_id,
+            task_id,
             eval_id,
             data.id,
           )
@@ -237,15 +240,15 @@
       const next_page = $page.url.searchParams.get("next_page")
       if (next_page === "eval_configs") {
         goto(
-          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/eval_configs`,
+          `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/eval_configs`,
         )
       } else if (next_page === "compare_run_configs") {
         goto(
-          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/${eval_id}/compare_run_configs`,
+          `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`,
         )
       } else {
         goto(
-          `/specs/${$page.params.project_id}/${$page.params.task_id}/${$page.params.spec_id}/eval?selected_eval_config=${data.id}`,
+          `/specs/${project_id}/${task_id}/${spec_id}/eval?selected_eval_config=${data.id}`,
         )
       }
     } catch (e) {
@@ -372,27 +375,27 @@
     const crumbs: Breadcrumb[] = [
       {
         label: "Specs & Evals",
-        href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
+        href: `/specs/${project_id}/${task_id}`,
       },
       {
         label: spec?.name || "Spec",
-        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}`,
+        href: `/specs/${project_id}/${task_id}/${spec_id}`,
       },
       {
         label: "Eval",
-        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}`,
+        href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
       },
     ]
 
     if (next_page === "eval_configs") {
       crumbs.push({
         label: "Compare Judges",
-        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}/eval_configs`,
+        href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/eval_configs`,
       })
     } else if (next_page === "compare_run_configs") {
       crumbs.push({
         label: "Compare Run Configurations",
-        href: `/specs/${$page.params.project_id}/${$page.params.task_id}/${spec_id}/${eval_id}/compare_run_configs`,
+        href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`,
       })
     }
 
@@ -488,7 +491,7 @@
           </div>
         {:else}
           <AvailableModelsDropdown
-            task_id={$page.params.task_id}
+            {task_id}
             bind:model={combined_model_name}
             bind:model_name
             bind:provider_name

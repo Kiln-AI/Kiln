@@ -251,6 +251,28 @@ export interface paths {
         patch: operations["update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build Prompt With Examples
+         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         *
+         *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         */
+        post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/spec": {
         parameters: {
             query?: never;
@@ -2336,10 +2358,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/copilot/question_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Question Spec */
+        post: operations["question_spec_api_copilot_question_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/refine_spec_with_question_answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Question Answers */
+        post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerOption */
+        AnswerOption: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+        };
+        /**
+         * AnswerOptionWithSelection
+         * @description An answer option with user selection state.
+         */
+        AnswerOptionWithSelection: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+            /**
+             * selected
+             * @description Whether the user selected this answer option
+             */
+            selected: boolean;
+        };
         /** ApiPrompt */
         ApiPrompt: {
             /**
@@ -2489,6 +2579,19 @@ export interface components {
             add_tags?: string[] | null;
             /** Remove Tags */
             remove_tags?: string[] | null;
+        };
+        /** BuildPromptRequest */
+        BuildPromptRequest: {
+            /**
+             * Examples
+             * @default []
+             */
+            examples: components["schemas"]["FewShotExample"][];
+        };
+        /** BuildPromptResponse */
+        BuildPromptResponse: {
+            /** Prompt */
+            prompt: string;
         };
         /** BulkCreateDocumentsResponse */
         BulkCreateDocumentsResponse: {
@@ -2754,8 +2857,8 @@ export interface components {
         ChunkerType: "fixed_window" | "semantic";
         /** ClarifySpecApiInput */
         ClarifySpecApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */
@@ -2778,11 +2881,9 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            /** Model Id */
-            model_id: string;
-            model_provider: components["schemas"]["ModelProviderName"];
-            /** Judge Prompt */
-            judge_prompt: string;
+            judge_result: components["schemas"]["PromptGenerationResultApi"];
+            topic_generation_result: components["schemas"]["PromptGenerationResultApi"];
+            input_generation_result: components["schemas"]["PromptGenerationResultApi"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -2893,7 +2994,7 @@ export interface components {
             /** Name */
             name: string;
             /** Description */
-            description: string;
+            description?: string | null;
             template: components["schemas"]["EvalTemplateId"] | null;
             /** Output Scores */
             output_scores: components["schemas"]["EvalOutputScore"][];
@@ -3879,14 +3980,14 @@ export interface components {
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /** ExampleWithFeedbackApi */
         ExampleWithFeedbackApi: {
-            /** User Rating Exhibits Issue Correct */
-            user_rating_exhibits_issue_correct: boolean;
+            /** User Agrees With Judge */
+            user_agrees_with_judge: boolean;
             /** Input */
             input: string;
             /** Output */
             output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
+            /** Fails Specification */
+            fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
         };
@@ -4108,6 +4209,13 @@ export interface components {
             core_requirement: string;
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
+        };
+        /** FewShotExample */
+        FewShotExample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
         };
         /** File */
         File: {
@@ -4431,8 +4539,8 @@ export interface components {
         };
         /** GenerateBatchApiInput */
         GenerateBatchApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
             /** Task Input Schema */
             task_input_schema: string;
             /** Task Output Schema */
@@ -4937,6 +5045,15 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        /** NewProposedSpecEditApi */
+        NewProposedSpecEditApi: {
+            /** Spec Field Name */
+            spec_field_name: string;
+            /** Proposed Edit */
+            proposed_edit: string;
+            /** Reason For Edit */
+            reason_for_edit: string;
+        };
         /** NsfwProperties */
         NsfwProperties: {
             /**
@@ -5153,6 +5270,12 @@ export interface components {
             /** Chain Of Thought Instructions */
             chain_of_thought_instructions?: string | null;
         };
+        /** PromptGenerationResultApi */
+        PromptGenerationResultApi: {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
+        };
         /** PromptGenerator */
         PromptGenerator: {
             /** Id */
@@ -5191,6 +5314,27 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+        };
+        /**
+         * ProposedSpecEdit
+         * @description A proposed edit to a spec field.
+         */
+        ProposedSpecEdit: {
+            /**
+             * spec_field_name
+             * @description The name of the spec field that is being edited
+             */
+            spec_field_name: string;
+            /**
+             * proposed_edit
+             * @description A new value for this spec field incorporating the feedback
+             */
+            proposed_edit: string;
+            /**
+             * reason_for_edit
+             * @description The reason for editing this spec field
+             */
+            reason_for_edit: string;
         };
         /** ProviderEmbeddingModels */
         ProviderEmbeddingModels: {
@@ -5236,6 +5380,58 @@ export interface components {
             /** Job Id */
             job_id: string;
             status: components["schemas"]["JobStatus"];
+        };
+        /** Question */
+        Question: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description A list of possible answers to this question for the user to select from
+             */
+            answer_options: components["schemas"]["AnswerOption"][];
+        };
+        /** QuestionSet */
+        QuestionSet: {
+            /**
+             * questions
+             * @description A set of questions to ask about the specification
+             */
+            questions: components["schemas"]["Question"][];
+        };
+        /**
+         * QuestionWithAnswer
+         * @description A question with user-provided answer.
+         */
+        QuestionWithAnswer: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description Possible answers the user was asked to select from
+             */
+            answer_options: components["schemas"]["AnswerOptionWithSelection"][];
+            /**
+             * custom_answer
+             * @description User-provided text feedback when predefined answer options don't fit
+             */
+            custom_answer?: string | null;
         };
         /** RagConfig */
         RagConfig: {
@@ -5470,13 +5666,7 @@ export interface components {
         };
         /** RefineSpecApiInput */
         RefineSpecApiInput: {
-            /** Task Prompt With Few Shot */
-            task_prompt_with_few_shot: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            task_info: components["schemas"]["TaskInfoApi"];
+            target_task_info: components["schemas"]["TargetTaskInfoApi"];
             spec: components["schemas"]["SpecInfoApi"];
             /** Examples With Feedback */
             examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
@@ -5484,11 +5674,20 @@ export interface components {
         /** RefineSpecApiOutput */
         RefineSpecApiOutput: {
             /** New Proposed Spec Edits */
-            new_proposed_spec_edits: {
-                [key: string]: components["schemas"]["SpecEditApi"];
-            };
-            /** Out Of Scope Feedback */
-            out_of_scope_feedback: string;
+            new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
+            /** Not Incorporated Feedback */
+            not_incorporated_feedback: string | null;
+        };
+        /**
+         * RefineSpecWithQuestionAnswersResponse
+         * @description Response containing proposed spec edits based on question answers.
+         */
+        RefineSpecWithQuestionAnswersResponse: {
+            /**
+             * new_proposed_spec_edits
+             * @description A list of proposed edits to spec fields
+             */
+            new_proposed_spec_edits: components["schemas"]["ProposedSpecEdit"][];
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5860,9 +6059,11 @@ export interface components {
             tags: string[];
             /**
              * Eval Id
-             * @description The id of the eval to use for this spec. If None, the spec is not associated with an eval.
+             * @description The id of the eval to use for this spec.
              */
-            eval_id?: string | null;
+            eval_id: string | null;
+            /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
+            task_sample?: components["schemas"]["TaskSample"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5879,16 +6080,8 @@ export interface components {
             /** Tags */
             tags: string[];
             /** Eval Id */
-            eval_id: string | null;
-        };
-        /** SpecEditApi */
-        SpecEditApi: {
-            /** Old Value */
-            old_value: string;
-            /** Proposed Edit */
-            proposed_edit: string;
-            /** Reason For Edit */
-            reason_for_edit: string;
+            eval_id: string;
+            task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /** SpecInfoApi */
         SpecInfoApi: {
@@ -5901,12 +6094,55 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** SpecQuestionerInput */
+        SpecQuestionerInput: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * task_input_schema
+             * @description If the task's input must conform to a specific input schema, it will be provided here
+             */
+            task_input_schema?: string | null;
+            /**
+             * task_output_schema
+             * @description If the task's output must conform to a specific schema, it will be provided here
+             */
+            task_output_schema?: string | null;
+            /**
+             * specification
+             * @description The specification to analyze
+             */
+            specification: string;
+        };
         /**
          * SpecStatus
          * @description Defines the status of a spec.
          * @enum {string}
          */
         SpecStatus: "active" | "future" | "deprecated" | "archived";
+        /**
+         * SpecificationInput
+         * @description The specification to refine.
+         */
+        SpecificationInput: {
+            /**
+             * spec_fields
+             * @description Dictionary mapping field names to their descriptions/purposes
+             */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /**
+             * spec_field_current_values
+             * @description Dictionary mapping field names to their current values
+             */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
         /** StartGepaJobRequest */
         StartGepaJobRequest: {
             /**
@@ -5932,14 +6168,35 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /**
+         * SubmitAnswersRequest
+         * @description Request to submit answers to a question set.
+         */
+        SubmitAnswersRequest: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * specification
+             * @description The specification to refine
+             */
+            specification: components["schemas"]["SpecificationInput"];
+            /**
+             * questions_and_answers
+             * @description Questions about the specification with user-provided answers
+             */
+            questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
+        };
         /** SubsampleBatchOutputItemApi */
         SubsampleBatchOutputItemApi: {
             /** Input */
             input: string;
             /** Output */
             output: string;
-            /** Exhibits Issue */
-            exhibits_issue: boolean;
+            /** Fails Specification */
+            fails_specification: boolean;
         };
         /** TabooProperties */
         TabooProperties: {
@@ -5952,6 +6209,15 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
+        };
+        /** TargetTaskInfoApi */
+        TargetTaskInfoApi: {
+            /** Target Task Prompt */
+            target_task_prompt: string;
+            /** Target Task Input Schema */
+            target_task_input_schema: string;
+            /** Target Task Output Schema */
+            target_task_output_schema: string;
         };
         /**
          * Task
@@ -6014,12 +6280,11 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** TaskInfoApi */
-        TaskInfoApi: {
-            /** Task Prompt */
-            task_prompt: string;
-            /** Few Shot Examples */
-            few_shot_examples?: string | null;
+        /** TaskMetadataApi */
+        TaskMetadataApi: {
+            /** Model Name */
+            model_name: string;
+            model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
          * TaskOutput
@@ -6379,6 +6644,22 @@ export interface components {
             prompt?: components["schemas"]["BasePrompt"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * TaskSample
+         * @description An example task input/output pair used to demonstrate expected behavior.
+         */
+        TaskSample: {
+            /**
+             * Input
+             * @description The example input for the task.
+             */
+            input: string;
+            /**
+             * Output
+             * @description The expected output for the task.
+             */
+            output: string;
         };
         /** ToneProperties */
         ToneProperties: {
@@ -7112,6 +7393,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Prompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildPromptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildPromptResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11584,6 +11901,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GenerateBatchApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_spec_api_copilot_question_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecQuestionerInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_question_answers_api_copilot_refine_spec_with_question_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineSpecWithQuestionAnswersResponse"];
                 };
             };
             /** @description Validation Error */

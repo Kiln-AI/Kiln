@@ -10,8 +10,8 @@
   import posthog from "posthog-js"
   import { onMount } from "svelte"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
   $: task_name = $current_task?.id == task_id ? $current_task?.name : "unknown"
 
   let prompt_name = ""

@@ -16,7 +16,7 @@ T = TypeVar("T", bound="ClarifySpecInput")
 class ClarifySpecInput:
     """
     Attributes:
-        task_prompt_with_few_shot (str):
+        target_task_prompt (str):
         task_input_schema (str):
         task_output_schema (str):
         spec_rendered_prompt_template (str):
@@ -26,7 +26,7 @@ class ClarifySpecInput:
         num_exemplars (int | Unset):  Default: 10.
     """
 
-    task_prompt_with_few_shot: str
+    target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
     spec_rendered_prompt_template: str
@@ -37,7 +37,7 @@ class ClarifySpecInput:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        task_prompt_with_few_shot = self.task_prompt_with_few_shot
+        target_task_prompt = self.target_task_prompt
 
         task_input_schema = self.task_input_schema
 
@@ -60,7 +60,7 @@ class ClarifySpecInput:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "task_prompt_with_few_shot": task_prompt_with_few_shot,
+                "target_task_prompt": target_task_prompt,
                 "task_input_schema": task_input_schema,
                 "task_output_schema": task_output_schema,
                 "spec_rendered_prompt_template": spec_rendered_prompt_template,
@@ -77,7 +77,7 @@ class ClarifySpecInput:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        task_prompt_with_few_shot = d.pop("task_prompt_with_few_shot")
+        target_task_prompt = d.pop("target_task_prompt")
 
         task_input_schema = d.pop("task_input_schema")
 
@@ -99,7 +99,7 @@ class ClarifySpecInput:
         num_exemplars = d.pop("num_exemplars", UNSET)
 
         clarify_spec_input = cls(
-            task_prompt_with_few_shot=task_prompt_with_few_shot,
+            target_task_prompt=target_task_prompt,
             task_input_schema=task_input_schema,
             task_output_schema=task_output_schema,
             spec_rendered_prompt_template=spec_rendered_prompt_template,

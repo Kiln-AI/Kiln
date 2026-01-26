@@ -17,7 +17,6 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Create Spec"
-    subtitle="Choose your Spec Creation Workflow"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
     breadcrumbs={[

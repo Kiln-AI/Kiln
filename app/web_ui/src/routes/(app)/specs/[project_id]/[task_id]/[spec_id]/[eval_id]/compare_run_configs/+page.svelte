@@ -35,10 +35,10 @@
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: spec_id = $page.params.spec_id
-  $: eval_id = $page.params.eval_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: spec_id = $page.params.spec_id!
+  $: eval_id = $page.params.eval_id!
 
   let spec: Spec | null = null
   let spec_loading = true
@@ -405,8 +405,8 @@
     try {
       set_current_eval_config_error = null
       evaluator = await set_current_eval_config(
-        $page.params.project_id,
-        $page.params.task_id,
+        project_id,
+        task_id,
         eval_id,
         current_eval_config_id,
       )

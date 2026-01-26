@@ -360,6 +360,7 @@ def test_task_specs_relationship(tmp_path):
         name="Test Spec",
         definition="The system should behave correctly",
         properties=properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()
@@ -388,6 +389,7 @@ def test_task_specs_readonly(tmp_path):
         name="Readonly Spec",
         definition="System should handle readonly correctly",
         properties=properties,
+        eval_id="test_eval_id",
         parent=task,
     )
     spec.save_to_file()

@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.spec import Spec, SpecStatus
+from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import (
     AppropriateToolUseProperties,
     BiasProperties,
@@ -51,6 +51,7 @@ def test_spec_valid_creation(sample_task):
         name="Test Spec",
         definition="The system should behave correctly",
         properties=properties,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
 
@@ -60,7 +61,8 @@ def test_spec_valid_creation(sample_task):
     assert spec.priority == Priority.p1
     assert spec.status == SpecStatus.active
     assert spec.tags == []
-    assert spec.eval_id is None
+    assert spec.eval_id == "test_eval_id"
+    assert spec.task_sample is None
 
 
 def test_spec_with_custom_values(sample_task):
@@ -94,6 +96,7 @@ def test_spec_missing_required_fields(sample_task, sample_tone_properties):
         Spec(
             definition="Test definition",
             properties=sample_tone_properties,
+            eval_id="test_eval_id",
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
@@ -103,6 +106,7 @@ def test_spec_missing_required_fields(sample_task, sample_tone_properties):
         Spec(
             name="Test",
             properties=sample_tone_properties,
+            eval_id="test_eval_id",
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
@@ -112,6 +116,17 @@ def test_spec_missing_required_fields(sample_task, sample_tone_properties):
         Spec(
             name="Test",
             definition="Test definition",
+            eval_id="test_eval_id",
+            parent=sample_task,
+        )  # type: ignore
+    assert "Field required" in str(exc_info.value)
+
+    # Missing eval_id
+    with pytest.raises(ValidationError) as exc_info:
+        Spec(
+            name="Test",
+            definition="Test definition",
+            properties=sample_tone_properties,
             parent=sample_task,
         )  # type: ignore
     assert "Field required" in str(exc_info.value)
@@ -124,6 +139,7 @@ def test_spec_empty_name(sample_task, sample_tone_properties):
             name="",
             definition="Test definition",
             properties=sample_tone_properties,
+            eval_id="test_eval_id",
             parent=sample_task,
         )
     assert "Name is too short" in str(exc_info.value)
@@ -136,6 +152,7 @@ def test_spec_empty_definition(sample_task, sample_tone_properties):
             name="Test",
             definition="",
             properties=sample_tone_properties,
+            eval_id="test_eval_id",
             parent=sample_task,
         )
     assert "String should have at least 1 character" in str(exc_info.value)
@@ -148,13 +165,11 @@ def create_sample_properties(spec_type: SpecType):
     if spec_type == SpecType.desired_behaviour:
         return DesiredBehaviourProperties(
             spec_type=spec_type,
-            core_requirement=core_requirement,
             desired_behaviour_description="Test desired behaviour",
         )
     elif spec_type == SpecType.issue:
         return IssueProperties(
             spec_type=spec_type,
-            core_requirement=core_requirement,
             issue_description="Test issue description",
         )
     elif spec_type == SpecType.tone:
@@ -288,6 +303,7 @@ def test_spec_all_types(sample_task, spec_type):
         name="Test Spec",
         definition="Test definition",
         properties=properties,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
     assert spec.properties["spec_type"] == spec_type
@@ -304,6 +320,7 @@ def test_spec_all_priorities(sample_task, sample_tone_properties, priority):
         definition="Test definition",
         properties=sample_tone_properties,
         priority=priority,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
     assert spec.priority == priority
@@ -325,6 +342,7 @@ def test_spec_all_statuses(sample_task, sample_tone_properties, status):
         definition="Test definition",
         properties=sample_tone_properties,
         status=status,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
     assert spec.status == status
@@ -338,6 +356,7 @@ def test_spec_tags_validation_empty_string(sample_task, sample_tone_properties):
             definition="Test definition",
             properties=sample_tone_properties,
             tags=["valid_tag", ""],
+            eval_id="test_eval_id",
             parent=sample_task,
         )
 
@@ -352,6 +371,7 @@ def test_spec_tags_validation_spaces(sample_task, sample_tone_properties):
             definition="Test definition",
             properties=sample_tone_properties,
             tags=["valid_tag", "invalid tag"],
+            eval_id="test_eval_id",
             parent=sample_task,
         )
 
@@ -363,6 +383,7 @@ def test_spec_tags_valid(sample_task, sample_tone_properties):
         definition="Test definition",
         properties=sample_tone_properties,
         tags=["tag1", "tag_2", "tag-3", "TAG4"],
+        eval_id="test_eval_id",
         parent=sample_task,
     )
     assert spec.tags == ["tag1", "tag_2", "tag-3", "TAG4"]
@@ -375,6 +396,7 @@ def test_spec_archived_status(sample_task, sample_tone_properties):
         definition="Test definition",
         properties=sample_tone_properties,
         status=SpecStatus.archived,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
     assert spec.status == SpecStatus.archived
@@ -384,6 +406,7 @@ def test_spec_archived_status(sample_task, sample_tone_properties):
         definition="Test definition",
         properties=sample_tone_properties,
         status=SpecStatus.active,
+        eval_id="test_eval_id_2",
         parent=sample_task,
     )
     assert spec2.status == SpecStatus.active
@@ -404,6 +427,7 @@ def test_spec_with_appropriate_tool_use_properties(sample_task):
         name="Tool Use Spec",
         definition="Test tool use spec",
         properties=properties,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
 
@@ -431,6 +455,7 @@ def test_spec_with_appropriate_tool_use_properties_all_fields(sample_task):
         name="Tool Use Spec",
         definition="Test tool use spec",
         properties=properties,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
 
@@ -449,7 +474,6 @@ def test_spec_with_desired_behaviour_properties(sample_task):
     """Test creating a spec with DesiredBehaviourProperties."""
     properties = DesiredBehaviourProperties(
         spec_type=SpecType.desired_behaviour,
-        core_requirement="Test instruction",
         desired_behaviour_description="Avoid toxic language",
         correct_behaviour_examples="Example 1: Be polite and respectful",
         incorrect_behaviour_examples="Example 1: Don't use slurs\nExample 2: Don't be rude",
@@ -458,6 +482,7 @@ def test_spec_with_desired_behaviour_properties(sample_task):
         name="Desired Behaviour Spec",
         definition="Test desired behaviour spec",
         properties=properties,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
 
@@ -487,6 +512,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
             name="Test Spec",
             definition="Test definition",
             properties=properties,  # type: ignore[arg-type]
+            eval_id="test_eval_id",
             parent=sample_task,
         )
     assert "Field required" in str(exc_info.value)
@@ -500,6 +526,7 @@ def test_spec_properties_validation_missing_required_fields(sample_task):
             name="Test Spec",
             definition="Test definition",
             properties=properties,  # type: ignore[arg-type]
+            eval_id="test_eval_id",
             parent=sample_task,
         )
     assert "Field required" in str(exc_info.value)
@@ -520,19 +547,20 @@ def test_spec_properties_validation_wrong_spec_type(sample_task):
             name="Test Spec",
             definition="Test definition",
             properties=properties,
+            eval_id="test_eval_id",
             parent=sample_task,
         )
 
     with pytest.raises(ValidationError):
         properties = DesiredBehaviourProperties(
             spec_type="wrong_type",  # type: ignore[arg-type]
-            core_requirement="Test instruction",
             desired_behaviour_description="Avoid toxic language",
         )
         Spec(
             name="Test Spec",
             definition="Test definition",
             properties=properties,
+            eval_id="test_eval_id",
             parent=sample_task,
         )
 
@@ -544,6 +572,7 @@ def test_spec_rejects_empty_dict_properties(sample_task):
             name="Test Spec",
             definition="Test definition",
             properties={},  # type: ignore[arg-type]
+            eval_id="test_eval_id",
             parent=sample_task,
         )
 
@@ -563,6 +592,7 @@ def test_spec_with_properties_and_definition(sample_task):
         name="Tool Use Spec",
         definition="This spec defines when to use tools appropriately",
         properties=properties,
+        eval_id="test_eval_id",
         parent=sample_task,
     )
 
@@ -570,3 +600,76 @@ def test_spec_with_properties_and_definition(sample_task):
     assert spec.properties is not None
     assert spec.properties["spec_type"] == SpecType.appropriate_tool_use
     assert spec.properties["tool_function_name"] == "tool_function_123"  # type: ignore[literal-required]
+
+
+def test_task_sample_model():
+    """Test creating a TaskSample model."""
+    sample = TaskSample(
+        input="What is the capital of France?",
+        output="The capital of France is Paris.",
+    )
+    assert sample.input == "What is the capital of France?"
+    assert sample.output == "The capital of France is Paris."
+
+
+def test_spec_with_task_sample(sample_task, sample_tone_properties):
+    """Test creating a spec with a task sample."""
+    sample = TaskSample(
+        input="Example input",
+        output="Example output",
+    )
+    spec = Spec(
+        name="Test Spec",
+        definition="Test definition",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        task_sample=sample,
+        parent=sample_task,
+    )
+    assert spec.task_sample is not None
+    assert spec.task_sample.input == "Example input"
+    assert spec.task_sample.output == "Example output"
+
+
+def test_spec_without_task_sample(sample_task, sample_tone_properties):
+    """Test that task_sample defaults to None."""
+    spec = Spec(
+        name="Test Spec",
+        definition="Test definition",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        parent=sample_task,
+    )
+    assert spec.task_sample is None
+
+
+def test_spec_task_sample_serialization(sample_tone_properties, tmp_path):
+    """Test that task_sample is properly serialized and deserialized."""
+    from kiln_ai.datamodel import Project
+
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    sample = TaskSample(
+        input="Serialize me",
+        output="I am serialized",
+    )
+    spec = Spec(
+        name="Serialization Test",
+        definition="Test definition",
+        properties=sample_tone_properties,
+        eval_id="test_eval_id",
+        task_sample=sample,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    loaded_spec = Spec.from_id_and_parent_path(spec.id, task.path)
+    assert loaded_spec is not None
+    assert loaded_spec.task_sample is not None
+    assert loaded_spec.task_sample.input == "Serialize me"
+    assert loaded_spec.task_sample.output == "I am serialized"

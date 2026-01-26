@@ -29,7 +29,7 @@
 
   let extracting = false
   let es: EventSource | null = null
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let extraction_progress = 0
   let extraction_total = 0
