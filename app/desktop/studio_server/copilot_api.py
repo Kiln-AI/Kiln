@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 
 # Pydantic input models (replacing attrs-based client models)
-class TargetTaskInfoApi(BaseModel):
+class TaskInfoApi(BaseModel):
     target_task_prompt: str
     target_task_input_schema: str
     target_task_output_schema: str
@@ -88,7 +88,8 @@ class ClarifySpecApiInput(BaseModel):
     target_task_prompt: str
     task_input_schema: str
     task_output_schema: str
-    spec_rendered_prompt_template: str
+    target_task_info: TaskInfoApi
+    target_specification: str
     num_samples_per_topic: int
     num_topics: int
     providers: list[ModelProviderName]
@@ -96,16 +97,16 @@ class ClarifySpecApiInput(BaseModel):
 
 
 class RefineSpecApiInput(BaseModel):
-    target_task_info: TargetTaskInfoApi
+    target_task_info: TaskInfoApi
     spec: SpecInfoApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
 
 class GenerateBatchApiInput(BaseModel):
-    target_task_prompt: str
-    task_input_schema: str
-    task_output_schema: str
-    spec_rendered_prompt_template: str
+    target_task_info: TaskInfoApi
+    topic_generation_task_info: TaskInfoApi
+    input_generation_task_info: TaskInfoApi
+    target_specification: str
     num_samples_per_topic: int
     num_topics: int
 
@@ -198,7 +199,7 @@ async def _generate_copilot_examples(
             "target_task_prompt": task_prompt_with_few_shot,
             "task_input_schema": task_input_schema,
             "task_output_schema": task_output_schema,
-            "spec_rendered_prompt_template": spec_definition,
+            "target_specification": spec_definition,
             "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
             "num_topics": NUM_TOPICS,
         }
