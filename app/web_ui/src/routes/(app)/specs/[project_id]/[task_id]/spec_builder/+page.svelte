@@ -420,8 +420,9 @@
       )
       if (api_error) throw api_error
       spec_id = data?.id
-      posthog.capture("create_spec_with_copilot", {
+      posthog.capture("create_spec", {
         spec_type: spec_type,
+        with_copilot: true,
       })
     } else {
       // If there's an unsaved manual entry, don't include it - just pass null
@@ -449,6 +450,7 @@
       spec_id = data?.id
       posthog.capture("create_spec", {
         spec_type: spec_type,
+        with_copilot: false,
       })
     }
 
@@ -588,7 +590,7 @@
       suggested_edits = processed.suggested_edits
       not_incorporated_feedback = processed.not_incorporated_feedback
 
-      posthog.capture("copilot_refine_spec", {
+      posthog.capture("copilot_refine_spec_with_feedback", {
         spec_type: spec_type,
       })
 

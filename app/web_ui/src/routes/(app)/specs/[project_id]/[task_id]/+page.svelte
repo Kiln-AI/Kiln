@@ -526,8 +526,8 @@
 
       posthog.capture("update_spec_tags_batch", {
         num_specs: specs_to_update.length,
-        tags_added: add_tags.length,
-        tags_removed: remove_tags.size,
+        num_tags_added: add_tags.length,
+        num_tags_removed: remove_tags.size,
       })
 
       add_tags = []
