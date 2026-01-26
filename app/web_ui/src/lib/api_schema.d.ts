@@ -326,37 +326,6 @@ export interface paths {
         patch: operations["update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create Spec With Copilot
-         * @description Create a spec using Kiln Copilot.
-         *
-         *     This endpoint uses Kiln Copilot to create a spec with:
-         *     1. An eval for the spec with appropriate template
-         *     2. Batch examples via copilot API for eval, train, and golden datasets
-         *     3. A judge eval config (if judge_info provided)
-         *     4. The spec itself
-         *
-         *     If you don't need copilot, use POST /spec instead.
-         *
-         *     All models are validated before any saves occur. If validation fails,
-         *     no data is persisted.
-         */
-        post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -2271,6 +2240,37 @@ export interface paths {
         put?: never;
         /** Submit Question Answers */
         post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Spec With Copilot
+         * @description Create a spec using Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to create a spec with:
+         *     1. An eval for the spec with appropriate template
+         *     2. Batch examples via copilot API for eval, train, and golden datasets
+         *     3. A judge eval config (if judge_info provided)
+         *     4. The spec itself
+         *
+         *     If you don't need copilot, use POST /spec instead.
+         *
+         *     All models are validated before any saves occur. If validation fails,
+         *     no data is persisted.
+         */
+        post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5743,7 +5743,10 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
-        /** SampleApi */
+        /**
+         * SampleApi
+         * @description A sample input/output pair.
+         */
         SampleApi: {
             /** Input */
             input: string;
@@ -7433,42 +7436,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateSpecRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Spec"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateSpecWithCopilotRequest"];
             };
         };
         responses: {
@@ -11613,6 +11580,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefineSpecWithQuestionAnswersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpecWithCopilotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
                 };
             };
             /** @description Validation Error */

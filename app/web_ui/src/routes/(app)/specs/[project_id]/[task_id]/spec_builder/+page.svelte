@@ -344,7 +344,7 @@
   async function saveSpec(
     values: Record<string, string | null>,
     use_kiln_copilot: boolean,
-    examples: ReviewedExample[],
+    reviewed_examples: ReviewedExample[],
     signal?: AbortSignal,
   ) {
     // Build definition and properties on the client side
@@ -364,9 +364,12 @@
     // Call the appropriate endpoint based on whether copilot is being used
     let spec_id: string | null | undefined
     if (use_kiln_copilot) {
+      console.log("use_kiln_copilot", use_kiln_copilot)
+      // TODO: judge_info is null here, need to fix.
       if (!judge_info) {
         throw new Error("Judge info is required for copilot spec creation")
       }
+      console.log("judge_info", judge_info)
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
         {
@@ -376,10 +379,7 @@
             definition,
             properties,
             evaluate_full_trace,
-            reviewed_examples: examples.map((e) => ({
-              ...e,
-              user_says_meets_spec: e.user_says_meets_spec ?? false,
-            })),
+            reviewed_examples,
             judge_info,
             task_description: task?.instruction || "",
             task_prompt_with_few_shot,
@@ -387,6 +387,8 @@
           signal,
         },
       )
+      console.log("data", data)
+      console.log("api_error", api_error)
       if (api_error) throw api_error
       spec_id = data?.id
     } else {
@@ -401,7 +403,7 @@
             priority: 1,
             status: "active",
             tags: [],
-            eval_id: null,
+            eval_id: "", // TODO: this endpoint doesn't make the eval with the eval tags etc. like we did with the other endpoint. Need to fix.
           },
         },
       )
