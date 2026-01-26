@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..models.model_provider_name import ModelProviderName
 from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.task_info import TaskInfo
+
 
 T = TypeVar("T", bound="ClarifySpecInput")
 
@@ -16,20 +20,16 @@ T = TypeVar("T", bound="ClarifySpecInput")
 class ClarifySpecInput:
     """
     Attributes:
-        target_task_prompt (str):
-        task_input_schema (str):
-        task_output_schema (str):
-        spec_rendered_prompt_template (str):
+        target_task_info (TaskInfo): Shared information about a task
+        target_specification (str):
         num_samples_per_topic (int):
         num_topics (int):
         providers (list[ModelProviderName]):
         num_exemplars (int | Unset):  Default: 10.
     """
 
-    target_task_prompt: str
-    task_input_schema: str
-    task_output_schema: str
-    spec_rendered_prompt_template: str
+    target_task_info: TaskInfo
+    target_specification: str
     num_samples_per_topic: int
     num_topics: int
     providers: list[ModelProviderName]
@@ -37,13 +37,9 @@ class ClarifySpecInput:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        target_task_prompt = self.target_task_prompt
+        target_task_info = self.target_task_info.to_dict()
 
-        task_input_schema = self.task_input_schema
-
-        task_output_schema = self.task_output_schema
-
-        spec_rendered_prompt_template = self.spec_rendered_prompt_template
+        target_specification = self.target_specification
 
         num_samples_per_topic = self.num_samples_per_topic
 
@@ -60,10 +56,8 @@ class ClarifySpecInput:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "target_task_prompt": target_task_prompt,
-                "task_input_schema": task_input_schema,
-                "task_output_schema": task_output_schema,
-                "spec_rendered_prompt_template": spec_rendered_prompt_template,
+                "target_task_info": target_task_info,
+                "target_specification": target_specification,
                 "num_samples_per_topic": num_samples_per_topic,
                 "num_topics": num_topics,
                 "providers": providers,
@@ -76,14 +70,12 @@ class ClarifySpecInput:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.task_info import TaskInfo
+
         d = dict(src_dict)
-        target_task_prompt = d.pop("target_task_prompt")
+        target_task_info = TaskInfo.from_dict(d.pop("target_task_info"))
 
-        task_input_schema = d.pop("task_input_schema")
-
-        task_output_schema = d.pop("task_output_schema")
-
-        spec_rendered_prompt_template = d.pop("spec_rendered_prompt_template")
+        target_specification = d.pop("target_specification")
 
         num_samples_per_topic = d.pop("num_samples_per_topic")
 
@@ -99,10 +91,8 @@ class ClarifySpecInput:
         num_exemplars = d.pop("num_exemplars", UNSET)
 
         clarify_spec_input = cls(
-            target_task_prompt=target_task_prompt,
-            task_input_schema=task_input_schema,
-            task_output_schema=task_output_schema,
-            spec_rendered_prompt_template=spec_rendered_prompt_template,
+            target_task_info=target_task_info,
+            target_specification=target_specification,
             num_samples_per_topic=num_samples_per_topic,
             num_topics=num_topics,
             providers=providers,
