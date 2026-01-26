@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, tick } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type {
@@ -316,13 +316,14 @@
   async function handle_analyze_with_copilot() {
     error = null
 
-    // Check for unsaved manual entry
-    if (has_unsaved_manual_entry) {
-      error = new KilnError("Please save your task sample before analyzing.")
-      return
-    }
-
     try {
+      // Check for unsaved manual entry
+      if (has_unsaved_manual_entry) {
+        error = new KilnError("Please save your task sample before analyzing.")
+        await tick() // Yield to let Svelte process FormContainer's submitting=true before finally sets it false
+        return
+      }
+
       if (!has_questioned_spec) {
         await get_question_set()
       } else {
@@ -729,7 +730,7 @@
       case "questioning":
         return undefined
       case "questions":
-        return "Answer these questions to help clarify your spec."
+        return "Reduce ambiguity of your spec."
       case "review":
         return "Improve your spec and judge with AI guidance."
       case "refine":
@@ -872,12 +873,16 @@
         bind:error
         bind:submitting
         {warn_before_unload}
+        hide_secondary_button={reviewed_examples.length === 0}
         on:analyze_refined={handle_analyze_refined_spec}
         on:create_spec={() => handle_create_spec_from_refine()}
         on:create_spec_secondary={() => handle_create_spec_from_refine()}
       />
     {:else if current_state === "questions" && question_set}
       <Questions
+        {name}
+        {spec_type}
+        {property_values}
         {question_set}
         on_submit={handle_submit_question_answers}
         bind:error

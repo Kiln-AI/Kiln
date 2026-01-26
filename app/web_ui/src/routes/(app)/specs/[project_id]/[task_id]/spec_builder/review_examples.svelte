@@ -258,6 +258,7 @@
 <Dialog
   bind:this={spec_details_dialog}
   title={`Spec: ${name}`}
+  width="wide"
   action_buttons={[
     {
       label: "Close",

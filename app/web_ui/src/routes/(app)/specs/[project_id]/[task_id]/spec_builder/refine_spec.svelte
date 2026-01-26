@@ -18,6 +18,7 @@
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
+  export let hide_secondary_button: boolean = false
 
   let form_container: FormContainer
 
@@ -229,7 +230,7 @@
     </div>
   {/if}
 </FormContainer>
-{#if has_refinements}
+{#if has_refinements && !hide_secondary_button}
   <div class="flex flex-row gap-1 mt-4 justify-end">
     <span class="text-sm text-gray-500">or</span>
     <button

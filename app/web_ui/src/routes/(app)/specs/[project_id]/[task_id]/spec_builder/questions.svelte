@@ -3,11 +3,17 @@
     AnswerOptionWithSelection,
     QuestionSet,
     QuestionWithAnswer,
+    SpecType,
   } from "$lib/types"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import SpecPropertiesDisplay from "../spec_properties_display.svelte"
 
+  export let name: string
+  export let spec_type: SpecType
+  export let property_values: Record<string, string | null>
   export let question_set: QuestionSet
   export let on_submit: (questions_and_answers: QuestionWithAnswer[]) => void
   export let error: KilnError | null
@@ -85,6 +91,11 @@
     selections[question_index] = "other"
     selections = selections
   }
+
+  let spec_details_dialog: Dialog | null = null
+  function open_details_dialog() {
+    spec_details_dialog?.show()
+  }
 </script>
 
 <div class="max-w-4xl">
@@ -97,6 +108,16 @@
     focus_on_mount={false}
     {warn_before_unload}
   >
+    <div class="flex flex-col">
+      <div class="font-medium">Answer Clarifying Questions</div>
+      <div class="font-light text-gray-500 text-sm">
+        Your answers to these questions will help Kiln refine your spec: <button
+          class="link text-sm text-left text-gray-500 hover:text-gray-700"
+          on:click={open_details_dialog}>{name}</button
+        >.
+      </div>
+    </div>
+    <div class="border-t" />
     <div class="flex flex-col gap-14">
       {#each question_set.questions as question, q_index}
         <div class="flex flex-col">
@@ -169,3 +190,17 @@
     </div>
   </FormContainer>
 </div>
+
+<Dialog
+  bind:this={spec_details_dialog}
+  title={`Spec: ${name}`}
+  width="wide"
+  action_buttons={[
+    {
+      label: "Close",
+      isCancel: true,
+    },
+  ]}
+>
+  <SpecPropertiesDisplay {spec_type} properties={property_values} />
+</Dialog>
