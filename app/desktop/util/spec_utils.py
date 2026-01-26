@@ -7,6 +7,18 @@ spec creation workflow.
 
 import random
 
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
+    generate_batch_v1_copilot_generate_batch_post,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    GenerateBatchInput,
+    GenerateBatchOutput,
+    HTTPValidationError,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_authenticated_client,
+)
+from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import EvalDataType, EvalOutputScore, EvalTemplateId
@@ -18,6 +30,7 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
+from kiln_ai.utils.config import Config
 from pydantic import BaseModel, Field
 
 # Constants for copilot spec creation
@@ -31,11 +44,91 @@ MIN_TRAIN_EXAMPLES = 20  # TODO: Make this 100
 MIN_GOLDEN_EXAMPLES = 10  # TODO: Make this 25
 
 
+def get_copilot_api_key() -> str:
+    """Get the Kiln Copilot API key from config, raising an error if not set."""
+    api_key = Config.shared().kiln_copilot_api_key
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Kiln Copilot API key not configured. Please connect your API key in settings.",
+        )
+    return api_key
+
+
 class SampleApi(BaseModel):
     """A sample input/output pair."""
 
     input: str = Field(alias="input")
     output: str
+
+
+async def generate_copilot_examples(
+    api_key: str,
+    task_prompt_with_few_shot: str,
+    task_input_schema: str,
+    task_output_schema: str,
+    spec_definition: str,
+) -> list["SampleApi"]:
+    """Generate examples via the Kiln Copilot API.
+
+    Calls the copilot generate_batch endpoint and returns a flat list of SampleApi objects.
+    Raises HTTPException on API errors.
+
+    Args:
+        api_key: The Kiln Copilot API key
+        task_prompt_with_few_shot: The task prompt with few-shot examples
+        task_input_schema: The task input JSON schema as a string
+        task_output_schema: The task output JSON schema as a string
+        spec_definition: The rendered spec definition
+    """
+    client = get_authenticated_client(api_key)
+
+    generate_input = GenerateBatchInput.from_dict(
+        {
+            "target_task_prompt": task_prompt_with_few_shot,
+            "task_input_schema": task_input_schema,
+            "task_output_schema": task_output_schema,
+            "spec_rendered_prompt_template": spec_definition,
+            "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
+            "num_topics": NUM_TOPICS,
+        }
+    )
+
+    result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
+        client=client,
+        body=generate_input,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=500, detail="Failed to generate batch: No response"
+        )
+
+    if isinstance(result, HTTPValidationError):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Validation error: {result.to_dict()}",
+        )
+
+    if not isinstance(result, GenerateBatchOutput):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+        )
+
+    # Convert result to flat list of SampleApi
+    examples: list[SampleApi] = []
+    data_dict = result.to_dict().get("data_by_topic", {})
+    for topic_examples in data_dict.values():
+        for ex in topic_examples:
+            examples.append(
+                SampleApi(
+                    input=ex.get("input", ""),
+                    output=ex.get("output", ""),
+                )
+            )
+
+    return examples
 
 
 class ReviewedExample(BaseModel):

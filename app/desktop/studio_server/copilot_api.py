@@ -31,12 +31,12 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.util.spec_creation import (
-    NUM_SAMPLES_PER_TOPIC,
-    NUM_TOPICS,
+from app.desktop.util.spec_utils import (
     ReviewedExample,
     SampleApi,
     create_dataset_task_runs,
+    generate_copilot_examples,
+    get_copilot_api_key,
     spec_eval_data_type,
     spec_eval_output_score,
     spec_eval_template,
@@ -54,7 +54,6 @@ from kiln_ai.datamodel.questions import (
 )
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import SpecProperties
-from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, Field
@@ -180,83 +179,10 @@ class CreateSpecWithCopilotRequest(BaseModel):
     task_prompt_with_few_shot: str = ""
 
 
-async def _generate_copilot_examples(
-    task_prompt_with_few_shot: str,
-    task_input_schema: str,
-    task_output_schema: str,
-    spec_definition: str,
-) -> list[SampleApi]:
-    """Generate examples via the Kiln Copilot API.
-
-    Calls the copilot generate_batch endpoint and returns a flat list of SampleApi objects.
-    Raises HTTPException on API errors.
-    """
-    api_key = _get_api_key()
-    client = get_authenticated_client(api_key)
-
-    generate_input = GenerateBatchInput.from_dict(
-        {
-            "target_task_prompt": task_prompt_with_few_shot,
-            "task_input_schema": task_input_schema,
-            "task_output_schema": task_output_schema,
-            "target_specification": spec_definition,
-            "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
-            "num_topics": NUM_TOPICS,
-        }
-    )
-
-    result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
-        client=client,
-        body=generate_input,
-    )
-
-    if result is None:
-        raise HTTPException(
-            status_code=500, detail="Failed to generate batch: No response"
-        )
-
-    if isinstance(result, HTTPValidationError):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Validation error: {result.to_dict()}",
-        )
-
-    if not isinstance(result, GenerateBatchOutput):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate batch: Unexpected response type {type(result)}",
-        )
-
-    # Convert result to flat list of SampleApi
-    examples: list[SampleApi] = []
-    data_dict = result.to_dict().get("data_by_topic", {})
-    for topic_examples in data_dict.values():
-        for ex in topic_examples:
-            examples.append(
-                SampleApi(
-                    input=ex.get("input", ""),
-                    output=ex.get("output", ""),
-                )
-            )
-
-    return examples
-
-
-def _get_api_key() -> str:
-    """Get the Kiln Copilot API key from config, raising an error if not set."""
-    api_key = Config.shared().kiln_copilot_api_key
-    if not api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="Kiln Copilot API key not configured. Please connect your API key in settings.",
-        )
-    return api_key
-
-
 def connect_copilot_api(app: FastAPI):
     @app.post("/api/copilot/clarify_spec")
     async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
-        api_key = _get_api_key()
+        api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
         clarify_input = ClarifySpecInput.from_dict(input.model_dump())
@@ -287,7 +213,7 @@ def connect_copilot_api(app: FastAPI):
 
     @app.post("/api/copilot/refine_spec")
     async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
-        api_key = _get_api_key()
+        api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
         refine_input = RefineSpecInput.from_dict(input.model_dump())
@@ -318,7 +244,7 @@ def connect_copilot_api(app: FastAPI):
 
     @app.post("/api/copilot/generate_batch")
     async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
-        api_key = _get_api_key()
+        api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
         generate_input = GenerateBatchInput.from_dict(input.model_dump())
@@ -351,7 +277,7 @@ def connect_copilot_api(app: FastAPI):
     async def question_spec(
         input: SpecQuestionerInput,
     ) -> QuestionSet:
-        api_key = _get_api_key()
+        api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
         questioner_input = SpecQuestionerInputServerApi.from_dict(input.model_dump())
@@ -384,7 +310,7 @@ def connect_copilot_api(app: FastAPI):
     async def submit_question_answers(
         request: SubmitAnswersRequest,
     ) -> RefineSpecWithQuestionAnswersResponse:
-        api_key = _get_api_key()
+        api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
         submit_input = SubmitAnswersRequestServerApi.from_dict(request.model_dump())
@@ -488,7 +414,9 @@ def connect_copilot_api(app: FastAPI):
         eval_model.current_config_id = eval_config.id
 
         # 3. Generate examples via copilot API
-        all_examples = await _generate_copilot_examples(
+        api_key = get_copilot_api_key()
+        all_examples = await generate_copilot_examples(
+            api_key=api_key,
             task_prompt_with_few_shot=request.task_prompt_with_few_shot,
             task_input_schema=str(task.input_json_schema)
             if task.input_json_schema
