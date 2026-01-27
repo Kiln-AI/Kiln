@@ -35,14 +35,9 @@ from app.desktop.studio_server.api_models.copilot_models import (
     GenerateBatchApiOutput,
     PromptGenerationResultApi,
     RefineSpecApiInput,
-    RefineSpecApiOutput,
     ReviewedExample,
     SpecQuestionerApiInput,
     TaskInfoApi,
-)
-from app.desktop.studio_server.api_models.questions_models import (
-    QuestionSet,
-    SubmitAnswersRequest,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     create_dataset_task_runs,
@@ -64,6 +59,11 @@ from kiln_server.utils.spec_utils import (
     spec_eval_data_type,
     spec_eval_output_score,
     spec_eval_template,
+)
+from libs.core.kiln_ai.datamodel.copilot_models.questions import (
+    QuestionSet,
+    RefineSpecApiOutput,
+    SubmitAnswersRequest,
 )
 from pydantic import BaseModel, Field
 
