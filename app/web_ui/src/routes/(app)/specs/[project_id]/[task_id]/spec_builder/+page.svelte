@@ -567,7 +567,7 @@
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },
-            spec: {
+            target_specification: {
               spec_fields: spec_info.spec_fields,
               spec_field_current_values: spec_info.spec_field_current_values,
             },

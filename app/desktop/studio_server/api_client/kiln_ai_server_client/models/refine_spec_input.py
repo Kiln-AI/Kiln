@@ -9,7 +9,7 @@ from attrs import field as _attrs_field
 if TYPE_CHECKING:
     from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
     from ..models.spec import Spec
-    from ..models.target_task_info import TargetTaskInfo
+    from ..models.task_info import TaskInfo
 
 
 T = TypeVar("T", bound="RefineSpecInput")
@@ -19,20 +19,20 @@ T = TypeVar("T", bound="RefineSpecInput")
 class RefineSpecInput:
     """
     Attributes:
-        target_task_info (TargetTaskInfo):
-        spec (Spec):
+        target_task_info (TaskInfo): Shared information about a task
+        target_specification (Spec):
         examples_with_feedback (list[ExamplesWithFeedbackItem]):
     """
 
-    target_task_info: TargetTaskInfo
-    spec: Spec
+    target_task_info: TaskInfo
+    target_specification: Spec
     examples_with_feedback: list[ExamplesWithFeedbackItem]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         target_task_info = self.target_task_info.to_dict()
 
-        spec = self.spec.to_dict()
+        target_specification = self.target_specification.to_dict()
 
         examples_with_feedback = []
         for examples_with_feedback_item_data in self.examples_with_feedback:
@@ -44,7 +44,7 @@ class RefineSpecInput:
         field_dict.update(
             {
                 "target_task_info": target_task_info,
-                "spec": spec,
+                "target_specification": target_specification,
                 "examples_with_feedback": examples_with_feedback,
             }
         )
@@ -55,12 +55,12 @@ class RefineSpecInput:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
         from ..models.spec import Spec
-        from ..models.target_task_info import TargetTaskInfo
+        from ..models.task_info import TaskInfo
 
         d = dict(src_dict)
-        target_task_info = TargetTaskInfo.from_dict(d.pop("target_task_info"))
+        target_task_info = TaskInfo.from_dict(d.pop("target_task_info"))
 
-        spec = Spec.from_dict(d.pop("spec"))
+        target_specification = Spec.from_dict(d.pop("target_specification"))
 
         examples_with_feedback = []
         _examples_with_feedback = d.pop("examples_with_feedback")
@@ -71,7 +71,7 @@ class RefineSpecInput:
 
         refine_spec_input = cls(
             target_task_info=target_task_info,
-            spec=spec,
+            target_specification=target_specification,
             examples_with_feedback=examples_with_feedback,
         )
 

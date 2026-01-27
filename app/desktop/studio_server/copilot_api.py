@@ -145,14 +145,7 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        input_dict = input.model_dump()
-        task_info = input_dict.pop("target_task_info")
-        input_dict["target_task_info"] = {
-            "target_task_prompt": task_info["task_prompt"],
-            "target_task_input_schema": task_info["task_input_schema"],
-            "target_task_output_schema": task_info["task_output_schema"],
-        }
-        refine_input = RefineSpecInput.from_dict(input_dict)
+        refine_input = RefineSpecInput.from_dict(input.model_dump())
 
         result = await refine_spec_v1_copilot_refine_spec_post.asyncio(
             client=client,

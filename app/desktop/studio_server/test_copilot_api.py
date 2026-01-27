@@ -64,7 +64,7 @@ def refine_spec_input():
             "task_input_schema": '{"type": "string"}',
             "task_output_schema": '{"type": "string"}',
         },
-        "spec": {
+        "target_specification": {
             "spec_fields": {},
             "spec_field_current_values": {},
         },
