@@ -105,6 +105,43 @@ def test_eval_basic_properties():
     assert eval.output_scores[0].type == TaskOutputRatingType.five_star
 
 
+def test_eval_with_train_set_filter_id():
+    """Test that Eval correctly stores train_set_filter_id."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        train_set_filter_id="tag::eval_train_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.eval_set_filter_id == "tag::eval_test"
+    assert eval.train_set_filter_id == "tag::eval_train_test"
+    assert eval.eval_configs_filter_id == "tag::eval_golden_test"
+
+
+def test_eval_train_set_filter_id_defaults_to_none():
+    """Test that train_set_filter_id defaults to None when not provided."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.train_set_filter_id is None
+
+
 def test_eval_default_values():
     eval = Eval(
         name="Test Eval",

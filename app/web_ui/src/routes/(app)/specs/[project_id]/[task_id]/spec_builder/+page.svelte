@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, tick } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type {
@@ -11,6 +11,9 @@
     QuestionSet,
     SubmitAnswersRequest,
     QuestionWithAnswer,
+    SpecProperties,
+    PromptGenerationResultApi,
+    ReviewedExample,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
@@ -19,12 +22,8 @@
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
     type SuggestedEdit,
+    type ReviewRow,
   } from "../spec_utils"
-  import {
-    createSpec,
-    type JudgeInfo,
-    type ReviewedExample,
-  } from "./spec_persistence"
   import { client } from "$lib/api_client"
   import {
     load_task,
@@ -34,10 +33,13 @@
   import CreateSpecForm from "./create_spec_form.svelte"
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
-  import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
+  import QuestioningAnimation from "./animations/questioning_animation.svelte"
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
+  import posthog from "posthog-js"
+  import SavingAnimation from "./animations/saving_animation.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -58,6 +60,7 @@
     | "review"
     | "refining"
     | "refine"
+    | "saving_with_copilot"
 
   let current_state: BuilderState = "create"
   let has_questioned_spec = false
@@ -84,19 +87,20 @@
 
   // Few-shot example for improving API calls
   let few_shot_example: FewShotExample | null = null
-  let task_prompt_with_few_shot: string = ""
+  let has_unsaved_manual_entry: boolean = false
+  let task_prompt_with_example: string = ""
   let is_prompt_building: boolean = false
 
   // Update the prompt when few_shot_example or task changes
-  async function update_task_prompt_with_few_shot() {
+  async function update_task_prompt_with_example() {
     if (!task) {
-      task_prompt_with_few_shot = ""
+      task_prompt_with_example = ""
       return
     }
     is_prompt_building = true
     try {
       const examples = few_shot_example ? [few_shot_example] : []
-      task_prompt_with_few_shot = await build_prompt_with_few_shot(
+      task_prompt_with_example = await build_prompt_with_few_shot(
         project_id,
         task_id,
         examples,
@@ -104,25 +108,25 @@
     } catch (e) {
       console.error("Failed to build prompt with few-shot:", e)
       // Fallback to just the instruction
-      task_prompt_with_few_shot = task?.instruction || ""
+      task_prompt_with_example = task?.instruction || ""
     } finally {
       is_prompt_building = false
     }
   }
 
   // Reactively update when example or task changes
-  $: void (few_shot_example, task, update_task_prompt_with_few_shot())
+  $: void (few_shot_example, task, update_task_prompt_with_example())
 
   // Question state
   let question_set: QuestionSet | null = null
 
   // Review state
-  type ReviewRow = ReviewedExample & { id: string }
-
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: JudgeInfo | null = null
+  let judge_info: PromptGenerationResultApi | null = null
+  let topic_generation_info: PromptGenerationResultApi | null = null
+  let input_generation_info: PromptGenerationResultApi | null = null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
@@ -263,19 +267,18 @@
 
     current_state = "analyzing_for_review"
 
-    const spec_rendered_prompt_template = buildSpecDefinition(
-      spec_type,
-      values_to_use,
-    )
+    const target_specification = buildSpecDefinition(spec_type, values_to_use)
 
     const { data, error: api_error } = await client.POST(
       "/api/copilot/clarify_spec",
       {
         body: {
-          target_task_prompt: task_prompt_with_few_shot,
-          task_input_schema,
-          task_output_schema,
-          spec_rendered_prompt_template,
+          target_task_info: {
+            task_prompt: task_prompt_with_example,
+            task_input_schema,
+            task_output_schema,
+          },
+          target_specification,
           num_samples_per_topic: 10,
           num_topics: 5,
           providers: providers,
@@ -293,20 +296,23 @@
       throw new Error("Failed to analyze spec for review. Please try again.")
     }
 
-    judge_info = {
-      prompt: data.judge_result.prompt,
-      model_name: data.judge_result.task_metadata.model_name,
-      model_provider: data.judge_result.task_metadata.model_provider_name,
-    }
+    // Save generation results - they match PromptGenerationResultApi
+    judge_info = data.judge_result
+    topic_generation_info = data.topic_generation_result
+    input_generation_info = data.input_generation_result
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
-      id: String(index + 1),
+      row_id: String(index + 1),
       input: example.input,
       output: example.output,
       model_says_meets_spec: !example.fails_specification,
       user_says_meets_spec: undefined,
       feedback: "",
     }))
+
+    posthog.capture("copilot_clarify_spec", {
+      spec_type: spec_type,
+    })
 
     // Update property_values on success (important for refined spec flow)
     property_values = { ...values_to_use }
@@ -317,7 +323,15 @@
   // Handler for "Analyze with Copilot" button
   async function handle_analyze_with_copilot() {
     error = null
+
     try {
+      // Check for unsaved manual entry
+      if (has_unsaved_manual_entry) {
+        error = new KilnError("Please save your task sample before analyzing.")
+        await tick() // Yield to let Svelte process FormContainer's submitting=true before finally sets it false
+        return
+      }
+
       if (!has_questioned_spec) {
         await get_question_set()
       } else {
@@ -325,6 +339,7 @@
       }
     } catch (e) {
       if (is_abort_error(e)) return
+      has_questioned_spec = false
       console.error("Kiln Copilot failed to analyze spec:", e)
       error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
       current_state = "create"
@@ -350,23 +365,102 @@
   async function saveSpec(
     values: Record<string, string | null>,
     use_kiln_copilot: boolean,
-    examples: ReviewedExample[],
+    reviewed_examples: ReviewedExample[],
     signal?: AbortSignal,
   ) {
-    const spec_id = await createSpec(
-      project_id,
-      task_id,
-      task?.instruction || "",
-      task_prompt_with_few_shot,
-      name,
-      spec_type,
-      values,
-      use_kiln_copilot,
-      evaluate_full_trace,
-      examples,
-      judge_info,
-      signal,
+    // Build definition and properties on the client side
+    const definition = buildSpecDefinition(spec_type, values)
+
+    // Build properties object with spec_type, filtering out null and empty values
+    const filteredValues = Object.fromEntries(
+      Object.entries(values).filter(
+        ([_, value]) => value !== null && value.trim() !== "",
+      ),
     )
+    const properties = {
+      spec_type: spec_type,
+      ...filteredValues,
+    } as SpecProperties
+
+    // Call the appropriate endpoint based on whether copilot is being used
+    let spec_id: string | null | undefined
+    if (use_kiln_copilot) {
+      if (!judge_info) {
+        console.error("Missing judge info for spec creation")
+        throw new Error("Something went wrong")
+      }
+      if (!topic_generation_info) {
+        console.error("Missing topic generation info for spec creation")
+        throw new Error("Something went wrong")
+      }
+      if (!input_generation_info) {
+        console.error("Missing input generation info for spec creation")
+        throw new Error("Something went wrong")
+      }
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition,
+            properties,
+            evaluate_full_trace,
+            reviewed_examples,
+            judge_info,
+            topic_generation_info,
+            input_generation_info,
+            task_description: task?.instruction || "",
+            task_prompt_with_example,
+            task_sample: few_shot_example
+              ? {
+                  input: few_shot_example.input,
+                  output: few_shot_example.output,
+                }
+              : null,
+          },
+          signal,
+        },
+      )
+      if (api_error) throw api_error
+      spec_id = data?.id
+      posthog.capture("create_spec", {
+        spec_type: spec_type,
+        with_copilot: true,
+      })
+    } else {
+      // If there's an unsaved manual entry, don't include it - just pass null
+      const task_sample =
+        has_unsaved_manual_entry || !few_shot_example
+          ? null
+          : { input: few_shot_example.input, output: few_shot_example.output }
+
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition,
+            properties,
+            evaluate_full_trace,
+            priority: 1,
+            status: "active",
+            task_sample,
+          },
+        },
+      )
+      if (api_error) throw api_error
+      spec_id = data?.id
+      posthog.capture("create_spec", {
+        spec_type: spec_type,
+        with_copilot: false,
+      })
+    }
+
+    if (!spec_id) {
+      throw new Error("Failed to create spec")
+    }
 
     complete = true
     goto(`/specs/${project_id}/${task_id}/${spec_id}`)
@@ -376,6 +470,7 @@
   async function handle_create_spec_without_copilot() {
     error = null
     try {
+      saving_spec = true
       await saveSpec(property_values, false, [])
     } catch (e) {
       error = createKilnError(e)
@@ -392,6 +487,7 @@
       // Use full-page spinner for creating spec because it takes a while
       saving_spec = true
 
+      current_state = "saving_with_copilot"
       await saveSpec(
         property_values,
         true,
@@ -404,6 +500,7 @@
       error = new KilnError(
         "Kiln Copilot failed to create spec. Please try again.",
       )
+      current_state = "review"
     } finally {
       submitting = false
       saving_spec = false
@@ -469,15 +566,15 @@
         {
           body: {
             target_task_info: {
-              target_task_prompt: task_prompt_with_few_shot,
-              target_task_input_schema: task.input_json_schema
+              task_prompt: task_prompt_with_example,
+              task_input_schema: task.input_json_schema
                 ? JSON.stringify(task.input_json_schema)
                 : "",
-              target_task_output_schema: task.output_json_schema
+              task_output_schema: task.output_json_schema
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },
-            spec: {
+            target_specification: {
               spec_fields: spec_info.spec_fields,
               spec_field_current_values: spec_info.spec_field_current_values,
             },
@@ -499,6 +596,10 @@
       refined_property_values = processed.refined_property_values
       suggested_edits = processed.suggested_edits
       not_incorporated_feedback = processed.not_incorporated_feedback
+
+      posthog.capture("copilot_refine_spec_with_feedback", {
+        spec_type: spec_type,
+      })
 
       current_state = "refine"
     } catch (e) {
@@ -533,6 +634,7 @@
     try {
       // Use full-page spinner for creating spec because it takes a while
       saving_spec = true
+      current_state = "saving_with_copilot"
       await saveSpec(
         refined_property_values,
         true,
@@ -545,6 +647,7 @@
       error = new KilnError(
         "Kiln Copilot failed to create spec. Please try again.",
       )
+      current_state = "refine"
     } finally {
       submitting = false
       saving_spec = false
@@ -558,17 +661,22 @@
     const specification = buildSpecDefinition(spec_type, property_values)
     const { data, error } = await client.POST("/api/copilot/question_spec", {
       body: {
-        task_prompt: task_prompt_with_few_shot,
-        specification,
+        target_task_info: {
+          task_prompt: task_prompt_with_example,
+          task_input_schema,
+          task_output_schema,
+        },
+        target_specification: specification,
       },
       signal: new_copilot_abort_signal(),
     })
     if (error) {
       throw error
     }
-    if (data === undefined) {
-      throw new Error("Failed to create questions")
-    }
+    posthog.capture("copilot_question_spec", {
+      spec_type: spec_type,
+      num_questions: data.questions.length,
+    })
     if (data.questions.length === 0) {
       await analyzeSpecForReview()
     } else {
@@ -585,7 +693,7 @@
     const spec_info = spec_info_for_refine()
 
     const request: SubmitAnswersRequest = {
-      task_prompt: task_prompt_with_few_shot,
+      task_prompt: task_prompt_with_example,
       specification: {
         spec_fields: spec_info.spec_fields,
         spec_field_current_values: spec_info.spec_field_current_values,
@@ -612,10 +720,17 @@
       const processed = processProposedSpecEdits(
         data.new_proposed_spec_edits,
         property_values,
+        data.not_incorporated_feedback || "",
       )
       refined_property_values = processed.refined_property_values
       suggested_edits = processed.suggested_edits
       not_incorporated_feedback = processed.not_incorporated_feedback
+
+      posthog.capture("copilot_refine_spec_with_answers", {
+        spec_type: spec_type,
+        num_answers: questions_and_answers.length,
+      })
+
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
@@ -641,6 +756,8 @@
       case "refining":
       case "refine":
         return "Copilot: Review Suggested Refinements"
+      case "saving_with_copilot":
+        return "Copilot: Creating Spec"
     }
   }
 
@@ -651,9 +768,10 @@
       case "analyzing_for_review":
       case "refining":
       case "questioning":
+      case "saving_with_copilot":
         return undefined
       case "questions":
-        return "Answer these questions to help clarify your spec."
+        return "Reduce ambiguity of your spec."
       case "review":
         return "Improve your spec and judge with AI guidance."
       case "refine":
@@ -706,7 +824,8 @@
     if (
       state === "analyzing_for_review" ||
       state === "refining" ||
-      state === "questioning"
+      state === "questioning" ||
+      state === "saving_with_copilot"
     )
       return ""
     return "max-w-[900px]"
@@ -725,7 +844,7 @@
     title={page_title}
     subtitle={page_subtitle}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -737,7 +856,7 @@
       },
     ]}
   >
-    {#if loading || saving_spec}
+    {#if loading || (saving_spec && current_state !== "saving_with_copilot")}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -762,12 +881,17 @@
         {project_id}
         {task_id}
         bind:few_shot_example
+        bind:has_unsaved_manual_entry
         on:analyze_with_copilot={handle_analyze_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />
     {:else if current_state === "analyzing_for_review"}
       <SpecAnalyzingAnimation />
-    {:else if current_state === "refining" || current_state === "questioning"}
+    {:else if current_state === "questioning"}
+      <QuestioningAnimation />
+    {:else if current_state === "saving_with_copilot"}
+      <SavingAnimation />
+    {:else if current_state === "refining"}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -795,12 +919,16 @@
         bind:error
         bind:submitting
         {warn_before_unload}
+        hide_secondary_button={reviewed_examples.length === 0}
         on:analyze_refined={handle_analyze_refined_spec}
         on:create_spec={() => handle_create_spec_from_refine()}
         on:create_spec_secondary={() => handle_create_spec_from_refine()}
       />
     {:else if current_state === "questions" && question_set}
       <Questions
+        {name}
+        {spec_type}
+        {property_values}
         {question_set}
         on_submit={handle_submit_question_answers}
         bind:error

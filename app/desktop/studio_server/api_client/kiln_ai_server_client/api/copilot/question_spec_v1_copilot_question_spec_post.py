@@ -7,13 +7,13 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
 from ...models.question_set import QuestionSet
-from ...models.spec_questioner_input import SpecQuestionerInput
+from ...models.spec_questioner_api_input import SpecQuestionerApiInput
 from ...types import Response
 
 
 def _get_kwargs(
     *,
-    body: SpecQuestionerInput,
+    body: SpecQuestionerApiInput,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
@@ -63,14 +63,14 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    body: SpecQuestionerInput,
+    body: SpecQuestionerApiInput,
 ) -> Response[HTTPValidationError | QuestionSet]:
     """Question Spec
 
      Generate questions to help clarify a specification.
 
     Args:
-        body (SpecQuestionerInput):
+        body (SpecQuestionerApiInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -94,14 +94,14 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    body: SpecQuestionerInput,
+    body: SpecQuestionerApiInput,
 ) -> HTTPValidationError | QuestionSet | None:
     """Question Spec
 
      Generate questions to help clarify a specification.
 
     Args:
-        body (SpecQuestionerInput):
+        body (SpecQuestionerApiInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -120,14 +120,14 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    body: SpecQuestionerInput,
+    body: SpecQuestionerApiInput,
 ) -> Response[HTTPValidationError | QuestionSet]:
     """Question Spec
 
      Generate questions to help clarify a specification.
 
     Args:
-        body (SpecQuestionerInput):
+        body (SpecQuestionerApiInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -149,14 +149,14 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    body: SpecQuestionerInput,
+    body: SpecQuestionerApiInput,
 ) -> HTTPValidationError | QuestionSet | None:
     """Question Spec
 
      Generate questions to help clarify a specification.
 
     Args:
-        body (SpecQuestionerInput):
+        body (SpecQuestionerApiInput):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

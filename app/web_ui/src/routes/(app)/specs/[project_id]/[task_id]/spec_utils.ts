@@ -13,10 +13,25 @@ import {
 } from "$lib/stores/run_configs_store"
 import { get_task_composite_id } from "$lib/stores"
 import { get } from "svelte/store"
+import posthog from "posthog-js"
 
 export type SuggestedEdit = {
   proposed_value: string
   reason_for_edit: string
+}
+
+/**
+ * A reviewed example from the spec review process.
+ * These examples form the golden dataset for the spec's eval.
+ * user_says_meets_spec is optional in the UI (not yet reviewed) but required when sent to backend.
+ */
+export type ReviewRow = {
+  input: string
+  output: string
+  model_says_meets_spec: boolean
+  user_says_meets_spec?: boolean
+  feedback: string
+  row_id: string
 }
 
 /**
@@ -129,6 +144,11 @@ export async function updateSpecPriority(
     throw error
   }
 
+  posthog.capture("update_spec_priority", {
+    old_priority: spec.priority,
+    new_priority: newPriority,
+  })
+
   return data
 }
 
@@ -166,6 +186,11 @@ export async function updateSpecStatus(
   if (error) {
     throw error
   }
+
+  posthog.capture("update_spec_status", {
+    old_status: spec.status,
+    new_status: newStatus,
+  })
 
   return data
 }

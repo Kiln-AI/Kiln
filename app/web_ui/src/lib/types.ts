@@ -123,6 +123,15 @@ export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
+
+// Copilot API types
+export type PromptGenerationResultApi =
+  components["schemas"]["PromptGenerationResultApi-Input"]
+export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
+export type ReviewedExample = components["schemas"]["ReviewedExample"]
+export type SampleApi = components["schemas"]["SampleApi"]
+export type SubsampleBatchOutputItemApi =
+  components["schemas"]["SubsampleBatchOutputItemApi"]
 export type SpecProperties =
   | components["schemas"]["AppropriateToolUseProperties"]
   | components["schemas"]["DesiredBehaviourProperties"]
@@ -149,9 +158,6 @@ export type QuestionSet = components["schemas"]["QuestionSet"]
 export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
 export type AnswerOptionWithSelection =
   components["schemas"]["AnswerOptionWithSelection"]
-export type RefineSpecWithQuestionAnswersResponse =
-  components["schemas"]["RefineSpecWithQuestionAnswersResponse"]
-export type ProposedSpecEdit = components["schemas"]["ProposedSpecEdit"]
 
 export type PublicGEPAJobStatusResponse =
   components["schemas"]["PublicGEPAJobStatusResponse"]

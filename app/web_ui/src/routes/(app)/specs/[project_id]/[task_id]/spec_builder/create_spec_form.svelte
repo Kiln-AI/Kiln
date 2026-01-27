@@ -24,6 +24,7 @@
   export let project_id: string
   export let task_id: string
   export let few_shot_example: FewShotExample | null = null
+  export let has_unsaved_manual_entry: boolean = false
 
   let form_container: FormContainer
 
@@ -109,6 +110,7 @@
       {project_id}
       {task_id}
       bind:selected_example={few_shot_example}
+      bind:has_unsaved_manual_entry
       {is_prompt_building}
     />
   {/if}

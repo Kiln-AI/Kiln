@@ -2392,6 +2392,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Spec With Copilot
+         * @description Create a spec using Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to create a spec with:
+         *     1. An eval for the spec with appropriate template
+         *     2. Batch examples via copilot API for eval, train, and golden datasets
+         *     3. A judge eval config (if judge_info provided)
+         *     4. The spec itself
+         *
+         *     If you don't need copilot, use POST /spec instead.
+         *
+         *     All models are validated before any saves occur. If validation fails,
+         *     no data is persisted.
+         */
+        post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2855,16 +2886,14 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
-        /** ClarifySpecApiInput */
+        /**
+         * ClarifySpecApiInput
+         * @description Input for clarifying a spec with copilot.
+         */
         ClarifySpecApiInput: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            /** Spec Rendered Prompt Template */
-            spec_rendered_prompt_template: string;
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            /** Target Specification */
+            target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
@@ -2877,13 +2906,16 @@ export interface components {
              */
             num_exemplars: number;
         };
-        /** ClarifySpecApiOutput */
+        /**
+         * ClarifySpecApiOutput
+         * @description Output from clarifying a spec.
+         */
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_result: components["schemas"]["PromptGenerationResultApi"];
-            topic_generation_result: components["schemas"]["PromptGenerationResultApi"];
-            input_generation_result: components["schemas"]["PromptGenerationResultApi"];
+            judge_result: components["schemas"]["PromptGenerationResultApi-Output"];
+            topic_generation_result: components["schemas"]["PromptGenerationResultApi-Output"];
+            input_generation_result: components["schemas"]["PromptGenerationResultApi-Output"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3153,6 +3185,57 @@ export interface components {
              *     }
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+        };
+        /**
+         * CreateSpecWithCopilotRequest
+         * @description Request model for creating a spec with Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to:
+         *     - Generate batch examples for eval, train, and golden datasets
+         *     - Create a judge eval config
+         *     - Create an eval with appropriate template/output scores
+         *     - Create and save the spec
+         *
+         *     If you don't want to use copilot, use the regular POST /spec endpoint instead.
+         *
+         *     The client is responsible for building:
+         *     - definition: The spec definition string (use buildSpecDefinition on client)
+         *     - properties: The spec properties object (filtered, with spec_type included)
+         */
+        CreateSpecWithCopilotRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Definition
+             * @description The spec definition string, built by client using buildSpecDefinition()
+             */
+            definition: string;
+            /**
+             * Properties
+             * @description The spec properties object, pre-built by client with spec_type included
+             */
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /**
+             * Evaluate Full Trace
+             * @default false
+             */
+            evaluate_full_trace: boolean;
+            /** Reviewed Examples */
+            reviewed_examples?: components["schemas"]["ReviewedExample"][];
+            judge_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            topic_generation_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            input_generation_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            /**
+             * Task Description
+             * @default
+             */
+            task_description: string;
+            /**
+             * Task Prompt With Example
+             * @default
+             */
+            task_prompt_with_example: string;
+            task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -3703,7 +3786,7 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id.
              */
             eval_set_filter_id: string;
             /**
@@ -3711,6 +3794,11 @@ export interface components {
              * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
              */
             eval_configs_filter_id?: string | null;
+            /**
+             * Train Set Filter Id
+             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             */
+            train_set_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -3978,7 +4066,10 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
-        /** ExampleWithFeedbackApi */
+        /**
+         * ExampleWithFeedbackApi
+         * @description An example with user feedback for spec refinement.
+         */
         ExampleWithFeedbackApi: {
             /** User Agrees With Judge */
             user_agrees_with_judge: boolean;
@@ -4537,22 +4628,25 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** GenerateBatchApiInput */
+        /**
+         * GenerateBatchApiInput
+         * @description Input for generating a batch of examples.
+         */
         GenerateBatchApiInput: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Task Input Schema */
-            task_input_schema: string;
-            /** Task Output Schema */
-            task_output_schema: string;
-            /** Spec Rendered Prompt Template */
-            spec_rendered_prompt_template: string;
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            topic_generation_task_info: components["schemas"]["TaskInfoApi"];
+            input_generation_task_info: components["schemas"]["TaskInfoApi"];
+            /** Target Specification */
+            target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
         };
-        /** GenerateBatchApiOutput */
+        /**
+         * GenerateBatchApiOutput
+         * @description Output from generating a batch of examples.
+         */
         GenerateBatchApiOutput: {
             /** Data By Topic */
             data_by_topic: {
@@ -5050,7 +5144,10 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
-        /** NewProposedSpecEditApi */
+        /**
+         * NewProposedSpecEditApi
+         * @description A proposed edit to a spec field.
+         */
         NewProposedSpecEditApi: {
             /** Spec Field Name */
             spec_field_name: string;
@@ -5275,8 +5372,41 @@ export interface components {
             /** Chain Of Thought Instructions */
             chain_of_thought_instructions?: string | null;
         };
-        /** PromptGenerationResultApi */
-        PromptGenerationResultApi: {
+        /**
+         * PromptGenerationInfo
+         * @description Information about a prompt generation step during copilot spec creation.
+         */
+        PromptGenerationInfo: {
+            /**
+             * Model Name
+             * @description The model used for generation.
+             */
+            model_name: string;
+            /**
+             * Provider Name
+             * @description The provider of the model used for generation.
+             */
+            provider_name: string;
+            /**
+             * Prompt
+             * @description The prompt used for generation.
+             */
+            prompt: string;
+        };
+        /**
+         * PromptGenerationResultApi
+         * @description Result from a prompt generation task.
+         */
+        "PromptGenerationResultApi-Input": {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
+        };
+        /**
+         * PromptGenerationResultApi
+         * @description Result from a prompt generation task.
+         */
+        "PromptGenerationResultApi-Output": {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
@@ -5319,27 +5449,6 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
-        };
-        /**
-         * ProposedSpecEdit
-         * @description A proposed edit to a spec field.
-         */
-        ProposedSpecEdit: {
-            /**
-             * spec_field_name
-             * @description The name of the spec field that is being edited
-             */
-            spec_field_name: string;
-            /**
-             * proposed_edit
-             * @description A new value for this spec field incorporating the feedback
-             */
-            proposed_edit: string;
-            /**
-             * reason_for_edit
-             * @description The reason for editing this spec field
-             */
-            reason_for_edit: string;
         };
         /** ProviderEmbeddingModels */
         ProviderEmbeddingModels: {
@@ -5669,30 +5778,25 @@ export interface components {
             /** Inaccurate Examples */
             inaccurate_examples: string;
         };
-        /** RefineSpecApiInput */
+        /**
+         * RefineSpecApiInput
+         * @description Input for refining a spec based on feedback.
+         */
         RefineSpecApiInput: {
-            target_task_info: components["schemas"]["TargetTaskInfoApi"];
-            spec: components["schemas"]["SpecInfoApi"];
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            target_specification: components["schemas"]["SpecApi"];
             /** Examples With Feedback */
             examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
         };
-        /** RefineSpecApiOutput */
+        /**
+         * RefineSpecApiOutput
+         * @description Output from refining a spec.
+         */
         RefineSpecApiOutput: {
             /** New Proposed Spec Edits */
             new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
             /** Not Incorporated Feedback */
             not_incorporated_feedback: string | null;
-        };
-        /**
-         * RefineSpecWithQuestionAnswersResponse
-         * @description Response containing proposed spec edits based on question answers.
-         */
-        RefineSpecWithQuestionAnswersResponse: {
-            /**
-             * new_proposed_spec_edits
-             * @description A list of proposed edits to spec fields
-             */
-            new_proposed_spec_edits: components["schemas"]["ProposedSpecEdit"][];
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -5801,6 +5905,25 @@ export interface components {
             /** Models */
             models: components["schemas"]["RerankerModelDetails"][];
         };
+        /**
+         * ReviewedExample
+         * @description A reviewed example from the spec review process.
+         *
+         *     Extends SampleApi with review-specific fields for tracking
+         *     model and user judgments on spec compliance.
+         */
+        ReviewedExample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Model Says Meets Spec */
+            model_says_meets_spec: boolean;
+            /** User Says Meets Spec */
+            user_says_meets_spec: boolean;
+            /** Feedback */
+            feedback: string;
+        };
         /** RunConfigEvalResult */
         RunConfigEvalResult: {
             /** Eval Id */
@@ -5895,7 +6018,10 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
-        /** SampleApi */
+        /**
+         * SampleApi
+         * @description A sample input/output pair.
+         */
         SampleApi: {
             /** Input */
             input: string;
@@ -6069,27 +6195,18 @@ export interface components {
             eval_id: string | null;
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
             task_sample?: components["schemas"]["TaskSample"] | null;
+            /** @description Information about topic generation during copilot spec creation. */
+            topic_generation_info?: components["schemas"]["PromptGenerationInfo"] | null;
+            /** @description Information about input generation during copilot spec creation. */
+            input_generation_info?: components["schemas"]["PromptGenerationInfo"] | null;
             /** Model Type */
             readonly model_type: string;
         };
-        /** SpecCreationRequest */
-        SpecCreationRequest: {
-            /** Name */
-            name: string;
-            /** Definition */
-            definition: string;
-            /** Properties */
-            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
-            priority: components["schemas"]["Priority"];
-            status: components["schemas"]["SpecStatus"];
-            /** Tags */
-            tags: string[];
-            /** Eval Id */
-            eval_id: string;
-            task_sample?: components["schemas"]["TaskSample"] | null;
-        };
-        /** SpecInfoApi */
-        SpecInfoApi: {
+        /**
+         * SpecApi
+         * @description Spec field information for refinement.
+         */
+        SpecApi: {
             /** Spec Fields */
             spec_fields: {
                 [key: string]: string;
@@ -6099,28 +6216,39 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** SpecQuestionerInput */
-        SpecQuestionerInput: {
+        /** SpecCreationRequest */
+        SpecCreationRequest: {
+            /** Name */
+            name: string;
+            /** Definition */
+            definition: string;
+            /** Properties */
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /** @default 1 */
+            priority: components["schemas"]["Priority"];
+            /** @default active */
+            status: components["schemas"]["SpecStatus"];
+            /** Tags */
+            tags?: string[];
             /**
-             * task_prompt
-             * @description The task's prompt
+             * Evaluate Full Trace
+             * @default false
              */
-            task_prompt: string;
+            evaluate_full_trace: boolean;
+            task_sample?: components["schemas"]["TaskSample"] | null;
+        };
+        /** SpecQuestionerApiInput */
+        SpecQuestionerApiInput: {
             /**
-             * task_input_schema
-             * @description If the task's input must conform to a specific input schema, it will be provided here
+             * target_task_info
+             * @description The task info including prompt, input schema, and output schema
              */
-            task_input_schema?: string | null;
+            target_task_info: components["schemas"]["TaskInfoApi"];
             /**
-             * task_output_schema
-             * @description If the task's output must conform to a specific schema, it will be provided here
-             */
-            task_output_schema?: string | null;
-            /**
-             * specification
+             * target_specification
              * @description The specification to analyze
              */
-            specification: string;
+            target_specification: string;
         };
         /**
          * SpecStatus
@@ -6196,7 +6324,10 @@ export interface components {
              */
             questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
         };
-        /** SubsampleBatchOutputItemApi */
+        /**
+         * SubsampleBatchOutputItemApi
+         * @description A single item from batch output for feedback.
+         */
         SubsampleBatchOutputItemApi: {
             /** Input */
             input: string;
@@ -6216,15 +6347,6 @@ export interface components {
             core_requirement: string;
             /** Taboo Examples */
             taboo_examples: string;
-        };
-        /** TargetTaskInfoApi */
-        TargetTaskInfoApi: {
-            /** Target Task Prompt */
-            target_task_prompt: string;
-            /** Target Task Input Schema */
-            target_task_input_schema: string;
-            /** Target Task Output Schema */
-            target_task_output_schema: string;
         };
         /**
          * Task
@@ -6287,7 +6409,22 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** TaskMetadataApi */
+        /**
+         * TaskInfoApi
+         * @description Task information for copilot API calls.
+         */
+        TaskInfoApi: {
+            /** Task Prompt */
+            task_prompt: string;
+            /** Task Input Schema */
+            task_input_schema: string;
+            /** Task Output Schema */
+            task_output_schema: string;
+        };
+        /**
+         * TaskMetadataApi
+         * @description Metadata about the model used for a task.
+         */
         TaskMetadataApi: {
             /** Model Name */
             model_name: string;
@@ -11930,7 +12067,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecQuestionerInput"];
+                "application/json": components["schemas"]["SpecQuestionerApiInput"];
             };
         };
         responses: {
@@ -11973,7 +12110,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RefineSpecWithQuestionAnswersResponse"];
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpecWithCopilotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
                 };
             };
             /** @description Validation Error */

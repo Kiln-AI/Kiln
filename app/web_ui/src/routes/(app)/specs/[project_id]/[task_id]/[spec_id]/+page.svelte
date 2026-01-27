@@ -43,6 +43,7 @@
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { goto } from "$app/navigation"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
+  import posthog from "posthog-js"
 
   // ### Spec Details Page ###
 
@@ -364,6 +365,9 @@
       }
       spec = data
       current_tags = spec.tags || []
+      posthog.capture("update_spec_tags", {
+        num_tags: tags.length,
+      })
     } catch (err) {
       tags_error = createKilnError(err)
     }
@@ -403,7 +407,7 @@
     title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
     subtitle="Use evals to measure how well your task meets this specification."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
         label: "Specs & Evals",
@@ -571,7 +575,7 @@
             Configure Eval
           </a>
         </div>
-      {:else if should_show_compare_table && evaluator && sorted_task_run_configs.length > 0}
+      {:else if should_show_compare_table && evaluator}
         <div class="mt-8">
           <RunConfigComparisonTable
             {project_id}

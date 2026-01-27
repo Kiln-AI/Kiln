@@ -7,37 +7,28 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
-    from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
-    from ..models.spec import Spec
     from ..models.task_info import TaskInfo
 
 
-T = TypeVar("T", bound="RefineSpecInput")
+T = TypeVar("T", bound="SpecQuestionerApiInput")
 
 
 @_attrs_define
-class RefineSpecInput:
+class SpecQuestionerApiInput:
     """
     Attributes:
         target_task_info (TaskInfo): Shared information about a task
-        target_specification (Spec):
-        examples_with_feedback (list[ExamplesWithFeedbackItem]):
+        target_specification (str):
     """
 
     target_task_info: TaskInfo
-    target_specification: Spec
-    examples_with_feedback: list[ExamplesWithFeedbackItem]
+    target_specification: str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         target_task_info = self.target_task_info.to_dict()
 
-        target_specification = self.target_specification.to_dict()
-
-        examples_with_feedback = []
-        for examples_with_feedback_item_data in self.examples_with_feedback:
-            examples_with_feedback_item = examples_with_feedback_item_data.to_dict()
-            examples_with_feedback.append(examples_with_feedback_item)
+        target_specification = self.target_specification
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -45,7 +36,6 @@ class RefineSpecInput:
             {
                 "target_task_info": target_task_info,
                 "target_specification": target_specification,
-                "examples_with_feedback": examples_with_feedback,
             }
         )
 
@@ -53,30 +43,20 @@ class RefineSpecInput:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
-        from ..models.spec import Spec
         from ..models.task_info import TaskInfo
 
         d = dict(src_dict)
         target_task_info = TaskInfo.from_dict(d.pop("target_task_info"))
 
-        target_specification = Spec.from_dict(d.pop("target_specification"))
+        target_specification = d.pop("target_specification")
 
-        examples_with_feedback = []
-        _examples_with_feedback = d.pop("examples_with_feedback")
-        for examples_with_feedback_item_data in _examples_with_feedback:
-            examples_with_feedback_item = ExamplesWithFeedbackItem.from_dict(examples_with_feedback_item_data)
-
-            examples_with_feedback.append(examples_with_feedback_item)
-
-        refine_spec_input = cls(
+        spec_questioner_api_input = cls(
             target_task_info=target_task_info,
             target_specification=target_specification,
-            examples_with_feedback=examples_with_feedback,
         )
 
-        refine_spec_input.additional_properties = d
-        return refine_spec_input
+        spec_questioner_api_input.additional_properties = d
+        return spec_questioner_api_input
 
     @property
     def additional_keys(self) -> list[str]:
