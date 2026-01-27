@@ -31,8 +31,8 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
 
   let token_budget: "light" | "medium" | "heavy" = "medium"
   let target_run_config_id: string | null = null

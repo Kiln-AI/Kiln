@@ -13,9 +13,9 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: gepa_job_id = $page.params.job_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: gepa_job_id = $page.params.job_id!
 
   let gepa_job: GepaJob | null = null
   let gepa_job_error: KilnError | null = null

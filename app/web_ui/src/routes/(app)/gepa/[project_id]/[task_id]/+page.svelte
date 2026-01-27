@@ -9,8 +9,8 @@
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
   $: is_empty = !gepa_jobs || gepa_jobs.length == 0
 
   let gepa_jobs: GepaJob[] | null = null
