@@ -6,50 +6,6 @@
       viewBox="0 0 600 900"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <!--
-    ================================================================================
-    ANIMATION TIMELINE DOCUMENTATION
-    ================================================================================
-  
-    STRUCTURE:
-      One main outer frame surrounding 3 component groups stacked vertically.
-      Each component group contains:
-      - top-bar           : Horizontal bar at top
-      - content-panel     : Left-aligned main content panel
-      - connector-1/2/3   : Circle connectors between panels
-      - right-panel-1/2/3 : Right-side panels
-  
-    ANIMATION SEQUENCE:
-      Main outer frame is visible from the start (static).
-      Each container completes before the next begins.
-      All phases are 500ms apart.
-      Each element uses a POP/GROW animation (scales to 1.15 then settles to 1).
-      
-      Container 1: 0ms - 1500ms
-        - Phase 0 (top-bar):                       0ms
-        - Phase 1 (content-panel):                 500ms
-        - Phase 2 (all connectors + all panels):  1000ms
-      
-      Container 2: 1500ms - 3000ms
-        - Phase 0: 1500ms
-        - Phase 1: 2000ms
-        - Phase 2: 2500ms
-      
-      Container 3: 3000ms - 4500ms
-        - Phase 0: 3000ms
-        - Phase 1: 3500ms
-        - Phase 2: 4000ms
-  
-    Total Cycle Duration: 5000ms (5 seconds) - LOOPS INFINITELY
-    
-    Cycle breakdown:
-      0-76%:   Elements appear in sequence
-      76-84%:  Hold (all visible)
-      84-90%:  All elements fade out together
-      90-100%: Hold invisible before restart
-    ================================================================================
-    -->
-
       <defs>
         <style>
           .stroke-primary {
@@ -63,11 +19,9 @@
             stroke: none;
           }
 
-          /* 
-          LOOPING ANIMATION - 4 second cycle
-          Container 1 visible on initial load, others cascade in
-          Timeline: C1 visible → C2/C3 appear → hold → fade out → pause → repeat
-        */
+          /* LOOPING ANIMATION - 4 second cycle
+      Container 1 visible on initial load, others cascade in
+      Timeline: C1 visible → C2/C3 appear → hold → fade out → pause → repeat */
 
           /* Container 1: Starts visible, fades out with others, fades back in before loop */
           @keyframes container1 {
@@ -115,15 +69,15 @@
             }
           }
 
-          /* Container 3: appears at 15% */
+          /* Container 3: appears at 26% */
           @keyframes container3 {
             0%,
-            15%,
+            26%,
             100% {
               opacity: 0;
               transform: scale(0.85);
             }
-            25% {
+            36% {
               opacity: 1;
               transform: scale(1);
             }
