@@ -122,21 +122,6 @@ class ClarifySpecApiOutput(BaseModel):
     input_generation_result: PromptGenerationResultApi
 
 
-class NewProposedSpecEditApi(BaseModel):
-    """A proposed edit to a spec field."""
-
-    spec_field_name: str
-    proposed_edit: str
-    reason_for_edit: str
-
-
-class RefineSpecApiOutput(BaseModel):
-    """Output from refining a spec."""
-
-    new_proposed_spec_edits: list[NewProposedSpecEditApi]
-    not_incorporated_feedback: str | None
-
-
 class GenerateBatchApiOutput(BaseModel):
     """Output from generating a batch of examples."""
 
