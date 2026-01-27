@@ -7,10 +7,8 @@ from app.desktop.studio_server.api_models.copilot_models import (
     ExampleWithFeedbackApi,
     GenerateBatchApiInput,
     GenerateBatchApiOutput,
-    NewProposedSpecEditApi,
     PromptGenerationResultApi,
     RefineSpecApiInput,
-    RefineSpecApiOutput,
     ReviewedExample,
     SampleApi,
     SpecApi,
@@ -289,42 +287,6 @@ class TestClarifySpecApiOutput:
         )
         assert len(output.examples_for_feedback) == 1
         assert output.judge_result.prompt == "Test prompt"
-
-
-class TestNewProposedSpecEditApi:
-    def test_creates_with_required_fields(self):
-        edit = NewProposedSpecEditApi(
-            spec_field_name="tone_description",
-            proposed_edit="Be more formal",
-            reason_for_edit="User feedback indicated informality",
-        )
-        assert edit.spec_field_name == "tone_description"
-        assert edit.proposed_edit == "Be more formal"
-        assert edit.reason_for_edit == "User feedback indicated informality"
-
-
-class TestRefineSpecApiOutput:
-    def test_creates_with_required_fields(self):
-        edit = NewProposedSpecEditApi(
-            spec_field_name="field",
-            proposed_edit="new value",
-            reason_for_edit="reason",
-        )
-        output = RefineSpecApiOutput(
-            new_proposed_spec_edits=[edit],
-            not_incorporated_feedback=None,
-        )
-        assert len(output.new_proposed_spec_edits) == 1
-        assert output.not_incorporated_feedback is None
-
-    def test_not_incorporated_feedback_can_be_set(self):
-        output = RefineSpecApiOutput(
-            new_proposed_spec_edits=[],
-            not_incorporated_feedback="Some feedback couldn't be incorporated",
-        )
-        assert (
-            output.not_incorporated_feedback == "Some feedback couldn't be incorporated"
-        )
 
 
 class TestGenerateBatchApiOutput:

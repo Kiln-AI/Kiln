@@ -167,3 +167,18 @@ class SubmitAnswersRequest(BaseModel):
         description="Questions about the specification with user-provided answers",
         title="questions_and_answers",
     )
+
+
+class NewProposedSpecEditApi(BaseModel):
+    """A proposed edit to a spec field."""
+
+    spec_field_name: str
+    proposed_edit: str
+    reason_for_edit: str
+
+
+class RefineSpecApiOutput(BaseModel):
+    """Output from refining a spec."""
+
+    new_proposed_spec_edits: list[NewProposedSpecEditApi]
+    not_incorporated_feedback: str | None
