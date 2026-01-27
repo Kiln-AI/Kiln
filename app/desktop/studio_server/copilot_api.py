@@ -15,11 +15,12 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     HTTPValidationError,
     RefineSpecInput,
     RefineSpecOutput,
-    SpecQuestionerApiInput,
-    TaskInfo,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     QuestionSet as QuestionSetServerApi,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    SpecQuestionerApiInput as SpecQuestionerApiInputServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SubmitAnswersRequest as SubmitAnswersRequestServerApi,
@@ -36,11 +37,11 @@ from app.desktop.studio_server.api_models.copilot_models import (
     RefineSpecApiInput,
     RefineSpecApiOutput,
     ReviewedExample,
+    SpecQuestionerApiInput,
     TaskInfoApi,
 )
 from app.desktop.studio_server.api_models.questions_models import (
     QuestionSet,
-    SpecQuestionerInput,
     SubmitAnswersRequest,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
@@ -199,19 +200,12 @@ def connect_copilot_api(app: FastAPI):
 
     @app.post("/api/copilot/question_spec")
     async def question_spec(
-        input: SpecQuestionerInput,
+        input: SpecQuestionerApiInput,
     ) -> QuestionSet:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        questioner_input = SpecQuestionerApiInput(
-            target_task_info=TaskInfo(
-                task_prompt=input.task_prompt,
-                task_input_schema=input.task_input_schema or "",
-                task_output_schema=input.task_output_schema or "",
-            ),
-            target_specification=input.specification,
-        )
+        questioner_input = SpecQuestionerApiInputServerApi.from_dict(input.model_dump())
 
         result = await question_spec_v1_copilot_question_spec_post.asyncio(
             client=client,

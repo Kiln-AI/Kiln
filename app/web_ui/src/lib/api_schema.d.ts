@@ -5981,28 +5981,18 @@ export interface components {
             evaluate_full_trace: boolean;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
-        /** SpecQuestionerInput */
-        SpecQuestionerInput: {
+        /** SpecQuestionerApiInput */
+        SpecQuestionerApiInput: {
             /**
-             * task_prompt
-             * @description The task's prompt
+             * target_task_info
+             * @description The task info including prompt, input schema, and output schema
              */
-            task_prompt: string;
+            target_task_info: components["schemas"]["TaskInfoApi"];
             /**
-             * task_input_schema
-             * @description If the task's input must conform to a specific input schema, it will be provided here
-             */
-            task_input_schema?: string | null;
-            /**
-             * task_output_schema
-             * @description If the task's output must conform to a specific schema, it will be provided here
-             */
-            task_output_schema?: string | null;
-            /**
-             * specification
+             * target_specification
              * @description The specification to analyze
              */
-            specification: string;
+            target_specification: string;
         };
         /**
          * SpecStatus
@@ -11576,7 +11566,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecQuestionerInput"];
+                "application/json": components["schemas"]["SpecQuestionerApiInput"];
             };
         };
         responses: {

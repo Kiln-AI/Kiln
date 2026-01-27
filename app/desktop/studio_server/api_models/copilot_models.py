@@ -141,3 +141,16 @@ class GenerateBatchApiOutput(BaseModel):
     """Output from generating a batch of examples."""
 
     data_by_topic: dict[str, list[SampleApi]]
+
+
+class SpecQuestionerApiInput(BaseModel):
+    target_task_info: TaskInfoApi = Field(
+        ...,
+        description="The task info including prompt, input schema, and output schema",
+        title="target_task_info",
+    )
+    target_specification: str = Field(
+        ...,
+        description="The specification to analyze",
+        title="target_specification",
+    )
