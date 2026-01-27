@@ -48,6 +48,9 @@ class SpecCreationRequest(BaseModel):
     task_sample: TaskSample | None = None
 
 
+# TODO: this endpoint doesn't make the eval with the eval tags etc. like we did with the other endpoint. Need to fix.
+# Probably just remove this endpoint and use the other endpoint instead. And add back "use copilot"?
+# Or wait we probably need to expose this as a public API so people can use it?
 def connect_spec_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/tasks/{task_id}/spec")
     async def create_spec(

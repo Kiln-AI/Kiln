@@ -32,9 +32,7 @@ def client(app):
 
 @pytest.fixture
 def mock_api_key():
-    with patch(
-        "app.desktop.studio_server.copilot_api.Config.shared"
-    ) as mock_config_shared:
+    with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
         mock_config = mock_config_shared.return_value
         mock_config.kiln_copilot_api_key = "test_api_key"
         yield mock_config
@@ -43,10 +41,12 @@ def mock_api_key():
 @pytest.fixture
 def clarify_spec_input():
     return {
-        "target_task_prompt": "Test task prompt",
-        "task_input_schema": '{"type": "string"}',
-        "task_output_schema": '{"type": "string"}',
-        "spec_rendered_prompt_template": "Test template",
+        "target_task_info": {
+            "task_prompt": "Test task prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "target_specification": "Test template",
         "num_samples_per_topic": 5,
         "num_topics": 3,
         "providers": ["openai"],
@@ -58,9 +58,9 @@ def clarify_spec_input():
 def refine_spec_input():
     return {
         "target_task_info": {
-            "target_task_prompt": "Test task prompt",
-            "target_task_input_schema": '{"type": "string"}',
-            "target_task_output_schema": '{"type": "string"}',
+            "task_prompt": "Test task prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
         },
         "spec": {
             "spec_fields": {},
@@ -80,10 +80,22 @@ def refine_spec_input():
 @pytest.fixture
 def generate_batch_input():
     return {
-        "target_task_prompt": "Test task prompt",
-        "task_input_schema": '{"type": "string"}',
-        "task_output_schema": '{"type": "string"}',
-        "spec_rendered_prompt_template": "Test template",
+        "target_task_info": {
+            "task_prompt": "Test task prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "topic_generation_task_info": {
+            "task_prompt": "Test topic generation prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "input_generation_task_info": {
+            "task_prompt": "Test input generation prompt",
+            "task_input_schema": '{"type": "string"}',
+            "task_output_schema": '{"type": "string"}',
+        },
+        "target_specification": "Test template",
         "num_samples_per_topic": 5,
         "num_topics": 3,
     }
@@ -91,9 +103,7 @@ def generate_batch_input():
 
 class TestClarifySpec:
     def test_clarify_spec_no_api_key(self, client, clarify_spec_input):
-        with patch(
-            "app.desktop.studio_server.copilot_api.Config.shared"
-        ) as mock_config_shared:
+        with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
             mock_config = mock_config_shared.return_value
             mock_config.kiln_copilot_api_key = None
 
@@ -173,9 +183,7 @@ class TestClarifySpec:
 
 class TestRefineSpec:
     def test_refine_spec_no_api_key(self, client, refine_spec_input):
-        with patch(
-            "app.desktop.studio_server.copilot_api.Config.shared"
-        ) as mock_config_shared:
+        with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
             mock_config = mock_config_shared.return_value
             mock_config.kiln_copilot_api_key = None
 
@@ -229,9 +237,7 @@ class TestRefineSpec:
 
 class TestGenerateBatch:
     def test_generate_batch_no_api_key(self, client, generate_batch_input):
-        with patch(
-            "app.desktop.studio_server.copilot_api.Config.shared"
-        ) as mock_config_shared:
+        with patch("app.desktop.util.spec_utils.Config.shared") as mock_config_shared:
             mock_config = mock_config_shared.return_value
             mock_config.kiln_copilot_api_key = None
 

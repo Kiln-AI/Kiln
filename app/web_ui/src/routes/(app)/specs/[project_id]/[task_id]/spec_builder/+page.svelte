@@ -11,6 +11,9 @@
     QuestionSet,
     SubmitAnswersRequest,
     QuestionWithAnswer,
+    SpecProperties,
+    PromptGenerationResultApi,
+    ReviewedExample,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
@@ -19,12 +22,8 @@
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
     type SuggestedEdit,
+    type ReviewRow,
   } from "../spec_utils"
-  import {
-    createSpec,
-    type JudgeInfo,
-    type ReviewedExample,
-  } from "./spec_persistence"
   import { client } from "$lib/api_client"
   import {
     load_task,
@@ -117,12 +116,12 @@
   let question_set: QuestionSet | null = null
 
   // Review state
-  type ReviewRow = ReviewedExample & { id: string }
-
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: JudgeInfo | null = null
+  let judge_info: PromptGenerationResultApi | null = null
+  let topic_generation_info: PromptGenerationResultApi | null = null
+  let input_generation_info: PromptGenerationResultApi | null = null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
@@ -263,19 +262,18 @@
 
     current_state = "analyzing_for_review"
 
-    const spec_rendered_prompt_template = buildSpecDefinition(
-      spec_type,
-      values_to_use,
-    )
+    const target_specification = buildSpecDefinition(spec_type, values_to_use)
 
     const { data, error: api_error } = await client.POST(
       "/api/copilot/clarify_spec",
       {
         body: {
-          target_task_prompt: task_prompt_with_few_shot,
-          task_input_schema,
-          task_output_schema,
-          spec_rendered_prompt_template,
+          target_task_info: {
+            task_prompt: task_prompt_with_few_shot,
+            task_input_schema,
+            task_output_schema,
+          },
+          target_specification,
           num_samples_per_topic: 10,
           num_topics: 5,
           providers: providers,
@@ -293,14 +291,13 @@
       throw new Error("Failed to analyze spec for review. Please try again.")
     }
 
-    judge_info = {
-      prompt: data.judge_result.prompt,
-      model_name: data.judge_result.task_metadata.model_name,
-      model_provider: data.judge_result.task_metadata.model_provider_name,
-    }
+    // Save generation results - they match PromptGenerationResultApi
+    judge_info = data.judge_result
+    topic_generation_info = data.topic_generation_result
+    input_generation_info = data.input_generation_result
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
-      id: String(index + 1),
+      row_id: String(index + 1),
       input: example.input,
       output: example.output,
       model_says_meets_spec: !example.fails_specification,
@@ -350,23 +347,76 @@
   async function saveSpec(
     values: Record<string, string | null>,
     use_kiln_copilot: boolean,
-    examples: ReviewedExample[],
+    reviewed_examples: ReviewedExample[],
     signal?: AbortSignal,
   ) {
-    const spec_id = await createSpec(
-      project_id,
-      task_id,
-      task?.instruction || "",
-      task_prompt_with_few_shot,
-      name,
-      spec_type,
-      values,
-      use_kiln_copilot,
-      evaluate_full_trace,
-      examples,
-      judge_info,
-      signal,
+    // Build definition and properties on the client side
+    const definition = buildSpecDefinition(spec_type, values)
+
+    // Build properties object with spec_type, filtering out null and empty values
+    const filteredValues = Object.fromEntries(
+      Object.entries(values).filter(
+        ([_, value]) => value !== null && value.trim() !== "",
+      ),
     )
+    const properties = {
+      spec_type: spec_type,
+      ...filteredValues,
+    } as SpecProperties
+
+    // Call the appropriate endpoint based on whether copilot is being used
+    let spec_id: string | null | undefined
+    if (use_kiln_copilot) {
+      // TODO: judge_info is null here, need to fix.
+      if (!judge_info || !topic_generation_info || !input_generation_info) {
+        throw new Error("Generation info is required for copilot spec creation")
+      }
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition,
+            properties,
+            evaluate_full_trace,
+            reviewed_examples,
+            judge_info,
+            topic_generation_info,
+            input_generation_info,
+            task_description: task?.instruction || "",
+            task_prompt_with_few_shot,
+          },
+          signal,
+        },
+      )
+      // console.log("data", data)
+      // console.log("api_error", api_error)
+      if (api_error) throw api_error
+      spec_id = data?.id
+    } else {
+      const { data, error: api_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition,
+            properties,
+            priority: 1,
+            status: "active",
+            tags: [],
+            eval_id: "", // TODO: this endpoint doesn't make the eval with the eval tags etc. like we did with the other endpoint. Need to fix.
+          },
+        },
+      )
+      if (api_error) throw api_error
+      spec_id = data?.id
+    }
+
+    if (!spec_id) {
+      throw new Error("Failed to create spec")
+    }
 
     complete = true
     goto(`/specs/${project_id}/${task_id}/${spec_id}`)
@@ -469,11 +519,11 @@
         {
           body: {
             target_task_info: {
-              target_task_prompt: task_prompt_with_few_shot,
-              target_task_input_schema: task.input_json_schema
+              task_prompt: task_prompt_with_few_shot,
+              task_input_schema: task.input_json_schema
                 ? JSON.stringify(task.input_json_schema)
                 : "",
-              target_task_output_schema: task.output_json_schema
+              task_output_schema: task.output_json_schema
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },

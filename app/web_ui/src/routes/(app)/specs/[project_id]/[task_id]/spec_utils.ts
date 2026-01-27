@@ -20,6 +20,20 @@ export type SuggestedEdit = {
 }
 
 /**
+ * A reviewed example from the spec review process.
+ * These examples form the golden dataset for the spec's eval.
+ * user_says_meets_spec is optional in the UI (not yet reviewed) but required when sent to backend.
+ */
+export type ReviewRow = {
+  input: string
+  output: string
+  model_says_meets_spec: boolean
+  user_says_meets_spec?: boolean
+  feedback: string
+  row_id: string
+}
+
+/**
  * Build a definition string from properties
  * @param specType - The type of spec
  * @param properties - The properties of the spec
