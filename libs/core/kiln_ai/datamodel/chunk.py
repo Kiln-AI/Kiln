@@ -172,6 +172,10 @@ class Chunk(BaseModel):
     content: KilnAttachmentModel = Field(
         description="The content of the chunk, stored as an attachment."
     )
+    page_number: int | None = Field(
+        default=None,
+        description="The page number (0-indexed) this chunk belongs to. Only set when the extraction has page_offsets.",
+    )
 
     @field_serializer("content")
     def serialize_content(

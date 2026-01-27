@@ -5084,6 +5084,11 @@ export interface components {
              * @description The score of the chunk, which depends on the similarity metric used.
              */
             similarity: number | null;
+            /**
+             * Page Number
+             * @description The page number (0-indexed) this chunk belongs to. Only set when the extraction has page_offsets.
+             */
+            page_number?: number | null;
         };
         /** SearchToolApiDescription */
         SearchToolApiDescription: {

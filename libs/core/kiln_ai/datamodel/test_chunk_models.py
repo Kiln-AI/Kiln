@@ -423,6 +423,39 @@ class TestChunk:
             with pytest.raises(ValueError):
                 Chunk(content=None)  # type: ignore[arg-type]
 
+    def test_page_number_defaults_to_none(self):
+        """Test that page_number defaults to None when not provided."""
+        with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+            tmp_file.write(b"test content")
+            tmp_path = Path(tmp_file.name)
+
+            attachment = KilnAttachmentModel.from_file(tmp_path)
+            chunk = Chunk(content=attachment)
+            assert chunk.page_number is None
+
+    def test_page_number_can_be_set(self):
+        """Test that page_number can be set to an integer."""
+        with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+            tmp_file.write(b"test content")
+            tmp_path = Path(tmp_file.name)
+
+            attachment = KilnAttachmentModel.from_file(tmp_path)
+            chunk = Chunk(content=attachment, page_number=0)
+            assert chunk.page_number == 0
+
+            chunk = Chunk(content=attachment, page_number=5)
+            assert chunk.page_number == 5
+
+    def test_page_number_can_be_none_explicitly(self):
+        """Test that page_number can be explicitly set to None."""
+        with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+            tmp_file.write(b"test content")
+            tmp_path = Path(tmp_file.name)
+
+            attachment = KilnAttachmentModel.from_file(tmp_path)
+            chunk = Chunk(content=attachment, page_number=None)
+            assert chunk.page_number is None
+
 
 class TestPropertiesNotMatchingChunkerType:
     """Test that properties are not matching the chunker type."""

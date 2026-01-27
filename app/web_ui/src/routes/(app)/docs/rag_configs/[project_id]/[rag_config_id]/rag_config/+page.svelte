@@ -55,6 +55,7 @@
     chunk_idx: number
     chunk_text: string
     similarity: number | null
+    page_number?: number | null
   }> = []
 
   onMount(async () => {
@@ -366,7 +367,8 @@
                           >
                             Document: {result.document_id}
                           </a>
-                          (Chunk #{result.chunk_idx})
+                          (Chunk #{result.chunk_idx} | Page: {result.page_number ??
+                            "N/A"})
                         </div>
                         <div>
                           Score: {result.similarity !== null

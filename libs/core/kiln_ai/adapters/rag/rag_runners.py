@@ -157,6 +157,7 @@ async def execute_chunker_job(job: ChunkerJob, chunker: BaseChunker) -> bool:
 
     chunking_result = await chunker.chunk(
         extraction_output_content,
+        page_offsets=job.extraction.page_offsets,
     )
     if chunking_result is None:
         raise ValueError("Chunking result is not set")
@@ -170,6 +171,7 @@ async def execute_chunker_job(job: ChunkerJob, chunker: BaseChunker) -> bool:
                     data=chunk.text,
                     mime_type="text/plain",
                 ),
+                page_number=chunk.page_number,
             )
             for chunk in chunking_result.chunks
         ],

@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker, ChunkingResult
@@ -156,6 +156,8 @@ def mock_extraction():
     extraction.extractor_config_id = "extractor-123"
     extraction.path = Path("test_extraction.txt")
     extraction.output_content = AsyncMock(return_value="test content")
+    # page_offsets is a new field, configure it as a property
+    type(extraction).page_offsets = PropertyMock(return_value=None)
     return extraction
 
 
@@ -388,6 +390,7 @@ class TestExecuteChunkerJob:
         mock_chunking_result = MagicMock(spec=ChunkingResult)
         mock_chunk = MagicMock()
         mock_chunk.text = "chunk text"
+        mock_chunk.page_number = None
         mock_chunking_result.chunks = [mock_chunk]
         mock_chunker.chunk = AsyncMock(return_value=mock_chunking_result)
 
@@ -400,8 +403,21 @@ class TestExecuteChunkerJob:
             result = await execute_chunker_job(job, mock_chunker)
 
             assert result is True
-            mock_chunker.chunk.assert_called_once_with("test content")
+            mock_chunker.chunk.assert_called_once_with(
+                "test content", page_offsets=mock_extraction.page_offsets
+            )
             mock_chunked_doc.save_to_file.assert_called_once()
+
+            # Verify that ChunkedDocument was created with Chunk objects that have page_number
+            assert mock_chunked_doc_class.called
+            call_args = mock_chunked_doc_class.call_args
+            assert call_args is not None
+            # ChunkedDocument is called with parent, chunker_config_id, and chunks as kwargs
+            chunks = call_args.kwargs.get("chunks", [])
+            assert len(chunks) == 1
+            # Verify the chunk has page_number attribute
+            assert hasattr(chunks[0], "page_number")
+            assert chunks[0].page_number is None
 
     @pytest.mark.asyncio
     async def test_execute_chunker_job_no_content_raises_error(
@@ -410,6 +426,7 @@ class TestExecuteChunkerJob:
         # Setup extraction without content
         mock_extraction = MagicMock(spec=Extraction)
         mock_extraction.output_content = AsyncMock(return_value=None)
+        type(mock_extraction).page_offsets = PropertyMock(return_value=None)
 
         job = ChunkerJob(extraction=mock_extraction, chunker_config=mock_chunker_config)
         mock_chunker = MagicMock(spec=BaseChunker)
@@ -428,6 +445,98 @@ class TestExecuteChunkerJob:
 
         with pytest.raises(ValueError, match="Chunking result is not set"):
             await execute_chunker_job(job, mock_chunker)
+
+    @pytest.mark.asyncio
+    async def test_execute_chunker_job_with_page_numbers(self, mock_chunker_config):
+        """Test that page_number from TextChunk is passed to Chunk when page_offsets are provided."""
+        # Setup extraction with page_offsets
+        mock_extraction = MagicMock(spec=Extraction)
+        mock_extraction.extractor_config_id = "extractor-123"
+        mock_extraction.path = Path("test_extraction.txt")
+        mock_extraction.output_content = AsyncMock(return_value="test content")
+        mock_extraction.page_offsets = [0, 100, 200]
+
+        job = ChunkerJob(extraction=mock_extraction, chunker_config=mock_chunker_config)
+
+        mock_chunker = MagicMock(spec=BaseChunker)
+        mock_chunking_result = MagicMock(spec=ChunkingResult)
+
+        # Create mock chunks with page numbers
+        mock_chunk1 = MagicMock()
+        mock_chunk1.text = "chunk 1 text"
+        mock_chunk1.page_number = 0
+
+        mock_chunk2 = MagicMock()
+        mock_chunk2.text = "chunk 2 text"
+        mock_chunk2.page_number = 1
+
+        mock_chunk3 = MagicMock()
+        mock_chunk3.text = "chunk 3 text"
+        mock_chunk3.page_number = None
+
+        mock_chunking_result.chunks = [mock_chunk1, mock_chunk2, mock_chunk3]
+        mock_chunker.chunk = AsyncMock(return_value=mock_chunking_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkedDocument"
+        ) as mock_chunked_doc_class:
+            mock_chunked_doc = MagicMock()
+            mock_chunked_doc_class.return_value = mock_chunked_doc
+
+            result = await execute_chunker_job(job, mock_chunker)
+
+            assert result is True
+            mock_chunker.chunk.assert_called_once_with(
+                "test content", page_offsets=[0, 100, 200]
+            )
+
+            # Verify that ChunkedDocument was created with Chunk objects that have correct page_numbers
+            assert mock_chunked_doc_class.called
+            call_args = mock_chunked_doc_class.call_args
+            assert call_args is not None
+            chunks = call_args.kwargs.get("chunks", [])
+            assert len(chunks) == 3
+            assert chunks[0].page_number == 0
+            assert chunks[1].page_number == 1
+            assert chunks[2].page_number is None
+
+    @pytest.mark.asyncio
+    async def test_execute_chunker_job_without_page_offsets(
+        self, mock_extraction, mock_chunker_config
+    ):
+        """Test that page_number is None when extraction has no page_offsets."""
+        mock_extraction.page_offsets = None
+
+        job = ChunkerJob(extraction=mock_extraction, chunker_config=mock_chunker_config)
+
+        mock_chunker = MagicMock(spec=BaseChunker)
+        mock_chunking_result = MagicMock(spec=ChunkingResult)
+        mock_chunk = MagicMock()
+        mock_chunk.text = "chunk text"
+        mock_chunk.page_number = None
+        mock_chunking_result.chunks = [mock_chunk]
+        mock_chunker.chunk = AsyncMock(return_value=mock_chunking_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkedDocument"
+        ) as mock_chunked_doc_class:
+            mock_chunked_doc = MagicMock()
+            mock_chunked_doc_class.return_value = mock_chunked_doc
+
+            result = await execute_chunker_job(job, mock_chunker)
+
+            assert result is True
+            mock_chunker.chunk.assert_called_once_with(
+                "test content", page_offsets=None
+            )
+
+            # Verify that ChunkedDocument was created with Chunk objects that have page_number=None
+            assert mock_chunked_doc_class.called
+            call_args = mock_chunked_doc_class.call_args
+            assert call_args is not None
+            chunks = call_args.kwargs.get("chunks", [])
+            assert len(chunks) == 1
+            assert chunks[0].page_number is None
 
 
 class TestExecuteEmbeddingJob:
