@@ -653,8 +653,12 @@
     const specification = buildSpecDefinition(spec_type, property_values)
     const { data, error } = await client.POST("/api/copilot/question_spec", {
       body: {
-        task_prompt: task_prompt_with_example,
-        specification,
+        target_task_info: {
+          task_prompt: task_prompt_with_example,
+          task_input_schema,
+          task_output_schema,
+        },
+        target_specification: specification,
       },
       signal: new_copilot_abort_signal(),
     })
@@ -711,6 +715,7 @@
       const processed = processProposedSpecEdits(
         data.new_proposed_spec_edits,
         property_values,
+        data.not_incorporated_feedback || "",
       )
       refined_property_values = processed.refined_property_values
       suggested_edits = processed.suggested_edits

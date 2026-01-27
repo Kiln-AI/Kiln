@@ -5211,27 +5211,6 @@ export interface components {
             /** Description */
             description?: string | null;
         };
-        /**
-         * ProposedSpecEdit
-         * @description A proposed edit to a spec field.
-         */
-        ProposedSpecEdit: {
-            /**
-             * spec_field_name
-             * @description The name of the spec field that is being edited
-             */
-            spec_field_name: string;
-            /**
-             * proposed_edit
-             * @description A new value for this spec field incorporating the feedback
-             */
-            proposed_edit: string;
-            /**
-             * reason_for_edit
-             * @description The reason for editing this spec field
-             */
-            reason_for_edit: string;
-        };
         /** ProviderEmbeddingModels */
         ProviderEmbeddingModels: {
             /** Models */
@@ -5562,17 +5541,6 @@ export interface components {
             new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
             /** Not Incorporated Feedback */
             not_incorporated_feedback: string | null;
-        };
-        /**
-         * RefineSpecWithQuestionAnswersResponse
-         * @description Response containing proposed spec edits based on question answers.
-         */
-        RefineSpecWithQuestionAnswersResponse: {
-            /**
-             * new_proposed_spec_edits
-             * @description A list of proposed edits to spec fields
-             */
-            new_proposed_spec_edits: components["schemas"]["ProposedSpecEdit"][];
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -6013,28 +5981,18 @@ export interface components {
             evaluate_full_trace: boolean;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
-        /** SpecQuestionerInput */
-        SpecQuestionerInput: {
+        /** SpecQuestionerApiInput */
+        SpecQuestionerApiInput: {
             /**
-             * task_prompt
-             * @description The task's prompt
+             * target_task_info
+             * @description The task info including prompt, input schema, and output schema
              */
-            task_prompt: string;
+            target_task_info: components["schemas"]["TaskInfoApi"];
             /**
-             * task_input_schema
-             * @description If the task's input must conform to a specific input schema, it will be provided here
-             */
-            task_input_schema?: string | null;
-            /**
-             * task_output_schema
-             * @description If the task's output must conform to a specific schema, it will be provided here
-             */
-            task_output_schema?: string | null;
-            /**
-             * specification
+             * target_specification
              * @description The specification to analyze
              */
-            specification: string;
+            target_specification: string;
         };
         /**
          * SpecStatus
@@ -11608,7 +11566,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SpecQuestionerInput"];
+                "application/json": components["schemas"]["SpecQuestionerApiInput"];
             };
         };
         responses: {
@@ -11651,7 +11609,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RefineSpecWithQuestionAnswersResponse"];
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
                 };
             };
             /** @description Validation Error */

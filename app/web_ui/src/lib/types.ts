@@ -158,9 +158,6 @@ export type QuestionSet = components["schemas"]["QuestionSet"]
 export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
 export type AnswerOptionWithSelection =
   components["schemas"]["AnswerOptionWithSelection"]
-export type RefineSpecWithQuestionAnswersResponse =
-  components["schemas"]["RefineSpecWithQuestionAnswersResponse"]
-export type ProposedSpecEdit = components["schemas"]["ProposedSpecEdit"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 
