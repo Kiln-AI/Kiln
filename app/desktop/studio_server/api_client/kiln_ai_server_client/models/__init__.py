@@ -28,18 +28,16 @@ from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edit import NewProposedSpecEdit
 from .output_file_info import OutputFileInfo
 from .prompt_generation_result import PromptGenerationResult
-from .proposed_spec_edit import ProposedSpecEdit
 from .question import Question
 from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
 from .refine_spec_input import RefineSpecInput
 from .refine_spec_output import RefineSpecOutput
-from .refine_spec_with_question_answers_response import RefineSpecWithQuestionAnswersResponse
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
 from .spec import Spec
-from .spec_questioner_input import SpecQuestionerInput
+from .spec_questioner_api_input import SpecQuestionerApiInput
 from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
 from .spec_spec_fields import SpecSpecFields
 from .specification_input import SpecificationInput
@@ -77,13 +75,11 @@ __all__ = (
     "NewProposedSpecEdit",
     "OutputFileInfo",
     "PromptGenerationResult",
-    "ProposedSpecEdit",
     "Question",
     "QuestionSet",
     "QuestionWithAnswer",
     "RefineSpecInput",
     "RefineSpecOutput",
-    "RefineSpecWithQuestionAnswersResponse",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
@@ -91,7 +87,7 @@ __all__ = (
     "SpecificationInput",
     "SpecificationInputSpecFieldCurrentValues",
     "SpecificationInputSpecFields",
-    "SpecQuestionerInput",
+    "SpecQuestionerApiInput",
     "SpecSpecFieldCurrentValues",
     "SpecSpecFields",
     "SubmitAnswersRequest",
