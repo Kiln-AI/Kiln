@@ -33,11 +33,13 @@
   import CreateSpecForm from "./create_spec_form.svelte"
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
-  import SpecAnalyzingAnimation from "../spec_analyzing_animation.svelte"
+  import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
+  import QuestioningAnimation from "./animations/questioning_animation.svelte"
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
+  import SavingAnimation from "./animations/saving_animation.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -58,6 +60,7 @@
     | "review"
     | "refining"
     | "refine"
+    | "saving_with_copilot"
 
   let current_state: BuilderState = "create"
   let has_questioned_spec = false
@@ -336,6 +339,7 @@
       }
     } catch (e) {
       if (is_abort_error(e)) return
+      has_questioned_spec = false
       console.error("Kiln Copilot failed to analyze spec:", e)
       error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
       current_state = "create"
@@ -466,6 +470,7 @@
   async function handle_create_spec_without_copilot() {
     error = null
     try {
+      saving_spec = true
       await saveSpec(property_values, false, [])
     } catch (e) {
       error = createKilnError(e)
@@ -482,6 +487,7 @@
       // Use full-page spinner for creating spec because it takes a while
       saving_spec = true
 
+      current_state = "saving_with_copilot"
       await saveSpec(
         property_values,
         true,
@@ -494,6 +500,7 @@
       error = new KilnError(
         "Kiln Copilot failed to create spec. Please try again.",
       )
+      current_state = "review"
     } finally {
       submitting = false
       saving_spec = false
@@ -627,6 +634,7 @@
     try {
       // Use full-page spinner for creating spec because it takes a while
       saving_spec = true
+      current_state = "saving_with_copilot"
       await saveSpec(
         refined_property_values,
         true,
@@ -639,6 +647,7 @@
       error = new KilnError(
         "Kiln Copilot failed to create spec. Please try again.",
       )
+      current_state = "refine"
     } finally {
       submitting = false
       saving_spec = false
@@ -659,9 +668,6 @@
     })
     if (error) {
       throw error
-    }
-    if (data === undefined) {
-      throw new Error("Failed to create questions")
     }
     posthog.capture("copilot_question_spec", {
       spec_type: spec_type,
@@ -745,6 +751,8 @@
       case "refining":
       case "refine":
         return "Copilot: Review Suggested Refinements"
+      case "saving_with_copilot":
+        return "Copilot: Creating Spec"
     }
   }
 
@@ -755,6 +763,7 @@
       case "analyzing_for_review":
       case "refining":
       case "questioning":
+      case "saving_with_copilot":
         return undefined
       case "questions":
         return "Reduce ambiguity of your spec."
@@ -810,7 +819,8 @@
     if (
       state === "analyzing_for_review" ||
       state === "refining" ||
-      state === "questioning"
+      state === "questioning" ||
+      state === "saving_with_copilot"
     )
       return ""
     return "max-w-[900px]"
@@ -841,7 +851,7 @@
       },
     ]}
   >
-    {#if loading || saving_spec}
+    {#if loading || (saving_spec && current_state !== "saving_with_copilot")}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -872,7 +882,11 @@
       />
     {:else if current_state === "analyzing_for_review"}
       <SpecAnalyzingAnimation />
-    {:else if current_state === "refining" || current_state === "questioning"}
+    {:else if current_state === "questioning"}
+      <QuestioningAnimation />
+    {:else if current_state === "saving_with_copilot"}
+      <SavingAnimation />
+    {:else if current_state === "refining"}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
