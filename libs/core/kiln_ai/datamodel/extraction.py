@@ -95,6 +95,10 @@ class Extraction(
     output: KilnAttachmentModel = Field(
         description="The extraction output.",
     )
+    page_offsets: list[int] | None = Field(
+        default=None,
+        description="Character offsets marking the start of each page. The int at index i is the char offset marking the start of page i (0-indexed). Only set for PDF extractions.",
+    )
 
     def parent_document(self) -> Union["Document", None]:
         if self.parent is None or self.parent.__class__.__name__ != "Document":
