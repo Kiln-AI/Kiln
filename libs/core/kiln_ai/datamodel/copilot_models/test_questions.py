@@ -1,5 +1,7 @@
 import pytest
-from app.desktop.studio_server.api_models.questions_models import (
+from pydantic import ValidationError
+
+from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     AnswerOption,
     AnswerOptionWithSelection,
     Question,
@@ -9,7 +11,6 @@ from app.desktop.studio_server.api_models.questions_models import (
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
-from pydantic import ValidationError
 
 
 # Fixtures for reusable test data

@@ -1,7 +1,7 @@
 """
 Data models for asking questions about a specification to refine it.
 
-These are API DTOs for the copilot questioner flow, not core domain models.
+Copilot models are in /lib so they can be shared across lib, server, and client.
 """
 
 from typing import Optional
