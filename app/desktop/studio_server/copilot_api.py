@@ -31,7 +31,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.copilot_models import (
+from app.desktop.studio_server.api_models.copilot_models import (
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
     GenerateBatchApiInput,
@@ -42,29 +42,33 @@ from app.desktop.studio_server.copilot_models import (
     ReviewedExample,
     TaskInfoApi,
 )
-from app.desktop.studio_server.questions_models import (
+from app.desktop.studio_server.api_models.questions_models import (
     QuestionSet,
     RefineSpecWithQuestionAnswersResponse,
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
-from app.desktop.util.spec_utils import (
+from app.desktop.studio_server.utils.copilot_utils import (
     create_dataset_task_runs,
     generate_copilot_examples,
     get_copilot_api_key,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
 )
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
-from kiln_ai.datamodel.spec import Spec, SpecStatus
+from kiln_ai.datamodel.spec import PromptGenerationInfo, Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.spec_utils import (
+    generate_spec_eval_filter_ids,
+    generate_spec_eval_tags,
+    spec_eval_data_type,
+    spec_eval_output_score,
+    spec_eval_template,
+)
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -100,7 +104,8 @@ class CreateSpecWithCopilotRequest(BaseModel):
     topic_generation_info: PromptGenerationResultApi
     input_generation_info: PromptGenerationResultApi
     task_description: str = ""
-    task_prompt_with_few_shot: str = ""
+    task_prompt_with_example: str = ""
+    task_sample: TaskSample | None = None
 
 
 def connect_copilot_api(app: FastAPI):
@@ -292,11 +297,11 @@ def connect_copilot_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
 
-        # Generate tag suffixes
-        eval_tag_suffix = request.name.lower().replace(" ", "_")
-        eval_tag = f"eval_{eval_tag_suffix}"
-        train_tag = f"eval_train_{eval_tag_suffix}"
-        golden_tag = f"eval_golden_{eval_tag_suffix}"
+        # Generate tags and filter IDs
+        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
+        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
+            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
+        )
 
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
@@ -304,8 +309,6 @@ def connect_copilot_api(app: FastAPI):
         # Determine eval properties
         template = spec_eval_template(spec_type)
         output_scores = [spec_eval_output_score(request.name)]
-        eval_set_filter_id = f"tag::{eval_tag}"
-        eval_configs_filter_id = f"tag::{golden_tag}"
         evaluation_data_type = spec_eval_data_type(
             spec_type, request.evaluate_full_trace
         )
@@ -321,6 +324,7 @@ def connect_copilot_api(app: FastAPI):
             template=template,
             output_scores=output_scores,
             eval_set_filter_id=eval_set_filter_id,
+            train_set_filter_id=train_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
@@ -355,7 +359,7 @@ def connect_copilot_api(app: FastAPI):
         all_examples = await generate_copilot_examples(
             api_key=api_key,
             target_task_info=TaskInfoApi(
-                task_prompt=request.task_prompt_with_few_shot,
+                task_prompt=request.task_prompt_with_example,
                 task_input_schema=task_input_schema,
                 task_output_schema=task_output_schema,
             ),
@@ -395,6 +399,17 @@ def connect_copilot_api(app: FastAPI):
             status=SpecStatus.active,
             tags=[],
             eval_id=eval_model.id,
+            task_sample=request.task_sample,
+            topic_generation_info=PromptGenerationInfo(
+                model_name=request.topic_generation_info.task_metadata.model_name,
+                provider_name=request.topic_generation_info.task_metadata.model_provider_name,
+                prompt=request.topic_generation_info.prompt,
+            ),
+            input_generation_info=PromptGenerationInfo(
+                model_name=request.input_generation_info.task_metadata.model_name,
+                provider_name=request.input_generation_info.task_metadata.model_provider_name,
+                prompt=request.input_generation_info.prompt,
+            ),
         )
         models_to_save.append(spec)
 

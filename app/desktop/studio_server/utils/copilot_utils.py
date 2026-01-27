@@ -18,7 +18,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.copilot_models import (
+from app.desktop.studio_server.api_models.copilot_models import (
     ReviewedExample,
     SampleApi,
     TaskInfoApi,
@@ -26,8 +26,6 @@ from app.desktop.studio_server.copilot_models import (
 from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import EvalDataType, EvalOutputScore, EvalTemplateId
-from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
@@ -128,62 +126,6 @@ async def generate_copilot_examples(
     return examples
 
 
-def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
-    """Create an EvalOutputScore for a spec."""
-    return EvalOutputScore(
-        name=spec_name,
-        type=TaskOutputRatingType.pass_fail,
-        instruction=f"Evaluate if the model's behaviour meets the spec: {spec_name}.",
-    )
-
-
-def spec_eval_data_type(
-    spec_type: SpecType, evaluate_full_trace: bool = False
-) -> EvalDataType:
-    """Determine the eval data type for a spec."""
-    if spec_type == SpecType.reference_answer_accuracy:
-        return EvalDataType.reference_answer
-
-    if evaluate_full_trace:
-        return EvalDataType.full_trace
-    else:
-        return EvalDataType.final_answer
-
-
-def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
-    """Get the eval template for a spec type."""
-    match spec_type:
-        case SpecType.appropriate_tool_use:
-            return EvalTemplateId.tool_call
-        case SpecType.reference_answer_accuracy:
-            return EvalTemplateId.rag
-        case SpecType.factual_correctness:
-            return EvalTemplateId.factual_correctness
-        case SpecType.toxicity:
-            return EvalTemplateId.toxicity
-        case SpecType.bias:
-            return EvalTemplateId.bias
-        case SpecType.maliciousness:
-            return EvalTemplateId.maliciousness
-        case SpecType.jailbreak:
-            return EvalTemplateId.jailbreak
-        case SpecType.issue:
-            return EvalTemplateId.issue
-        case SpecType.desired_behaviour:
-            return EvalTemplateId.desired_behaviour
-        case (
-            SpecType.tone
-            | SpecType.formatting
-            | SpecType.localization
-            | SpecType.hallucinations
-            | SpecType.completeness
-            | SpecType.nsfw
-            | SpecType.taboo
-            | SpecType.prompt_leakage
-        ):
-            return None
-
-
 def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
     """Randomly sample and remove n items from a list.
 
@@ -204,7 +146,9 @@ def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
     return sampled
 
 
-def create_task_run_from_sample(sample: SampleApi, tag: str) -> TaskRun:
+def create_task_run_from_sample(
+    sample: SampleApi, tag: str, extra_tags: list[str] | None = None
+) -> TaskRun:
     """Create a TaskRun from a SampleApi (without parent set)."""
     data_source = DataSource(
         type=DataSourceType.synthetic,
@@ -215,6 +159,10 @@ def create_task_run_from_sample(sample: SampleApi, tag: str) -> TaskRun:
         },
     )
 
+    tags = [tag]
+    if extra_tags:
+        tags.extend(extra_tags)
+
     # Access input using model_dump since SampleApi uses alias
     sample_dict = sample.model_dump(by_alias=True)
     return TaskRun(
@@ -224,12 +172,15 @@ def create_task_run_from_sample(sample: SampleApi, tag: str) -> TaskRun:
             output=sample.output,
             source=data_source,
         ),
-        tags=[tag],
+        tags=tags,
     )
 
 
 def create_task_run_from_reviewed(
-    example: ReviewedExample, tag: str, spec_name: str
+    example: ReviewedExample,
+    tag: str,
+    spec_name: str,
+    extra_tags: list[str] | None = None,
 ) -> TaskRun:
     """Create a TaskRun from a reviewed example with rating (without parent set)."""
     data_source = DataSource(
@@ -240,6 +191,10 @@ def create_task_run_from_reviewed(
             "model_provider": KILN_COPILOT_MODEL_PROVIDER,
         },
     )
+
+    tags = [tag]
+    if extra_tags:
+        tags.extend(extra_tags)
 
     rating_key = f"named::{spec_name}"
     rating_value = 1.0 if example.user_says_meets_spec else 0.0
@@ -261,7 +216,7 @@ def create_task_run_from_reviewed(
                 },
             ),
         ),
-        tags=[tag],
+        tags=tags,
     )
 
 
@@ -284,27 +239,36 @@ def create_dataset_task_runs(
     """
     task_runs: list[TaskRun] = []
 
+    # Generate a session tag for all task runs in this batch
+    session_id = random.randint(0, 999999999999)
+    session_tag = f"synthetic_session_{session_id}"
+    extra_tags = [session_tag]
+
     # Sample examples for eval and train datasets
     eval_examples = sample_and_remove(all_examples, MIN_EVAL_EXAMPLES)
     train_examples = sample_and_remove(all_examples, MIN_TRAIN_EXAMPLES)
 
     # Create TaskRuns for eval examples
     for example in eval_examples:
-        task_runs.append(create_task_run_from_sample(example, eval_tag))
+        task_runs.append(create_task_run_from_sample(example, eval_tag, extra_tags))
 
     # Create TaskRuns for train examples
     for example in train_examples:
-        task_runs.append(create_task_run_from_sample(example, train_tag))
+        task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
 
     # Create unrated golden examples from remaining pool if needed
     unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
     if unrated_golden_count > 0:
         unrated_golden_examples = sample_and_remove(all_examples, unrated_golden_count)
         for example in unrated_golden_examples:
-            task_runs.append(create_task_run_from_sample(example, golden_tag))
+            task_runs.append(
+                create_task_run_from_sample(example, golden_tag, extra_tags)
+            )
 
     # Create TaskRuns for reviewed examples with ratings
     for reviewed in reviewed_examples:
-        task_runs.append(create_task_run_from_reviewed(reviewed, golden_tag, spec_name))
+        task_runs.append(
+            create_task_run_from_reviewed(reviewed, golden_tag, spec_name, extra_tags)
+        )
 
     return task_runs

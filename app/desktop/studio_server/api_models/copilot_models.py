@@ -1,8 +1,4 @@
-"""Shared Pydantic models for the Copilot API.
-
-These models are used by copilot_api.py and spec_utils.py to avoid
-circular imports and provide proper typing.
-"""
+"""Shared Pydantic models for the Copilot API."""
 
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from pydantic import BaseModel, Field

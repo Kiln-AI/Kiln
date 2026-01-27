@@ -16,6 +16,16 @@ class TaskSample(BaseModel):
     output: str = Field(description="The expected output for the task.")
 
 
+class PromptGenerationInfo(BaseModel):
+    """Information about a prompt generation step during copilot spec creation."""
+
+    model_name: str = Field(description="The model used for generation.")
+    provider_name: str = Field(
+        description="The provider of the model used for generation."
+    )
+    prompt: str = Field(description="The prompt used for generation.")
+
+
 class SpecStatus(str, Enum):
     """Defines the status of a spec."""
 
@@ -54,6 +64,14 @@ class Spec(KilnParentedModel):
     task_sample: TaskSample | None = Field(
         default=None,
         description="An example task input/output pair used to demonstrate expected behavior for this spec.",
+    )
+    topic_generation_info: PromptGenerationInfo | None = Field(
+        default=None,
+        description="Information about topic generation during copilot spec creation.",
+    )
+    input_generation_info: PromptGenerationInfo | None = Field(
+        default=None,
+        description="Information about input generation during copilot spec creation.",
     )
 
     @model_validator(mode="after")

@@ -22,6 +22,7 @@
     checkKilnCopilotAvailable,
   } from "./spec_utils"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import posthog from "posthog-js"
 
   // ### Spec Table ###
 
@@ -523,6 +524,12 @@
         }
       }
 
+      posthog.capture("update_spec_tags_batch", {
+        num_specs: specs_to_update.length,
+        num_tags_added: add_tags.length,
+        num_tags_removed: remove_tags.size,
+      })
+
       add_tags = []
       success = true
       return true
@@ -577,6 +584,10 @@
         const new_status = should_archive ? "archived" : "active"
         await updateSpecStatus(spec, new_status as SpecStatus)
       }
+
+      posthog.capture(should_archive ? "archive_specs" : "unarchive_specs", {
+        num_specs: specs_to_update.length,
+      })
 
       success = true
       return true
