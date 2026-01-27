@@ -15,15 +15,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     HTTPValidationError,
     RefineSpecInput,
     RefineSpecOutput,
+    SpecQuestionerApiInput,
+    TaskInfo,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     QuestionSet as QuestionSetServerApi,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    RefineSpecWithQuestionAnswersResponse as RefineSpecWithQuestionAnswersResponseServerApi,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SpecQuestionerInput as SpecQuestionerInputServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SubmitAnswersRequest as SubmitAnswersRequestServerApi,
@@ -44,7 +40,6 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.api_models.questions_models import (
     QuestionSet,
-    RefineSpecWithQuestionAnswersResponse,
     SpecQuestionerInput,
     SubmitAnswersRequest,
 )
@@ -209,7 +204,14 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        questioner_input = SpecQuestionerInputServerApi.from_dict(input.model_dump())
+        questioner_input = SpecQuestionerApiInput(
+            target_task_info=TaskInfo(
+                task_prompt=input.task_prompt,
+                task_input_schema=input.task_input_schema or "",
+                task_output_schema=input.task_output_schema or "",
+            ),
+            target_specification=input.specification,
+        )
 
         result = await question_spec_v1_copilot_question_spec_post.asyncio(
             client=client,
@@ -238,7 +240,7 @@ def connect_copilot_api(app: FastAPI):
     @app.post("/api/copilot/refine_spec_with_question_answers")
     async def submit_question_answers(
         request: SubmitAnswersRequest,
-    ) -> RefineSpecWithQuestionAnswersResponse:
+    ) -> RefineSpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
@@ -261,10 +263,8 @@ def connect_copilot_api(app: FastAPI):
                 detail=f"Validation error: {result.to_dict()}",
             )
 
-        if isinstance(result, RefineSpecWithQuestionAnswersResponseServerApi):
-            return RefineSpecWithQuestionAnswersResponse.model_validate(
-                result.to_dict()
-            )
+        if isinstance(result, RefineSpecOutput):
+            return RefineSpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
             status_code=500,

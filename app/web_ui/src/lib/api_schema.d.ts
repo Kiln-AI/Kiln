@@ -5211,27 +5211,6 @@ export interface components {
             /** Description */
             description?: string | null;
         };
-        /**
-         * ProposedSpecEdit
-         * @description A proposed edit to a spec field.
-         */
-        ProposedSpecEdit: {
-            /**
-             * spec_field_name
-             * @description The name of the spec field that is being edited
-             */
-            spec_field_name: string;
-            /**
-             * proposed_edit
-             * @description A new value for this spec field incorporating the feedback
-             */
-            proposed_edit: string;
-            /**
-             * reason_for_edit
-             * @description The reason for editing this spec field
-             */
-            reason_for_edit: string;
-        };
         /** ProviderEmbeddingModels */
         ProviderEmbeddingModels: {
             /** Models */
@@ -5562,17 +5541,6 @@ export interface components {
             new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
             /** Not Incorporated Feedback */
             not_incorporated_feedback: string | null;
-        };
-        /**
-         * RefineSpecWithQuestionAnswersResponse
-         * @description Response containing proposed spec edits based on question answers.
-         */
-        RefineSpecWithQuestionAnswersResponse: {
-            /**
-             * new_proposed_spec_edits
-             * @description A list of proposed edits to spec fields
-             */
-            new_proposed_spec_edits: components["schemas"]["ProposedSpecEdit"][];
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
@@ -11651,7 +11619,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RefineSpecWithQuestionAnswersResponse"];
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
                 };
             };
             /** @description Validation Error */
