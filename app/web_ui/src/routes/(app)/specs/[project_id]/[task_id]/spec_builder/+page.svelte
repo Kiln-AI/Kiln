@@ -336,6 +336,7 @@
       }
     } catch (e) {
       if (is_abort_error(e)) return
+      has_questioned_spec = false
       console.error("Kiln Copilot failed to analyze spec:", e)
       error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
       current_state = "create"
