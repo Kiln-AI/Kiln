@@ -19,6 +19,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     QuestionSet as QuestionSetServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    RefineSpecApiOutput as RefineSpecApiOutputClient,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SpecQuestionerApiInput as SpecQuestionerApiInputServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -164,7 +167,7 @@ def connect_copilot_api(app: FastAPI):
                 detail=f"Validation error: {result.to_dict()}",
             )
 
-        if isinstance(result, RefineSpecApiOutput):
+        if isinstance(result, RefineSpecApiOutputClient):
             return RefineSpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
@@ -262,7 +265,7 @@ def connect_copilot_api(app: FastAPI):
                 detail=f"Validation error: {result.to_dict()}",
             )
 
-        if isinstance(result, RefineSpecApiOutput):
+        if isinstance(result, RefineSpecApiOutputClient):
             return RefineSpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(

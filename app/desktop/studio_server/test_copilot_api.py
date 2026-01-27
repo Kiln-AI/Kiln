@@ -10,8 +10,8 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
     HTTPValidationError,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_output import (
-    RefineSpecOutput,
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
+    RefineSpecApiOutput,
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from fastapi import FastAPI
@@ -145,19 +145,28 @@ class TestClarifySpec:
                 },
                 "prompt": "Test judge prompt",
             },
-            "topic_generation_result": {
-                "task_metadata": {
-                    "model_name": "gpt-4",
-                    "model_provider_name": "openai",
+            "sdg_session_config": {
+                "topic_generation_config": {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test topic generation prompt",
                 },
-                "prompt": "Test topic prompt",
-            },
-            "input_generation_result": {
-                "task_metadata": {
-                    "model_name": "gpt-4",
-                    "model_provider_name": "openai",
+                "input_generation_config": {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test input generation prompt",
                 },
-                "prompt": "Test input prompt",
+                "output_generation_config": {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test output generation prompt",
+                },
             },
         }
 
@@ -211,7 +220,7 @@ class TestRefineSpec:
             assert "API key not configured" in response.json()["detail"]
 
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
-        mock_output = MagicMock(spec=RefineSpecOutput)
+        mock_output = MagicMock(spec=RefineSpecApiOutput)
         mock_output.to_dict.return_value = {
             "new_proposed_spec_edits": [],
             "not_incorporated_feedback": None,
