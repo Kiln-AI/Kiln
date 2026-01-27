@@ -718,7 +718,7 @@
   title="Specs &amp; Evals"
   subtitle="Specifications describe the behaviours to enforce or avoid for your task. Adding specs lets us measure and optimize quality with evals."
   sub_subtitle={"Read the Docs"}
-  sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+  sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
   action_buttons={is_empty
     ? []
     : [
@@ -758,7 +758,7 @@
             },
             {
               label: "Docs & Guide",
-              href: "https://docs.kiln.tech/docs/evaluations",
+              href: "https://docs.kiln.tech/docs/evals-and-specs",
               is_primary: false,
               new_tab: true,
             },

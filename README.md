@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.kiln.tech/docs/evaluations"><strong>Evals</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/evals-and-specs"><strong>Evals & Specs</strong></a> • 
   <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> • 
   <a href="https://docs.kiln.tech/docs/agents"><strong>Agents</strong></a> • 
   <a href="https://docs.kiln.tech/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •

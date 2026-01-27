@@ -40,7 +40,7 @@
   <AppPage
     title="Create Spec"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/evaluations"
+    sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
         label: "Specs & Evals",
