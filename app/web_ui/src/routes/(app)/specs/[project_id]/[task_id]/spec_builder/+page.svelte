@@ -12,7 +12,8 @@
     SubmitAnswersRequest,
     QuestionWithAnswer,
     SpecProperties,
-    PromptGenerationResultApi,
+    SyntheticDataGenerationStepConfigApi,
+    SyntheticDataGenerationSessionConfigApi,
     ReviewedExample,
   } from "$lib/types"
   import { goto } from "$app/navigation"
@@ -124,9 +125,8 @@
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: PromptGenerationResultApi | null = null
-  let topic_generation_info: PromptGenerationResultApi | null = null
-  let input_generation_info: PromptGenerationResultApi | null = null
+  let judge_info: SyntheticDataGenerationStepConfigApi | null = null
+  let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
@@ -296,10 +296,9 @@
       throw new Error("Failed to analyze spec for review. Please try again.")
     }
 
-    // Save generation results - they match PromptGenerationResultApi
+    // Save generation results
     judge_info = data.judge_result
-    topic_generation_info = data.topic_generation_result
-    input_generation_info = data.input_generation_result
+    sdg_session_config = data.sdg_session_config
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
       row_id: String(index + 1),
@@ -389,12 +388,8 @@
         console.error("Missing judge info for spec creation")
         throw new Error("Something went wrong")
       }
-      if (!topic_generation_info) {
-        console.error("Missing topic generation info for spec creation")
-        throw new Error("Something went wrong")
-      }
-      if (!input_generation_info) {
-        console.error("Missing input generation info for spec creation")
+      if (!sdg_session_config) {
+        console.error("Missing sdg session config for spec creation")
         throw new Error("Something went wrong")
       }
       const { data, error: api_error } = await client.POST(
@@ -408,8 +403,7 @@
             evaluate_full_trace,
             reviewed_examples,
             judge_info,
-            topic_generation_info,
-            input_generation_info,
+            sdg_session_config,
             task_description: task?.instruction || "",
             task_prompt_with_example,
             task_sample: few_shot_example

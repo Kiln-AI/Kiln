@@ -7,12 +7,13 @@ from app.desktop.studio_server.api_models.copilot_models import (
     ExampleWithFeedbackApi,
     GenerateBatchApiInput,
     GenerateBatchApiOutput,
-    PromptGenerationResultApi,
     RefineSpecApiInput,
     ReviewedExample,
     SampleApi,
     SpecApi,
     SubsampleBatchOutputItemApi,
+    SyntheticDataGenerationSessionConfigApi,
+    SyntheticDataGenerationStepConfigApi,
     TaskInfoApi,
     TaskMetadataApi,
 )
@@ -61,13 +62,13 @@ class TestTaskMetadataApi:
             assert metadata.model_provider_name == provider
 
 
-class TestPromptGenerationResultApi:
+class TestSyntheticDataGenerationStepConfigApi:
     def test_creates_with_required_fields(self):
         metadata = TaskMetadataApi(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
         )
-        result = PromptGenerationResultApi(
+        result = SyntheticDataGenerationStepConfigApi(
             task_metadata=metadata,
             prompt="Generated prompt content",
         )
@@ -241,15 +242,48 @@ class TestGenerateBatchApiInput:
         )
         input_model = GenerateBatchApiInput(
             target_task_info=task_info,
-            topic_generation_task_info=task_info,
-            input_generation_task_info=task_info,
+            sdg_session_config=SyntheticDataGenerationSessionConfigApi(
+                topic_generation_config=SyntheticDataGenerationStepConfigApi(
+                    task_metadata=TaskMetadataApi(
+                        model_name="gpt-4",
+                        model_provider_name=ModelProviderName.openai,
+                    ),
+                    prompt="Test prompt",
+                ),
+                input_generation_config=SyntheticDataGenerationStepConfigApi(
+                    task_metadata=TaskMetadataApi(
+                        model_name="gpt-4",
+                        model_provider_name=ModelProviderName.openai,
+                    ),
+                    prompt="Test prompt",
+                ),
+                output_generation_config=SyntheticDataGenerationStepConfigApi(
+                    task_metadata=TaskMetadataApi(
+                        model_name="gpt-4",
+                        model_provider_name=ModelProviderName.openai,
+                    ),
+                    prompt="Test prompt",
+                ),
+            ),
             target_specification="Test spec",
             num_samples_per_topic=5,
-            num_topics=10,
+            num_topics=3,
+        )
+        assert (
+            input_model.sdg_session_config.topic_generation_config.prompt
+            == "Test prompt"
+        )
+        assert (
+            input_model.sdg_session_config.input_generation_config.prompt
+            == "Test prompt"
+        )
+        assert (
+            input_model.sdg_session_config.output_generation_config.prompt
+            == "Test prompt"
         )
         assert input_model.target_specification == "Test spec"
         assert input_model.num_samples_per_topic == 5
-        assert input_model.num_topics == 10
+        assert input_model.num_topics == 3
 
 
 class TestSubsampleBatchOutputItemApi:
@@ -270,7 +304,7 @@ class TestClarifySpecApiOutput:
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
         )
-        prompt_result = PromptGenerationResultApi(
+        prompt_result = SyntheticDataGenerationStepConfigApi(
             task_metadata=metadata,
             prompt="Test prompt",
         )
@@ -282,8 +316,11 @@ class TestClarifySpecApiOutput:
         output = ClarifySpecApiOutput(
             examples_for_feedback=[example],
             judge_result=prompt_result,
-            topic_generation_result=prompt_result,
-            input_generation_result=prompt_result,
+            sdg_session_config=SyntheticDataGenerationSessionConfigApi(
+                topic_generation_config=prompt_result,
+                input_generation_config=prompt_result,
+                output_generation_config=prompt_result,
+            ),
         )
         assert len(output.examples_for_feedback) == 1
         assert output.judge_result.prompt == "Test prompt"

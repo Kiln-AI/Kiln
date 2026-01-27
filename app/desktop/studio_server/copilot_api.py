@@ -14,7 +14,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateBatchOutput,
     HTTPValidationError,
     RefineSpecInput,
-    RefineSpecOutput,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     QuestionSet as QuestionSetServerApi,
@@ -33,10 +32,11 @@ from app.desktop.studio_server.api_models.copilot_models import (
     ClarifySpecApiOutput,
     GenerateBatchApiInput,
     GenerateBatchApiOutput,
-    PromptGenerationResultApi,
     RefineSpecApiInput,
     ReviewedExample,
     SpecQuestionerApiInput,
+    SyntheticDataGenerationSessionConfigApi,
+    SyntheticDataGenerationStepConfigApi,
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
@@ -49,7 +49,13 @@ from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
-from kiln_ai.datamodel.spec import PromptGenerationInfo, Spec, SpecStatus, TaskSample
+from kiln_ai.datamodel.spec import (
+    Spec,
+    SpecStatus,
+    SyntheticDataGenerationSessionConfig,
+    SyntheticDataGenerationStepConfig,
+    TaskSample,
+)
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
@@ -96,9 +102,8 @@ class CreateSpecWithCopilotRequest(BaseModel):
     )
     evaluate_full_trace: bool = False
     reviewed_examples: list[ReviewedExample] = Field(default_factory=list)
-    judge_info: PromptGenerationResultApi
-    topic_generation_info: PromptGenerationResultApi
-    input_generation_info: PromptGenerationResultApi
+    judge_info: SyntheticDataGenerationStepConfigApi
+    sdg_session_config: SyntheticDataGenerationSessionConfigApi
     task_description: str = ""
     task_prompt_with_example: str = ""
     task_sample: TaskSample | None = None
@@ -159,7 +164,7 @@ def connect_copilot_api(app: FastAPI):
                 detail=f"Validation error: {result.to_dict()}",
             )
 
-        if isinstance(result, RefineSpecOutput):
+        if isinstance(result, RefineSpecApiOutput):
             return RefineSpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
@@ -257,7 +262,7 @@ def connect_copilot_api(app: FastAPI):
                 detail=f"Validation error: {result.to_dict()}",
             )
 
-        if isinstance(result, RefineSpecOutput):
+        if isinstance(result, RefineSpecApiOutput):
             return RefineSpecApiOutput.model_validate(result.to_dict())
 
         raise HTTPException(
@@ -350,16 +355,7 @@ def connect_copilot_api(app: FastAPI):
                 task_input_schema=task_input_schema,
                 task_output_schema=task_output_schema,
             ),
-            topic_generation_task_info=TaskInfoApi(
-                task_prompt=request.topic_generation_info.prompt,
-                task_input_schema="",
-                task_output_schema="",
-            ),
-            input_generation_task_info=TaskInfoApi(
-                task_prompt=request.input_generation_info.prompt,
-                task_input_schema="",
-                task_output_schema=task_input_schema,
-            ),
+            sdg_session_config=request.sdg_session_config,
             spec_definition=request.definition,
         )
 
@@ -377,6 +373,10 @@ def connect_copilot_api(app: FastAPI):
         models_to_save.extend(task_runs)
 
         # 5. Create the Spec using pre-computed definition and properties from client
+        topic_generation_config = request.sdg_session_config.topic_generation_config
+        input_generation_config = request.sdg_session_config.input_generation_config
+        output_generation_config = request.sdg_session_config.output_generation_config
+
         spec = Spec(
             parent=task,
             name=request.name,
@@ -387,15 +387,22 @@ def connect_copilot_api(app: FastAPI):
             tags=[],
             eval_id=eval_model.id,
             task_sample=request.task_sample,
-            topic_generation_info=PromptGenerationInfo(
-                model_name=request.topic_generation_info.task_metadata.model_name,
-                provider_name=request.topic_generation_info.task_metadata.model_provider_name,
-                prompt=request.topic_generation_info.prompt,
-            ),
-            input_generation_info=PromptGenerationInfo(
-                model_name=request.input_generation_info.task_metadata.model_name,
-                provider_name=request.input_generation_info.task_metadata.model_provider_name,
-                prompt=request.input_generation_info.prompt,
+            synthetic_data_generation_session_config=SyntheticDataGenerationSessionConfig(
+                topic_generation_config=SyntheticDataGenerationStepConfig(
+                    model_name=topic_generation_config.task_metadata.model_name,
+                    provider_name=topic_generation_config.task_metadata.model_provider_name,
+                    prompt=topic_generation_config.prompt,
+                ),
+                input_generation_config=SyntheticDataGenerationStepConfig(
+                    model_name=input_generation_config.task_metadata.model_name,
+                    provider_name=input_generation_config.task_metadata.model_provider_name,
+                    prompt=input_generation_config.prompt,
+                ),
+                output_generation_config=SyntheticDataGenerationStepConfig(
+                    model_name=output_generation_config.task_metadata.model_name,
+                    provider_name=output_generation_config.task_metadata.model_provider_name,
+                    prompt=output_generation_config.prompt,
+                ),
             ),
         )
         models_to_save.append(spec)

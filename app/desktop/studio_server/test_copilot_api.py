@@ -87,15 +87,28 @@ def generate_batch_input():
             "task_input_schema": '{"type": "string"}',
             "task_output_schema": '{"type": "string"}',
         },
-        "topic_generation_task_info": {
-            "task_prompt": "Test topic generation prompt",
-            "task_input_schema": '{"type": "string"}',
-            "task_output_schema": '{"type": "string"}',
-        },
-        "input_generation_task_info": {
-            "task_prompt": "Test input generation prompt",
-            "task_input_schema": '{"type": "string"}',
-            "task_output_schema": '{"type": "string"}',
+        "sdg_session_config": {
+            "topic_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test topic generation prompt",
+            },
+            "input_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test input generation prompt",
+            },
+            "output_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test output generation prompt",
+            },
         },
         "target_specification": "Test template",
         "num_samples_per_topic": 5,
