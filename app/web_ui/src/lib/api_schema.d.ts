@@ -5549,7 +5549,7 @@ export interface components {
          */
         RefineSpecApiInput: {
             target_task_info: components["schemas"]["TaskInfoApi"];
-            spec: components["schemas"]["SpecInfoApi"];
+            target_specification: components["schemas"]["SpecApi"];
             /** Examples With Feedback */
             examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
         };
@@ -5978,6 +5978,20 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /**
+         * SpecApi
+         * @description Spec field information for refinement.
+         */
+        SpecApi: {
+            /** Spec Fields */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /** Spec Field Current Values */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
         /** SpecCreationRequest */
         SpecCreationRequest: {
             /** Name */
@@ -5998,20 +6012,6 @@ export interface components {
              */
             evaluate_full_trace: boolean;
             task_sample?: components["schemas"]["TaskSample"] | null;
-        };
-        /**
-         * SpecInfoApi
-         * @description Spec field information for refinement.
-         */
-        SpecInfoApi: {
-            /** Spec Fields */
-            spec_fields: {
-                [key: string]: string;
-            };
-            /** Spec Field Current Values */
-            spec_field_current_values: {
-                [key: string]: string;
-            };
         };
         /** SpecQuestionerInput */
         SpecQuestionerInput: {

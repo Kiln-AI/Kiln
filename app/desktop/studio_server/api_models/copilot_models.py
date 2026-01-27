@@ -53,7 +53,7 @@ class ReviewedExample(BaseModel):
 
 
 # Input models
-class SpecInfoApi(BaseModel):
+class SpecApi(BaseModel):
     """Spec field information for refinement."""
 
     spec_fields: dict[str, str]
@@ -87,7 +87,7 @@ class RefineSpecApiInput(BaseModel):
     """Input for refining a spec based on feedback."""
 
     target_task_info: TaskInfoApi
-    spec: SpecInfoApi
+    target_specification: SpecApi
     examples_with_feedback: list[ExampleWithFeedbackApi]
 
 

@@ -46,7 +46,6 @@ from .specification_input import SpecificationInput
 from .specification_input_spec_field_current_values import SpecificationInputSpecFieldCurrentValues
 from .specification_input_spec_fields import SpecificationInputSpecFields
 from .submit_answers_request import SubmitAnswersRequest
-from .target_task_info import TargetTaskInfo
 from .task_info import TaskInfo
 from .task_metadata import TaskMetadata
 from .validation_error import ValidationError
@@ -96,7 +95,6 @@ __all__ = (
     "SpecSpecFieldCurrentValues",
     "SpecSpecFields",
     "SubmitAnswersRequest",
-    "TargetTaskInfo",
     "TaskInfo",
     "TaskMetadata",
     "ValidationError",

@@ -11,6 +11,9 @@
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
   import type { ReviewRow } from "../spec_utils"
+  import hljs from "highlight.js/lib/core"
+  import json from "highlight.js/lib/languages/json"
+  hljs.registerLanguage("json", json)
 
   export let name: string
   export let spec_type: SpecType
@@ -29,13 +32,23 @@
     create_spec_secondary: void
   }>()
 
-  function formatExpandedContent(data: string): string {
+  function formatExpandedContent(data: string): {
+    value: string
+    isJson: boolean
+  } {
     try {
-      const json = JSON.parse(data)
-      return JSON.stringify(json, null, 2)
+      const json_data = JSON.parse(data)
+      if (typeof json_data !== "string") {
+        const formatted = JSON.stringify(json_data, null, 2)
+        const highlighted = hljs.highlight(formatted, {
+          language: "json",
+        }).value
+        return { value: highlighted, isJson: true }
+      }
     } catch (_) {
-      return data
+      // Not valid JSON, return as plain text
     }
+    return { value: data, isJson: false }
   }
 
   function set_meets_spec(id: string, meets_spec: boolean, event: Event) {
@@ -106,6 +119,10 @@
   }
 </script>
 
+<head>
+  <link rel="stylesheet" href="/styles/highlightjs.min.css" />
+</head>
+
 <FormContainer
   bind:this={form_container}
   {submit_label}
@@ -156,16 +173,30 @@
         </thead>
         <tbody>
           {#each review_rows as row (row.row_id)}
+            {@const input_content = formatExpandedContent(row.input)}
+            {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
-                <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                    row.input,
-                  )}</pre>
+                <pre class="whitespace-pre-wrap">
+                  {#if input_content.isJson}
+                    <!-- eslint-disable svelte/no-at-html-tags -->
+                    {@html input_content.value}
+                    <!-- eslint-enable svelte/no-at-html-tags -->
+                  {:else}
+                    {input_content.value}
+                  {/if}
+                </pre>
               </td>
               <td class="py-2">
-                <pre class="whitespace-pre-wrap">{formatExpandedContent(
-                    row.output,
-                  )}</pre>
+                <pre class="whitespace-pre-wrap">
+                  {#if output_content.isJson}
+                    <!-- eslint-disable svelte/no-at-html-tags -->
+                    {@html output_content.value}
+                    <!-- eslint-enable svelte/no-at-html-tags -->
+                  {:else}
+                    {output_content.value}
+                  {/if}
+                </pre>
               </td>
               <td class="py-2">
                 <div class="flex gap-1">

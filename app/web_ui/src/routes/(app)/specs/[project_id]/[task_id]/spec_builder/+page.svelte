@@ -336,6 +336,7 @@
       }
     } catch (e) {
       if (is_abort_error(e)) return
+      has_questioned_spec = false
       console.error("Kiln Copilot failed to analyze spec:", e)
       error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
       current_state = "create"
@@ -567,7 +568,7 @@
                 ? JSON.stringify(task.output_json_schema)
                 : "",
             },
-            spec: {
+            target_specification: {
               spec_fields: spec_info.spec_fields,
               spec_field_current_values: spec_info.spec_field_current_values,
             },

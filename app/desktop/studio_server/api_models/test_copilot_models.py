@@ -13,7 +13,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     RefineSpecApiOutput,
     ReviewedExample,
     SampleApi,
-    SpecInfoApi,
+    SpecApi,
     SubsampleBatchOutputItemApi,
     TaskInfoApi,
     TaskMetadataApi,
@@ -123,9 +123,9 @@ class TestReviewedExample:
         assert example.input == "aliased input"
 
 
-class TestSpecInfoApi:
+class TestSpecApi:
     def test_creates_with_required_fields(self):
-        info = SpecInfoApi(
+        info = SpecApi(
             spec_fields={"field1": "Field 1 description"},
             spec_field_current_values={"field1": "current value"},
         )
@@ -133,7 +133,7 @@ class TestSpecInfoApi:
         assert info.spec_field_current_values == {"field1": "current value"}
 
     def test_accepts_empty_dicts(self):
-        info = SpecInfoApi(
+        info = SpecApi(
             spec_fields={},
             spec_field_current_values={},
         )
@@ -216,7 +216,7 @@ class TestRefineSpecApiInput:
             task_input_schema="{}",
             task_output_schema="{}",
         )
-        spec_info = SpecInfoApi(
+        spec_info = SpecApi(
             spec_fields={"field": "description"},
             spec_field_current_values={"field": "value"},
         )
@@ -228,7 +228,7 @@ class TestRefineSpecApiInput:
         )
         input_model = RefineSpecApiInput(
             target_task_info=task_info,
-            spec=spec_info,
+            target_specification=spec_info,
             examples_with_feedback=[example],
         )
         assert len(input_model.examples_with_feedback) == 1
