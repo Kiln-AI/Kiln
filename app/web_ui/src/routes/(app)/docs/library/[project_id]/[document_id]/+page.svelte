@@ -175,11 +175,23 @@
       tags_error = createKilnError(err)
     }
   }
+
+  function truncate_string(str: string, max_length: number) {
+    if (!str) {
+      return ""
+    }
+    if (str.length <= max_length) {
+      return str
+    }
+    return str.slice(0, max_length) + "…"
+  }
 </script>
 
 <AppPage
   title="Document"
-  subtitle={document?.friendly_name}
+  subtitle={document?.friendly_name
+    ? truncate_string(document.friendly_name, 100)
+    : undefined}
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width

@@ -61,6 +61,8 @@ class ReadOnlyMutationError(RuntimeError):
 FORBIDDEN_CHARS_REGEX = r"[/\\?%*:|\"<>.,;=\n]"
 FORBIDDEN_CHARS = "/ \\ ? % * : | < > . , ; = \\n"
 
+MAX_FILENAME_LENGTH = 120
+
 
 def name_validator(*, min_length: int, max_length: int) -> Callable[[Any], str]:
     def fn(name: Any) -> str:
@@ -85,7 +87,14 @@ def name_validator(*, min_length: int, max_length: int) -> Callable[[Any], str]:
     return fn
 
 
-def string_to_valid_name(name: str) -> str:
+def string_to_valid_name(name: str, truncate_to_max_length: bool = False) -> str:
+    """Convert a string to a valid filename.
+    Args:
+        name (str): The string to convert.
+        truncate_to_max_length (bool): If True, the name will be truncated to the maximum filename length.
+    Returns:
+        str: The valid filename.
+    """
     # https://docs.python.org/3/library/unicodedata.html#unicodedata.normalize
     valid_name = unicodedata.normalize("NFKD", name)
     # Replace any forbidden chars with an underscore
@@ -97,7 +106,12 @@ def string_to_valid_name(name: str) -> str:
     # Replace consecutive underscores with a single underscore
     valid_name = re.sub(r"_+", "_", valid_name)
     # Remove leading and trailing underscores or whitespace
-    return valid_name.strip("_").strip()
+    valid_name = valid_name.strip("_").strip()
+    if truncate_to_max_length and len(valid_name) > MAX_FILENAME_LENGTH:
+        valid_name = valid_name[:MAX_FILENAME_LENGTH]
+        # After truncating, we might have new trailing whitespace, dots, or underscores, so strip again.
+        valid_name = valid_name.strip("_").strip().rstrip(".")
+    return valid_name
 
 
 class KilnAttachmentModel(BaseModel):
@@ -260,7 +274,7 @@ class KilnAttachmentModel(BaseModel):
 #     name: FilenameString = Field(description="The name of the model.")
 #     name_short: FilenameStringShort = Field(description="The short name of the model.")
 FilenameString = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=120))
+    str, BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH))
 ]
 FilenameStringShort = Annotated[
     str, BeforeValidator(name_validator(min_length=1, max_length=32))

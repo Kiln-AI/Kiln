@@ -13,6 +13,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.basemodel import (
+    MAX_FILENAME_LENGTH,
     KilnBaseModel,
     KilnParentedModel,
     ReadOnlyMutationError,
@@ -379,6 +380,52 @@ def test_string_to_valid_name(tmp_path, name, expected):
     # check we can create a folder with the valid name
     dir_path = tmp_path / str(uuid.uuid4()) / expected
     dir_path.mkdir(parents=True)
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        # Names shorter than MAX_FILENAME_LENGTH are processed but may change due to forbidden chars
+        ("short_name.txt", "short_name txt"),  # . becomes space
+        (
+            "a" * 119 + ".txt",
+            "a" * 119,
+        ),  # . becomes space, gets stripped after truncation
+        # Names exactly MAX_FILENAME_LENGTH are unchanged if no forbidden chars
+        ("a" * 120, "a" * 120),
+        # Names longer than MAX_FILENAME_LENGTH are truncated
+        ("a" * 121, "a" * 120),
+        (
+            "very_long_filename_that_exceeds_the_maximum_length_limit.txt",
+            "very_long_filename_that_exceeds_the_maximum_length_limit txt",
+        ),  # . becomes space, 67 chars
+        # Empty and edge cases with truncation
+        ("", ""),
+        ("a" * 120 + "extra", "a" * 120),
+        # Invalid characters are still processed before truncation
+        (
+            "file/with/invalid@chars.and_very_long_name.txt",
+            "file with invalid@chars and_very_long_name txt",
+        ),  # / and . become spaces
+        (
+            "a" * 100 + "@invalid" + "b" * 50,
+            "a" * 100 + "@invalid" + "b" * 12,
+        ),  # @ stays, total 158 chars -> truncated to 120
+    ],
+)
+def test_string_to_valid_name_with_truncate(tmp_path, name, expected):
+    assert string_to_valid_name(name, truncate_to_max_length=True) == expected
+
+    # Check that result is never longer than MAX_FILENAME_LENGTH
+    assert (
+        len(string_to_valid_name(name, truncate_to_max_length=True))
+        <= MAX_FILENAME_LENGTH
+    )
+
+    # Check that without truncation, longer names would exceed the limit
+    if len(name) > MAX_FILENAME_LENGTH:
+        untruncated = string_to_valid_name(name, truncate_to_max_length=False)
+        assert len(untruncated) > MAX_FILENAME_LENGTH or untruncated != expected
 
 
 @pytest.mark.parametrize(
