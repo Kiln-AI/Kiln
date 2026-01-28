@@ -21,6 +21,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 from app.desktop.studio_server.api_models.copilot_models import (
     ReviewedExample,
     SampleApi,
+    SyntheticDataGenerationSessionConfigApi,
     TaskInfoApi,
 )
 from fastapi import HTTPException
@@ -58,8 +59,7 @@ def get_copilot_api_key() -> str:
 async def generate_copilot_examples(
     api_key: str,
     target_task_info: TaskInfoApi,
-    topic_generation_task_info: TaskInfoApi,
-    input_generation_task_info: TaskInfoApi,
+    sdg_session_config: SyntheticDataGenerationSessionConfigApi,
     spec_definition: str,
 ) -> list[SampleApi]:
     """Generate examples via the Kiln Copilot API.
@@ -70,8 +70,7 @@ async def generate_copilot_examples(
     Args:
         api_key: The Kiln Copilot API key
         target_task_info: Task info for the target task
-        topic_generation_task_info: Task info for topic generation
-        input_generation_task_info: Task info for input generation
+        sdg_session_config: Session config for synthetic data generation
         spec_definition: The rendered spec definition
     """
     client = get_authenticated_client(api_key)
@@ -79,8 +78,7 @@ async def generate_copilot_examples(
     generate_input = GenerateBatchInput.from_dict(
         {
             "target_task_info": target_task_info.model_dump(),
-            "topic_generation_task_info": topic_generation_task_info.model_dump(),
-            "input_generation_task_info": input_generation_task_info.model_dump(),
+            "sdg_session_config": sdg_session_config.model_dump(),
             "target_specification": spec_definition,
             "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
             "num_topics": NUM_TOPICS,

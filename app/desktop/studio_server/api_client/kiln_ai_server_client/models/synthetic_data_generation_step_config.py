@@ -10,12 +10,12 @@ if TYPE_CHECKING:
     from ..models.task_metadata import TaskMetadata
 
 
-T = TypeVar("T", bound="PromptGenerationResult")
+T = TypeVar("T", bound="SyntheticDataGenerationStepConfig")
 
 
 @_attrs_define
-class PromptGenerationResult:
-    """Information about a prompt generation run.
+class SyntheticDataGenerationStepConfig:
+    """Configuration for a synthetic data generation step.
 
     Attributes:
         task_metadata (TaskMetadata): Metadata about a task invocation.
@@ -51,13 +51,13 @@ class PromptGenerationResult:
 
         prompt = d.pop("prompt")
 
-        prompt_generation_result = cls(
+        synthetic_data_generation_step_config = cls(
             task_metadata=task_metadata,
             prompt=prompt,
         )
 
-        prompt_generation_result.additional_properties = d
-        return prompt_generation_result
+        synthetic_data_generation_step_config.additional_properties = d
+        return synthetic_data_generation_step_config
 
     @property
     def additional_keys(self) -> list[str]:

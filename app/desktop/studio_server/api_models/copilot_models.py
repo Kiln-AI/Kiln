@@ -20,11 +20,19 @@ class TaskMetadataApi(BaseModel):
     model_provider_name: ModelProviderName
 
 
-class PromptGenerationResultApi(BaseModel):
-    """Result from a prompt generation task."""
+class SyntheticDataGenerationStepConfigApi(BaseModel):
+    """Configuration for a synthetic data generation step."""
 
     task_metadata: TaskMetadataApi
     prompt: str
+
+
+class SyntheticDataGenerationSessionConfigApi(BaseModel):
+    """Configuration for a synthetic data generation session"""
+
+    topic_generation_config: SyntheticDataGenerationStepConfigApi
+    input_generation_config: SyntheticDataGenerationStepConfigApi
+    output_generation_config: SyntheticDataGenerationStepConfigApi
 
 
 class SampleApi(BaseModel):
@@ -95,11 +103,10 @@ class GenerateBatchApiInput(BaseModel):
     """Input for generating a batch of examples."""
 
     target_task_info: TaskInfoApi
-    topic_generation_task_info: TaskInfoApi
-    input_generation_task_info: TaskInfoApi
     target_specification: str
     num_samples_per_topic: int
     num_topics: int
+    sdg_session_config: SyntheticDataGenerationSessionConfigApi
 
 
 # Output models
@@ -117,9 +124,8 @@ class ClarifySpecApiOutput(BaseModel):
     """Output from clarifying a spec."""
 
     examples_for_feedback: list[SubsampleBatchOutputItemApi]
-    judge_result: PromptGenerationResultApi
-    topic_generation_result: PromptGenerationResultApi
-    input_generation_result: PromptGenerationResultApi
+    judge_result: SyntheticDataGenerationStepConfigApi
+    sdg_session_config: SyntheticDataGenerationSessionConfigApi
 
 
 class GenerateBatchApiOutput(BaseModel):

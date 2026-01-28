@@ -16,14 +16,28 @@ class TaskSample(BaseModel):
     output: str = Field(description="The expected output for the task.")
 
 
-class PromptGenerationInfo(BaseModel):
-    """Information about a prompt generation step during copilot spec creation."""
+class SyntheticDataGenerationStepConfig(BaseModel):
+    """Information about a synthetic data generation step."""
 
     model_name: str = Field(description="The model used for generation.")
     provider_name: str = Field(
         description="The provider of the model used for generation."
     )
     prompt: str = Field(description="The prompt used for generation.")
+
+
+class SyntheticDataGenerationSessionConfig(BaseModel):
+    """Configuration for a synthetic data generation session."""
+
+    topic_generation_config: SyntheticDataGenerationStepConfig = Field(
+        description="Configuration for topic generation."
+    )
+    input_generation_config: SyntheticDataGenerationStepConfig = Field(
+        description="Configuration for input generation."
+    )
+    output_generation_config: SyntheticDataGenerationStepConfig = Field(
+        description="Configuration for output generation."
+    )
 
 
 class SpecStatus(str, Enum):
@@ -65,13 +79,11 @@ class Spec(KilnParentedModel):
         default=None,
         description="An example task input/output pair used to demonstrate expected behavior for this spec.",
     )
-    topic_generation_info: PromptGenerationInfo | None = Field(
+    synthetic_data_generation_session_config: (
+        SyntheticDataGenerationSessionConfig | None
+    ) = Field(
         default=None,
-        description="Information about topic generation during copilot spec creation.",
-    )
-    input_generation_info: PromptGenerationInfo | None = Field(
-        default=None,
-        description="Information about input generation during copilot spec creation.",
+        description="Config for synthetic data generation session.",
     )
 
     @model_validator(mode="after")
