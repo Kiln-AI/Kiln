@@ -132,7 +132,7 @@ def connect_copilot_api(app: FastAPI):
         result = detailed_result.parsed
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Failed to clarify spec. Please try again."
+                status_code=500, detail="Failed to analyze spec. Please try again."
             )
 
         if isinstance(result, HTTPValidationError):
@@ -167,7 +167,8 @@ def connect_copilot_api(app: FastAPI):
         result = detailed_result.parsed
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Failed to refine spec. Please try again."
+                status_code=500,
+                detail="Failed to refine spec with feedback. Please try again.",
             )
 
         if isinstance(result, HTTPValidationError):
@@ -241,7 +242,7 @@ def connect_copilot_api(app: FastAPI):
         if result is None:
             raise HTTPException(
                 status_code=500,
-                detail="Failed to generate questions. Please try again.",
+                detail="Failed to generate clarifying questions for spec. Please try again.",
             )
 
         if isinstance(result, HTTPValidationError):

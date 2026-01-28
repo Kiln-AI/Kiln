@@ -194,7 +194,7 @@ class TestClarifySpec:
         ):
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 500
-            assert "Failed to clarify spec" in response.json()["detail"]
+            assert "Failed to analyze spec" in response.json()["detail"]
 
     def test_clarify_spec_validation_error(
         self, client, clarify_spec_input, mock_api_key

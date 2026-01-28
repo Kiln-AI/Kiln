@@ -87,26 +87,31 @@ async def generate_copilot_examples(
         }
     )
 
-    result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
-        client=client,
-        body=generate_input,
+    detailed_result = (
+        await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
+            client=client,
+            body=generate_input,
+        )
     )
+    check_response_error(detailed_result)
 
+    result = detailed_result.parsed
     if result is None:
         raise HTTPException(
-            status_code=500, detail="Failed to generate batch: No response"
+            status_code=500,
+            detail="Failed to generate synthetic data for spec. Please try again.",
         )
 
     if isinstance(result, HTTPValidationError):
         raise HTTPException(
             status_code=422,
-            detail=f"Validation error: {result.to_dict()}",
+            detail="Validation error.",
         )
 
     if not isinstance(result, GenerateBatchOutput):
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     # Convert result to flat list of SampleApi
@@ -276,7 +281,7 @@ def create_dataset_task_runs(
 
 
 def check_response_error(
-    response: Response, default_detail: str = "Unknown error"
+    response: Response, default_detail: str = "Unknown error."
 ) -> None:
     """Check if the response is an error with user centric message."""
     if response.status_code != 200:
@@ -286,7 +291,7 @@ def check_response_error(
         if response.content.startswith(b"{"):
             try:
                 json_data = json.loads(response.content)
-                detail = json_data.get("user_message", "Unknown error")
+                detail = json_data.get("user_message", default_detail)
             except json.JSONDecodeError:
                 pass
         raise HTTPException(
