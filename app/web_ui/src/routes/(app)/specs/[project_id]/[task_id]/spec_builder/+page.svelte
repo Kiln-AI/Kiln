@@ -111,8 +111,7 @@
         task_id,
         examples,
       )
-    } catch (e) {
-      console.error("Failed to build prompt with few-shot:", e)
+    } catch {
       // Fallback to just the instruction
       task_prompt_with_example = task?.instruction || ""
     } finally {
@@ -209,7 +208,7 @@
       // Load the task (used by copilot API calls)
       task = await load_task(project_id, task_id)
       if (!task) {
-        throw new Error("Failed to load task")
+        throw new KilnError("Failed to load task.")
       }
 
       // Check if default run config has tools (copilot doesn't support tool calling)
@@ -221,7 +220,6 @@
       // Get spec type from URL params
       const spec_type_param = $page.url.searchParams.get("type")
       if (!spec_type_param) {
-        console.error("No spec type provided")
         complete = true
         goto(`/specs/${project_id}/${task_id}`)
         return
@@ -267,7 +265,7 @@
     values_to_use: Record<string, string | null> = property_values,
   ) {
     if (!task) {
-      throw new Error("Task not loaded")
+      throw new KilnError("Task not loaded.")
     }
 
     current_state = "analyzing_for_review"
@@ -298,7 +296,9 @@
     }
 
     if (!data) {
-      throw new Error("Failed to analyze spec for review. Please try again.")
+      throw new KilnError(
+        "Failed to analyze spec for review. Please try again.",
+      )
     }
 
     // Save generation results
@@ -344,8 +344,7 @@
     } catch (e) {
       if (is_abort_error(e)) return
       has_questioned_spec = false
-      console.error("Kiln Copilot failed to analyze spec:", e)
-      error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
+      error = createKilnError(e)
       current_state = "create"
     } finally {
       submitting = false
@@ -390,12 +389,10 @@
     let spec_id: string | null | undefined
     if (use_kiln_copilot) {
       if (!judge_info) {
-        console.error("Missing judge info for spec creation")
-        throw new Error("Something went wrong")
+        throw new KilnError("Something went wrong.")
       }
       if (!sdg_session_config) {
-        console.error("Missing sdg session config for spec creation")
-        throw new Error("Something went wrong")
+        throw new KilnError("Something went wrong.")
       }
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -458,7 +455,7 @@
     }
 
     if (!spec_id) {
-      throw new Error("Failed to create spec")
+      throw new KilnError("Failed to create spec. Please try again.")
     }
 
     complete = true
@@ -499,10 +496,7 @@
       )
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to create spec:", e)
-      error = new KilnError(
-        "Kiln Copilot failed to create spec. Please try again.",
-      )
+      error = createKilnError(e)
       current_state = "review"
     } finally {
       submitting = false
@@ -538,7 +532,7 @@
       current_state = "refining"
 
       if (!task) {
-        throw new Error("Task not loaded")
+        throw new KilnError("Task not loaded")
       }
 
       // Store current reviewed examples
@@ -559,8 +553,8 @@
       }))
 
       if (examples_with_feedback.length === 0) {
-        throw new Error(
-          "No valid reviewed examples with feedback to refine spec",
+        throw new KilnError(
+          "No valid reviewed examples with feedback to refine spec.",
         )
       }
 
@@ -607,8 +601,7 @@
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to refine spec:", e)
-      error = new KilnError("Kiln Copilot failed to refine. Please try again.")
+      error = createKilnError(e)
       current_state = "review"
     } finally {
       submitting = false
@@ -623,8 +616,7 @@
       await analyzeSpecForReview(refined_property_values)
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to analyze refined spec:", e)
-      error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
+      error = createKilnError(e)
       current_state = "refine"
     } finally {
       submitting = false
@@ -646,10 +638,7 @@
       )
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to create spec:", e)
-      error = new KilnError(
-        "Kiln Copilot failed to create spec. Please try again.",
-      )
+      error = createKilnError(e)
       current_state = "refine"
     } finally {
       submitting = false
@@ -662,19 +651,22 @@
     current_state = "questioning"
 
     const specification = buildSpecDefinition(spec_type, property_values)
-    const { data, error } = await client.POST("/api/copilot/question_spec", {
-      body: {
-        target_task_info: {
-          task_prompt: task_prompt_with_example,
-          task_input_schema,
-          task_output_schema,
+    const { data, error: api_error } = await client.POST(
+      "/api/copilot/question_spec",
+      {
+        body: {
+          target_task_info: {
+            task_prompt: task_prompt_with_example,
+            task_input_schema,
+            task_output_schema,
+          },
+          target_specification: specification,
         },
-        target_specification: specification,
+        signal: new_copilot_abort_signal(),
       },
-      signal: new_copilot_abort_signal(),
-    })
-    if (error) {
-      throw error
+    )
+    if (api_error) {
+      throw api_error
     }
     posthog.capture("copilot_question_spec", {
       spec_type: spec_type,
@@ -716,8 +708,11 @@
       if (post_error) {
         throw post_error
       }
+
       if (!data) {
-        throw new Error("No response returned")
+        throw new KilnError(
+          "Failed to refine spec with question answers. Please try again.",
+        )
       }
 
       const processed = processProposedSpecEdits(
@@ -737,8 +732,7 @@
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to refine spec:", e)
-      error = new KilnError("Kiln Copilot failed to refine. Please try again.")
+      error = createKilnError(e)
       current_state = "questions"
     } finally {
       submitting = false

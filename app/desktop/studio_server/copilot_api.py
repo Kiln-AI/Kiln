@@ -127,13 +127,13 @@ def connect_copilot_api(app: FastAPI):
 
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Failed to clarify spec: No response"
+                status_code=500, detail="Failed to clarify spec. Please try again."
             )
 
         if isinstance(result, HTTPValidationError):
             raise HTTPException(
                 status_code=422,
-                detail=f"Validation error: {result.to_dict()}",
+                detail="Validation error.",
             )
 
         if isinstance(result, ClarifySpecOutput):
@@ -141,7 +141,7 @@ def connect_copilot_api(app: FastAPI):
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to clarify spec: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     @app.post("/api/copilot/refine_spec")
@@ -158,13 +158,13 @@ def connect_copilot_api(app: FastAPI):
 
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Failed to refine spec: No response"
+                status_code=500, detail="Failed to refine spec. Please try again."
             )
 
         if isinstance(result, HTTPValidationError):
             raise HTTPException(
                 status_code=422,
-                detail=f"Validation error: {result.to_dict()}",
+                detail="Validation error.",
             )
 
         if isinstance(result, RefineSpecApiOutputClient):
@@ -172,7 +172,7 @@ def connect_copilot_api(app: FastAPI):
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to refine spec: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     @app.post("/api/copilot/generate_batch")
@@ -189,13 +189,14 @@ def connect_copilot_api(app: FastAPI):
 
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Failed to generate batch: No response"
+                status_code=500,
+                detail="Failed to generate synthetic data for spec. Please try again.",
             )
 
         if isinstance(result, HTTPValidationError):
             raise HTTPException(
                 status_code=422,
-                detail=f"Validation error: {result.to_dict()}",
+                detail="Validation error.",
             )
 
         if isinstance(result, GenerateBatchOutput):
@@ -203,7 +204,7 @@ def connect_copilot_api(app: FastAPI):
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     @app.post("/api/copilot/question_spec")
@@ -222,13 +223,14 @@ def connect_copilot_api(app: FastAPI):
 
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Failed to generate questions: No response"
+                status_code=500,
+                detail="Failed to generate questions. Please try again.",
             )
 
         if isinstance(result, HTTPValidationError):
             raise HTTPException(
                 status_code=422,
-                detail=f"Validation error: {result.to_dict()}",
+                detail="Validation error.",
             )
 
         if isinstance(result, QuestionSetServerApi):
@@ -236,7 +238,7 @@ def connect_copilot_api(app: FastAPI):
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate questions: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     @app.post("/api/copilot/refine_spec_with_question_answers")
@@ -256,13 +258,13 @@ def connect_copilot_api(app: FastAPI):
         if result is None:
             raise HTTPException(
                 status_code=500,
-                detail="Failed to refine spec with question answers: No response",
+                detail="Failed to refine spec with question answers. Please try again.",
             )
 
         if isinstance(result, HTTPValidationError):
             raise HTTPException(
                 status_code=422,
-                detail=f"Validation error: {result.to_dict()}",
+                detail="Validation error.",
             )
 
         if isinstance(result, RefineSpecApiOutputClient):
@@ -270,7 +272,7 @@ def connect_copilot_api(app: FastAPI):
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to refine spec with question answers: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot")
