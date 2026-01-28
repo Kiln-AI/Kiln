@@ -4132,7 +4132,10 @@ export interface components {
         EmbeddingProperties: {
             /** Dimensions */
             dimensions?: number;
-            /** Instructions */
+            /**
+             * Instructions
+             * @description Optional instructions to prepend/format embedding inputs.
+             */
             instructions?: string;
         };
         /** EmbeddingProvider */

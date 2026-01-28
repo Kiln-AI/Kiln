@@ -632,6 +632,33 @@ class TestLitellmEmbeddingAdapter:
         # Empty instructions should be treated as no instructions
         assert result == input_texts
 
+    @pytest.mark.paid
+    @pytest.mark.parametrize(
+        "provider,model_name",
+        get_all_embedding_models_and_providers(),
+    )
+    async def test_paid_generate_embeddings_with_custom_instructions_supported(
+        self, provider, model_name, mock_litellm_core_config
+    ):
+        model_provider = built_in_embedding_models_from_provider(provider, model_name)
+        assert model_provider is not None
+        if not model_provider.supports_instructions:
+            pytest.skip("Model does not support custom instructions. Skipping.")
+
+        # generate embedding with instructions
+        adapter = embedding_adapter_from_type(
+            EmbeddingConfig(
+                name="paid-embedding",
+                model_provider_name=provider,
+                model_name=model_name,
+                properties={"instructions": "Focus on the color being mentioned"},
+            )
+        )
+        text = ["Kiln is an open-source evaluation platform for LLMs."]
+        result = await adapter.generate_embeddings(text)
+        assert len(result.embeddings) == 1
+        assert isinstance(result.embeddings[0].vector, list)
+
     async def test_generate_embeddings_method_integration(self, mock_litellm_adapter):
         """Test the public embed method integration."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
