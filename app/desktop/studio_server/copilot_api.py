@@ -43,6 +43,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
+    check_response_error,
     create_dataset_task_runs,
     generate_copilot_examples,
     get_copilot_api_key,
@@ -215,11 +216,14 @@ def connect_copilot_api(app: FastAPI):
 
         questioner_input = SpecQuestionerApiInputServerApi.from_dict(input.model_dump())
 
-        result = await question_spec_v1_copilot_question_spec_post.asyncio(
-            client=client,
-            body=questioner_input,
+        detailed_result = (
+            await question_spec_v1_copilot_question_spec_post.asyncio_detailed(
+                client=client,
+                body=questioner_input,
+            )
         )
-
+        check_response_error(detailed_result)
+        result = detailed_result.parsed
         if result is None:
             raise HTTPException(
                 status_code=500, detail="Failed to generate questions: No response"
