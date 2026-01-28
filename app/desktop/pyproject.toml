@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kiln-studio-desktop"
-version = "0.23.0"
+version = "0.24.0"
 description = "The Kiln Desktop App. Download from https://kiln.tech"
 requires-python = ">=3.10"
 dependencies = [
