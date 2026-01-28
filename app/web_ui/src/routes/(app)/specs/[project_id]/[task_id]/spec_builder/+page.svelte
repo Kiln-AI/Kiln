@@ -480,8 +480,12 @@
     try {
       // Use full-page spinner for creating spec because it takes a while
       saving_spec = true
-
       current_state = "saving_with_copilot"
+
+      // Store current reviewed examples
+      const currentExamples = currentReviewedExamples()
+      reviewed_examples = [...reviewed_examples, ...currentExamples]
+
       await saveSpec(
         property_values,
         true,
