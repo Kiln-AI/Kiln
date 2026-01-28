@@ -1470,7 +1470,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -1518,7 +1519,7 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
-                # Disabled as the API doesn't always return reasoning. Would be good to re-enable when it does.
+                # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 max_parallel_requests=2,
@@ -1530,7 +1531,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
-                reasoning_capable=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
@@ -1595,6 +1597,7 @@ built_in_models: List[KilnModel] = [
                 ],
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
             KilnModelProvider(
