@@ -35,8 +35,11 @@
   export let saved = false
   export let keyboard_submit = true
   export let submit_visible = true
+  export let submit_disabled = false
+  export let submit_data_tip: string | undefined = undefined
   export let gap: number = 6
   export let focus_on_mount = true
+  export let compact_button = false
   $: ui_saved_indicator = update_ui_saved_indicator(saved)
 
   function update_ui_saved_indicator(saved: boolean): boolean {
@@ -87,14 +90,21 @@
 
   const dispatch = createEventDispatcher()
 
-  async function validate_and_submit() {
+  export async function validate_only(): Promise<boolean> {
     await trigger_validation()
     const firstError = first_error()
     if (firstError) {
       has_validation_errors = true
       focus_field(firstError.id)
-    } else {
-      has_validation_errors = false
+      return false
+    }
+    has_validation_errors = false
+    return true
+  }
+
+  export async function validate_and_submit() {
+    const valid = await validate_only()
+    if (valid) {
       // No errors, submit. The wrapper should handle the event
       submitting = true
       dispatch("submit")
@@ -159,11 +169,9 @@
   }
 
   function handleFormSubmit(event: SubmitEvent) {
-    // Only allow submission from the submit button. Without this, all buttons in the form become submit buttons.
-    const submitter = event.submitter as HTMLElement
-    if (!submitter || submitter.getAttribute("type") !== "submit") {
-      event.preventDefault()
-    }
+    // Always prevent native form submission - we handle submission via the custom event dispatch in validate_and_submit()
+    // Without this all buttons on the form will submit by default.
+    event.preventDefault()
   }
 </script>
 
@@ -172,7 +180,7 @@
 <form class="flex flex-col gap-{gap} w-full" {id} on:submit={handleFormSubmit}>
   <slot />
 
-  <div class="flex flex-col gap-2">
+  <div class="flex flex-col gap-2 {compact_button ? 'items-end' : ''}">
     {#if has_validation_errors}
       <div class="text-sm text-center text-error">
         <button class="link" on:click={() => focus_first_error()}
@@ -187,32 +195,41 @@
         </div>
       {/each}
     {/if}
-    <button
-      type="submit"
-      class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
-        ? 'btn-success'
-        : ''} {submit_visible ? '' : 'hidden'}"
-      on:click={validate_and_submit}
-      disabled={submitting}
+    <div
+      class="{submit_data_tip ? 'tooltip tooltip-top' : ''} {compact_button
+        ? ''
+        : 'w-full'}"
+      data-tip={submit_data_tip}
     >
-      {#if ui_saved_indicator}
-        ✔ Saved
-      {:else if !submitting}
-        {submit_label}
-        <span
-          class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
-            ? ''
-            : 'hidden'}"
-        >
-          {#if isMacOS()}
-            <span class="tracking-widest">⌘↵</span>
-          {:else}
-            <span>ctrl ↵</span>
-          {/if}
-        </span>
-      {:else}
-        <span class="loading loading-spinner loading-md"></span>
-      {/if}
-    </button>
+      <button
+        type="submit"
+        class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
+          ? 'btn-success'
+          : ''} {submit_visible ? '' : 'hidden'} {compact_button
+          ? 'min-w-64 px-12'
+          : 'w-full'}"
+        on:click={validate_and_submit}
+        disabled={submitting || submit_disabled}
+      >
+        {#if ui_saved_indicator}
+          ✔ Saved
+        {:else if !submitting}
+          {submit_label}
+          <span
+            class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+              ? ''
+              : 'hidden'}"
+          >
+            {#if isMacOS()}
+              <span class="tracking-widest">⌘↵</span>
+            {:else}
+              <span>ctrl ↵</span>
+            {/if}
+          </span>
+        {:else}
+          <span class="loading loading-spinner loading-md"></span>
+        {/if}
+      </button>
+    </div>
   </div>
 </form>

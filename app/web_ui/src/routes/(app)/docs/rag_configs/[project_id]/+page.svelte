@@ -19,7 +19,7 @@
   } from "$lib/stores/rag_progress_store"
   import { ui_state } from "$lib/stores"
 
-  $: projectStateStore = getProjectRagStateStore($page.params.project_id)
+  $: projectStateStore = getProjectRagStateStore(project_id)
   $: progressState = $projectStateStore
 
   let error: KilnError | null = null
@@ -35,10 +35,10 @@
     page_number = parseInt(url.searchParams.get("page") || "1", 10)
   }
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
   $: current_task_id = $ui_state.current_task_id
   $: evals_href = current_task_id
-    ? `/evals/${project_id}/${current_task_id}/create_evaluator?template_id=rag`
+    ? `/specs/${project_id}/${current_task_id}/select_template?template_id=rag`
     : undefined
 
   onMount(async () => {

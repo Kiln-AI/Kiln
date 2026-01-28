@@ -44,8 +44,8 @@
 
   let synth_data_loading = false
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
   let is_setup = false
 
   let run_config_component: RunConfigComponent | null = null
@@ -726,6 +726,15 @@
   function set_current_step(step: StepNumber) {
     current_step = step
   }
+
+  let mandatory_tools: string[] | null = null
+
+  $: mandatory_tools = $saved_state.tool_id
+    ? [$saved_state.tool_id]
+    : $saved_state.fine_tuning_tools &&
+        $saved_state.fine_tuning_tools.length > 0
+      ? $saved_state.fine_tuning_tools
+      : null
 </script>
 
 <div class="max-w-[1400px]">
@@ -1166,12 +1175,8 @@
             current_task={task}
             requires_structured_output={!!task.output_json_schema}
             tools_selector_settings={{
-              mandatory_tools: $saved_state.tool_id
-                ? [$saved_state.tool_id]
-                : $saved_state.fine_tuning_tools &&
-                    $saved_state.fine_tuning_tools.length > 0
-                  ? $saved_state.fine_tuning_tools
-                  : null,
+              mandatory_tools,
+              optional: mandatory_tools ? false : true,
               disabled:
                 $saved_state.fine_tuning_tools &&
                 $saved_state.fine_tuning_tools.length > 0

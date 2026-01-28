@@ -27,7 +27,9 @@ dev = [
 ]
 
 [tool.uv]
-override-dependencies = []
+override-dependencies = [
+  "starlette>=0.49.1",   # forces a safe minimum for the transitive dep
+]
 
 [tool.uv.workspace]
 members = ["libs/core", "libs/server", "app/desktop"]
@@ -41,7 +43,7 @@ kiln-ai = { workspace = true }
 exclude = []
 
 [tool.ty.src]
-exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv"]
+exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
 
 [tool.ty.rules]
 invalid-key = "ignore"
@@ -58,3 +60,5 @@ extend-select = ["I","F401","RUF","FAST","TID"]
 
 [tool.pytest.ini_options]
  addopts="-n auto"
+
+

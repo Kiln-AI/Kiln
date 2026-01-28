@@ -1,8 +1,8 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
-  import type { ActionButton } from "../../../../../types"
+  import type { ActionButton } from "$lib/types"
   import Run from "../../../../../run/run.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import {
     current_task,
     model_name,
@@ -33,9 +33,9 @@
   import type { Writable } from "svelte/store"
   import { get_tools_property_info } from "$lib/stores/tools_store"
 
-  $: run_id = $page.params.run_id
-  $: task_id = $page.params.task_id
-  $: project_id = $page.params.project_id
+  $: run_id = $page.params.run_id!
+  $: task_id = $page.params.task_id!
+  $: project_id = $page.params.project_id!
   // @ts-expect-error list_page is not a property of PageState
   $: list_page = ($page.state.list_page || []) as string[]
 

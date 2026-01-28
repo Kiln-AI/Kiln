@@ -18,7 +18,7 @@
   import { embedding_model_name, provider_name_from_id } from "$lib/stores"
   import { chunker_type_format } from "$lib/utils/formatters"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let loading: boolean = false
   let error: KilnError | null = null
@@ -318,7 +318,7 @@
     />
     <FormElement
       label="Description"
-      description="A description of the chunker for you and your team. This will have no effect on the chunker's behavior."
+      description="A description of the chunker for you and your team. This will have no effect on the chunker's behaviour."
       optional={true}
       inputType="textarea"
       id="description"

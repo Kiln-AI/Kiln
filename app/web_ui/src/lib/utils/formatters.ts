@@ -1,11 +1,15 @@
 import {
   type ChunkerConfig,
   type ChunkerType,
+  type EvalConfig,
   type EvalConfigType,
   type OutputFormat,
+  type ProviderModels,
+  type SpecType,
   type StructuredOutputMode,
   type ToolServerType,
 } from "$lib/types"
+import { model_name, provider_name_from_id } from "$lib/stores"
 import {
   fixedWindowChunkerProperties,
   semanticChunkerProperties,
@@ -192,12 +196,53 @@ export function format_chunker_config_overview(config: ChunkerConfig) {
   }
 }
 
+export function formatSpecType(type: SpecType): string {
+  if (type === "nsfw") {
+    return "NSFW"
+  }
+  if (type === "reference_answer_accuracy") {
+    return "Reference Answer Accuracy (RAG)"
+  }
+  return type
+    .split("_")
+    .map(
+      (word: string) =>
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+    )
+    .join(" ")
+}
+
+export function formatPriority(priority: number): string {
+  return `P${priority}`
+}
+
 export function capitalize(str: string | undefined | null): string {
   if (!str) {
     return ""
   }
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
+
+export function autofillSpecName(spec_type: string): string {
+  if (spec_type === "desired_behaviour" || spec_type === "issue") {
+    return ""
+  }
+  return formatSpecTypeName(spec_type)
+}
+
+export function formatSpecTypeName(spec_type: string): string {
+  if (spec_type === "nsfw") {
+    return "NSFW"
+  }
+  if (spec_type === "reference_answer_accuracy") {
+    return "Reference Answer Accuracy (RAG)"
+  }
+  return spec_type
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+}
+
 /**
  * Converts StructuredOutputMode to a human-readable string.
  * This function uses exhaustive case checking - if you add a new case to StructuredOutputMode,
@@ -258,4 +303,26 @@ export function toolServerTypeToString(
       return undefined
     }
   }
+}
+
+/**
+ * Format an eval config name for display in dropdowns and properties.
+ * Format: "{name} — {config_type}, {model_name} ({provider})"
+ * Example: "Electric Dragon — G-eval, GPT 4.1 (OpenAI)"
+ * If compact is true, it will only return the name and model name.
+ * Example: "Electric Dragon — GPT 4.1"
+ */
+export function formatEvalConfigName(
+  eval_config: EvalConfig,
+  model_info: ProviderModels | null,
+  compact: boolean = false,
+): string {
+  const model_name_value = model_name(eval_config.model_name, model_info)
+  const parts = compact
+    ? [model_name_value]
+    : [
+        eval_config_to_ui_name(eval_config.config_type),
+        `${model_name_value} (${provider_name_from_id(eval_config.model_provider)})`,
+      ]
+  return eval_config.name + " — " + parts.join(", ")
 }

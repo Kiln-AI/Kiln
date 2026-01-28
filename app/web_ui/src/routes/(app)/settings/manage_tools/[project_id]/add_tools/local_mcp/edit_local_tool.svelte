@@ -13,7 +13,9 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import posthog from "posthog-js"
   import { view_logs } from "$lib/utils/logs"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
+
+  $: project_id = $page.params.project_id!
 
   // The existing tool server, if we're editing
   export let editing_tool_server: ExternalToolServerApiDescription | null = null
@@ -197,7 +199,7 @@
           {
             params: {
               path: {
-                project_id: $page.params.project_id,
+                project_id,
                 tool_server_id: editing_tool_server.id || "",
               },
             },
@@ -212,7 +214,7 @@
           {
             params: {
               path: {
-                project_id: $page.params.project_id,
+                project_id,
               },
             },
             body: body,
@@ -236,11 +238,9 @@
       }
 
       // Delete the project_id from the available_tools, so next load it loads the updated list.
-      uncache_available_tools($page.params.project_id)
+      uncache_available_tools(project_id)
       // Navigate to the tools page for the created tool
-      goto(
-        `/settings/manage_tools/${$page.params.project_id}/tool_servers/${server_id}`,
-      )
+      goto(`/settings/manage_tools/${project_id}/tool_servers/${server_id}`)
     } catch (e) {
       error = createKilnError(e)
     } finally {

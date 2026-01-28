@@ -5,6 +5,7 @@
   const dispatch = createEventDispatcher()
 
   export let title: string
+  export let center_content: boolean = false
   export let subtitle: string | null = null
   export let sub_subtitle: string | null = null
   export let sub_subtitle_link: string | null = null
@@ -23,6 +24,7 @@
     disabled?: boolean
     loading?: boolean
     hide?: boolean
+    width?: "normal" | "wide"
   }
   export let action_buttons: ActionButton[] = []
   let action_running = false
@@ -81,7 +83,11 @@
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
     <div class="flex flex-row gap-2 items-start">
-      <div class="grow flex flex-col">
+      <div
+        class="grow flex flex-col {center_content
+          ? 'items-center'
+          : 'items-start'}"
+      >
         <h3 class="text-lg font-medium">
           {title}
         </h3>
@@ -187,9 +193,9 @@
                 </form>
               {:else}
                 <button
-                  class="btn btn-sm h-10 min-w-24 {button.isPrimary
-                    ? 'btn-primary'
-                    : ''}
+                  class="btn btn-sm h-10 min-w-24 {button.width === 'wide'
+                    ? 'w-full'
+                    : ''} {button.isPrimary ? 'btn-primary' : ''}
                   {button.isError ? 'btn-error' : ''}
                   {button.isWarning ? 'btn-warning' : ''}"
                   disabled={button.disabled || button.loading}

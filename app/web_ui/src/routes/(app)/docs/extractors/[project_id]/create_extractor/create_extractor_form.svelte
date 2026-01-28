@@ -15,7 +15,7 @@
     default_extractor_audio_prompts,
   } from "./default_extractor_prompts"
 
-  $: project_id = $page.params.project_id
+  $: project_id = $page.params.project_id!
 
   let loading: boolean = false
   let error: KilnError | null = null
@@ -195,7 +195,7 @@
     />
     <FormElement
       label="Description"
-      description="A description of the extractor for you and your team. This will have no effect on the extractor's behavior."
+      description="A description of the extractor for you and your team. This will have no effect on the extractor's behaviour."
       optional={true}
       inputType="textarea"
       id="extractor_description"

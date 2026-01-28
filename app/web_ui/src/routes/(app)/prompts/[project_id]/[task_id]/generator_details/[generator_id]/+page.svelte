@@ -4,15 +4,15 @@
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import AppPage from "../../../../../app_page.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   let prompt: string | null = null
   let prompt_loading = true
   let prompt_error: KilnError | null = null
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: generator_id = $page.params.generator_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: generator_id = $page.params.generator_id!
   $: generator_name = $current_task_prompts?.generators.find(
     (generator) => generator.id === generator_id,
   )?.name

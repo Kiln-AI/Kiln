@@ -7,13 +7,13 @@
     prompt_name_from_id,
   } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: prompt_id = $page.params.prompt_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: prompt_id = $page.params.prompt_id!
 
   $: prompt_model = $current_task_prompts?.prompts.find(
     (prompt) => prompt.id === prompt_id,

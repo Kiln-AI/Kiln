@@ -20,6 +20,7 @@ from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
+    from kiln_ai.datamodel.spec import Spec
     from kiln_ai.datamodel.task import Task
 
 EvalScores = Dict[str, float]
@@ -36,6 +37,7 @@ class EvalTemplateId(str, Enum):
     """
 
     kiln_requirements = "kiln_requirements"
+    desired_behaviour = "desired_behaviour"
     issue = "kiln_issue"
     tool_call = "tool_call"
     toxicity = "toxicity"
@@ -66,7 +68,7 @@ class EvalOutputScore(BaseModel):
         description="A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user.",
     )
     type: TaskOutputRatingType = Field(
-        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical')."
+        description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
     )
 
     def json_key(self) -> str:
@@ -333,11 +335,15 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         description="The id of the current config to use for this eval. This can be changed over time to run the same eval with different configs.",
     )
     eval_set_filter_id: DatasetFilterId = Field(
-        description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id."
+        description="The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id."
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
         description="The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.",
+    )
+    train_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -346,8 +352,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
-    template_properties: dict[str, str | int | bool | float] = Field(
-        default={},
+    template_properties: dict[str, str | int | bool | float] | None = Field(
+        default=None,
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
     )
     evaluation_data_type: EvalDataType = Field(
@@ -363,6 +369,23 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     def configs(self, readonly: bool = False) -> list[EvalConfig]:
         return super().configs(readonly=readonly)  # type: ignore
+
+    # Workaround to return typed parent without importing Spec
+    def associated_spec(self, readonly: bool = False) -> Union["Spec", None]:
+        """
+        Get the spec associated with this eval, if any.
+        Returns None for legacy evals that are not associated with a spec.
+        """
+
+        task = self.parent_task()
+        if not task or not self.id:
+            return None
+
+        specs = task.specs(readonly=readonly)
+        for spec in specs:
+            if spec.eval_id == self.id:
+                return spec
+        return None
 
     @model_validator(mode="after")
     def upgrade_old_reference_answer_eval_config(self) -> Self:
@@ -434,7 +457,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
                 "eval_configs_filter_id is required for all templates except 'rag'"
             )
 
-        # Check for properties that are required for the issue template
+        # For spec-based evals, template_properties will be None and validation happens in the spec
+        # For legacy evals, template_properties contains the data and we validate here
+        if self.template_properties is None:
+            return self
+
+        # Check for properties that are required for the issue template (legacy evals only)
         if self.template == EvalTemplateId.issue:
             if "issue_prompt" not in self.template_properties or not isinstance(
                 self.template_properties["issue_prompt"], str

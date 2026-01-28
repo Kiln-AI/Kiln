@@ -1,9 +1,13 @@
 <script lang="ts">
   import CheckmarkListIcon from "./checkmark_list_icon.svelte"
-  import { goto } from "$app/navigation"
   import { onMount } from "svelte"
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
+  import {
+    redirect_to_personal,
+    redirect_to_work,
+    redirect_after_registration,
+  } from "../registration_helpers"
 
   async function selectAccountType(type: "personal" | "work") {
     try {
@@ -18,9 +22,9 @@
       }
 
       if (type === "personal") {
-        goto("/setup/subscribe")
+        redirect_to_personal(false)
       } else {
-        goto("/setup/register_work")
+        redirect_to_work(false)
       }
     } catch (error) {
       console.error("Error selecting account type", error)
@@ -44,16 +48,14 @@
       }
       const user_type = data.user_type
       const work_use_contact = data.work_use_contact
+      const personal_use_contact = data.personal_use_contact
 
-      // Check if they have already selected an account type
-      if (user_type === "personal") {
-        goto("/setup/connect_providers", { replaceState: true })
-      } else if (user_type === "work") {
-        if (!work_use_contact) {
-          goto("/setup/register_work", { replaceState: true })
-        } else {
-          goto("/setup/connect_providers", { replaceState: true })
-        }
+      // Check if they have already selected an account type, can skip the registration flow
+      if (
+        (user_type === "personal" && personal_use_contact) ||
+        (user_type === "work" && work_use_contact)
+      ) {
+        redirect_after_registration(true)
       }
     } catch (error) {
       console.error("Error loading settings", error)
@@ -102,12 +104,8 @@
           </li>
           <li class="flex items-start">
             <CheckmarkListIcon />
-            <span>No Signup Required</span>
-          </li>
-          <li class="flex items-start">
-            <CheckmarkListIcon />
             <div>
-              <div>For Personal Use</div>
+              <div>Personal Use Only</div>
               <div class="text-sm text-gray-500">
                 Not licensed for commercial use
               </div>
@@ -132,13 +130,11 @@
           <li class="flex items-start">
             <CheckmarkListIcon />
             <div>
-              <div>Work Email Required</div>
-              <div class="text-sm text-gray-500">Only takes 10 seconds</div>
+              <span>For Work and Enterprise</span>
+              <div class="text-sm text-gray-500">
+                Licensed for commercial use
+              </div>
             </div>
-          </li>
-          <li class="flex items-start">
-            <CheckmarkListIcon />
-            <span>For Work and Enterprise Projects</span>
           </li>
         </ul>
         <div class="btn btn-outline btn-primary w-full pointer-events-none">

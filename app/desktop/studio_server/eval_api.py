@@ -137,12 +137,12 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 
 class CreateEvaluatorRequest(BaseModel):
     name: str
-    description: str
+    description: str | None = None
     template: EvalTemplateId | None
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
     eval_configs_filter_id: DatasetFilterId | None
-    template_properties: dict[str, str | float | int | bool]
+    template_properties: dict[str, str | float | int | bool] | None
     evaluation_data_type: EvalDataType
 
 
@@ -235,17 +235,13 @@ class RunConfigEvalResult(BaseModel):
     dataset_size: int
     eval_config_result: EvalConfigResult | None
     missing_default_eval_config: bool
+    spec_id: ID_TYPE | None
 
 
 class RunConfigEvalScoresSummary(BaseModel):
     eval_results: List[RunConfigEvalResult]
     # mean usage statistics across all eval runs for this run config
     mean_usage: MeanUsage | None = None
-
-
-class UpdateEvalRequest(BaseModel):
-    name: str
-    description: str | None = None
 
 
 def dataset_ids_in_filter(
@@ -363,25 +359,6 @@ def connect_evals_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
-
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def update_eval(
-        project_id: str, task_id: str, eval_id: str, request: UpdateEvalRequest
-    ) -> Eval:
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.name = request.name
-        eval.description = request.description
-        eval.save_to_file()
-        return eval
-
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav")
-    async def update_eval_favourite(
-        project_id: str, task_id: str, eval_id: str, request: UpdateFavouriteRequest
-    ) -> Eval:
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.favourite = request.favourite
-        eval.save_to_file()
-        return eval
 
     @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
@@ -895,6 +872,13 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
+        # Build a mapping from eval_id to spec_id for evals that are associated with specs
+        specs = task.specs()
+        eval_id_to_spec_id: Dict[str, str] = {}
+        for spec in specs:
+            if spec.eval_id and spec.id:
+                eval_id_to_spec_id[spec.eval_id] = spec.id
+
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
 
@@ -941,6 +925,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
+                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
                     )
                 )
                 continue
@@ -1028,6 +1013,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
+                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

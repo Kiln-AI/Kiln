@@ -6,32 +6,6 @@ import httpx
 import litellm
 import openai
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.testclient import TestClient
-from kiln_ai.adapters.ml_embedding_model_list import (
-    EmbeddingModelName,
-    KilnEmbeddingModel,
-    KilnEmbeddingModelProvider,
-    built_in_embedding_models,
-)
-from kiln_ai.adapters.ml_model_list import (
-    KilnModel,
-    KilnModelProvider,
-    ModelName,
-    ModelProviderName,
-    StructuredOutputMode,
-    built_in_models,
-    default_structured_output_mode_for_model_provider,
-)
-from kiln_ai.adapters.reranker_list import (
-    KilnRerankerModel,
-    KilnRerankerModelProvider,
-    RerankerModelName,
-    built_in_rerankers,
-)
-from kiln_ai.utils.config import Config
-
 from app.desktop.studio_server.provider_api import (
     AvailableModels,
     ModelDetails,
@@ -61,6 +35,31 @@ from app.desktop.studio_server.provider_api import (
     openai_compatible_providers_load_cache,
     parse_url,
 )
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+from kiln_ai.adapters.ml_embedding_model_list import (
+    EmbeddingModelName,
+    KilnEmbeddingModel,
+    KilnEmbeddingModelProvider,
+    built_in_embedding_models,
+)
+from kiln_ai.adapters.ml_model_list import (
+    KilnModel,
+    KilnModelProvider,
+    ModelName,
+    ModelProviderName,
+    StructuredOutputMode,
+    built_in_models,
+    default_structured_output_mode_for_model_provider,
+)
+from kiln_ai.adapters.reranker_list import (
+    KilnRerankerModel,
+    KilnRerankerModelProvider,
+    RerankerModelName,
+    built_in_rerankers,
+)
+from kiln_ai.utils.config import Config
 
 
 @pytest.fixture
@@ -132,6 +131,67 @@ def test_connect_api_key_siliconflow_success(mock_connect_siliconflow, client):
     assert response.status_code == 200
     assert response.json() == {"message": "Connected to Siliconflow"}
     mock_connect_siliconflow.assert_called_once_with("test_key")
+
+
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+def test_connect_api_key_kiln_copilot_success(
+    mock_httpx_get, mock_config_shared, client
+):
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_get.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to Kiln Copilot"}
+    assert mock_config.kiln_copilot_api_key == "test_key"
+
+
+def test_connect_api_key_kiln_copilot_empty_key(client):
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": ""}},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "API Key not found"}
+
+
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+def test_connect_api_key_kiln_copilot_failure(mock_httpx_get, client):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.json.return_value = {"message": "Invalid API key"}
+    mock_httpx_get.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": "invalid_key"}},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"message": "Invalid API key"}
+
+
+@patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
+def test_connect_api_key_kiln_copilot_network_error(mock_httpx_get, client):
+    mock_httpx_get.side_effect = httpx.RequestError("Network error")
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "kiln_copilot", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 400
+    assert "Failed to connect" in response.json()["message"]
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")

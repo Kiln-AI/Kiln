@@ -8,14 +8,14 @@
   import { provider_name_from_id, load_available_models } from "$lib/stores"
   import { formatDate, data_strategy_name } from "$lib/utils/formatters"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { ui_state } from "$lib/stores"
   import { goto } from "$app/navigation"
 
-  $: project_id = $page.params.project_id
-  $: task_id = $page.params.task_id
-  $: finetune_id = $page.params.finetune_id
+  $: project_id = $page.params.project_id!
+  $: task_id = $page.params.task_id!
+  $: finetune_id = $page.params.finetune_id!
   $: running =
     finetune?.status.status === "pending" ||
     finetune?.status.status === "running"
