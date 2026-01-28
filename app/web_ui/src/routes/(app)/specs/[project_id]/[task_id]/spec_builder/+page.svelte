@@ -280,9 +280,9 @@
           },
           target_specification,
           num_samples_per_topic: 10,
-          num_topics: 5,
+          num_topics: 10,
           providers: providers,
-          num_exemplars: 5, // TODO: 10 topics, 10 samples per topic, 10 exemplars
+          num_exemplars: 10,
         },
         signal: new_copilot_abort_signal(),
       },
