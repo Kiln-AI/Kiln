@@ -25,6 +25,8 @@ class GenerateBatchInput:
         num_topics (int):
         sdg_session_config (SyntheticDataGenerationSessionConfigInput): Same as SyntheticDataGenerationSessionConfig,
             but new name for our SDK auto-compile tool.
+
+            https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
     """
 
     target_task_info: TaskInfo

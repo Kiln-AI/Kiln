@@ -17,13 +17,21 @@ T = TypeVar("T", bound="SyntheticDataGenerationSessionConfigInput")
 class SyntheticDataGenerationSessionConfigInput:
     """Same as SyntheticDataGenerationSessionConfig, but new name for our SDK auto-compile tool.
 
-    Attributes:
-        topic_generation_config (SyntheticDataGenerationStepConfigInput): Same as SyntheticDataGenerationStepConfig, but
-            new name for our SDK auto-compile tool.
-        input_generation_config (SyntheticDataGenerationStepConfigInput): Same as SyntheticDataGenerationStepConfig, but
-            new name for our SDK auto-compile tool.
-        output_generation_config (SyntheticDataGenerationStepConfigInput): Same as SyntheticDataGenerationStepConfig,
-            but new name for our SDK auto-compile tool.
+    https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+
+        Attributes:
+            topic_generation_config (SyntheticDataGenerationStepConfigInput): Same as SyntheticDataGenerationStepConfig, but
+                new name for our SDK auto-compile tool.
+
+                https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+            input_generation_config (SyntheticDataGenerationStepConfigInput): Same as SyntheticDataGenerationStepConfig, but
+                new name for our SDK auto-compile tool.
+
+                https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+            output_generation_config (SyntheticDataGenerationStepConfigInput): Same as SyntheticDataGenerationStepConfig,
+                but new name for our SDK auto-compile tool.
+
+                https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
     """
 
     topic_generation_config: SyntheticDataGenerationStepConfigInput

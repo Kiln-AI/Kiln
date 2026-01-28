@@ -17,9 +17,11 @@ T = TypeVar("T", bound="SyntheticDataGenerationStepConfigInput")
 class SyntheticDataGenerationStepConfigInput:
     """Same as SyntheticDataGenerationStepConfig, but new name for our SDK auto-compile tool.
 
-    Attributes:
-        task_metadata (TaskMetadata): Metadata about a task invocation.
-        prompt (str):
+    https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+
+        Attributes:
+            task_metadata (TaskMetadata): Metadata about a task invocation.
+            prompt (str):
     """
 
     task_metadata: TaskMetadata
