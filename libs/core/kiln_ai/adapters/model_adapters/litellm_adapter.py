@@ -46,6 +46,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
     ChatCompletionToolMessageParamWrapper,
 )
+from kiln_ai.utils.timing_logger import time_operation
 
 MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 30
@@ -643,7 +644,11 @@ class LiteLlmAdapter(BaseAdapter):
             async def run_tool_and_format(
                 t=tool, c=context, args=parsed_args, tc_id=tool_call.id
             ):
-                result = await t.run(c, **args)
+                tool_name = await t.name()
+
+                with time_operation("tool_run", f"{tool_name}"):
+                    result = await t.run(c, **args)
+
                 return ChatCompletionToolMessageParamWrapper(
                     role="tool",
                     tool_call_id=tc_id,

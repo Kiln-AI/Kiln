@@ -15,7 +15,7 @@ os.environ.setdefault("KILN_SKIP_REMOTE_MODEL_LIST", "true")
 dev_app = make_app()
 
 os.environ["DEBUG_EVENT_LOOP"] = "true"
-
+os.environ["KILN_SHOW_TIMING"] = "true"
 
 if __name__ == "__main__":
     setup_resource_limits()
