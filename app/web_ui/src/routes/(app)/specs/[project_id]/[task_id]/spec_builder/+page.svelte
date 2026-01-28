@@ -84,12 +84,8 @@
 
   // Task data (loaded once in initialize)
   let task: Task | null = null
-  $: task_input_schema = task?.input_json_schema
-    ? JSON.stringify(task.input_json_schema)
-    : ""
-  $: task_output_schema = task?.output_json_schema
-    ? JSON.stringify(task.output_json_schema)
-    : ""
+  $: task_input_schema = task?.input_json_schema ?? ""
+  $: task_output_schema = task?.output_json_schema ?? ""
 
   // Few-shot example for improving API calls
   let few_shot_example: FewShotExample | null = null
@@ -569,12 +565,8 @@
           body: {
             target_task_info: {
               task_prompt: task_prompt_with_example,
-              task_input_schema: task.input_json_schema
-                ? JSON.stringify(task.input_json_schema)
-                : "",
-              task_output_schema: task.output_json_schema
-                ? JSON.stringify(task.output_json_schema)
-                : "",
+              task_input_schema: task_input_schema,
+              task_output_schema: task_output_schema,
             },
             target_specification: {
               spec_fields: spec_info.spec_fields,

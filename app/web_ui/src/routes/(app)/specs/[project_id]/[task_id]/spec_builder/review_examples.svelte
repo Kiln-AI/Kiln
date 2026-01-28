@@ -177,26 +177,24 @@
             {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
-                <pre class="whitespace-pre-wrap">
-                  {#if input_content.isJson}
-                    <!-- eslint-disable svelte/no-at-html-tags -->
-                    {@html input_content.value}
-                    <!-- eslint-enable svelte/no-at-html-tags -->
-                  {:else}
-                    {input_content.value}
-                  {/if}
-                </pre>
+                {#if input_content.isJson}
+                  <!-- eslint-disable svelte/no-at-html-tags -->
+                  <pre
+                    class="whitespace-pre-wrap">{@html input_content.value}</pre>
+                  <!-- eslint-enable svelte/no-at-html-tags -->
+                {:else}
+                  <pre class="whitespace-pre-wrap">{input_content.value}</pre>
+                {/if}
               </td>
               <td class="py-2">
-                <pre class="whitespace-pre-wrap">
-                  {#if output_content.isJson}
-                    <!-- eslint-disable svelte/no-at-html-tags -->
-                    {@html output_content.value}
-                    <!-- eslint-enable svelte/no-at-html-tags -->
-                  {:else}
-                    {output_content.value}
-                  {/if}
-                </pre>
+                {#if output_content.isJson}
+                  <!-- eslint-disable svelte/no-at-html-tags -->
+                  <pre
+                    class="whitespace-pre-wrap">{@html output_content.value}</pre>
+                  <!-- eslint-enable svelte/no-at-html-tags -->
+                {:else}
+                  <pre class="whitespace-pre-wrap">{output_content.value}</pre>
+                {/if}
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
