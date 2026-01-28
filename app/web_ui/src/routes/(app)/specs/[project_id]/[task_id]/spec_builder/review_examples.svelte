@@ -220,11 +220,17 @@
                 {#if row.user_says_meets_spec !== undefined}
                   <div class="flex items-center gap-1 justify-center">
                     {#if is_row_aligned(row)}
-                      <div class="text-success w-5 h-5">
+                      <div
+                        class="text-success w-5 h-5 tooltip tooltip-left"
+                        data-tip="Our automated judge got this right!"
+                      >
                         <CheckCircleIcon />
                       </div>
                     {:else}
-                      <div class="text-error w-5 h-5">
+                      <div
+                        class="text-error w-5 h-5 tooltip tooltip-left"
+                        data-tip="Our automated judge got this one wrong. That's okay, we're here to learn and improve! Provide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge."
+                      >
                         <XCircleIcon />
                       </div>
                     {/if}
@@ -238,7 +244,6 @@
                   <FormElement
                     label="Teach the Judge"
                     description={`Describe why this result ${row.user_says_meets_spec ? "passes" : "fails"}. Detailed explanations will improve the judge.`}
-                    info_description={`Our automated judge got this one wrong. That's okay, we're here to learn and improve!\nProvide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge.`}
                     id="feedback-{row.row_id}"
                     inputType="textarea"
                     height="base"
