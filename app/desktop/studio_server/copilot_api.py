@@ -121,11 +121,15 @@ def connect_copilot_api(app: FastAPI):
 
         clarify_input = ClarifySpecInput.from_dict(input.model_dump())
 
-        result = await clarify_spec_v1_copilot_clarify_spec_post.asyncio(
-            client=client,
-            body=clarify_input,
+        detailed_result = (
+            await clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed(
+                client=client,
+                body=clarify_input,
+            )
         )
+        check_response_error(detailed_result)
 
+        result = detailed_result.parsed
         if result is None:
             raise HTTPException(
                 status_code=500, detail="Failed to clarify spec. Please try again."
@@ -152,11 +156,15 @@ def connect_copilot_api(app: FastAPI):
 
         refine_input = RefineSpecInput.from_dict(input.model_dump())
 
-        result = await refine_spec_v1_copilot_refine_spec_post.asyncio(
-            client=client,
-            body=refine_input,
+        detailed_result = (
+            await refine_spec_v1_copilot_refine_spec_post.asyncio_detailed(
+                client=client,
+                body=refine_input,
+            )
         )
+        check_response_error(detailed_result)
 
+        result = detailed_result.parsed
         if result is None:
             raise HTTPException(
                 status_code=500, detail="Failed to refine spec. Please try again."
@@ -183,11 +191,15 @@ def connect_copilot_api(app: FastAPI):
 
         generate_input = GenerateBatchInput.from_dict(input.model_dump())
 
-        result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
-            client=client,
-            body=generate_input,
+        detailed_result = (
+            await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
+                client=client,
+                body=generate_input,
+            )
         )
+        check_response_error(detailed_result)
 
+        result = detailed_result.parsed
         if result is None:
             raise HTTPException(
                 status_code=500,
@@ -224,6 +236,7 @@ def connect_copilot_api(app: FastAPI):
             )
         )
         check_response_error(detailed_result)
+
         result = detailed_result.parsed
         if result is None:
             raise HTTPException(
@@ -254,11 +267,13 @@ def connect_copilot_api(app: FastAPI):
 
         submit_input = SubmitAnswersRequestServerApi.from_dict(request.model_dump())
 
-        result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio(
+        detailed_result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed(
             client=client,
             body=submit_input,
         )
+        check_response_error(detailed_result)
 
+        result = detailed_result.parsed
         if result is None:
             raise HTTPException(
                 status_code=500,
