@@ -201,6 +201,7 @@ class ModelName(str, Enum):
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_k2_thinking = "kimi_k2_thinking"
+    kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_7 = "glm_4_7"
     glm_4_7_flash = "glm_4_7_flash"
@@ -5426,6 +5427,41 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # Kimi K2.5
+    # Not available on SiliconFlow CN yet
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_5,
+        friendly_name="Kimi K2.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2p5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
