@@ -11,9 +11,9 @@ from app.desktop.studio_server.utils.copilot_utils import (
     KILN_ADAPTER_NAME,
     KILN_COPILOT_MODEL_NAME,
     KILN_COPILOT_MODEL_PROVIDER,
-    MIN_EVAL_EXAMPLES,
     MIN_GOLDEN_EXAMPLES,
-    MIN_TRAIN_EXAMPLES,
+    NUM_SAMPLES_PER_TOPIC,
+    NUM_TOPICS,
     create_dataset_task_runs,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
@@ -230,7 +230,7 @@ class TestCreateDatasetTaskRuns:
     def test_creates_correct_number_of_task_runs(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES)
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
 
@@ -243,14 +243,14 @@ class TestCreateDatasetTaskRuns:
             "Test Spec",
         )
 
-        # Should have MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES
-        expected_count = MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES
+        # Should have NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
+        expected_count = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
         assert len(task_runs) == expected_count
 
     def test_includes_reviewed_examples_in_golden_set(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES)
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples = [
             ReviewedExample(
@@ -281,7 +281,7 @@ class TestCreateDatasetTaskRuns:
     def test_all_task_runs_have_session_tag(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES)
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
 
@@ -304,7 +304,7 @@ class TestCreateDatasetTaskRuns:
     def test_same_session_tag_for_all_runs(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES)
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
 
@@ -329,7 +329,7 @@ class TestCreateDatasetTaskRuns:
     def test_eval_examples_have_eval_tag(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES)
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
 
@@ -343,12 +343,14 @@ class TestCreateDatasetTaskRuns:
         )
 
         eval_runs = [tr for tr in task_runs if "eval_tag" in tr.tags]
-        assert len(eval_runs) == MIN_EVAL_EXAMPLES
+        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
+        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
+        assert len(eval_runs) == num_eval_runs
 
     def test_train_examples_have_train_tag(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(MIN_EVAL_EXAMPLES + MIN_TRAIN_EXAMPLES + MIN_GOLDEN_EXAMPLES)
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
 
@@ -362,7 +364,10 @@ class TestCreateDatasetTaskRuns:
         )
 
         train_runs = [tr for tr in task_runs if "train_tag" in tr.tags]
-        assert len(train_runs) == MIN_TRAIN_EXAMPLES
+        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
+        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
+        num_train_runs = (num_runs - MIN_GOLDEN_EXAMPLES) - num_eval_runs
+        assert len(train_runs) == num_train_runs
 
     def test_handles_insufficient_examples(self):
         # Fewer examples than needed

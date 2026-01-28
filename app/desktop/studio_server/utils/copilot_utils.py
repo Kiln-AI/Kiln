@@ -39,11 +39,9 @@ from kiln_ai.utils.config import Config
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
 KILN_COPILOT_MODEL_PROVIDER = "kiln"
 KILN_ADAPTER_NAME = "kiln-adapter"
-NUM_SAMPLES_PER_TOPIC = 5  # TODO: Make this 15
-NUM_TOPICS = 10  # TODO: Make this 15
-MIN_EVAL_EXAMPLES = 20  # TODO: Make this 100
-MIN_TRAIN_EXAMPLES = 20  # TODO: Make this 100
-MIN_GOLDEN_EXAMPLES = 10  # TODO: Make this 25
+NUM_SAMPLES_PER_TOPIC = 20
+NUM_TOPICS = 15
+MIN_GOLDEN_EXAMPLES = 25
 
 
 def get_copilot_api_key() -> str:
@@ -231,8 +229,8 @@ def create_dataset_task_runs(
     """Create TaskRuns for eval, train, and golden datasets.
 
     Samples from all_examples (mutating it) and creates TaskRuns for:
-    - Eval dataset (MIN_EVAL_EXAMPLES)
-    - Train dataset (MIN_TRAIN_EXAMPLES)
+    - Eval dataset
+    - Train dataset
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
 
     Returns TaskRuns without parent set - caller must set parent.
@@ -244,19 +242,13 @@ def create_dataset_task_runs(
     session_tag = f"synthetic_session_{session_id}"
     extra_tags = [session_tag]
 
-    # Sample examples for eval and train datasets
-    eval_examples = sample_and_remove(all_examples, MIN_EVAL_EXAMPLES)
-    train_examples = sample_and_remove(all_examples, MIN_TRAIN_EXAMPLES)
+    # Create TaskRuns for reviewed examples with ratings
+    for reviewed in reviewed_examples:
+        task_runs.append(
+            create_task_run_from_reviewed(reviewed, golden_tag, spec_name, extra_tags)
+        )
 
-    # Create TaskRuns for eval examples
-    for example in eval_examples:
-        task_runs.append(create_task_run_from_sample(example, eval_tag, extra_tags))
-
-    # Create TaskRuns for train examples
-    for example in train_examples:
-        task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
-
-    # Create unrated golden examples from remaining pool if needed
+    # Create more unrated golden examples from remaining pool if needed
     unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
     if unrated_golden_count > 0:
         unrated_golden_examples = sample_and_remove(all_examples, unrated_golden_count)
@@ -265,10 +257,19 @@ def create_dataset_task_runs(
                 create_task_run_from_sample(example, golden_tag, extra_tags)
             )
 
-    # Create TaskRuns for reviewed examples with ratings
-    for reviewed in reviewed_examples:
-        task_runs.append(
-            create_task_run_from_reviewed(reviewed, golden_tag, spec_name, extra_tags)
-        )
+    # Sample half the remaining examples for eval vs train datasets
+    example_count = len(all_examples)
+    eval_count = example_count // 2
+    train_count = example_count - eval_count
+    eval_examples = sample_and_remove(all_examples, eval_count)
+    train_examples = sample_and_remove(all_examples, train_count)
+
+    # Create TaskRuns for eval examples
+    for example in eval_examples:
+        task_runs.append(create_task_run_from_sample(example, eval_tag, extra_tags))
+
+    # Create TaskRuns for train examples
+    for example in train_examples:
+        task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
 
     return task_runs

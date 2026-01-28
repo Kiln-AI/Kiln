@@ -42,6 +42,10 @@
   import posthog from "posthog-js"
   import SavingAnimation from "./animations/saving_animation.svelte"
 
+  const CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC = 10
+  const CLARIFY_SPEC_NUM_TOPICS = 10
+  const CLARIFY_SPEC_NUM_EXEMPLARS = 10
+
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
@@ -280,10 +284,10 @@
             task_output_schema,
           },
           target_specification,
-          num_samples_per_topic: 10,
-          num_topics: 5,
+          num_samples_per_topic: CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC,
+          num_topics: CLARIFY_SPEC_NUM_TOPICS,
           providers: providers,
-          num_exemplars: 5, // TODO: 10 topics, 10 samples per topic, 10 exemplars
+          num_exemplars: CLARIFY_SPEC_NUM_EXEMPLARS,
         },
         signal: new_copilot_abort_signal(),
       },
