@@ -5,6 +5,7 @@ evals, eval configs, and task runs as part of the copilot-assisted
 spec creation workflow.
 """
 
+import json
 import random
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -15,6 +16,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateBatchOutput,
     HTTPValidationError,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
@@ -85,26 +87,31 @@ async def generate_copilot_examples(
         }
     )
 
-    result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
-        client=client,
-        body=generate_input,
+    detailed_result = (
+        await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
+            client=client,
+            body=generate_input,
+        )
     )
+    check_response_error(detailed_result)
 
+    result = detailed_result.parsed
     if result is None:
         raise HTTPException(
-            status_code=500, detail="Failed to generate batch: No response"
+            status_code=500,
+            detail="Failed to generate synthetic data for spec. Please try again.",
         )
 
     if isinstance(result, HTTPValidationError):
         raise HTTPException(
             status_code=422,
-            detail=f"Validation error: {result.to_dict()}",
+            detail="Validation error.",
         )
 
     if not isinstance(result, GenerateBatchOutput):
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     # Convert result to flat list of SampleApi
@@ -271,3 +278,23 @@ def create_dataset_task_runs(
         task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
 
     return task_runs
+
+
+def check_response_error(
+    response: Response, default_detail: str = "Unknown error."
+) -> None:
+    """Check if the response is an error with user centric message."""
+    if response.status_code != 200:
+        # response.content is a bytes object
+        # We check if it's a JSON object with a user_message field
+        detail = default_detail
+        if response.content.startswith(b"{"):
+            try:
+                json_data = json.loads(response.content)
+                detail = json_data.get("user_message", default_detail)
+            except json.JSONDecodeError:
+                pass
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=detail,
+        )
