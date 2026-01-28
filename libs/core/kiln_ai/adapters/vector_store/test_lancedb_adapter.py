@@ -38,6 +38,7 @@ def get_all_nodes(adapter: LanceDBAdapter) -> List[SearchResult]:
             chunk_idx=node.metadata["kiln_chunk_idx"],
             chunk_text=node.get_content(MetadataMode.NONE),
             similarity=None,
+            page_number=node.metadata.get("kiln_page_number"),
         )
         for node in nodes
     ]
@@ -450,6 +451,56 @@ def test_format_query_result_error_conditions(
     with pytest.raises(
         ValueError, match="ids, nodes, and similarities must have the same length"
     ):
+        adapter.format_query_result(query_result)
+
+    # Test with valid page_number (int) - should work
+    node_with_int_page = TextNode(
+        text="test",
+        metadata={"kiln_doc_id": "doc1", "kiln_chunk_idx": 0, "kiln_page_number": 5},
+    )
+    query_result = VectorStoreQueryResult(
+        ids=["1"], nodes=[node_with_int_page], similarities=[0.5]
+    )
+    result = adapter.format_query_result(query_result)
+    assert len(result) == 1
+    assert result[0].page_number == 5
+
+    # Test with page_number None - should work
+    node_with_none_page = TextNode(
+        text="test",
+        metadata={"kiln_doc_id": "doc1", "kiln_chunk_idx": 0},
+    )
+    query_result = VectorStoreQueryResult(
+        ids=["1"], nodes=[node_with_none_page], similarities=[0.5]
+    )
+    result = adapter.format_query_result(query_result)
+    assert len(result) == 1
+    assert result[0].page_number is None
+
+    # Test with invalid page_number (not None but not int) - should raise ValueError
+    node_with_invalid_page = TextNode(
+        text="test",
+        metadata={
+            "kiln_doc_id": "doc1",
+            "kiln_chunk_idx": 0,
+            "kiln_page_number": "not_an_int",
+        },
+    )
+    query_result = VectorStoreQueryResult(
+        ids=["1"], nodes=[node_with_invalid_page], similarities=[0.5]
+    )
+    with pytest.raises(ValueError, match="page_number must be an integer"):
+        adapter.format_query_result(query_result)
+
+    # Test with invalid page_number (float) - should raise ValueError
+    node_with_float_page = TextNode(
+        text="test",
+        metadata={"kiln_doc_id": "doc1", "kiln_chunk_idx": 0, "kiln_page_number": 5.5},
+    )
+    query_result = VectorStoreQueryResult(
+        ids=["1"], nodes=[node_with_float_page], similarities=[0.5]
+    )
+    with pytest.raises(ValueError, match="page_number must be an integer"):
         adapter.format_query_result(query_result)
 
 
@@ -1101,6 +1152,85 @@ async def test_uuid_scheme_retrieval_and_node_properties(
             assert source_relationship[0].node_id == "doc_002"
         else:
             assert source_relationship.node_id == "doc_002"
+
+
+@pytest.mark.asyncio
+async def test_page_number_metadata_stored_and_retrieved(
+    fts_vector_store_config,
+    embedding_config,
+    tmp_path,
+    create_rag_config_factory,
+):
+    """Test that page_number is correctly stored in metadata and retrieved in search results."""
+    rag_config = create_rag_config_factory(fts_vector_store_config, embedding_config)
+    adapter = LanceDBAdapter(rag_config, fts_vector_store_config)
+
+    # Create chunks with page numbers
+    chunked_doc = ChunkedDocument(
+        chunker_config_id="test_chunker",
+        chunks=[
+            Chunk(
+                content=KilnAttachmentModel.from_data("chunk 0", "text/plain"),
+                page_number=0,
+            ),
+            Chunk(
+                content=KilnAttachmentModel.from_data("chunk 1", "text/plain"),
+                page_number=1,
+            ),
+            Chunk(
+                content=KilnAttachmentModel.from_data("chunk 2", "text/plain"),
+                page_number=None,
+            ),
+            Chunk(
+                content=KilnAttachmentModel.from_data("chunk 3", "text/plain"),
+                page_number=5,
+            ),
+        ],
+        path=tmp_path / "chunked_doc.kiln",
+    )
+    chunked_doc.save_to_file()
+
+    chunk_embeddings = ChunkEmbeddings(
+        parent=chunked_doc,
+        embedding_config_id=embedding_config.id,
+        embeddings=[
+            Embedding(vector=[0.1, 0.2]),
+            Embedding(vector=[0.3, 0.4]),
+            Embedding(vector=[0.5, 0.6]),
+            Embedding(vector=[0.7, 0.8]),
+        ],
+        path=tmp_path / "chunk_embeddings.kiln",
+    )
+    chunk_embeddings.save_to_file()
+
+    doc_with_chunks = DocumentWithChunksAndEmbeddings(
+        document_id="doc_001",
+        chunked_document=chunked_doc,
+        chunk_embeddings=chunk_embeddings,
+    )
+
+    await adapter.add_chunks_with_embeddings([doc_with_chunks])
+
+    # Verify nodes have correct page_number metadata
+    nodes = await adapter.get_nodes_by_ids(
+        [deterministic_chunk_id("doc_001", i) for i in range(4)]
+    )
+    assert len(nodes) == 4
+    assert nodes[0].metadata.get("kiln_page_number") == 0
+    assert nodes[1].metadata.get("kiln_page_number") == 1
+    assert "kiln_page_number" not in nodes[2].metadata  # None should not be stored
+    assert nodes[3].metadata.get("kiln_page_number") == 5
+
+    # Verify search results include page_number
+    query = VectorStoreQuery(query_string="chunk")
+    results = await adapter.search(query)
+    assert len(results) >= 4
+    # Find our specific chunks in results
+    result_dict = {r.chunk_idx: r for r in results if r.document_id == "doc_001"}
+    assert result_dict[0].page_number == 0
+    assert result_dict[1].page_number == 1
+    assert result_dict[2].page_number is None
+    assert result_dict[3].page_number == 5
 
 
 @pytest.mark.asyncio
