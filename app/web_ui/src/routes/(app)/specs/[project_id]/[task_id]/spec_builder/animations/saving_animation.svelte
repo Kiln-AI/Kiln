@@ -1,5 +1,5 @@
 <div class="flex flex-col items-center justify-center my-10">
-  <div class="flex flex-col max-h-[100px] max-w-[100px] mt-6">
+  <div class="flex flex-col max-h-[100px] max-w-[100px] mt-6 mb-6">
     <svg
       width="100"
       height="100"

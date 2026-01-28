@@ -5,6 +5,7 @@ evals, eval configs, and task runs as part of the copilot-assisted
 spec creation workflow.
 """
 
+import json
 import random
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -15,12 +16,14 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateBatchOutput,
     HTTPValidationError,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.api_models.copilot_models import (
     ReviewedExample,
     SampleApi,
+    SyntheticDataGenerationSessionConfigApi,
     TaskInfoApi,
 )
 from fastapi import HTTPException
@@ -39,11 +42,9 @@ from kiln_ai.utils.config import Config
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
 KILN_COPILOT_MODEL_PROVIDER = "kiln"
 KILN_ADAPTER_NAME = "kiln-adapter"
-NUM_SAMPLES_PER_TOPIC = 5  # TODO: Make this 15
-NUM_TOPICS = 10  # TODO: Make this 15
-MIN_EVAL_EXAMPLES = 20  # TODO: Make this 100
-MIN_TRAIN_EXAMPLES = 20  # TODO: Make this 100
-MIN_GOLDEN_EXAMPLES = 10  # TODO: Make this 25
+NUM_SAMPLES_PER_TOPIC = 20
+NUM_TOPICS = 15
+MIN_GOLDEN_EXAMPLES = 25
 
 
 def get_copilot_api_key() -> str:
@@ -60,8 +61,7 @@ def get_copilot_api_key() -> str:
 async def generate_copilot_examples(
     api_key: str,
     target_task_info: TaskInfoApi,
-    topic_generation_task_info: TaskInfoApi,
-    input_generation_task_info: TaskInfoApi,
+    sdg_session_config: SyntheticDataGenerationSessionConfigApi,
     spec_definition: str,
 ) -> list[SampleApi]:
     """Generate examples via the Kiln Copilot API.
@@ -72,8 +72,7 @@ async def generate_copilot_examples(
     Args:
         api_key: The Kiln Copilot API key
         target_task_info: Task info for the target task
-        topic_generation_task_info: Task info for topic generation
-        input_generation_task_info: Task info for input generation
+        sdg_session_config: Session config for synthetic data generation
         spec_definition: The rendered spec definition
     """
     client = get_authenticated_client(api_key)
@@ -81,34 +80,38 @@ async def generate_copilot_examples(
     generate_input = GenerateBatchInput.from_dict(
         {
             "target_task_info": target_task_info.model_dump(),
-            "topic_generation_task_info": topic_generation_task_info.model_dump(),
-            "input_generation_task_info": input_generation_task_info.model_dump(),
+            "sdg_session_config": sdg_session_config.model_dump(),
             "target_specification": spec_definition,
             "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
             "num_topics": NUM_TOPICS,
         }
     )
 
-    result = await generate_batch_v1_copilot_generate_batch_post.asyncio(
-        client=client,
-        body=generate_input,
+    detailed_result = (
+        await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
+            client=client,
+            body=generate_input,
+        )
     )
+    check_response_error(detailed_result)
 
+    result = detailed_result.parsed
     if result is None:
         raise HTTPException(
-            status_code=500, detail="Failed to generate batch: No response"
+            status_code=500,
+            detail="Failed to generate synthetic data for spec. Please try again.",
         )
 
     if isinstance(result, HTTPValidationError):
         raise HTTPException(
             status_code=422,
-            detail=f"Validation error: {result.to_dict()}",
+            detail="Validation error.",
         )
 
     if not isinstance(result, GenerateBatchOutput):
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate batch: Unexpected response type {type(result)}",
+            detail="Unknown error.",
         )
 
     # Convert result to flat list of SampleApi
@@ -231,8 +234,8 @@ def create_dataset_task_runs(
     """Create TaskRuns for eval, train, and golden datasets.
 
     Samples from all_examples (mutating it) and creates TaskRuns for:
-    - Eval dataset (MIN_EVAL_EXAMPLES)
-    - Train dataset (MIN_TRAIN_EXAMPLES)
+    - Eval dataset
+    - Train dataset
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
 
     Returns TaskRuns without parent set - caller must set parent.
@@ -244,9 +247,27 @@ def create_dataset_task_runs(
     session_tag = f"synthetic_session_{session_id}"
     extra_tags = [session_tag]
 
-    # Sample examples for eval and train datasets
-    eval_examples = sample_and_remove(all_examples, MIN_EVAL_EXAMPLES)
-    train_examples = sample_and_remove(all_examples, MIN_TRAIN_EXAMPLES)
+    # Create TaskRuns for reviewed examples with ratings
+    for reviewed in reviewed_examples:
+        task_runs.append(
+            create_task_run_from_reviewed(reviewed, golden_tag, spec_name, extra_tags)
+        )
+
+    # Create more unrated golden examples from remaining pool if needed
+    unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
+    if unrated_golden_count > 0:
+        unrated_golden_examples = sample_and_remove(all_examples, unrated_golden_count)
+        for example in unrated_golden_examples:
+            task_runs.append(
+                create_task_run_from_sample(example, golden_tag, extra_tags)
+            )
+
+    # Sample half the remaining examples for eval vs train datasets
+    example_count = len(all_examples)
+    eval_count = example_count // 2
+    train_count = example_count - eval_count
+    eval_examples = sample_and_remove(all_examples, eval_count)
+    train_examples = sample_and_remove(all_examples, train_count)
 
     # Create TaskRuns for eval examples
     for example in eval_examples:
@@ -256,19 +277,24 @@ def create_dataset_task_runs(
     for example in train_examples:
         task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
 
-    # Create unrated golden examples from remaining pool if needed
-    unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
-    if unrated_golden_count > 0:
-        unrated_golden_examples = sample_and_remove(all_examples, unrated_golden_count)
-        for example in unrated_golden_examples:
-            task_runs.append(
-                create_task_run_from_sample(example, golden_tag, extra_tags)
-            )
-
-    # Create TaskRuns for reviewed examples with ratings
-    for reviewed in reviewed_examples:
-        task_runs.append(
-            create_task_run_from_reviewed(reviewed, golden_tag, spec_name, extra_tags)
-        )
-
     return task_runs
+
+
+def check_response_error(
+    response: Response, default_detail: str = "Unknown error."
+) -> None:
+    """Check if the response is an error with user centric message."""
+    if response.status_code != 200:
+        # response.content is a bytes object
+        # We check if it's a JSON object with a user_message field
+        detail = default_detail
+        if response.content.startswith(b"{"):
+            try:
+                json_data = json.loads(response.content)
+                detail = json_data.get("user_message", default_detail)
+            except json.JSONDecodeError:
+                pass
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=detail,
+        )

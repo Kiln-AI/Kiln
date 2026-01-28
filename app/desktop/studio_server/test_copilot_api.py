@@ -7,11 +7,8 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_s
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_batch_output import (
     GenerateBatchOutput,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
-    HTTPValidationError,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_output import (
-    RefineSpecOutput,
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
+    RefineSpecApiOutput,
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from fastapi import FastAPI
@@ -87,15 +84,28 @@ def generate_batch_input():
             "task_input_schema": '{"type": "string"}',
             "task_output_schema": '{"type": "string"}',
         },
-        "topic_generation_task_info": {
-            "task_prompt": "Test topic generation prompt",
-            "task_input_schema": '{"type": "string"}',
-            "task_output_schema": '{"type": "string"}',
-        },
-        "input_generation_task_info": {
-            "task_prompt": "Test input generation prompt",
-            "task_input_schema": '{"type": "string"}',
-            "task_output_schema": '{"type": "string"}',
+        "sdg_session_config": {
+            "topic_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test topic generation prompt",
+            },
+            "input_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test input generation prompt",
+            },
+            "output_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test output generation prompt",
+            },
         },
         "target_specification": "Test template",
         "num_samples_per_topic": 5,
@@ -132,26 +142,39 @@ class TestClarifySpec:
                 },
                 "prompt": "Test judge prompt",
             },
-            "topic_generation_result": {
-                "task_metadata": {
-                    "model_name": "gpt-4",
-                    "model_provider_name": "openai",
+            "sdg_session_config": {
+                "topic_generation_config": {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test topic generation prompt",
                 },
-                "prompt": "Test topic prompt",
-            },
-            "input_generation_result": {
-                "task_metadata": {
-                    "model_name": "gpt-4",
-                    "model_provider_name": "openai",
+                "input_generation_config": {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test input generation prompt",
                 },
-                "prompt": "Test input prompt",
+                "output_generation_config": {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test output generation prompt",
+                },
             },
         }
 
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
         with patch(
-            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_output,
+            return_value=mock_response,
         ):
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 200
@@ -160,29 +183,34 @@ class TestClarifySpec:
             assert result["judge_result"]["task_metadata"]["model_name"] == "gpt-4"
 
     def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
         with patch(
-            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=mock_response,
         ):
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 500
-            assert "No response" in response.json()["detail"]
+            assert "Failed to analyze spec" in response.json()["detail"]
 
     def test_clarify_spec_validation_error(
         self, client, clarify_spec_input, mock_api_key
     ):
-        mock_error = MagicMock(spec=HTTPValidationError)
-        mock_error.to_dict.return_value = {"detail": []}
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.content = b'{"user_message": "Validation error from server"}'
 
         with patch(
-            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio",
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=mock_response,
         ):
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 422
-            assert "Validation error" in response.json()["detail"]
+            assert "Validation error from server" in response.json()["detail"]
 
 
 class TestRefineSpec:
@@ -198,16 +226,20 @@ class TestRefineSpec:
             assert "API key not configured" in response.json()["detail"]
 
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
-        mock_output = MagicMock(spec=RefineSpecOutput)
+        mock_output = MagicMock(spec=RefineSpecApiOutput)
         mock_output.to_dict.return_value = {
             "new_proposed_spec_edits": [],
             "not_incorporated_feedback": None,
         }
 
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
         with patch(
-            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_output,
+            return_value=mock_response,
         ):
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 200
@@ -216,29 +248,34 @@ class TestRefineSpec:
             assert "not_incorporated_feedback" in result
 
     def test_refine_spec_no_response(self, client, refine_spec_input, mock_api_key):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
         with patch(
-            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=mock_response,
         ):
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 500
-            assert "No response" in response.json()["detail"]
+            assert "Failed to refine spec" in response.json()["detail"]
 
     def test_refine_spec_validation_error(
         self, client, refine_spec_input, mock_api_key
     ):
-        mock_error = MagicMock(spec=HTTPValidationError)
-        mock_error.to_dict.return_value = {"detail": []}
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.content = b'{"user_message": "Validation error from server"}'
 
         with patch(
-            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio",
+            "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=mock_response,
         ):
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 422
-            assert "Validation error" in response.json()["detail"]
+            assert "Validation error from server" in response.json()["detail"]
 
 
 class TestGenerateBatch:
@@ -259,10 +296,14 @@ class TestGenerateBatch:
         mock_output = MagicMock(spec=GenerateBatchOutput)
         mock_output.to_dict.return_value = {"data_by_topic": {}}
 
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
         with patch(
-            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_output,
+            return_value=mock_response,
         ):
             response = client.post(
                 "/api/copilot/generate_batch", json=generate_batch_input
@@ -274,30 +315,35 @@ class TestGenerateBatch:
     def test_generate_batch_no_response(
         self, client, generate_batch_input, mock_api_key
     ):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
         with patch(
-            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=mock_response,
         ):
             response = client.post(
                 "/api/copilot/generate_batch", json=generate_batch_input
             )
             assert response.status_code == 500
-            assert "No response" in response.json()["detail"]
+            assert "Failed to generate synthetic data" in response.json()["detail"]
 
     def test_generate_batch_validation_error(
         self, client, generate_batch_input, mock_api_key
     ):
-        mock_error = MagicMock(spec=HTTPValidationError)
-        mock_error.to_dict.return_value = {"detail": []}
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.content = b'{"user_message": "Validation error from server"}'
 
         with patch(
-            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio",
+            "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=mock_response,
         ):
             response = client.post(
                 "/api/copilot/generate_batch", json=generate_batch_input
             )
             assert response.status_code == 422
-            assert "Validation error" in response.json()["detail"]
+            assert "Validation error from server" in response.json()["detail"]

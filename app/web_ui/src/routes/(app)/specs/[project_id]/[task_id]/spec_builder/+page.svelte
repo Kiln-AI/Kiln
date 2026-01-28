@@ -12,7 +12,8 @@
     SubmitAnswersRequest,
     QuestionWithAnswer,
     SpecProperties,
-    PromptGenerationResultApi,
+    SyntheticDataGenerationStepConfigApi,
+    SyntheticDataGenerationSessionConfigApi,
     ReviewedExample,
   } from "$lib/types"
   import { goto } from "$app/navigation"
@@ -35,11 +36,16 @@
   import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
   import QuestioningAnimation from "./animations/questioning_animation.svelte"
+  import RefiningAnimation from "./animations/refining_animation.svelte"
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
   import SavingAnimation from "./animations/saving_animation.svelte"
+
+  const CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC = 10
+  const CLARIFY_SPEC_NUM_TOPICS = 10
+  const CLARIFY_SPEC_NUM_EXEMPLARS = 10
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -78,12 +84,8 @@
 
   // Task data (loaded once in initialize)
   let task: Task | null = null
-  $: task_input_schema = task?.input_json_schema
-    ? JSON.stringify(task.input_json_schema)
-    : ""
-  $: task_output_schema = task?.output_json_schema
-    ? JSON.stringify(task.output_json_schema)
-    : ""
+  $: task_input_schema = task?.input_json_schema ?? ""
+  $: task_output_schema = task?.output_json_schema ?? ""
 
   // Few-shot example for improving API calls
   let few_shot_example: FewShotExample | null = null
@@ -105,8 +107,7 @@
         task_id,
         examples,
       )
-    } catch (e) {
-      console.error("Failed to build prompt with few-shot:", e)
+    } catch {
       // Fallback to just the instruction
       task_prompt_with_example = task?.instruction || ""
     } finally {
@@ -124,9 +125,8 @@
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: PromptGenerationResultApi | null = null
-  let topic_generation_info: PromptGenerationResultApi | null = null
-  let input_generation_info: PromptGenerationResultApi | null = null
+  let judge_info: SyntheticDataGenerationStepConfigApi | null = null
+  let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
@@ -204,7 +204,7 @@
       // Load the task (used by copilot API calls)
       task = await load_task(project_id, task_id)
       if (!task) {
-        throw new Error("Failed to load task")
+        throw new KilnError("Failed to load task.")
       }
 
       // Check if default run config has tools (copilot doesn't support tool calling)
@@ -216,7 +216,6 @@
       // Get spec type from URL params
       const spec_type_param = $page.url.searchParams.get("type")
       if (!spec_type_param) {
-        console.error("No spec type provided")
         complete = true
         goto(`/specs/${project_id}/${task_id}`)
         return
@@ -262,7 +261,7 @@
     values_to_use: Record<string, string | null> = property_values,
   ) {
     if (!task) {
-      throw new Error("Task not loaded")
+      throw new KilnError("Task not loaded.")
     }
 
     current_state = "analyzing_for_review"
@@ -279,10 +278,10 @@
             task_output_schema,
           },
           target_specification,
-          num_samples_per_topic: 10,
-          num_topics: 5,
+          num_samples_per_topic: CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC,
+          num_topics: CLARIFY_SPEC_NUM_TOPICS,
           providers: providers,
-          num_exemplars: 5, // TODO: 10 topics, 10 samples per topic, 10 exemplars
+          num_exemplars: CLARIFY_SPEC_NUM_EXEMPLARS,
         },
         signal: new_copilot_abort_signal(),
       },
@@ -293,13 +292,14 @@
     }
 
     if (!data) {
-      throw new Error("Failed to analyze spec for review. Please try again.")
+      throw new KilnError(
+        "Failed to analyze spec for review. Please try again.",
+      )
     }
 
-    // Save generation results - they match PromptGenerationResultApi
+    // Save generation results
     judge_info = data.judge_result
-    topic_generation_info = data.topic_generation_result
-    input_generation_info = data.input_generation_result
+    sdg_session_config = data.sdg_session_config
 
     review_rows = data.examples_for_feedback.map((example, index) => ({
       row_id: String(index + 1),
@@ -340,8 +340,7 @@
     } catch (e) {
       if (is_abort_error(e)) return
       has_questioned_spec = false
-      console.error("Kiln Copilot failed to analyze spec:", e)
-      error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
+      error = createKilnError(e)
       current_state = "create"
     } finally {
       submitting = false
@@ -386,16 +385,10 @@
     let spec_id: string | null | undefined
     if (use_kiln_copilot) {
       if (!judge_info) {
-        console.error("Missing judge info for spec creation")
-        throw new Error("Something went wrong")
+        throw new KilnError("Something went wrong.")
       }
-      if (!topic_generation_info) {
-        console.error("Missing topic generation info for spec creation")
-        throw new Error("Something went wrong")
-      }
-      if (!input_generation_info) {
-        console.error("Missing input generation info for spec creation")
-        throw new Error("Something went wrong")
+      if (!sdg_session_config) {
+        throw new KilnError("Something went wrong.")
       }
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -408,8 +401,7 @@
             evaluate_full_trace,
             reviewed_examples,
             judge_info,
-            topic_generation_info,
-            input_generation_info,
+            sdg_session_config,
             task_description: task?.instruction || "",
             task_prompt_with_example,
             task_sample: few_shot_example
@@ -459,7 +451,7 @@
     }
 
     if (!spec_id) {
-      throw new Error("Failed to create spec")
+      throw new KilnError("Failed to create spec. Please try again.")
     }
 
     complete = true
@@ -486,8 +478,12 @@
     try {
       // Use full-page spinner for creating spec because it takes a while
       saving_spec = true
-
       current_state = "saving_with_copilot"
+
+      // Store current reviewed examples
+      const currentExamples = currentReviewedExamples()
+      reviewed_examples = [...reviewed_examples, ...currentExamples]
+
       await saveSpec(
         property_values,
         true,
@@ -496,10 +492,7 @@
       )
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to create spec:", e)
-      error = new KilnError(
-        "Kiln Copilot failed to create spec. Please try again.",
-      )
+      error = createKilnError(e)
       current_state = "review"
     } finally {
       submitting = false
@@ -535,7 +528,7 @@
       current_state = "refining"
 
       if (!task) {
-        throw new Error("Task not loaded")
+        throw new KilnError("Task not loaded")
       }
 
       // Store current reviewed examples
@@ -556,8 +549,8 @@
       }))
 
       if (examples_with_feedback.length === 0) {
-        throw new Error(
-          "No valid reviewed examples with feedback to refine spec",
+        throw new KilnError(
+          "No valid reviewed examples with feedback to refine spec.",
         )
       }
 
@@ -567,12 +560,8 @@
           body: {
             target_task_info: {
               task_prompt: task_prompt_with_example,
-              task_input_schema: task.input_json_schema
-                ? JSON.stringify(task.input_json_schema)
-                : "",
-              task_output_schema: task.output_json_schema
-                ? JSON.stringify(task.output_json_schema)
-                : "",
+              task_input_schema: task_input_schema,
+              task_output_schema: task_output_schema,
             },
             target_specification: {
               spec_fields: spec_info.spec_fields,
@@ -604,8 +593,7 @@
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to refine spec:", e)
-      error = new KilnError("Kiln Copilot failed to refine. Please try again.")
+      error = createKilnError(e)
       current_state = "review"
     } finally {
       submitting = false
@@ -620,8 +608,7 @@
       await analyzeSpecForReview(refined_property_values)
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to analyze refined spec:", e)
-      error = new KilnError("Kiln Copilot failed to analyze. Please try again.")
+      error = createKilnError(e)
       current_state = "refine"
     } finally {
       submitting = false
@@ -643,10 +630,7 @@
       )
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to create spec:", e)
-      error = new KilnError(
-        "Kiln Copilot failed to create spec. Please try again.",
-      )
+      error = createKilnError(e)
       current_state = "refine"
     } finally {
       submitting = false
@@ -659,19 +643,22 @@
     current_state = "questioning"
 
     const specification = buildSpecDefinition(spec_type, property_values)
-    const { data, error } = await client.POST("/api/copilot/question_spec", {
-      body: {
-        target_task_info: {
-          task_prompt: task_prompt_with_example,
-          task_input_schema,
-          task_output_schema,
+    const { data, error: api_error } = await client.POST(
+      "/api/copilot/question_spec",
+      {
+        body: {
+          target_task_info: {
+            task_prompt: task_prompt_with_example,
+            task_input_schema,
+            task_output_schema,
+          },
+          target_specification: specification,
         },
-        target_specification: specification,
+        signal: new_copilot_abort_signal(),
       },
-      signal: new_copilot_abort_signal(),
-    })
-    if (error) {
-      throw error
+    )
+    if (api_error) {
+      throw api_error
     }
     posthog.capture("copilot_question_spec", {
       spec_type: spec_type,
@@ -713,8 +700,11 @@
       if (post_error) {
         throw post_error
       }
+
       if (!data) {
-        throw new Error("No response returned")
+        throw new KilnError(
+          "Failed to refine spec with question answers. Please try again.",
+        )
       }
 
       const processed = processProposedSpecEdits(
@@ -734,8 +724,7 @@
       current_state = "refine"
     } catch (e) {
       if (is_abort_error(e)) return
-      console.error("Kiln Copilot failed to refine spec:", e)
-      error = new KilnError("Kiln Copilot failed to refine. Please try again.")
+      error = createKilnError(e)
       current_state = "questions"
     } finally {
       submitting = false
@@ -889,12 +878,10 @@
       <SpecAnalyzingAnimation />
     {:else if current_state === "questioning"}
       <QuestioningAnimation />
+    {:else if current_state === "refining"}
+      <RefiningAnimation />
     {:else if current_state === "saving_with_copilot"}
       <SavingAnimation />
-    {:else if current_state === "refining"}
-      <div class="w-full min-h-[50vh] flex justify-center items-center">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
     {:else if current_state === "review"}
       <ReviewExamples
         {name}

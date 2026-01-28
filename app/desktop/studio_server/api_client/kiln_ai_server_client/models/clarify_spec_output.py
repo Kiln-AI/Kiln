@@ -8,7 +8,8 @@ from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
     from ..models.examples_for_feedback_item import ExamplesForFeedbackItem
-    from ..models.prompt_generation_result import PromptGenerationResult
+    from ..models.synthetic_data_generation_session_config import SyntheticDataGenerationSessionConfig
+    from ..models.synthetic_data_generation_step_config import SyntheticDataGenerationStepConfig
 
 
 T = TypeVar("T", bound="ClarifySpecOutput")
@@ -19,15 +20,13 @@ class ClarifySpecOutput:
     """
     Attributes:
         examples_for_feedback (list[ExamplesForFeedbackItem]):
-        judge_result (PromptGenerationResult): Information about a prompt generation run.
-        topic_generation_result (PromptGenerationResult): Information about a prompt generation run.
-        input_generation_result (PromptGenerationResult): Information about a prompt generation run.
+        judge_result (SyntheticDataGenerationStepConfig): Configuration for a synthetic data generation step.
+        sdg_session_config (SyntheticDataGenerationSessionConfig): Configuration for a synthetic data generation session
     """
 
     examples_for_feedback: list[ExamplesForFeedbackItem]
-    judge_result: PromptGenerationResult
-    topic_generation_result: PromptGenerationResult
-    input_generation_result: PromptGenerationResult
+    judge_result: SyntheticDataGenerationStepConfig
+    sdg_session_config: SyntheticDataGenerationSessionConfig
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -38,9 +37,7 @@ class ClarifySpecOutput:
 
         judge_result = self.judge_result.to_dict()
 
-        topic_generation_result = self.topic_generation_result.to_dict()
-
-        input_generation_result = self.input_generation_result.to_dict()
+        sdg_session_config = self.sdg_session_config.to_dict()
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -48,8 +45,7 @@ class ClarifySpecOutput:
             {
                 "examples_for_feedback": examples_for_feedback,
                 "judge_result": judge_result,
-                "topic_generation_result": topic_generation_result,
-                "input_generation_result": input_generation_result,
+                "sdg_session_config": sdg_session_config,
             }
         )
 
@@ -58,7 +54,8 @@ class ClarifySpecOutput:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.examples_for_feedback_item import ExamplesForFeedbackItem
-        from ..models.prompt_generation_result import PromptGenerationResult
+        from ..models.synthetic_data_generation_session_config import SyntheticDataGenerationSessionConfig
+        from ..models.synthetic_data_generation_step_config import SyntheticDataGenerationStepConfig
 
         d = dict(src_dict)
         examples_for_feedback = []
@@ -68,17 +65,14 @@ class ClarifySpecOutput:
 
             examples_for_feedback.append(examples_for_feedback_item)
 
-        judge_result = PromptGenerationResult.from_dict(d.pop("judge_result"))
+        judge_result = SyntheticDataGenerationStepConfig.from_dict(d.pop("judge_result"))
 
-        topic_generation_result = PromptGenerationResult.from_dict(d.pop("topic_generation_result"))
-
-        input_generation_result = PromptGenerationResult.from_dict(d.pop("input_generation_result"))
+        sdg_session_config = SyntheticDataGenerationSessionConfig.from_dict(d.pop("sdg_session_config"))
 
         clarify_spec_output = cls(
             examples_for_feedback=examples_for_feedback,
             judge_result=judge_result,
-            topic_generation_result=topic_generation_result,
-            input_generation_result=input_generation_result,
+            sdg_session_config=sdg_session_config,
         )
 
         clarify_spec_output.additional_properties = d

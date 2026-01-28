@@ -2913,9 +2913,8 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_result: components["schemas"]["PromptGenerationResultApi-Output"];
-            topic_generation_result: components["schemas"]["PromptGenerationResultApi-Output"];
-            input_generation_result: components["schemas"]["PromptGenerationResultApi-Output"];
+            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3222,9 +3221,8 @@ export interface components {
             evaluate_full_trace: boolean;
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
-            judge_info: components["schemas"]["PromptGenerationResultApi-Input"];
-            topic_generation_info: components["schemas"]["PromptGenerationResultApi-Input"];
-            input_generation_info: components["schemas"]["PromptGenerationResultApi-Input"];
+            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
             /**
              * Task Description
              * @default
@@ -4634,14 +4632,13 @@ export interface components {
          */
         GenerateBatchApiInput: {
             target_task_info: components["schemas"]["TaskInfoApi"];
-            topic_generation_task_info: components["schemas"]["TaskInfoApi"];
-            input_generation_task_info: components["schemas"]["TaskInfoApi"];
             /** Target Specification */
             target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
         };
         /**
          * GenerateBatchApiOutput
@@ -5371,45 +5368,6 @@ export interface components {
             prompt: string;
             /** Chain Of Thought Instructions */
             chain_of_thought_instructions?: string | null;
-        };
-        /**
-         * PromptGenerationInfo
-         * @description Information about a prompt generation step during copilot spec creation.
-         */
-        PromptGenerationInfo: {
-            /**
-             * Model Name
-             * @description The model used for generation.
-             */
-            model_name: string;
-            /**
-             * Provider Name
-             * @description The provider of the model used for generation.
-             */
-            provider_name: string;
-            /**
-             * Prompt
-             * @description The prompt used for generation.
-             */
-            prompt: string;
-        };
-        /**
-         * PromptGenerationResultApi
-         * @description Result from a prompt generation task.
-         */
-        "PromptGenerationResultApi-Input": {
-            task_metadata: components["schemas"]["TaskMetadataApi"];
-            /** Prompt */
-            prompt: string;
-        };
-        /**
-         * PromptGenerationResultApi
-         * @description Result from a prompt generation task.
-         */
-        "PromptGenerationResultApi-Output": {
-            task_metadata: components["schemas"]["TaskMetadataApi"];
-            /** Prompt */
-            prompt: string;
         };
         /** PromptGenerator */
         PromptGenerator: {
@@ -6195,10 +6153,8 @@ export interface components {
             eval_id: string | null;
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
             task_sample?: components["schemas"]["TaskSample"] | null;
-            /** @description Information about topic generation during copilot spec creation. */
-            topic_generation_info?: components["schemas"]["PromptGenerationInfo"] | null;
-            /** @description Information about input generation during copilot spec creation. */
-            input_generation_info?: components["schemas"]["PromptGenerationInfo"] | null;
+            /** @description Config for synthetic data generation session. */
+            synthetic_data_generation_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfig"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -6335,6 +6291,75 @@ export interface components {
             output: string;
             /** Fails Specification */
             fails_specification: boolean;
+        };
+        /**
+         * SyntheticDataGenerationSessionConfig
+         * @description Configuration for a synthetic data generation session.
+         */
+        SyntheticDataGenerationSessionConfig: {
+            /** @description Configuration for topic generation. */
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfig"];
+            /** @description Configuration for input generation. */
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfig"];
+            /** @description Configuration for output generation. */
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfig"];
+        };
+        /**
+         * SyntheticDataGenerationSessionConfigApi
+         * @description Configuration for a synthetic data generation session
+         */
+        "SyntheticDataGenerationSessionConfigApi-Input": {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+        };
+        /**
+         * SyntheticDataGenerationSessionConfigApi
+         * @description Configuration for a synthetic data generation session
+         */
+        "SyntheticDataGenerationSessionConfigApi-Output": {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+        };
+        /**
+         * SyntheticDataGenerationStepConfig
+         * @description Information about a synthetic data generation step.
+         */
+        SyntheticDataGenerationStepConfig: {
+            /**
+             * Model Name
+             * @description The model used for generation.
+             */
+            model_name: string;
+            /**
+             * Provider Name
+             * @description The provider of the model used for generation.
+             */
+            provider_name: string;
+            /**
+             * Prompt
+             * @description The prompt used for generation.
+             */
+            prompt: string;
+        };
+        /**
+         * SyntheticDataGenerationStepConfigApi
+         * @description Configuration for a synthetic data generation step.
+         */
+        "SyntheticDataGenerationStepConfigApi-Input": {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
+        };
+        /**
+         * SyntheticDataGenerationStepConfigApi
+         * @description Configuration for a synthetic data generation step.
+         */
+        "SyntheticDataGenerationStepConfigApi-Output": {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
+            /** Prompt */
+            prompt: string;
         };
         /** TabooProperties */
         TabooProperties: {

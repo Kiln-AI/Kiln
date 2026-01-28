@@ -25,14 +25,13 @@ from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
 from .model_provider_name import ModelProviderName
-from .new_proposed_spec_edit import NewProposedSpecEdit
+from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
-from .prompt_generation_result import PromptGenerationResult
 from .question import Question
 from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
+from .refine_spec_api_output import RefineSpecApiOutput
 from .refine_spec_input import RefineSpecInput
-from .refine_spec_output import RefineSpecOutput
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
@@ -44,7 +43,10 @@ from .specification_input import SpecificationInput
 from .specification_input_spec_field_current_values import SpecificationInputSpecFieldCurrentValues
 from .specification_input_spec_fields import SpecificationInputSpecFields
 from .submit_answers_request import SubmitAnswersRequest
-from .target_task_info import TargetTaskInfo
+from .synthetic_data_generation_session_config import SyntheticDataGenerationSessionConfig
+from .synthetic_data_generation_session_config_input import SyntheticDataGenerationSessionConfigInput
+from .synthetic_data_generation_step_config import SyntheticDataGenerationStepConfig
+from .synthetic_data_generation_step_config_input import SyntheticDataGenerationStepConfigInput
 from .task_info import TaskInfo
 from .task_metadata import TaskMetadata
 from .validation_error import ValidationError
@@ -73,14 +75,13 @@ __all__ = (
     "JobStatusResponse",
     "JobType",
     "ModelProviderName",
-    "NewProposedSpecEdit",
+    "NewProposedSpecEditApi",
     "OutputFileInfo",
-    "PromptGenerationResult",
     "Question",
     "QuestionSet",
     "QuestionWithAnswer",
+    "RefineSpecApiOutput",
     "RefineSpecInput",
-    "RefineSpecOutput",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
@@ -92,7 +93,10 @@ __all__ = (
     "SpecSpecFieldCurrentValues",
     "SpecSpecFields",
     "SubmitAnswersRequest",
-    "TargetTaskInfo",
+    "SyntheticDataGenerationSessionConfig",
+    "SyntheticDataGenerationSessionConfigInput",
+    "SyntheticDataGenerationStepConfig",
+    "SyntheticDataGenerationStepConfigInput",
     "TaskInfo",
     "TaskMetadata",
     "ValidationError",

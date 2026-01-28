@@ -177,26 +177,24 @@
             {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
-                <pre class="whitespace-pre-wrap">
-                  {#if input_content.isJson}
-                    <!-- eslint-disable svelte/no-at-html-tags -->
-                    {@html input_content.value}
-                    <!-- eslint-enable svelte/no-at-html-tags -->
-                  {:else}
-                    {input_content.value}
-                  {/if}
-                </pre>
+                {#if input_content.isJson}
+                  <!-- eslint-disable svelte/no-at-html-tags -->
+                  <pre
+                    class="whitespace-pre-wrap">{@html input_content.value}</pre>
+                  <!-- eslint-enable svelte/no-at-html-tags -->
+                {:else}
+                  <pre class="whitespace-pre-wrap">{input_content.value}</pre>
+                {/if}
               </td>
               <td class="py-2">
-                <pre class="whitespace-pre-wrap">
-                  {#if output_content.isJson}
-                    <!-- eslint-disable svelte/no-at-html-tags -->
-                    {@html output_content.value}
-                    <!-- eslint-enable svelte/no-at-html-tags -->
-                  {:else}
-                    {output_content.value}
-                  {/if}
-                </pre>
+                {#if output_content.isJson}
+                  <!-- eslint-disable svelte/no-at-html-tags -->
+                  <pre
+                    class="whitespace-pre-wrap">{@html output_content.value}</pre>
+                  <!-- eslint-enable svelte/no-at-html-tags -->
+                {:else}
+                  <pre class="whitespace-pre-wrap">{output_content.value}</pre>
+                {/if}
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
@@ -222,11 +220,17 @@
                 {#if row.user_says_meets_spec !== undefined}
                   <div class="flex items-center gap-1 justify-center">
                     {#if is_row_aligned(row)}
-                      <div class="text-success w-5 h-5">
+                      <div
+                        class="text-success w-5 h-5 tooltip tooltip-left"
+                        data-tip="Our automated judge got this right!"
+                      >
                         <CheckCircleIcon />
                       </div>
                     {:else}
-                      <div class="text-error w-5 h-5">
+                      <div
+                        class="text-error w-5 h-5 tooltip tooltip-left"
+                        data-tip="Our automated judge got this one wrong. That's okay, we're here to learn and improve! Provide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge."
+                      >
                         <XCircleIcon />
                       </div>
                     {/if}
@@ -240,7 +244,6 @@
                   <FormElement
                     label="Teach the Judge"
                     description={`Describe why this result ${row.user_says_meets_spec ? "passes" : "fails"}. Detailed explanations will improve the judge.`}
-                    info_description={`Our automated judge got this one wrong. That's okay, we're here to learn and improve!\nProvide a detailed explanation of why it should pass or fail, and we'll use that to improve the judge.`}
                     id="feedback-{row.row_id}"
                     inputType="textarea"
                     height="base"
