@@ -354,5 +354,6 @@
   </div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
     Kiln is analyzing your spec to identify areas that could use more clarity.
+    Hold tight!
   </div>
 </div>

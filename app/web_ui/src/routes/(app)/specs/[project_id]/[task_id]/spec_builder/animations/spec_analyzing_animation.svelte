@@ -762,7 +762,7 @@
       </g>
     </svg>
   </div>
-  <div class="font-medium text-lg text-center mt-2">Analyzing and Refining</div>
+  <div class="font-medium text-lg text-center mt-2">Analyzing Spec</div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
     Kiln is reviewing your spec, generating example data to review, and creating
     a judge. Hold tight!

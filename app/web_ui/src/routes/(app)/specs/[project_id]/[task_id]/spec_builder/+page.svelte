@@ -36,6 +36,7 @@
   import RefineSpec from "./refine_spec.svelte"
   import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
   import QuestioningAnimation from "./animations/questioning_animation.svelte"
+  import RefiningAnimation from "./animations/refining_animation.svelte"
   import type { FewShotExample } from "$lib/utils/few_shot_example"
   import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
   import Questions from "./questions.svelte"
@@ -887,12 +888,10 @@
       <SpecAnalyzingAnimation />
     {:else if current_state === "questioning"}
       <QuestioningAnimation />
+    {:else if current_state === "refining"}
+      <RefiningAnimation />
     {:else if current_state === "saving_with_copilot"}
       <SavingAnimation />
-    {:else if current_state === "refining"}
-      <div class="w-full min-h-[50vh] flex justify-center items-center">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
     {:else if current_state === "review"}
       <ReviewExamples
         {name}
