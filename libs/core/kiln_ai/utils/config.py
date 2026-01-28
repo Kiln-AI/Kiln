@@ -159,6 +159,11 @@ class Config:
                 env_var="CEREBRAS_API_KEY",
                 sensitive=True,
             ),
+            "kiln_copilot_api_key": ConfigProperty(
+                str,
+                env_var="KILN_COPILOT_API_KEY",
+                sensitive=True,
+            ),
             "enable_demo_tools": ConfigProperty(
                 bool,
                 env_var="ENABLE_DEMO_TOOLS",

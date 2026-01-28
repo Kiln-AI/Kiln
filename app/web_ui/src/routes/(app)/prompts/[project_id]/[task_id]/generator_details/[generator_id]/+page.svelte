@@ -4,7 +4,7 @@
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import AppPage from "../../../../../app_page.svelte"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   let prompt: string | null = null
   let prompt_loading = true

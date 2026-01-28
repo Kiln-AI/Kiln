@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ActionButton } from "../../routes/(app)/types"
+  import type { ActionButton } from "$lib/types"
   import ButtonList from "./button_list.svelte"
 
   type MultiIntro = {

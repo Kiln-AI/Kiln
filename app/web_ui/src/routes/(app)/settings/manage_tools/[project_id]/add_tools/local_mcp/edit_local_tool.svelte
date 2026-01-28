@@ -13,7 +13,7 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import posthog from "posthog-js"
   import { view_logs } from "$lib/utils/logs"
-  import Output from "../../../../../run/output.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   $: project_id = $page.params.project_id!
 

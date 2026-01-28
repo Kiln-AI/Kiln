@@ -97,8 +97,12 @@ describe("sanitize_route_id", () => {
     })
 
     it("should handle square brackets with complex names", () => {
-      expect(sanitize_route_id("evals/[eval_config_id]/[run_config_id]")).toBe(
-        "/evals/eval_config_id/run_config_id",
+      expect(
+        sanitize_route_id(
+          "specs/[project_id]/[task_id]/[spec_id]/[eval_id]/[eval_config_id]/[run_config_id]",
+        ),
+      ).toBe(
+        "/specs/project_id/task_id/spec_id/eval_id/eval_config_id/run_config_id",
       )
     })
 
@@ -191,10 +195,10 @@ describe("sanitize_route_id", () => {
     it("should handle nested dynamic routes", () => {
       expect(
         sanitize_route_id(
-          "(app)/evals/[project_id]/[task_id]/[eval_id]/[eval_config_id]/[run_config_id]/run_result",
+          "(app)/specs/[project_id]/[task_id]/[spec_id]/[eval_id]/[eval_config_id]/[run_config_id]/run_result",
         ),
       ).toBe(
-        "/evals/project_id/task_id/eval_id/eval_config_id/run_config_id/run_result",
+        "/specs/project_id/task_id/spec_id/eval_id/eval_config_id/run_config_id/run_result",
       )
     })
 

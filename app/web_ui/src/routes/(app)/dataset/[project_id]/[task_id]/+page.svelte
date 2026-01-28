@@ -12,6 +12,7 @@
   import { replaceState } from "$app/navigation"
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
 
   let runs: RunSummary[] | null = null
   let filtered_runs: RunSummary[] | null = null
@@ -177,7 +178,7 @@
     last_selected_id = null
   }
 
-  let filter_tags_dialog: Dialog | null = null
+  let filter_tags_dialog: FilterTagsDialog | null = null
 
   function remove_filter_tag(tag: string) {
     const newTags = filter_tags.filter((t) => t !== tag)
@@ -656,41 +657,14 @@
   {/if}
 </AppPage>
 
-<Dialog
+<FilterTagsDialog
   bind:this={filter_tags_dialog}
   title="Filter Dataset by Tags"
-  action_buttons={[{ label: "Close", isCancel: true }]}
->
-  {#if filter_tags.length > 0}
-    <div class="text-sm mb-2 font-medium">Current Filters:</div>
-  {/if}
-  <div class="flex flex-row gap-2 flex-wrap">
-    {#each filter_tags as tag}
-      <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
-        <span class="truncate">{tag}</span>
-        <button
-          class="pl-3 font-medium shrink-0"
-          on:click={() => remove_filter_tag(tag)}>✕</button
-        >
-      </div>
-    {/each}
-  </div>
-
-  <div class="text-sm mt-4 mb-2 font-medium">Add a filter:</div>
-  {#if Object.keys(available_filter_tags).length == 0}
-    <p class="text-sm text-gray-500">
-      Any further filters would show zero results.
-    </p>
-  {/if}
-  <div class="flex flex-row gap-2 flex-wrap">
-    {#each Object.entries(available_filter_tags).sort((a, b) => b[1] - a[1]) as [tag, count]}
-      <button
-        class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full"
-        on:click={() => add_filter_tag(tag)}>{tag} ({count})</button
-      >
-    {/each}
-  </div>
-</Dialog>
+  {filter_tags}
+  {available_filter_tags}
+  onRemoveFilterTag={remove_filter_tag}
+  onAddFilterTag={add_filter_tag}
+/>
 
 <Dialog
   bind:this={delete_dialog}

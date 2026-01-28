@@ -1,8 +1,18 @@
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode, TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TaskOutputRatingType,
+)
 from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec_properties import (
+    DesiredBehaviourProperties,
+    SpecType,
+    ToxicityProperties,
+)
 from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 
@@ -10,13 +20,13 @@ from kiln_ai.datamodel.task_output import normalize_rating
 def test_runconfig_valid_creation():
     config = RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
-        structured_output_mode="json_schema",
+        structured_output_mode=StructuredOutputMode.json_schema,
     )
 
     assert config.model_name == "gpt-4"
-    assert config.model_provider_name == "openai"
+    assert config.model_provider_name == ModelProviderName.openai
     assert config.prompt_id == PromptGenerators.SIMPLE  # Check default value
 
 
@@ -37,9 +47,9 @@ def test_runconfig_missing_required_fields():
 def test_runconfig_custom_prompt_id():
     config = RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
-        structured_output_mode="json_schema",
+        structured_output_mode=StructuredOutputMode.json_schema,
     )
 
     assert config.prompt_id == PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT
@@ -54,9 +64,9 @@ def sample_task():
 def sample_run_config_props(sample_task):
     return RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
-        structured_output_mode="json_schema",
+        structured_output_mode=StructuredOutputMode.json_schema,
     )
 
 
@@ -148,9 +158,9 @@ def test_run_config_defaults():
 
     config = RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
-        structured_output_mode="json_schema",
+        structured_output_mode=StructuredOutputMode.json_schema,
     )
     assert config.top_p == 1.0
     assert config.temperature == 1.0
@@ -162,7 +172,7 @@ def test_run_config_valid_ranges():
     # Test valid values
     config = RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
         top_p=0.9,
         temperature=0.7,
@@ -180,7 +190,7 @@ def test_run_config_valid_top_p(top_p):
 
     config = RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
         top_p=top_p,
         temperature=1.0,
@@ -197,7 +207,7 @@ def test_run_config_invalid_top_p(top_p):
     with pytest.raises(ValueError, match="top_p must be between 0 and 1"):
         RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
             top_p=top_p,
             temperature=1.0,
@@ -211,7 +221,7 @@ def test_run_config_valid_temperature(temperature):
 
     config = RunConfigProperties(
         model_name="gpt-4",
-        model_provider_name="openai",
+        model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
         top_p=0.9,
         temperature=temperature,
@@ -228,7 +238,7 @@ def test_run_config_invalid_temperature(temperature):
     with pytest.raises(ValueError, match="temperature must be between 0 and 2"):
         RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
             top_p=0.9,
             temperature=temperature,
@@ -312,7 +322,7 @@ def test_task_default_run_config_id_property(tmp_path):
         name="Test Config",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
             structured_output_mode=StructuredOutputMode.json_schema,
         ),
@@ -330,3 +340,64 @@ def test_task_default_run_config_id_property(tmp_path):
     # Test setting back to None
     task.default_run_config_id = None
     assert task.default_run_config_id is None
+
+
+def test_task_specs_relationship(tmp_path):
+    """Test that specs can be created, saved, and retrieved through the task parent."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    properties = DesiredBehaviourProperties(
+        spec_type=SpecType.desired_behaviour,
+        core_requirement="Test instruction",
+        desired_behaviour_description="The system should behave correctly",
+        correct_behaviour_examples="Example 1",
+        incorrect_behaviour_examples="Example 1",
+    )
+    spec = Spec(
+        name="Test Spec",
+        definition="The system should behave correctly",
+        properties=properties,
+        eval_id="test_eval_id",
+        parent=task,
+    )
+    spec.save_to_file()
+
+    # Test specs can be retrieved from disk
+    specs = task.specs()
+    assert len(specs) == 1
+    assert specs[0].name == "Test Spec"
+    assert specs[0].definition == "The system should behave correctly"
+    assert specs[0].properties["spec_type"] == SpecType.desired_behaviour
+
+
+def test_task_specs_readonly(tmp_path):
+    """Test that specs can be retrieved with readonly parameter."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    properties = ToxicityProperties(
+        spec_type=SpecType.toxicity,
+        core_requirement="The system should avoid toxic language",
+        toxicity_examples="Example 1",
+    )
+    spec = Spec(
+        name="Readonly Spec",
+        definition="System should handle readonly correctly",
+        properties=properties,
+        eval_id="test_eval_id",
+        parent=task,
+    )
+    spec.save_to_file()
+
+    specs_readonly = task.specs(readonly=True)
+    assert len(specs_readonly) == 1
+    assert specs_readonly[0].name == "Readonly Spec"
+
+    specs_default = task.specs(readonly=False)
+    assert len(specs_default) == 1
+    assert specs_default[0].name == "Readonly Spec"

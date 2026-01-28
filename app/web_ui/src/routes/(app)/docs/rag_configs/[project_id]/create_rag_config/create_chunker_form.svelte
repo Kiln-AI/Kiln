@@ -318,7 +318,7 @@
     />
     <FormElement
       label="Description"
-      description="A description of the chunker for you and your team. This will have no effect on the chunker's behavior."
+      description="A description of the chunker for you and your team. This will have no effect on the chunker's behaviour."
       optional={true}
       inputType="textarea"
       id="description"

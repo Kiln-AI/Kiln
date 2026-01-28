@@ -1,6 +1,6 @@
 // Type definitions for Kiln section components
 
-import type { EvalTemplateId } from "$lib/types"
+import type { EvalTemplateId, SpecType } from "$lib/types"
 
 export interface SettingsItem {
   type: "settings"
@@ -29,4 +29,13 @@ export interface EvalTemplateItem {
   on_select: () => void
 }
 
+export interface SpecTemplateItem {
+  type: "spec_template"
+  name: string
+  description: string
+  on_select: () => void
+}
+
 export type KilnSectionItem = SettingsItem | EvalTemplateItem
+
+export type CarouselSectionItem = SpecTemplateItem

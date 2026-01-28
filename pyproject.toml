@@ -43,7 +43,7 @@ kiln-ai = { workspace = true }
 exclude = []
 
 [tool.ty.src]
-exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv"]
+exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
 
 [tool.ty.rules]
 invalid-key = "ignore"

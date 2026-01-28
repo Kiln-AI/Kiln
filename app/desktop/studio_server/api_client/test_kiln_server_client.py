@@ -4,13 +4,16 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.health import (
     ping_ping_get,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
+    AuthenticatedClient,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     KilnServerClient,
     _get_desktop_app_version,
+    get_authenticated_client,
     get_kiln_server_client,
     server_client,
 )
@@ -162,3 +165,44 @@ class TestAsyncPingRequest:
         result = await ping_ping_get.asyncio(client=client)
 
         assert result == "pong"
+
+
+class TestGetAuthenticatedClient:
+    """Tests for the get_authenticated_client factory function."""
+
+    def test_returns_authenticated_client(self):
+        """Verify the function returns an AuthenticatedClient instance."""
+        client = get_authenticated_client("test_api_key")
+        assert isinstance(client, AuthenticatedClient)
+
+    def test_returns_client_with_correct_base_url_no_env_var(self):
+        """Verify the client is configured with the correct base URL."""
+        with patch.dict(os.environ, {}, clear=True):
+            client = get_authenticated_client("test_api_key")
+            assert client._base_url == "https://api.kiln.tech"
+
+    def test_returns_client_with_correct_base_url_with_env_var(self):
+        """Verify the client is configured with the correct base URL from env."""
+        with patch.dict(
+            os.environ, {"KILN_SERVER_BASE_URL": "https://localhost:8000"}, clear=True
+        ):
+            client = get_authenticated_client("test_api_key")
+            assert client._base_url == "https://localhost:8000"
+
+    def test_returns_client_with_correct_token(self):
+        """Verify the client has the correct token set."""
+        client = get_authenticated_client("my_secret_token")
+        assert client.token == "my_secret_token"
+
+    def test_returns_client_with_correct_user_agent_header(self):
+        """Verify the client has the correct User-Agent header set."""
+        client = get_authenticated_client("test_api_key")
+        assert client._headers["User-Agent"] == f"KilnDesktopApp/{APP_VERSION}"
+        assert client._headers["Kiln-Desktop-App-Version"] == APP_VERSION
+
+    def test_client_has_appropriate_timeout(self):
+        """Verify the client has a reasonable timeout for long-running requests."""
+        client = get_authenticated_client("test_api_key")
+        assert client._timeout is not None
+        assert client._timeout.read == 300.0
+        assert client._timeout.connect == 30.0

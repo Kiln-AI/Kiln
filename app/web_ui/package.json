@@ -44,6 +44,7 @@
   "dependencies": {
     "@floating-ui/dom": "^1.7.2",
     "echarts": "^6.0.0",
+    "@kinde-oss/kinde-auth-pkce-js": "^4.3.0",
     "highlight.js": "^11.10.0",
     "openapi-fetch": "^0.12.2",
     "posthog-js": "^1.184.2"

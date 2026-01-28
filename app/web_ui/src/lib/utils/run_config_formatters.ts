@@ -12,6 +12,7 @@ import {
 import { get_tools_property_info } from "$lib/stores/tools_store"
 import { prompt_link } from "$lib/utils/link_builder"
 import type { UiProperty } from "$lib/ui/property_list"
+import { formatDate } from "./formatters"
 
 export function getDetailedModelName(
   config: TaskRunConfig,
@@ -126,6 +127,10 @@ export function getRunConfigUiProperties(
     {
       name: "Name",
       value: run_config.name || "N/A",
+    },
+    {
+      name: "Created At",
+      value: formatDate(run_config.created_at),
     },
     {
       name: "Model",
