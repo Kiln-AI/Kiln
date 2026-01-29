@@ -5437,19 +5437,23 @@ built_in_models: List[KilnModel] = [
         name=ModelName.kimi_k2_5,
         friendly_name="Kimi K2.5",
         providers=[
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/kimi-k2p5",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=True,
-                multimodal_capable=True,
-                supports_vision=True,
-                supports_doc_extraction=True,
-                multimodal_mime_types=[
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
+            # Fireworks provider commented out due to immutable parameter requirements:
+            # top_p must be exactly 0.95 (thinking mode) or temperature must be 0.6 (non-thinking mode)
+            # We currently always send temperature=1.0 and top_p=1.0 from run_config, which causes errors.
+            # In the future maybe Fireworks will make this easier to work with, or Kiln will add some sort of fixed params for thinking mode settings.
+            # KilnModelProvider(
+            #     name=ModelProviderName.fireworks_ai,
+            #     model_id="accounts/fireworks/models/kimi-k2p5",
+            #     structured_output_mode=StructuredOutputMode.json_schema,
+            #     supports_data_gen=True,
+            #     multimodal_capable=True,
+            #     supports_vision=True,
+            #     supports_doc_extraction=True,
+            #     multimodal_mime_types=[
+            #         KilnMimeType.JPG,
+            #         KilnMimeType.PNG,
+            #     ],
+            # ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2.5",
@@ -5458,6 +5462,8 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response, so disabling it here
+                # reasoning_capable=True,
                 multimodal_mime_types=[
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
