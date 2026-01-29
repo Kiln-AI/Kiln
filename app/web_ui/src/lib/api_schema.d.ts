@@ -2832,6 +2832,8 @@ export interface components {
         CheckEvalResponse: {
             /** Has Default Config */
             has_default_config: boolean;
+            /** Has Train Set */
+            has_train_set: boolean;
             /** Model Is Supported */
             model_is_supported: boolean;
         };

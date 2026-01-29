@@ -1400,6 +1400,7 @@ def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
 
     mock_eval = MagicMock()
     mock_eval.current_config_id = None
+    mock_eval.train_set_filter_id = None
 
     project_id = project.id
     task_id = task.id
@@ -1417,6 +1418,7 @@ def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is False
+        assert result["has_train_set"] is False
         assert result["model_is_supported"] is False
 
 
@@ -1435,6 +1437,7 @@ def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
 
     mock_eval = MagicMock()
     mock_eval.current_config_id = "config-123"
+    mock_eval.train_set_filter_id = None
 
     project_id = project.id
     task_id = task.id
@@ -1458,6 +1461,7 @@ def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is False
+        assert result["has_train_set"] is False
         assert result["model_is_supported"] is False
 
 
@@ -1475,6 +1479,7 @@ def test_check_eval_missing_model_name(client, mock_api_key, tmp_path):
 
     mock_eval = MagicMock()
     mock_eval.current_config_id = "config-123"
+    mock_eval.train_set_filter_id = None
 
     mock_config = MagicMock()
     mock_config.model_name = None
@@ -1502,6 +1507,7 @@ def test_check_eval_missing_model_name(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is True
+        assert result["has_train_set"] is False
         assert result["model_is_supported"] is False
 
 
@@ -1519,6 +1525,7 @@ def test_check_eval_missing_model_provider(client, mock_api_key, tmp_path):
 
     mock_eval = MagicMock()
     mock_eval.current_config_id = "config-123"
+    mock_eval.train_set_filter_id = None
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1546,6 +1553,7 @@ def test_check_eval_missing_model_provider(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is True
+        assert result["has_train_set"] is False
         assert result["model_is_supported"] is False
 
 
@@ -1563,6 +1571,7 @@ def test_check_eval_server_validation_error(client, mock_api_key, tmp_path):
 
     mock_eval = MagicMock()
     mock_eval.current_config_id = "config-123"
+    mock_eval.train_set_filter_id = None
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1611,6 +1620,7 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
 
     mock_eval = MagicMock()
     mock_eval.current_config_id = "config-123"
+    mock_eval.train_set_filter_id = None
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1671,6 +1681,66 @@ def test_check_eval_exception(client, mock_api_key, tmp_path):
 
         assert response.status_code == 500
         assert "Failed to check eval" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "train_set_filter_id,expected_has_train_set",
+    [("tag::train", True), (None, False)],
+)
+def test_check_eval_success_train_set(
+    client, mock_api_key, tmp_path, train_set_filter_id, expected_has_train_set
+):
+    """Test that check_eval returns correct has_train_set from eval.train_set_filter_id."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    mock_eval = MagicMock()
+    mock_eval.current_config_id = "config-123"
+    mock_eval.train_set_filter_id = train_set_filter_id
+
+    mock_config = MagicMock()
+    mock_config.model_name = "gpt-4"
+    mock_config.model_provider = "openai"
+
+    mock_check_response = MagicMock()
+    mock_check_response.is_model_supported = True
+
+    project_id = project.id
+    task_id = task.id
+    eval_id = "test-eval-id"
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_check_response,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            params={"eval_id": eval_id},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["has_default_config"] is True
+        assert result["has_train_set"] is expected_has_train_set
+        assert result["model_is_supported"] is True
 
 
 def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):

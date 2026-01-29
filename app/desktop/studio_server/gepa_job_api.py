@@ -83,6 +83,7 @@ class CheckEvalResponse(BaseModel):
     """Response model for check_eval endpoint."""
 
     has_default_config: bool
+    has_train_set: bool
     model_is_supported: bool
 
 
@@ -312,6 +313,7 @@ def connect_gepa_job_api(app: FastAPI):
             if not eval.current_config_id:
                 return CheckEvalResponse(
                     has_default_config=False,
+                    has_train_set=bool(eval.train_set_filter_id),
                     model_is_supported=False,
                 )
 
@@ -323,6 +325,7 @@ def connect_gepa_job_api(app: FastAPI):
             except HTTPException:
                 return CheckEvalResponse(
                     has_default_config=False,
+                    has_train_set=bool(eval.train_set_filter_id),
                     model_is_supported=False,
                 )
 
@@ -333,6 +336,7 @@ def connect_gepa_job_api(app: FastAPI):
             if not model_name or not model_provider:
                 return CheckEvalResponse(
                     has_default_config=True,
+                    has_train_set=bool(eval.train_set_filter_id),
                     model_is_supported=False,
                 )
 
@@ -365,6 +369,7 @@ def connect_gepa_job_api(app: FastAPI):
 
             return CheckEvalResponse(
                 has_default_config=True,
+                has_train_set=bool(eval.train_set_filter_id),
                 model_is_supported=response.is_model_supported,
             )
 

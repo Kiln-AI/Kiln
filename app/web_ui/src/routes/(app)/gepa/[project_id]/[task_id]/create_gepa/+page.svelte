@@ -84,6 +84,7 @@
     configs: EvalConfig[]
     current_config: EvalConfig | null
     has_default_config: boolean
+    has_train_set: boolean
     model_is_supported: boolean
     validation_status: "unchecked" | "checking" | "valid" | "invalid"
     validation_message: string | null
@@ -106,6 +107,12 @@
       item.eval.id &&
       selected_eval_ids.has(item.eval.id) &&
       !item.has_default_config,
+  )
+  $: has_evals_without_train_set = evals_with_configs.some(
+    (item) =>
+      item.eval.id &&
+      selected_eval_ids.has(item.eval.id) &&
+      !item.has_train_set,
   )
   $: has_unsupported_models =
     run_config_validation_status === "invalid" ||
@@ -262,6 +269,7 @@
           configs: configs_data || [],
           current_config,
           has_default_config: false,
+          has_train_set: false,
           model_is_supported: false,
           validation_status: "unchecked" as const,
           validation_message: null,
@@ -384,6 +392,7 @@
 
       if (data) {
         evals_with_configs[index].has_default_config = data.has_default_config
+        evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
 
         // Construct friendly message
@@ -405,6 +414,10 @@
               "Model is not supported for Kiln Prompt Optimization"
           }
           evals_with_configs[index].validation_status = "invalid"
+        } else if (!data.has_train_set) {
+          evals_with_configs[index].validation_message =
+            "This eval has no train set and will not be used during optimization."
+          evals_with_configs[index].validation_status = "valid"
         } else {
           evals_with_configs[index].validation_message = null
           evals_with_configs[index].validation_status = "valid"
@@ -788,7 +801,7 @@
               </div>
             {:else}
               <div class="bg-base-200 rounded-lg p-4 space-y-3">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, model_is_supported, validation_status, validation_message }}
+                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, model_is_supported, validation_status, validation_message }}
                   {@const spec_id = "legacy"}
                   {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
                   {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
@@ -805,7 +818,9 @@
                             ? "border-warning"
                             : !model_is_supported
                               ? "border-error"
-                              : "border-success"
+                              : !has_train_set
+                                ? "border-warning"
+                                : "border-success"
                     }`}
                   >
                     <div class="flex items-start justify-between gap-2">
@@ -835,6 +850,8 @@
                               <span class="text-warning text-sm">⚠</span>
                             {:else if !model_is_supported}
                               <span class="text-error text-sm">✗</span>
+                            {:else if !has_train_set}
+                              <span class="text-warning text-sm">⚠</span>
                             {:else}
                               <span class="text-success text-sm">✓</span>
                             {/if}
@@ -927,6 +944,20 @@
                     Some evaluators are disabled and won't be used for
                     optimization. This may cause the optimization to not fulfill
                     all of your requirements.
+                  </div>
+                </Warning>
+              </div>
+            {:else if has_evals_without_train_set}
+              <div class="mt-3">
+                <Warning
+                  warning_color="warning"
+                  warning_icon="info"
+                  outline={true}
+                  tight={true}
+                >
+                  <div class="text-sm text-gray-600">
+                    Some selected evals have no train set and will not be used
+                    during optimization.
                   </div>
                 </Warning>
               </div>
