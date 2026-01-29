@@ -1086,7 +1086,7 @@ def test_zip_project_basic(tmp_path):
     project_dir.mkdir()
 
     (project_dir / "file1.txt").write_text("content1")
-    (project_dir / "file2.py").write_text("print('hello')")
+    (project_dir / "file2.py").write_text("hello")
 
     subdir = project_dir / "subdir"
     subdir.mkdir()
