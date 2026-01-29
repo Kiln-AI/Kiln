@@ -462,13 +462,12 @@ def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
         result = response.json()
         assert result["latest_status"] == "succeeded"
         assert result["optimized_prompt"] == optimized_prompt
-        assert result["created_prompt_id"] is not None
 
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
         assert prompts[0].name == f"GEPA - {gepa_job.name}"
-        assert prompts[0].generator_id == "gepa"
+        assert result["created_prompt_id"] == f"id::{prompts[0].id}"
 
 
 def test_gepa_job_only_creates_prompt_once(client, mock_api_key, tmp_path):

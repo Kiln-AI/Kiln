@@ -12,6 +12,7 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
+  import { prompt_link } from "$lib/utils/link_builder"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -108,6 +109,17 @@
       get_task_composite_id(project_id, task_id)
     ] || []
 
+  $: view_prompt_action_buttons = gepa_job?.created_prompt_id
+    ? (() => {
+        const href = prompt_link(
+          project_id,
+          task_id,
+          gepa_job!.created_prompt_id!,
+        )
+        return href ? [{ label: "View Generated Prompt", href }] : []
+      })()
+    : []
+
   function get_run_config_name(run_config_id: string): string {
     const config = run_configs.find((rc) => rc.id === run_config_id)
     return config?.name || run_config_id
@@ -157,14 +169,7 @@
         href: `/gepa/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={gepa_job?.created_prompt_id
-      ? [
-          {
-            label: "View Generated Prompt",
-            href: `/prompts/${project_id}/${task_id}/saved/${gepa_job.created_prompt_id}`,
-          },
-        ]
-      : []}
+    action_buttons={view_prompt_action_buttons}
   >
     {#if gepa_job_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -230,15 +235,17 @@
             </div>
 
             {#if gepa_job.created_prompt_id}
-              <div class="flex items-center">Generated Prompt</div>
-              <div class="flex items-center text-gray-500">
-                <a
-                  href={`/prompts/${project_id}/${task_id}/saved/${gepa_job.created_prompt_id}`}
-                  class="link"
-                >
-                  View Prompt
-                </a>
-              </div>
+              {@const created_prompt_href = prompt_link(
+                project_id,
+                task_id,
+                gepa_job.created_prompt_id,
+              )}
+              {#if created_prompt_href}
+                <div class="flex items-center">Generated Prompt</div>
+                <div class="flex items-center text-gray-500">
+                  <a href={created_prompt_href} class="link"> View Prompt </a>
+                </div>
+              {/if}
             {/if}
           </div>
         </div>
