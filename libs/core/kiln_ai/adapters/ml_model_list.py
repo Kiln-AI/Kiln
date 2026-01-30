@@ -5460,11 +5460,13 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 multimodal_capable=True,
-                supports_doc_extraction=True,
                 supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_doc_extraction=True,
                 # while the model is capable of reasoning, it doesn't always return it in the response, so disabling it here
                 # reasoning_capable=True,
                 multimodal_mime_types=[
+                    KilnMimeType.PDF,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
