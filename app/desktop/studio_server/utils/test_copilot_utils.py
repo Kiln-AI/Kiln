@@ -3,10 +3,6 @@
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.api_models.copilot_models import (
-    ReviewedExample,
-    SampleApi,
-)
 from app.desktop.studio_server.utils.copilot_utils import (
     KILN_ADAPTER_NAME,
     KILN_COPILOT_MODEL_NAME,
@@ -21,6 +17,10 @@ from app.desktop.studio_server.utils.copilot_utils import (
     sample_and_remove,
 )
 from fastapi import HTTPException
+from kiln_ai.datamodel.copilot_models.copilot_api_models import (
+    ReviewedExample,
+    Sample,
+)
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import DataSourceType
 
@@ -56,39 +56,31 @@ class TestGetCopilotApiKey:
 
 class TestSampleAndRemove:
     def test_samples_correct_number_of_items(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(10)
-        ]
+        examples = [Sample(input=f"input_{i}", output=f"output_{i}") for i in range(10)]
         sampled = sample_and_remove(examples, 3)
         assert len(sampled) == 3
         assert len(examples) == 7
 
     def test_samples_all_when_n_greater_than_length(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(5)
-        ]
+        examples = [Sample(input=f"input_{i}", output=f"output_{i}") for i in range(5)]
         sampled = sample_and_remove(examples, 10)
         assert len(sampled) == 5
         assert len(examples) == 0
 
     def test_returns_empty_list_when_empty_input(self):
-        examples: list[SampleApi] = []
+        examples: list[Sample] = []
         sampled = sample_and_remove(examples, 5)
         assert len(sampled) == 0
         assert len(examples) == 0
 
     def test_mutates_original_list(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(10)
-        ]
+        examples = [Sample(input=f"input_{i}", output=f"output_{i}") for i in range(10)]
         original_length = len(examples)
         sample_and_remove(examples, 4)
         assert len(examples) == original_length - 4
 
     def test_samples_zero_items(self):
-        examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(5)
-        ]
+        examples = [Sample(input=f"input_{i}", output=f"output_{i}") for i in range(5)]
         sampled = sample_and_remove(examples, 0)
         assert len(sampled) == 0
         assert len(examples) == 5
@@ -96,22 +88,22 @@ class TestSampleAndRemove:
 
 class TestCreateTaskRunFromSample:
     def test_creates_task_run_with_correct_input(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         task_run = create_task_run_from_sample(sample, "eval_tag")
         assert task_run.input == "test input"
 
     def test_creates_task_run_with_correct_output(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         task_run = create_task_run_from_sample(sample, "eval_tag")
         assert task_run.output.output == "test output"
 
     def test_creates_task_run_with_tag(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         task_run = create_task_run_from_sample(sample, "eval_tag")
         assert "eval_tag" in task_run.tags
 
     def test_creates_task_run_with_extra_tags(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         task_run = create_task_run_from_sample(
             sample, "eval_tag", extra_tags=["session_123", "other_tag"]
         )
@@ -120,12 +112,12 @@ class TestCreateTaskRunFromSample:
         assert "other_tag" in task_run.tags
 
     def test_creates_task_run_without_extra_tags(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         task_run = create_task_run_from_sample(sample, "eval_tag", extra_tags=None)
         assert task_run.tags == ["eval_tag"]
 
     def test_creates_task_run_with_synthetic_data_source(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         task_run = create_task_run_from_sample(sample, "eval_tag")
         assert task_run.input_source.type == DataSourceType.synthetic
         assert task_run.input_source.properties["model_name"] == KILN_COPILOT_MODEL_NAME
@@ -229,7 +221,7 @@ class TestCreateTaskRunFromReviewed:
 class TestCreateDatasetTaskRuns:
     def test_creates_correct_number_of_task_runs(self):
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            Sample(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
@@ -249,7 +241,7 @@ class TestCreateDatasetTaskRuns:
 
     def test_includes_reviewed_examples_in_golden_set(self):
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            Sample(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples = [
@@ -280,7 +272,7 @@ class TestCreateDatasetTaskRuns:
 
     def test_all_task_runs_have_session_tag(self):
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            Sample(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
@@ -303,7 +295,7 @@ class TestCreateDatasetTaskRuns:
 
     def test_same_session_tag_for_all_runs(self):
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            Sample(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
@@ -328,7 +320,7 @@ class TestCreateDatasetTaskRuns:
 
     def test_eval_examples_have_eval_tag(self):
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            Sample(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
@@ -349,7 +341,7 @@ class TestCreateDatasetTaskRuns:
 
     def test_train_examples_have_train_tag(self):
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            Sample(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
         ]
         reviewed_examples: list[ReviewedExample] = []
@@ -372,7 +364,7 @@ class TestCreateDatasetTaskRuns:
     def test_handles_insufficient_examples(self):
         # Fewer examples than needed
         all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(5)
+            Sample(input=f"input_{i}", output=f"output_{i}") for i in range(5)
         ]
         reviewed_examples: list[ReviewedExample] = []
 
