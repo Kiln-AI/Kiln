@@ -117,12 +117,7 @@ async def generate_copilot_examples(
     data_dict = result.to_dict().get("data_by_topic", {})
     for topic_examples in data_dict.values():
         for ex in topic_examples:
-            examples.append(
-                Sample(
-                    input=ex.get("input", ""),
-                    output=ex.get("output", ""),
-                )
-            )
+            examples.append(Sample(input=ex.input, output=ex.output))
 
     return examples
 
