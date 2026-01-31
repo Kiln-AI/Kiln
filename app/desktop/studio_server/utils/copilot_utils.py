@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.copilot_models.copilot_api_models import (
     GenerateBatchInput,
+    GenerateBatchOutput,
     ReviewedExample,
     Sample,
     SyntheticDataGenerationSessionConfigInput,
@@ -105,18 +106,23 @@ async def generate_copilot_examples(
             detail="Validation error.",
         )
 
-    # Convert result to flat list of Sample
+    if not isinstance(result, GenerateBatchOutput):
+        raise HTTPException(
+            status_code=500,
+            detail="Unknown error.",
+        )
+
+    # Convert result to flat list of SampleApi
     examples: list[Sample] = []
-    if result:
-        data_dict = result.to_dict().get("data_by_topic", {})
-        for topic_examples in data_dict.values():
-            for ex in topic_examples:
-                examples.append(
-                    Sample(
-                        input=ex.get("input", ""),
-                        output=ex.get("output", ""),
-                    )
+    data_dict = result.to_dict().get("data_by_topic", {})
+    for topic_examples in data_dict.values():
+        for ex in topic_examples:
+            examples.append(
+                Sample(
+                    input=ex.get("input", ""),
+                    output=ex.get("output", ""),
                 )
+            )
 
     return examples
 
