@@ -9,33 +9,27 @@ from pydantic import BaseModel, ConfigDict, Field
 class ExamplesForFeedbackItem(BaseModel):
     """A sample presented for user feedback, with model's judgment."""
 
-    input: str = Field(alias="input")
+    input: str
     output: str
     fails_specification: bool
-
-    model_config = {"populate_by_name": True}
 
 
 class ExamplesWithFeedbackItem(BaseModel):
     """An example with user feedback on the judge's assessment."""
 
     user_agrees_with_judge: bool
-    input: str = Field(alias="input")
+    input: str
     output: str
     fails_specification: bool
     user_feedback: str | None = None
-
-    model_config = {"populate_by_name": True}
 
 
 class JudgedSample(BaseModel):
     """A sample with the model's judgment on spec compliance."""
 
-    input: str = Field(alias="input")
+    input: str
     output: str
     fails_specification: bool
-
-    model_config = {"populate_by_name": True}
 
 
 class TaskMetadata(BaseModel):
@@ -68,8 +62,6 @@ class Sample(BaseModel):
     input: str
     output: str
 
-    model_config = {"populate_by_name": True}
-
 
 class ReviewedExample(BaseModel):
     """A reviewed example from the spec review process.
@@ -78,13 +70,11 @@ class ReviewedExample(BaseModel):
     model and user judgments on spec compliance.
     """
 
-    input: str = Field(alias="input")
+    input: str
     output: str
     model_says_meets_spec: bool
     user_says_meets_spec: bool
     feedback: str
-
-    model_config = {"populate_by_name": True}
 
 
 class TopicSamples(BaseModel):

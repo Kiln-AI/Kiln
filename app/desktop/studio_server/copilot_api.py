@@ -109,7 +109,7 @@ def connect_copilot_api(app: FastAPI):
         detailed_result = (
             await clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(by_alias=True),
+                body=input.model_dump(),
             )
         )
         check_response_error(detailed_result)
@@ -136,7 +136,7 @@ def connect_copilot_api(app: FastAPI):
         detailed_result = (
             await refine_spec_v1_copilot_refine_spec_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(by_alias=True),
+                body=input.model_dump(),
             )
         )
         check_response_error(detailed_result)
@@ -164,7 +164,7 @@ def connect_copilot_api(app: FastAPI):
         detailed_result = (
             await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(by_alias=True),
+                body=input.model_dump(),
             )
         )
         check_response_error(detailed_result)
@@ -194,7 +194,7 @@ def connect_copilot_api(app: FastAPI):
         detailed_result = (
             await question_spec_v1_copilot_question_spec_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(by_alias=True),
+                body=input.model_dump(),
             )
         )
         check_response_error(detailed_result)
@@ -223,7 +223,7 @@ def connect_copilot_api(app: FastAPI):
 
         detailed_result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed(
             client=client,
-            body=request.model_dump(by_alias=True),
+            body=request.model_dump(),
         )
         check_response_error(detailed_result)
 

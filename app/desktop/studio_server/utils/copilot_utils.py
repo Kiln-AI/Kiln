@@ -87,7 +87,7 @@ async def generate_copilot_examples(
     detailed_result = (
         await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
             client=client,
-            body=generate_input.model_dump(by_alias=True),
+            body=generate_input.model_dump(),
         )
     )
     check_response_error(detailed_result)
