@@ -12,22 +12,21 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     generate_batch_v1_copilot_generate_batch_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    GenerateBatchInput,
-    GenerateBatchOutput,
     HTTPValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.api_models.copilot_models import (
-    ReviewedExample,
-    SampleApi,
-    SyntheticDataGenerationSessionConfigApi,
-    TaskInfoApi,
-)
 from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.copilot_models.copilot_api_models import (
+    GenerateBatchInput,
+    ReviewedExample,
+    Sample,
+    SyntheticDataGenerationSessionConfigInput,
+    TaskInfo,
+)
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -60,13 +59,13 @@ def get_copilot_api_key() -> str:
 
 async def generate_copilot_examples(
     api_key: str,
-    target_task_info: TaskInfoApi,
-    sdg_session_config: SyntheticDataGenerationSessionConfigApi,
+    target_task_info: TaskInfo,
+    sdg_session_config: SyntheticDataGenerationSessionConfigInput,
     spec_definition: str,
-) -> list[SampleApi]:
+) -> list[Sample]:
     """Generate examples via the Kiln Copilot API.
 
-    Calls the copilot generate_batch endpoint and returns a flat list of SampleApi objects.
+    Calls the copilot generate_batch endpoint and returns a flat list of Sample objects.
     Raises HTTPException on API errors.
 
     Args:
@@ -77,20 +76,18 @@ async def generate_copilot_examples(
     """
     client = get_authenticated_client(api_key)
 
-    generate_input = GenerateBatchInput.from_dict(
-        {
-            "target_task_info": target_task_info.model_dump(),
-            "sdg_session_config": sdg_session_config.model_dump(),
-            "target_specification": spec_definition,
-            "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
-            "num_topics": NUM_TOPICS,
-        }
+    generate_input = GenerateBatchInput(
+        target_task_info=target_task_info,
+        sdg_session_config=sdg_session_config,
+        target_specification=spec_definition,
+        num_samples_per_topic=NUM_SAMPLES_PER_TOPIC,
+        num_topics=NUM_TOPICS,
     )
 
     detailed_result = (
         await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
             client=client,
-            body=generate_input,
+            body=generate_input.model_dump(by_alias=True),
         )
     )
     check_response_error(detailed_result)
@@ -108,34 +105,29 @@ async def generate_copilot_examples(
             detail="Validation error.",
         )
 
-    if not isinstance(result, GenerateBatchOutput):
-        raise HTTPException(
-            status_code=500,
-            detail="Unknown error.",
-        )
-
-    # Convert result to flat list of SampleApi
-    examples: list[SampleApi] = []
-    data_dict = result.to_dict().get("data_by_topic", {})
-    for topic_examples in data_dict.values():
-        for ex in topic_examples:
-            examples.append(
-                SampleApi(
-                    input=ex.get("input", ""),
-                    output=ex.get("output", ""),
+    # Convert result to flat list of Sample
+    examples: list[Sample] = []
+    if result:
+        data_dict = result.to_dict().get("data_by_topic", {})
+        for topic_examples in data_dict.values():
+            for ex in topic_examples:
+                examples.append(
+                    Sample(
+                        input=ex.get("input", ""),
+                        output=ex.get("output", ""),
+                    )
                 )
-            )
 
     return examples
 
 
-def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
+def sample_and_remove(examples: list[Sample], n: int) -> list[Sample]:
     """Randomly sample and remove n items from a list.
 
     Mutates the input list by removing the sampled elements.
     Uses swap-and-pop for O(1) removal.
     """
-    sampled: list[SampleApi] = []
+    sampled: list[Sample] = []
     count = min(n, len(examples))
 
     for _ in range(count):
@@ -150,9 +142,9 @@ def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
 
 
 def create_task_run_from_sample(
-    sample: SampleApi, tag: str, extra_tags: list[str] | None = None
+    sample: Sample, tag: str, extra_tags: list[str] | None = None
 ) -> TaskRun:
-    """Create a TaskRun from a SampleApi (without parent set)."""
+    """Create a TaskRun from a Sample (without parent set)."""
     data_source = DataSource(
         type=DataSourceType.synthetic,
         properties={
@@ -166,10 +158,8 @@ def create_task_run_from_sample(
     if extra_tags:
         tags.extend(extra_tags)
 
-    # Access input using model_dump since SampleApi uses alias
-    sample_dict = sample.model_dump(by_alias=True)
     return TaskRun(
-        input=sample_dict["input"],
+        input=sample.input,
         input_source=data_source,
         output=TaskOutput(
             output=sample.output,
@@ -224,7 +214,7 @@ def create_task_run_from_reviewed(
 
 
 def create_dataset_task_runs(
-    all_examples: list[SampleApi],
+    all_examples: list[Sample],
     reviewed_examples: list[ReviewedExample],
     eval_tag: str,
     train_tag: str,
