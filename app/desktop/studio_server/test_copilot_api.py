@@ -201,7 +201,7 @@ class TestClarifySpec:
     ):
         mock_response = MagicMock()
         mock_response.status_code = 422
-        mock_response.content = b'{"user_message": "Validation error from server"}'
+        mock_response.content = b'{"message": "Validation error from server"}'
 
         with patch(
             "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed",
@@ -266,7 +266,7 @@ class TestRefineSpec:
     ):
         mock_response = MagicMock()
         mock_response.status_code = 422
-        mock_response.content = b'{"user_message": "Validation error from server"}'
+        mock_response.content = b'{"message": "Validation error from server"}'
 
         with patch(
             "app.desktop.studio_server.copilot_api.refine_spec_v1_copilot_refine_spec_post.asyncio_detailed",
@@ -335,7 +335,7 @@ class TestGenerateBatch:
     ):
         mock_response = MagicMock()
         mock_response.status_code = 422
-        mock_response.content = b'{"user_message": "Validation error from server"}'
+        mock_response.content = b'{"message": "Validation error from server"}'
 
         with patch(
             "app.desktop.studio_server.copilot_api.generate_batch_v1_copilot_generate_batch_post.asyncio_detailed",
