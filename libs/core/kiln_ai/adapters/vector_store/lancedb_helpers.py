@@ -50,31 +50,37 @@ def convert_to_llama_index_node(
     node_id: str,
     text: str,
     vector: List[float],
+    page_number: int | None = None,
 ) -> TextNode:
+    metadata: Dict[str, Any] = {
+        # metadata is populated by some internal llama_index logic
+        # that uses for example the source_node relationship
+        "kiln_doc_id": document_id,
+        "kiln_chunk_idx": chunk_idx,
+        #
+        # llama_index lancedb vector store automatically sets these metadata:
+        # "doc_id": "UUID node_id of the Source Node relationship",
+        # "document_id": "UUID node_id of the Source Node relationship",
+        # "ref_doc_id": "UUID node_id of the Source Node relationship"
+        #
+        # llama_index file loaders set these metadata, which would be useful to also support:
+        # "creation_date": "2025-09-03",
+        # "file_name": "file.pdf",
+        # "file_path": "/absolute/path/to/the/file.pdf",
+        # "file_size": 395154,
+        # "file_type": "application\/pdf",
+        # "last_modified_date": "2025-09-03",
+        # "page_label": "1",
+    }
+
+    if page_number is not None:
+        metadata["kiln_page_number"] = page_number
+
     return TextNode(
         id_=node_id,
         text=text,
         embedding=vector,
-        metadata={
-            # metadata is populated by some internal llama_index logic
-            # that uses for example the source_node relationship
-            "kiln_doc_id": document_id,
-            "kiln_chunk_idx": chunk_idx,
-            #
-            # llama_index lancedb vector store automatically sets these metadata:
-            # "doc_id": "UUID node_id of the Source Node relationship",
-            # "document_id": "UUID node_id of the Source Node relationship",
-            # "ref_doc_id": "UUID node_id of the Source Node relationship"
-            #
-            # llama_index file loaders set these metadata, which would be useful to also support:
-            # "creation_date": "2025-09-03",
-            # "file_name": "file.pdf",
-            # "file_path": "/absolute/path/to/the/file.pdf",
-            # "file_size": 395154,
-            # "file_type": "application\/pdf",
-            # "last_modified_date": "2025-09-03",
-            # "page_label": "1",
-        },
+        metadata=metadata,
         relationships={
             # when using the llama_index loaders, llama_index groups Nodes under Documents
             # and relationships point to the Document (which is also a Node), which confusingly

@@ -84,6 +84,13 @@ def semantic_chunker_factory():
 
             # Create mock semantic splitter
             mock_splitter = MagicMock()
+            mock_node1 = MagicMock()
+            mock_node1.get_content.return_value = "First semantic chunk."
+            mock_node2 = MagicMock()
+            mock_node2.get_content.return_value = "Second semantic chunk."
+            mock_splitter.abuild_semantic_nodes_from_documents = AsyncMock(
+                return_value=[mock_node1, mock_node2]
+            )
             mock_splitter_class.return_value = mock_splitter
 
             return SemanticChunker(config)
@@ -292,6 +299,8 @@ async def test_semantic_chunker_real_integration(tmp_path):
     # Basic sanity assertions
     assert len(result.chunks) >= 1
     assert all(isinstance(c.text, str) and len(c.text) > 0 for c in result.chunks)
+    # Page numbers should be None when not provided
+    assert all(c.page_number is None for c in result.chunks)
 
     assert (
         "The history of spices is, in many ways, the history of globalization itself."
@@ -300,3 +309,32 @@ async def test_semantic_chunker_real_integration(tmp_path):
 
     # flaky assertion, may fail sometimes
     assert len(result.chunks) >= 3
+
+
+async def test_semantic_chunker_page_numbers_without_offsets(
+    semantic_chunker_factory, semantic_chunker_config
+):
+    """Test that page_number is None when page_offsets are not provided."""
+    chunker = semantic_chunker_factory(semantic_chunker_config)
+    result = await chunker.chunk("Test content here.")
+
+    assert len(result.chunks) > 0
+    for chunk in result.chunks:
+        assert chunk.page_number is None
+
+
+async def test_semantic_chunker_page_numbers_with_offsets(
+    semantic_chunker_factory, semantic_chunker_config
+):
+    """Test page number assignment when page_offsets are provided."""
+    chunker = semantic_chunker_factory(semantic_chunker_config)
+    text = "First semantic chunk. Second semantic chunk."
+    page_offsets = [0, 25]
+
+    result = await chunker.chunk(text, page_offsets=page_offsets)
+
+    assert len(result.chunks) > 0
+    # All chunks should have page numbers assigned
+    for chunk in result.chunks:
+        assert chunk.page_number is not None
+        assert chunk.page_number in [0, 1]
