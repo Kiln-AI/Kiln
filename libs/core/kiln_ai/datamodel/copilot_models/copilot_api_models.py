@@ -29,6 +29,7 @@ class JudgedSample(BaseModel):
 
     input: str
     output: str
+    reasoning: str | None = None
     fails_specification: bool
 
 
