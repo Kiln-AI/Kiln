@@ -24,7 +24,7 @@
 </script>
 
 <div
-  class="card card-bordered max-w-96 w-full border-base-300 shadow-md p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200"
+  class="card card-bordered w-full border-base-300 shadow-md p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all duration-200"
   on:click={onClick}
   on:keypress={handleKeyPress}
   role="button"
