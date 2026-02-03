@@ -13,6 +13,7 @@
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -31,6 +32,7 @@
     Run,
     FineTune,
     Models,
+    Optimize,
     None,
   }
 
@@ -63,6 +65,8 @@
       section = Section.Models
     } else if (path_start("/specs", $page.url.pathname)) {
       section = Section.Specs
+    } else if (path_start("/optimize", $page.url.pathname)) {
+      section = Section.Optimize
     } else {
       section = Section.None
     }
@@ -252,6 +256,19 @@
             />
           </svg>
           Synthetic Data</a
+        >
+      </li>
+
+      <li class="menu-md">
+        <a
+          href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+          class={section == Section.Optimize ? "active" : ""}
+        >
+          <div class="h-6 w-6 mr-2">
+            <OptimizeIcon />
+          </div>
+
+          Optimize</a
         >
       </li>
 
