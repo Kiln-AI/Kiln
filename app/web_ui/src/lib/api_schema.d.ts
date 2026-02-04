@@ -4827,6 +4827,31 @@ export interface components {
              */
             message: string;
         };
+        /** MCPToolReference */
+        MCPToolReference: {
+            /**
+             * Tool Id
+             * @description The MCP tool ID to call (mcp::local|remote::<server_id>::<tool_name>).
+             */
+            tool_id: string;
+            /**
+             * Tool Server Id
+             * @description The MCP tool server ID.
+             */
+            tool_server_id?: string | null;
+            /**
+             * Tool Name
+             * @description The MCP tool name.
+             */
+            tool_name?: string | null;
+            /**
+             * Input Schema
+             * @description Snapshot of the MCP tool input schema.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** MaliciousnessProperties */
         MaliciousnessProperties: {
             /**
@@ -5647,12 +5672,24 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunConfigKind
+         * @enum {string}
+         */
+        RunConfigKind: "llm" | "mcp";
+        /**
          * RunConfigProperties
          * @description A configuration for running a task.
          *
          *     This includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
          */
         RunConfigProperties: {
+            /**
+             * @description The type of run config (llm or mcp).
+             * @default llm
+             */
+            kind: components["schemas"]["RunConfigKind"];
+            /** @description MCP tool reference used when kind is mcp. */
+            mcp_tool?: components["schemas"]["MCPToolReference"] | null;
             /**
              * Model Name
              * @description The model to use for this run config.

@@ -24,6 +24,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
+from kiln_ai.datamodel.run_config import RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -403,21 +404,21 @@ def connect_evals_api(app: FastAPI):
             )
 
         frozen_prompt: BasePrompt | None = None
-        prompt_id = request.run_config_properties.prompt_id
-        if not is_frozen_prompt(prompt_id):
-            # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
-            # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
-            prompt_builder = prompt_builder_from_id(prompt_id, task)
-            prompt_name = generate_memorable_name()
-            frozen_prompt = BasePrompt(
-                name=prompt_name,
-                description=f"Frozen copy of prompt '{prompt_id}'.",
-                generator_id=prompt_id,
-                prompt=prompt_builder.build_base_prompt(),
-                chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
-            )
-
         run_config_properties = request.run_config_properties
+        prompt_id = run_config_properties.prompt_id
+        if run_config_properties.kind == RunConfigKind.llm:
+            if not is_frozen_prompt(prompt_id):
+                # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
+                # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
+                prompt_builder = prompt_builder_from_id(prompt_id, task)
+                prompt_name = generate_memorable_name()
+                frozen_prompt = BasePrompt(
+                    name=prompt_name,
+                    description=f"Frozen copy of prompt '{prompt_id}'.",
+                    generator_id=prompt_id,
+                    prompt=prompt_builder.build_base_prompt(),
+                    chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
+                )
 
         task_run_config = TaskRunConfig(
             parent=task,
