@@ -3,10 +3,8 @@ import { goto } from "$app/navigation"
 export interface Optimizer {
   title: string
   description: string
-  info_description?: string
   cost: number
-  complexity: number
-  speed: number
+  effort: number
   onClick: () => void
 }
 
@@ -20,8 +18,7 @@ export function get_optimizers(
       description:
         "Automatically optimize your prompt with Kiln Copilot or manually engineer prompts to compare.",
       cost: 4,
-      complexity: 1,
-      speed: 4,
+      effort: 1,
       onClick: () => {
         goto(`/prompts/${project_id}/${task_id}`)
       },
@@ -30,8 +27,7 @@ export function get_optimizers(
       title: "Compare Models",
       description: "Find a better, faster or cheaper model for your task.",
       cost: 2,
-      complexity: 2,
-      speed: 3,
+      effort: 2,
       onClick: () => {
         goto(`/models`)
       },
@@ -39,10 +35,9 @@ export function get_optimizers(
     {
       title: "Fine Tune",
       description:
-        "Learns from your dataset to create custom models. Fine-tuned models can be faster, cheaper and more accurate than standard models.",
+        "Learns from your dataset to create custom models that can be faster, cheaper and more accurate than standard models.",
       cost: 5,
-      complexity: 5,
-      speed: 4,
+      effort: 5,
       onClick: () => {
         goto(`/fine_tune/${project_id}/${task_id}`)
       },
@@ -52,8 +47,7 @@ export function get_optimizers(
       description:
         "Allow your AI task to search for custom knowledge before answering.",
       cost: 3,
-      complexity: 5,
-      speed: 4,
+      effort: 4,
       onClick: () => {
         goto(`/docs/${project_id}`)
       },
@@ -63,8 +57,7 @@ export function get_optimizers(
       description:
         "Add tools like web-search and code interpreter to improve task performance.",
       cost: 1,
-      complexity: 2,
-      speed: 2,
+      effort: 2,
       onClick: () => {
         goto(`/settings/manage_tools/${project_id}/add_tools`)
       },
@@ -74,8 +67,7 @@ export function get_optimizers(
       description:
         "Break complex problems into coordinated subtasks with Kiln Tasks as Tools.",
       cost: 1,
-      complexity: 2,
-      speed: 2,
+      effort: 3,
       onClick: () => {
         goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
       },

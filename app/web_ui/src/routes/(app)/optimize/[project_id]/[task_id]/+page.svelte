@@ -3,6 +3,7 @@
   import OptimizeCard from "$lib/ui/optimize_card.svelte"
   import { get_optimizers } from "./optimizers"
   import { page } from "$app/stores"
+  import SettingsHeader from "$lib/ui/settings_header.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -15,7 +16,8 @@
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
 >
-  <div class="overflow-x-auto">
+  <div class="flex flex-col gap-6">
+    <SettingsHeader title="Select Optimization" />
     <div
       class="grid gap-6"
       style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
@@ -24,13 +26,12 @@
         <OptimizeCard
           title={optimizer.title}
           description={optimizer.description}
-          info_description={optimizer.info_description}
           cost={optimizer.cost}
-          complexity={optimizer.complexity}
-          speed={optimizer.speed}
+          effort={optimizer.effort}
           onClick={optimizer.onClick}
         />
       {/each}
     </div>
+    <SettingsHeader title="Run Configurations" />
   </div>
 </AppPage>
