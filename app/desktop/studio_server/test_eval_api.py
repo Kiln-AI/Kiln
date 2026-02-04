@@ -1322,8 +1322,8 @@ def test_build_score_key_to_task_requirement_id():
         "app.desktop.studio_server.eval_api.string_to_json_key"
     ) as mock_string_to_json_key:
         # Configure the mock to convert spaces to underscores and lowercase
-        mock_string_to_json_key.side_effect = (
-            lambda name: name.lower().replace(" ", "_").replace("-", "_")
+        mock_string_to_json_key.side_effect = lambda name: (
+            name.lower().replace(" ", "_").replace("-", "_")
         )
 
         # Call the function under test

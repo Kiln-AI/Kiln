@@ -77,7 +77,7 @@
     const urlColumns = urlParams.get("columns")
     if (urlColumns) {
       const parsedColumns = parseInt(urlColumns, 10)
-      if (parsedColumns >= 2 && parsedColumns <= 4) {
+      if (parsedColumns >= 2 && parsedColumns <= MAX_COLUMNS) {
         columns = parsedColumns
       }
     }
@@ -413,8 +413,9 @@
     create_new_run_config_dialog?.show()
   }
 
+  const MAX_COLUMNS = 6
   function addColumn() {
-    if (columns < 4) {
+    if (columns < MAX_COLUMNS) {
       columns++
       selectedModels = [...selectedModels, null]
     }
@@ -620,7 +621,7 @@
       {:else}
         <!-- Add Column Button - positioned above table on the right -->
         <div class="flex justify-end mb-4">
-          {#if columns < 4}
+          {#if columns < MAX_COLUMNS}
             <button
               on:click={addColumn}
               class="btn btn-sm btn-outline gap-2"
