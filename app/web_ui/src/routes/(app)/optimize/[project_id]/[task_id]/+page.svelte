@@ -17,7 +17,7 @@
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
 >
   <div class="flex flex-col gap-6">
-    <SettingsHeader title="Select Optimization" />
+    <SettingsHeader title="Optimization Techniques" />
     <div
       class="grid gap-6"
       style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"

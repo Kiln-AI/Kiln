@@ -26,7 +26,7 @@
   tabindex="0"
   aria-label={title}
 >
-  <div class="p-0">
+  <div class="p-0 flex flex-col flex-1">
     <div class="text-lg font-semibold leading-tight line-clamp-1">{title}</div>
     <div class="text-xs text-gray-500 font-medium mt-2 mb-4">
       {description}
