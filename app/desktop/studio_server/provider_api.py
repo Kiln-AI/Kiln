@@ -2,7 +2,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 import httpx
 import litellm
@@ -25,6 +25,7 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
+    UserModelEntry,
     built_in_models,
 )
 from kiln_ai.adapters.ollama_tools import (
@@ -32,7 +33,11 @@ from kiln_ai.adapters.ollama_tools import (
     ollama_base_url,
     parse_ollama_tags,
 )
-from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
+from kiln_ai.adapters.provider_tools import (
+    get_all_user_models,
+    provider_name_from_id,
+    provider_warnings,
+)
 from kiln_ai.adapters.reranker_list import built_in_rerankers
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.registry import all_projects
@@ -211,6 +216,12 @@ class ProviderRerankerModels(BaseModel):
     models: Dict[str, ProviderModel]
 
 
+class AvailableProviderInfo(BaseModel):
+    id: str  # Provider identifier
+    name: str  # Display name
+    provider_type: Literal["builtin", "custom"]
+
+
 def connect_provider_api(app: FastAPI):
     @app.get("/api/providers/models")
     async def get_providers_models() -> ProviderModels:
@@ -305,6 +316,10 @@ def connect_provider_api(app: FastAPI):
         # Add any openai compatible providers
         openai_compatible = openai_compatible_providers()
         models.extend(openai_compatible)
+
+        # Add user models (new registry + legacy combined)
+        user_model_groups = user_models_as_available()
+        models.extend(user_model_groups)
 
         return models
 
@@ -462,6 +477,124 @@ def connect_provider_api(app: FastAPI):
             status_code=200,
             content={"message": "OpenAI compatible provider deleted"},
         )
+
+    @app.get("/api/settings/available_providers")
+    async def get_available_providers() -> List[AvailableProviderInfo]:
+        """Returns all providers that can have custom models added."""
+        providers = []
+
+        # Built-in providers with required API keys set
+        for provider, warning in provider_warnings.items():
+            has_keys = all(
+                Config.shared().get_value(key) is not None
+                for key in warning.required_config_keys
+            )
+            if has_keys:
+                providers.append(
+                    AvailableProviderInfo(
+                        id=str(provider.value),
+                        name=provider_name_from_id(provider),
+                        provider_type="builtin",
+                    )
+                )
+
+        # Custom OpenAI-compatible providers
+        openai_compat_providers = Config.shared().openai_compatible_providers or []
+        for provider in openai_compat_providers:
+            if provider.get("name"):
+                providers.append(
+                    AvailableProviderInfo(
+                        id=provider["name"],
+                        name=provider["name"],
+                        provider_type="custom",
+                    )
+                )
+
+        return providers
+
+    @app.get("/api/settings/user_models")
+    async def get_user_models() -> List[UserModelEntry]:
+        """Returns all user-defined models (new registry + legacy combined)."""
+        return get_all_user_models()
+
+    @app.post("/api/settings/user_models")
+    async def add_user_model(entry: UserModelEntry) -> JSONResponse:
+        """Add a user-defined model to the registry."""
+
+        # Validate provider exists
+        if entry.provider_type == "builtin":
+            if entry.provider_id not in ModelProviderName.__members__:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid provider: {entry.provider_id}"
+                )
+            # Check if provider is configured
+            provider_warning = provider_warnings.get(
+                ModelProviderName(entry.provider_id)
+            )
+            if provider_warning:
+                for key in provider_warning.required_config_keys:
+                    if Config.shared().get_value(key) is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Provider {entry.provider_id} is not configured. Please set up API keys first.",
+                        )
+        else:
+            providers = Config.shared().openai_compatible_providers or []
+            if not any(p.get("name") == entry.provider_id for p in providers):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Custom provider not found: {entry.provider_id}",
+                )
+
+        # Add to registry
+        registry = Config.shared().user_model_registry or []
+
+        # Check for duplicate
+        if any(
+            e.get("provider_type") == entry.provider_type
+            and e.get("provider_id") == entry.provider_id
+            and e.get("model_id") == entry.model_id
+            for e in registry
+        ):
+            raise HTTPException(status_code=400, detail="Model already exists")
+
+        registry.append(entry.model_dump(exclude_none=True))
+        Config.shared().user_model_registry = registry
+
+        return JSONResponse(status_code=200, content={"message": "Model added"})
+
+    @app.delete("/api/settings/user_models")
+    async def delete_user_model(
+        provider_type: str, provider_id: str, model_id: str
+    ) -> JSONResponse:
+        """Delete a user-defined model from the registry."""
+
+        registry = Config.shared().user_model_registry or []
+        original_len = len(registry)
+
+        registry = [
+            e
+            for e in registry
+            if not (
+                e.get("provider_type") == provider_type
+                and e.get("provider_id") == provider_id
+                and e.get("model_id") == model_id
+            )
+        ]
+
+        if len(registry) == original_len:
+            # Check if it's a legacy model
+            legacy = Config.shared().custom_models or []
+            legacy_id = f"{provider_id}::{model_id}"
+            if legacy_id in legacy:
+                legacy.remove(legacy_id)
+                Config.shared().custom_models = legacy
+            else:
+                raise HTTPException(status_code=404, detail="Model not found")
+        else:
+            Config.shared().user_model_registry = registry
+
+        return JSONResponse(status_code=200, content={"message": "Model deleted"})
 
     def parse_api_key(key_data: dict) -> str:
         return parse_api_field(key_data, "API Key")
@@ -1461,6 +1594,90 @@ def custom_models() -> AvailableModels | None:
         provider_id=ModelProviderName.kiln_custom_registry,
         models=models,
     )
+
+
+def user_models_as_available() -> List[AvailableModels]:
+    """
+    Returns user models grouped by provider for the available_models endpoint.
+    """
+    user_models = get_all_user_models()
+    if not user_models:
+        return []
+
+    # Group by provider
+    by_provider: Dict[tuple[str, str], List[ModelDetails]] = {}
+
+    for entry in user_models:
+        key = (entry.provider_type, entry.provider_id)
+        if key not in by_provider:
+            by_provider[key] = []
+
+        # Build model ID for selection
+        full_model_id = (
+            f"user_model::{entry.provider_type}::{entry.provider_id}::{entry.model_id}"
+        )
+
+        # Get display name
+        display_name = entry.name or entry.model_id
+
+        # Determine capabilities from overrides
+        overrides = entry.overrides or {}
+
+        # Convert string structured_output_mode to enum if present
+        structured_output_mode_value = overrides.get(
+            "structured_output_mode", StructuredOutputMode.json_instructions
+        )
+        if isinstance(structured_output_mode_value, str):
+            try:
+                structured_output_mode_value = StructuredOutputMode(
+                    structured_output_mode_value
+                )
+            except ValueError:
+                structured_output_mode_value = StructuredOutputMode.json_instructions
+
+        by_provider[key].append(
+            ModelDetails(
+                id=full_model_id,
+                name=display_name,
+                supports_structured_output=overrides.get(
+                    "supports_structured_output", False
+                ),
+                supports_data_gen=overrides.get("supports_data_gen", False),
+                supports_logprobs=overrides.get("supports_logprobs", False),
+                supports_function_calling=overrides.get(
+                    "supports_function_calling", False
+                ),
+                untested_model=True,
+                suggested_for_data_gen=False,
+                suggested_for_evals=False,
+                uncensored=overrides.get("uncensored", False),
+                suggested_for_uncensored_data_gen=False,
+                structured_output_mode=structured_output_mode_value,
+                supports_vision=overrides.get("supports_vision", False),
+                supports_doc_extraction=overrides.get("supports_doc_extraction", False),
+                suggested_for_doc_extraction=False,
+                multimodal_capable=overrides.get("multimodal_capable", False),
+                multimodal_mime_types=overrides.get("multimodal_mime_types"),
+            )
+        )
+
+    # Create AvailableModels groups
+    result = []
+    for (provider_type, provider_id), models in by_provider.items():
+        if provider_type == "builtin":
+            provider_display = provider_name_from_id(provider_id) + " (Custom)"
+        else:
+            provider_display = provider_id + " (Custom)"
+
+        result.append(
+            AvailableModels(
+                provider_name=provider_display,
+                provider_id=f"user_model::{provider_type}::{provider_id}",
+                models=models,
+            )
+        )
+
+    return result
 
 
 def fine_tune_model_structured_output_mode(

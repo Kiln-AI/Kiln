@@ -7,6 +7,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
 )
 from kiln_ai.adapters.provider_tools import (
     core_provider,
+    find_user_model,
     lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -33,6 +34,17 @@ def litellm_core_provider_config(
         updated_run_config_properties = run_config_properties.model_copy(deep=True)
         updated_run_config_properties.model_name = model_id
         run_config_properties = updated_run_config_properties
+
+    # Check for user models with custom providers
+    if openai_compatible_provider_name is None:
+        user_model_provider = find_user_model(run_config_properties.model_name)
+        if (
+            user_model_provider
+            and user_model_provider.openai_compatible_provider_name is not None
+        ):
+            openai_compatible_provider_name = (
+                user_model_provider.openai_compatible_provider_name
+            )
 
     config = lite_llm_core_config_for_provider(
         core_provider_name, openai_compatible_provider_name

@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import List, Literal
+from typing import Any, List, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -317,6 +317,9 @@ class KilnModelProvider(BaseModel):
     # not exact and real rate limit rules are much more complex
     max_parallel_requests: int | None = None
 
+    # For openai_compatible providers: the name of the custom provider
+    openai_compatible_provider_name: str | None = None
+
 
 class KilnModel(BaseModel):
     """
@@ -334,6 +337,42 @@ class KilnModel(BaseModel):
     name: str
     friendly_name: str
     providers: List[KilnModelProvider]
+
+
+class UserModelEntry(BaseModel):
+    """
+    A user-defined custom model entry.
+
+    Attributes:
+        provider_type: "builtin" for ModelProviderName enum providers, "custom" for openai_compatible
+        provider_id: For builtin: enum value like "openai". For custom: the custom provider name
+        model_id: The model ID to use with the provider's API
+        name: Display name (optional, defaults to model_id)
+        overrides: Property overrides from KilnModelProvider (optional)
+    """
+
+    provider_type: Literal["builtin", "custom"]
+    provider_id: str
+    model_id: str
+    name: str | None = None
+    overrides: dict[str, Any] | None = None
+
+    @field_validator("overrides")
+    @classmethod
+    def validate_overrides(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is None:
+            return None
+
+        # Get valid field names from KilnModelProvider
+        valid_fields = set(KilnModelProvider.model_fields.keys())
+        # Remove fields that shouldn't be overridden
+        valid_fields -= {"name", "model_id"}
+
+        invalid_fields = set(v.keys()) - valid_fields
+        if invalid_fields:
+            raise ValueError(f"Invalid override fields: {invalid_fields}")
+
+        return v
 
 
 built_in_models: List[KilnModel] = [

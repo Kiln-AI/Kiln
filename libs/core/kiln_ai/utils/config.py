@@ -149,6 +149,10 @@ class Config:
                 list,
                 default_lambda=lambda: [],
             ),
+            "user_model_registry": ConfigProperty(
+                list,
+                default_lambda=lambda: [],
+            ),
             "openai_compatible_providers": ConfigProperty(
                 list,
                 default_lambda=lambda: [],
