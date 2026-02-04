@@ -12,7 +12,7 @@
 
 <AppPage
   title="Optimize"
-  subtitle="Optimize your current task for better performance."
+  subtitle="Optimize your current task for better performance with prompts, models and more."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
 >
