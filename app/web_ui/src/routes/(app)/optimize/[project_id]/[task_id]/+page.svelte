@@ -3,8 +3,7 @@
   import OptimizeCard from "$lib/ui/optimize_card.svelte"
   import { get_optimizers } from "./optimizers"
   import { page } from "$app/stores"
-  import SettingsHeader from "$lib/ui/settings_header.svelte"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import {
     available_tools,
     get_task_composite_id,
@@ -20,10 +19,21 @@
   } from "$lib/stores/run_configs_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { Task, TaskRunConfig } from "$lib/types"
-  import PropertyList from "$lib/ui/property_list.svelte"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
-  import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
-  import type { UiProperty } from "$lib/ui/property_list"
+  import {
+    getDetailedModelName,
+    getRunConfigPromptDisplayName,
+  } from "$lib/utils/run_config_formatters"
+  import { formatDate } from "$lib/utils/formatters"
+  import { get_tools_property_info } from "$lib/stores/tools_store"
+  import { goto } from "$app/navigation"
+  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
+  import { load_task_run_configs as reload_run_configs } from "$lib/stores/run_configs_store"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import type { Optimizer } from "./optimizers"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -32,8 +42,64 @@
   let loading = true
   let error: KilnError | null = null
   let task: Task | null = null
-  let default_run_config: TaskRunConfig | null = null
-  let default_run_config_properties: UiProperty[] | null = null
+
+  type SortableColumn = "name" | "prompt" | "model" | "created_at"
+  let sortColumn: SortableColumn = "created_at"
+  let sortDirection: "asc" | "desc" = "desc"
+
+  let selected_run_config: TaskRunConfig | null = null
+  let run_config_details_dialog: RunConfigDetailsDialog | null = null
+  let create_run_config_dialog: CreateNewRunConfigDialog | null = null
+  let optimizer_dialog: Dialog | null = null
+  let selected_optimizer: Optimizer | null = null
+  let optimizer_selected_run_config_id: string | null = null
+  let optimizer_create_run_config_dialog: CreateNewRunConfigDialog | null = null
+
+  $: if (optimizer_selected_run_config_id === "__create_new_run_config__") {
+    optimizer_create_run_config_dialog?.show()
+  }
+
+  async function handleOptimizerClick(optimizer: Optimizer) {
+    selected_optimizer = optimizer
+    optimizer_selected_run_config_id = null
+    await tick()
+    optimizer_dialog?.show()
+  }
+
+  function handleOptimizerNext() {
+    return true
+    // TODO: Handle next step based on selected optimizer and run config
+  }
+
+  const MAX_SELECTIONS = 6
+  let select_mode: boolean = false
+  let selected_run_configs: Set<string> = new Set()
+
+  function toggle_selection(config_id: string) {
+    if (selected_run_configs.has(config_id)) {
+      selected_run_configs.delete(config_id)
+    } else if (selected_run_configs.size < MAX_SELECTIONS) {
+      selected_run_configs.add(config_id)
+    }
+    selected_run_configs = selected_run_configs
+  }
+
+  function handleCompare() {
+    if (selected_run_configs.size === 0) return
+    const modelIds = Array.from(selected_run_configs).join(",")
+    goto(
+      `/specs/${project_id}/${task_id}/compare?models=${modelIds}&columns=${selected_run_configs.size}&from=optimize`,
+    )
+  }
+
+  function cancelSelection() {
+    select_mode = false
+    selected_run_configs = new Set()
+  }
+
+  async function handleNewRunConfigCreated() {
+    await reload_run_configs(project_id, task_id, true)
+  }
 
   onMount(async () => {
     loading = true
@@ -42,21 +108,11 @@
         load_model_info(),
         load_available_tools(project_id),
         load_task_prompts(project_id, task_id),
+        load_task_run_configs(project_id, task_id),
       ])
       task = await load_task(project_id, task_id)
       if (!task) {
         throw new Error("Task not found")
-      }
-      if (task.default_run_config_id) {
-        await load_task_run_configs(project_id, task_id)
-        const run_configs =
-          $run_configs_by_task_composite_id[
-            get_task_composite_id(project_id, task_id)
-          ]
-        default_run_config =
-          run_configs.find(
-            (run_config) => run_config.id === task?.default_run_config_id,
-          ) ?? null
       }
     } catch (e) {
       error = createKilnError(e)
@@ -69,23 +125,128 @@
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
     null
 
-  $: default_run_config_properties = default_run_config
-    ? getRunConfigUiProperties(
-        project_id,
-        task_id,
-        default_run_config,
-        $model_info,
-        task_prompts,
-        $available_tools,
-      )
-    : null
+  $: run_configs =
+    $run_configs_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ] || []
+
+  $: default_run_config_id = task?.default_run_config_id
+
+  $: sorted_run_configs = sortRunConfigs(
+    run_configs,
+    sortColumn,
+    sortDirection,
+    default_run_config_id,
+  )
+
+  function sortRunConfigs(
+    configs: TaskRunConfig[],
+    column: SortableColumn,
+    direction: "asc" | "desc",
+    default_id: string | null | undefined,
+  ): TaskRunConfig[] {
+    if (!configs || configs.length === 0) return []
+
+    return [...configs].sort((a, b) => {
+      if (default_id) {
+        if (a.id === default_id) return -1
+        if (b.id === default_id) return 1
+      }
+
+      let aValue: string | number | Date | null | undefined
+      let bValue: string | number | Date | null | undefined
+
+      switch (column) {
+        case "name":
+          aValue = (a.name || "").toLowerCase()
+          bValue = (b.name || "").toLowerCase()
+          break
+        case "prompt":
+          aValue = getRunConfigPromptDisplayName(a, task_prompts).toLowerCase()
+          bValue = getRunConfigPromptDisplayName(b, task_prompts).toLowerCase()
+          break
+        case "model":
+          aValue = getDetailedModelName(a, $model_info).toLowerCase()
+          bValue = getDetailedModelName(b, $model_info).toLowerCase()
+          break
+        case "created_at":
+          aValue = a.created_at ? new Date(a.created_at).getTime() : 0
+          bValue = b.created_at ? new Date(b.created_at).getTime() : 0
+          break
+        default:
+          return 0
+      }
+
+      if (!aValue && aValue !== 0) return direction === "asc" ? 1 : -1
+      if (!bValue && bValue !== 0) return direction === "asc" ? -1 : 1
+
+      if (aValue < bValue) return direction === "asc" ? -1 : 1
+      if (aValue > bValue) return direction === "asc" ? 1 : -1
+      return 0
+    })
+  }
+
+  function handleSort(column: SortableColumn) {
+    if (sortColumn === column) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc"
+    } else {
+      sortColumn = column
+      sortDirection = "desc"
+    }
+  }
+
+  function getToolsDisplay(config: TaskRunConfig): {
+    value: string | string[]
+    links: (string | null)[] | undefined
+  } {
+    const tool_ids = config.run_config_properties.tools_config?.tools || []
+    return $available_tools
+      ? get_tools_property_info(tool_ids, project_id, $available_tools)
+      : { value: "Loading...", links: undefined }
+  }
+
+  function handleRowClick(config: TaskRunConfig) {
+    selected_run_config = config
+    run_config_details_dialog?.show()
+  }
+
+  function handleClone(config: TaskRunConfig, event: Event) {
+    event.stopPropagation()
+    create_run_config_dialog?.showClone(config)
+  }
+
+  type TableColumn = {
+    key: string
+    label: string
+    sortable: boolean
+    sortKey?: SortableColumn
+  }
+
+  const tableColumns: TableColumn[] = [
+    { key: "name", label: "Name", sortable: true, sortKey: "name" },
+    { key: "prompt", label: "Prompt", sortable: true, sortKey: "prompt" },
+    { key: "model", label: "Model", sortable: true, sortKey: "model" },
+    { key: "tools", label: "Tools", sortable: false },
+    {
+      key: "created_at",
+      label: "Date Created",
+      sortable: true,
+      sortKey: "created_at",
+    },
+  ]
 </script>
 
 <AppPage
   title="Optimize"
-  subtitle="Explore strategies and apply improvements to your task using prompts, models, and tools."
+  subtitle="Compare and optimize different run configurations for your task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
+  action_buttons={[
+    {
+      label: "Add Run Configuration",
+      handler: () => create_run_config_dialog?.show(),
+    },
+  ]}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -96,17 +257,176 @@
       {error?.getMessage() || "An unknown error occurred"}
     </div>
   {:else}
-    <div class="flex flex-col gap-6">
-      <!-- <SettingsHeader title="Default Run Configuration" />
-      {#if default_run_config_properties}
-        <div class="px-4 flex flex-col gap-2">
-          <PropertyList properties={default_run_config_properties} />
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-col sm:flex-row gap-4 sm:gap-8">
+        <div class="grow">
+          <h2 class="text-lg font-medium text-gray-900">Run Configurations</h2>
+          <div class="text-sm text-gray-500">
+            Select one or more configurations to compare their evaluation
+            results, or pick an optimization strategy below to create a new
+            configuration from an existing one.
+          </div>
         </div>
-      {/if} -->
-      <SettingsHeader
-        title="Optimization Strategies"
-        subtitle="Strategies to consider when optimizing your task, highlighting tradeoffs between effort and cost. You can apply these strategies in the Run Configurations table below."
-      />
+        <div class="flex flex-row items-center gap-3">
+          {#if select_mode}
+            <div class="font-light text-sm">
+              {selected_run_configs.size} selected{#if selected_run_configs.size >= MAX_SELECTIONS}
+                <span class="text-gray-400">{` (max)`}</span>
+              {/if}
+            </div>
+            <button class="btn btn-mid" on:click={cancelSelection}>
+              Cancel Selection
+            </button>
+          {:else}
+            <button class="btn btn-mid" on:click={() => (select_mode = true)}>
+              Select
+            </button>
+          {/if}
+          {#if selected_run_configs.size > 0}
+            <button class="btn btn-primary btn-mid" on:click={handleCompare}>
+              Compare
+            </button>
+          {/if}
+        </div>
+      </div>
+      {#if sorted_run_configs.length === 0}
+        <div class="text-gray-500 rounded-lg border p-4 text-sm">
+          No run configurations yet. Create one by clicking "Add Run
+          Configuration" above.
+        </div>
+      {:else}
+        <div class="overflow-auto max-h-96 rounded-lg border">
+          <table class="table">
+            <thead>
+              <tr>
+                {#if select_mode}
+                  <th></th>
+                {/if}
+                {#each tableColumns as column}
+                  {#if column.sortable && column.sortKey}
+                    {@const sortKey = column.sortKey}
+                    <th
+                      on:click={() => handleSort(sortKey)}
+                      class="hover:bg-base-200 cursor-pointer"
+                    >
+                      {column.label}
+                      <span class="inline-block w-3 text-center">
+                        {sortColumn === sortKey
+                          ? sortDirection === "asc"
+                            ? "▲"
+                            : "▼"
+                          : "\u200B"}
+                      </span>
+                    </th>
+                  {:else}
+                    <th>
+                      {column.label}
+                    </th>
+                  {/if}
+                {/each}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each sorted_run_configs as config}
+                {@const tools_info = getToolsDisplay(config)}
+                {@const is_default = config.id === task?.default_run_config_id}
+                {@const is_selected =
+                  config.id && selected_run_configs.has(config.id)}
+                <tr
+                  class="{select_mode ? '' : 'hover'} cursor-pointer {is_default
+                    ? 'bg-base-200'
+                    : ''} {select_mode && is_selected ? 'bg-base-200' : ''}"
+                  on:click={() => {
+                    if (select_mode && config.id) {
+                      toggle_selection(config.id)
+                    } else {
+                      handleRowClick(config)
+                    }
+                  }}
+                >
+                  {#if select_mode}
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={is_selected || false}
+                        disabled={!is_selected &&
+                          selected_run_configs.size >= MAX_SELECTIONS}
+                      />
+                    </td>
+                  {/if}
+                  <td class="font-medium">
+                    <div class="flex items-center gap-2">
+                      {config.name || "Unnamed"}
+                      {#if is_default}
+                        <span class="badge badge-sm badge-primary">Default</span
+                        >
+                      {/if}
+                    </div>
+                  </td>
+                  <td class="text-gray-500">
+                    {getRunConfigPromptDisplayName(config, task_prompts)}
+                  </td>
+                  <td class="text-gray-500">
+                    {getDetailedModelName(config, $model_info)}
+                  </td>
+                  <td class="text-gray-500">
+                    {#if Array.isArray(tools_info.value)}
+                      <div class="flex flex-wrap gap-1">
+                        {#each tools_info.value as tool_name, i}
+                          {@const link = tools_info.links?.[i]}
+                          {#if link}
+                            <a
+                              href={link}
+                              class="badge badge-outline hover:bg-base-200"
+                              on:click|stopPropagation
+                            >
+                              {tool_name}
+                            </a>
+                          {:else}
+                            <span class="badge badge-outline">{tool_name}</span>
+                          {/if}
+                        {/each}
+                      </div>
+                    {:else}
+                      {tools_info.value}
+                    {/if}
+                  </td>
+                  <td class="text-sm text-gray-500">
+                    {formatDate(config.created_at)}
+                  </td>
+                  <td class="p-0" on:click|stopPropagation>
+                    <div class="dropdown dropdown-end dropdown-hover">
+                      <TableButton />
+                      <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                      >
+                        <li>
+                          <button on:click={(e) => handleClone(config, e)}>
+                            Clone
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+      <div class="mt-4">
+        <h2 class="text-lg font-medium text-gray-900">
+          Optimization Strategies
+        </h2>
+        <p class="text-sm text-gray-500">
+          Strategies to consider when optimizing your task, highlighting
+          tradeoffs between effort and cost.
+        </p>
+      </div>
       <div
         class="grid gap-6"
         style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
@@ -118,14 +438,72 @@
             metrics={optimizer.metrics}
             recommended={optimizer.recommended}
             recommended_tooltip={optimizer.recommended_tooltip}
-            onClick={optimizer.onClick}
+            onClick={() => handleOptimizerClick(optimizer)}
           />
         {/each}
       </div>
-      <SettingsHeader title="Run Configurations" />
-      <!-- TODO: Add run configurations table with buttons like promote to default, edit, delete, clone, optimize, etc. -->
-      <!-- Fine tune models can be shown here as "virtual" entries with prompt: "missing" or something etc. GEPA prompts can appear with model "missing" or there can be an unfinished tag or something. -->
-      <!-- All Optimization Techniques should create a new run configuration at the end using the default? -->
     </div>
   {/if}
 </AppPage>
+
+{#if selected_run_config}
+  <RunConfigDetailsDialog
+    bind:this={run_config_details_dialog}
+    {project_id}
+    {task_id}
+    task_run_config={selected_run_config}
+  />
+{/if}
+
+<CreateNewRunConfigDialog
+  bind:this={create_run_config_dialog}
+  {project_id}
+  {task}
+  new_run_config_created={handleNewRunConfigCreated}
+/>
+
+{#if selected_optimizer && task}
+  <Dialog
+    bind:this={optimizer_dialog}
+    title={`Optimization: ${selected_optimizer.title}`}
+    sub_subtitle={selected_optimizer.description}
+    action_buttons={[
+      { label: "Cancel", isCancel: true },
+      {
+        label: "Next",
+        isPrimary: true,
+        disabled:
+          !optimizer_selected_run_config_id ||
+          optimizer_selected_run_config_id === "__create_new_run_config__",
+        action: handleOptimizerNext,
+      },
+    ]}
+  >
+    <div class="py-4">
+      <SavedRunConfigurationsDropdown
+        title="Run Configuration to Optimize"
+        description="A clone of the selected run configuration will be created and used for optimization."
+        {project_id}
+        current_task={task}
+        bind:selected_run_config_id={optimizer_selected_run_config_id}
+        run_page={false}
+      />
+    </div>
+  </Dialog>
+
+  <CreateNewRunConfigDialog
+    bind:this={optimizer_create_run_config_dialog}
+    {project_id}
+    {task}
+    new_run_config_created={(run_config) => {
+      if (run_config.id) {
+        optimizer_selected_run_config_id = run_config.id
+      }
+    }}
+    on:close={() => {
+      if (optimizer_selected_run_config_id === "__create_new_run_config__") {
+        optimizer_selected_run_config_id = null
+      }
+    }}
+  />
+{/if}
