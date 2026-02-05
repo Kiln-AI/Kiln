@@ -17,11 +17,8 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.datamodel.tool_id import MCP_LOCAL_TOOL_ID_PREFIX
 
 
-@pytest.mark.asyncio
-@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-async def test_mcp_adapter_invokes_tool_from_external_server(
-    mock_session_manager, tmp_path
-):
+@pytest.fixture
+def project_with_local_mcp_server(tmp_path):
     project_path = tmp_path / "test_project" / Project.base_filename()
     project = Project(name="Test Project", path=str(project_path))
     project.save_to_file()
@@ -39,6 +36,31 @@ async def test_mcp_adapter_invokes_tool_from_external_server(
     tool_server.parent = project
     tool_server.save_to_file()
 
+    return project, tool_server
+
+
+@pytest.fixture
+def local_mcp_tool_id(project_with_local_mcp_server):
+    _, tool_server = project_with_local_mcp_server
+    return f"{MCP_LOCAL_TOOL_ID_PREFIX}{tool_server.id}::test_file_python"
+
+
+def _mock_mcp_call(mock_session_manager, text_output: str):
+    mock_session = AsyncMock()
+    mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+    mock_session.call_tool.return_value = CallToolResult(
+        content=[TextContent(type="text", text=text_output)],
+        isError=False,  # type: ignore[arg-type]
+    )
+    return mock_session
+
+
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_struct_in_string_out(
+    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+):
+    project, _ = project_with_local_mcp_server
     task = Task(
         name="Test Task",
         parent=project,
@@ -52,17 +74,11 @@ async def test_mcp_adapter_invokes_tool_from_external_server(
         ),
     )
 
-    tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}{tool_server.id}::test_file_python"
     run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=tool_id)
+        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
-    mock_session = AsyncMock()
-    mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
-    mock_session.call_tool.return_value = CallToolResult(
-        content=[TextContent(type="text", text="ok")],
-        isError=False,  # type: ignore[arg-type]
-    )
+    mock_session = _mock_mcp_call(mock_session_manager, "ok")
 
     adapter = MCPAdapter(task=task, run_config=run_config)
     run, run_output = await adapter.invoke_returning_run_output(
@@ -79,25 +95,10 @@ async def test_mcp_adapter_invokes_tool_from_external_server(
 
 @pytest.mark.asyncio
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-async def test_mcp_adapter_structured_output(mock_session_manager, tmp_path):
-    """Test that the MCPAdapter can handle structured output from the task"""
-    project_path = tmp_path / "test_project" / Project.base_filename()
-    project = Project(name="Test Project", path=str(project_path))
-    project.save_to_file()
-
-    tool_server = ExternalToolServer(
-        name="Hooks MCP",
-        type=ToolServerType.local_mcp,
-        properties={
-            "command": "uvx",
-            "args": ["hooks-mcp"],
-            "env_vars": {},
-            "is_archived": False,
-        },
-    )
-    tool_server.parent = project
-    tool_server.save_to_file()
-
+async def test_mcp_adapter_string_in_struct_out(
+    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+):
+    project, _ = project_with_local_mcp_server
     task = Task(
         name="Structured Output Task",
         parent=project,
@@ -111,17 +112,11 @@ async def test_mcp_adapter_structured_output(mock_session_manager, tmp_path):
         ),
     )
 
-    tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}{tool_server.id}::test_file_python"
     run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=tool_id)
+        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
-    mock_session = AsyncMock()
-    mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
-    mock_session.call_tool.return_value = CallToolResult(
-        content=[TextContent(type="text", text='{"status":"ok"}')],
-        isError=False,  # type: ignore[arg-type]
-    )
+    mock_session = _mock_mcp_call(mock_session_manager, '{"status":"ok"}')
 
     adapter = MCPAdapter(task=task, run_config=run_config)
     run, run_output = await adapter.invoke_returning_run_output("input")
@@ -131,6 +126,80 @@ async def test_mcp_adapter_structured_output(mock_session_manager, tmp_path):
     mock_session.call_tool.assert_called_once_with(
         name="test_file_python",
         arguments={"input": "input"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_string_in_string_out(
+    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+):
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Plaintext Task",
+        parent=project,
+        instruction="Echo input",
+    )
+
+    run_config = RunConfigProperties(
+        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    mock_session = _mock_mcp_call(mock_session_manager, "ok")
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+    run, run_output = await adapter.invoke_returning_run_output("input")
+
+    assert run_output.output == "ok"
+    assert run.output.output == "ok"
+    mock_session.call_tool.assert_called_once_with(
+        name="test_file_python",
+        arguments={"input": "input"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_struct_in_struct_out(
+    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+):
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Structured Task",
+        parent=project,
+        instruction="Return JSON",
+        input_json_schema=json.dumps(
+            {
+                "type": "object",
+                "properties": {"TEST_PATH": {"type": "string"}},
+                "required": ["TEST_PATH"],
+            }
+        ),
+        output_json_schema=json.dumps(
+            {
+                "type": "object",
+                "properties": {"status": {"type": "string"}},
+                "required": ["status"],
+            }
+        ),
+    )
+
+    run_config = RunConfigProperties(
+        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    mock_session = _mock_mcp_call(mock_session_manager, '{"status":"ok"}')
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+    run, run_output = await adapter.invoke_returning_run_output(
+        {"TEST_PATH": "libs/core/kiln_ai/datamodel/test_run_config.py"}
+    )
+
+    assert run_output.output == {"status": "ok"}
+    assert run.output.output == '{"status": "ok"}'
+    mock_session.call_tool.assert_called_once_with(
+        name="test_file_python",
+        arguments={"TEST_PATH": "libs/core/kiln_ai/datamodel/test_run_config.py"},
     )
 
 
