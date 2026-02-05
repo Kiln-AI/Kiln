@@ -136,3 +136,13 @@ def validate_schema_dict(v: Dict, require_object: bool = True):
 def string_to_json_key(s: str) -> str:
     """Convert a string to a valid JSON key."""
     return re.sub(r"[^a-z0-9_]", "", s.strip().lower().replace(" ", "_"))
+
+
+def single_string_field_name(schema: Dict) -> str | None:
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict) or len(properties) != 1:
+        return None
+    field_name, field_schema = next(iter(properties.items()))
+    if isinstance(field_schema, dict) and field_schema.get("type") == "string":
+        return field_name
+    return None

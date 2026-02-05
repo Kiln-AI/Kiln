@@ -1,3 +1,5 @@
+from typing import Any
+
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
@@ -63,6 +65,12 @@ class MCPServerTool(KilnToolInterface):
             raise ValueError("Tool returned multiple content blocks, expected one")
 
         return ToolCallResult(output=result.content[0].text)
+
+    async def input_schema(self) -> dict[str, Any]:
+        await self._load_tool_properties()
+        if not isinstance(self._parameters_schema, dict):
+            raise ValueError("Tool input schema is invalid.")
+        return self._parameters_schema
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:

@@ -6,7 +6,10 @@ from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import DataSource, Task, TaskRun, Usage
 from kiln_ai.datamodel.datamodel_enums import InputType
-from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.json_schema import (
+    single_string_field_name,
+    validate_schema_with_value_error,
+)
 from kiln_ai.datamodel.run_config import RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools.tool_registry import tool_from_id
@@ -43,7 +46,15 @@ class MCPAdapter(BaseAdapter):
         if self.input_schema is None:
             if not isinstance(input, str):
                 raise ValueError("Plaintext task input must be a string")
-            tool_kwargs = {"input": input}
+            field_name = "input"
+            tool_schema = self.run_config.mcp_tool.input_schema
+            if tool_schema is not None:
+                field_name = single_string_field_name(tool_schema)
+                if field_name is None:
+                    raise ValueError(
+                        "Plaintext task input requires MCP tool input schema with exactly one string field."
+                    )
+            tool_kwargs = {field_name: input}
         elif isinstance(input, dict):
             tool_kwargs = input
         else:
@@ -114,8 +125,9 @@ class MCPAdapter(BaseAdapter):
 
     # Helpers
 
+    @staticmethod
     def _build_single_turn_trace(
-        self, input: InputType, output: str | dict
+        input: InputType, output: str | dict
     ) -> list[ChatCompletionMessageParam]:
         user_message: ChatCompletionUserMessageParam = {
             "role": "user",
