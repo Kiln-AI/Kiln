@@ -840,6 +840,7 @@ def test_user_model_builtin_provider_adapter_creation(basic_task):
         config_instance = Mock()
         config_instance.user_model_registry = [
             {
+                "id": "test-um-builtin",
                 "provider_type": "builtin",
                 "provider_id": "openai",
                 "model_id": "gpt-custom",
@@ -861,7 +862,7 @@ def test_user_model_builtin_provider_adapter_creation(basic_task):
             adapter = adapter_for_task(
                 kiln_task=basic_task,
                 run_config_properties=RunConfigProperties(
-                    model_name="user_model::builtin::openai::gpt-custom",
+                    model_name="user_model::test-um-builtin",
                     model_provider_name=ModelProviderName.openai,
                     prompt_id="simple_prompt_builder",
                     structured_output_mode="json_schema",
@@ -880,6 +881,7 @@ def test_user_model_custom_provider_adapter_creation(basic_task):
         config_instance = Mock()
         config_instance.user_model_registry = [
             {
+                "id": "test-um-custom",
                 "provider_type": "custom",
                 "provider_id": "MyProvider",
                 "model_id": "custom-model",
@@ -909,7 +911,7 @@ def test_user_model_custom_provider_adapter_creation(basic_task):
             adapter = adapter_for_task(
                 kiln_task=basic_task,
                 run_config_properties=RunConfigProperties(
-                    model_name="user_model::custom::MyProvider::custom-model",
+                    model_name="user_model::test-um-custom",
                     model_provider_name=ModelProviderName.openai_compatible,
                     prompt_id="simple_prompt_builder",
                     structured_output_mode="json_schema",

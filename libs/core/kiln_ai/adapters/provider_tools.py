@@ -144,18 +144,25 @@ def core_provider(model_id: str, provider_name: ModelProviderName) -> ModelProvi
     Some provider IDs are wrappers (fine-tunes, custom models). This maps these to runnable providers (openai, ollama, etc)
     """
 
-    # New user models: user_model::{provider_type}::{provider_id}::{actual_model_id}
+    # New user models: user_model::{id}
     # Check this first, regardless of what provider_name is (user models can be in any provider list now)
     if model_id.startswith("user_model::"):
-        parts = model_id.split("::", 4)
-        if len(parts) == 4:
-            _, provider_type, provider_id, _ = parts
-            if provider_type == "custom":
-                return ModelProviderName.openai_compatible
-            elif provider_type == "builtin":
-                if provider_id not in ModelProviderName.__members__:
-                    raise ValueError(f"Invalid provider name: {provider_id}")
-                return ModelProviderName(provider_id)
+        parts = model_id.split("::", 1)
+        if len(parts) == 2:
+            entry_id = parts[1]
+            # Find the entry to get its provider info
+            for entry in get_all_user_models():
+                if entry.id == entry_id:
+                    if entry.provider_type == "custom":
+                        return ModelProviderName.openai_compatible
+                    elif entry.provider_type == "builtin":
+                        if entry.provider_id not in ModelProviderName.__members__:
+                            raise ValueError(
+                                f"Invalid provider name: {entry.provider_id}"
+                            )
+                        return ModelProviderName(entry.provider_id)
+            # If not found, raise an error
+            raise ValueError(f"User model {entry_id} not found")
 
     # Legacy custom models: provider::model_id (only when using kiln_custom_registry)
     if provider_name is ModelProviderName.kiln_custom_registry:
@@ -437,26 +444,22 @@ def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
 
 def find_user_model(model_id: str) -> KilnModelProvider | None:
     """
-    Find a user model by its full model ID and return as KilnModelProvider.
+    Find a user model by its ID and return as KilnModelProvider.
 
-    Model ID format: "user_model::{provider_type}::{provider_id}::{model_id}"
+    Model ID format: "user_model::{id}"
     """
     if not model_id.startswith("user_model::"):
         return None
 
-    parts = model_id.split("::", 3)
-    if len(parts) != 4:
+    parts = model_id.split("::", 1)
+    if len(parts) != 2:
         return None
 
-    _, provider_type, provider_id, actual_model_id = parts
+    entry_id = parts[1]
 
-    # Find matching entry
+    # Find matching entry by ID
     for entry in get_all_user_models():
-        if (
-            entry.provider_type == provider_type
-            and entry.provider_id == provider_id
-            and entry.model_id == actual_model_id
-        ):
+        if entry.id == entry_id:
             return user_model_to_provider(entry)
 
     return None

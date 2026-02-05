@@ -1290,6 +1290,7 @@ def mock_config_with_user_models():
         config_instance = Mock()
         config_instance.user_model_registry = [
             {
+                "id": "test-id-1",
                 "provider_type": "builtin",
                 "provider_id": "openai",
                 "model_id": "gpt-custom-model",
@@ -1301,6 +1302,7 @@ def mock_config_with_user_models():
                 },
             },
             {
+                "id": "test-id-2",
                 "provider_type": "custom",
                 "provider_id": "MyCustomProvider",
                 "model_id": "custom-model-1",
@@ -1335,6 +1337,7 @@ def test_get_all_user_models_with_config(mock_config_with_user_models):
     # Check builtin user model
     builtin_model = next(m for m in models if m.provider_id == "openai")
     assert builtin_model.provider_type == "builtin"
+    assert builtin_model.id == "test-id-1"
     assert builtin_model.model_id == "gpt-custom-model"
     assert builtin_model.name == "My Custom GPT Model"
     assert builtin_model.overrides is not None
@@ -1343,12 +1346,14 @@ def test_get_all_user_models_with_config(mock_config_with_user_models):
     # Check custom provider user model
     custom_model = next(m for m in models if m.provider_id == "MyCustomProvider")
     assert custom_model.provider_type == "custom"
+    assert custom_model.id == "test-id-2"
     assert custom_model.model_id == "custom-model-1"
 
-    # Check legacy custom model
+    # Check legacy custom model (ID is auto-generated)
     legacy_model = next(m for m in models if m.provider_id == "groq")
     assert legacy_model.provider_type == "builtin"
     assert legacy_model.model_id == "legacy-custom-model"
+    assert legacy_model.id is not None  # Should have auto-generated ID
 
 
 def test_get_all_user_models_empty(mock_config_empty_user_models):
@@ -1457,11 +1462,12 @@ def test_user_model_to_provider_invalid_builtin():
 
 
 def test_find_user_model():
-    """Test find_user_model finds user model by full model ID"""
+    """Test find_user_model finds user model by ID"""
     with patch("kiln_ai.adapters.provider_tools.Config") as mock:
         config_instance = Mock()
         config_instance.user_model_registry = [
             {
+                "id": "test-model-id",
                 "provider_type": "builtin",
                 "provider_id": "openai",
                 "model_id": "gpt-custom",
@@ -1471,7 +1477,7 @@ def test_find_user_model():
         config_instance.custom_models = []
         mock.shared.return_value = config_instance
 
-        provider = find_user_model("user_model::builtin::openai::gpt-custom")
+        provider = find_user_model("user_model::test-model-id")
 
         assert provider is not None
         assert provider.name == ModelProviderName.openai
@@ -1487,7 +1493,7 @@ def test_find_user_model_not_found():
         config_instance.custom_models = []
         mock.shared.return_value = config_instance
 
-        provider = find_user_model("user_model::builtin::openai::nonexistent")
+        provider = find_user_model("user_model::nonexistent-id")
 
         assert provider is None
 
@@ -1500,29 +1506,59 @@ def test_find_user_model_invalid_format():
 
 def test_core_provider_user_model_builtin():
     """Test core_provider extracts builtin provider from user model ID"""
-    provider = core_provider(
-        "user_model::builtin::openai::custom-model", ModelProviderName.openai
-    )
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-um-id",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "custom-model",
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
 
-    assert provider == ModelProviderName.openai
+        provider = core_provider("user_model::test-um-id", ModelProviderName.openai)
+
+        assert provider == ModelProviderName.openai
 
 
 def test_core_provider_user_model_custom():
     """Test core_provider returns openai_compatible for custom user models"""
-    provider = core_provider(
-        "user_model::custom::MyProvider::model", ModelProviderName.openai_compatible
-    )
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-custom-id",
+                "provider_type": "custom",
+                "provider_id": "MyProvider",
+                "model_id": "model",
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
 
-    assert provider == ModelProviderName.openai_compatible
-
-
-def test_core_provider_user_model_invalid_builtin():
-    """Test core_provider raises error for invalid builtin provider in user model"""
-    with pytest.raises(ValueError, match="Invalid provider name"):
-        core_provider(
-            "user_model::builtin::invalid_provider::model",
-            ModelProviderName.kiln_custom_registry,
+        provider = core_provider(
+            "user_model::test-custom-id", ModelProviderName.openai_compatible
         )
+
+        assert provider == ModelProviderName.openai_compatible
+
+
+def test_core_provider_user_model_not_found():
+    """Test core_provider raises error for non-existent user model"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = []
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        with pytest.raises(ValueError, match=r"User model .* not found"):
+            core_provider(
+                "user_model::non-existent-id",
+                ModelProviderName.openai_compatible,
+            )
 
 
 def test_kiln_model_provider_from_user_model():
@@ -1531,6 +1567,7 @@ def test_kiln_model_provider_from_user_model():
         config_instance = Mock()
         config_instance.user_model_registry = [
             {
+                "id": "test-kiln-id",
                 "provider_type": "builtin",
                 "provider_id": "openai",
                 "model_id": "my-custom-model",
@@ -1540,9 +1577,7 @@ def test_kiln_model_provider_from_user_model():
         config_instance.custom_models = []
         mock.shared.return_value = config_instance
 
-        provider = kiln_model_provider_from(
-            "user_model::builtin::openai::my-custom-model"
-        )
+        provider = kiln_model_provider_from("user_model::test-kiln-id")
 
         assert provider is not None
         assert provider.name == ModelProviderName.openai

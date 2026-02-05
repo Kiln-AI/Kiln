@@ -604,36 +604,71 @@ def connect_provider_api(app: FastAPI):
 
     @app.delete("/api/settings/user_models")
     async def delete_user_model(
-        provider_type: str, provider_id: str, model_id: str
+        provider_type: str | None = None,
+        provider_id: str | None = None,
+        model_id: str | None = None,
+        id: str | None = None,
     ) -> JSONResponse:
-        """Delete a user-defined model from the registry."""
+        """Delete a user-defined model from the registry.
 
-        registry = Config.shared().user_model_registry or []
-        original_len = len(registry)
+        Supports two deletion methods:
+        1. By ID (new): Pass `id` parameter to delete from user_model_registry
+        2. By tuple (legacy): Pass provider_type, provider_id, model_id to delete from
+           user_model_registry by matching those fields, or from legacy custom_models
 
-        registry = [
-            e
-            for e in registry
-            if not (
-                e.get("provider_type") == provider_type
-                and e.get("provider_id") == provider_id
-                and e.get("model_id") == model_id
-            )
-        ]
+        Legacy models in custom_models don't have IDs and must use the tuple method.
+        """
 
-        if len(registry) == original_len:
-            # Check if it's a legacy model
+        # Method 1: Delete by ID (new format)
+        if id is not None:
+            registry = Config.shared().user_model_registry or []
+            original_len = len(registry)
+            registry = [e for e in registry if e.get("id") != id]
+
+            if len(registry) == original_len:
+                raise HTTPException(status_code=404, detail="Model not found")
+
+            Config.shared().user_model_registry = registry
+            return JSONResponse(status_code=200, content={"message": "Model deleted"})
+
+        # Method 2: Delete by tuple (legacy format, also supports user_model_registry)
+        if provider_type and provider_id and model_id:
+            registry = Config.shared().user_model_registry or []
+            original_len = len(registry)
+
+            # Try to delete from user_model_registry first
+            registry = [
+                e
+                for e in registry
+                if not (
+                    e.get("provider_type") == provider_type
+                    and e.get("provider_id") == provider_id
+                    and e.get("model_id") == model_id
+                )
+            ]
+
+            if len(registry) != original_len:
+                Config.shared().user_model_registry = registry
+                return JSONResponse(
+                    status_code=200, content={"message": "Model deleted"}
+                )
+
+            # If not found in registry, try legacy custom_models
             legacy = Config.shared().custom_models or []
             legacy_id = f"{provider_id}::{model_id}"
             if legacy_id in legacy:
                 legacy.remove(legacy_id)
                 Config.shared().custom_models = legacy
-            else:
-                raise HTTPException(status_code=404, detail="Model not found")
-        else:
-            Config.shared().user_model_registry = registry
+                return JSONResponse(
+                    status_code=200, content={"message": "Model deleted"}
+                )
 
-        return JSONResponse(status_code=200, content={"message": "Model deleted"})
+            raise HTTPException(status_code=404, detail="Model not found")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Must specify either 'id' or provider_type+provider_id+model_id",
+        )
 
     def parse_api_key(key_data: dict) -> str:
         return parse_api_field(key_data, "API Key")
@@ -1660,10 +1695,8 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
         if key not in by_provider:
             by_provider[key] = []
 
-        # Build model ID for selection
-        full_model_id = (
-            f"user_model::{entry.provider_type}::{entry.provider_id}::{entry.model_id}"
-        )
+        # Build model ID for selection using the entry's unique ID
+        full_model_id = f"user_model::{entry.id}"
 
         # Get display name with " (Custom)" suffix
         display_name = (entry.name or entry.model_id) + " (Custom)"

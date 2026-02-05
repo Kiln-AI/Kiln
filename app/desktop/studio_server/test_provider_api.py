@@ -3426,3 +3426,134 @@ async def test_get_available_reranker_models(app, client):
             ],
         },
     ]
+
+
+def test_delete_user_model_by_id():
+    """Test deleting a user model by its ID (new format)"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = [
+        {
+            "id": "test-model-id-1",
+            "provider_type": "builtin",
+            "provider_id": "openai",
+            "model_id": "gpt-custom",
+        },
+        {
+            "id": "test-model-id-2",
+            "provider_type": "custom",
+            "provider_id": "MyProvider",
+            "model_id": "custom-model",
+        },
+    ]
+    mock_config.custom_models = []
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.delete("/api/settings/user_models?id=test-model-id-1")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model deleted"}
+    # Verify the model was removed
+    assert len(mock_config.user_model_registry) == 1
+    assert mock_config.user_model_registry[0]["id"] == "test-model-id-2"
+
+
+def test_delete_user_model_by_tuple_from_registry():
+    """Test deleting a user model by provider_type/provider_id/model_id tuple (legacy format)"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = [
+        {
+            "id": "test-model-id",
+            "provider_type": "builtin",
+            "provider_id": "openrouter",
+            "model_id": "cognitivecomputations/dolphin-mixtral-8x22b",
+        },
+    ]
+    mock_config.custom_models = []
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.delete(
+            "/api/settings/user_models?provider_type=builtin&provider_id=openrouter&model_id=cognitivecomputations%2Fdolphin-mixtral-8x22b"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model deleted"}
+    assert len(mock_config.user_model_registry) == 0
+
+
+def test_delete_user_model_by_tuple_from_legacy_custom_models():
+    """Test deleting a legacy model from custom_models by tuple (legacy format)"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = []
+    mock_config.custom_models = [
+        "openrouter::cognitivecomputations/dolphin-mixtral-8x22b"
+    ]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.delete(
+            "/api/settings/user_models?provider_type=builtin&provider_id=openrouter&model_id=cognitivecomputations%2Fdolphin-mixtral-8x22b"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model deleted"}
+    assert mock_config.custom_models == []
+
+
+def test_delete_user_model_not_found():
+    """Test deleting a non-existent model returns 404"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = []
+    mock_config.custom_models = []
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.delete("/api/settings/user_models?id=non-existent-id")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
+
+
+def test_delete_user_model_bad_request_no_params():
+    """Test deleting without required parameters returns 400"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = []
+    mock_config.custom_models = []
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.delete("/api/settings/user_models")
+
+    assert response.status_code == 400
+    assert "Must specify" in response.json()["detail"]

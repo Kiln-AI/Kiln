@@ -1292,6 +1292,13 @@ export interface paths {
         /**
          * Delete User Model
          * @description Delete a user-defined model from the registry.
+         *
+         *     Supports two deletion methods:
+         *     1. By ID (new): Pass `id` parameter to delete from user_model_registry
+         *     2. By tuple (legacy): Pass provider_type, provider_id, model_id to delete from
+         *        user_model_registry by matching those fields, or from legacy custom_models
+         *
+         *     Legacy models in custom_models don't have IDs and must use the tuple method.
          */
         delete: operations["delete_user_model_api_settings_user_models_delete"];
         options?: never;
@@ -6766,6 +6773,7 @@ export interface components {
          * @description A user-defined custom model entry.
          *
          *     Attributes:
+         *         id: Unique identifier for this entry (auto-generated if not provided)
          *         provider_type: "builtin" for ModelProviderName enum providers, "custom" for openai_compatible
          *         provider_id: For builtin: enum value like "openai". For custom: the custom provider name
          *         model_id: The model ID to use with the provider's API
@@ -6795,6 +6803,8 @@ export interface components {
             overrides?: {
                 [key: string]: unknown;
             } | null;
+            /** Id */
+            id?: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -9693,10 +9703,11 @@ export interface operations {
     };
     delete_user_model_api_settings_user_models_delete: {
         parameters: {
-            query: {
-                provider_type: string;
-                provider_id: string;
-                model_id: string;
+            query?: {
+                provider_type?: string | null;
+                provider_id?: string | null;
+                model_id?: string | null;
+                id?: string | null;
             };
             header?: never;
             path?: never;
