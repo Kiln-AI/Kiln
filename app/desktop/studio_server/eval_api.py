@@ -114,6 +114,19 @@ def _validate_mcp_input_schema(task: Task, tool_input_schema: dict) -> None:
         raise ValueError("Task input schema must be compatible with the MCP tool.")
 
 
+def _validate_mcp_output_schema(task: Task, tool_output_schema: dict | None) -> None:
+    """Validate that the task output schema matches the MCP tool output schema"""
+    # If either doesn't have an output schema, no validation needed
+    if task.output_json_schema is None or tool_output_schema is None:
+        return
+
+    task_output_schema = task.output_schema()
+    if task_output_schema is None:
+        raise ValueError("Task output schema must be set for structured output tasks.")
+    if not schemas_compatible(task_output_schema, tool_output_schema):
+        raise ValueError("Task output schema must be compatible with the MCP tool.")
+
+
 def _load_mcp_tool(tool_id: str, task: Task) -> MCPServerTool:
     if not is_mcp_tool_id(tool_id):
         raise ValueError("Tool selected is not an MCP tool.")
@@ -508,16 +521,7 @@ def connect_evals_api(app: FastAPI):
             tool_input_schema = await _load_mcp_input_schema(tool)
             tool_output_schema = await _load_mcp_output_schema(tool)
             _validate_mcp_input_schema(task, tool_input_schema)
-            if task.output_json_schema is not None and tool_output_schema is not None:
-                task_output_schema = task.output_schema()
-                if task_output_schema is None:
-                    raise ValueError(
-                        "Task output schema must be set for structured output tasks."
-                    )
-                if not schemas_compatible(task_output_schema, tool_output_schema):
-                    raise ValueError(
-                        "Task output schema must be compatible with the MCP tool."
-                    )
+            _validate_mcp_output_schema(task, tool_output_schema)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -542,6 +546,7 @@ def connect_evals_api(app: FastAPI):
             run_config_properties=run_config_properties,
             description=request.description,
         )
+        # Save the config
         task_run_config.save_to_file()
         return task_run_config
 

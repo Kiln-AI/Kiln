@@ -11,6 +11,7 @@ from app.desktop.studio_server.eval_api import (
     _load_mcp_output_schema,
     _load_mcp_tool,
     _validate_mcp_input_schema,
+    _validate_mcp_output_schema,
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
@@ -272,6 +273,48 @@ def test_validate_mcp_input_schema_structured_fails(mock_task):
     tool_schema = {"type": "object", "properties": {"y": {"type": "string"}}}
     with pytest.raises(ValueError, match="must be compatible"):
         _validate_mcp_input_schema(mock_task, tool_schema)
+
+
+def test_validate_mcp_output_schema_success(mock_task):
+    # Both None - no validation needed
+    mock_task.output_json_schema = None
+    _validate_mcp_output_schema(mock_task, None)
+
+    # Task None, tool has schema - no validation needed
+    mock_task.output_json_schema = None
+    tool_schema = {"type": "object", "properties": {"result": {"type": "string"}}}
+    _validate_mcp_output_schema(mock_task, tool_schema)
+
+    # Task has schema, tool None - no validation needed
+    mock_task.output_json_schema = json.dumps(
+        {"type": "object", "properties": {"result": {"type": "string"}}}
+    )
+    _validate_mcp_output_schema(mock_task, None)
+
+    # Both have compatible schemas
+    mock_task.output_json_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {"result": {"type": "string"}},
+            "required": ["result"],
+        }
+    )
+    tool_schema = {
+        "type": "object",
+        "properties": {"result": {"type": "string"}},
+        "required": ["result"],
+    }
+    _validate_mcp_output_schema(mock_task, tool_schema)
+
+
+def test_validate_mcp_output_schema_fails(mock_task):
+    # Incompatible schemas
+    mock_task.output_json_schema = json.dumps(
+        {"type": "object", "properties": {"x": {"type": "string"}}}
+    )
+    tool_schema = {"type": "object", "properties": {"y": {"type": "string"}}}
+    with pytest.raises(ValueError, match="must be compatible"):
+        _validate_mcp_output_schema(mock_task, tool_schema)
 
 
 def test_load_mcp_tool_success(mock_task):
