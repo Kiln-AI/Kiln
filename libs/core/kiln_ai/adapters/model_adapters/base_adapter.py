@@ -25,7 +25,6 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.run_config import RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
@@ -71,8 +70,6 @@ class BaseAdapter(metaclass=ABCMeta):
         run_config: RunConfigProperties,
         config: AdapterConfig | None = None,
     ):
-        if run_config.kind != RunConfigKind.llm:
-            raise ValueError("BaseAdapter only supports llm run configs")
         self.task = task
         self.run_config: RunConfigProperties = run_config
         self.update_run_config_unknown_structured_output_mode()

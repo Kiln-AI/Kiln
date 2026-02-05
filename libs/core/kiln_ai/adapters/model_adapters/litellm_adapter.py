@@ -33,6 +33,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.run_config import RunConfigKind
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -73,6 +74,8 @@ class LiteLlmAdapter(BaseAdapter):
         kiln_task: datamodel.Task,
         base_adapter_config: AdapterConfig | None = None,
     ):
+        if config.run_config_properties.kind != RunConfigKind.llm:
+            raise ValueError("LiteLlmAdapter requires a run config with kind llm")
         self.config = config
         self._additional_body_options = config.additional_body_options
         self._api_base = config.base_url

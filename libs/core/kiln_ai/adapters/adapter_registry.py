@@ -5,6 +5,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
 )
+from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.adapters.provider_tools import (
     core_provider,
     lite_llm_core_config_for_provider,
@@ -58,7 +59,14 @@ def adapter_for_task(
     run_config_properties: RunConfigProperties,
     base_adapter_config: AdapterConfig | None = None,
 ) -> BaseAdapter:
-    # Implement MCPAdapter when run_config.kind=="mcp"
+    # for MCP run config, use MCPAdapter to call the MCP server
+    if run_config_properties.kind == RunConfigKind.mcp:
+        return MCPAdapter(
+            task=kiln_task,
+            run_config=run_config_properties,
+            config=base_adapter_config,
+        )
+
     return LiteLlmAdapter(
         kiln_task=kiln_task,
         config=litellm_core_provider_config(run_config_properties),
