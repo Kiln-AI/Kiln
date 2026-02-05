@@ -8,12 +8,12 @@
   import {
     available_tools,
     get_task_composite_id,
-    load_available_prompts,
     load_available_tools,
     load_model_info,
     load_task,
     model_info,
   } from "$lib/stores"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
@@ -41,7 +41,7 @@
       await Promise.all([
         load_model_info(),
         load_available_tools(project_id),
-        load_available_prompts(),
+        load_task_prompts(project_id, task_id),
       ])
       task = await load_task(project_id, task_id)
       if (!task) {
@@ -83,7 +83,7 @@
 
 <AppPage
   title="Optimize"
-  subtitle="Optimize your current task for better performance with prompts, models and more."
+  subtitle="Explore strategies and apply improvements to your task using prompts, models, and tools."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
 >
@@ -97,13 +97,16 @@
     </div>
   {:else}
     <div class="flex flex-col gap-6">
-      <SettingsHeader title="Default Run Configuration" />
+      <!-- <SettingsHeader title="Default Run Configuration" />
       {#if default_run_config_properties}
         <div class="px-4 flex flex-col gap-2">
           <PropertyList properties={default_run_config_properties} />
         </div>
-      {/if}
-      <SettingsHeader title="Optimization Techniques" />
+      {/if} -->
+      <SettingsHeader
+        title="Optimization Strategies"
+        subtitle="Strategies to consider when optimizing your task, highlighting tradeoffs between effort and cost. You can apply these strategies in the Run Configurations table below."
+      />
       <div
         class="grid gap-6"
         style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
@@ -112,13 +115,14 @@
           <OptimizeCard
             title={optimizer.title}
             description={optimizer.description}
-            cost={optimizer.cost}
-            effort={optimizer.effort}
+            metrics={optimizer.metrics}
+            recommended={optimizer.recommended}
+            recommended_tooltip={optimizer.recommended_tooltip}
             onClick={optimizer.onClick}
           />
         {/each}
       </div>
-      <SettingsHeader title="Manage Run Configurations" />
+      <SettingsHeader title="Run Configurations" />
       <!-- TODO: Add run configurations table with buttons like promote to default, edit, delete, clone, optimize, etc. -->
       <!-- Fine tune models can be shown here as "virtual" entries with prompt: "missing" or something etc. GEPA prompts can appear with model "missing" or there can be an unfinished tag or something. -->
       <!-- All Optimization Techniques should create a new run configuration at the end using the default? -->

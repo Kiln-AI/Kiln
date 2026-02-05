@@ -1,10 +1,14 @@
 import { goto } from "$app/navigation"
 
+export const METRIC_COST = "Cost"
+export const METRIC_EFFORT = "Effort"
+
 export interface Optimizer {
   title: string
   description: string
-  cost: number
-  effort: number
+  metrics: Record<string, number>
+  recommended?: boolean
+  recommended_tooltip?: string
   onClick: () => void
 }
 
@@ -14,60 +18,56 @@ export function get_optimizers(
 ): Optimizer[] {
   const optimizers: Optimizer[] = [
     {
-      title: "Optimize Prompt",
+      title: "Improve Prompt",
       description:
-        "Automatically optimize your prompt with Kiln Copilot or manually engineer prompts to compare.",
-      cost: 4,
-      effort: 1,
+        "Improve output quality by refining instructions, structure, and examples.",
+      metrics: { [METRIC_COST]: 4, [METRIC_EFFORT]: 1 },
+      recommended: true,
+      recommended_tooltip: "Best first step before changing models or tools.",
       onClick: () => {
         goto(`/prompts/${project_id}/${task_id}`)
       },
     },
     {
-      title: "Compare Models",
-      description: "Find a better, faster or cheaper model for your task.",
-      cost: 2,
-      effort: 2,
+      title: "Try Different Models",
+      description: "Test different models to improve reasoning, structured output, speed, or cost for the same task.",
+      metrics: { [METRIC_COST]: 2, [METRIC_EFFORT]: 2 },
       onClick: () => {
         goto(`/models`)
       },
     },
     {
-      title: "Fine Tune",
+      title: "Fine-Tune a Model",
       description:
-        "Learns from your dataset to create custom models that can be faster, cheaper and more accurate than standard models.",
-      cost: 5,
-      effort: 5,
+        "Train a custom model on your data for higher accuracy, consistency, and domain-specific performance at scale.",
+      metrics: { [METRIC_COST]: 5, [METRIC_EFFORT]: 5 },
       onClick: () => {
         goto(`/fine_tune/${project_id}/${task_id}`)
       },
     },
     {
-      title: "Search Tools (RAG)",
+      title: "Add Knowledge (RAG)",
       description:
-        "Allow your AI task to search for custom knowledge before answering.",
-      cost: 3,
-      effort: 4,
+        "Ground responses in your documents and data to reduce hallucinations and improve factual accuracy with Search Tools (RAG).",
+      metrics: { [METRIC_COST]: 3, [METRIC_EFFORT]: 4 },
       onClick: () => {
         goto(`/docs/${project_id}`)
       },
     },
     {
-      title: "MCP Tools",
+      title: "Add External Tools",
       description:
-        "Add tools like web-search and code interpreter to improve task performance.",
-      cost: 1,
-      effort: 2,
+        "Give your task access to external capabilities like web search, code execution, and system integrations with MCP Tools.",
+      metrics: { [METRIC_COST]: 1, [METRIC_EFFORT]: 2 },
       onClick: () => {
         goto(`/settings/manage_tools/${project_id}/add_tools`)
       },
     },
     {
-      title: "Agents",
+      title: "Build an Agent Workflow",
       description:
-        "Break complex problems into coordinated subtasks with Kiln Tasks as Tools.",
-      cost: 1,
-      effort: 3,
+        "Break complex workflows into coordinated subtasks using multiple models and tools working together with Kiln Tasks as Tools.",
+      metrics: { [METRIC_COST]: 1, [METRIC_EFFORT]: 3 },
       onClick: () => {
         goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
       },
