@@ -4,12 +4,12 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import (
     ModelName,
-    UserModelEntry,
     built_in_models,
     built_in_models_from_provider,
     default_structured_output_mode_for_model_provider,
     get_model_by_name,
 )
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 
 

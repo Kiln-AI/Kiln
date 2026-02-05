@@ -1359,7 +1359,7 @@ def test_get_all_user_models_empty(mock_config_empty_user_models):
 
 def test_user_model_to_provider_builtin():
     """Test user_model_to_provider for builtin provider"""
-    from kiln_ai.adapters.ml_model_list import UserModelEntry
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
 
     entry = UserModelEntry(
         provider_type="builtin",
@@ -1380,7 +1380,7 @@ def test_user_model_to_provider_builtin():
 
 def test_user_model_to_provider_custom():
     """Test user_model_to_provider for custom provider"""
-    from kiln_ai.adapters.ml_model_list import UserModelEntry
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
 
     entry = UserModelEntry(
         provider_type="custom",
@@ -1399,7 +1399,7 @@ def test_user_model_to_provider_custom():
 
 def test_user_model_to_provider_filters_unknown_fields():
     """Test that user_model_to_provider filters unknown fields from overrides for forward compatibility"""
-    from kiln_ai.adapters.ml_model_list import UserModelEntry
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
 
     entry = UserModelEntry(
         provider_type="builtin",
@@ -1422,7 +1422,7 @@ def test_user_model_to_provider_filters_unknown_fields():
 
 def test_user_model_to_provider_cannot_override_name_or_model_id():
     """Test that 'name' and 'model_id' in overrides are filtered out"""
-    from kiln_ai.adapters.ml_model_list import UserModelEntry
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
 
     entry = UserModelEntry(
         provider_type="builtin",
@@ -1446,7 +1446,7 @@ def test_user_model_to_provider_cannot_override_name_or_model_id():
 
 def test_user_model_to_provider_invalid_builtin():
     """Test user_model_to_provider raises error for invalid builtin provider"""
-    from kiln_ai.adapters.ml_model_list import UserModelEntry
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
 
     entry = UserModelEntry(
         provider_type="builtin", provider_id="invalid_provider", model_id="model"

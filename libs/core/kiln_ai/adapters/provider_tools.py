@@ -14,10 +14,10 @@ from kiln_ai.adapters.ml_model_list import (
     ModelParserID,
     ModelProviderName,
     StructuredOutputMode,
-    UserModelEntry,
     built_in_models,
 )
 from kiln_ai.adapters.ollama_tools import get_ollama_connection
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.utils.config import Config

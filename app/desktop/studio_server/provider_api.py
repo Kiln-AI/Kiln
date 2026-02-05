@@ -25,9 +25,9 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
-    UserModelEntry,
     built_in_models,
 )
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
     ollama_base_url,
