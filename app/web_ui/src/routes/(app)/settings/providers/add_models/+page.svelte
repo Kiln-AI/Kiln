@@ -8,6 +8,10 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { getContext } from "svelte"
   import type { Writable } from "svelte/store"
+  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
   type ProviderInfo = {
     id: string
@@ -35,14 +39,107 @@
   let show_advanced = false
 
   // Override form state (Advanced section)
-  let override_supports_structured_output: boolean | null = null
-  let override_structured_output_mode: string | null = null
-  let override_supports_data_gen: boolean | null = null
-  let override_supports_logprobs: boolean | null = null
-  let override_supports_function_calling: boolean | null = null
-  let override_supports_vision: boolean | null = null
-  let override_reasoning_capable: boolean | null = null
-  let override_parser: string | null = null
+  // Use "" for default/unset state so fancy_select shows the default option selected
+  let override_supports_structured_output: string = ""
+  let override_structured_output_mode: string = ""
+  let override_supports_logprobs: string = ""
+  let override_supports_function_calling: string = ""
+  let override_supports_vision: string = ""
+  let override_reasoning_capable: string = ""
+  let override_parser: string = ""
+
+  // Fancy select option groups for model settings
+  const yes_no_default_options: OptionGroup[] = [
+    {
+      options: [
+        { label: "Default (No)", value: "" },
+        { label: "Yes", value: "true" },
+        { label: "No", value: "false" },
+      ],
+    },
+  ]
+
+  const structured_output_options: OptionGroup[] = [
+    {
+      options: [
+        {
+          label: "Default (No)",
+          value: "",
+          description: "Model does not support structured output.",
+        },
+        {
+          label: "Yes",
+          value: "true",
+          description: "Model supports structured JSON output.",
+        },
+        {
+          label: "No",
+          value: "false",
+          description: "Model does not support structured output.",
+        },
+      ],
+    },
+  ]
+
+  const structured_output_mode_options: OptionGroup[] = [
+    {
+      options: [
+        {
+          label: "Default",
+          value: "",
+          description: "Use the option most commonly seen on this provider.",
+        },
+        {
+          label: "JSON Schema",
+          value: "json_schema",
+          description:
+            "Provider enforces output matches a JSON schema. Most reliable.",
+        },
+        {
+          label: "JSON Mode",
+          value: "json_mode",
+          description:
+            "Provider guarantees valid JSON, but not a specific schema.",
+        },
+        {
+          label: "JSON Instructions",
+          value: "json_instructions",
+          description: "Request JSON output via prompt instructions only.",
+        },
+      ],
+    },
+  ]
+
+  const parser_options: OptionGroup[] = [
+    {
+      options: [
+        { label: "None", value: "" },
+        {
+          label: "R1 Thinking",
+          value: "r1_thinking",
+          description: "Parse <think> tags from reasoning models.",
+        },
+      ],
+    },
+  ]
+
+  const reasoning_capable_options: OptionGroup[] = [
+    {
+      options: [
+        { label: "Default (No)", value: "" },
+        {
+          label: "Yes",
+          value: "true",
+          description: "Reasoning should always be returned, fail if missing.",
+        },
+        {
+          label: "No",
+          value: "false",
+          description: "Reasoning not expected or optional.",
+        },
+      ],
+    },
+  ]
 
   const load_data = async () => {
     try {
@@ -61,10 +158,6 @@
       )
       if (models_error) throw models_error
       user_models = models || []
-
-      if (available_providers.length > 0) {
-        new_model_provider = available_providers[0].id
-      }
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -79,28 +172,27 @@
   function build_overrides(): Record<string, unknown> | undefined {
     const overrides: Record<string, unknown> = {}
 
-    if (override_supports_structured_output !== null) {
-      overrides.supports_structured_output = override_supports_structured_output
+    if (override_supports_structured_output !== "") {
+      overrides.supports_structured_output =
+        override_supports_structured_output === "true"
     }
-    if (override_structured_output_mode !== null) {
+    if (override_structured_output_mode !== "") {
       overrides.structured_output_mode = override_structured_output_mode
     }
-    if (override_supports_data_gen !== null) {
-      overrides.supports_data_gen = override_supports_data_gen
+    if (override_supports_logprobs !== "") {
+      overrides.supports_logprobs = override_supports_logprobs === "true"
     }
-    if (override_supports_logprobs !== null) {
-      overrides.supports_logprobs = override_supports_logprobs
+    if (override_supports_function_calling !== "") {
+      overrides.supports_function_calling =
+        override_supports_function_calling === "true"
     }
-    if (override_supports_function_calling !== null) {
-      overrides.supports_function_calling = override_supports_function_calling
+    if (override_supports_vision !== "") {
+      overrides.supports_vision = override_supports_vision === "true"
     }
-    if (override_supports_vision !== null) {
-      overrides.supports_vision = override_supports_vision
+    if (override_reasoning_capable !== "") {
+      overrides.reasoning_capable = override_reasoning_capable === "true"
     }
-    if (override_reasoning_capable !== null) {
-      overrides.reasoning_capable = override_reasoning_capable
-    }
-    if (override_parser !== null) {
+    if (override_parser !== "") {
       overrides.parser = override_parser
     }
 
@@ -154,14 +246,13 @@
   }
 
   function reset_overrides() {
-    override_supports_structured_output = null
-    override_structured_output_mode = null
-    override_supports_data_gen = null
-    override_supports_logprobs = null
-    override_supports_function_calling = null
-    override_supports_vision = null
-    override_reasoning_capable = null
-    override_parser = null
+    override_supports_structured_output = ""
+    override_structured_output_mode = ""
+    override_supports_logprobs = ""
+    override_supports_function_calling = ""
+    override_supports_vision = ""
+    override_reasoning_capable = ""
+    override_parser = ""
     show_advanced = false
   }
 
@@ -203,6 +294,30 @@
     )
   }
 
+  const override_labels: Record<string, string> = {
+    supports_structured_output: "Structured Output",
+    structured_output_mode: "Output Mode",
+    supports_data_gen: "Data Generation",
+    supports_logprobs: "Logprobs",
+    supports_function_calling: "Function Calling",
+    supports_vision: "Vision",
+    reasoning_capable: "Reasoning",
+    parser: "Parser",
+  }
+
+  function format_overrides(model: UserModelEntry): string {
+    if (!model.overrides) return ""
+    const items = Object.entries(model.overrides)
+      .map(([key, value]) => {
+        const label = override_labels[key] || key
+        const displayValue =
+          typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)
+        return `**${label}**: ${displayValue}`
+      })
+      .join("\n")
+    return items
+  }
+
   // You can get here 2 ways, build a breadcrumb for each
   const lastPageUrl = getContext<Writable<URL | undefined>>("lastPageUrl")
   function get_breadcrumbs() {
@@ -223,8 +338,10 @@
 </script>
 
 <AppPage
-  title="Manage Custom Models"
-  sub_subtitle="Add/remove additional models from your connected AI providers, on top of those already included with Kiln."
+  title="Custom Models"
+  subtitle="Add models from your connected AI providers"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
   breadcrumbs={get_breadcrumbs()}
   action_buttons={user_models && user_models.length > 0
     ? [
@@ -241,51 +358,116 @@
       <div class="loading loading-spinner loading-lg"></div>
     </div>
   {:else if error}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="alert alert-error">
-        <span>{error.message}</span>
+    <div
+      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+    >
+      <div class="font-medium">Error Loading Models</div>
+      <div class="text-error text-sm">
+        {error.message || "An unknown error occurred"}
       </div>
     </div>
   {:else if user_models.length > 0}
-    <div class="flex flex-col gap-4">
-      {#each user_models as model}
-        <div
-          class="flex flex-row gap-2 card bg-base-200 py-2 px-4 items-center"
-        >
-          <div class="font-medium min-w-48">
-            {get_provider_display_name(model)}
-          </div>
-          <div class="grow">
-            {get_model_display_name(model)}
-            {#if has_overrides(model)}
-              <span class="badge badge-sm badge-info ml-2">Custom Settings</span
-              >
-            {/if}
-          </div>
-          <button
-            on:click={() => remove_model(model)}
-            class="link text-sm text-gray-500"
-          >
-            Remove
-          </button>
-        </div>
-      {/each}
+    <div class="rounded-lg border">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Settings</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each user_models as model}
+            <tr>
+              <td class="font-medium">{get_provider_display_name(model)}</td>
+              <td>
+                <div class="flex flex-col">
+                  <span>{get_model_display_name(model)}</span>
+                  {#if model.name && model.name !== model.model_id}
+                    <span class="text-xs text-base-content/60"
+                      >{model.model_id}</span
+                    >
+                  {/if}
+                </div>
+              </td>
+              <td>
+                {#if has_overrides(model)}
+                  <span class="text-base-content/60">Custom</span>
+                  <InfoTooltip
+                    tooltip_text={format_overrides(model)}
+                    no_pad={true}
+                  />
+                {:else}
+                  <span class="text-base-content/60">Default</span>
+                {/if}
+              </td>
+              <td class="p-0">
+                <div class="dropdown dropdown-end dropdown-hover">
+                  <TableButton />
+                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                  <ul
+                    tabindex="0"
+                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
+                  >
+                    <li>
+                      <button on:click={() => remove_model(model)}>
+                        Remove Model
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   {:else}
-    <div class="flex flex-col gap-4 justify-center items-center min-h-[30vh]">
-      <button
-        class="btn btn-wide btn-primary mt-4"
-        on:click={show_add_model_modal}
+    <div class="flex flex-col items-center justify-center min-h-[50vh]">
+      <Intro
+        title="Add Custom Models"
+        description_paragraphs={[
+          "Add models from your connected AI providers beyond those already included with Kiln.",
+          "Custom models let you use the latest models or specialized variants from any connected provider.",
+        ]}
+        action_buttons={[
+          {
+            label: "Add Model",
+            onClick: show_add_model_modal,
+            is_primary: true,
+          },
+        ]}
       >
-        Add Model
-      </button>
+        <svelte:fragment slot="icon">
+          <svg
+            class="w-12 h-12"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 6V18M18 12H6"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+        </svelte:fragment>
+      </Intro>
     </div>
   {/if}
 </AppPage>
 
 <Dialog
   bind:this={add_model_dialog}
-  title="Add Model"
+  title="Add Custom Model"
   action_buttons={[
     { label: "Cancel", isCancel: true },
     {
@@ -296,17 +478,19 @@
     },
   ]}
 >
-  <div class="text-sm">Add a model from an existing provider.</div>
-  <div class="text-sm text-gray-500 mt-3">
-    Provide the exact model ID used by the provider API.
-  </div>
-
-  <div class="flex flex-col gap-4 mt-8">
+  <div class="flex flex-col gap-4">
     <FormElement
       label="Model Provider"
       id="model_provider"
-      inputType="select"
-      select_options={available_providers.map((p) => [p.id, p.name])}
+      inputType="fancy_select"
+      fancy_select_options={[
+        {
+          options: available_providers.map((p) => ({
+            label: p.name,
+            value: p.id,
+          })),
+        },
+      ]}
       bind:value={new_model_provider}
     />
 
@@ -315,116 +499,86 @@
       id="model_id"
       inputType="input"
       placeholder="e.g., gpt-4o-mini or llama3"
+      description="Must be the exact model ID used by the provider API."
       bind:value={new_model_name}
     />
 
     <FormElement
-      label="Display Name (Optional)"
+      label="Display Name"
       id="display_name"
       inputType="input"
       placeholder="e.g., My Custom Model"
+      info_description="The name you'll see in Kiln dropdowns."
+      optional={true}
       bind:value={new_model_display_name}
     />
 
-    <!-- Advanced Section -->
+    <!-- Model Settings Section -->
     <div class="collapse collapse-arrow bg-base-200">
       <input type="checkbox" bind:checked={show_advanced} />
-      <div class="collapse-title font-medium">Advanced Options</div>
+      <div class="collapse-title font-medium">Model Settings</div>
       <div class="collapse-content">
         <div class="flex flex-col gap-4 pt-2">
           <FormElement
             label="Supports Structured Output"
             id="supports_structured_output"
-            inputType="select"
-            select_options={[
-              ["", "Default (No)"],
-              ["true", "Yes"],
-              ["false", "No"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={structured_output_options}
+            info_description="Whether the model can return responses in a specific JSON format."
             bind:value={override_supports_structured_output}
           />
 
           <FormElement
             label="Structured Output Mode"
             id="structured_output_mode"
-            inputType="select"
-            select_options={[
-              ["", "Default (JSON Instructions)"],
-              ["json_schema", "JSON Schema"],
-              ["json_mode", "JSON Mode"],
-              ["json_instructions", "JSON Instructions"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={structured_output_mode_options}
+            info_description="JSON Schema typically works best on newer models, but leave default for older models."
             bind:value={override_structured_output_mode}
-          />
-
-          <FormElement
-            label="Supports Data Generation"
-            id="supports_data_gen"
-            inputType="select"
-            select_options={[
-              ["", "Default (No)"],
-              ["true", "Yes"],
-              ["false", "No"],
-            ]}
-            bind:value={override_supports_data_gen}
           />
 
           <FormElement
             label="Supports Logprobs"
             id="supports_logprobs"
-            inputType="select"
-            select_options={[
-              ["", "Default (No)"],
-              ["true", "Yes"],
-              ["false", "No"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={yes_no_default_options}
+            info_description="Whether the model returns token log probabilities. Used for confidence scoring in evals."
             bind:value={override_supports_logprobs}
           />
 
           <FormElement
             label="Supports Function Calling"
             id="supports_function_calling"
-            inputType="select"
-            select_options={[
-              ["", "Default (No)"],
-              ["true", "Yes"],
-              ["false", "No"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={yes_no_default_options}
+            info_description="Whether the model supports tool/function calling APIs for structured interactions."
             bind:value={override_supports_function_calling}
           />
 
           <FormElement
             label="Supports Vision"
             id="supports_vision"
-            inputType="select"
-            select_options={[
-              ["", "Default (No)"],
-              ["true", "Yes"],
-              ["false", "No"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={yes_no_default_options}
+            info_description="Whether the model can process images as input."
             bind:value={override_supports_vision}
           />
 
           <FormElement
             label="Reasoning Capable (Thinking Model)"
             id="reasoning_capable"
-            inputType="select"
-            select_options={[
-              ["", "Default (No)"],
-              ["true", "Yes"],
-              ["false", "No"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={reasoning_capable_options}
+            info_description="Leave off if reasoning is optional. Only set to Yes if reasoning is always returned."
             bind:value={override_reasoning_capable}
           />
 
           <FormElement
             label="Output Parser"
             id="parser"
-            inputType="select"
-            select_options={[
-              ["", "None"],
-              ["r1_thinking", "R1 Thinking (<think> tags)"],
-            ]}
+            inputType="fancy_select"
+            fancy_select_options={parser_options}
+            info_description="Special parsing for model output. Use R1 Thinking for models that return reasoning in <think> tags."
             bind:value={override_parser}
           />
         </div>
