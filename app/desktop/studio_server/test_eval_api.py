@@ -1,12 +1,16 @@
 import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    _load_mcp_input_schema,
+    _load_mcp_output_schema,
+    _load_mcp_tool,
+    _validate_mcp_input_schema,
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
@@ -48,6 +52,7 @@ from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
 
 @pytest.fixture
@@ -217,6 +222,149 @@ def valid_eval_config_request():
     )
 
 
+def test_validate_mcp_input_schema_plaintext_success(mock_task):
+    mock_task.input_json_schema = None
+    tool_schema = {"type": "object", "properties": {"message": {"type": "string"}}}
+    _validate_mcp_input_schema(mock_task, tool_schema)
+
+
+@pytest.mark.parametrize(
+    "tool_schema, error_match",
+    [
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"},
+                    "count": {"type": "number"},
+                },
+            },
+            "exactly one string input field",
+        ),
+        (
+            {"type": "object", "properties": {"count": {"type": "number"}}},
+            "exactly one string input field",
+        ),
+    ],
+)
+def test_validate_mcp_input_schema_plaintext_fails(mock_task, tool_schema, error_match):
+    mock_task.input_json_schema = None
+    with pytest.raises(ValueError, match=error_match):
+        _validate_mcp_input_schema(mock_task, tool_schema)
+
+
+def test_validate_mcp_input_schema_structured_success(mock_task):
+    mock_task.input_json_schema = json.dumps(
+        {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}
+    )
+    tool_schema = {
+        "type": "object",
+        "properties": {"x": {"type": "string"}},
+        "required": ["x"],
+    }
+    _validate_mcp_input_schema(mock_task, tool_schema)
+
+
+def test_validate_mcp_input_schema_structured_fails(mock_task):
+    mock_task.input_json_schema = json.dumps(
+        {"type": "object", "properties": {"x": {"type": "string"}}}
+    )
+    tool_schema = {"type": "object", "properties": {"y": {"type": "string"}}}
+    with pytest.raises(ValueError, match="must be compatible"):
+        _validate_mcp_input_schema(mock_task, tool_schema)
+
+
+def test_load_mcp_tool_success(mock_task):
+    tool_id = "mcp::local::server123::test_tool"
+    mock_tool = Mock(spec=MCPServerTool)
+
+    with patch("app.desktop.studio_server.eval_api.is_mcp_tool_id") as mock_is_mcp:
+        with patch(
+            "app.desktop.studio_server.eval_api.tool_from_id"
+        ) as mock_tool_from_id:
+            mock_is_mcp.return_value = True
+            mock_tool_from_id.return_value = mock_tool
+
+            result = _load_mcp_tool(tool_id, mock_task)
+
+            assert result == mock_tool
+
+
+def test_load_mcp_tool_fails_not_mcp_tool_id(mock_task):
+    tool_id = "not_mcp_tool"
+
+    with patch("app.desktop.studio_server.eval_api.is_mcp_tool_id") as mock_is_mcp:
+        mock_is_mcp.return_value = False
+
+        with pytest.raises(ValueError, match="not an MCP tool"):
+            _load_mcp_tool(tool_id, mock_task)
+
+
+def test_load_mcp_tool_fails_wrong_type(mock_task):
+    tool_id = "mcp::local::server123::test_tool"
+
+    with patch("app.desktop.studio_server.eval_api.is_mcp_tool_id") as mock_is_mcp:
+        with patch(
+            "app.desktop.studio_server.eval_api.tool_from_id"
+        ) as mock_tool_from_id:
+            mock_is_mcp.return_value = True
+            mock_tool_from_id.return_value = Mock()
+
+            with pytest.raises(ValueError, match="Failed to load MCP tool"):
+                _load_mcp_tool(tool_id, mock_task)
+
+
+@pytest.mark.asyncio
+async def test_load_mcp_input_schema_success():
+    mock_tool = Mock(spec=MCPServerTool)
+    expected_schema = {"type": "object", "properties": {"x": {"type": "string"}}}
+    mock_tool.input_schema = AsyncMock(return_value=expected_schema)
+
+    result = await _load_mcp_input_schema(mock_tool)
+
+    assert result == expected_schema
+
+
+@pytest.mark.asyncio
+async def test_load_mcp_input_schema_fails():
+    mock_tool = Mock(spec=MCPServerTool)
+
+    # Tool raises ValueError
+    mock_tool.input_schema = AsyncMock(side_effect=ValueError("Invalid schema"))
+    with pytest.raises(ValueError, match="missing a valid input schema"):
+        await _load_mcp_input_schema(mock_tool)
+
+    # Tool returns non-dict
+    mock_tool.input_schema = AsyncMock(return_value="not a dict")
+    with pytest.raises(ValueError, match="missing a valid input schema"):
+        await _load_mcp_input_schema(mock_tool)
+
+
+@pytest.mark.asyncio
+async def test_load_mcp_output_schema_success():
+    mock_tool = Mock(spec=MCPServerTool)
+
+    # Returns dict schema
+    expected_schema = {"type": "object", "properties": {"result": {"type": "string"}}}
+    mock_tool.output_schema = AsyncMock(return_value=expected_schema)
+    result = await _load_mcp_output_schema(mock_tool)
+    assert result == expected_schema
+
+    # Returns None (optional output schema)
+    mock_tool.output_schema = AsyncMock(return_value=None)
+    result = await _load_mcp_output_schema(mock_tool)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_load_mcp_output_schema_fails():
+    mock_tool = Mock(spec=MCPServerTool)
+    mock_tool.output_schema = AsyncMock(side_effect=ValueError("Invalid schema"))
+
+    with pytest.raises(ValueError, match="invalid output schema"):
+        await _load_mcp_output_schema(mock_tool)
+
+
 @pytest.mark.asyncio
 async def test_create_evaluator(
     client, mock_task_from_id, valid_evaluator_request, mock_task
@@ -353,6 +501,76 @@ async def test_create_task_run_config_without_freezing(
     assert result["run_config_properties"]["model_provider_name"] == "openai"
     assert result["run_config_properties"]["prompt_id"] == "id::prompt_123"
     assert result["prompt"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_mcp_run_config_plaintext_success(
+    client, mock_task_from_id, mock_task
+):
+    # Plaintext task with MCP tool that has single string field
+    mock_task.input_json_schema = None
+    mock_task.output_json_schema = None
+    mock_task_from_id.return_value = mock_task
+
+    tool = Mock(spec=MCPServerTool)
+    tool.input_schema = AsyncMock(
+        return_value={"type": "object", "properties": {"message": {"type": "string"}}}
+    )
+    tool.output_schema = AsyncMock(return_value=None)
+    tool.name = AsyncMock(return_value="test_tool")
+
+    with patch("app.desktop.studio_server.eval_api.tool_from_id") as mock_tool_from_id:
+        mock_tool_from_id.return_value = tool
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/mcp_run_config",
+            json={
+                "name": "Plaintext MCP Config",
+                "tool_id": "mcp::local::server123::test_tool",
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["name"] == "Plaintext MCP Config"
+    assert result["run_config_properties"]["kind"] == "mcp"
+    assert result["run_config_properties"]["mcp_tool"]["tool_name"] == "test_tool"
+
+
+@pytest.mark.asyncio
+async def test_create_mcp_run_config_input_schema_mismatch(
+    client, mock_task_from_id, mock_task
+):
+    # Task and tool input schemas are incompatible
+    mock_task.input_json_schema = json.dumps(
+        {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}
+    )
+    mock_task_from_id.return_value = mock_task
+
+    tool = Mock(spec=MCPServerTool)
+    tool.input_schema = AsyncMock(
+        return_value={
+            "type": "object",
+            "properties": {"y": {"type": "string"}},
+            "required": ["y"],
+        }
+    )
+    tool.output_schema = AsyncMock(return_value=None)
+    tool.name = AsyncMock(return_value="test_tool")
+
+    with patch("app.desktop.studio_server.eval_api.tool_from_id") as mock_tool_from_id:
+        mock_tool_from_id.return_value = tool
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/mcp_run_config",
+            json={
+                "name": "MCP Config",
+                "tool_id": "mcp::local::server123::test_tool",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "Task input schema must be compatible with the MCP tool." in response.text
 
 
 @pytest.mark.asyncio

@@ -23,8 +23,11 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalTemplateId,
 )
-from kiln_ai.datamodel.json_schema import single_string_field_name, string_to_json_key
-from kiln_ai.datamodel.prompt_id import is_frozen_prompt
+from kiln_ai.datamodel.json_schema import (
+    schemas_compatible,
+    single_string_field_name,
+    string_to_json_key,
+)
 from kiln_ai.datamodel.prompt_id import PromptGenerators, is_frozen_prompt
 from kiln_ai.datamodel.run_config import MCPToolReference, RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
@@ -105,10 +108,10 @@ def _validate_mcp_input_schema(task: Task, tool_input_schema: dict) -> None:
         return
 
     task_schema = task.input_schema()
-    if task_schema != tool_input_schema:
-        raise ValueError(
-            "Task input schema must exactly match the MCP tool's input schema."
-        )
+    if task_schema is None:
+        raise ValueError("Task input schema must be set for structured input tasks.")
+    if not schemas_compatible(task_schema, tool_input_schema):
+        raise ValueError("Task input schema must be compatible with the MCP tool.")
 
 
 def _load_mcp_tool(tool_id: str, task: Task) -> MCPServerTool:
@@ -128,6 +131,14 @@ async def _load_mcp_input_schema(tool: MCPServerTool) -> dict:
     if not isinstance(tool_input_schema, dict):
         raise ValueError("MCP tool definition is missing a valid input schema.")
     return tool_input_schema
+
+
+async def _load_mcp_output_schema(tool: MCPServerTool) -> dict | None:
+    """Load the MCP tool output schema, it's optional"""
+    try:
+        return await tool.output_schema()
+    except ValueError:
+        raise ValueError("MCP tool definition has an invalid output schema.")
 
 
 def task_run_config_from_id(
@@ -495,7 +506,18 @@ def connect_evals_api(app: FastAPI):
             tool_id = request.tool_id
             tool = _load_mcp_tool(tool_id, task)
             tool_input_schema = await _load_mcp_input_schema(tool)
+            tool_output_schema = await _load_mcp_output_schema(tool)
             _validate_mcp_input_schema(task, tool_input_schema)
+            if task.output_json_schema is not None and tool_output_schema is not None:
+                task_output_schema = task.output_schema()
+                if task_output_schema is None:
+                    raise ValueError(
+                        "Task output schema must be set for structured output tasks."
+                    )
+                if not schemas_compatible(task_output_schema, tool_output_schema):
+                    raise ValueError(
+                        "Task output schema must be compatible with the MCP tool."
+                    )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -506,6 +528,7 @@ def connect_evals_api(app: FastAPI):
                 tool_id=tool_id,
                 tool_name=tool_name,
                 input_schema=tool_input_schema,
+                output_schema=tool_output_schema,
             ),
             model_name="mcp_tool",
             model_provider_name=ModelProviderName.mcp_provider,
