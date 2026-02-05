@@ -139,10 +139,66 @@ def string_to_json_key(s: str) -> str:
 
 
 def single_string_field_name(schema: Dict) -> str | None:
+    """
+    Return the field name if schema has exactly one string property, otherwise None.
+
+    i.e. {"properties": {"message": {"type": "string"}}} returns "message".
+    """
     properties = schema.get("properties", {})
+    # Must have exactly one property
     if not isinstance(properties, dict) or len(properties) != 1:
         return None
+    # Get the single property name and schema
     field_name, field_schema = next(iter(properties.items()))
+    # Return the field name only if it's a string type
     if isinstance(field_schema, dict) and field_schema.get("type") == "string":
         return field_name
     return None
+
+
+def schemas_compatible(task_schema: Dict, tool_schema: Dict) -> bool:
+    """
+    Check if a task schema is compatible with a tool schema.
+
+    Compatible means: task provides all fields the tool requires, task doesn't
+    provide fields the tool doesn't accept, and field types match (ignoring
+    additionalProperties differences).
+    """
+    if task_schema.get("type") != tool_schema.get("type"):
+        return False
+
+    # For non-object types, compare after removing additionalProperties
+    if task_schema.get("type") != "object":
+        return _normalize_schema(task_schema) == _normalize_schema(tool_schema)
+
+    # Get properties from both schemas
+    task_props = task_schema.get("properties", {})
+    tool_props = tool_schema.get("properties", {})
+    if not isinstance(task_props, dict) or not isinstance(tool_props, dict):
+        return False
+
+    # Task must provide all fields required by the tool
+    tool_required = set(tool_schema.get("required", []) or [])
+    if not tool_required.issubset(set(task_props.keys())):
+        return False
+
+    # Task can't provide fields the tool doesn't accept
+    if not set(task_props.keys()).issubset(set(tool_props.keys())):
+        return False
+
+    # Each field's schema must match (ignoring additionalProperties)
+    for field_name, task_field_schema in task_props.items():
+        tool_field_schema = tool_props.get(field_name)
+        if _normalize_schema(task_field_schema) != _normalize_schema(tool_field_schema):
+            return False
+
+    return True
+
+
+def _normalize_schema(schema: Any) -> Any:
+    """Remove additionalProperties from schema to allow compatibility check."""
+    if not isinstance(schema, dict):
+        return schema
+    normalized = dict(schema)
+    normalized.pop("additionalProperties", None)
+    return normalized
