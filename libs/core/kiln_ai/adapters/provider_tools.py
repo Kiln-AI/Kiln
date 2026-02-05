@@ -388,6 +388,10 @@ def get_all_user_models() -> list[UserModelEntry]:
 def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
     """
     Convert a UserModelEntry to a KilnModelProvider with overrides applied.
+
+    Note: This function filters overrides to only include valid KilnModelProvider fields.
+    Unknown fields in overrides are silently ignored for forward compatibility, allowing
+    new fields to be added to KilnModelProvider without breaking existing UserModelEntry data.
     """
     # Determine the base provider name
     if entry.provider_type == "builtin":
@@ -415,10 +419,17 @@ def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
     # We ignore type errors here because the overrides are validated at runtime
     # and the Pydantic model will handle type conversion
     if entry.overrides:
-        # Only include overrides that are actually set (not None)
+        # Get valid field names from KilnModelProvider for forward compatibility
+        # This allows new fields to be added to KilnModelProvider without breaking
+        # existing UserModelEntry data that may have those fields in overrides
+        valid_fields = set(KilnModelProvider.model_fields.keys())
+        # Remove fields that shouldn't be overridden
+        valid_fields -= {"name", "model_id"}
+
+        # Only include overrides that are valid fields and actually set (not None)
         # This allows the default values to be used when override is None
         for key, value in entry.overrides.items():
-            if value is not None and value != "":
+            if value is not None and value != "" and key in valid_fields:
                 base_kwargs[key] = value
 
     return KilnModelProvider(**base_kwargs)  # type: ignore[arg-type]

@@ -1397,6 +1397,53 @@ def test_user_model_to_provider_custom():
     assert provider.supports_vision is True
 
 
+def test_user_model_to_provider_filters_unknown_fields():
+    """Test that user_model_to_provider filters unknown fields from overrides for forward compatibility"""
+    from kiln_ai.adapters.ml_model_list import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id="openai",
+        model_id="gpt-custom",
+        overrides={
+            "supports_structured_output": True,
+            # Unknown field that doesn't exist in KilnModelProvider
+            "future_field_not_yet_implemented": True,
+        },
+    )
+
+    provider = user_model_to_provider(entry)
+
+    # Valid override is applied
+    assert provider.supports_structured_output is True
+    # Unknown field is not applied (no error, just silently ignored)
+    assert not hasattr(provider, "future_field_not_yet_implemented")
+
+
+def test_user_model_to_provider_cannot_override_name_or_model_id():
+    """Test that 'name' and 'model_id' in overrides are filtered out"""
+    from kiln_ai.adapters.ml_model_list import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id="openai",
+        model_id="original-model",
+        overrides={
+            "name": "different_provider",
+            "model_id": "different-model",
+            "supports_structured_output": True,
+        },
+    )
+
+    provider = user_model_to_provider(entry)
+
+    # name and model_id cannot be overridden - the original values are used
+    assert provider.name == ModelProviderName.openai
+    assert provider.model_id == "original-model"
+    # But other valid overrides are applied
+    assert provider.supports_structured_output is True
+
+
 def test_user_model_to_provider_invalid_builtin():
     """Test user_model_to_provider raises error for invalid builtin provider"""
     from kiln_ai.adapters.ml_model_list import UserModelEntry

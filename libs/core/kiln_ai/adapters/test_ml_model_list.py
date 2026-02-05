@@ -485,18 +485,23 @@ class TestUserModelEntry:
         assert entry.overrides == {}
 
     def test_user_model_entry_invalid_override_field(self):
-        """Test that invalid override fields are rejected"""
-        from pydantic import ValidationError
+        """Test that unknown override fields are allowed for forward compatibility"""
+        # Unknown fields should be stored in UserModelEntry (for forward compatibility)
+        # They will be filtered out when applying overrides in user_model_to_provider
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id="openai",
+            model_id="gpt-custom",
+            overrides={
+                "invalid_field_that_does_not_exist": True,
+                "supports_structured_output": True,
+            },
+        )
 
-        with pytest.raises(ValidationError) as exc_info:
-            UserModelEntry(
-                provider_type="builtin",
-                provider_id="openai",
-                model_id="gpt-custom",
-                overrides={"invalid_field_that_does_not_exist": True},
-            )
-
-        assert "invalid_field_that_does_not_exist" in str(exc_info.value)
+        # The unknown field is stored
+        assert entry.overrides is not None
+        assert entry.overrides["invalid_field_that_does_not_exist"] is True
+        assert entry.overrides["supports_structured_output"] is True
 
     def test_user_model_entry_invalid_provider_type(self):
         """Test that invalid provider_type is rejected"""
@@ -532,25 +537,21 @@ class TestUserModelEntry:
         assert entry.overrides["supports_vision"] is False
 
     def test_user_model_entry_cannot_override_name_or_model_id(self):
-        """Test that 'name' and 'model_id' cannot be in overrides"""
-        from pydantic import ValidationError
+        """Test that 'name' and 'model_id' in overrides are stored but filtered during application
 
-        with pytest.raises(ValidationError) as exc_info:
-            UserModelEntry(
-                provider_type="builtin",
-                provider_id="openai",
-                model_id="gpt-custom",
-                overrides={"name": "Different Name"},
-            )
+        Note: UserModelEntry now allows any keys in overrides for forward compatibility.
+        The filtering to prevent overriding 'name' and 'model_id' happens in user_model_to_provider.
+        This test verifies that unknown fields are stored at the entry level.
+        """
+        # These should be allowed at the UserModelEntry level (for forward compatibility)
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id="openai",
+            model_id="gpt-custom",
+            overrides={"name": "Different Name", "model_id": "different-model"},
+        )
 
-        assert "name" in str(exc_info.value)
-
-        with pytest.raises(ValidationError) as exc_info:
-            UserModelEntry(
-                provider_type="builtin",
-                provider_id="openai",
-                model_id="gpt-custom",
-                overrides={"model_id": "different-model"},
-            )
-
-        assert "model_id" in str(exc_info.value)
+        # The overrides are stored
+        assert entry.overrides is not None
+        assert entry.overrides["name"] == "Different Name"
+        assert entry.overrides["model_id"] == "different-model"

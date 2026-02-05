@@ -6771,6 +6771,13 @@ export interface components {
          *         model_id: The model ID to use with the provider's API
          *         name: Display name (optional, defaults to model_id)
          *         overrides: Property overrides from KilnModelProvider (optional)
+         *
+         *     Note on overrides:
+         *         The overrides field accepts any keys for forward compatibility. When a UserModelEntry
+         *         is converted to a KilnModelProvider via user_model_to_provider(), only valid
+         *         KilnModelProvider fields are applied. Unknown fields are silently ignored.
+         *         This allows new fields to be added to KilnModelProvider without breaking existing
+         *         UserModelEntry data.
          */
         UserModelEntry: {
             /**

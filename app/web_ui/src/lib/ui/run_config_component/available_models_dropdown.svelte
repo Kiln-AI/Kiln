@@ -67,7 +67,8 @@
       : null
     provider_name = model_provider ? model_provider.split("/")[0] : null
     // Use the map to get the provider display name (for custom providers)
-    provider_display_name = model_value_to_provider_name.get(model_provider) || null
+    provider_display_name =
+      model_value_to_provider_name.get(model_provider) || null
   }
 
   $: addRecentModel(model_name, provider_name, provider_display_name)

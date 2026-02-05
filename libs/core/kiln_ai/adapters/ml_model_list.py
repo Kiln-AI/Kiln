@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, List, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -349,6 +349,13 @@ class UserModelEntry(BaseModel):
         model_id: The model ID to use with the provider's API
         name: Display name (optional, defaults to model_id)
         overrides: Property overrides from KilnModelProvider (optional)
+
+    Note on overrides:
+        The overrides field accepts any keys for forward compatibility. When a UserModelEntry
+        is converted to a KilnModelProvider via user_model_to_provider(), only valid
+        KilnModelProvider fields are applied. Unknown fields are silently ignored.
+        This allows new fields to be added to KilnModelProvider without breaking existing
+        UserModelEntry data.
     """
 
     provider_type: Literal["builtin", "custom"]
@@ -356,23 +363,6 @@ class UserModelEntry(BaseModel):
     model_id: str
     name: str | None = None
     overrides: dict[str, Any] | None = None
-
-    @field_validator("overrides")
-    @classmethod
-    def validate_overrides(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        if v is None:
-            return None
-
-        # Get valid field names from KilnModelProvider
-        valid_fields = set(KilnModelProvider.model_fields.keys())
-        # Remove fields that shouldn't be overridden
-        valid_fields -= {"name", "model_id"}
-
-        invalid_fields = set(v.keys()) - valid_fields
-        if invalid_fields:
-            raise ValueError(f"Invalid override fields: {invalid_fields}")
-
-        return v
 
 
 built_in_models: List[KilnModel] = [
