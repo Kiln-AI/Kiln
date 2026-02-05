@@ -28,6 +28,9 @@ class MCPToolReference(BaseModel):
     input_schema: dict | None = Field(
         default=None, description="Snapshot of the MCP tool input schema."
     )
+    output_schema: dict | None = Field(
+        default=None, description="Snapshot of the MCP tool output schema."
+    )
 
 
 class ToolsRunConfig(BaseModel):

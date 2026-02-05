@@ -4877,6 +4877,13 @@ export interface components {
             input_schema?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Output Schema
+             * @description Snapshot of the MCP tool output schema.
+             */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** MaliciousnessProperties */
         MaliciousnessProperties: {
