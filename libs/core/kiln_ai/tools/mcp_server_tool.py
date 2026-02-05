@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from mcp.types import CallToolResult, TextContent
@@ -51,6 +52,14 @@ class MCPServerTool(KilnToolInterface):
         if result.isError:
             raise ValueError(
                 f"Tool {await self.name()} returned an error: {result.content}"
+            )
+
+        # If the tool returns structured content, return it as a JSON string
+        if result.structuredContent is not None:
+            if not isinstance(result.structuredContent, dict):
+                raise ValueError("Tool returned invalid structured content")
+            return ToolCallResult(
+                output=json.dumps(result.structuredContent, ensure_ascii=False)
             )
 
         if not result.content:

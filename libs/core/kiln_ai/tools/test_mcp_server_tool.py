@@ -77,6 +77,34 @@ class TestMCPServerTool:
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_run_structured_content(self, mock_session_manager):
+        """Test run() uses structuredContent when present."""
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+
+        call_result = CallToolResult(
+            content=[],
+            structuredContent={"status": "ok"},
+            isError=False,
+        )
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        result = await tool.run()
+
+        assert result.output == '{"status": "ok"}'
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     async def test_run_empty_content(self, mock_session_manager):
         """Test run() with empty content raises ValueError."""
         mock_session = AsyncMock()
