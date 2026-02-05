@@ -203,6 +203,33 @@ async def test_mcp_adapter_struct_in_struct_out(
     )
 
 
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_emits_single_turn_trace(
+    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+):
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Trace Task",
+        parent=project,
+        instruction="Echo input",
+    )
+
+    run_config = RunConfigProperties(
+        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    _mock_mcp_call(mock_session_manager, "ok")
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+    run, _ = await adapter.invoke_returning_run_output("input")
+
+    assert run.trace == [
+        {"role": "user", "content": "input"},
+        {"role": "assistant", "content": "ok"},
+    ]
+
+
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_mcp_adapter_hooks_mcp_integration():

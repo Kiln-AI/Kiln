@@ -96,19 +96,8 @@ class MCPAdapter(BaseAdapter):
                     f"response is not a string for non-structured task: {run_output.output}"
                 )
 
-        user_message: ChatCompletionUserMessageParam = {
-            "role": "user",
-            "content": input
-            if isinstance(input, str)
-            else json.dumps(input, ensure_ascii=False),
-        }
-        assistant_message: ChatCompletionAssistantMessageParamWrapper = {
-            "role": "assistant",
-            "content": run_output.output
-            if isinstance(run_output.output, str)
-            else json.dumps(run_output.output, ensure_ascii=False),
-        }
-        trace: list[ChatCompletionMessageParam] = [user_message, assistant_message]
+        # Build single turn trace
+        trace = self._build_single_turn_trace(input, run_output.output)
 
         run = self.generate_run(input, input_source, run_output, usage, trace)
 
@@ -122,3 +111,22 @@ class MCPAdapter(BaseAdapter):
             run.id = None
 
         return run, run_output
+
+    # Helpers
+
+    def _build_single_turn_trace(
+        self, input: InputType, output: str | dict
+    ) -> list[ChatCompletionMessageParam]:
+        user_message: ChatCompletionUserMessageParam = {
+            "role": "user",
+            "content": input
+            if isinstance(input, str)
+            else json.dumps(input, ensure_ascii=False),
+        }
+        assistant_message: ChatCompletionAssistantMessageParamWrapper = {
+            "role": "assistant",
+            "content": output
+            if isinstance(output, str)
+            else json.dumps(output, ensure_ascii=False),
+        }
+        return [user_message, assistant_message]
