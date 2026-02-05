@@ -22,6 +22,7 @@ from kiln_ai.adapters.provider_tools import (
     finetune_from_id,
     finetune_provider_model,
     get_all_user_models,
+    get_legacy_custom_models,
     get_model_and_provider,
     kiln_model_provider_from,
     lite_llm_core_config_for_provider,
@@ -1328,11 +1329,12 @@ def mock_config_empty_user_models():
 
 
 def test_get_all_user_models_with_config(mock_config_with_user_models):
-    """Test get_all_user_models returns combined user models from registry and legacy"""
+    """Test get_all_user_models returns only user_model_registry entries (not legacy)"""
 
     models = get_all_user_models()
 
-    assert len(models) == 3
+    # Only user_model_registry entries, not legacy custom_models
+    assert len(models) == 2
 
     # Check builtin user model
     builtin_model = next(m for m in models if m.provider_id == "openai")
@@ -1349,11 +1351,22 @@ def test_get_all_user_models_with_config(mock_config_with_user_models):
     assert custom_model.id == "test-id-2"
     assert custom_model.model_id == "custom-model-1"
 
-    # Check legacy custom model (ID is auto-generated)
-    legacy_model = next(m for m in models if m.provider_id == "groq")
-    assert legacy_model.provider_type == "builtin"
-    assert legacy_model.model_id == "legacy-custom-model"
-    assert legacy_model.id is not None  # Should have auto-generated ID
+
+def test_get_legacy_custom_models(mock_config_with_user_models):
+    """Test get_legacy_custom_models returns parsed legacy custom_models"""
+
+    models = get_legacy_custom_models()
+
+    assert len(models) == 1
+    provider_id, model_id = models[0]
+    assert provider_id == "groq"
+    assert model_id == "legacy-custom-model"
+
+
+def test_get_legacy_custom_models_empty(mock_config_empty_user_models):
+    """Test get_legacy_custom_models returns empty list when no legacy models"""
+    models = get_legacy_custom_models()
+    assert models == []
 
 
 def test_get_all_user_models_empty(mock_config_empty_user_models):
@@ -1583,3 +1596,18 @@ def test_kiln_model_provider_from_user_model():
         assert provider.name == ModelProviderName.openai
         assert provider.model_id == "my-custom-model"
         assert provider.supports_structured_output is True
+
+
+def test_kiln_model_provider_from_legacy_under_builtin_provider(mock_config):
+    """Test kiln_model_provider_from handles legacy 'provider::model' format under builtin provider.
+
+    This covers the case where legacy custom_models are now displayed under their
+    actual built-in provider in the UI, so model_name="openai::custom-model" and
+    provider_name="openai" (not kiln_custom_registry).
+    """
+    provider = kiln_model_provider_from("openai::custom-model", "openai")
+
+    assert provider.name == ModelProviderName.openai
+    assert provider.model_id == "custom-model"
+    assert provider.untested_model is True
+    assert provider.supports_structured_output is False

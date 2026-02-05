@@ -27,7 +27,6 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
-from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
     ollama_base_url,
@@ -35,10 +34,12 @@ from kiln_ai.adapters.ollama_tools import (
 )
 from kiln_ai.adapters.provider_tools import (
     get_all_user_models,
+    get_legacy_custom_models,
     provider_name_from_id,
     provider_warnings,
 )
 from kiln_ai.adapters.reranker_list import built_in_rerankers
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
@@ -308,55 +309,48 @@ def connect_provider_api(app: FastAPI):
         if fine_tuned_models:
             models.append(fine_tuned_models)
 
-        # Add any custom models
-        custom = custom_models()
-        if custom:
-            models.append(custom)
-
         # Add any openai compatible providers
         openai_compatible = openai_compatible_providers()
 
-        # Get user models keyed by provider_id
-        user_models_by_provider = user_models_as_available()
+        # Collect all custom models to merge into provider lists.
+        # Legacy custom_models and user_model_registry are handled separately
+        # but merged the same way (by provider key).
+        models_to_merge: Dict[str, List[ModelDetails]] = {}
 
-        # Merge user models into built-in providers
-        if user_models_by_provider:
+        # Legacy custom_models: keyed by built-in provider_id (e.g., "openai")
+        for key, model_list in legacy_custom_models_as_available().items():
+            models_to_merge.setdefault(key, []).extend(model_list)
+
+        # New user_model_registry: keyed by provider_id (builtin) or provider name (custom)
+        for key, model_list in user_models_as_available().items():
+            models_to_merge.setdefault(key, []).extend(model_list)
+
+        # Merge custom models into their respective provider lists
+        if models_to_merge:
             for provider in models:
                 provider_id_str = str(provider.provider_id)
-                if provider_id_str in user_models_by_provider:
-                    provider.models.extend(user_models_by_provider[provider_id_str])
+                if provider_id_str in models_to_merge:
+                    provider.models.extend(models_to_merge.pop(provider_id_str))
 
-            # Merge user models into openai compatible providers (by provider_name)
+            # Merge into openai compatible providers (by provider_name)
             openai_compatible = [
                 AvailableModels(
                     provider_name=provider.provider_name,
                     provider_id=provider.provider_id,
                     models=provider.models
-                    + user_models_by_provider.get(provider.provider_name, []),
+                    + models_to_merge.pop(provider.provider_name, []),
                 )
                 for provider in openai_compatible
             ]
-            # Also add any custom providers that only have user models (no API-fetched models)
-            for provider_name, user_models_list in user_models_by_provider.items():
-                if not any(p.provider_name == provider_name for p in openai_compatible):
-                    # Check if this is a built-in provider that might have been missed
-                    if provider_name in [str(p) for p in key_providers]:
-                        # It's a built-in provider, add to the main models list
-                        provider_models = next(
-                            (m for m in models if str(m.provider_id) == provider_name),
-                            None,
-                        )
-                        if provider_models:
-                            provider_models.models.extend(user_models_list)
-                    else:
-                        # It's a custom provider with only user models
-                        openai_compatible.append(
-                            AvailableModels(
-                                provider_name=provider_name,
-                                provider_id=ModelProviderName.openai_compatible,
-                                models=user_models_list,
-                            )
-                        )
+            # Any remaining entries are custom providers with only user models
+            for provider_name, model_list in models_to_merge.items():
+                openai_compatible.append(
+                    AvailableModels(
+                        provider_name=provider_name,
+                        provider_id=ModelProviderName.openai_compatible,
+                        models=model_list,
+                    )
+                )
 
         models.extend(openai_compatible)
 
@@ -553,8 +547,31 @@ def connect_provider_api(app: FastAPI):
 
     @app.get("/api/settings/user_models")
     async def get_user_models() -> List[UserModelEntry]:
-        """Returns all user-defined models (new registry + legacy combined)."""
-        return get_all_user_models()
+        """Returns all user-defined models (new registry + legacy combined).
+
+        Includes both user_model_registry entries and legacy custom_models
+        (converted to UserModelEntry for display). Legacy models can be
+        deleted via the tuple method (provider_type/provider_id/model_id).
+        """
+        result = list(get_all_user_models())
+
+        # Include legacy custom_models for display on the management page
+        for provider_id, model_id in get_legacy_custom_models():
+            if not any(
+                m.provider_type == "builtin"
+                and m.provider_id == provider_id
+                and m.model_id == model_id
+                for m in result
+            ):
+                result.append(
+                    UserModelEntry(
+                        provider_type="builtin",
+                        provider_id=provider_id,
+                        model_id=model_id,
+                    )
+                )
+
+        return result
 
     @app.post("/api/settings/user_models")
     async def add_user_model(entry: UserModelEntry) -> JSONResponse:
@@ -588,11 +605,12 @@ def connect_provider_api(app: FastAPI):
         # Add to registry
         registry = Config.shared().user_model_registry or []
 
-        # Check for duplicate
+        # Check for exact duplicate (all identifying fields must match)
         if any(
-            e.get("provider_type") == entry.provider_type
-            and e.get("provider_id") == entry.provider_id
+            e.get("provider_id") == entry.provider_id
             and e.get("model_id") == entry.model_id
+            and e.get("name") == entry.name
+            and e.get("overrides") == (entry.overrides if entry.overrides else None)
             for e in registry
         ):
             raise HTTPException(status_code=400, detail="Model already exists")
@@ -1627,52 +1645,57 @@ def embedding_models_from_ollama_tag(
     return models
 
 
-def custom_models() -> AvailableModels | None:
-    custom_model_ids = Config.shared().custom_models
-    if not custom_model_ids or len(custom_model_ids) == 0:
-        return None
+def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
+    """
+    Returns legacy custom_models keyed by their built-in provider_id for merging
+    into available_models.
 
-    models: List[ModelDetails] = []
-    for model_id in custom_model_ids:
-        try:
-            provider_id = model_id.split("::", 1)[0]
-            model_name = model_id.split("::", 1)[1]
-            models.append(
-                ModelDetails(
-                    id=model_id,
-                    name=f"{provider_name_from_id(provider_id)}: {model_name}",
-                    supports_structured_output=False,
-                    supports_data_gen=False,
-                    supports_logprobs=False,
-                    supports_function_calling=False,
-                    untested_model=True,
-                    suggested_for_data_gen=False,
-                    suggested_for_evals=False,
-                    uncensored=False,
-                    suggested_for_uncensored_data_gen=False,
-                    # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
-                    structured_output_mode=StructuredOutputMode.json_instructions,
-                    supports_vision=False,
-                    supports_doc_extraction=False,
-                    suggested_for_doc_extraction=False,
-                    multimodal_capable=False,
-                    multimodal_mime_types=None,
-                )
+    Legacy custom_models are stored as "provider::model_id" strings in config.
+    They keep that full string as their model ID (for DB history compatibility).
+    They appear under their actual built-in provider with " (Custom)" suffix.
+
+    New custom models should use user_model_registry instead.
+    """
+    legacy_models = get_legacy_custom_models()
+    if not legacy_models:
+        return {}
+
+    by_provider: Dict[str, List[ModelDetails]] = {}
+    for provider_id, model_name in legacy_models:
+        full_model_id = f"{provider_id}::{model_name}"
+        if provider_id not in by_provider:
+            by_provider[provider_id] = []
+        by_provider[provider_id].append(
+            ModelDetails(
+                id=full_model_id,
+                name=f"{model_name} (Custom)",
+                supports_structured_output=False,
+                supports_data_gen=False,
+                supports_logprobs=False,
+                supports_function_calling=False,
+                untested_model=True,
+                suggested_for_data_gen=False,
+                suggested_for_evals=False,
+                uncensored=False,
+                suggested_for_uncensored_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_vision=False,
+                supports_doc_extraction=False,
+                suggested_for_doc_extraction=False,
+                multimodal_capable=False,
+                multimodal_mime_types=None,
             )
-        except Exception:
-            # Continue on to the rest
-            logger.error("Error processing custom model %s", model_id, exc_info=True)
-
-    return AvailableModels(
-        provider_name="Custom Models",
-        provider_id=ModelProviderName.kiln_custom_registry,
-        models=models,
-    )
+        )
+    return by_provider
 
 
 def user_models_as_available() -> Dict[str, List[ModelDetails]]:
     """
-    Returns user models keyed by provider_id for merging into available_models.
+    Returns user_model_registry entries keyed by provider_id for merging into
+    available_models.
+
+    These are the new-format custom models (not legacy custom_models).
+    Legacy custom_models are handled separately by legacy_custom_models_as_available().
 
     Returns:
         - Dict keyed by provider_id (enum value for builtin, provider name for custom)

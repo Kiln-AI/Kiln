@@ -1281,6 +1281,10 @@ export interface paths {
         /**
          * Get User Models
          * @description Returns all user-defined models (new registry + legacy combined).
+         *
+         *     Includes both user_model_registry entries and legacy custom_models
+         *     (converted to UserModelEntry for display). Legacy models can be
+         *     deleted via the tuple method (provider_type/provider_id/model_id).
          */
         get: operations["get_user_models_api_settings_user_models_get"];
         put?: never;

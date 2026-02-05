@@ -28,8 +28,8 @@ from app.desktop.studio_server.provider_api import (
     connect_together,
     connect_vertex,
     connect_wandb,
-    custom_models,
     embedding_models_from_ollama_tag,
+    legacy_custom_models_as_available,
     models_from_ollama_tag,
     openai_compatible_providers,
     openai_compatible_providers_load_cache,
@@ -1514,56 +1514,42 @@ async def test_connect_ollama_does_not_save_unchanged_url():
         mock_config_instance.save_setting.assert_not_called()
 
 
-def test_custom_models():
-    # Mock Config.shared().custom_models
-    mock_custom_models = [
-        "openai::model1",
-        "groq::model2",
-        "invalid_model_format",
-        "openai::model::with::delimiters",
-    ]
+def test_legacy_custom_models_as_available():
+    with patch(
+        "app.desktop.studio_server.provider_api.get_legacy_custom_models"
+    ) as mock_get_legacy:
+        mock_get_legacy.return_value = [
+            ("openai", "model1"),
+            ("groq", "model2"),
+            ("openai", "model::with::delimiters"),
+        ]
 
-    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
-        mock_config_instance = MagicMock()
-        mock_config_instance.custom_models = mock_custom_models
-        mock_config.return_value = mock_config_instance
+        result = legacy_custom_models_as_available()
 
-        result = custom_models()
+        assert len(result) == 2  # Two providers: openai, groq
 
-        assert result is not None
-        assert result.provider_name == "Custom Models"
-        assert result.provider_id == ModelProviderName.kiln_custom_registry
-        assert len(result.models) == 3  # Only valid models should be included
+        # OpenAI models
+        assert len(result["openai"]) == 2
+        assert result["openai"][0].id == "openai::model1"
+        assert result["openai"][0].name == "model1 (Custom)"
+        assert result["openai"][0].supports_structured_output is False
+        assert result["openai"][0].untested_model is True
 
-        # Verify first model details
-        assert result.models[0].id == "openai::model1"
-        assert result.models[0].name == "OpenAI: model1"
-        assert result.models[0].supports_structured_output is False
-        assert result.models[0].supports_data_gen is False
-        assert result.models[0].untested_model is True
+        assert result["openai"][1].id == "openai::model::with::delimiters"
+        assert result["openai"][1].name == "model::with::delimiters (Custom)"
 
-        # Verify second model details
-        assert result.models[1].id == "groq::model2"
-        assert result.models[1].name == "Groq: model2"
-        assert result.models[1].supports_structured_output is False
-        assert result.models[1].supports_data_gen is False
-        assert result.models[1].untested_model is True
+        # Groq models
+        assert len(result["groq"]) == 1
+        assert result["groq"][0].id == "groq::model2"
+        assert result["groq"][0].name == "model2 (Custom)"
 
-        # Verify third model details
-        assert result.models[2].id == "openai::model::with::delimiters"
-        assert result.models[2].name == "OpenAI: model::with::delimiters"
-        assert result.models[2].supports_structured_output is False
-        assert result.models[2].supports_data_gen is False
-        assert result.models[2].untested_model is True
-
-    # Test case: No custom models
-    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
-        mock_config_instance = MagicMock()
-        mock_config_instance.custom_models = []
-        mock_config.return_value = mock_config_instance
-
-        result = custom_models()
-        assert result is None
+    # Test empty
+    with patch(
+        "app.desktop.studio_server.provider_api.get_legacy_custom_models"
+    ) as mock_get_legacy:
+        mock_get_legacy.return_value = []
+        result = legacy_custom_models_as_available()
+        assert result == {}
 
 
 @pytest.mark.asyncio
@@ -3426,6 +3412,221 @@ async def test_get_available_reranker_models(app, client):
             ],
         },
     ]
+
+
+def test_add_user_model_success():
+    """Test adding a user model successfully"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = []
+    mock_config.openai_compatible_providers = [
+        {"name": "my_custom_provider", "base_url": "https://api.example.com"}
+    ]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.post(
+            "/api/settings/user_models",
+            json={
+                "provider_type": "custom",
+                "provider_id": "my_custom_provider",
+                "model_id": "my-model",
+                "name": "My Model",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model added"}
+    assert len(mock_config.user_model_registry) == 1
+    assert mock_config.user_model_registry[0]["model_id"] == "my-model"
+
+
+def test_add_user_model_exact_duplicate_rejected():
+    """Test that an exact duplicate (same provider_id, model_id, name, overrides) is rejected"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = [
+        {
+            "provider_type": "custom",
+            "provider_id": "my_custom_provider",
+            "model_id": "my-model",
+            "name": "My Model",
+            "overrides": None,
+        }
+    ]
+    mock_config.openai_compatible_providers = [
+        {"name": "my_custom_provider", "base_url": "https://api.example.com"}
+    ]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.post(
+            "/api/settings/user_models",
+            json={
+                "provider_type": "custom",
+                "provider_id": "my_custom_provider",
+                "model_id": "my-model",
+                "name": "My Model",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+def test_add_user_model_same_model_id_different_name_allowed():
+    """Test that same model_id with different display name is allowed (not a duplicate)"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = [
+        {
+            "provider_type": "custom",
+            "provider_id": "my_custom_provider",
+            "model_id": "my-model",
+            "name": "My Model V1",
+            "overrides": None,
+        }
+    ]
+    mock_config.openai_compatible_providers = [
+        {"name": "my_custom_provider", "base_url": "https://api.example.com"}
+    ]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.post(
+            "/api/settings/user_models",
+            json={
+                "provider_type": "custom",
+                "provider_id": "my_custom_provider",
+                "model_id": "my-model",
+                "name": "My Model V2",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model added"}
+    assert len(mock_config.user_model_registry) == 2
+
+
+def test_add_user_model_same_model_id_different_overrides_allowed():
+    """Test that same model_id with different overrides is allowed (not a duplicate)"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = [
+        {
+            "provider_type": "custom",
+            "provider_id": "my_custom_provider",
+            "model_id": "my-model",
+            "name": "My Model",
+            "overrides": {"max_tokens": 100},
+        }
+    ]
+    mock_config.openai_compatible_providers = [
+        {"name": "my_custom_provider", "base_url": "https://api.example.com"}
+    ]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.post(
+            "/api/settings/user_models",
+            json={
+                "provider_type": "custom",
+                "provider_id": "my_custom_provider",
+                "model_id": "my-model",
+                "name": "My Model",
+                "overrides": {"max_tokens": 200},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model added"}
+    assert len(mock_config.user_model_registry) == 2
+
+
+def test_add_user_model_same_model_id_different_provider_allowed():
+    """Test that same model_id on a different provider is allowed"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = [
+        {
+            "provider_type": "custom",
+            "provider_id": "provider_a",
+            "model_id": "my-model",
+            "name": None,
+            "overrides": None,
+        }
+    ]
+    mock_config.openai_compatible_providers = [
+        {"name": "provider_a", "base_url": "https://api.a.com"},
+        {"name": "provider_b", "base_url": "https://api.b.com"},
+    ]
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.post(
+            "/api/settings/user_models",
+            json={
+                "provider_type": "custom",
+                "provider_id": "provider_b",
+                "model_id": "my-model",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Model added"}
+    assert len(mock_config.user_model_registry) == 2
+
+
+def test_add_user_model_invalid_custom_provider():
+    """Test that adding a model for a non-existent custom provider fails"""
+    app = FastAPI()
+    connect_provider_api(app)
+    client = TestClient(app)
+
+    mock_config = Mock()
+    mock_config.user_model_registry = []
+    mock_config.openai_compatible_providers = []
+
+    with patch(
+        "app.desktop.studio_server.provider_api.Config.shared",
+        return_value=mock_config,
+    ):
+        response = client.post(
+            "/api/settings/user_models",
+            json={
+                "provider_type": "custom",
+                "provider_id": "nonexistent_provider",
+                "model_id": "my-model",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "not found" in response.json()["detail"]
 
 
 def test_delete_user_model_by_id():

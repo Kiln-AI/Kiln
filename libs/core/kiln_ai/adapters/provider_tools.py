@@ -215,9 +215,14 @@ def kiln_model_provider_from(
     if built_in_model:
         return built_in_model
 
-    # For custom registry, get the provider name and model name from the model id
+    # Legacy custom models: "provider::model_id" format (e.g., "openai::gpt-4o-custom")
+    # Can come from:
+    # - kiln_custom_registry provider (old DB records)
+    # - actual built-in provider (new UI selections where legacy models appear under their provider)
     if provider_name == ModelProviderName.kiln_custom_registry:
         provider_name, name = parse_custom_model_id(name)
+    elif "::" in name:
+        _, name = parse_custom_model_id(name)
     else:
         logger.warning(
             f"Unexpected model/provider pair. Will treat as custom model but check your model settings. Provider: {provider_name}/{name}"
@@ -236,7 +241,6 @@ def kiln_model_provider_from(
         supports_data_gen=False,
         untested_model=True,
         model_id=name,
-        # We don't know the structured output mode for custom models, so we default to json_instructions which is the only one that works everywhere.
         structured_output_mode=StructuredOutputMode.json_instructions,
     )
 
@@ -353,11 +357,14 @@ def finetune_provider_model(
 
 def get_all_user_models() -> list[UserModelEntry]:
     """
-    Returns all user-defined models, combining user_model_registry with legacy custom_models.
+    Returns user-defined models from the user_model_registry config.
+
+    This only returns models from the new user_model_registry format.
+    Legacy custom_models (format "provider::model_id") are handled separately
+    via get_legacy_custom_models() to preserve their stable ID format.
     """
     result = []
 
-    # Load from new registry
     registry = Config.shared().user_model_registry or []
     for entry in registry:
         try:
@@ -365,30 +372,30 @@ def get_all_user_models() -> list[UserModelEntry]:
         except Exception:
             logger.warning(f"Invalid user model entry: {entry}")
 
-    # Load legacy custom_models and convert
+    return result
+
+
+def get_legacy_custom_models() -> list[tuple[str, str]]:
+    """
+    Returns legacy custom_models as a list of (provider_id, model_id) tuples.
+
+    Legacy custom_models are stored in config as "provider::model_id" strings
+    (e.g. "openai::gpt-4o-custom"). These generate stable IDs in the format
+    "provider::model_id" which are stored in the database. Do NOT change the
+    ID format as it would break history matching.
+
+    New custom models should use user_model_registry instead.
+    """
+    result: list[tuple[str, str]] = []
     legacy_models = Config.shared().custom_models or []
     for model_str in legacy_models:
         try:
             parts = model_str.split("::", 1)
             if len(parts) == 2:
                 provider_id, model_id = parts
-                # Check if already in registry (avoid duplicates)
-                if not any(
-                    m.provider_type == "builtin"
-                    and m.provider_id == provider_id
-                    and m.model_id == model_id
-                    for m in result
-                ):
-                    result.append(
-                        UserModelEntry(
-                            provider_type="builtin",
-                            provider_id=provider_id,
-                            model_id=model_id,
-                        )
-                    )
+                result.append((provider_id, model_id))
         except Exception:
             logger.warning(f"Invalid legacy custom model: {model_str}")
-
     return result
 
 
