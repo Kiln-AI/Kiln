@@ -390,6 +390,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Cerebras"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
+            case ModelProviderName.mcp_provider:
+                return "MCP Provider"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -641,6 +643,8 @@ def lite_llm_core_config_for_provider(
         case ModelProviderName.kiln_fine_tune:
             return None
         case ModelProviderName.kiln_custom_registry:
+            return None
+        case ModelProviderName.mcp_provider:
             return None
         case _:
             raise_exhaustive_enum_error(provider_name)

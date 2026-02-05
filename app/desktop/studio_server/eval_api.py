@@ -25,6 +25,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.json_schema import single_string_field_name, string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
+from kiln_ai.datamodel.prompt_id import PromptGenerators, is_frozen_prompt
 from kiln_ai.datamodel.run_config import MCPToolReference, RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
@@ -507,8 +508,8 @@ def connect_evals_api(app: FastAPI):
                 input_schema=tool_input_schema,
             ),
             model_name="mcp_tool",
-            model_provider_name=ModelProviderName.kiln_custom_registry,
-            prompt_id="simple_prompt_builder",
+            model_provider_name=ModelProviderName.mcp_provider,
+            prompt_id=PromptGenerators.SIMPLE,
             structured_output_mode=StructuredOutputMode.default,
         )
 

@@ -87,9 +87,7 @@ class RunConfigProperties(BaseModel):
         kind = data.get("kind")
         if kind in (RunConfigKind.mcp, RunConfigKind.mcp.value):
             data.setdefault("model_name", "mcp_tool")
-            data.setdefault(
-                "model_provider_name", ModelProviderName.kiln_custom_registry
-            )
+            data.setdefault("model_provider_name", ModelProviderName.mcp_provider)
             data.setdefault("prompt_id", "simple_prompt_builder")
             data.setdefault("structured_output_mode", StructuredOutputMode.default)
             data.setdefault("top_p", 1.0)
