@@ -252,7 +252,7 @@
         <div
           class="flex flex-row gap-2 card bg-base-200 py-2 px-4 items-center"
         >
-          <div class="font-medium min-w-24">
+          <div class="font-medium min-w-48">
             {get_provider_display_name(model)}
           </div>
           <div class="grow">

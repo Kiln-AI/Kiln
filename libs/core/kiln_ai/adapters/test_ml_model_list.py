@@ -4,6 +4,7 @@ import pytest
 
 from kiln_ai.adapters.ml_model_list import (
     ModelName,
+    UserModelEntry,
     built_in_models,
     built_in_models_from_provider,
     default_structured_output_mode_for_model_provider,
@@ -426,3 +427,130 @@ def test_unique_providers_per_model():
                 f"2. Intentional design where the same provider offers different model variants\n"
                 f"If this is intentional, the test should be updated to allow multiple entries per provider."
             )
+
+
+class TestUserModelEntry:
+    """Test cases for UserModelEntry Pydantic model"""
+
+    def test_create_valid_user_model_entry_builtin(self):
+        """Test creating a valid UserModelEntry for builtin provider"""
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id="openai",
+            model_id="gpt-custom",
+            name="My Custom Model",
+            overrides={"supports_structured_output": True},
+        )
+
+        assert entry.provider_type == "builtin"
+        assert entry.provider_id == "openai"
+        assert entry.model_id == "gpt-custom"
+        assert entry.name == "My Custom Model"
+        assert entry.overrides == {"supports_structured_output": True}
+
+    def test_create_valid_user_model_entry_custom(self):
+        """Test creating a valid UserModelEntry for custom provider"""
+        entry = UserModelEntry(
+            provider_type="custom",
+            provider_id="MyProvider",
+            model_id="custom-model",
+        )
+
+        assert entry.provider_type == "custom"
+        assert entry.provider_id == "MyProvider"
+        assert entry.model_id == "custom-model"
+        assert entry.name is None
+        assert entry.overrides is None
+
+    def test_user_model_entry_defaults(self):
+        """Test that optional fields default to None"""
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id="groq",
+            model_id="llama-custom",
+        )
+
+        assert entry.name is None
+        assert entry.overrides is None
+
+    def test_user_model_entry_empty_overrides(self):
+        """Test that empty overrides dict is allowed"""
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id="openai",
+            model_id="gpt-custom",
+            overrides={},
+        )
+
+        assert entry.overrides == {}
+
+    def test_user_model_entry_invalid_override_field(self):
+        """Test that invalid override fields are rejected"""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserModelEntry(
+                provider_type="builtin",
+                provider_id="openai",
+                model_id="gpt-custom",
+                overrides={"invalid_field_that_does_not_exist": True},
+            )
+
+        assert "invalid_field_that_does_not_exist" in str(exc_info.value)
+
+    def test_user_model_entry_invalid_provider_type(self):
+        """Test that invalid provider_type is rejected"""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserModelEntry(
+                provider_type="invalid_type",  # type: ignore
+                provider_id="openai",
+                model_id="gpt-custom",
+            )
+
+        assert "provider_type" in str(exc_info.value)
+
+    def test_user_model_entry_overrides_with_valid_fields(self):
+        """Test that valid override fields are accepted"""
+        entry = UserModelEntry(
+            provider_type="builtin",
+            provider_id="openai",
+            model_id="gpt-custom",
+            overrides={
+                "supports_structured_output": True,
+                "supports_data_gen": True,
+                "supports_logprobs": True,
+                "supports_vision": False,
+            },
+        )
+
+        assert entry.overrides is not None
+        assert entry.overrides["supports_structured_output"] is True
+        assert entry.overrides["supports_data_gen"] is True
+        assert entry.overrides["supports_logprobs"] is True
+        assert entry.overrides["supports_vision"] is False
+
+    def test_user_model_entry_cannot_override_name_or_model_id(self):
+        """Test that 'name' and 'model_id' cannot be in overrides"""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserModelEntry(
+                provider_type="builtin",
+                provider_id="openai",
+                model_id="gpt-custom",
+                overrides={"name": "Different Name"},
+            )
+
+        assert "name" in str(exc_info.value)
+
+        with pytest.raises(ValidationError) as exc_info:
+            UserModelEntry(
+                provider_type="builtin",
+                provider_id="openai",
+                model_id="gpt-custom",
+                overrides={"model_id": "different-model"},
+            )
+
+        assert "model_id" in str(exc_info.value)

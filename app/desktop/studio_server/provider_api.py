@@ -315,11 +315,50 @@ def connect_provider_api(app: FastAPI):
 
         # Add any openai compatible providers
         openai_compatible = openai_compatible_providers()
-        models.extend(openai_compatible)
 
-        # Add user models (new registry + legacy combined)
-        user_model_groups = user_models_as_available()
-        models.extend(user_model_groups)
+        # Get user models keyed by provider_id
+        user_models_by_provider = user_models_as_available()
+
+        # Merge user models into built-in providers
+        if user_models_by_provider:
+            for provider in models:
+                provider_id_str = str(provider.provider_id)
+                if provider_id_str in user_models_by_provider:
+                    provider.models.extend(user_models_by_provider[provider_id_str])
+
+            # Merge user models into openai compatible providers (by provider_name)
+            openai_compatible = [
+                AvailableModels(
+                    provider_name=provider.provider_name,
+                    provider_id=provider.provider_id,
+                    models=provider.models
+                    + user_models_by_provider.get(provider.provider_name, []),
+                )
+                for provider in openai_compatible
+            ]
+            # Also add any custom providers that only have user models (no API-fetched models)
+            for provider_name, user_models_list in user_models_by_provider.items():
+                if not any(p.provider_name == provider_name for p in openai_compatible):
+                    # Check if this is a built-in provider that might have been missed
+                    if provider_name in [str(p) for p in key_providers]:
+                        # It's a built-in provider, add to the main models list
+                        provider_models = next(
+                            (m for m in models if str(m.provider_id) == provider_name),
+                            None,
+                        )
+                        if provider_models:
+                            provider_models.models.extend(user_models_list)
+                    else:
+                        # It's a custom provider with only user models
+                        openai_compatible.append(
+                            AvailableModels(
+                                provider_name=provider_name,
+                                provider_id=ModelProviderName.openai_compatible,
+                                models=user_models_list,
+                            )
+                        )
+
+        models.extend(openai_compatible)
 
         return models
 
@@ -1596,19 +1635,28 @@ def custom_models() -> AvailableModels | None:
     )
 
 
-def user_models_as_available() -> List[AvailableModels]:
+def user_models_as_available() -> Dict[str, List[ModelDetails]]:
     """
-    Returns user models grouped by provider for the available_models endpoint.
+    Returns user models keyed by provider_id for merging into available_models.
+
+    Returns:
+        - Dict keyed by provider_id (enum value for builtin, provider name for custom)
+        - Each value is a list of ModelDetails with " (Custom)" suffix on names
     """
     user_models = get_all_user_models()
     if not user_models:
-        return []
+        return {}
 
     # Group by provider
-    by_provider: Dict[tuple[str, str], List[ModelDetails]] = {}
+    by_provider: Dict[str, List[ModelDetails]] = {}
 
     for entry in user_models:
-        key = (entry.provider_type, entry.provider_id)
+        # Determine the key for this model
+        if entry.provider_type == "builtin":
+            key = entry.provider_id  # e.g., "openai"
+        else:
+            key = entry.provider_id  # e.g., "ABC"
+
         if key not in by_provider:
             by_provider[key] = []
 
@@ -1617,8 +1665,8 @@ def user_models_as_available() -> List[AvailableModels]:
             f"user_model::{entry.provider_type}::{entry.provider_id}::{entry.model_id}"
         )
 
-        # Get display name
-        display_name = entry.name or entry.model_id
+        # Get display name with " (Custom)" suffix
+        display_name = (entry.name or entry.model_id) + " (Custom)"
 
         # Determine capabilities from overrides
         overrides = entry.overrides or {}
@@ -1661,23 +1709,7 @@ def user_models_as_available() -> List[AvailableModels]:
             )
         )
 
-    # Create AvailableModels groups
-    result = []
-    for (provider_type, provider_id), models in by_provider.items():
-        if provider_type == "builtin":
-            provider_display = provider_name_from_id(provider_id) + " (Custom)"
-        else:
-            provider_display = provider_id + " (Custom)"
-
-        result.append(
-            AvailableModels(
-                provider_name=provider_display,
-                provider_id=f"user_model::{provider_type}::{provider_id}",
-                models=models,
-            )
-        )
-
-    return result
+    return by_provider
 
 
 def fine_tune_model_structured_output_mode(

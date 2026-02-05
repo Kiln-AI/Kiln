@@ -21,9 +21,21 @@ def litellm_core_provider_config(
         run_config_properties.model_name, run_config_properties.model_provider_name
     )
 
-    # For OpenAI compatible providers, we want to retrieve the underlying provider and update the run config properties to match
+    # Check for user models with custom providers first (before legacy parsing)
     openai_compatible_provider_name = None
-    if run_config_properties.model_provider_name == ModelProviderName.openai_compatible:
+    user_model_provider = find_user_model(run_config_properties.model_name)
+    if (
+        user_model_provider
+        and user_model_provider.openai_compatible_provider_name is not None
+    ):
+        openai_compatible_provider_name = (
+            user_model_provider.openai_compatible_provider_name
+        )
+    # For OpenAI compatible providers (legacy format: provider::model_id)
+    elif (
+        run_config_properties.model_provider_name == ModelProviderName.openai_compatible
+        and not run_config_properties.model_name.startswith("user_model::")
+    ):
         model_id = run_config_properties.model_name
         try:
             openai_compatible_provider_name, model_id = model_id.split("::")
@@ -34,17 +46,6 @@ def litellm_core_provider_config(
         updated_run_config_properties = run_config_properties.model_copy(deep=True)
         updated_run_config_properties.model_name = model_id
         run_config_properties = updated_run_config_properties
-
-    # Check for user models with custom providers
-    if openai_compatible_provider_name is None:
-        user_model_provider = find_user_model(run_config_properties.model_name)
-        if (
-            user_model_provider
-            and user_model_provider.openai_compatible_provider_name is not None
-        ):
-            openai_compatible_provider_name = (
-                user_model_provider.openai_compatible_provider_name
-            )
 
     config = lite_llm_core_config_for_provider(
         core_provider_name, openai_compatible_provider_name

@@ -144,7 +144,20 @@ def core_provider(model_id: str, provider_name: ModelProviderName) -> ModelProvi
     Some provider IDs are wrappers (fine-tunes, custom models). This maps these to runnable providers (openai, ollama, etc)
     """
 
-    # Custom models map to the underlying provider
+    # New user models: user_model::{provider_type}::{provider_id}::{actual_model_id}
+    # Check this first, regardless of what provider_name is (user models can be in any provider list now)
+    if model_id.startswith("user_model::"):
+        parts = model_id.split("::", 4)
+        if len(parts) == 4:
+            _, provider_type, provider_id, _ = parts
+            if provider_type == "custom":
+                return ModelProviderName.openai_compatible
+            elif provider_type == "builtin":
+                if provider_id not in ModelProviderName.__members__:
+                    raise ValueError(f"Invalid provider name: {provider_id}")
+                return ModelProviderName(provider_id)
+
+    # Legacy custom models: provider::model_id (only when using kiln_custom_registry)
     if provider_name is ModelProviderName.kiln_custom_registry:
         provider_name, _ = parse_custom_model_id(model_id)
         return provider_name
