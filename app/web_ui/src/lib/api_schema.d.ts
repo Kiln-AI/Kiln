@@ -1757,6 +1757,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/starred": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Run Config Starred */
+        patch: operations["update_run_config_starred_api_projects__project_id__tasks__task_id__run_config__run_config_id__starred_patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
         parameters: {
             query?: never;
@@ -6543,6 +6560,12 @@ export interface components {
             run_config_properties: components["schemas"]["RunConfigProperties"];
             /** @description A prompt to use for run config. */
             prompt?: components["schemas"]["BasePrompt"] | null;
+            /**
+             * Starred
+             * @description Whether this run config is starred/favourited by the user.
+             * @default false
+             */
+            starred: boolean;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10637,6 +10660,41 @@ export interface operations {
                 "application/json": components["schemas"]["CreateTaskRunConfigRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_run_config_starred_api_projects__project_id__tasks__task_id__run_config__run_config_id__starred_patch: {
+        parameters: {
+            query: {
+                starred: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                run_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

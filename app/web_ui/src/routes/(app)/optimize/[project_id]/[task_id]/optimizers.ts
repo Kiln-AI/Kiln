@@ -56,7 +56,7 @@ export function get_optimizers(
       title: "Add External Tools",
       description:
         "Give your task access to external capabilities like web search, code execution, and system integrations with MCP Tools.",
-      metrics: { [METRIC_IMPACT]: 3, [METRIC_COST_EFFICIENCY]: 4, [METRIC_SIMPLICITY]: 3 },
+      metrics: { [METRIC_IMPACT]: 3, [METRIC_COST_EFFICIENCY]: 4, [METRIC_SIMPLICITY]: 2 },
       on_click: () => {
         window.open("https://docs.kiln.tech/docs/tools-and-mcp", "_blank")
       }

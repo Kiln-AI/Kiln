@@ -32,6 +32,7 @@
   export let info_description: string | undefined = undefined
   export let settings: Partial<ModelDropdownSettings> = {}
   export let error_message: string | null = null
+  export let disabled: boolean = false
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -317,6 +318,7 @@
     bind:error_message
     fancy_select_options={model_options}
     placeholder="Select a model"
+    {disabled}
   />
 
   {#if selected_model_untested}

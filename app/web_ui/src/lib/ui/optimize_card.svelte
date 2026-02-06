@@ -2,8 +2,6 @@
   export let title: string
   export let description: string
   export let metrics: Record<string, number>
-  export let recommended: boolean = false
-  export let recommended_tooltip: string | undefined = undefined
   export let onClick: () => void
 
   function handleKeyPress(event: KeyboardEvent) {

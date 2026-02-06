@@ -3,7 +3,7 @@
   import OptimizeCard from "$lib/ui/optimize_card.svelte"
   import { get_optimizers } from "./optimizers"
   import { page } from "$app/stores"
-  import { onMount, tick } from "svelte"
+  import { onMount } from "svelte"
   import {
     available_tools,
     get_task_composite_id,
@@ -31,6 +31,8 @@
   import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { load_task_run_configs as reload_run_configs } from "$lib/stores/run_configs_store"
+  import { client } from "$lib/api_client"
+  import StarIcon from "$lib/ui/icons/star_icon.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -40,7 +42,7 @@
   let error: KilnError | null = null
   let task: Task | null = null
 
-  type SortableColumn = "name" | "prompt" | "model" | "created_at"
+  type SortableColumn = "starred" | "name" | "prompt" | "model" | "created_at"
   let sortColumn: SortableColumn = "created_at"
   let sortDirection: "asc" | "desc" = "desc"
 
@@ -134,6 +136,10 @@
       let bValue: string | number | Date | null | undefined
 
       switch (column) {
+        case "starred":
+          aValue = a.starred ? 1 : 0
+          bValue = b.starred ? 1 : 0
+          break
         case "name":
           aValue = (a.name || "").toLowerCase()
           bValue = (b.name || "").toLowerCase()
@@ -192,14 +198,50 @@
     create_run_config_dialog?.showClone(config)
   }
 
+  async function toggle_starred(config: TaskRunConfig, event: Event) {
+    event.stopPropagation()
+    if (!config.id) return
+    const new_starred = !config.starred
+    const { error: err } = await client.PATCH(
+      "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/starred",
+      {
+        params: {
+          path: { project_id, task_id, run_config_id: config.id },
+          query: { starred: new_starred },
+        },
+      },
+    )
+    if (err) {
+      console.error("Failed to update starred status:", err)
+      return
+    }
+    run_configs_by_task_composite_id.update((configs) => {
+      const key = get_task_composite_id(project_id, task_id)
+      const updated = (configs[key] || []).map((c) =>
+        c.id === config.id ? { ...c, starred: new_starred } : c,
+      )
+      return { ...configs, [key]: updated }
+    })
+  }
+
   type TableColumn = {
     key: string
     label: string
     sortable: boolean
     sortKey?: SortableColumn
+    class?: string
+    style?: string
   }
 
   const tableColumns: TableColumn[] = [
+    {
+      key: "starred",
+      label: "",
+      sortable: true,
+      sortKey: "starred",
+      style: "width: 1%;",
+      class: "whitespace-nowrap",
+    },
     { key: "name", label: "Name", sortable: true, sortKey: "name" },
     { key: "prompt", label: "Prompt", sortable: true, sortKey: "prompt" },
     { key: "model", label: "Model", sortable: true, sortKey: "model" },
@@ -294,7 +336,7 @@
           Configuration" above.
         </div>
       {:else}
-        <div class="overflow-auto max-h-96 rounded-lg border">
+        <div class="overflow-x-auto overflow-y-hidden rounded-lg border">
           <table class="table">
             <thead>
               <tr>
@@ -306,7 +348,9 @@
                     {@const sortKey = column.sortKey}
                     <th
                       on:click={() => handleSort(sortKey)}
-                      class="hover:bg-base-200 cursor-pointer"
+                      class="hover:bg-base-200 cursor-pointer {column.class ||
+                        ''}"
+                      style={column.style || ""}
                     >
                       {column.label}
                       <span class="inline-block w-3 text-center">
@@ -355,6 +399,16 @@
                       />
                     </td>
                   {/if}
+                  <td class="text-center" on:click|stopPropagation>
+                    <button
+                      class="w-5 h-5 inline-block {config.starred
+                        ? 'text-secondary'
+                        : 'text-base-300 hover:text-base-content/30'}"
+                      on:click={(e) => toggle_starred(config, e)}
+                    >
+                      <StarIcon filled={config.starred} />
+                    </button>
+                  </td>
                   <td class="font-medium">
                     <div class="flex items-center gap-2">
                       {config.name || "Unnamed"}

@@ -46,6 +46,7 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  export let disable_model_selection: boolean = false
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
 
@@ -364,6 +365,7 @@
       settings={updated_model_dropdown_settings}
       bind:error_message={model_dropdown_error_message}
       bind:this={model_dropdown}
+      disabled={disable_model_selection}
     />
   {/if}
   {#if !hide_prompt_selector}

@@ -71,6 +71,10 @@ class TaskRunConfig(KilnParentedModel):
         default=None,
         description="A prompt to use for run config.",
     )
+    starred: bool = Field(
+        default=False,
+        description="Whether this run config is starred/favourited by the user.",
+    )
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
