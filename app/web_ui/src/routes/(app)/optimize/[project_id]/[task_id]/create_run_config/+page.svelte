@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { load_task } from "$lib/stores"
+  import { get_task_composite_id, load_task } from "$lib/stores"
   import type { Task } from "$lib/types"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
@@ -9,6 +9,10 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { goto } from "$app/navigation"
   import Output from "$lib/ui/output.svelte"
+  import {
+    load_task_prompts,
+    prompts_by_task_composite_id,
+  } from "$lib/stores/prompts_store"
 
   interface PromptInfo {
     id: string
@@ -16,12 +20,14 @@
     prompt: string
   }
 
-  // Passing in both prompt info and model info at the same time will have unexpected behavior.
-  export let prompt_info: PromptInfo | undefined = undefined
-  export let model: string | undefined = undefined // e.g. "openrouter/gpt_5_nano"
-
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+
+  // Gotten from URL params. Passing in both prompt info and model info at the same time will have unexpected behavior.
+  let prompt_id: string | undefined = undefined
+  let model: string | undefined = undefined // e.g. "openrouter/gpt_5_nano"
+
+  let prompt_info: PromptInfo | undefined = undefined
 
   let loading = false
   let loading_error: KilnError | null = null
@@ -34,6 +40,19 @@
   onMount(async () => {
     loading = true
     try {
+      model = $page.url.searchParams.get("model") || undefined
+      prompt_id = $page.url.searchParams.get("prompt_id") || undefined
+      if (prompt_id) {
+        await load_task_prompts(project_id, task_id)
+        const found_prompt = $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ]?.prompts?.find((prompt) => prompt.id === prompt_id)
+        if (found_prompt) {
+          prompt_info = found_prompt
+        } else {
+          throw new Error("Prompt not found")
+        }
+      }
       task = await load_task(project_id, task_id)
       if (!task) {
         throw new Error("Task not found")
@@ -70,6 +89,21 @@
       : model
         ? ' with your selected model'
         : ''}."
+    breadcrumbs={model
+      ? [
+          {
+            label: "Models",
+            href: `/models`,
+          },
+        ]
+      : prompt_info
+        ? [
+            {
+              label: "Prompts",
+              href: `/prompts/${project_id}/${task_id}`,
+            },
+          ]
+        : []}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

@@ -31,7 +31,7 @@ export function get_optimizers(
         "Test different models to improve reasoning, structured output, speed, or cost for the same task.",
       metrics: { [METRIC_IMPACT]: 4, [METRIC_COST_EFFICIENCY]: 4, [METRIC_SIMPLICITY]: 1 },
       on_click: () => {
-        goto(`/models`)
+        goto(`/optimize/models`)
       }
     },
     {
