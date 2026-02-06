@@ -94,14 +94,39 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 **Common flags to consider:**
 - `structured_output_mode` – how the model handles JSON output
 - `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
-- `supports_doc_extraction` / `supports_vision` / `multimodal_capable` – if the model handles images/PDFs
-  - **Note:** These flags are NOT always set, even for capable models. Currently only GPT models have these configured in Kiln. Inherit from the predecessor - if the predecessor doesn't have them, the new model shouldn't either unless explicitly requested.
-- `multimodal_mime_types` – list of `KilnMimeType` values it supports
+- `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
 - `reasoning_capable` – for thinking/reasoning models
 - `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
 - `parser` / `formatter` – for models needing special parsing (e.g. R1-style thinking)
 
-#### 2c. `suggested_for_evals` / `suggested_for_data_gen` rules
+#### 2c. Multimodal capabilities
+
+If the model supports any non-text inputs (images, documents, audio, video), configure multimodal flags. These follow a hierarchy:
+
+- Set `multimodal_capable=True` and `supports_doc_extraction=True` if the model supports **one or more** MIME types
+- Set `supports_vision=True` if the model supports **images**
+- If `supports_vision=True`, you can also support PDFs by setting `multimodal_requires_pdf_as_image=True` (and adding `KilnMimeType.PDF` to the MIME type list). This renders PDFs as images before sending them to the model.
+- `KilnMimeType.TXT` and `KilnMimeType.MD` are supported on **all** models that have `multimodal_capable=True` — always include them
+
+**Strategy: start broad, narrow based on test failures.**
+1. Enable a generous set of MIME types based on what the model claims to support
+2. Run the tests
+3. If a test fails because the provider/model **rejects a specific data type**, that's a valid failure — remove that MIME type and re-run
+4. If a test fails for other reasons (timeout, auth, structured output), that's a different issue — don't remove MIME types for non-rejection failures
+
+The full superset of MIME types available (Gemini uses all of these):
+```python
+# documents
+KilnMimeType.PDF, KilnMimeType.CSV, KilnMimeType.TXT, KilnMimeType.HTML, KilnMimeType.MD
+# images
+KilnMimeType.JPG, KilnMimeType.PNG
+# audio
+KilnMimeType.MP3, KilnMimeType.WAV, KilnMimeType.OGG
+# video
+KilnMimeType.MP4, KilnMimeType.MOV
+```
+
+#### 2d. `suggested_for_evals` / `suggested_for_data_gen` rules
 
 **Not every model gets these flags.** Only set them if:
 - The **predecessor** in the same tier already has them (e.g. Opus 4.5 has `suggested_for_evals` → Opus 4.6 should too), OR
@@ -122,7 +147,7 @@ Steps:
 4. Remove the flag (or set it to `False`) on the oldest
 5. Set the flag on the new model
 
-#### 2d. Add to `ModelFamily` enum (only if needed)
+#### 2e. Add to `ModelFamily` enum (only if needed)
 
 Only add a new family if the model vendor is completely new (not already in the enum).
 
@@ -160,6 +185,34 @@ The test key (`-k`) uses the `ModelName` enum value (snake_case).
 - Re-run only the failing test(s) **with `-v`** to get verbose output for debugging
 - Check the error output for structured output issues, API errors, or parameter mismatches
 - Common fixes: change `structured_output_mode`, adjust provider-specific flags, comment out a problematic provider
+
+#### 3c. Multimodal / extraction tests
+
+If the model has `supports_doc_extraction=True`, run the extraction tests separately. These are in `libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py`.
+
+The key test is `test_extract_document_success` — it's parametrized by model+provider AND by MIME type, so it tests each supported type individually. Tests automatically skip MIME types not in the model's `multimodal_mime_types` list.
+
+**Step 1:** Collect the test IDs for the new model to see what will run:
+
+```bash
+uv run pytest --collect-only libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py::test_extract_document_success -q | grep model_enum_name
+```
+
+This will show test IDs like:
+```
+...::test_extract_document_success[application/pdf-text_probe0-claude_opus_4_6-openrouter]
+...::test_extract_document_success[image/png-text_probe5-claude_opus_4_6-anthropic]
+```
+
+**Step 2:** Run the extraction tests for the new model. Use `-k` with the model name to filter:
+
+```bash
+uv run pytest --runpaid --ollama libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py::test_extract_document_success -k "model_enum_name"
+```
+
+**Handling MIME type failures:**
+- If a test fails because the provider **rejects the data type** (e.g. 400 error, unsupported format), that's a valid failure — remove that `KilnMimeType` from the model's `multimodal_mime_types` list and re-run
+- If a test fails for other reasons (timeout, content mismatch, auth), investigate the root cause — don't just remove the MIME type
 
 ### Phase 4 – Discord Announcement
 
