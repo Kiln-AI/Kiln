@@ -1598,14 +1598,11 @@ def test_kiln_model_provider_from_user_model():
         assert provider.supports_structured_output is True
 
 
-def test_kiln_model_provider_from_legacy_under_builtin_provider(mock_config):
-    """Test kiln_model_provider_from handles legacy 'provider::model' format under builtin provider.
-
-    This covers the case where legacy custom_models are now displayed under their
-    actual built-in provider in the UI, so model_name="openai::custom-model" and
-    provider_name="openai" (not kiln_custom_registry).
-    """
-    provider = kiln_model_provider_from("openai::custom-model", "openai")
+def test_kiln_model_provider_from_legacy_under_custom_registry(mock_config):
+    """Test kiln_model_provider_from handles legacy 'provider::model' format under kiln_custom_registry."""
+    provider = kiln_model_provider_from(
+        "openai::custom-model", ModelProviderName.kiln_custom_registry
+    )
 
     assert provider.name == ModelProviderName.openai
     assert provider.model_id == "custom-model"

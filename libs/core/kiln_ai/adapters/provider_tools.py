@@ -216,13 +216,9 @@ def kiln_model_provider_from(
         return built_in_model
 
     # Legacy custom models: "provider::model_id" format (e.g., "openai::gpt-4o-custom")
-    # Can come from:
-    # - kiln_custom_registry provider (old DB records)
-    # - actual built-in provider (new UI selections where legacy models appear under their provider)
+    # These always come through with provider_name=kiln_custom_registry
     if provider_name == ModelProviderName.kiln_custom_registry:
         provider_name, name = parse_custom_model_id(name)
-    elif "::" in name:
-        _, name = parse_custom_model_id(name)
     else:
         logger.warning(
             f"Unexpected model/provider pair. Will treat as custom model but check your model settings. Provider: {provider_name}/{name}"
@@ -241,6 +237,7 @@ def kiln_model_provider_from(
         supports_data_gen=False,
         untested_model=True,
         model_id=name,
+        # The only mode that works on all models. Newer user model registry allows you to set this.
         structured_output_mode=StructuredOutputMode.json_instructions,
     )
 

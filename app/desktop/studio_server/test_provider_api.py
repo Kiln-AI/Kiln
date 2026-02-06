@@ -1526,22 +1526,20 @@ def test_legacy_custom_models_as_available():
 
         result = legacy_custom_models_as_available()
 
-        assert len(result) == 2  # Two providers: openai, groq
+        assert len(result) == 1  # All under kiln_custom_registry
+        models = result["kiln_custom_registry"]
+        assert len(models) == 3
 
-        # OpenAI models
-        assert len(result["openai"]) == 2
-        assert result["openai"][0].id == "openai::model1"
-        assert result["openai"][0].name == "model1 (Custom)"
-        assert result["openai"][0].supports_structured_output is False
-        assert result["openai"][0].untested_model is True
+        assert models[0].id == "openai::model1"
+        assert models[0].name == "model1 (Custom)"
+        assert models[0].supports_structured_output is False
+        assert models[0].untested_model is True
 
-        assert result["openai"][1].id == "openai::model::with::delimiters"
-        assert result["openai"][1].name == "model::with::delimiters (Custom)"
+        assert models[1].id == "groq::model2"
+        assert models[1].name == "model2 (Custom)"
 
-        # Groq models
-        assert len(result["groq"]) == 1
-        assert result["groq"][0].id == "groq::model2"
-        assert result["groq"][0].name == "model2 (Custom)"
+        assert models[2].id == "openai::model::with::delimiters"
+        assert models[2].name == "model::with::delimiters (Custom)"
 
     # Test empty
     with patch(

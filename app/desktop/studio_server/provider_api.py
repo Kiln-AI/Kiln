@@ -317,7 +317,7 @@ def connect_provider_api(app: FastAPI):
         # but merged the same way (by provider key).
         models_to_merge: Dict[str, List[ModelDetails]] = {}
 
-        # Legacy custom_models: keyed by built-in provider_id (e.g., "openai")
+        # Legacy custom_models: keyed by kiln_custom_registry
         for key, model_list in legacy_custom_models_as_available().items():
             models_to_merge.setdefault(key, []).extend(model_list)
 
@@ -1647,12 +1647,12 @@ def embedding_models_from_ollama_tag(
 
 def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
     """
-    Returns legacy custom_models keyed by their built-in provider_id for merging
+    Returns legacy custom_models keyed by "kiln_custom_registry" for merging
     into available_models.
 
     Legacy custom_models are stored as "provider::model_id" strings in config.
     They keep that full string as their model ID (for DB history compatibility).
-    They appear under their actual built-in provider with " (Custom)" suffix.
+    They appear under the "Custom Models" provider group.
 
     New custom models should use user_model_registry instead.
     """
@@ -1660,12 +1660,10 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
     if not legacy_models:
         return {}
 
-    by_provider: Dict[str, List[ModelDetails]] = {}
+    models: List[ModelDetails] = []
     for provider_id, model_name in legacy_models:
         full_model_id = f"{provider_id}::{model_name}"
-        if provider_id not in by_provider:
-            by_provider[provider_id] = []
-        by_provider[provider_id].append(
+        models.append(
             ModelDetails(
                 id=full_model_id,
                 name=f"{model_name} (Custom)",
@@ -1686,7 +1684,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 multimodal_mime_types=None,
             )
         )
-    return by_provider
+    return {"kiln_custom_registry": models}
 
 
 def user_models_as_available() -> Dict[str, List[ModelDetails]]:
