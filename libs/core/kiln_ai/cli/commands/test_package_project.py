@@ -67,7 +67,7 @@ def temp_project(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
         ),
     )
     run_config.save_to_file()
@@ -106,7 +106,7 @@ def temp_project_with_multiple_tasks(tmp_path: Path):
                 model_name="gpt-4o",
                 model_provider_name="openai",
                 prompt_id=PromptGenerators.SIMPLE.value,
-                structured_output_mode=StructuredOutputMode.default,
+                structured_output_mode=StructuredOutputMode.default_v2,
             ),
         )
         run_config.save_to_file()
@@ -161,7 +161,7 @@ def temp_project_with_tools(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
             tools_config=ToolsRunConfig(tools=["kiln_tool::add_numbers"]),
         ),
     )
@@ -198,7 +198,7 @@ def temp_project_with_dynamic_prompt(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name="openai",
             prompt_id=PromptGenerators.FEW_SHOT.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
         ),
     )
     run_config.save_to_file()
@@ -235,7 +235,7 @@ def temp_project_with_kiln_task_tool(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
         ),
     )
     subtask_run_config.save_to_file()
@@ -277,7 +277,7 @@ def temp_project_with_kiln_task_tool(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
             tools_config=ToolsRunConfig(
                 tools=[f"{KILN_TASK_TOOL_ID_PREFIX}{tool_server.id}"]
             ),
@@ -333,7 +333,7 @@ def temp_project_with_mcp_local_tool(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
             tools_config=ToolsRunConfig(
                 tools=[f"{MCP_LOCAL_TOOL_ID_PREFIX}{tool_server.id}::some_tool"]
             ),
@@ -386,7 +386,7 @@ def temp_project_with_mcp_remote_tool(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
             tools_config=ToolsRunConfig(
                 tools=[f"{MCP_REMOTE_TOOL_ID_PREFIX}{tool_server.id}::some_tool"]
             ),
@@ -426,7 +426,7 @@ def temp_project_with_rag_tool(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
             tools_config=ToolsRunConfig(tools=[f"{RAG_TOOL_ID_PREFIX}some_rag_config"]),
         ),
     )
@@ -463,7 +463,7 @@ def temp_project_with_builtin_tool(tmp_path: Path):
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
-            structured_output_mode=StructuredOutputMode.default,
+            structured_output_mode=StructuredOutputMode.default_v2,
             tools_config=ToolsRunConfig(tools=[KilnBuiltInToolId.ADD_NUMBERS.value]),
         ),
     )

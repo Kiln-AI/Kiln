@@ -254,6 +254,8 @@ export function structuredOutputModeToString(
   switch (mode) {
     case "default":
       return "Default (Legacy)"
+    case "default_v2":
+      return "Default"
     case "json_schema":
       return "JSON Schema"
     case "function_calling_weak":

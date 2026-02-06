@@ -356,7 +356,7 @@ async def test_start_success(
         prompt_id="simple_prompt_builder",
         temperature=0.7,
         top_p=0.9,
-        structured_output_mode=StructuredOutputMode.default,
+        structured_output_mode=StructuredOutputMode.default_v2,
     )
     mock_dataset_id = "dataset-123"
     mock_model_id = "ft-model-123"
@@ -393,7 +393,9 @@ async def test_start_success(
         assert fireworks_finetune.datamodel.properties["endpoint_version"] == "v2"
         # Verify run_config.structured_output_mode is set correctly
         expected_run_config_mode = (
-            expected_mode if expected_mode is not None else StructuredOutputMode.default
+            expected_mode
+            if expected_mode is not None
+            else StructuredOutputMode.default_v2
         )
         assert (
             fireworks_finetune.datamodel.run_config.structured_output_mode

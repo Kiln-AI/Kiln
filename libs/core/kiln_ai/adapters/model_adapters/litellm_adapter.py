@@ -329,24 +329,44 @@ class LiteLlmAdapter(BaseAdapter):
             case StructuredOutputMode.json_instruction_and_object:
                 # We set response_format to json_object and also set json instructions in the prompt
                 return {"response_format": {"type": "json_object"}}
-            case StructuredOutputMode.default:
+            case StructuredOutputMode.default_legacy:
                 provider_name = self.run_config.model_provider_name
-                if provider_name == ModelProviderName.ollama:
-                    # Ollama added json_schema to all models: https://ollama.com/blog/structured-outputs
-                    return self.json_schema_response_format()
-                elif provider_name == ModelProviderName.docker_model_runner:
-                    # Docker Model Runner uses OpenAI-compatible API with JSON schema support
-                    return self.json_schema_response_format()
-                else:
-                    # Default to function calling -- it's older than the other modes. Higher compatibility.
-                    # Strict isn't widely supported yet, so we don't use it by default unless it's OpenAI.
-                    strict = provider_name == ModelProviderName.openai
-                    return self.tool_call_params(strict=strict)
+
+                # OpenAI requires strict function calling while most other providers do not
+                strict = provider_name == ModelProviderName.openai
+
+                # Older default is function calling. JSON schema is newer and more powerful. However we don't want to change behaviour for existing saved run configs.
+                default = self.tool_call_params(strict=strict)
+
+                return self.default_for_provider(provider_name, default)
+            case StructuredOutputMode.default_v2:
+                # New default is json schema -- it has taken over as the preferred mode.
+                provider_name = self.run_config.model_provider_name
+                return self.default_for_provider(
+                    provider_name, self.json_schema_response_format()
+                )
             case StructuredOutputMode.unknown:
                 # See above, but this case should never happen.
                 raise ValueError("Structured output mode is unknown.")
             case _:
                 raise_exhaustive_enum_error(structured_output_mode)
+
+    def default_for_provider(
+        self, provider_name: ModelProviderName, default: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Return the default response format for a provider if the provider has a strong preference for one mode over a default.
+
+        Some like Ollama and Docker Model Runner add json_schema to all models via constrained decoding, so we can use that by default.
+        """
+        if (
+            provider_name == ModelProviderName.ollama
+            or provider_name == ModelProviderName.docker_model_runner
+        ):
+            # https://ollama.com/blog/structured-outputs
+            return self.json_schema_response_format()
+        else:
+            return default
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task.output_schema()

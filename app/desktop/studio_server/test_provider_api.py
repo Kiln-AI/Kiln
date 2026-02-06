@@ -1085,7 +1085,7 @@ async def test_get_available_models_ollama_exception(app, client):
                     "suggested_for_uncensored_data_gen": False,
                     "supports_logprobs": False,
                     "supports_function_calling": True,
-                    "structured_output_mode": "default",
+                    "structured_output_mode": "default_v2",
                     "task_filter": None,
                     "untested_model": False,
                     "suggested_for_data_gen": False,

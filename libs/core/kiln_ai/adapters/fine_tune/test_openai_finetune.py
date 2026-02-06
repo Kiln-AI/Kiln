@@ -395,7 +395,7 @@ async def test_start_success(
         prompt_id="simple_prompt_builder",
         temperature=0.7,
         top_p=0.9,
-        structured_output_mode=StructuredOutputMode.default,
+        structured_output_mode=StructuredOutputMode.default_v2,
     )
 
     # Mock parameters
@@ -450,7 +450,9 @@ async def test_start_success(
         assert openai_finetune.datamodel.base_model_id == "gpt-4o-mini-2024-07-18"
         # Verify run_config.structured_output_mode is set correctly
         expected_run_config_mode = (
-            expected_mode if expected_mode is not None else StructuredOutputMode.default
+            expected_mode
+            if expected_mode is not None
+            else StructuredOutputMode.default_v2
         )
         assert (
             openai_finetune.datamodel.run_config.structured_output_mode

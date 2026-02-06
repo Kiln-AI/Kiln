@@ -124,7 +124,7 @@ async def test_response_format_options_json_mode(config, mock_task, mode):
 @pytest.mark.parametrize(
     "mode",
     [
-        StructuredOutputMode.default,
+        StructuredOutputMode.default_legacy,
         StructuredOutputMode.function_calling,
     ],
 )
@@ -161,10 +161,15 @@ async def test_response_format_options_json_instructions(config, mock_task, mode
 
 
 @pytest.mark.asyncio
-async def test_response_format_options_json_schema(config, mock_task):
-    config.run_config_properties.structured_output_mode = (
-        StructuredOutputMode.json_schema
-    )
+@pytest.mark.parametrize(
+    "mode",
+    [
+        StructuredOutputMode.default_v2,
+        StructuredOutputMode.json_schema,
+    ],
+)
+async def test_response_format_options_json_schema(config, mock_task, mode):
+    config.run_config_properties.structured_output_mode = mode
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     with (

@@ -272,7 +272,7 @@ class KilnModelProvider(BaseModel):
     suggested_for_data_gen: bool = False
     untested_model: bool = False
     provider_finetune_id: str | None = None
-    structured_output_mode: StructuredOutputMode = StructuredOutputMode.default
+    structured_output_mode: StructuredOutputMode = StructuredOutputMode.default_v2
     parser: ModelParserID | None = None
     formatter: ModelFormatterID | None = None
     reasoning_capable: bool = False
@@ -5926,11 +5926,11 @@ def built_in_models_from_provider(
 def default_structured_output_mode_for_model_provider(
     model_name: str,
     provider: ModelProviderName,
-    default: StructuredOutputMode = StructuredOutputMode.default,
+    default: StructuredOutputMode = StructuredOutputMode.default_v2,
     disallowed_modes: List[StructuredOutputMode] = [],
 ) -> StructuredOutputMode:
     """
-    We don't expose setting this manually in the UI, so pull a recommended mode from ml_model_list
+    Pull a recommended mode from ml_model_list
     """
     try:
         # Convert string to ModelName enum

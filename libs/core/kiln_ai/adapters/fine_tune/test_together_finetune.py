@@ -321,7 +321,7 @@ async def test_start_success(
         prompt_id="simple_prompt_builder",
         temperature=0.7,
         top_p=0.9,
-        structured_output_mode=StructuredOutputMode.default,
+        structured_output_mode=StructuredOutputMode.default_v2,
     )
 
     # Mock file ID from generate_and_upload_jsonl
@@ -374,7 +374,9 @@ async def test_start_success(
         assert together_finetune.datamodel.fine_tune_model_id == "model-123"
         # Verify run_config.structured_output_mode is set correctly
         expected_run_config_mode = (
-            expected_mode if expected_mode is not None else StructuredOutputMode.default
+            expected_mode
+            if expected_mode is not None
+            else StructuredOutputMode.default_v2
         )
         assert (
             together_finetune.datamodel.run_config.structured_output_mode

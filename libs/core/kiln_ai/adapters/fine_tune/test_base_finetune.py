@@ -84,7 +84,7 @@ def basic_run_config():
         prompt_id="simple_prompt_builder",
         temperature=0.7,
         top_p=0.9,
-        structured_output_mode=StructuredOutputMode.default,
+        structured_output_mode=StructuredOutputMode.default_v2,
     )
 
 
@@ -240,7 +240,7 @@ async def test_create_and_start_with_run_config(mock_dataset):
         prompt_id="simple_prompt_builder",
         temperature=0.7,
         top_p=0.9,
-        structured_output_mode=StructuredOutputMode.default,
+        structured_output_mode=StructuredOutputMode.default_v2,
     )
 
     _, datamodel = await MockFinetune.create_and_start(

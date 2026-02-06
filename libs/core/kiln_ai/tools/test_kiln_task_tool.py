@@ -202,7 +202,7 @@ class TestKilnTaskTool:
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                         prompt_id="simple_prompt_builder",
-                        structured_output_mode=StructuredOutputMode.default,
+                        structured_output_mode=StructuredOutputMode.default_legacy,
                     ),
                 ),
             )
@@ -217,7 +217,11 @@ class TestKilnTaskTool:
 
     @pytest.mark.asyncio
     async def test_run_with_structured_input(
-        self, kiln_task_tool, mock_context, mock_task, mock_run_config
+        self,
+        kiln_task_tool,
+        mock_context,
+        mock_task,
+        mock_run_config,
     ):
         """Test the run method with structured input."""
         # Setup task with JSON schema
@@ -256,7 +260,7 @@ class TestKilnTaskTool:
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                         prompt_id="simple_prompt_builder",
-                        structured_output_mode=StructuredOutputMode.default,
+                        structured_output_mode=StructuredOutputMode.default_legacy,
                     ),
                 ),
             )

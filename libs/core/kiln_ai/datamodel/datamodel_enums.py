@@ -34,11 +34,13 @@ class StructuredOutputMode(str, Enum):
     - json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.
     - json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).
     - json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.
-    - default: let the adapter decide (legacy, do not use for new use cases)
+    - default_v2: a newer better default, introduced Jan 2026. Prefers json_schema over tool calling as everyone went that way. New constant as we want prior saved run configs to be consistent.
+    - default_legacy: let the adapter decide. Legacy, do not use for new use cases. Prefers older tool calling style that's out of fashion.
     - unknown: used for cases where the structured output mode is not known (on old models where it wasn't saved). Should lookup best option at runtime.
     """
 
-    default = "default"
+    default_legacy = "default"
+    default_v2 = "default_v2"
     json_schema = "json_schema"
     function_calling_weak = "function_calling_weak"
     function_calling = "function_calling"

@@ -47,7 +47,7 @@ class TestDefaultStructuredOutputModeForModelProvider:
             model_name="invalid_model_name",
             provider=ModelProviderName.openai,
         )
-        assert result == StructuredOutputMode.default
+        assert result == StructuredOutputMode.default_v2
 
     def test_invalid_model_name_returns_custom_default(self):
         """Test that invalid model name returns custom default when specified"""
@@ -65,7 +65,7 @@ class TestDefaultStructuredOutputModeForModelProvider:
             model_name="gpt_4_1",
             provider=ModelProviderName.gemini_api,  # GPT 4.1 doesn't have gemini_api provider
         )
-        assert result == StructuredOutputMode.default
+        assert result == StructuredOutputMode.default_v2
 
     def test_disallowed_modes_returns_default(self):
         """Test that when provider's mode is in disallowed_modes, returns default"""
@@ -75,7 +75,7 @@ class TestDefaultStructuredOutputModeForModelProvider:
             provider=ModelProviderName.openai,
             disallowed_modes=[StructuredOutputMode.json_schema],
         )
-        assert result == StructuredOutputMode.default
+        assert result == StructuredOutputMode.default_v2
 
     def test_disallowed_modes_with_custom_default(self):
         """Test disallowed modes with custom default value"""
@@ -107,7 +107,7 @@ class TestDefaultStructuredOutputModeForModelProvider:
                 StructuredOutputMode.function_calling,
             ],
         )
-        assert result == StructuredOutputMode.default
+        assert result == StructuredOutputMode.default_v2
 
     def test_reasoning_model_with_different_providers(self):
         """Test reasoning models that have different structured output modes"""
@@ -132,7 +132,7 @@ class TestDefaultStructuredOutputModeForModelProvider:
                 ModelProviderName.gemini_api,
                 StructuredOutputMode.json_schema,
             ),
-            ("llama_3_1_8b", ModelProviderName.groq, StructuredOutputMode.default),
+            ("llama_3_1_8b", ModelProviderName.groq, StructuredOutputMode.default_v2),
             (
                 "qwq_32b",
                 ModelProviderName.together_ai,
