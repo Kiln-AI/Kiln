@@ -31,9 +31,6 @@
   import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { load_task_run_configs as reload_run_configs } from "$lib/stores/run_configs_store"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
-  import type { Optimizer } from "./optimizers"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -50,26 +47,6 @@
   let selected_run_config: TaskRunConfig | null = null
   let run_config_details_dialog: RunConfigDetailsDialog | null = null
   let create_run_config_dialog: CreateNewRunConfigDialog | null = null
-  let optimizer_dialog: Dialog | null = null
-  let selected_optimizer: Optimizer | null = null
-  let optimizer_selected_run_config_id: string | null = null
-  let optimizer_create_run_config_dialog: CreateNewRunConfigDialog | null = null
-
-  $: if (optimizer_selected_run_config_id === "__create_new_run_config__") {
-    optimizer_create_run_config_dialog?.show()
-  }
-
-  async function handleOptimizerClick(optimizer: Optimizer) {
-    selected_optimizer = optimizer
-    optimizer_selected_run_config_id = null
-    await tick()
-    optimizer_dialog?.show()
-  }
-
-  function handleOptimizerNext() {
-    return true
-    // TODO: Handle next step based on selected optimizer and run config
-  }
 
   const MAX_SELECTIONS = 6
   let select_mode: boolean = false
@@ -238,7 +215,7 @@
 
 <AppPage
   title="Optimize"
-  subtitle="Compare and optimize different run configurations for your task."
+  subtitle="Optimize and compare different run configurations for your task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
   action_buttons={[
@@ -258,7 +235,29 @@
     </div>
   {:else}
     <div class="flex flex-col gap-4">
-      <div class="flex flex-col sm:flex-row gap-4 sm:gap-8">
+      <div>
+        <h2 class="text-lg font-medium text-gray-900">
+          Optimization Strategies
+        </h2>
+        <p class="text-sm text-gray-500">
+          Strategies for optimizing your task, highlighting tradeoffs between
+          impact, cost efficiency, and simplicity.
+        </p>
+      </div>
+      <div
+        class="grid gap-6"
+        style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
+      >
+        {#each optimizers as optimizer}
+          <OptimizeCard
+            title={optimizer.title}
+            description={optimizer.description}
+            metrics={optimizer.metrics}
+            onClick={optimizer.on_click}
+          />
+        {/each}
+      </div>
+      <div class="flex flex-col sm:flex-row gap-4 sm:gap-8 mt-4">
         <div class="grow">
           <h2 class="text-lg font-medium text-gray-900">Run Configurations</h2>
           <div class="text-sm text-gray-500">
@@ -418,30 +417,6 @@
           </table>
         </div>
       {/if}
-      <div class="mt-4">
-        <h2 class="text-lg font-medium text-gray-900">
-          Optimization Strategies
-        </h2>
-        <p class="text-sm text-gray-500">
-          Strategies to consider when optimizing your task, highlighting
-          tradeoffs between effort and cost.
-        </p>
-      </div>
-      <div
-        class="grid gap-6"
-        style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
-      >
-        {#each optimizers as optimizer}
-          <OptimizeCard
-            title={optimizer.title}
-            description={optimizer.description}
-            metrics={optimizer.metrics}
-            recommended={optimizer.recommended}
-            recommended_tooltip={optimizer.recommended_tooltip}
-            onClick={() => handleOptimizerClick(optimizer)}
-          />
-        {/each}
-      </div>
     </div>
   {/if}
 </AppPage>
@@ -461,49 +436,3 @@
   {task}
   new_run_config_created={handleNewRunConfigCreated}
 />
-
-{#if selected_optimizer && task}
-  <Dialog
-    bind:this={optimizer_dialog}
-    title={`Optimization: ${selected_optimizer.title}`}
-    sub_subtitle={selected_optimizer.description}
-    action_buttons={[
-      { label: "Cancel", isCancel: true },
-      {
-        label: "Next",
-        isPrimary: true,
-        disabled:
-          !optimizer_selected_run_config_id ||
-          optimizer_selected_run_config_id === "__create_new_run_config__",
-        action: handleOptimizerNext,
-      },
-    ]}
-  >
-    <div class="py-4">
-      <SavedRunConfigurationsDropdown
-        title="Run Configuration to Optimize"
-        description="A clone of the selected run configuration will be created and used for optimization."
-        {project_id}
-        current_task={task}
-        bind:selected_run_config_id={optimizer_selected_run_config_id}
-        run_page={false}
-      />
-    </div>
-  </Dialog>
-
-  <CreateNewRunConfigDialog
-    bind:this={optimizer_create_run_config_dialog}
-    {project_id}
-    {task}
-    new_run_config_created={(run_config) => {
-      if (run_config.id) {
-        optimizer_selected_run_config_id = run_config.id
-      }
-    }}
-    on:close={() => {
-      if (optimizer_selected_run_config_id === "__create_new_run_config__") {
-        optimizer_selected_run_config_id = null
-      }
-    }}
-  />
-{/if}

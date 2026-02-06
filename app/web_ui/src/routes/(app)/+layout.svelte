@@ -244,17 +244,6 @@
         <ul>
           <li class="menu-md menu-nested">
             <a
-              href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-              class={section == Section.FineTune ? "active" : ""}
-            >
-              <div class="h-6 w-6 mr-2">
-                <FinetuneIcon />
-              </div>
-              Fine Tune
-            </a>
-          </li>
-          <li class="menu-md menu-nested">
-            <a
               href={`/prompts/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
               class={section == Section.Prompts ? "active" : ""}
             >
@@ -275,17 +264,6 @@
                 />
               </svg>
               Prompts
-            </a>
-          </li>
-          <li class="menu-md menu-nested">
-            <a
-              href={`/docs/${$ui_state.current_project_id}`}
-              class={section == Section.Documents ? "active" : ""}
-            >
-              <div class="h-6 w-6 mr-2">
-                <FileIcon kind="document" />
-              </div>
-              Docs &amp; Search
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -319,6 +297,28 @@
                 />
               </svg>
               Models
+            </a>
+          </li>
+          <li class="menu-md menu-nested">
+            <a
+              href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+              class={section == Section.FineTune ? "active" : ""}
+            >
+              <div class="h-6 w-6 mr-2">
+                <FinetuneIcon />
+              </div>
+              Fine Tune
+            </a>
+          </li>
+          <li class="menu-md menu-nested">
+            <a
+              href={`/docs/${$ui_state.current_project_id}`}
+              class={section == Section.Documents ? "active" : ""}
+            >
+              <div class="h-6 w-6 mr-2">
+                <FileIcon kind="document" />
+              </div>
+              Docs &amp; Search
             </a>
           </li>
         </ul>
