@@ -4,6 +4,7 @@
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { ModelProviderName } from "$lib/types"
   import AppPage from "../app_page.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import {
     available_models,
     load_available_models,
@@ -462,6 +463,22 @@
     return "Connect the provider to use this model"
   }
 
+  let connect_provider_dialog: Dialog | null = null
+  let connect_provider_model: Model | null = null
+
+  function findFirstConnectedProvider(model: Model): Provider | null {
+    return (
+      model.providers.find((p) =>
+        model_provider_is_connected(
+          p.name,
+          model.name,
+          p.model_id,
+          p.provider_finetune_id,
+        ),
+      ) || null
+    )
+  }
+
   function handleKeyPress(event: KeyboardEvent, model: Model) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
@@ -470,9 +487,14 @@
   }
 
   function onClick(model: Model) {
-    const provider = model.providers[0]
+    const connectedProvider = findFirstConnectedProvider(model)
+    if (!connectedProvider) {
+      connect_provider_model = model
+      connect_provider_dialog?.show()
+      return
+    }
     goto(
-      `/optimize/${project_id}/${task_id}/create_run_config?model=${encodeURIComponent(`${provider.name}/${model.name}`)}`,
+      `/optimize/${project_id}/${task_id}/create_run_config?model=${encodeURIComponent(`${connectedProvider.name}/${model.name}`)}`,
     )
   }
 </script>
@@ -907,3 +929,52 @@
     {/if}
   </AppPage>
 </div>
+
+<Dialog
+  bind:this={connect_provider_dialog}
+  title="Connect to Provider"
+  action_buttons={[
+    {
+      label: "Cancel",
+      isCancel: true,
+    },
+    {
+      label: "Connect Provider",
+      isPrimary: true,
+      action: () => {
+        goto("/settings/providers")
+        return true
+      },
+    },
+  ]}
+>
+  <div class="flex flex-col gap-4">
+    <p class="text-sm text-gray-600">
+      To use <span class="font-medium"
+        >{connect_provider_model?.friendly_name ?? "this model"}</span
+      >, please connect at least one of its providers.
+    </p>
+    {#if connect_provider_model}
+      <div class="flex flex-col gap-2">
+        <p class="text-sm font-medium text-gray-700">Available providers</p>
+        {#each connect_provider_model.providers as provider}
+          <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+            <img
+              src={get_provider_image(provider.name)}
+              alt={provider.name}
+              class="w-6 h-6 rounded"
+              on:error={(e) => {
+                if (e.target instanceof HTMLImageElement) {
+                  e.target.style.display = "none"
+                }
+              }}
+            />
+            <span class="text-sm text-gray-700"
+              >{provider_name_from_id(provider.name)}</span
+            >
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+</Dialog>
