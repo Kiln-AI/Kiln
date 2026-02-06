@@ -41,7 +41,7 @@
   // Override form state (Advanced section)
   // Use "" for default/unset state so fancy_select shows the default option selected
   let override_supports_structured_output: string = ""
-  let override_structured_output_mode: string = ""
+  let override_structured_output_mode: string = "json_schema"
   let override_supports_logprobs: string = ""
   let override_supports_function_calling: string = ""
   let override_supports_vision: string = ""
@@ -85,15 +85,21 @@
     {
       options: [
         {
-          label: "Default",
-          value: "",
-          description: "Use the option most commonly seen on this provider.",
-        },
-        {
           label: "JSON Schema",
           value: "json_schema",
           description:
-            "Provider enforces output matches a JSON schema. Most reliable.",
+            "Provider enforces output matches a JSON schema. Most reliable if supported.",
+        },
+        {
+          label: "Function Calling (Strict)",
+          value: "function_calling",
+          description: "Request JSON using function calling capabilities.",
+        },
+        {
+          label: "Function Calling (Weak)",
+          value: "function_calling_weak",
+          description:
+            "Request JSON using function calling capabilities, but with weaker schema enforcement.",
         },
         {
           label: "JSON Mode",
@@ -102,9 +108,22 @@
             "Provider guarantees valid JSON, but not a specific schema.",
         },
         {
+          label: "JSON Instructions + JSON Mode",
+          value: "json_instruction_and_object",
+          description:
+            "Add prompt instructions for schema, plus API JSON mode for valid JSON.",
+        },
+        {
           label: "JSON Instructions",
           value: "json_instructions",
-          description: "Request JSON output via prompt instructions only.",
+          description:
+            "Add prompt instructions to request JSON matching the schema. No API capabilities are used.",
+        },
+        {
+          label: "JSON Custom Instructions",
+          value: "json_custom_instructions",
+          description:
+            "Model outputs JSON with custom instructions already in the system prompt. Don't append additional JSON instructions.",
         },
       ],
     },
@@ -533,7 +552,7 @@
             id="structured_output_mode"
             inputType="fancy_select"
             fancy_select_options={structured_output_mode_options}
-            info_description="JSON Schema typically works best on newer models, but leave default for older models."
+            info_description="JSON Schema typically works best on newer models. See API docs from the providers for the best mode."
             bind:value={override_structured_output_mode}
           />
 
