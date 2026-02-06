@@ -106,6 +106,7 @@ If the model supports any non-text inputs (images, documents, audio, video), con
 - Set `multimodal_capable=True` and `supports_doc_extraction=True` if the model supports **one or more** MIME types
 - Set `supports_vision=True` if the model supports **images**
 - If `supports_vision=True`, you can also support PDFs by setting `multimodal_requires_pdf_as_image=True` (and adding `KilnMimeType.PDF` to the MIME type list). This renders PDFs as images before sending them to the model.
+- **OpenRouter:** always set `multimodal_requires_pdf_as_image=True` — see OpenRouter quirks section for why.
 - `KilnMimeType.TXT` and `KilnMimeType.MD` are supported on **all** models that have `multimodal_capable=True` — always include them
 
 **Strategy: start broad, narrow based on test failures.**
@@ -273,6 +274,7 @@ Use ⚠️ for features that are flaky or have caveats. Use ❌ for unsupported 
 - For reasoning models: may need `require_openrouter_reasoning=True`
 - Some models need `openrouter_skip_required_parameters=True`
 - Logprobs: `logprobs_openrouter_options=True` if supported
+- **Always set `multimodal_requires_pdf_as_image=True` on OpenRouter providers.** OpenRouter claims to use the model's native PDF capability but in practice routes PDFs through Mistral OCR, which adds metadata annotations that LiteLLM can't parse, causing validation failures. Sending PDFs as images bypasses this.
 
 ### Qwen3 / Thinking Models
 - Thinking variants need `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
