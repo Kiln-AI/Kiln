@@ -3,9 +3,29 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
+from kiln_ai.datamodel.task import TaskRunConfig
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
+
+
+def _run_config_from_prompt_id(
+    project_id: str, task_id: str, prompt_id: str
+) -> TaskRunConfig:
+    """Look up a TaskRunConfig from a frozen prompt ID like task_run_config::proj::task::rc_id."""
+    parts = prompt_id.split("::")
+    if len(parts) != 4:
+        raise HTTPException(
+            status_code=400, detail="Invalid frozen prompt ID format"
+        )
+    run_config_id = parts[3]
+    parent_task = task_from_id(project_id, task_id)
+    run_config = next(
+        (rc for rc in parent_task.run_configs() if rc.id == run_config_id), None
+    )
+    if not run_config:
+        raise HTTPException(status_code=404, detail="Run config not found")
+    return run_config
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -103,6 +123,7 @@ def connect_prompt_api(app: FastAPI):
                 prompts.append(
                     ApiPrompt(
                         id=f"task_run_config::{project_id}::{task_id}::{task_run_config.id}",
+                        created_at=task_run_config.created_at,
                         **properties,
                     )
                 )
@@ -115,12 +136,32 @@ def connect_prompt_api(app: FastAPI):
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
     async def update_prompt(
         project_id: str, task_id: str, prompt_id: str, prompt_data: PromptUpdateRequest
-    ) -> Prompt:
-        prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
-        prompt.name = prompt_data.name
-        prompt.description = prompt_data.description
-        prompt.save_to_file()
-        return prompt
+    ) -> ApiPrompt:
+        if prompt_id.startswith("task_run_config::"):
+            run_config = _run_config_from_prompt_id(
+                project_id, task_id, prompt_id
+            )
+            if not run_config.prompt:
+                raise HTTPException(
+                    status_code=404, detail="Run config has no frozen prompt"
+                )
+            run_config.prompt = run_config.prompt.model_copy(
+                update={"name": prompt_data.name}
+            )
+            run_config.save_to_file()
+            properties = run_config.prompt.model_dump(exclude={"id"})
+            return ApiPrompt(
+                id=prompt_id,
+                created_at=run_config.created_at,
+                **properties,
+            )
+        else:
+            prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
+            prompt.name = prompt_data.name
+            prompt.description = prompt_data.description
+            prompt.save_to_file()
+            properties = prompt.model_dump(exclude={"id"})
+            return ApiPrompt(id=f"id::{prompt.id}", **properties)
 
     @app.delete("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
     async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:

@@ -509,6 +509,14 @@
     subtitle="Browse available models"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
+    breadcrumbs={project_id && task_id
+      ? [
+          {
+            label: "Optimize",
+            href: `/optimize/${project_id}/${task_id}`,
+          },
+        ]
+      : []}
     action_buttons={[
       {
         label: "Manage Providers",

@@ -30,7 +30,10 @@
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
   import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
-  import { load_task_run_configs as reload_run_configs } from "$lib/stores/run_configs_store"
+  import {
+    load_task_run_configs as reload_run_configs,
+    update_task_default_run_config,
+  } from "$lib/stores/run_configs_store"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
 
@@ -198,6 +201,18 @@
     create_run_config_dialog?.showClone(config)
   }
 
+  async function handleSetDefault(config: TaskRunConfig, event: Event) {
+    event.stopPropagation()
+    if (!config.id) return
+    try {
+      await update_task_default_run_config(project_id, task_id, config.id)
+      task = await load_task(project_id, task_id)
+    } catch (e) {
+      // TODO: Show error in UI instead of log error
+      console.error("Failed to set default run config:", e)
+    }
+  }
+
   async function toggle_starred(config: TaskRunConfig, event: Event) {
     event.stopPropagation()
     if (!config.id) return
@@ -248,7 +263,7 @@
     { key: "tools", label: "Tools", sortable: false },
     {
       key: "created_at",
-      label: "Date Created",
+      label: "Created At",
       sortable: true,
       sortKey: "created_at",
     },
@@ -257,7 +272,7 @@
 
 <AppPage
   title="Optimize"
-  subtitle="Optimize and compare different run configurations for your task."
+  subtitle="Find the best way to run your task by comparing different prompts, models, and tools."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
   action_buttons={[
@@ -308,7 +323,9 @@
             configuration from an existing one.
           </div>
         </div>
-        <div class="flex flex-row items-center gap-3">
+        <div
+          class="flex flex-row items-center gap-3 flex-shrink-0 whitespace-nowrap"
+        >
           {#if select_mode}
             <div class="font-light text-sm">
               {selected_run_configs.size} selected{#if selected_run_configs.size >= MAX_SELECTIONS}
@@ -455,13 +472,22 @@
                       <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
                       <ul
                         tabindex="0"
-                        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
                       >
                         <li>
                           <button on:click={(e) => handleClone(config, e)}>
                             Clone
                           </button>
                         </li>
+                        {#if !is_default}
+                          <li>
+                            <button
+                              on:click={(e) => handleSetDefault(config, e)}
+                            >
+                              Set as Task Default
+                            </button>
+                          </li>
+                        {/if}
                       </ul>
                     </div>
                   </td>

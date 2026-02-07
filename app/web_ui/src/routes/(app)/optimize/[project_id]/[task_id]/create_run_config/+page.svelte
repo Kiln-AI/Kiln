@@ -123,12 +123,8 @@
         <div class="flex flex-col gap-4">
           {#if prompt_info}
             <div class="flex flex-col gap-2">
-              <div class="flex flex-row gap-2 justify-between">
-                <div class="text-sm font-medium">Prompt</div>
-                <div class="flex flex-row gap-4">
-                  <div class="text-sm text-gray-500">{prompt_info.name}</div>
-                  <div class="text-sm text-gray-500">ID: {prompt_info.id}</div>
-                </div>
+              <div class="text-sm font-medium">
+                Prompt: {prompt_info.name}
               </div>
               <Output raw_output={prompt_info.prompt} />
             </div>
