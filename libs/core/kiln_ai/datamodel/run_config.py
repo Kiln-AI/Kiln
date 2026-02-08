@@ -52,7 +52,7 @@ class RunConfigProperties(BaseModel):
 
     kind: RunConfigKind = Field(
         default=RunConfigKind.kiln_agent,
-        description="The type of run config (llm or mcp).",
+        description="The type of run config (kiln_agent or mcp).",
     )
     mcp_tool: MCPToolReference | None = Field(
         default=None,
@@ -99,17 +99,46 @@ class RunConfigProperties(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def validate_required_fields(self) -> Self:
-        match self.kind:
-            case RunConfigKind.mcp:
-                if self.mcp_tool is None:
-                    raise ValueError("mcp_tool is required when kind is mcp")
-            case RunConfigKind.kiln_agent:
-                if self.mcp_tool is not None:
-                    raise ValueError("mcp_tool must not be set when kind is llm")
-            case _:
-                raise ValueError(f"Unknown run config kind: {self.kind}")
+    def validate_mcp(self) -> Self:
+        if self.kind != RunConfigKind.mcp:
+            return self
 
+        if self.mcp_tool is None:
+            raise ValueError("mcp_tool is required when kind is mcp")
+
+        if self.model_name != "mcp_tool":
+            raise ValueError("model_name must be 'mcp_tool' when kind is mcp")
+        if self.model_provider_name != ModelProviderName.mcp_provider:
+            raise ValueError(
+                "model_provider_name must be 'mcp_provider' when kind is mcp"
+            )
+        if self.prompt_id != "simple_prompt_builder":
+            raise ValueError(
+                "prompt_id must be 'simple_prompt_builder' when kind is mcp"
+            )
+        if self.structured_output_mode != StructuredOutputMode.default:
+            raise ValueError("structured_output_mode must be default when kind is mcp")
+        if self.top_p != 1.0:
+            raise ValueError("top_p must be 1.0 when kind is mcp")
+        if self.temperature != 1.0:
+            raise ValueError("temperature must be 1.0 when kind is mcp")
+        if self.tools_config is not None:
+            raise ValueError("tools_config must not be set when kind is mcp")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_kiln_agent(self) -> Self:
+        if self.kind != RunConfigKind.kiln_agent:
+            return self
+
+        if self.mcp_tool is not None:
+            raise ValueError("mcp_tool must not be set when kind is kiln_agent")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_sampling(self) -> Self:
         if not (0 <= self.top_p <= 1):
             raise ValueError("top_p must be between 0 and 1")
 

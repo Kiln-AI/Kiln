@@ -5717,7 +5717,7 @@ export interface components {
          */
         RunConfigProperties: {
             /**
-             * @description The type of run config (llm or mcp).
+             * @description The type of run config (kiln_agent or mcp).
              * @default kiln_agent
              */
             kind: components["schemas"]["RunConfigKind"];
