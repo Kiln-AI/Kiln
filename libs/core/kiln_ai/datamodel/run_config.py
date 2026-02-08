@@ -13,7 +13,7 @@ from kiln_ai.datamodel.tool_id import ToolId
 
 
 class RunConfigKind(str, Enum):
-    llm = "llm"
+    kiln_agent = "kiln_agent"
     mcp = "mcp"
 
 
@@ -51,7 +51,7 @@ class RunConfigProperties(BaseModel):
     """
 
     kind: RunConfigKind = Field(
-        default=RunConfigKind.llm,
+        default=RunConfigKind.kiln_agent,
         description="The type of run config (llm or mcp).",
     )
     mcp_tool: MCPToolReference | None = Field(
@@ -104,8 +104,7 @@ class RunConfigProperties(BaseModel):
             case RunConfigKind.mcp:
                 if self.mcp_tool is None:
                     raise ValueError("mcp_tool is required when kind is mcp")
-                return self
-            case RunConfigKind.llm:
+            case RunConfigKind.kiln_agent:
                 if self.mcp_tool is not None:
                     raise ValueError("mcp_tool must not be set when kind is llm")
             case _:

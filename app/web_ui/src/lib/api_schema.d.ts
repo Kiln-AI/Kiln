@@ -5708,7 +5708,7 @@ export interface components {
          * RunConfigKind
          * @enum {string}
          */
-        RunConfigKind: "llm" | "mcp";
+        RunConfigKind: "kiln_agent" | "mcp";
         /**
          * RunConfigProperties
          * @description A configuration for running a task.
@@ -5718,7 +5718,7 @@ export interface components {
         RunConfigProperties: {
             /**
              * @description The type of run config (llm or mcp).
-             * @default llm
+             * @default kiln_agent
              */
             kind: components["schemas"]["RunConfigKind"];
             /** @description MCP tool reference used when kind is mcp. */

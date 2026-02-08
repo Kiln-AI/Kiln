@@ -11,7 +11,7 @@ from kiln_ai.datamodel.run_config import (
 
 def _valid_llm_run_config() -> RunConfigProperties:
     return RunConfigProperties(
-        kind=RunConfigKind.llm,
+        kind=RunConfigKind.kiln_agent,
         model_name="gpt-4o",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_prompt_builder",
@@ -31,13 +31,13 @@ def test_run_config_defaults_to_llm() -> None:
         temperature=1.0,
     )
 
-    assert run_config.kind == RunConfigKind.llm
+    assert run_config.kind == RunConfigKind.kiln_agent
 
 
 def test_run_config_llm_requires_fields() -> None:
     with pytest.raises(ValidationError, match="Field required"):
         RunConfigProperties(
-            kind=RunConfigKind.llm,
+            kind=RunConfigKind.kiln_agent,
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.json_mode,
@@ -49,7 +49,7 @@ def test_run_config_llm_requires_fields() -> None:
 def test_run_config_llm_forbids_mcp_tool() -> None:
     with pytest.raises(ValueError, match="mcp_tool must not be set when kind is llm"):
         RunConfigProperties(
-            kind=RunConfigKind.llm,
+            kind=RunConfigKind.kiln_agent,
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",

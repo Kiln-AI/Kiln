@@ -17,7 +17,7 @@ from kiln_ai.datamodel.task import RunConfigProperties
 def litellm_core_provider_config(
     run_config_properties: RunConfigProperties,
 ) -> LiteLlmConfig:
-    if run_config_properties.kind != RunConfigKind.llm:
+    if run_config_properties.kind != RunConfigKind.kiln_agent:
         raise ValueError("litellm config requested for non-llm run config")
     # For things like the fine-tune provider, we want to run the underlying provider (e.g. openai)
     core_provider_name = core_provider(

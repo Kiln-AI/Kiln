@@ -254,7 +254,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
     assert parsed_output == mocked_output
     assert run.output.source.properties == {
         "adapter_name": "kiln_openai_compatible_adapter",
-        "kind": "llm",
+        "kind": "kiln_agent",
         "model_name": "llama_3_1_8b",
         "model_provider": "ollama",
         "prompt_id": "simple_prompt_builder",

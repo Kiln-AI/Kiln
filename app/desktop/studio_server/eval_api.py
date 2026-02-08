@@ -477,19 +477,21 @@ def connect_evals_api(app: FastAPI):
         frozen_prompt: BasePrompt | None = None
         run_config_properties = request.run_config_properties
         prompt_id = run_config_properties.prompt_id
-        if run_config_properties.kind == RunConfigKind.llm:
-            if not is_frozen_prompt(prompt_id):
-                # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
-                # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
-                prompt_builder = prompt_builder_from_id(prompt_id, task)
-                prompt_name = generate_memorable_name()
-                frozen_prompt = BasePrompt(
-                    name=prompt_name,
-                    description=f"Frozen copy of prompt '{prompt_id}'.",
-                    generator_id=prompt_id,
-                    prompt=prompt_builder.build_base_prompt(),
-                    chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
-                )
+        if (
+            run_config_properties.kind == RunConfigKind.kiln_agent
+            and not is_frozen_prompt(prompt_id)
+        ):
+            # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
+            # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
+            prompt_builder = prompt_builder_from_id(prompt_id, task)
+            prompt_name = generate_memorable_name()
+            frozen_prompt = BasePrompt(
+                name=prompt_name,
+                description=f"Frozen copy of prompt '{prompt_id}'.",
+                generator_id=prompt_id,
+                prompt=prompt_builder.build_base_prompt(),
+                chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
+            )
 
         task_run_config = TaskRunConfig(
             parent=task,
@@ -522,10 +524,10 @@ def connect_evals_api(app: FastAPI):
             tool_output_schema = await _load_mcp_output_schema(tool)
             _validate_mcp_input_schema(task, tool_input_schema)
             _validate_mcp_output_schema(task, tool_output_schema)
+            tool_name = await tool.name()
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        tool_name = await tool.name()
         run_config_properties = RunConfigProperties(
             kind=RunConfigKind.mcp,
             mcp_tool=MCPToolReference(

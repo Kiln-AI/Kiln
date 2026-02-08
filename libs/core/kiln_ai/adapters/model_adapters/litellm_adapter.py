@@ -74,8 +74,10 @@ class LiteLlmAdapter(BaseAdapter):
         kiln_task: datamodel.Task,
         base_adapter_config: AdapterConfig | None = None,
     ):
-        if config.run_config_properties.kind != RunConfigKind.llm:
-            raise ValueError("LiteLlmAdapter requires a run config with kind llm")
+        if config.run_config_properties.kind != RunConfigKind.kiln_agent:
+            raise ValueError(
+                "LiteLlmAdapter requires a run config with kind kiln_agent"
+            )
         self.config = config
         self._additional_body_options = config.additional_body_options
         self._api_base = config.base_url
