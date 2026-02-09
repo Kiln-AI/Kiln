@@ -18,6 +18,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import { selected_tool_for_task } from "$lib/stores/tool_store"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -95,8 +96,14 @@
     if (!selected_tool_name) {
       return
     }
+    const tool = tool_server?.available_tools?.find(
+      (available_tool) => available_tool.name === selected_tool_name,
+    )
+    if (tool) {
+      selected_tool_for_task.set(tool)
+    }
     goto(
-      `/settings/create_task/${project_id}?tool_id=${encodeURIComponent(
+      `/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
         build_tool_id(selected_tool_name),
       )}`,
     )
@@ -105,6 +112,12 @@
   function handleAddToExistingTask() {
     if (!selected_tool_name) {
       return
+    }
+    const tool = tool_server?.available_tools?.find(
+      (available_tool) => available_tool.name === selected_tool_name,
+    )
+    if (tool) {
+      selected_tool_for_task.set(tool)
     }
     goto(
       `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
