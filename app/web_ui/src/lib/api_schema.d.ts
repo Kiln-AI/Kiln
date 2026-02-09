@@ -3955,6 +3955,10 @@ export interface components {
             inputSchema?: {
                 [key: string]: unknown;
             };
+            /** Outputschema */
+            outputSchema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ExternalToolServer
