@@ -134,6 +134,7 @@
   $: submit_disabled =
     selected_eval_ids.size === 0 ||
     has_evals_without_config ||
+    has_evals_without_train_set ||
     evals_loading ||
     has_unsupported_models ||
     is_validating ||
@@ -358,11 +359,14 @@
     }
   }
 
-  async function check_eval_validation(index: number) {
+  async function check_eval_validation(
+    index: number,
+    run_even_if_unselected = false,
+  ) {
     const item = evals_with_configs[index]
     if (!item.eval.id) return
 
-    if (!selected_eval_ids.has(item.eval.id)) {
+    if (!run_even_if_unselected && !selected_eval_ids.has(item.eval.id)) {
       return
     }
 
@@ -417,7 +421,7 @@
         } else if (!data.has_train_set) {
           evals_with_configs[index].validation_message =
             "This eval has no train set and will not be used during optimization."
-          evals_with_configs[index].validation_status = "valid"
+          evals_with_configs[index].validation_status = "invalid"
         } else {
           evals_with_configs[index].validation_message = null
           evals_with_configs[index].validation_status = "valid"
@@ -429,6 +433,14 @@
         createKilnError(e).getMessage()
     }
     evals_with_configs = [...evals_with_configs]
+    if (
+      evals_with_configs[index].validation_status === "invalid" &&
+      item.eval.id
+    ) {
+      selected_eval_ids = new Set(
+        [...selected_eval_ids].filter((id) => id !== item.eval.id),
+      )
+    }
   }
 
   $: if (
@@ -464,12 +476,71 @@
     ])
   })
 
-  function refresh_evaluators() {
-    evals_with_configs = evals_with_configs.map((item) => ({
-      ...item,
-      validation_status: "unchecked" as const,
-      validation_message: null,
-    }))
+  async function refresh_evaluators() {
+    const { data: evals_data } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/evals",
+      {
+        params: {
+          path: {
+            project_id,
+            task_id,
+          },
+        },
+      },
+    )
+
+    if (evals_data) {
+      const evals_by_id = new Map(evals_data.map((e) => [e.id, e]))
+      const configs_by_eval_id = await Promise.all(
+        evals_with_configs.map(async (item) => {
+          const eval_id = item.eval.id
+          if (!eval_id) return { eval_id: null as string | null, configs: [] }
+          const { data: configs_data } = await client.GET(
+            "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+            {
+              params: {
+                path: {
+                  project_id,
+                  task_id,
+                  eval_id,
+                },
+              },
+            },
+          )
+          const configs = configs_data || []
+          return { eval_id, configs }
+        }),
+      )
+      evals_with_configs = evals_with_configs.map((item, i) => {
+        const fresh_eval = item.eval.id
+          ? evals_by_id.get(item.eval.id)
+          : null
+        const { configs } = configs_by_eval_id[i] ?? { configs: [] }
+        const eval_obj = fresh_eval ?? item.eval
+        const current_config =
+          (configs.find((c) => c.id === eval_obj.current_config_id) as
+            | EvalConfig
+            | undefined) ?? null
+        return {
+          ...item,
+          eval: eval_obj,
+          configs,
+          current_config,
+          validation_status: "unchecked" as const,
+          validation_message: null,
+        }
+      })
+    } else {
+      evals_with_configs = evals_with_configs.map((item) => ({
+        ...item,
+        validation_status: "unchecked" as const,
+        validation_message: null,
+      }))
+    }
+
+    await Promise.all(
+      evals_with_configs.map((_, i) => check_eval_validation(i, true)),
+    )
   }
 
   async function create_gepa_job() {
@@ -625,13 +696,6 @@
               <div class="flex items-center gap-2 text-sm text-gray-500 mt-2">
                 <span class="loading loading-spinner loading-xs"></span>
                 <span>Checking compatibility...</span>
-              </div>
-            {:else if run_config_validation_status === "valid"}
-              <div class="mt-2">
-                <span class="badge badge-success badge-sm badge-outline gap-1">
-                  <span>✓</span>
-                  <span>Compatible with Kiln Prompt Optimization</span>
-                </span>
               </div>
             {:else if run_config_validation_status === "invalid"}
               <div class="mt-3">
@@ -801,7 +865,7 @@
               </div>
             {:else}
               <div class="bg-base-200 rounded-lg p-4 space-y-3">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, model_is_supported, validation_status, validation_message }}
+                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, model_is_supported, validation_status, validation_message }}
                   {@const spec_id = "legacy"}
                   {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
                   {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
@@ -809,27 +873,18 @@
                     ? selected_eval_ids.has(evalItem.id)
                     : false}
                   <div
-                    class={`border-l-4 pl-3 py-2 ${
-                      !is_selected
-                        ? "opacity-50 text-gray-400"
-                        : validation_status === "checking"
-                          ? "border-gray-300"
-                          : !has_default_config
-                            ? "border-warning"
-                            : !model_is_supported
-                              ? "border-error"
-                              : !has_train_set
-                                ? "border-warning"
-                                : "border-success"
+                    class={`pl-3 py-2 ${
+                      !is_selected ? "opacity-80 text-base-content/70" : ""
                     }`}
                   >
                     <div class="flex items-start justify-between gap-2">
-                      <div class="flex-1">
+                      <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">
                           <input
                             type="checkbox"
-                            class="checkbox checkbox-sm"
+                            class="checkbox checkbox-sm shrink-0"
                             checked={is_selected}
+                            disabled={validation_status === "invalid"}
                             on:change={(e) => {
                               if (evalItem.id) {
                                 const newSet = new Set(selected_eval_ids)
@@ -842,29 +897,20 @@
                               }
                             }}
                           />
-                          {#if is_selected}
-                            {#if validation_status === "checking"}
-                              <span class="loading loading-spinner loading-xs"
-                              ></span>
-                            {:else if !has_default_config}
-                              <span class="text-warning text-sm">⚠</span>
-                            {:else if !model_is_supported}
-                              <span class="text-error text-sm">✗</span>
-                            {:else if !has_train_set}
-                              <span class="text-warning text-sm">⚠</span>
-                            {:else}
-                              <span class="text-success text-sm">✓</span>
-                            {/if}
-                          {/if}
                           <a
                             href={eval_url}
                             target="_blank"
-                            class={`font-medium text-sm link hover:underline ${
-                              !is_selected ? "text-gray-400" : ""
+                            class={`font-medium text-sm link hover:underline min-w-0 truncate ${
+                              !is_selected ? "text-base-content/70" : ""
                             }`}
                           >
                             {evalItem.name}
                           </a>
+                          {#if validation_status === "checking"}
+                            <span
+                              class="loading loading-spinner loading-xs shrink-0"
+                            ></span>
+                          {/if}
                         </div>
 
                         {#if evalItem.description}
@@ -885,7 +931,11 @@
                         {/if}
 
                         {#if validation_message}
-                          <div class="text-xs text-gray-600 mt-1">
+                          <div
+                            class="text-xs mt-1 {validation_status === 'invalid'
+                              ? 'text-error'
+                              : 'text-gray-600'}"
+                          >
                             {validation_message}
                           </div>
                         {/if}
@@ -897,7 +947,7 @@
                               target="_blank"
                               class="link text-gray-500 text-sm"
                             >
-                              → Set default judge
+                              Set default judge
                             </a>
                           </div>
                         {:else if !model_is_supported}
