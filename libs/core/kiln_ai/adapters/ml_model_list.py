@@ -125,6 +125,7 @@ class ModelName(str, Enum):
     claude_opus_4 = "claude_opus_4"
     claude_opus_4_1 = "claude_opus_4_1"
     claude_opus_4_5 = "claude_opus_4_5"
+    claude_opus_4_6 = "claude_opus_4_6"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -1401,6 +1402,48 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Opus 4.6
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_6,
+        friendly_name="Claude Opus 4.6",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Claude Opus 4.5
     KilnModel(
         family=ModelFamily.claude,
@@ -1411,16 +1454,32 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.5",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-5-20251101",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
