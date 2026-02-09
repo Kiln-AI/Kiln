@@ -15,12 +15,17 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import { load_available_tools } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null
+  let dialog: Dialog
+  let selected_tool_name = ""
   let loading = true
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
@@ -71,6 +76,61 @@
   function goBack() {
     goto(`/settings/manage_tools/${project_id}`)
   }
+
+  function openToolDialog() {
+    if (!tool_server) {
+      return
+    }
+
+    if (tool_server.available_tools.length === 1) {
+      selected_tool_name = tool_server.available_tools[0]?.name || ""
+    } else {
+      selected_tool_name = ""
+    }
+
+    dialog.show()
+  }
+
+  function handleCreateTask() {
+    if (!selected_tool_name) {
+      return
+    }
+    goto(
+      `/settings/create_task/${project_id}?tool_id=${encodeURIComponent(
+        build_tool_id(selected_tool_name),
+      )}`,
+    )
+  }
+
+  function handleAddToExistingTask() {
+    if (!selected_tool_name) {
+      return
+    }
+    goto(
+      `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
+        build_tool_id(selected_tool_name),
+      )}`,
+    )
+  }
+
+  function build_tool_id(tool_name: string): string {
+    const type_prefix = tool_server?.type === "remote_mcp" ? "remote" : "local"
+    return `mcp::${type_prefix}::${tool_server_id}::${tool_name}`
+  }
+
+  $: tool_options =
+    tool_server?.available_tools && tool_server.available_tools.length > 0
+      ? ([
+          {
+            label: "Available Tools",
+            options: tool_server.available_tools.map((tool) => ({
+              label: tool.name,
+              value: tool.name,
+              description: tool.description || undefined,
+            })),
+          },
+        ] as OptionGroup[])
+      : []
 
   function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
@@ -357,6 +417,10 @@
       },
     ]}
     action_buttons={[
+      ...(tool_server?.type === "remote_mcp" ||
+      tool_server?.type === "local_mcp"
+        ? [{ label: "Use Tool For Task", handler: openToolDialog }]
+        : []),
       {
         label: "Edit",
         href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
@@ -367,6 +431,58 @@
       },
     ]}
   >
+    <Dialog bind:this={dialog} title="Use Tool For Task" width="wide">
+      {#if tool_server && tool_server.available_tools && tool_server.available_tools.length > 1}
+        <div class="mb-6">
+          <FormElement
+            inputType="fancy_select"
+            label="Select a Tool"
+            id="selected_tool_name"
+            bind:value={selected_tool_name}
+            fancy_select_options={tool_options}
+          />
+        </div>
+      {/if}
+      <div class="flex flex-col gap-4">
+        <div
+          class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
+            ? ''
+            : 'opacity-60 pointer-events-none'}"
+          on:click={handleCreateTask}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") handleCreateTask()
+          }}
+          tabindex={selected_tool_name ? 0 : undefined}
+          role="button"
+        >
+          <div class="card-body p-4">
+            <div class="text-lg font-semibold">Create New Task</div>
+            <div class="text-sm text-gray-500">
+              Create a new Kiln task with input/output schemas matching this
+              tool.
+            </div>
+          </div>
+        </div>
+        <div
+          class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
+            ? ''
+            : 'opacity-60 pointer-events-none'}"
+          on:click={handleAddToExistingTask}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") handleAddToExistingTask()
+          }}
+          tabindex={selected_tool_name ? 0 : undefined}
+          role="button"
+        >
+          <div class="card-body p-4">
+            <div class="text-lg font-semibold">Add to Existing Task</div>
+            <div class="text-sm text-gray-500">
+              Use this tool as a direct MCP executor for an existing task.
+            </div>
+          </div>
+        </div>
+      </div>
+    </Dialog>
     {#if archive_error}
       <Warning
         warning_message={archive_error.getMessage() ||
