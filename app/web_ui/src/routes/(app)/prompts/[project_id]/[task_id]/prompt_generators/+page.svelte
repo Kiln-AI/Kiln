@@ -68,20 +68,24 @@
     }
   }
 
-  function get_disabled_state(template: PromptGeneratorTemplate): {
+  function get_disabled_state(
+    template: PromptGeneratorTemplate,
+    has_rated: boolean,
+    has_repair: boolean,
+  ): {
     disabled: boolean
     reason?: string
   } {
     if (template.generator_id === "kiln_prompt_optimizer") {
       return { disabled: true, reason: "Coming soon" }
     }
-    if (template.requires_repairs && !has_repair_data) {
+    if (template.requires_repairs && !has_repair) {
       return {
         disabled: true,
         reason: "Requires repaired data in your dataset",
       }
     }
-    if (template.requires_data && !has_rated_data) {
+    if (template.requires_data && !has_rated) {
       return {
         disabled: true,
         reason: "Requires rated data in your dataset",
@@ -94,7 +98,11 @@
     category: category.category,
     items: category.templates.map(
       (template: PromptGeneratorTemplate): CarouselSectionItem => {
-        const state = get_disabled_state(template)
+        const state = get_disabled_state(
+          template,
+          has_rated_data,
+          has_repair_data,
+        )
         return {
           type: "prompt_generator" as const,
           name: template.name,
@@ -112,6 +120,8 @@
   <AppPage
     title="Create a Prompt"
     subtitle="Select a prompt generator to get started."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
       {
         label: "Prompts",

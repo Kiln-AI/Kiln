@@ -12,8 +12,8 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: task_name = $current_task?.id == task_id ? $current_task?.name : "unknown"
 
+  let generator_name = ""
   let prompt_name = ""
   let prompt = ""
   let is_chain_of_thought = false
@@ -27,7 +27,6 @@
   let loading_generator = false
   let is_custom = true
 
-  let initial_prompt_name = ""
   let initial_prompt = ""
   let initial_loaded = false
 
@@ -66,9 +65,8 @@
           multi_shot_chain_of_thought_prompt_builder:
             "Chain of Thought - Many Shot",
         }
-        prompt_name = gen_name_map[generator_id] || generator_id
+        generator_name = gen_name_map[generator_id] || generator_id
 
-        initial_prompt_name = prompt_name
         initial_prompt = prompt
       } catch (e) {
         create_error = createKilnError(e)
@@ -76,10 +74,11 @@
         loading_generator = false
       }
     } else {
+      generator_name = "Custom"
+
       if ($current_task?.instruction) {
         prompt = $current_task.instruction
       }
-      initial_prompt_name = prompt_name
       initial_prompt = prompt
     }
 
@@ -140,8 +139,8 @@
 
   $: if (initial_loaded) {
     warn_before_unload =
-      prompt_name !== initial_prompt_name ||
       prompt !== initial_prompt ||
+      !!prompt_name ||
       (is_custom && is_chain_of_thought)
   }
 </script>
@@ -149,7 +148,9 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Create a Prompt"
-    subtitle={`For the task "${task_name}"`}
+    subtitle={`${generator_name}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
       {
         label: "Prompts",
