@@ -4,6 +4,7 @@ import type {
   ProviderModels,
   ToolSetApiDescription,
 } from "$lib/types"
+import { is_mcp_run_config } from "$lib/utils/run_config_kind"
 import {
   model_name,
   prompt_name_from_id,
@@ -18,7 +19,7 @@ export function getDetailedModelName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {
-  if (config.run_config_properties.kind === "mcp") {
+  if (is_mcp_run_config(config)) {
     return config.run_config_properties.mcp_tool?.tool_name ?? "MCP Tool"
   }
   return getDetailedModelNameFromParts(
@@ -102,7 +103,7 @@ export function getRunConfigUiProperties(
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
 ): UiProperty[] {
-  if (run_config.run_config_properties.kind === "mcp") {
+  if (is_mcp_run_config(run_config)) {
     return [
       {
         name: "ID",

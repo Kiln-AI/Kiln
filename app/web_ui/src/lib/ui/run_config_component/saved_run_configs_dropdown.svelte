@@ -22,6 +22,7 @@
     getRunConfigPromptDisplayName,
     getDetailedModelName,
   } from "$lib/utils/run_config_formatters"
+  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { onMount } from "svelte"
   import {
     load_task_run_configs,
@@ -182,7 +183,7 @@
       )
 
       if (default_config) {
-        const is_mcp = default_config.run_config_properties.kind === "mcp"
+        const is_mcp = is_mcp_run_config(default_config)
         saved_configuration_options.push({
           value: default_run_config_id,
           label: `${default_config.name} (Default)`,
@@ -207,7 +208,7 @@
     if (other_task_run_configs.length > 0) {
       saved_configuration_options.push(
         ...other_task_run_configs.map((config) => {
-          const is_mcp = config.run_config_properties.kind === "mcp"
+          const is_mcp = is_mcp_run_config(config)
           return {
             value: config.id ?? "",
             label: config.name,

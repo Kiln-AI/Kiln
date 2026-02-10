@@ -24,8 +24,8 @@
   import ToolsSelector from "./tools_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import Warning from "$lib/ui/warning.svelte"
-  import Output from "$lib/ui/output.svelte"
+  import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
+  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
@@ -90,7 +90,7 @@
         get_task_composite_id(project_id, current_task.id)
       ] ?? []
     const config = all_configs.find((c) => c.id === selected_run_config_id)
-    return config?.run_config_properties?.kind === "mcp"
+    return is_mcp_run_config(config)
   })()
 
   $: selected_mcp_config = (() => {
@@ -101,25 +101,6 @@
       ] ?? []
     return all_configs.find((c) => c.id === selected_run_config_id) ?? null
   })()
-
-  $: mcp_tool_name =
-    selected_mcp_config?.run_config_properties?.mcp_tool?.tool_name ?? "Unknown"
-  $: mcp_input_schema_output = selected_mcp_config?.run_config_properties
-    ?.mcp_tool?.input_schema
-    ? JSON.stringify(
-        selected_mcp_config.run_config_properties.mcp_tool.input_schema,
-        null,
-        2,
-      )
-    : "Plain text"
-  $: mcp_output_schema_output = selected_mcp_config?.run_config_properties
-    ?.mcp_tool?.output_schema
-    ? JSON.stringify(
-        selected_mcp_config.run_config_properties.mcp_tool.output_schema,
-        null,
-        2,
-      )
-    : "Plain text"
 
   // If requires_structured_output, update structured_output_mode when model changes
   // We test each model in our known model list, so a smart default is selected automatically.
@@ -156,7 +137,7 @@
       // No need to update selected_run_config_id, it's already custom or unset
       return
     }
-    if (selected_run_config.run_config_properties.kind === "mcp") {
+    if (is_mcp_run_config(selected_run_config)) {
       return
     }
 
@@ -269,7 +250,7 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-    if (selected_run_config.run_config_properties.kind === "mcp") {
+    if (is_mcp_run_config(selected_run_config)) {
       return
     }
 
@@ -407,29 +388,10 @@
 
 <div class="w-full flex flex-col gap-4">
   {#if is_mcp}
-    <Warning
-      warning_message={`This run config calls the MCP tool directly${
-        mcp_tool_name ? ` (${mcp_tool_name})` : ""
-      }. No model or prompt configuration is needed.`}
-      warning_color="primary"
-      warning_icon="info"
-    />
-    <div class="flex flex-col gap-4">
-      <div>
-        <div class="text-sm font-medium mb-2">Tool Name</div>
-        <div class="text-sm text-gray-500">{mcp_tool_name}</div>
-      </div>
-      <div>
-        <div class="text-sm font-medium mb-2">Input Schema</div>
-        <Output raw_output={mcp_input_schema_output} />
-      </div>
-      <div>
-        <div class="text-sm font-medium mb-2">Output Schema</div>
-        <Output raw_output={mcp_output_schema_output} />
-      </div>
-    </div>
-  {/if}
-  {#if !is_mcp}
+    {#if selected_mcp_config}
+      <McpRunConfigPanel run_config={selected_mcp_config} />
+    {/if}
+  {:else}
     {#if !hide_model_selector}
       <AvailableModelsDropdown
         task_id={current_task?.id ?? null}

@@ -5,6 +5,7 @@
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import RunConfigDetailsDialog from "./run_config_details_dialog.svelte"
+  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
 
   export let project_id: string
   export let task_id: string
@@ -23,7 +24,7 @@
 
   $: tools_count =
     task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
-  $: is_mcp = task_run_config.run_config_properties.kind === "mcp"
+  $: is_mcp = is_mcp_run_config(task_run_config)
 </script>
 
 <div class="flex items-center gap-2">
