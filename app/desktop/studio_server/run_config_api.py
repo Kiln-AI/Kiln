@@ -117,37 +117,15 @@ def connect_run_config_api(app: FastAPI):
         for task in project.tasks():
             if task.id is None:
                 continue
-
             compatible = True
             reason: str | None = None
 
-            # Input schema compatibility
-            if task.input_json_schema is None:
-                field_name = single_string_field_name(tool_input_schema)
-                if field_name is None:
-                    compatible = False
-                    reason = "Plaintext tasks require the MCP tool to have exactly one string input field."
-            else:
-                task_schema = task.input_schema()
-                if task_schema is None:
-                    compatible = False
-                    reason = "Task input schema must be set for structured input tasks."
-                elif not schemas_compatible(task_schema, tool_input_schema):
-                    compatible = False
-                    reason = "Task input schema must be compatible with the MCP tool."
-
-            # Output schema compatibility (only if still compatible)
-            if compatible and task.output_json_schema is not None:
-                if tool_output_schema is not None:
-                    task_output_schema = task.output_schema()
-                    if task_output_schema is None:
-                        compatible = False
-                        reason = "Task output schema must be set for structured output tasks."
-                    elif not schemas_compatible(task_output_schema, tool_output_schema):
-                        compatible = False
-                        reason = (
-                            "Task output schema must be compatible with the MCP tool."
-                        )
+            try:
+                _validate_mcp_input_schema(task, tool_input_schema)
+                _validate_mcp_output_schema(task, tool_output_schema)
+            except ValueError as e:
+                compatible = False
+                reason = str(e)
 
             results.append(
                 TaskToolCompatibility(

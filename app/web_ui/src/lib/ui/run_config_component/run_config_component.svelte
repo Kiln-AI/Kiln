@@ -204,6 +204,8 @@
       return
     }
 
+    await apply_pending_run_config_if_needed()
+
     // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
     process_model_change()
 
@@ -219,6 +221,23 @@
 
     // deselect the run config if they have changed any run options to not match the selected run config
     await reset_to_custom_options_if_needed()
+  }
+
+  async function apply_pending_run_config_if_needed() {
+    const pending_run_config_id = $ui_state.pending_run_config_id
+    if (!pending_run_config_id || !current_task?.id) {
+      return
+    }
+    await load_task_run_configs(project_id, current_task.id)
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    const exists = all_configs.find((c) => c.id === pending_run_config_id)
+    ui_state.set({ ...$ui_state, pending_run_config_id: null })
+    if (exists) {
+      selected_run_config_id = pending_run_config_id
+    }
   }
 
   let prior_model: string | null = null

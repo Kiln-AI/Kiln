@@ -166,6 +166,7 @@
         ...get(ui_state),
         current_task_id: task_id,
         current_project_id: project_id,
+        pending_run_config_id: config.id,
       })
       goto("/run")
     } catch (err) {
@@ -245,29 +246,31 @@
         </div>
         {#if selected_option === "agent"}
           <div class="pl-2">
-            <FormElement
-              inputType="fancy_select"
-              label="Select a Task"
-              id="agent_task_id"
-              bind:value={selected_task_id_agent}
-              fancy_select_options={task_options}
-              disabled={!data_loaded}
-              empty_state_message="Loading tasks..."
-            />
-            {#if tasks_loading_error}
-              <div class="text-error text-sm mt-2">{tasks_loading_error}</div>
-            {/if}
-            <div class="text-sm text-gray-500 mt-2">
-              The tool will be pre-added to your run configuration. Choose a
-              model and prompt on the Run page.
+            <div class="flex flex-col gap-4">
+              <FormElement
+                inputType="fancy_select"
+                label="Select a Task"
+                id="agent_task_id"
+                bind:value={selected_task_id_agent}
+                fancy_select_options={task_options}
+                disabled={!data_loaded}
+                empty_state_message="Loading tasks..."
+              />
+              {#if tasks_loading_error}
+                <div class="text-error text-sm">{tasks_loading_error}</div>
+              {/if}
+              <div class="text-sm text-gray-500">
+                The tool will be pre-added to your run configuration. Choose a
+                model and prompt on the Run page.
+              </div>
+              <button
+                class="btn btn-primary w-full"
+                type="button"
+                on:click={handle_agent_go_to_run}
+              >
+                Go to Run Page
+              </button>
             </div>
-            <button
-              class="btn btn-primary btn-sm mt-4"
-              type="button"
-              on:click={handle_agent_go_to_run}
-            >
-              Go to Run Page
-            </button>
           </div>
         {/if}
         <div
@@ -297,45 +300,47 @@
             bind:submitting
             bind:saved
           >
-            {#if incompatible_count > 0}
-              <Warning
-                warning_message="{incompatible_count} task{incompatible_count ===
-                1
-                  ? ''
-                  : 's'} not available — schema doesn't match this tool. Create a new task, update the MCP tool schema, or use the agent option instead."
-                warning_color="warning"
-                large_icon={true}
-                outline={true}
+            <div class="flex flex-col gap-4">
+              {#if incompatible_count > 0}
+                <Warning
+                  warning_message="{incompatible_count} task{incompatible_count ===
+                  1
+                    ? ''
+                    : 's'} not available — schema doesn't match this tool. Create a new task, update the MCP tool schema, or use the agent option instead."
+                  warning_color="warning"
+                  large_icon={true}
+                  outline={true}
+                />
+              {/if}
+              <FormElement
+                inputType="fancy_select"
+                label="Select a Task"
+                id="task_id"
+                bind:value={selected_task_id}
+                fancy_select_options={compatible_task_options}
+                disabled={compatibility_loading}
+                empty_state_message={compatibility_loading
+                  ? "Loading tasks..."
+                  : "No compatible tasks found"}
               />
-            {/if}
-            <FormElement
-              inputType="fancy_select"
-              label="Select a Task"
-              id="task_id"
-              bind:value={selected_task_id}
-              fancy_select_options={compatible_task_options}
-              disabled={compatibility_loading}
-              empty_state_message={compatibility_loading
-                ? "Loading tasks..."
-                : "No compatible tasks found"}
-            />
-            {#if compatibility_error}
-              <div class="text-error text-sm mt-2">{compatibility_error}</div>
-            {/if}
-            <FormElement
-              inputType="input"
-              label="Run Config Name"
-              id="run_config_name"
-              bind:value={run_config_name}
-              optional={true}
-              placeholder="Auto-generated if empty"
-            />
-            <FormElement
-              inputType="checkbox"
-              label="Make Default"
-              id="make_default"
-              bind:value={make_default}
-            />
+              {#if compatibility_error}
+                <div class="text-error text-sm">{compatibility_error}</div>
+              {/if}
+              <FormElement
+                inputType="input"
+                label="Run Config Name"
+                id="run_config_name"
+                bind:value={run_config_name}
+                optional={true}
+                placeholder="Auto-generated if empty"
+              />
+              <FormElement
+                inputType="checkbox"
+                label="Make Default"
+                id="make_default"
+                bind:value={make_default}
+              />
+            </div>
           </FormContainer>
         {/if}
       </div>
