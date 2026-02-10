@@ -16,6 +16,7 @@
     save_new_mcp_run_config,
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
+  import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
 
   $: project_id = $page.params.project_id!
@@ -123,7 +124,7 @@
     }
   }
 
-  function handle_agent_go_to_run() {
+  async function handle_agent_go_to_run() {
     if (!tool_id) {
       error = createKilnError({ message: "Tool not selected.", status: 400 })
       return
@@ -132,9 +133,24 @@
       error = createKilnError({ message: "Please select a task.", status: 400 })
       return
     }
+    const task_id = selected_task_id_agent
+    await tools_store_initialized
+    tools_store.update((state) => {
+      const existing = state.selected_tool_ids_by_task_id[task_id]
+      const next = existing?.includes(tool_id)
+        ? existing
+        : [...(existing ?? []), tool_id]
+      return {
+        ...state,
+        selected_tool_ids_by_task_id: {
+          ...state.selected_tool_ids_by_task_id,
+          [task_id]: next,
+        },
+      }
+    })
     ui_state.set({
       ...get(ui_state),
-      current_task_id: selected_task_id_agent,
+      current_task_id: task_id,
       current_project_id: project_id,
       pending_tool_id: tool_id,
     })

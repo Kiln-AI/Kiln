@@ -45,12 +45,14 @@ export type UIState = {
   current_project_id: string | null
   current_task_id: string | null
   selected_model: string | null
+  pending_tool_id: string | null
 }
 
 export const default_ui_state: UIState = {
   current_project_id: null,
   current_task_id: null,
   selected_model: null,
+  pending_tool_id: null,
 }
 
 // Private, used to store the current project, and task ID

@@ -1,8 +1,9 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import { available_tools, load_available_tools } from "$lib/stores"
+  import { available_tools, load_available_tools, ui_state } from "$lib/stores"
   import { onMount } from "svelte"
+  import { get } from "svelte/store"
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
@@ -63,6 +64,12 @@
       tools = [...new Set(combined_tools)]
 
       tools_store_loaded_task_id = task_id
+    }
+
+    const state = get(ui_state)
+    if (state.pending_tool_id && !tools.includes(state.pending_tool_id)) {
+      tools = [...tools, state.pending_tool_id]
+      ui_state.set({ ...state, pending_tool_id: null })
     }
   }
 
