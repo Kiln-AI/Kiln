@@ -30,6 +30,7 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -94,6 +95,11 @@
   let evals_loading = false
   let evals_error: KilnError | null = null
   let selected_eval_ids: Set<string> = new Set()
+
+  let train_set_tags: Record<string, string> = {} // eval_id -> tag name
+  let saving_train_set: Record<string, boolean> = {} // eval_id -> is_saving
+  let train_set_errors: Record<string, string> = {} // eval_id -> error_message
+  let showing_train_set_picker: Record<string, boolean> = {} // eval_id -> showing picker
 
   let run_config_validation_status:
     | "unchecked"
@@ -440,6 +446,65 @@
       selected_eval_ids = new Set(
         [...selected_eval_ids].filter((id) => id !== item.eval.id),
       )
+    }
+  }
+
+  async function save_train_set_for_eval(eval_id: string, tag: string) {
+    if (!tag || tag.trim().length === 0) {
+      train_set_errors[eval_id] = "Tag cannot be empty"
+      train_set_errors = { ...train_set_errors }
+      return
+    }
+
+    try {
+      saving_train_set[eval_id] = true
+      saving_train_set = { ...saving_train_set }
+      train_set_errors[eval_id] = ""
+      train_set_errors = { ...train_set_errors }
+
+      const cleaned_tag = tag.trim().replace(/\s+/g, "_")
+      const train_set_filter_id = `tag::${cleaned_tag}`
+
+      const { error } = await client.PATCH(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              eval_id,
+            },
+          },
+          body: {
+            train_set_filter_id,
+          },
+        },
+      )
+
+      if (error) {
+        throw error
+      }
+
+      // Clear the input and hide the picker
+      train_set_tags[eval_id] = ""
+      showing_train_set_picker[eval_id] = false
+      train_set_tags = { ...train_set_tags }
+      showing_train_set_picker = { ...showing_train_set_picker }
+
+      // Find the eval index and re-check validation
+      const index = evals_with_configs.findIndex(
+        (item) => item.eval.id === eval_id,
+      )
+      if (index !== -1) {
+        await check_eval_validation(index, true)
+      }
+    } catch (e) {
+      train_set_errors[eval_id] =
+        createKilnError(e).getMessage() || "Failed to save train set"
+      train_set_errors = { ...train_set_errors }
+    } finally {
+      saving_train_set[eval_id] = false
+      saving_train_set = { ...saving_train_set }
     }
   }
 
@@ -863,7 +928,7 @@
               </div>
             {:else}
               <div class="bg-base-200 rounded-lg p-4 space-y-3">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, model_is_supported, validation_status, validation_message }}
+                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, model_is_supported, validation_status, validation_message }}
                   {@const spec_id = "legacy"}
                   {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
                   {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
@@ -934,29 +999,98 @@
                               ? 'text-error'
                               : 'text-gray-600'}"
                           >
-                            {validation_message}
+                            {#if !has_default_config}
+                              Please set a default config for this evaluator.
+                              <a
+                                href={eval_configs_url}
+                                target="_blank"
+                                class="link"
+                              >
+                                Set default judge
+                              </a>
+                            {:else if !model_is_supported}
+                              {validation_message}
+                              <a
+                                href={eval_configs_url}
+                                target="_blank"
+                                class="link"
+                              >
+                                Change default judge
+                              </a>
+                            {:else if !has_train_set}
+                              {validation_message}
+                              <button
+                                type="button"
+                                class="link"
+                                on:click={() => {
+                                  if (evalItem.id) {
+                                    showing_train_set_picker[evalItem.id] = true
+                                    showing_train_set_picker = {
+                                      ...showing_train_set_picker,
+                                    }
+                                  }
+                                }}
+                              >
+                                Set train set
+                              </button>
+                            {:else}
+                              {validation_message}
+                            {/if}
                           </div>
                         {/if}
 
-                        {#if !has_default_config}
-                          <div class="mt-2">
-                            <a
-                              href={eval_configs_url}
-                              target="_blank"
-                              class="link text-gray-500 text-sm"
-                            >
-                              Set default judge
-                            </a>
-                          </div>
-                        {:else if !model_is_supported}
-                          <div class="mt-2">
-                            <a
-                              href={eval_configs_url}
-                              target="_blank"
-                              class="link text-gray-500 text-sm"
-                            >
-                              → Change default judge
-                            </a>
+                        {#if !has_train_set && showing_train_set_picker[evalItem.id || ""]}
+                          <div class="mt-2 space-y-2">
+                            <div class="text-xs text-gray-600">
+                              Enter a tag name for the train set:
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <TagDropdown
+                                {project_id}
+                                {task_id}
+                                bind:tag={train_set_tags[evalItem.id || ""]}
+                                on_select={(tag) => {
+                                  if (evalItem.id) {
+                                    save_train_set_for_eval(evalItem.id, tag)
+                                  }
+                                }}
+                                on_escape={() => {
+                                  if (evalItem.id) {
+                                    train_set_tags[evalItem.id] = ""
+                                    showing_train_set_picker[evalItem.id] =
+                                      false
+                                    train_set_tags = { ...train_set_tags }
+                                    showing_train_set_picker = {
+                                      ...showing_train_set_picker,
+                                    }
+                                  }
+                                }}
+                                example_tag_set="task_run"
+                                focus_on_mount={true}
+                              />
+                              {#if saving_train_set[evalItem.id || ""]}
+                                <span class="loading loading-spinner loading-xs"
+                                ></span>
+                              {/if}
+                            </div>
+                            {#if train_set_errors[evalItem.id || ""]}
+                              <div class="text-error text-xs">
+                                {train_set_errors[evalItem.id || ""]}
+                              </div>
+                            {/if}
+                            <div class="text-xs text-gray-500">
+                              After setting the tag, go to the
+                              <a
+                                href="/dataset/{project_id}/{task_id}"
+                                target="_blank"
+                                class="link"
+                              >
+                                Dataset page
+                              </a>
+                              to tag your training data with "{train_set_tags[
+                                evalItem.id || ""
+                              ] || "(tag name)"}"
+                            </div>
                           </div>
                         {/if}
                       </div>

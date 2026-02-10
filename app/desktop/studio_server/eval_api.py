@@ -186,6 +186,12 @@ class UpdateFavouriteRequest(BaseModel):
     favourite: bool
 
 
+class UpdateEvalRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    train_set_filter_id: str | None = None
+
+
 class EvalProgress(BaseModel):
     # The total size of the dataset used for the eval
     dataset_size: int
@@ -364,6 +370,35 @@ def connect_evals_api(app: FastAPI):
     async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.delete()
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
+    async def update_eval(
+        project_id: str,
+        task_id: str,
+        eval_id: str,
+        request: UpdateEvalRequest,
+    ) -> Eval:
+        eval = eval_from_id(project_id, task_id, eval_id)
+
+        if request.name is not None:
+            eval.name = request.name
+        if request.description is not None:
+            eval.description = request.description
+
+        # legacy evals (not created with Specs) do not have a train set filter, but we need one
+        # for some features such as prompt optimization
+        if request.train_set_filter_id is not None:
+            # if the eval already has a train set filter, we do not allow changing it because it
+            # would make comparing results before and after the change very confusing
+            if eval.train_set_filter_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Train set filter is already set and cannot be changed. Please create a new eval if you need a different train set.",
+                )
+            eval.train_set_filter_id = request.train_set_filter_id
+
+        eval.save_to_file()
+        return eval
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/evals")
     async def get_evals(project_id: str, task_id: str) -> list[Eval]:

@@ -1686,7 +1686,8 @@ export interface paths {
         delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Eval */
+        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -6916,6 +6917,15 @@ export interface components {
             /** Toxicity Examples */
             toxicity_examples: string;
         };
+        /** UpdateEvalRequest */
+        UpdateEvalRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Train Set Filter Id */
+            train_set_filter_id?: string | null;
+        };
         /**
          * UpdateFinetuneRequest
          * @description Request to update a finetune
@@ -10780,6 +10790,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
                 };
             };
             /** @description Validation Error */
