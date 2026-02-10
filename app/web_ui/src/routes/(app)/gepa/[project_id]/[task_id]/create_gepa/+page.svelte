@@ -32,10 +32,17 @@
   import Warning from "$lib/ui/warning.svelte"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
 
+  function tagFromFilterId(filter_id: string): string | undefined {
+    if (filter_id.startsWith("tag::")) {
+      return filter_id.replace("tag::", "")
+    }
+    return undefined
+  }
+
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
-  let token_budget: "light" | "medium" | "heavy" = "medium"
+  let token_budget: "light" | "medium" | "heavy" = "light"
   let target_run_config_id: string | null = null
 
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
@@ -86,6 +93,7 @@
     current_config: EvalConfig | null
     has_default_config: boolean
     has_train_set: boolean
+    train_set_size: number | null
     model_is_supported: boolean
     validation_status: "unchecked" | "checking" | "valid" | "invalid"
     validation_message: string | null
@@ -277,6 +285,7 @@
           current_config,
           has_default_config: false,
           has_train_set: false,
+          train_set_size: null,
           model_is_supported: false,
           validation_status: "unchecked" as const,
           validation_message: null,
@@ -405,6 +414,33 @@
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
 
+        // If has train set, fetch the size
+        if (data.has_train_set && item.eval.train_set_filter_id) {
+          const train_tag = tagFromFilterId(item.eval.train_set_filter_id)
+          if (train_tag) {
+            try {
+              const { data: tag_counts, error: tag_error } = await client.GET(
+                "/api/projects/{project_id}/tasks/{task_id}/tags",
+                {
+                  params: {
+                    path: {
+                      project_id,
+                      task_id,
+                    },
+                  },
+                },
+              )
+              if (tag_error) {
+                throw tag_error
+              }
+              evals_with_configs[index].train_set_size =
+                tag_counts?.[train_tag] || 0
+            } catch (_) {
+              evals_with_configs[index].train_set_size = 0
+            }
+          }
+        }
+
         // Construct friendly message
         if (!data.has_default_config) {
           evals_with_configs[index].validation_message =
@@ -426,7 +462,15 @@
           evals_with_configs[index].validation_status = "invalid"
         } else if (!data.has_train_set) {
           evals_with_configs[index].validation_message =
-            "This eval has no train set and will not be used during optimization."
+            "This eval requires a training set to use as examples during optimization."
+          evals_with_configs[index].validation_status = "invalid"
+        } else if (
+          evals_with_configs[index].train_set_size !== null &&
+          evals_with_configs[index].train_set_size === 0
+        ) {
+          const train_tag = tagFromFilterId(item.eval.train_set_filter_id || "")
+          evals_with_configs[index].validation_message =
+            `The train set is empty. Add data to the tag "${train_tag}" to use it for optimization.`
           evals_with_configs[index].validation_status = "invalid"
         } else {
           evals_with_configs[index].validation_message = null
@@ -496,6 +540,9 @@
         (item) => item.eval.id === eval_id,
       )
       if (index !== -1) {
+        // Update the eval object with the new train_set_filter_id
+        evals_with_configs[index].eval.train_set_filter_id = train_set_filter_id
+        evals_with_configs = [...evals_with_configs]
         await check_eval_validation(index, true)
       }
     } catch (e) {
@@ -708,12 +755,9 @@
         <div class="mb-4">
           <Warning warning_color="primary" warning_icon="info" outline={true}>
             <div class="text-sm">
-              <div class="font-medium mb-1">
-                Kiln Prompt Optimization Requirements
-              </div>
               <div class="text-gray-600">
-                Kiln Prompt Optimization supports OpenRouter, OpenAI, Gemini,
-                and Anthropic providers. Tool use is not currently supported.
+                Only the following providers are supported: OpenRouter, OpenAI,
+                Gemini, and Anthropic.
               </div>
             </div>
           </Warning>
@@ -928,7 +972,7 @@
               </div>
             {:else}
               <div class="bg-base-200 rounded-lg p-4 space-y-3">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, model_is_supported, validation_status, validation_message }}
+                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, train_set_size, model_is_supported, validation_status, validation_message }}
                   {@const spec_id = "legacy"}
                   {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
                   {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
@@ -993,6 +1037,14 @@
                           </div>
                         {/if}
 
+                        {#if has_train_set && train_set_size !== null}
+                          <div class="text-xs text-gray-500">
+                            {train_set_size} examples tagged with "{tagFromFilterId(
+                              evalItem.train_set_filter_id || "",
+                            )}"
+                          </div>
+                        {/if}
+
                         {#if validation_message}
                           <div
                             class="text-xs mt-1 {validation_status === 'invalid'
@@ -1031,8 +1083,19 @@
                                   }
                                 }}
                               >
-                                Set train set
+                                Set train set tag
                               </button>
+                            {:else if train_set_size === 0}
+                              {validation_message}
+                              <a
+                                href="/dataset/{project_id}/{task_id}"
+                                target="_blank"
+                                class="link"
+                              >
+                                Tag data with "{tagFromFilterId(
+                                  evalItem.train_set_filter_id || "",
+                                )}"
+                              </a>
                             {:else}
                               {validation_message}
                             {/if}
@@ -1123,9 +1186,8 @@
                   tight={true}
                 >
                   <div class="text-sm text-gray-600">
-                    Some evaluators are disabled and won't be used for
-                    optimization. This may cause the optimization to not fulfill
-                    all of your requirements.
+                    Some evaluators are disabled. The optimizer will not be able
+                    to optimize for these evaluators.
                   </div>
                 </Warning>
               </div>
