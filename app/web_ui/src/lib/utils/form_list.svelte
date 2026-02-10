@@ -7,6 +7,7 @@
   // Some uses of this component let svelte objects manage content. They just want a unique ID for the list.
   export let generate_uuid_content: boolean = false
   export let frozen: boolean = false
+  export let hide_add_button: boolean = false
   export let empty_description: string | null = null
 
   // Unique ID for the list, for scrolling to top after removal
@@ -107,7 +108,7 @@
 
 <div class="flex place-content-center">
   <button
-    class="btn btn-sm {frozen ? 'hidden' : ''}"
+    class="btn btn-sm {frozen || hide_add_button ? 'hidden' : ''}"
     on:click={() => add_item(true)}
     id={id + "_add_button"}
   >

@@ -4,6 +4,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Prompt, PromptGenerators, Task
+from kiln_ai.datamodel.prompt import BasePrompt
+from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.prompt_api import _prompt_generators, connect_prompt_api
@@ -190,21 +193,90 @@ def test_update_prompt_not_found(client, project_and_task):
     assert "Prompt not found" in response.json()["message"]
 
 
-def test_update_prompt_non_custom(client, project_and_task):
+def test_update_prompt_unsupported_type(client, project_and_task):
     project, task = project_and_task
 
     update_data = {"name": "Updated Name", "description": "Updated description"}
 
     with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
-        # Try to update a non-custom prompt (doesn't start with "id::")
         response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/prompts/task_run_config::some_id",
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/fine_tune_prompt::some_id",
             json=update_data,
         )
 
     assert response.status_code == 400
     assert "Only custom prompts can be updated" in response.json()["message"]
+
+
+def test_update_frozen_prompt_name(client, project_and_task):
+    project, task = project_and_task
+
+    run_config = TaskRunConfig(
+        name="Test Run Config",
+        parent=task,
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id=f"task_run_config::{project.id}::{task.id}::placeholder",
+            structured_output_mode="default",
+        ),
+        prompt=BasePrompt(
+            name="Original Frozen Name",
+            prompt="This is a frozen prompt",
+        ),
+    )
+    run_config.save_to_file()
+
+    update_data = {"name": "Updated Frozen Name"}
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/task_run_config::{project.id}::{task.id}::{run_config.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["name"] == "Updated Frozen Name"
+    assert res["prompt"] == "This is a frozen prompt"
+
+    loaded_rc = TaskRunConfig.load_from_file(run_config.path)
+    assert loaded_rc.prompt is not None
+    assert loaded_rc.prompt.name == "Updated Frozen Name"
+
+
+def test_update_frozen_prompt_not_found(client, project_and_task):
+    project, task = project_and_task
+
+    update_data = {"name": "Updated Name"}
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/task_run_config::{project.id}::{task.id}::nonexistent",
+            json=update_data,
+        )
+
+    assert response.status_code == 404
+    assert "Run config not found" in response.json()["message"]
+
+
+def test_update_frozen_prompt_invalid_format(client, project_and_task):
+    project, task = project_and_task
+
+    update_data = {"name": "Updated Name"}
+
+    with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/task_run_config::bad_format",
+            json=update_data,
+        )
+
+    assert response.status_code == 400
+    assert "Invalid frozen prompt ID format" in response.json()["message"]
 
 
 def test_delete_prompt_success(client, project_and_task):

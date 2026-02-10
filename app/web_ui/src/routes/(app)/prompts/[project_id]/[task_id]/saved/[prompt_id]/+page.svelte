@@ -4,8 +4,10 @@
     current_project,
     current_task,
     current_task_prompts,
+    load_available_prompts,
     prompt_name_from_id,
   } from "$lib/stores"
+  import { load_task_run_configs } from "$lib/stores/run_configs_store"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -18,6 +20,11 @@
   $: prompt_model = $current_task_prompts?.prompts.find(
     (prompt) => prompt.id === prompt_id,
   )
+
+  $: can_edit =
+    prompt_model?.id.startsWith("id::") ||
+    prompt_model?.id.startsWith("task_run_config::")
+
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
     prompt_props = Object.fromEntries(
@@ -41,6 +48,14 @@
   }
 
   let edit_dialog: EditDialog | null = null
+
+  async function after_save() {
+    edit_dialog?.close()
+    await Promise.all([
+      load_available_prompts(true),
+      load_task_run_configs(project_id, task_id, true),
+    ])
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -54,7 +69,7 @@
         href: `/prompts/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={prompt_model?.id.startsWith("id::")
+    action_buttons={can_edit
       ? [
           {
             label: "Edit",
@@ -112,9 +127,8 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
-  warning="Prompt body is locked to preserve consistency of past data. If you want to edit the prompt body, create a new prompt."
   patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
-  delete_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
+  {after_save}
   fields={[
     {
       label: "Prompt Name",
@@ -122,14 +136,6 @@
       api_name: "name",
       value: prompt_model?.name || "",
       input_type: "input",
-    },
-    {
-      label: "Description",
-      description: "The description of the prompt",
-      api_name: "description",
-      optional: true,
-      value: prompt_model?.description || "",
-      input_type: "textarea",
     },
   ]}
 />

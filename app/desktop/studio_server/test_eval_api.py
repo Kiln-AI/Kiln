@@ -649,6 +649,108 @@ async def test_get_all_run_configs(mock_task_from_id, mock_task):
     assert "finetune_run_config::project1::task1::ft_incomplete" not in config_ids
 
 
+def test_run_config_starred_default(mock_task):
+    """Test that starred defaults to False on TaskRunConfig."""
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        name="Starred Test Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    assert run_config.starred is False
+
+
+def test_run_config_starred_persists(mock_task):
+    """Test that starred field persists through save and load."""
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        name="Starred Persist Config",
+        starred=True,
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+    assert run_config.starred is True
+
+    loaded = TaskRunConfig.load_from_file(run_config.path)
+    assert loaded.starred is True
+
+
+def test_update_run_config_starred(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to star a run config."""
+    assert mock_run_config.starred is False
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1/starred",
+        params={"starred": True},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["starred"] is True
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.starred is True
+
+
+def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to unstar a previously starred run config."""
+    mock_run_config.starred = True
+    mock_run_config.save_to_file()
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1/starred",
+        params={"starred": False},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["starred"] is False
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.starred is False
+
+
+def test_update_run_config_starred_not_found(client, mock_task_from_id, mock_task):
+    """Test the PATCH endpoint returns 404 for non-existent run config."""
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/non_existent/starred",
+        params={"starred": True},
+    )
+    assert response.status_code == 404
+
+
+def test_update_run_config_starred_finetune(client, mock_task_from_id, mock_task):
+    """Test that starring a finetune run config (no path) returns 400."""
+    finetune_run_config = TaskRunConfig(
+        id="finetune_run_config::project1::task1::ft1",
+        name="Finetune Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=mock_task,
+    )
+
+    with patch(
+        "app.desktop.studio_server.eval_api.task_run_config_from_id"
+    ) as mock_from_id:
+        mock_from_id.return_value = finetune_run_config
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1/starred",
+            params={"starred": True},
+        )
+    assert response.status_code == 400
+
+
 @pytest.fixture
 def mock_eval_for_score_summary():
     eval = Mock(spec=Eval)

@@ -61,4 +61,11 @@
     padding-top: 12px;
     padding-bottom: 12px;
   }
+
+  .collapse:focus-within,
+  .collapse input:focus,
+  .collapse input:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
 </style>

@@ -79,6 +79,10 @@
     dialog?.show()
   }
 
+  export function close() {
+    dialog?.close()
+  }
+
   let delete_dialog: DeleteDialog | null = null
   function showDeleteDialog() {
     dialog?.close()

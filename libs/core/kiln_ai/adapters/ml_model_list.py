@@ -125,6 +125,7 @@ class ModelName(str, Enum):
     claude_opus_4 = "claude_opus_4"
     claude_opus_4_1 = "claude_opus_4_1"
     claude_opus_4_5 = "claude_opus_4_5"
+    claude_opus_4_6 = "claude_opus_4_6"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -201,6 +202,7 @@ class ModelName(str, Enum):
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_k2_thinking = "kimi_k2_thinking"
+    kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
     glm_4_7 = "glm_4_7"
     glm_4_7_flash = "glm_4_7_flash"
@@ -1400,6 +1402,48 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Opus 4.6
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_6,
+        friendly_name="Claude Opus 4.6",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Claude Opus 4.5
     KilnModel(
         family=ModelFamily.claude,
@@ -1410,16 +1454,32 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.5",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-opus-4-5-20251101",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -5426,6 +5486,49 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # Kimi K2.5
+    # Not available on SiliconFlow CN yet
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_5,
+        friendly_name="Kimi K2.5",
+        providers=[
+            # Fireworks provider commented out due to immutable parameter requirements:
+            # top_p must be exactly 0.95 (thinking mode) or temperature must be 0.6 (non-thinking mode)
+            # We currently always send temperature=1.0 and top_p=1.0 from run_config, which causes errors.
+            # In the future maybe Fireworks will make this easier to work with, or Kiln will add some sort of fixed params for thinking mode settings.
+            # KilnModelProvider(
+            #     name=ModelProviderName.fireworks_ai,
+            #     model_id="accounts/fireworks/models/kimi-k2p5",
+            #     structured_output_mode=StructuredOutputMode.json_schema,
+            #     supports_data_gen=True,
+            #     multimodal_capable=True,
+            #     supports_vision=True,
+            #     supports_doc_extraction=True,
+            #     multimodal_mime_types=[
+            #         KilnMimeType.JPG,
+            #         KilnMimeType.PNG,
+            #     ],
+            # ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_doc_extraction=True,
+                # while the model is capable of reasoning, it doesn't always return it in the response, so disabling it here
+                # reasoning_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),

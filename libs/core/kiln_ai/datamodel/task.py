@@ -72,6 +72,10 @@ class TaskRunConfig(KilnParentedModel):
         default=None,
         description="A prompt to use for run config.",
     )
+    starred: bool = Field(
+        default=False,
+        description="Whether this run config is starred/favourited by the user.",
+    )
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -131,7 +135,10 @@ class Task(
         min_length=1,
         description="The instructions for the task. Will be used in prompts/training/validation.",
     )
-    requirements: List[TaskRequirement] = Field(default=[])
+    requirements: List[TaskRequirement] = Field(
+        default=[],
+        description="Deprecated: Use specs and prompts instead.",
+    )
     # Output must be an object schema, as things like tool calls only allow objects
     output_json_schema: JsonObjectSchema | None = None
     # Inputs are more flexible, allowing arrays

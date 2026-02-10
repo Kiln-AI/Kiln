@@ -469,6 +469,25 @@ def connect_evals_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/starred"
+    )
+    async def update_run_config_starred(
+        project_id: str,
+        task_id: str,
+        run_config_id: str,
+        starred: bool,
+    ) -> TaskRunConfig:
+        run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+        if run_config.path is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot update starred status for this run config.",
+            )
+        run_config.starred = starred
+        run_config.save_to_file()
+        return run_config
+
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"
     )

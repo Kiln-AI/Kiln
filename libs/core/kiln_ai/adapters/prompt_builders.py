@@ -79,7 +79,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
         base_prompt = self.build_prompt(include_json_instructions=False)
         cot_prompt = self.chain_of_thought_prompt()
         if cot_prompt:
-            base_prompt += "\n# Thinking Instructions\n\n" + cot_prompt
+            base_prompt += "\n\n# Thinking Instructions\n\n" + cot_prompt
         return base_prompt
 
 

@@ -16,6 +16,7 @@ def _get_kwargs(
     job_type: JobType,
     job_id: str,
 ) -> dict[str, Any]:
+
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/v1/jobs/{job_type}/{job_id}/status".format(

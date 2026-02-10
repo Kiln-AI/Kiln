@@ -15,6 +15,7 @@ def _get_kwargs(
     model_name: str,
     model_provider_name: str,
 ) -> dict[str, Any]:
+
     params: dict[str, Any] = {}
 
     params["model_name"] = model_name

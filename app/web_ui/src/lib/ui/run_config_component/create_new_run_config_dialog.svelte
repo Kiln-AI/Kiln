@@ -13,12 +13,30 @@
     | null = null
   export let hide_tools_selector: boolean = false
 
+  type DialogMode = "create" | "clone"
+  let mode: DialogMode = "create"
+  let source_run_config: TaskRunConfig | null = null
+
   let submitting: boolean
   let save_config_error: KilnError | null = null
   let run_config_component: RunConfigComponent | null = null
   let dialog: Dialog | null = null
 
+  $: dialog_title =
+    mode === "create"
+      ? "Create New Run Configuration"
+      : "Clone Run Configuration"
+
   export function show() {
+    mode = "create"
+    source_run_config = null
+    save_config_error = null
+    dialog?.show()
+  }
+
+  export function showClone(run_config: TaskRunConfig) {
+    mode = "clone"
+    source_run_config = run_config
     save_config_error = null
     dialog?.show()
   }
@@ -47,12 +65,7 @@
   }
 </script>
 
-<Dialog
-  bind:this={dialog}
-  title="Create New Run Configuration"
-  {subtitle}
-  on:close
->
+<Dialog bind:this={dialog} title={dialog_title} {subtitle} on:close>
   <FormContainer
     submit_visible={true}
     submit_label="Create"
@@ -72,6 +85,7 @@
             hide_create_kiln_task_tool_button: true,
           }}
           {hide_tools_selector}
+          selected_run_config_id={source_run_config?.id || null}
         />
       {/if}
 

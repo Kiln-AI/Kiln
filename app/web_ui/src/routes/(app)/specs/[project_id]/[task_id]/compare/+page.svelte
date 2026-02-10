@@ -39,6 +39,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
+  $: breadcrumbs = fromOptimize
+    ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]
+    : [{ label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` }]
 
   // State management
   let columns = 2 // Start with 2 columns
@@ -77,7 +81,7 @@
     const urlColumns = urlParams.get("columns")
     if (urlColumns) {
       const parsedColumns = parseInt(urlColumns, 10)
-      if (parsedColumns >= 2 && parsedColumns <= 4) {
+      if (parsedColumns >= 2 && parsedColumns <= MAX_COLUMNS) {
         columns = parsedColumns
       }
     }
@@ -413,8 +417,9 @@
     create_new_run_config_dialog?.show()
   }
 
+  const MAX_COLUMNS = 6
   function addColumn() {
-    if (columns < 4) {
+    if (columns < MAX_COLUMNS) {
       columns++
       selectedModels = [...selectedModels, null]
     }
@@ -590,9 +595,7 @@
 <AppPage
   title="Compare Run Configurations"
   subtitle="Find the optimal run configuration for your task using evals"
-  breadcrumbs={[
-    { label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` },
-  ]}
+  {breadcrumbs}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -620,7 +623,7 @@
       {:else}
         <!-- Add Column Button - positioned above table on the right -->
         <div class="flex justify-end mb-4">
-          {#if columns < 4}
+          {#if columns < MAX_COLUMNS}
             <button
               on:click={addColumn}
               class="btn btn-sm btn-outline gap-2"
