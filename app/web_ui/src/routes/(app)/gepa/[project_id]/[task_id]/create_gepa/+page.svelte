@@ -512,9 +512,7 @@
         }),
       )
       evals_with_configs = evals_with_configs.map((item, i) => {
-        const fresh_eval = item.eval.id
-          ? evals_by_id.get(item.eval.id)
-          : null
+        const fresh_eval = item.eval.id ? evals_by_id.get(item.eval.id) : null
         const { configs } = configs_by_eval_id[i] ?? { configs: [] }
         const eval_obj = fresh_eval ?? item.eval
         const current_config =
