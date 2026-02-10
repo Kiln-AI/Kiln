@@ -194,17 +194,10 @@ def connect_run_config_api(app: FastAPI):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        is_plaintext_input = (
-            single_string_field_name(tool_input_schema) is not None
-            and tool_output_schema is None
-        )
-
         task = Task(
             name=request.task_name,
             instruction="Complete the task as described.",
-            input_json_schema=None
-            if is_plaintext_input
-            else json.dumps(tool_input_schema),
+            input_json_schema=json.dumps(tool_input_schema),
             output_json_schema=json.dumps(tool_output_schema)
             if tool_output_schema
             else None,

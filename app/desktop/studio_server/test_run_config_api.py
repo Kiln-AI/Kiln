@@ -347,7 +347,7 @@ def test_create_task_from_tool_plaintext(client, tmp_path):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "New Task"
-    assert data["input_json_schema"] is None
+    assert data["input_json_schema"] == json.dumps(tool_input_schema)
     assert data["output_json_schema"] is None
     assert data["default_run_config_id"] is not None
 
