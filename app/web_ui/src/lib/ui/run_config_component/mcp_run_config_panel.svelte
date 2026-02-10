@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Warning from "$lib/ui/warning.svelte"
   import Output from "$lib/ui/output.svelte"
   import type { TaskRunConfig } from "$lib/types"
 
@@ -15,16 +14,9 @@
     : "Output Format: Plain text"
 </script>
 
-<Warning
-  warning_message={`This run config calls the MCP tool directly${
-    mcp_tool_name ? ` (${mcp_tool_name})` : ""
-  }. No model or prompt configuration is needed.`}
-  warning_color="primary"
-  warning_icon="info"
-/>
 <div class="flex flex-col gap-4">
   <div>
-    <div class="text-sm font-medium mb-2">Tool Name</div>
+    <div class="text-sm font-medium mb-2">MCP Tool Name</div>
     <div class="text-sm text-gray-500">{mcp_tool_name}</div>
   </div>
   <div>

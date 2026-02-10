@@ -8,6 +8,7 @@
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import type { Task } from "$lib/types"
+  import type { components } from "$lib/api_schema"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
   import { ui_state } from "$lib/stores"
@@ -36,6 +37,11 @@
   let data_loaded = false
 
   let tool_loading_error: KilnError | null = null
+  type TaskToolCompatibility = components["schemas"]["TaskToolCompatibility"]
+
+  let compatibility_tasks: TaskToolCompatibility[] = []
+  let compatibility_loading = false
+  let compatibility_error: string | null = null
 
   onMount(async () => {
     const cached_tool = get(selected_tool_for_task)
@@ -80,8 +86,53 @@
       ] as OptionGroup[])
     : []
 
+  $: compatible_task_options = data_loaded
+    ? ([
+        {
+          label: "Compatible Tasks",
+          options: compatibility_tasks
+            .filter((task) => task.compatible)
+            .map((task) => ({
+              label: task.task_name,
+              value: task.task_id,
+            })),
+        },
+      ] as OptionGroup[])
+    : []
+
+  $: incompatible_count = compatibility_tasks.filter(
+    (t) => !t.compatible,
+  ).length
+
   function toggle_option(option: "agent" | "direct") {
     selected_option = selected_option === option ? null : option
+    if (selected_option === "direct") {
+      load_compatibility_tasks()
+    }
+  }
+
+  async function load_compatibility_tasks() {
+    if (!tool_id) {
+      compatibility_error = "Tool not selected."
+      return
+    }
+    compatibility_loading = true
+    compatibility_error = null
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks_compatible_with_tool",
+        {
+          params: { path: { project_id }, query: { tool_id } },
+        },
+      )
+      if (fetch_error) {
+        compatibility_error = "Failed to load tasks: " + fetch_error
+      } else {
+        compatibility_tasks = data
+      }
+    } finally {
+      compatibility_loading = false
+    }
   }
 
   async function handle_save() {
@@ -246,23 +297,30 @@
             bind:submitting
             bind:saved
           >
-            <Warning
-              warning_message="Some tasks may not be available because their schemas don't match this tool."
-              warning_color="warning"
-              large_icon={true}
-              outline={true}
-            />
+            {#if incompatible_count > 0}
+              <Warning
+                warning_message="{incompatible_count} task{incompatible_count ===
+                1
+                  ? ''
+                  : 's'} not available — schema doesn't match this tool. Create a new task, update the MCP tool schema, or use the agent option instead."
+                warning_color="warning"
+                large_icon={true}
+                outline={true}
+              />
+            {/if}
             <FormElement
               inputType="fancy_select"
               label="Select a Task"
               id="task_id"
               bind:value={selected_task_id}
-              fancy_select_options={task_options}
-              disabled={!data_loaded}
-              empty_state_message="Loading tasks..."
+              fancy_select_options={compatible_task_options}
+              disabled={compatibility_loading}
+              empty_state_message={compatibility_loading
+                ? "Loading tasks..."
+                : "No compatible tasks found"}
             />
-            {#if tasks_loading_error}
-              <div class="text-error text-sm mt-2">{tasks_loading_error}</div>
+            {#if compatibility_error}
+              <div class="text-error text-sm mt-2">{compatibility_error}</div>
             {/if}
             <FormElement
               inputType="input"
