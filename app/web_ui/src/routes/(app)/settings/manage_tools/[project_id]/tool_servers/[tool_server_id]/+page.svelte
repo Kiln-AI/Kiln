@@ -16,9 +16,8 @@
   import { load_available_tools } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
-  import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
+  import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -78,17 +77,8 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function openToolDialog() {
-    if (!tool_server) {
-      return
-    }
-
-    if (tool_server.available_tools.length === 1) {
-      selected_tool_name = tool_server.available_tools[0]?.name || ""
-    } else {
-      selected_tool_name = ""
-    }
-
+  function open_modal(tool_name: string) {
+    selected_tool_name = tool_name
     dialog.show()
   }
 
@@ -96,12 +86,8 @@
     if (!selected_tool_name) {
       return
     }
-    const tool = tool_server?.available_tools?.find(
-      (available_tool) => available_tool.name === selected_tool_name,
-    )
-    if (tool) {
-      selected_tool_for_task.set(tool)
-    }
+    set_tool_store()
+    dialog.close()
     goto(
       `/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
         build_tool_id(selected_tool_name),
@@ -109,7 +95,7 @@
     )
   }
 
-  function handleAddToExistingTask() {
+  function set_tool_store() {
     if (!selected_tool_name) {
       return
     }
@@ -119,31 +105,12 @@
     if (tool) {
       selected_tool_for_task.set(tool)
     }
-    goto(
-      `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
-        build_tool_id(selected_tool_name),
-      )}`,
-    )
   }
 
   function build_tool_id(tool_name: string): string {
     const type_prefix = tool_server?.type === "remote_mcp" ? "remote" : "local"
     return `mcp::${type_prefix}::${tool_server_id}::${tool_name}`
   }
-
-  $: tool_options =
-    tool_server?.available_tools && tool_server.available_tools.length > 0
-      ? ([
-          {
-            label: "Available Tools",
-            options: tool_server.available_tools.map((tool) => ({
-              label: tool.name,
-              value: tool.name,
-              description: tool.description || undefined,
-            })),
-          },
-        ] as OptionGroup[])
-      : []
 
   function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
@@ -430,10 +397,6 @@
       },
     ]}
     action_buttons={[
-      ...(tool_server?.type === "remote_mcp" ||
-      tool_server?.type === "local_mcp"
-        ? [{ label: "Use Tool For Task", handler: openToolDialog }]
-        : []),
       {
         label: "Edit",
         href: `/settings/manage_tools/${project_id}/edit_tool_server/${tool_server?.id}`,
@@ -445,17 +408,6 @@
     ]}
   >
     <Dialog bind:this={dialog} title="Use Tool For Task" width="wide">
-      {#if tool_server && tool_server.available_tools && tool_server.available_tools.length > 1}
-        <div class="mb-6">
-          <FormElement
-            inputType="fancy_select"
-            label="Select a Tool"
-            id="selected_tool_name"
-            bind:value={selected_tool_name}
-            fancy_select_options={tool_options}
-          />
-        </div>
-      {/if}
       <div class="flex flex-col gap-4">
         <div
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
@@ -480,9 +432,31 @@
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
             ? ''
             : 'opacity-60 pointer-events-none'}"
-          on:click={handleAddToExistingTask}
+          on:click={() => {
+            if (!selected_tool_name) {
+              return
+            }
+            set_tool_store()
+            dialog.close()
+            goto(
+              `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
+                build_tool_id(selected_tool_name),
+              )}`,
+            )
+          }}
           on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") handleAddToExistingTask()
+            if (e.key === "Enter" || e.key === " ") {
+              if (!selected_tool_name) {
+                return
+              }
+              set_tool_store()
+              dialog.close()
+              goto(
+                `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
+                  build_tool_id(selected_tool_name),
+                )}`,
+              )
+            }
           }}
           tabindex={selected_tool_name ? 0 : undefined}
           role="button"
@@ -490,7 +464,7 @@
           <div class="card-body p-4">
             <div class="text-lg font-semibold">Add to Existing Task</div>
             <div class="text-sm text-gray-500">
-              Use this tool as a direct MCP executor for an existing task.
+              Use this tool with an existing Kiln task.
             </div>
           </div>
         </div>
@@ -594,6 +568,9 @@
                   <th>Name</th>
                   <th>Description</th>
                   <th>Arguments</th>
+                  {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
+                    <th></th>
+                  {/if}
                 </tr>
               </thead>
               <tbody>
@@ -632,6 +609,24 @@
                         <span class="text-gray-500">None</span>
                       {/if}
                     </td>
+                    {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
+                      <td class="p-0">
+                        <div class="dropdown dropdown-end dropdown-hover">
+                          <TableButton />
+                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                          <ul
+                            tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                          >
+                            <li>
+                              <button on:click={() => open_modal(tool.name)}>
+                                Use Tool For Task
+                              </button>
+                            </li>
+                          </ul>
+                        </div>
+                      </td>
+                    {/if}
                   </tr>
                 {/each}
               </tbody>
