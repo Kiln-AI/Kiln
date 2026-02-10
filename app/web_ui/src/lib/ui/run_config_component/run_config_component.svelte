@@ -24,6 +24,8 @@
   import ToolsSelector from "./tools_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import Output from "$lib/ui/output.svelte"
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
@@ -81,6 +83,44 @@
     load_task_prompts(project_id, current_task.id)
   }
 
+  $: is_mcp = (() => {
+    if (!selected_run_config_id || !current_task?.id) return false
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    const config = all_configs.find((c) => c.id === selected_run_config_id)
+    return config?.run_config_properties?.kind === "mcp"
+  })()
+
+  $: selected_mcp_config = (() => {
+    if (!is_mcp || !selected_run_config_id || !current_task?.id) return null
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    return all_configs.find((c) => c.id === selected_run_config_id) ?? null
+  })()
+
+  $: mcp_tool_name =
+    selected_mcp_config?.run_config_properties?.mcp_tool?.tool_name ?? "Unknown"
+  $: mcp_input_schema_output = selected_mcp_config?.run_config_properties
+    ?.mcp_tool?.input_schema
+    ? JSON.stringify(
+        selected_mcp_config.run_config_properties.mcp_tool.input_schema,
+        null,
+        2,
+      )
+    : "Plain text"
+  $: mcp_output_schema_output = selected_mcp_config?.run_config_properties
+    ?.mcp_tool?.output_schema
+    ? JSON.stringify(
+        selected_mcp_config.run_config_properties.mcp_tool.output_schema,
+        null,
+        2,
+      )
+    : "Plain text"
+
   // If requires_structured_output, update structured_output_mode when model changes
   // We test each model in our known model list, so a smart default is selected automatically.
   function update_structured_output_mode_if_needed(
@@ -114,6 +154,9 @@
     const selected_run_config = await get_selected_run_config()
     if (!selected_run_config || selected_run_config === "custom") {
       // No need to update selected_run_config_id, it's already custom or unset
+      return
+    }
+    if (selected_run_config.run_config_properties.kind === "mcp") {
       return
     }
 
@@ -226,6 +269,9 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
+    if (selected_run_config.run_config_properties.kind === "mcp") {
+      return
+    }
 
     const config_properties = selected_run_config.run_config_properties
 
@@ -261,6 +307,9 @@
 
   // Helper function to convert run options to server run_config_properties format
   export function run_options_as_run_config_properties(): RunConfigProperties {
+    if (selected_mcp_config?.run_config_properties) {
+      return selected_mcp_config.run_config_properties
+    }
     return {
       model_name: model_name,
       // @ts-expect-error server will catch if enum is not valid
@@ -357,43 +406,47 @@
 </script>
 
 <div class="w-full flex flex-col gap-4">
-  {#if !hide_model_selector}
-    <AvailableModelsDropdown
-      task_id={current_task?.id ?? null}
-      bind:model
-      settings={updated_model_dropdown_settings}
-      bind:error_message={model_dropdown_error_message}
-      bind:this={model_dropdown}
+  {#if is_mcp}
+    <Warning
+      warning_message={`This run config calls the MCP tool directly${
+        mcp_tool_name ? ` (${mcp_tool_name})` : ""
+      }. No model or prompt configuration is needed.`}
+      warning_color="primary"
+      warning_icon="info"
     />
+    <div class="flex flex-col gap-4">
+      <div>
+        <div class="text-sm font-medium mb-2">Tool Name</div>
+        <div class="text-sm text-gray-500">{mcp_tool_name}</div>
+      </div>
+      <div>
+        <div class="text-sm font-medium mb-2">Input Schema</div>
+        <Output raw_output={mcp_input_schema_output} />
+      </div>
+      <div>
+        <div class="text-sm font-medium mb-2">Output Schema</div>
+        <Output raw_output={mcp_output_schema_output} />
+      </div>
+    </div>
   {/if}
-  {#if !hide_prompt_selector}
-    <PromptTypeSelector
-      bind:prompt_method
-      info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-      bind:linked_model_selection={model}
-    />
-  {/if}
-  {#if !show_tools_selector_in_advanced}
-    {#if !hide_tools_selector}
-      <ToolsSelector
-        bind:tools
-        {project_id}
+  {#if !is_mcp}
+    {#if !hide_model_selector}
+      <AvailableModelsDropdown
         task_id={current_task?.id ?? null}
-        settings={tools_selector_settings}
+        bind:model
+        settings={updated_model_dropdown_settings}
+        bind:error_message={model_dropdown_error_message}
+        bind:this={model_dropdown}
       />
     {/if}
-    <Collapse title="Advanced Options">
-      <slot name="advanced" />
-      <AdvancedRunOptions
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        has_structured_output={requires_structured_output}
+    {#if !hide_prompt_selector}
+      <PromptTypeSelector
+        bind:prompt_method
+        info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+        bind:linked_model_selection={model}
       />
-    </Collapse>
-  {:else}
-    <Collapse title="Advanced Options">
-      <slot name="advanced" />
+    {/if}
+    {#if !show_tools_selector_in_advanced}
       {#if !hide_tools_selector}
         <ToolsSelector
           bind:tools
@@ -402,12 +455,33 @@
           settings={tools_selector_settings}
         />
       {/if}
-      <AdvancedRunOptions
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        has_structured_output={requires_structured_output}
-      />
-    </Collapse>
+      <Collapse title="Advanced Options">
+        <slot name="advanced" />
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </Collapse>
+    {:else}
+      <Collapse title="Advanced Options">
+        <slot name="advanced" />
+        {#if !hide_tools_selector}
+          <ToolsSelector
+            bind:tools
+            {project_id}
+            task_id={current_task?.id ?? null}
+            settings={tools_selector_settings}
+          />
+        {/if}
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </Collapse>
+    {/if}
   {/if}
 </div>

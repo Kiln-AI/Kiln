@@ -23,6 +23,7 @@
 
   $: tools_count =
     task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
+  $: is_mcp = task_run_config.run_config_properties.kind === "mcp"
 </script>
 
 <div class="flex items-center gap-2">
@@ -34,15 +35,23 @@
   {/if}
 </div>
 <div class="text-sm text-gray-500">
-  <div>
-    Model: {getDetailedModelName(task_run_config, $model_info)}
-  </div>
-  <div>
-    Prompt: {getRunConfigPromptDisplayName(task_run_config, task_prompts)}
-  </div>
-  <div>
-    Tools: {tools_count > 0 ? `${tools_count} available` : "None"}
-  </div>
+  {#if is_mcp}
+    <div>Type: MCP Tool (Direct)</div>
+    <div>
+      Tool: {task_run_config.run_config_properties.mcp_tool?.tool_name ??
+        "Unknown"}
+    </div>
+  {:else}
+    <div>
+      Model: {getDetailedModelName(task_run_config, $model_info)}
+    </div>
+    <div>
+      Prompt: {getRunConfigPromptDisplayName(task_run_config, task_prompts)}
+    </div>
+    <div>
+      Tools: {tools_count > 0 ? `${tools_count} available` : "None"}
+    </div>
+  {/if}
 </div>
 <button
   class="link text-sm text-gray-500 hover:text-gray-700 mt-1"

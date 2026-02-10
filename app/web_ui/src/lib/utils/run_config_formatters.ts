@@ -18,6 +18,9 @@ export function getDetailedModelName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {
+  if (config.run_config_properties.kind === "mcp") {
+    return config.run_config_properties.mcp_tool?.tool_name ?? "MCP Tool"
+  }
   return getDetailedModelNameFromParts(
     config.run_config_properties.model_name,
     config.run_config_properties.model_provider_name,
@@ -99,6 +102,36 @@ export function getRunConfigUiProperties(
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
 ): UiProperty[] {
+  if (run_config.run_config_properties.kind === "mcp") {
+    return [
+      {
+        name: "ID",
+        value: run_config.id || "N/A",
+      },
+      {
+        name: "Name",
+        value: run_config.name || "N/A",
+      },
+      {
+        name: "Created At",
+        value: formatDate(run_config.created_at),
+      },
+      {
+        name: "Type",
+        value: "MCP Tool (Direct)",
+      },
+      {
+        name: "Tool Name",
+        value:
+          run_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown",
+      },
+      {
+        name: "Tool ID",
+        value: run_config.run_config_properties.mcp_tool?.tool_id ?? "Unknown",
+      },
+    ]
+  }
+
   const model_value = model_info
     ? `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`
     : "Loading..."

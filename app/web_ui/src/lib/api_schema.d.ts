@@ -1927,6 +1927,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/create_task_from_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Task From Tool */
+        post: operations["create_task_from_tool_api_projects__project_id__create_task_from_tool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/select_kiln_file": {
         parameters: {
             query?: never;
@@ -3096,6 +3113,13 @@ export interface components {
              */
             task_prompt_with_example: string;
             task_sample?: components["schemas"]["TaskSample"] | null;
+        };
+        /** CreateTaskFromToolRequest */
+        CreateTaskFromToolRequest: {
+            /** Tool Id */
+            tool_id: string;
+            /** Task Name */
+            task_name: string;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
@@ -11064,6 +11088,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_from_tool_api_projects__project_id__create_task_from_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskFromToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
                 };
             };
             /** @description Validation Error */

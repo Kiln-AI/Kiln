@@ -7,6 +7,9 @@
   import { onDestroy, onMount } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { get } from "svelte/store"
+  import { client } from "$lib/api_client"
+  import { goto } from "$app/navigation"
+  import { ui_state } from "$lib/stores"
   import {
     selected_tool_for_task,
     type ExternalToolApiDescription,
@@ -46,6 +49,17 @@
 
   async function handle_save() {
     if (!tool_id) {
+      form_error = createKilnError({
+        message: "Tool not selected.",
+        status: 400,
+      })
+      return
+    }
+    if (!task_name.trim()) {
+      form_error = createKilnError({
+        message: "Task name is required.",
+        status: 400,
+      })
       return
     }
 
@@ -53,9 +67,31 @@
     saved = false
     form_error = null
 
-    // TODO: Wire to POST /api/projects/{project_id}/create_task_from_tool
-
-    submitting = false
+    try {
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/create_task_from_tool",
+        {
+          params: { path: { project_id } },
+          body: { tool_id, task_name },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      if (!data?.id) {
+        throw new Error("Task ID missing after create.")
+      }
+      ui_state.set({
+        ...get(ui_state),
+        current_task_id: data.id,
+        current_project_id: project_id,
+      })
+      goto("/run")
+    } catch (err) {
+      form_error = createKilnError(err)
+    } finally {
+      submitting = false
+    }
   }
 
   $: input_schema_output = tool?.inputSchema
