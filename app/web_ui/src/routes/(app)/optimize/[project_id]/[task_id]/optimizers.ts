@@ -41,7 +41,7 @@ export function get_optimizers(
         [METRIC_EASE]: 1,
       },
       on_click: () => {
-        goto(`/optimize/models`)
+        goto(`/models`)
       },
     },
     {
