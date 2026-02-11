@@ -7,7 +7,6 @@
   import { onDestroy, onMount } from "svelte"
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { Task } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
@@ -17,24 +16,17 @@
     save_new_mcp_run_config,
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
-  import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
 
-  let selected_option: "agent" | "direct" | null = null
   let selected_task_id: string | null = null
-  let selected_task_id_agent: string | null = null
   let run_config_name = ""
   let make_default = false
   let submitting = false
   let saved = false
   let error: KilnError | null = null
-
-  let tasks: Task[] = []
-  let tasks_loading_error: string | null = null
-  let data_loaded = false
 
   let tool_loading_error: KilnError | null = null
   type TaskToolCompatibility = components["schemas"]["TaskToolCompatibility"]
@@ -56,60 +48,30 @@
         ),
       )
     }
-
-    const { data, error: fetch_error } = await client.GET(
-      "/api/projects/{project_id}/tasks",
-      { params: { path: { project_id } } },
-    )
-    if (fetch_error) {
-      tasks_loading_error = "Tasks failed to load: " + fetch_error
-    } else {
-      tasks = data
+    if (tool_id) {
+      await load_compatibility_tasks()
     }
-    data_loaded = true
   })
 
   onDestroy(() => {
     selected_tool_for_task.set(null)
   })
 
-  $: task_options = data_loaded
-    ? ([
-        {
-          label: "Project Tasks",
-          options: tasks.map((task) => ({
-            label: task.name,
-            value: task.id ?? "",
-            description: task.description || undefined,
-          })),
-        },
-      ] as OptionGroup[])
-    : []
-
-  $: compatible_task_options = data_loaded
-    ? ([
-        {
-          label: "Compatible Tasks",
-          options: compatibility_tasks
-            .filter((task) => task.compatible)
-            .map((task) => ({
-              label: task.task_name,
-              value: task.task_id,
-            })),
-        },
-      ] as OptionGroup[])
-    : []
+  $: compatible_task_options = [
+    {
+      label: "Compatible Tasks",
+      options: compatibility_tasks
+        .filter((task) => task.compatible)
+        .map((task) => ({
+          label: task.task_name,
+          value: task.task_id,
+        })),
+    },
+  ] as OptionGroup[]
 
   $: incompatible_count = compatibility_tasks.filter(
     (t) => !t.compatible,
   ).length
-
-  function toggle_option(option: "agent" | "direct") {
-    selected_option = selected_option === option ? null : option
-    if (selected_option === "direct") {
-      load_compatibility_tasks()
-    }
-  }
 
   async function load_compatibility_tasks() {
     if (!tool_id) {
@@ -175,44 +137,11 @@
       submitting = false
     }
   }
-
-  async function handle_agent_go_to_run() {
-    if (!tool_id) {
-      error = createKilnError({ message: "Tool not selected.", status: 400 })
-      return
-    }
-    if (!selected_task_id_agent) {
-      error = createKilnError({ message: "Please select a task.", status: 400 })
-      return
-    }
-    const task_id = selected_task_id_agent
-    await tools_store_initialized
-    tools_store.update((state) => {
-      const existing = state.selected_tool_ids_by_task_id[task_id]
-      const next = existing?.includes(tool_id)
-        ? existing
-        : [...(existing ?? []), tool_id]
-      return {
-        ...state,
-        selected_tool_ids_by_task_id: {
-          ...state.selected_tool_ids_by_task_id,
-          [task_id]: next,
-        },
-      }
-    })
-    ui_state.set({
-      ...get(ui_state),
-      current_task_id: task_id,
-      current_project_id: project_id,
-      pending_tool_id: tool_id,
-    })
-    goto("/run")
-  }
 </script>
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Add Tool to Task"
+    title="Run Tool Directly on Task"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },
@@ -225,124 +154,59 @@
       </div>
     {:else}
       <div class="flex flex-col gap-4 mb-6">
-        <div
-          class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer"
-          on:click={() => toggle_option("agent")}
-          on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") toggle_option("agent")
-          }}
-          tabindex="0"
-          role="button"
+        <p class="text-sm text-gray-500">
+          This will call the MCP tool directly with task inputs — no wrapping
+          agent or prompt is used.
+        </p>
+        <FormContainer
+          submit_label="Save"
+          on:submit={handle_save}
+          bind:error
+          bind:submitting
+          bind:saved
         >
-          <div class="card-body p-4">
-            <div class="text-lg font-semibold">
-              Give Kiln Agent Access to This Tool
-            </div>
-            <div class="text-sm text-gray-500">
-              A Kiln AI agent will use the model you choose and can call this
-              MCP tool during task execution.
-            </div>
+          <div class="flex flex-col gap-4">
+            {#if incompatible_count > 0}
+              <Warning
+                warning_message="{incompatible_count} task{incompatible_count ===
+                1
+                  ? ''
+                  : 's'} not available — schema doesn't match this tool. Create a new task, update the MCP tool schema, or use the agent option instead."
+                warning_color="warning"
+                large_icon={true}
+                outline={true}
+              />
+            {/if}
+            <FormElement
+              inputType="fancy_select"
+              label="Select a Task"
+              id="task_id"
+              bind:value={selected_task_id}
+              fancy_select_options={compatible_task_options}
+              disabled={compatibility_loading}
+              empty_state_message={compatibility_loading
+                ? "Loading tasks..."
+                : "No compatible tasks found"}
+            />
+            {#if compatibility_error}
+              <div class="text-error text-sm">{compatibility_error}</div>
+            {/if}
+            <FormElement
+              inputType="input"
+              label="Run Config Name"
+              id="run_config_name"
+              bind:value={run_config_name}
+              optional={true}
+              placeholder="Auto-generated if empty"
+            />
+            <FormElement
+              inputType="checkbox"
+              label="Make Default"
+              id="make_default"
+              bind:value={make_default}
+            />
           </div>
-        </div>
-        {#if selected_option === "agent"}
-          <div class="pl-2">
-            <div class="flex flex-col gap-4">
-              <FormElement
-                inputType="fancy_select"
-                label="Select a Task"
-                id="agent_task_id"
-                bind:value={selected_task_id_agent}
-                fancy_select_options={task_options}
-                disabled={!data_loaded}
-                empty_state_message="Loading tasks..."
-              />
-              {#if tasks_loading_error}
-                <div class="text-error text-sm">{tasks_loading_error}</div>
-              {/if}
-              <div class="text-sm text-gray-500">
-                The tool will be pre-added to your run configuration. Choose a
-                model and prompt on the Run page.
-              </div>
-              <button
-                class="btn btn-primary w-full"
-                type="button"
-                on:click={handle_agent_go_to_run}
-              >
-                Go to Run Page
-              </button>
-            </div>
-          </div>
-        {/if}
-        <div
-          class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer"
-          on:click={() => toggle_option("direct")}
-          on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") toggle_option("direct")
-          }}
-          tabindex="0"
-          role="button"
-        >
-          <div class="card-body p-4">
-            <div class="text-lg font-semibold">
-              Task Calls MCP Directly (No Agent)
-            </div>
-            <div class="text-sm text-gray-500">
-              Kiln will call your MCP tool directly with task inputs and
-              retrieve task outputs. No wrapper agent or prompt is used.
-            </div>
-          </div>
-        </div>
-        {#if selected_option === "direct"}
-          <FormContainer
-            submit_label="Save"
-            on:submit={handle_save}
-            bind:error
-            bind:submitting
-            bind:saved
-          >
-            <div class="flex flex-col gap-4">
-              {#if incompatible_count > 0}
-                <Warning
-                  warning_message="{incompatible_count} task{incompatible_count ===
-                  1
-                    ? ''
-                    : 's'} not available — schema doesn't match this tool. Create a new task, update the MCP tool schema, or use the agent option instead."
-                  warning_color="warning"
-                  large_icon={true}
-                  outline={true}
-                />
-              {/if}
-              <FormElement
-                inputType="fancy_select"
-                label="Select a Task"
-                id="task_id"
-                bind:value={selected_task_id}
-                fancy_select_options={compatible_task_options}
-                disabled={compatibility_loading}
-                empty_state_message={compatibility_loading
-                  ? "Loading tasks..."
-                  : "No compatible tasks found"}
-              />
-              {#if compatibility_error}
-                <div class="text-error text-sm">{compatibility_error}</div>
-              {/if}
-              <FormElement
-                inputType="input"
-                label="Run Config Name"
-                id="run_config_name"
-                bind:value={run_config_name}
-                optional={true}
-                placeholder="Auto-generated if empty"
-              />
-              <FormElement
-                inputType="checkbox"
-                label="Make Default"
-                id="make_default"
-                bind:value={make_default}
-              />
-            </div>
-          </FormContainer>
-        {/if}
+        </FormContainer>
       </div>
     {/if}
   </AppPage>

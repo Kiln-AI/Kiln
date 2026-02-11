@@ -18,6 +18,8 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
   import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import { ui_state } from "$lib/stores"
+  import { get } from "svelte/store"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -82,14 +84,38 @@
     dialog.show()
   }
 
-  function handleCreateTask() {
+  function handleCreateTask(tool_name: string) {
+    selected_tool_name = tool_name
+    set_tool_store()
+    goto(
+      `/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+        build_tool_id(tool_name),
+      )}`,
+    )
+  }
+
+  function handleRunWithToolAccess() {
+    if (!selected_tool_name) {
+      return
+    }
+    const tool_id = build_tool_id(selected_tool_name)
+    set_tool_store()
+    dialog.close()
+    ui_state.set({
+      ...get(ui_state),
+      pending_tool_id: tool_id,
+    })
+    goto("/run")
+  }
+
+  function handleDirectMcp() {
     if (!selected_tool_name) {
       return
     }
     set_tool_store()
     dialog.close()
     goto(
-      `/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+      `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
         build_tool_id(selected_tool_name),
       )}`,
     )
@@ -407,24 +433,25 @@
       },
     ]}
   >
-    <Dialog bind:this={dialog} title="Use Tool For Task" width="wide">
+    <Dialog bind:this={dialog} title="Run Task with Tool" width="wide">
       <div class="flex flex-col gap-4">
         <div
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
             ? ''
             : 'opacity-60 pointer-events-none'}"
-          on:click={handleCreateTask}
+          on:click={handleRunWithToolAccess}
           on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") handleCreateTask()
+            if (e.key === "Enter" || e.key === " ") handleRunWithToolAccess()
           }}
           tabindex={selected_tool_name ? 0 : undefined}
           role="button"
         >
           <div class="card-body p-4">
-            <div class="text-lg font-semibold">Create New Task</div>
+            <div class="text-lg font-semibold">
+              Run Current Task with Tool Access
+            </div>
             <div class="text-sm text-gray-500">
-              Create a new Kiln task with input/output schemas matching this
-              tool.
+              Run current task, giving the agent access to this tool.
             </div>
           </div>
         </div>
@@ -432,39 +459,20 @@
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
             ? ''
             : 'opacity-60 pointer-events-none'}"
-          on:click={() => {
-            if (!selected_tool_name) {
-              return
-            }
-            set_tool_store()
-            dialog.close()
-            goto(
-              `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
-                build_tool_id(selected_tool_name),
-              )}`,
-            )
-          }}
+          on:click={handleDirectMcp}
           on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              if (!selected_tool_name) {
-                return
-              }
-              set_tool_store()
-              dialog.close()
-              goto(
-                `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
-                  build_tool_id(selected_tool_name),
-                )}`,
-              )
-            }
+            if (e.key === "Enter" || e.key === " ") handleDirectMcp()
           }}
           tabindex={selected_tool_name ? 0 : undefined}
           role="button"
         >
           <div class="card-body p-4">
-            <div class="text-lg font-semibold">Add to Existing Task</div>
+            <div class="text-lg font-semibold">
+              Task Directly Runs Tool (no Agent)
+            </div>
             <div class="text-sm text-gray-500">
-              Use this tool with an existing Kiln task.
+              Have the task call this tool directly, without a wrapping agent.
+              Useful to evaluate external APIs in Kiln.
             </div>
           </div>
         </div>
@@ -616,11 +624,18 @@
                           <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
                           <ul
                             tabindex="0"
-                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
                           >
                             <li>
                               <button on:click={() => open_modal(tool.name)}>
-                                Use Tool For Task
+                                Run Task with Tool
+                              </button>
+                            </li>
+                            <li>
+                              <button
+                                on:click={() => handleCreateTask(tool.name)}
+                              >
+                                Create New Task From This Tool
                               </button>
                             </li>
                           </ul>
