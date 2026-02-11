@@ -6,7 +6,6 @@
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { goto } from "$app/navigation"
   import Completed from "$lib/ui/completed.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import type { Task, TaskRunConfig, Eval, EvalConfig } from "$lib/types"
@@ -33,6 +32,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -792,45 +792,12 @@
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if kiln_copilot_connected === false}
-      <div class="max-w-[600px] mx-auto">
-        <div class="bg-base-200 rounded-lg p-8 text-center">
-          <div class="flex justify-center mb-4">
-            <img
-              src="/images/animated_logo.svg"
-              alt="Kiln Copilot"
-              class="size-16"
-            />
-          </div>
-          <h2 class="text-2xl font-bold mb-3">Kiln Copilot Required</h2>
-          <p class="text-gray-600 mb-6">
-            Kiln Prompt Optimization uses Kiln Copilot to automatically optimize
-            your prompts using advanced techniques. Connect your Kiln Copilot
-            account to continue.
-          </p>
-          {#if copilot_check_error}
-            <div class="bg-error/10 border border-error/20 rounded-lg p-3 mb-6">
-              <div class="text-error text-sm">
-                {copilot_check_error.getMessage() ||
-                  "Failed to check Kiln Copilot connection"}
-              </div>
-            </div>
-          {/if}
-          <div class="flex flex-col gap-3">
-            <button
-              class="btn btn-primary"
-              on:click={() => goto(`/gepa/copilot_auth`)}
-            >
-              Connect Kiln Copilot
-            </button>
-            <a
-              href="/gepa/{project_id}/{task_id}"
-              class="link text-sm text-gray-600"
-            >
-              Back to Optimizer Jobs
-            </a>
-          </div>
-        </div>
-      </div>
+      <CopilotRequiredCard
+        description="Kiln Prompt Optimization requires Kiln Copilot to automatically optimize your prompts using advanced techniques."
+        auth_url="/gepa/copilot_auth"
+        back_label="Back to Optimizer Jobs"
+        error={copilot_check_error}
+      />
     {:else if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
