@@ -118,7 +118,7 @@ class MCPSessionManager:
 
         async with self._cache_lock:
             keys_to_remove = [
-                key for key in self._session_cache if key.endswith(f":{session_id}")
+                key for key in self._session_cache if key.split(":", 1)[1] == session_id
             ]
             for key in keys_to_remove:
                 _, exit_stack = self._session_cache.pop(key)
@@ -231,7 +231,7 @@ class MCPSessionManager:
 
     def _prepare_local_params(
         self, tool_server: ExternalToolServer
-    ) -> tuple[str, list, dict, str, StdioServerParameters]:
+    ) -> tuple[str, list[str], dict, str, StdioServerParameters]:
         """Extract and prepare parameters for local MCP connection.
 
         Args:

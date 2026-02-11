@@ -1897,9 +1897,13 @@ class TestMCPSessionCaching:
         mock_client,
         mock_mcp_streams,
         cached_remote_tool_server,
-        mock_session_instance,
     ):
-        """Test that concurrent get_or_create calls safely handle race conditions."""
+        """Test that concurrent get_or_create calls safely handle race conditions.
+
+        Injects a delay into session creation so multiple coroutines get past the
+        initial cache-miss check before any of them finish creating a session,
+        exercising the double-check locking and loser-closes-its-stack logic.
+        """
         import asyncio
 
         mock_read_stream, mock_write_stream = mock_mcp_streams
@@ -1910,30 +1914,34 @@ class TestMCPSessionCaching:
         )
 
         manager = MCPSessionManager.shared()
+        creation_count = 0
+
+        original_create = manager._create_cached_session
+
+        async def slow_create(tool_server):
+            nonlocal creation_count
+            creation_count += 1
+            await asyncio.sleep(0.05)
+            return await original_create(tool_server)
+
+        manager._create_cached_session = slow_create
 
         with patch(
             "kiln_ai.tools.mcp_session_manager.ClientSession"
         ) as mock_session_class:
+            mock_session_instance = AsyncMock()
             mock_session_class.return_value.__aenter__.return_value = (
                 mock_session_instance
             )
 
             session_id = "test_session_123"
 
-            # Create multiple coroutines that will try to create the same session
-            async def create_session():
-                return await manager.get_or_create_session(
-                    cached_remote_tool_server, session_id
-                )
-
-            # Run them concurrently
             results = await asyncio.gather(
-                create_session(),
-                create_session(),
-                create_session(),
+                manager.get_or_create_session(cached_remote_tool_server, session_id),
+                manager.get_or_create_session(cached_remote_tool_server, session_id),
+                manager.get_or_create_session(cached_remote_tool_server, session_id),
             )
 
-            # All should return the same session
-            assert len(set(results)) == 1
-            # Initialize should only be called once
-            mock_session_instance.initialize.assert_called_once()
+            assert all(r is mock_session_instance for r in results)
+            assert creation_count > 1, "Delay should cause multiple creation attempts"
+            assert len(manager._session_cache) == 1
