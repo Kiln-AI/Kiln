@@ -618,15 +618,6 @@
     })
   }
 
-  onMount(async () => {
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
-  })
-
   async function refresh_evaluators() {
     const { data: evals_data } = await client.GET(
       "/api/projects/{project_id}/tasks/{task_id}/evals",
