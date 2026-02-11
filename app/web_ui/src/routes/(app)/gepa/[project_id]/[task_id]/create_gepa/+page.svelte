@@ -6,6 +6,7 @@
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
+  import { goto } from "$app/navigation"
   import Completed from "$lib/ui/completed.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import type { Task, TaskRunConfig, Eval, EvalConfig } from "$lib/types"
@@ -31,6 +32,7 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -96,6 +98,8 @@
 
   let current_task: Task | null = null
   let task_loading = true
+  let kiln_copilot_connected: boolean | null = null
+  let copilot_check_error: KilnError | null = null
 
   type EvalWithConfig = {
     eval: Eval
@@ -212,12 +216,22 @@
   onMount(async () => {
     from_prompt_generators =
       $page.url.searchParams.get("from") === "prompt_generators"
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
+
+    try {
+      kiln_copilot_connected = await checkKilnCopilotAvailable()
+    } catch (e) {
+      copilot_check_error = createKilnError(e)
+      kiln_copilot_connected = false
+    }
+
+    if (kiln_copilot_connected) {
+      await Promise.all([
+        load_task(),
+        load_task_prompts(project_id, task_id),
+        load_task_run_configs(project_id, task_id),
+        load_evals_and_configs(),
+      ])
+    }
   })
 
   async function load_task() {
@@ -773,7 +787,51 @@
           },
         ]}
   >
-    {#if task_loading}
+    {#if kiln_copilot_connected === null}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if kiln_copilot_connected === false}
+      <div class="max-w-[600px] mx-auto">
+        <div class="bg-base-200 rounded-lg p-8 text-center">
+          <div class="flex justify-center mb-4">
+            <img
+              src="/images/animated_logo.svg"
+              alt="Kiln Copilot"
+              class="size-16"
+            />
+          </div>
+          <h2 class="text-2xl font-bold mb-3">Kiln Copilot Required</h2>
+          <p class="text-gray-600 mb-6">
+            Kiln Prompt Optimization uses Kiln Copilot to automatically optimize
+            your prompts using advanced techniques. Connect your Kiln Copilot
+            account to continue.
+          </p>
+          {#if copilot_check_error}
+            <div class="bg-error/10 border border-error/20 rounded-lg p-3 mb-6">
+              <div class="text-error text-sm">
+                {copilot_check_error.getMessage() ||
+                  "Failed to check Kiln Copilot connection"}
+              </div>
+            </div>
+          {/if}
+          <div class="flex flex-col gap-3">
+            <button
+              class="btn btn-primary"
+              on:click={() => goto(`/gepa/copilot_auth`)}
+            >
+              Connect Kiln Copilot
+            </button>
+            <a
+              href="/gepa/{project_id}/{task_id}"
+              class="link text-sm text-gray-600"
+            >
+              Back to Optimizer Jobs
+            </a>
+          </div>
+        </div>
+      </div>
+    {:else if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
