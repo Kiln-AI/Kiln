@@ -95,7 +95,13 @@ class MCPSessionManager:
         async with self._cache_lock:
             if cache_key in self._session_cache:
                 # Another coroutine created it first — close ours and return theirs
-                await stack.aclose()
+                try:
+                    await stack.aclose()
+                except Exception:
+                    logger.warning(
+                        f"Error closing redundant MCP session stack for {cache_key}",
+                        exc_info=True,
+                    )
                 return self._session_cache[cache_key][0]
             self._session_cache[cache_key] = (session, stack)
             return session
