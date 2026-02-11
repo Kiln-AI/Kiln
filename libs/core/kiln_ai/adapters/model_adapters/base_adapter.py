@@ -222,12 +222,16 @@ class BaseAdapter(metaclass=ABCMeta):
             return await self._run_returning_run_output(input, input_source)
         finally:
             if is_root_agent:
-                run_id = get_agent_run_id()
-                if run_id:
-                    from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        from kiln_ai.tools.mcp_session_manager import (
+                            MCPSessionManager,
+                        )
 
-                    await MCPSessionManager.shared().cleanup_session(run_id)
-                clear_agent_run_id()
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
 
     def has_structured_output(self) -> bool:
         return self.output_schema is not None
