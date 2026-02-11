@@ -47,12 +47,16 @@ class TestMCPServerTool:
         assert tool._tool is None
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_run_success(self, mock_session_manager):
+    async def test_run_success(self, mock_session_manager, mock_get_run_id):
         """Test successful run() execution."""
         # Setup mocks
+        mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
 
         result_content = [TextContent(type="text", text="Success result")]
         call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
@@ -76,11 +80,15 @@ class TestMCPServerTool:
         )
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_run_empty_content(self, mock_session_manager):
+    async def test_run_empty_content(self, mock_session_manager, mock_get_run_id):
         """Test run() with empty content raises ValueError."""
+        mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
 
         call_result = CallToolResult(
             content=list[ContentBlock]([]),
@@ -102,11 +110,17 @@ class TestMCPServerTool:
             await tool.run()
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_run_non_text_content_error(self, mock_session_manager):
+    async def test_run_non_text_content_error(
+        self, mock_session_manager, mock_get_run_id
+    ):
         """Test run() raises error when first content is not TextContent."""
+        mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
 
         result_content = [
             ImageContent(type="image", data="base64data", mimeType="image/png")
@@ -128,11 +142,15 @@ class TestMCPServerTool:
             await tool.run()
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_run_error_result(self, mock_session_manager):
+    async def test_run_error_result(self, mock_session_manager, mock_get_run_id):
         """Test run() raises error when tool returns isError=True."""
+        mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
 
         result_content = [TextContent(type="text", text="Error occurred")]
         call_result = CallToolResult(
@@ -155,11 +173,17 @@ class TestMCPServerTool:
             await tool.run()
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_run_multiple_content_blocks_error(self, mock_session_manager):
+    async def test_run_multiple_content_blocks_error(
+        self, mock_session_manager, mock_get_run_id
+    ):
         """Test run() raises error when tool returns multiple content blocks."""
+        mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
 
         result_content = [
             TextContent(type="text", text="First block"),
@@ -184,11 +208,15 @@ class TestMCPServerTool:
             await tool.run()
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_call_tool_success(self, mock_session_manager):
+    async def test_call_tool_success(self, mock_session_manager, mock_get_run_id):
         """Test _call_tool() method."""
+        mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
 
         result_content = [TextContent(type="text", text="Async result")]
         call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
@@ -466,7 +494,7 @@ class TestMCPServerToolAgentRunContext:
     @pytest.fixture
     def clear_context(self):
         """Clear the agent run context before each test."""
-        from kiln_ai.adapters.adapter_run_context import clear_agent_run_id
+        from kiln_ai.run_context import clear_agent_run_id
 
         clear_agent_run_id()
         yield
@@ -478,7 +506,7 @@ class TestMCPServerToolAgentRunContext:
         self, mock_session_manager, clear_context
     ):
         """Test that _call_tool uses get_or_create_session when run ID is set."""
-        from kiln_ai.adapters.adapter_run_context import set_agent_run_id
+        from kiln_ai.run_context import set_agent_run_id
 
         # Set a run context
         run_id = "test_run_123"
@@ -517,18 +545,10 @@ class TestMCPServerToolAgentRunContext:
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_call_tool_without_session_context(
+    async def test_call_tool_without_session_context_raises(
         self, mock_session_manager, clear_context
     ):
-        """Test that _call_tool falls back to ephemeral session when no session ID."""
-        # Mock mcp_client (ephemeral session)
-        mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
-
-        result_content = [TextContent(type="text", text="Test result")]
-        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
-        mock_session.call_tool.return_value = call_result
-
+        """Test that _call_tool raises RuntimeError when called without a run ID."""
         server = ExternalToolServer(
             name="test_server",
             type=ToolServerType.remote_mcp,
@@ -539,14 +559,13 @@ class TestMCPServerToolAgentRunContext:
         )
         tool = MCPServerTool(server, "test_tool")
 
-        await tool._call_tool(param1="value1")
+        with pytest.raises(
+            RuntimeError, match="MCP tool call attempted without an agent run context"
+        ):
+            await tool._call_tool(param1="value1")
 
         # Verify get_or_create_session was NOT called
         mock_session_manager.shared.return_value.get_or_create_session.assert_not_called()
-        # Verify mcp_client was used (ephemeral session)
-        mock_session_manager.shared.return_value.mcp_client.assert_called_once_with(
-            server
-        )
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
@@ -554,7 +573,7 @@ class TestMCPServerToolAgentRunContext:
         self, mock_session_manager, clear_context
     ):
         """Test that _get_tool uses cached session when run ID is set."""
-        from kiln_ai.adapters.adapter_run_context import set_agent_run_id
+        from kiln_ai.run_context import set_agent_run_id
 
         # Set a run context
         run_id = "test_run_123"

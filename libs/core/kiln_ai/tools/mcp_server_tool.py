@@ -1,9 +1,9 @@
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
-from kiln_ai.adapters.adapter_run_context import get_agent_run_id
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
+from kiln_ai.run_context import get_agent_run_id
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -68,27 +68,19 @@ class MCPServerTool(KilnToolInterface):
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:
         session_id = get_agent_run_id()
+        if not session_id:
+            raise RuntimeError(
+                "MCP tool call attempted without an agent run context. "
+                "This is a bug — tool calls should only happen during an agent run."
+            )
 
-        if session_id:
-            # Use cached session from the agent's session context
-            session = await MCPSessionManager.shared().get_or_create_session(
-                self._tool_server_model, session_id
-            )
-            result = await session.call_tool(
-                name=await self.name(),
-                arguments=kwargs,
-            )
-            return result
-        else:
-            # Fallback: ephemeral session (outside agent context)
-            async with MCPSessionManager.shared().mcp_client(
-                self._tool_server_model
-            ) as session:
-                result = await session.call_tool(
-                    name=await self.name(),
-                    arguments=kwargs,
-                )
-                return result
+        session = await MCPSessionManager.shared().get_or_create_session(
+            self._tool_server_model, session_id
+        )
+        return await session.call_tool(
+            name=await self.name(),
+            arguments=kwargs,
+        )
 
     async def _load_tool_properties(self):
         if self._tool is not None:

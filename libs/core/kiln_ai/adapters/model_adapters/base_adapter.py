@@ -3,13 +3,6 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-# Import agent run context for run lifecycle management
-from kiln_ai.adapters.adapter_run_context import (
-    clear_agent_run_id,
-    generate_agent_run_id,
-    get_agent_run_id,
-    set_agent_run_id,
-)
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
@@ -33,6 +26,14 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties
+
+# Import agent run context for run lifecycle management
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    generate_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config

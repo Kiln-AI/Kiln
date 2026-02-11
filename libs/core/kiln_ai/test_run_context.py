@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from kiln_ai.adapters.adapter_run_context import (
+from kiln_ai.run_context import (
     clear_agent_run_id,
     generate_agent_run_id,
     get_agent_run_id,

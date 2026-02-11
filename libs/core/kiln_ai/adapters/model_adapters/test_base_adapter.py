@@ -665,7 +665,7 @@ class TestAgentRunContextLifecycle:
     @pytest.fixture
     def clear_context(self):
         """Clear the agent run context before each test."""
-        from kiln_ai.adapters.adapter_run_context import clear_agent_run_id
+        from kiln_ai.run_context import clear_agent_run_id
 
         clear_agent_run_id()
         yield
@@ -674,8 +674,8 @@ class TestAgentRunContextLifecycle:
     @pytest.mark.asyncio
     async def test_invoke_sets_run_context(self, adapter, clear_context):
         """Test that invoke sets the run context for root agent."""
-        from kiln_ai.adapters.adapter_run_context import get_agent_run_id
         from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
         async def mock_run(input):
@@ -714,8 +714,8 @@ class TestAgentRunContextLifecycle:
     @pytest.mark.asyncio
     async def test_invoke_clears_run_context_after(self, adapter, clear_context):
         """Test that invoke clears the run context after completion."""
-        from kiln_ai.adapters.adapter_run_context import get_agent_run_id
         from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
         async def mock_run(input):
@@ -753,7 +753,7 @@ class TestAgentRunContextLifecycle:
     @pytest.mark.asyncio
     async def test_invoke_clears_run_context_on_error(self, adapter, clear_context):
         """Test that invoke clears the run context even on error."""
-        from kiln_ai.adapters.adapter_run_context import get_agent_run_id
+        from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
         async def mock_run(input):
@@ -773,11 +773,11 @@ class TestAgentRunContextLifecycle:
     @pytest.mark.asyncio
     async def test_sub_agent_inherits_run(self, adapter, clear_context):
         """Test that sub-agent inherits parent's run ID."""
-        from kiln_ai.adapters.adapter_run_context import (
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import (
             get_agent_run_id,
             set_agent_run_id,
         )
-        from kiln_ai.adapters.run_output import RunOutput
 
         # Simulate parent agent setting the run context
         parent_run_id = "parent_agent_run"
@@ -823,11 +823,11 @@ class TestAgentRunContextLifecycle:
     @pytest.mark.asyncio
     async def test_sub_agent_does_not_create_new_run(self, adapter, clear_context):
         """Test that sub-agent doesn't create a new run ID."""
-        from kiln_ai.adapters.adapter_run_context import (
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import (
             get_agent_run_id,
             set_agent_run_id,
         )
-        from kiln_ai.adapters.run_output import RunOutput
 
         # Simulate parent agent setting the run context
         parent_run_id = "parent_agent_run"
