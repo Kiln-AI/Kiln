@@ -165,6 +165,30 @@ class MCPSessionManager:
             await stack.aclose()
             raise
 
+    def _prepare_remote_params(
+        self, tool_server: ExternalToolServer
+    ) -> tuple[str, dict]:
+        """Extract and prepare parameters for remote MCP connection.
+
+        Args:
+            tool_server: The external tool server configuration
+
+        Returns:
+            A tuple of (server_url, headers) with secrets merged
+
+        Raises:
+            ValueError: If the server URL is not configured
+        """
+        server_url = tool_server.properties.get("server_url")
+        if not server_url:
+            raise ValueError("server_url is required")
+
+        headers = tool_server.properties.get("headers", {}).copy()
+        secret_headers, _ = tool_server.retrieve_secrets()
+        headers.update(secret_headers)
+
+        return server_url, headers
+
     async def _create_cached_remote_session(
         self,
         tool_server: ExternalToolServer,
@@ -185,13 +209,7 @@ class MCPSessionManager:
             ValueError: If the server URL is not configured
             RuntimeError: If connection to the server fails
         """
-        server_url = tool_server.properties.get("server_url")
-        if not server_url:
-            raise ValueError("server_url is required")
-
-        headers = tool_server.properties.get("headers", {}).copy()
-        secret_headers, _ = tool_server.retrieve_secrets()
-        headers.update(secret_headers)
+        server_url, headers = self._prepare_remote_params(tool_server)
 
         try:
             read_stream, write_stream, _ = await stack.enter_async_context(
@@ -206,25 +224,19 @@ class MCPSessionManager:
             self._handle_remote_mcp_error(e)
             raise  # unreachable but needed for type checker
 
-    async def _create_cached_local_session(
-        self,
-        tool_server: ExternalToolServer,
-        stack: AsyncExitStack,
-    ) -> ClientSession:
-        """Create a cached local MCP session using AsyncExitStack.
-
-        The subprocess, stderr capture, and session remain alive until the stack is closed.
+    def _prepare_local_params(
+        self, tool_server: ExternalToolServer
+    ) -> tuple[str, list, dict, str, StdioServerParameters]:
+        """Extract and prepare parameters for local MCP connection.
 
         Args:
             tool_server: The external tool server configuration
-            stack: The AsyncExitStack to manage the transport lifecycle
 
         Returns:
-            An initialized ClientSession
+            A tuple of (command, args, env_vars, cwd, server_params)
 
         Raises:
             ValueError: If the command is not provided or args is not a list
-            RuntimeError: If the subprocess fails to start or initialize
         """
         command = tool_server.properties.get("command")
         if not command:
@@ -249,6 +261,32 @@ class MCPSessionManager:
         os.makedirs(cwd, exist_ok=True)
         server_params = StdioServerParameters(
             command=command, args=args, env=env_vars, cwd=cwd
+        )
+
+        return command, args, env_vars, cwd, server_params
+
+    async def _create_cached_local_session(
+        self,
+        tool_server: ExternalToolServer,
+        stack: AsyncExitStack,
+    ) -> ClientSession:
+        """Create a cached local MCP session using AsyncExitStack.
+
+        The subprocess, stderr capture, and session remain alive until the stack is closed.
+
+        Args:
+            tool_server: The external tool server configuration
+            stack: The AsyncExitStack to manage the transport lifecycle
+
+        Returns:
+            An initialized ClientSession
+
+        Raises:
+            ValueError: If the command is not provided or args is not a list
+            RuntimeError: If the subprocess fails to start or initialize
+        """
+        _command, _args, _env_vars, _cwd, server_params = self._prepare_local_params(
+            tool_server
         )
 
         err_log = stack.enter_context(
@@ -304,17 +342,7 @@ class MCPSessionManager:
         """
         Create a session for a remote MCP server.
         """
-        # Make sure the server_url is set
-        server_url = tool_server.properties.get("server_url")
-        if not server_url:
-            raise ValueError("server_url is required")
-
-        # Make a copy of the headers to avoid modifying the original object
-        headers = tool_server.properties.get("headers", {}).copy()
-
-        # Retrieve secret headers from configuration and merge with regular headers
-        secret_headers, _ = tool_server.retrieve_secrets()
-        headers.update(secret_headers)
+        server_url, headers = self._prepare_remote_params(tool_server)
 
         try:
             async with streamablehttp_client(server_url, headers=headers) as (
@@ -338,34 +366,8 @@ class MCPSessionManager:
         """
         Create a session for a local MCP server.
         """
-        command = tool_server.properties.get("command")
-        if not command:
-            raise ValueError(
-                "Attempted to start local MCP server, but no command was provided"
-            )
-
-        args = tool_server.properties.get("args", [])
-        if not isinstance(args, list):
-            raise ValueError(
-                "Attempted to start local MCP server, but args is not a list of strings"
-            )
-
-        # Make a copy of the env_vars to avoid modifying the original object
-        env_vars = tool_server.properties.get("env_vars", {}).copy()
-
-        # Retrieve secret environment variables from configuration and merge with regular env_vars
-        secret_env_vars, _ = tool_server.retrieve_secrets()
-        env_vars.update(secret_env_vars)
-
-        # Set PATH, only if not explicitly set during MCP tool setup
-        if "PATH" not in env_vars:
-            env_vars["PATH"] = self._get_path()
-
-        # Set the server parameters
-        cwd = os.path.join(Config.settings_dir(), "cache", "mcp_cache")
-        os.makedirs(cwd, exist_ok=True)
-        server_params = StdioServerParameters(
-            command=command, args=args, env=env_vars, cwd=cwd
+        _command, _args, _env_vars, _cwd, server_params = self._prepare_local_params(
+            tool_server
         )
 
         # Create temporary file to capture MCP server stderr
