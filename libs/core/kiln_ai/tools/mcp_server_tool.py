@@ -1,6 +1,7 @@
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
+from kiln_ai.adapters.adapter_run_context import get_agent_run_id
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
 from kiln_ai.tools.base_tool import (
@@ -9,7 +10,6 @@ from kiln_ai.tools.base_tool import (
     ToolCallDefinition,
     ToolCallResult,
 )
-from kiln_ai.tools.mcp_session_context import get_mcp_session_id
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
@@ -67,7 +67,7 @@ class MCPServerTool(KilnToolInterface):
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:
-        session_id = get_mcp_session_id()
+        session_id = get_agent_run_id()
 
         if session_id:
             # Use cached session from the agent's session context
@@ -104,7 +104,7 @@ class MCPServerTool(KilnToolInterface):
 
     #  Get the MCP Tool from the server
     async def _get_tool(self, tool_name: str) -> MCPTool:
-        session_id = get_mcp_session_id()
+        session_id = get_agent_run_id()
 
         if session_id:
             session = await MCPSessionManager.shared().get_or_create_session(

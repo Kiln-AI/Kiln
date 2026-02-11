@@ -460,29 +460,29 @@ class TestMCPServerToolIntegration:
         assert mcp_tool.name == "echo"
 
 
-class TestMCPServerToolSessionContext:
-    """Unit tests for MCPServerTool with session context."""
+class TestMCPServerToolAgentRunContext:
+    """Unit tests for MCPServerTool with agent run context."""
 
     @pytest.fixture
     def clear_context(self):
-        """Clear the MCP session context before each test."""
-        from kiln_ai.tools.mcp_session_context import clear_mcp_session_id
+        """Clear the agent run context before each test."""
+        from kiln_ai.adapters.adapter_run_context import clear_agent_run_id
 
-        clear_mcp_session_id()
+        clear_agent_run_id()
         yield
-        clear_mcp_session_id()
+        clear_agent_run_id()
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     async def test_call_tool_with_session_context(
         self, mock_session_manager, clear_context
     ):
-        """Test that _call_tool uses get_or_create_session when session ID is set."""
-        from kiln_ai.tools.mcp_session_context import set_mcp_session_id
+        """Test that _call_tool uses get_or_create_session when run ID is set."""
+        from kiln_ai.adapters.adapter_run_context import set_agent_run_id
 
-        # Set a session context
-        session_id = "test_session_123"
-        set_mcp_session_id(session_id)
+        # Set a run context
+        run_id = "test_run_123"
+        set_agent_run_id(run_id)
 
         # Mock get_or_create_session as an async function
         mock_session = AsyncMock()
@@ -508,7 +508,7 @@ class TestMCPServerToolSessionContext:
 
         # Verify get_or_create_session was called
         mock_session_manager.shared.return_value.get_or_create_session.assert_called_once_with(
-            server, session_id
+            server, run_id
         )
         # Verify call_tool was called on the cached session
         mock_session.call_tool.assert_called_once_with(
@@ -553,12 +553,12 @@ class TestMCPServerToolSessionContext:
     async def test_get_tool_with_session_context(
         self, mock_session_manager, clear_context
     ):
-        """Test that _get_tool uses cached session when session ID is set."""
-        from kiln_ai.tools.mcp_session_context import set_mcp_session_id
+        """Test that _get_tool uses cached session when run ID is set."""
+        from kiln_ai.adapters.adapter_run_context import set_agent_run_id
 
-        # Set a session context
-        session_id = "test_session_123"
-        set_mcp_session_id(session_id)
+        # Set a run context
+        run_id = "test_run_123"
+        set_agent_run_id(run_id)
 
         # Mock get_or_create_session as an async function
         mock_session = AsyncMock()
@@ -589,7 +589,7 @@ class TestMCPServerToolSessionContext:
 
         # Verify get_or_create_session was called
         mock_session_manager.shared.return_value.get_or_create_session.assert_called_once_with(
-            server, session_id
+            server, run_id
         )
         # Verify list_tools was called on the cached session
         mock_session.list_tools.assert_called_once()

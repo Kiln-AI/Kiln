@@ -659,30 +659,30 @@ async def test_custom_prompt_builder(base_task):
     assert adapter.prompt_builder == custom_builder
 
 
-class TestMcpSessionContextLifecycle:
-    """Unit tests for MCP session context lifecycle in BaseAdapter."""
+class TestAgentRunContextLifecycle:
+    """Unit tests for agent run context lifecycle in BaseAdapter."""
 
     @pytest.fixture
     def clear_context(self):
-        """Clear the MCP session context before each test."""
-        from kiln_ai.tools.mcp_session_context import clear_mcp_session_id
+        """Clear the agent run context before each test."""
+        from kiln_ai.adapters.adapter_run_context import clear_agent_run_id
 
-        clear_mcp_session_id()
+        clear_agent_run_id()
         yield
-        clear_mcp_session_id()
+        clear_agent_run_id()
 
     @pytest.mark.asyncio
-    async def test_invoke_sets_session_context(self, adapter, clear_context):
-        """Test that invoke sets the session context for root agent."""
+    async def test_invoke_sets_run_context(self, adapter, clear_context):
+        """Test that invoke sets the run context for root agent."""
+        from kiln_ai.adapters.adapter_run_context import get_agent_run_id
         from kiln_ai.adapters.run_output import RunOutput
-        from kiln_ai.tools.mcp_session_context import get_mcp_session_id
 
         # Mock the _run method
         async def mock_run(input):
-            # Check that session ID is set during _run
-            session_id = get_mcp_session_id()
-            assert session_id is not None
-            assert session_id.startswith("mcp_")
+            # Check that run ID is set during _run
+            run_id = get_agent_run_id()
+            assert run_id is not None
+            assert run_id.startswith("run_")
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -712,10 +712,10 @@ class TestMcpSessionContextLifecycle:
             await adapter.invoke_returning_run_output({"test": "input"})
 
     @pytest.mark.asyncio
-    async def test_invoke_clears_session_context_after(self, adapter, clear_context):
-        """Test that invoke clears the session context after completion."""
+    async def test_invoke_clears_run_context_after(self, adapter, clear_context):
+        """Test that invoke clears the run context after completion."""
+        from kiln_ai.adapters.adapter_run_context import get_agent_run_id
         from kiln_ai.adapters.run_output import RunOutput
-        from kiln_ai.tools.mcp_session_context import get_mcp_session_id
 
         # Mock the _run method
         async def mock_run(input):
@@ -747,19 +747,19 @@ class TestMcpSessionContextLifecycle:
 
             await adapter.invoke_returning_run_output({"test": "input"})
 
-            # After invoke, session ID should be cleared
-            assert get_mcp_session_id() is None
+            # After invoke, run ID should be cleared
+            assert get_agent_run_id() is None
 
     @pytest.mark.asyncio
-    async def test_invoke_clears_session_context_on_error(self, adapter, clear_context):
-        """Test that invoke clears the session context even on error."""
-        from kiln_ai.tools.mcp_session_context import get_mcp_session_id
+    async def test_invoke_clears_run_context_on_error(self, adapter, clear_context):
+        """Test that invoke clears the run context even on error."""
+        from kiln_ai.adapters.adapter_run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
         async def mock_run(input):
-            # Session ID should be set even when error occurs
-            session_id = get_mcp_session_id()
-            assert session_id is not None
+            # Run ID should be set even when error occurs
+            run_id = get_agent_run_id()
+            assert run_id is not None
             raise ValueError("Test error")
 
         adapter._run = mock_run
@@ -767,27 +767,27 @@ class TestMcpSessionContextLifecycle:
         with pytest.raises(ValueError, match="Test error"):
             await adapter.invoke_returning_run_output({"test": "input"})
 
-        # After error, session ID should be cleared
-        assert get_mcp_session_id() is None
+        # After error, run ID should be cleared
+        assert get_agent_run_id() is None
 
     @pytest.mark.asyncio
-    async def test_sub_agent_inherits_session(self, adapter, clear_context):
-        """Test that sub-agent inherits parent's session ID."""
-        from kiln_ai.adapters.run_output import RunOutput
-        from kiln_ai.tools.mcp_session_context import (
-            get_mcp_session_id,
-            set_mcp_session_id,
+    async def test_sub_agent_inherits_run(self, adapter, clear_context):
+        """Test that sub-agent inherits parent's run ID."""
+        from kiln_ai.adapters.adapter_run_context import (
+            get_agent_run_id,
+            set_agent_run_id,
         )
+        from kiln_ai.adapters.run_output import RunOutput
 
-        # Simulate parent agent setting the session context
-        parent_session_id = "parent_mcp_session"
-        set_mcp_session_id(parent_session_id)
+        # Simulate parent agent setting the run context
+        parent_run_id = "parent_agent_run"
+        set_agent_run_id(parent_run_id)
 
-        # Mock the _run method to check inherited session ID
+        # Mock the _run method to check inherited run ID
         async def mock_run(input):
-            # Sub-agent should see parent's session ID
-            session_id = get_mcp_session_id()
-            assert session_id == parent_session_id
+            # Sub-agent should see parent's run ID
+            run_id = get_agent_run_id()
+            assert run_id == parent_run_id
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -816,29 +816,29 @@ class TestMcpSessionContextLifecycle:
 
             await adapter.invoke_returning_run_output({"test": "input"})
 
-            # After invoke, the parent's session ID should still be set
+            # After invoke, the parent's run ID should still be set
             # (since we were acting as a sub-agent)
-            assert get_mcp_session_id() == parent_session_id
+            assert get_agent_run_id() == parent_run_id
 
     @pytest.mark.asyncio
-    async def test_sub_agent_does_not_create_new_session(self, adapter, clear_context):
-        """Test that sub-agent doesn't create a new session ID."""
-        from kiln_ai.adapters.run_output import RunOutput
-        from kiln_ai.tools.mcp_session_context import (
-            get_mcp_session_id,
-            set_mcp_session_id,
+    async def test_sub_agent_does_not_create_new_run(self, adapter, clear_context):
+        """Test that sub-agent doesn't create a new run ID."""
+        from kiln_ai.adapters.adapter_run_context import (
+            get_agent_run_id,
+            set_agent_run_id,
         )
+        from kiln_ai.adapters.run_output import RunOutput
 
-        # Simulate parent agent setting the session context
-        parent_session_id = "parent_mcp_session"
-        set_mcp_session_id(parent_session_id)
+        # Simulate parent agent setting the run context
+        parent_run_id = "parent_agent_run"
+        set_agent_run_id(parent_run_id)
 
-        session_id_during_run = None
+        run_id_during_run = None
 
-        # Mock the _run method to capture session ID
+        # Mock the _run method to capture run ID
         async def mock_run(input):
-            nonlocal session_id_during_run
-            session_id_during_run = get_mcp_session_id()
+            nonlocal run_id_during_run
+            run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -867,8 +867,8 @@ class TestMcpSessionContextLifecycle:
 
             await adapter.invoke_returning_run_output({"test": "input"})
 
-            # Sub-agent should have used the parent's session ID
-            assert session_id_during_run == parent_session_id
+            # Sub-agent should have used the parent's run ID
+            assert run_id_during_run == parent_run_id
 
     @pytest.mark.asyncio
     async def test_cleanup_session_called_on_completion(self, adapter, clear_context):
@@ -914,8 +914,8 @@ class TestMcpSessionContextLifecycle:
 
             # cleanup_session should have been called
             mock_manager.cleanup_session.assert_called_once()
-            # The session ID should be a string that starts with "mcp_"
+            # The run ID should be a string that starts with "run_"
             call_args = mock_manager.cleanup_session.call_args
             assert call_args is not None
-            session_id = call_args[0][0] if call_args[0] else call_args[1]["session_id"]
-            assert session_id.startswith("mcp_")
+            run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
+            assert run_id.startswith("run_")
