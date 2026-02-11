@@ -54,7 +54,14 @@
 
   function getPromptType(
     prompt_id: string,
-  ): "Custom" | "Fine Tuning Prompt" | "Frozen Prompt" | "Unknown" {
+    generator_id?: string | null,
+  ):
+    | "Custom"
+    | "Fine Tuning Prompt"
+    | "Frozen Prompt"
+    | "Optimized Prompt"
+    | "Unknown" {
+    if (generator_id === "kiln_prompt_optimizer") return "Optimized Prompt"
     if (prompt_id.startsWith("id::")) return "Custom"
     if (prompt_id.startsWith("fine_tune_prompt::")) return "Fine Tuning Prompt"
     if (prompt_id.startsWith("task_run_config::")) return "Frozen Prompt"
@@ -72,8 +79,8 @@
           bValue = (b.name || "").toLowerCase()
           break
         case "type":
-          aValue = getPromptType(a.id).toLowerCase()
-          bValue = getPromptType(b.id).toLowerCase()
+          aValue = getPromptType(a.id, a.generator_id).toLowerCase()
+          bValue = getPromptType(b.id, b.generator_id).toLowerCase()
           break
         case "created_at":
           aValue = a.created_at ? new Date(a.created_at).getTime() : 0
@@ -127,6 +134,10 @@
     ]}
     action_buttons={[
       {
+        label: "Optimizer Jobs",
+        href: `/gepa/${project_id}/${task_id}`,
+      },
+      {
         label: "Create Prompt",
         href: `/prompts/${project_id}/${task_id}/prompt_generators`,
         primary: true,
@@ -178,8 +189,8 @@
         <div>
           <h2 class="text-lg font-medium text-gray-900">Saved Prompts</h2>
           <p class="text-sm text-gray-500 mb-2">
-            Saved prompts include custom prompts, frozen prompts from saved run
-            configurations, and fine-tuning prompts.
+            Saved prompts include custom prompts, optimized prompts, frozen
+            prompts from saved run configurations, and fine-tuning prompts.
           </p>
           {#if !has_prompts}
             <div class="text-gray-500 rounded-lg border p-4 text-sm">
@@ -227,7 +238,7 @@
                         {prompt.name}
                       </td>
                       <td class="whitespace-nowrap">
-                        {getPromptType(prompt.id)}
+                        {getPromptType(prompt.id, prompt.generator_id)}
                       </td>
                       <td>
                         <div class="max-w-[400px] truncate">

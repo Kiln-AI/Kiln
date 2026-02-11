@@ -2,7 +2,6 @@
   import AppPage from "../../../../../app_page.svelte"
   import { page } from "$app/stores"
   import { onMount, onDestroy } from "svelte"
-  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { GepaJob } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
@@ -13,6 +12,7 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
+  import { load_gepa_job } from "$lib/stores/gepa_store"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -67,23 +67,7 @@
         gepa_job = null
       }
 
-      const { data: gepa_job_response, error: get_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              gepa_job_id,
-            },
-          },
-        },
-      )
-
-      if (get_error) {
-        throw get_error
-      }
-      gepa_job = gepa_job_response
+      gepa_job = await load_gepa_job(project_id, task_id, gepa_job_id)
       build_properties()
     } catch (error) {
       if (show_loading) {
@@ -138,8 +122,9 @@
       {
         name: "Token Budget",
         value:
-          gepa_job.token_budget.charAt(0).toUpperCase() +
-          gepa_job.token_budget.slice(1),
+          { light: "Low", medium: "Medium", heavy: "High" }[
+            gepa_job.token_budget
+          ] || gepa_job.token_budget,
       },
       {
         name: "Target Run Config",
@@ -161,11 +146,19 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Kiln Prompt Optimization Job"
+    title="Prompt Optimizer Job"
     subtitle={gepa_job_loading ? undefined : `Name: ${gepa_job?.name}`}
     breadcrumbs={[
       {
-        label: "Kiln Prompt Optimization Jobs",
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
+      {
+        label: "Prompts",
+        href: `/prompts/${project_id}/${task_id}`,
+      },
+      {
+        label: "Optimizer Jobs",
         href: `/gepa/${project_id}/${task_id}`,
       },
     ]}

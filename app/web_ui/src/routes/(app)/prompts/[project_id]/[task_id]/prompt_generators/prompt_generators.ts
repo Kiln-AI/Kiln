@@ -14,6 +14,20 @@ export type PromptGeneratorCategory = {
 
 export const prompt_generator_categories: PromptGeneratorCategory[] = [
   {
+    category: "Automated Optimization",
+    templates: [
+      {
+        generator_id: "kiln_prompt_optimizer",
+        name: "Kiln Prompt Optimizer",
+        description:
+          "Run GEPA to automatically optimize your prompt with training data.",
+        requires_data: false,
+        requires_repairs: false,
+        chain_of_thought: false,
+      },
+    ],
+  },
+  {
     category: "Standard Prompts",
     templates: [
       {
@@ -86,20 +100,6 @@ export const prompt_generator_categories: PromptGeneratorCategory[] = [
         requires_data: true,
         requires_repairs: false,
         chain_of_thought: true,
-      },
-    ],
-  },
-  {
-    category: "Automated Optimization",
-    templates: [
-      {
-        generator_id: "kiln_prompt_optimizer",
-        name: "Kiln Prompt Optimizer",
-        description:
-          "Run GEPA to automatically optimize your prompt with training data.",
-        requires_data: false,
-        requires_repairs: false,
-        chain_of_thought: false,
       },
     ],
   },

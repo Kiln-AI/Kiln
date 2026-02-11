@@ -27,6 +27,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import { get_tools_property_info } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
+  import { tick } from "svelte"
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
   import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
@@ -191,8 +192,9 @@
       : { value: "Loading...", links: undefined }
   }
 
-  function handleRowClick(config: TaskRunConfig) {
+  async function handleRowClick(config: TaskRunConfig) {
     selected_run_config = config
+    await tick()
     run_config_details_dialog?.show()
   }
 

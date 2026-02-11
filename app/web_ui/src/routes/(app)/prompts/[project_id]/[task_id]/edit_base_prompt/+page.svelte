@@ -76,6 +76,10 @@
     subtitle="Update the base prompt for this task."
     breadcrumbs={[
       {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
+      {
         label: "Prompts",
         href: `/prompts/${project_id}/${task_id}`,
       },

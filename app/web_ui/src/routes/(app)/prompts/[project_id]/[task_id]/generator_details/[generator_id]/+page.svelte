@@ -1,4 +1,5 @@
 <script lang="ts">
+  // TODO: Remove this page?
   import { current_task, current_task_prompts } from "$lib/stores"
   import { page } from "$app/stores"
   import { type KilnError, createKilnError } from "$lib/utils/error_handlers"

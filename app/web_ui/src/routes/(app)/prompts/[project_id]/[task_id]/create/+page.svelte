@@ -153,6 +153,10 @@
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
       {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
+      {
         label: "Prompts",
         href: `/prompts/${project_id}/${task_id}`,
       },
