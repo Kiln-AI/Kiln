@@ -44,21 +44,12 @@ from kiln_ai.datamodel import GepaJob, Project, Prompt
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.lock import shared_async_lock_manager
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-# locks per job ID to prevent race conditions when creating artifacts
-_job_locks: dict[str, asyncio.Lock] = {}
-
-
-def _get_job_lock(job_id: str) -> asyncio.Lock:
-    """Get or create a lock for a specific job ID."""
-    if job_id not in _job_locks:
-        _job_locks[job_id] = asyncio.Lock()
-    return _job_locks[job_id]
 
 
 def is_job_status_final(status: str) -> bool:
@@ -292,8 +283,7 @@ async def update_gepa_job_and_create_artifacts(
 
         new_status = str(status_response.status.value)
 
-        lock = _get_job_lock(gepa_job.job_id)
-        async with lock:
+        async with shared_async_lock_manager.acquire(gepa_job.job_id):
             previous_status = gepa_job.latest_status
             gepa_job.latest_status = new_status
 

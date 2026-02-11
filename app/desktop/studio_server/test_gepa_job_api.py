@@ -1,3 +1,4 @@
+import asyncio
 import io
 import zipfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -36,6 +37,7 @@ from app.desktop.studio_server.gepa_job_api import (
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import GepaJob, Project, Task
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 
@@ -884,8 +886,6 @@ def test_update_gepa_job_status_no_parent_task(mock_api_key):
     mock_client = MagicMock(spec=AuthenticatedClient)
 
     with pytest.raises(Exception) as exc_info:
-        import asyncio
-
         asyncio.run(update_gepa_job_and_create_artifacts(gepa_job, mock_client))
 
     assert exc_info.value.status_code == 500
@@ -2111,8 +2111,6 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
 
 def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
     """Test that a run config is created when a GEPA job succeeds."""
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -2214,8 +2212,6 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
 
 def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
     """Test that a run config is only created once even if status is checked multiple times."""
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -2366,12 +2362,8 @@ def test_gepa_job_run_config_handles_missing_target_config(
         assert result["created_run_config_id"] is None
 
 
-def test_gepa_job_prevents_race_condition_on_artifact_creation(
-    client, mock_api_key, tmp_path
-):
-    """Test that concurrent requests don't create duplicate artifacts due to locking."""
-    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-
+def test_gepa_job_prevents_race_condition_on_artifact_creation(mock_api_key, tmp_path):
+    """Test that concurrent updates don't create duplicate artifacts due to locking."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -2405,10 +2397,6 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(
     )
     gepa_job.save_to_file()
 
-    project_id = project.id
-    task_id = task.id
-    gepa_job_id = gepa_job.id
-
     optimized_prompt = "This is the optimized prompt from GEPA"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
@@ -2418,12 +2406,117 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(
         output=GEPAJobOutput(optimized_prompt=optimized_prompt),
     )
 
-    with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
-        patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
-            return_value=target_run_config,
+    mock_client = MagicMock(spec=AuthenticatedClient)
+
+    async def concurrent_updates():
+        """Run two concurrent update calls to test locking."""
+        with (
+            patch(
+                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+                new_callable=AsyncMock,
+                return_value=mock_status_response,
+            ),
+            patch(
+                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+                new_callable=AsyncMock,
+                return_value=mock_result_response,
+            ),
+            patch(
+                "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+                return_value=target_run_config,
+            ),
+            patch(
+                "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
+                return_value=gepa_job,
+            ),
+        ):
+            # Call update_gepa_job_and_create_artifacts concurrently with asyncio.gather
+            results = await asyncio.gather(
+                update_gepa_job_and_create_artifacts(gepa_job, mock_client),
+                update_gepa_job_and_create_artifacts(gepa_job, mock_client),
+            )
+            return results
+
+    results = asyncio.run(concurrent_updates())
+
+    # Both calls should succeed
+    assert len(results) == 2
+    assert results[0].latest_status == JobStatus.SUCCEEDED.value
+    assert results[1].latest_status == JobStatus.SUCCEEDED.value
+
+    # Should only create one prompt and one run config despite concurrent calls
+    prompts = task.prompts()
+    assert len(prompts) == 1
+
+    run_configs = task.run_configs()
+    assert len(run_configs) == 2  # original + optimized
+
+
+@pytest.mark.parametrize(
+    "previous_status,new_status,should_create_artifacts",
+    [
+        # Should create artifacts - transitioning TO succeeded from non-succeeded
+        (JobStatus.PENDING, JobStatus.SUCCEEDED, True),
+        (JobStatus.RUNNING, JobStatus.SUCCEEDED, True),
+        (JobStatus.FAILED, JobStatus.SUCCEEDED, True),
+        (JobStatus.CANCELLED, JobStatus.SUCCEEDED, True),
+        # Should NOT create artifacts - already succeeded or not transitioning to succeeded
+        (JobStatus.SUCCEEDED, JobStatus.SUCCEEDED, False),
+        (JobStatus.PENDING, JobStatus.RUNNING, False),
+        (JobStatus.PENDING, JobStatus.FAILED, False),
+        (JobStatus.RUNNING, JobStatus.FAILED, False),
+        (JobStatus.RUNNING, JobStatus.CANCELLED, False),
+        (JobStatus.PENDING, JobStatus.CANCELLED, False),
+    ],
+)
+def test_update_gepa_job_status_transitions(
+    mock_api_key, tmp_path, previous_status, new_status, should_create_artifacts
+):
+    """Test that artifacts are only created when transitioning TO succeeded from non-succeeded status."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    target_run_config = TaskRunConfig(
+        parent=task,
+        name="Original Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
         ),
+    )
+    target_run_config.save_to_file()
+
+    # Create job with the previous_status
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id=target_run_config.id,
+        latest_status=previous_status.value,
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    optimized_prompt = "This is the optimized prompt from GEPA"
+    mock_status_response = JobStatusResponse(job_id="remote-job-123", status=new_status)
+    mock_result_response = GEPAJobResultResponse(
+        status=new_status,
+        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+    )
+
+    mock_client = MagicMock(spec=AuthenticatedClient)
+
+    with (
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
@@ -2434,21 +2527,255 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=target_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
+            return_value=gepa_job,
+        ),
     ):
-        # Make two concurrent requests - simulating a race condition
-        response_1 = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
-        )
-        response_2 = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        updated_job = asyncio.run(
+            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
         )
 
-        assert response_1.status_code == 200
-        assert response_2.status_code == 200
+    # Verify status was updated
+    assert updated_job.latest_status == new_status.value
 
-        # Should only create one prompt and one run config despite concurrent requests
-        prompts = task.prompts()
-        assert len(prompts) == 1
+    # Verify artifacts created or not based on transition
+    prompts = task.prompts()
+    run_configs = task.run_configs()
 
-        run_configs = task.run_configs()
-        assert len(run_configs) == 2  # original + optimized
+    if should_create_artifacts:
+        # Artifacts should be created
+        assert len(prompts) == 1, (
+            f"Expected 1 prompt for {previous_status.value} -> {new_status.value}"
+        )
+        assert prompts[0].prompt == optimized_prompt
+        assert len(run_configs) == 2, (
+            f"Expected 2 run configs for {previous_status.value} -> {new_status.value}"
+        )
+        assert updated_job.created_prompt_id is not None
+        assert updated_job.created_run_config_id is not None
+        assert updated_job.optimized_prompt == optimized_prompt
+    else:
+        # No artifacts should be created
+        assert len(prompts) == 0, (
+            f"Expected 0 prompts for {previous_status.value} -> {new_status.value}"
+        )
+        assert len(run_configs) == 1, (
+            f"Expected 1 run config for {previous_status.value} -> {new_status.value}"
+        )
+        assert updated_job.created_prompt_id is None
+        assert updated_job.created_run_config_id is None
+
+
+def test_update_gepa_job_running_to_succeeded_creates_artifacts(mock_api_key, tmp_path):
+    """Test that transitioning from running to succeeded creates artifacts."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    target_run_config = TaskRunConfig(
+        parent=task,
+        name="Original Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    target_run_config.save_to_file()
+
+    # Job starts as RUNNING (not pending)
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id=target_run_config.id,
+        latest_status=JobStatus.RUNNING.value,
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    optimized_prompt = "Optimized from running state"
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.SUCCEEDED
+    )
+    mock_result_response = GEPAJobResultResponse(
+        status=JobStatus.SUCCEEDED,
+        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+    )
+
+    mock_client = MagicMock(spec=AuthenticatedClient)
+
+    with (
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_result_response,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=target_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
+            return_value=gepa_job,
+        ),
+    ):
+        updated_job = asyncio.run(
+            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+        )
+
+    assert updated_job.latest_status == JobStatus.SUCCEEDED.value
+    assert updated_job.optimized_prompt == optimized_prompt
+
+    # Artifacts should be created even though previous status was RUNNING
+    prompts = task.prompts()
+    assert len(prompts) == 1
+    assert prompts[0].prompt == optimized_prompt
+
+    run_configs = task.run_configs()
+    assert len(run_configs) == 2
+
+
+def test_update_gepa_job_succeeded_to_succeeded_no_artifacts(mock_api_key, tmp_path):
+    """Test that job already succeeded does not recreate artifacts."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    # Job is already succeeded with artifacts
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status=JobStatus.SUCCEEDED.value,
+        optimized_prompt="Already optimized",
+        created_prompt_id="id::existing-prompt",
+        created_run_config_id="existing-run-config",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.SUCCEEDED
+    )
+
+    mock_client = MagicMock(spec=AuthenticatedClient)
+
+    with (
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_result,
+    ):
+        updated_job = asyncio.run(
+            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+        )
+
+    # Should not fetch result since already succeeded
+    mock_result.assert_not_called()
+
+    # Status remains succeeded
+    assert updated_job.latest_status == JobStatus.SUCCEEDED.value
+    assert updated_job.optimized_prompt == "Already optimized"
+    assert updated_job.created_prompt_id == "id::existing-prompt"
+    assert updated_job.created_run_config_id == "existing-run-config"
+
+    # No new artifacts should be created
+    prompts = task.prompts()
+    assert len(prompts) == 0
+
+    run_configs = task.run_configs()
+    assert len(run_configs) == 0
+
+
+def test_update_gepa_job_pending_to_running_no_artifacts(mock_api_key, tmp_path):
+    """Test that transitioning from pending to running does not create artifacts."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-1",
+        latest_status=JobStatus.PENDING.value,
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.RUNNING
+    )
+
+    mock_client = MagicMock(spec=AuthenticatedClient)
+
+    with (
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+        ) as mock_result,
+    ):
+        updated_job = asyncio.run(
+            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+        )
+
+    # Should not fetch result since not succeeded
+    mock_result.assert_not_called()
+
+    # Status updated to running
+    assert updated_job.latest_status == JobStatus.RUNNING.value
+
+    # No artifacts should be created
+    prompts = task.prompts()
+    assert len(prompts) == 0
+
+    run_configs = task.run_configs()
+    assert len(run_configs) == 0
+
+    assert updated_job.created_prompt_id is None
+    assert updated_job.created_run_config_id is None
+    assert updated_job.optimized_prompt is None
