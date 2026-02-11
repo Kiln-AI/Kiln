@@ -1568,6 +1568,7 @@ class TestMCPSessionCaching:
         MCPSessionManager._shared_instance = None
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_get_or_create_session_creates_new(self, mock_client):
         """Test that get_or_create_session creates a new session on first call."""
 
@@ -1614,6 +1615,7 @@ class TestMCPSessionCaching:
         assert cache_key in manager._session_cache
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_get_or_create_session_returns_cached(self, mock_client):
         """Test that get_or_create_session returns cached session on second call."""
 
@@ -1661,6 +1663,7 @@ class TestMCPSessionCaching:
             mock_session_instance.initialize.assert_called_once()
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_get_or_create_session_different_servers(self, mock_client):
         """Test that different servers get different cached sessions."""
 
@@ -1719,6 +1722,7 @@ class TestMCPSessionCaching:
             assert session1 is not session2
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_get_or_create_session_different_session_ids(self, mock_client):
         """Test that different session IDs get different cached sessions."""
 
@@ -1764,6 +1768,7 @@ class TestMCPSessionCaching:
             assert session1 is not session2
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_cleanup_session_closes_stacks(self, mock_client):
         """Test that cleanup_session properly closes exit stacks."""
 
@@ -1833,6 +1838,7 @@ class TestMCPSessionCaching:
             assert aclose_called
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_cleanup_ignores_other_sessions(self, mock_client):
         """Test that cleanup only removes sessions matching the session ID."""
 
@@ -1902,6 +1908,7 @@ class TestMCPSessionCaching:
             assert cache_key_2 in manager._session_cache
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
     async def test_concurrent_get_or_create(self, mock_client):
         """Test that concurrent get_or_create calls safely handle race conditions."""
         import asyncio
