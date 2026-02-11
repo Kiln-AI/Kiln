@@ -6,7 +6,7 @@ import sys
 import tempfile
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
-from typing import AsyncGenerator
+from typing import AsyncGenerator, NoReturn
 
 import httpx
 from mcp import StdioServerParameters
@@ -151,7 +151,6 @@ class MCPSessionManager:
             RuntimeError: If connection to the server fails
         """
         stack = AsyncExitStack()
-        await stack.__aenter__()
 
         try:
             match tool_server.type:
@@ -401,7 +400,7 @@ class MCPSessionManager:
                 self._handle_local_mcp_error(e, stderr_content)
                 raise  # unreachable but needed for type checker
 
-    def _handle_remote_mcp_error(self, e: Exception) -> None:
+    def _handle_remote_mcp_error(self, e: Exception) -> NoReturn:
         """Shared error handling for remote MCP connection failures.
 
         Args:
@@ -430,7 +429,7 @@ class MCPSessionManager:
             f"Failed to connect to the MCP Server. Check the server's docs for troubleshooting. Original error: {e}"
         ) from e
 
-    def _handle_local_mcp_error(self, e: Exception, stderr: str) -> None:
+    def _handle_local_mcp_error(self, e: Exception, stderr: str) -> NoReturn:
         """Shared error handling for local MCP connection failures.
 
         Args:
@@ -446,7 +445,7 @@ class MCPSessionManager:
 
         self._raise_local_mcp_error(e, stderr)
 
-    def _raise_local_mcp_error(self, e: Exception, stderr: str):
+    def _raise_local_mcp_error(self, e: Exception, stderr: str) -> NoReturn:
         """
         Raise a RuntimeError with a friendlier message for local MCP errors.
         """
