@@ -1,9 +1,10 @@
+import asyncio
 import logging
 import os
 import subprocess
 import sys
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
 from typing import AsyncGenerator
 
@@ -32,6 +33,9 @@ class MCPSessionManager:
 
     def __init__(self):
         self._shell_path = None
+        # Session cache: key = "{server_id}:{session_id}" → (ClientSession, AsyncExitStack)
+        self._session_cache: dict[str, tuple[ClientSession, AsyncExitStack]] = {}
+        self._cache_lock = asyncio.Lock()
 
     @classmethod
     def shared(cls):
@@ -58,6 +62,218 @@ class MCPSessionManager:
                 raise ValueError("Kiln task tools are not available from an MCP server")
             case _:
                 raise_exhaustive_enum_error(tool_server.type)
+
+    async def get_or_create_session(
+        self,
+        tool_server: ExternalToolServer,
+        session_id: str,
+    ) -> ClientSession:
+        """Get or create a cached MCP session for the given server and session ID.
+
+        Args:
+            tool_server: The external tool server configuration
+            session_id: The session ID for this agent run
+
+        Returns:
+            A cached or newly created ClientSession
+
+        Raises:
+            ValueError: If the server configuration is invalid
+            RuntimeError: If connection to the server fails
+        """
+        cache_key = f"{tool_server.id}:{session_id}"
+
+        async with self._cache_lock:
+            if cache_key in self._session_cache:
+                return self._session_cache[cache_key][0]
+
+        # Create outside the lock to avoid holding it during slow I/O.
+        # Race: two coroutines may both reach here for the same key.
+        # The lock below ensures only one wins; the loser closes its stack.
+        session, stack = await self._create_cached_session(tool_server)
+
+        async with self._cache_lock:
+            if cache_key in self._session_cache:
+                # Another coroutine created it first — close ours and return theirs
+                await stack.aclose()
+                return self._session_cache[cache_key][0]
+            self._session_cache[cache_key] = (session, stack)
+            return session
+
+    async def cleanup_session(self, session_id: str) -> None:
+        """Close all MCP sessions associated with a session ID.
+
+        Called by the root agent's finally block when the agent run completes.
+
+        Args:
+            session_id: The session ID to clean up
+        """
+        to_cleanup: list[tuple[str, AsyncExitStack]] = []
+
+        async with self._cache_lock:
+            keys_to_remove = [
+                key for key in self._session_cache if key.endswith(f":{session_id}")
+            ]
+            for key in keys_to_remove:
+                _, exit_stack = self._session_cache.pop(key)
+                to_cleanup.append((key, exit_stack))
+
+        # Close outside the lock to avoid holding it during I/O
+        for key, exit_stack in to_cleanup:
+            try:
+                await exit_stack.aclose()
+            except Exception:
+                logger.warning(f"Error closing MCP session {key}", exc_info=True)
+
+    async def _create_cached_session(
+        self,
+        tool_server: ExternalToolServer,
+    ) -> tuple[ClientSession, AsyncExitStack]:
+        """Create a cached MCP session with AsyncExitStack for lifecycle management.
+
+        The session remains alive until the AsyncExitStack is closed,
+        allowing the session to be reused across multiple tool calls.
+
+        Args:
+            tool_server: The external tool server configuration
+
+        Returns:
+            A tuple of (ClientSession, AsyncExitStack)
+
+        Raises:
+            ValueError: If the server configuration is invalid
+            RuntimeError: If connection to the server fails
+        """
+        stack = AsyncExitStack()
+        await stack.__aenter__()
+
+        try:
+            match tool_server.type:
+                case ToolServerType.remote_mcp:
+                    return await self._create_cached_remote_session(
+                        tool_server, stack
+                    ), stack
+                case ToolServerType.local_mcp:
+                    return await self._create_cached_local_session(
+                        tool_server, stack
+                    ), stack
+                case ToolServerType.kiln_task:
+                    raise ValueError("Kiln task tools are not MCP servers")
+                case _:
+                    raise_exhaustive_enum_error(tool_server.type)
+        except Exception:
+            await stack.aclose()
+            raise
+
+    async def _create_cached_remote_session(
+        self,
+        tool_server: ExternalToolServer,
+        stack: AsyncExitStack,
+    ) -> ClientSession:
+        """Create a cached remote MCP session using AsyncExitStack.
+
+        The transport and session remain alive until the stack is closed.
+
+        Args:
+            tool_server: The external tool server configuration
+            stack: The AsyncExitStack to manage the transport lifecycle
+
+        Returns:
+            An initialized ClientSession
+
+        Raises:
+            ValueError: If the server URL is not configured
+            RuntimeError: If connection to the server fails
+        """
+        server_url = tool_server.properties.get("server_url")
+        if not server_url:
+            raise ValueError("server_url is required")
+
+        headers = tool_server.properties.get("headers", {}).copy()
+        secret_headers, _ = tool_server.retrieve_secrets()
+        headers.update(secret_headers)
+
+        try:
+            read_stream, write_stream, _ = await stack.enter_async_context(
+                streamablehttp_client(server_url, headers=headers)
+            )
+            session = await stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await session.initialize()
+            return session
+        except Exception as e:
+            self._handle_remote_mcp_error(e)
+            raise  # unreachable but needed for type checker
+
+    async def _create_cached_local_session(
+        self,
+        tool_server: ExternalToolServer,
+        stack: AsyncExitStack,
+    ) -> ClientSession:
+        """Create a cached local MCP session using AsyncExitStack.
+
+        The subprocess, stderr capture, and session remain alive until the stack is closed.
+
+        Args:
+            tool_server: The external tool server configuration
+            stack: The AsyncExitStack to manage the transport lifecycle
+
+        Returns:
+            An initialized ClientSession
+
+        Raises:
+            ValueError: If the command is not provided or args is not a list
+            RuntimeError: If the subprocess fails to start or initialize
+        """
+        command = tool_server.properties.get("command")
+        if not command:
+            raise ValueError(
+                "Attempted to start local MCP server, but no command was provided"
+            )
+
+        args = tool_server.properties.get("args", [])
+        if not isinstance(args, list):
+            raise ValueError(
+                "Attempted to start local MCP server, but args is not a list of strings"
+            )
+
+        env_vars = tool_server.properties.get("env_vars", {}).copy()
+        secret_env_vars, _ = tool_server.retrieve_secrets()
+        env_vars.update(secret_env_vars)
+
+        if "PATH" not in env_vars:
+            env_vars["PATH"] = self._get_path()
+
+        cwd = os.path.join(Config.settings_dir(), "cache", "mcp_cache")
+        os.makedirs(cwd, exist_ok=True)
+        server_params = StdioServerParameters(
+            command=command, args=args, env=env_vars, cwd=cwd
+        )
+
+        err_log = stack.enter_context(
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+        )
+
+        try:
+            read, write = await stack.enter_async_context(
+                stdio_client(server_params, errlog=err_log)
+            )
+            session = await stack.enter_async_context(
+                ClientSession(read, write, read_timeout_seconds=timedelta(seconds=30))
+            )
+            await session.initialize()
+            return session
+        except Exception as e:
+            err_log.seek(0)
+            stderr_content = err_log.read()
+            if stderr_content:
+                logger.error(
+                    f"MCP server '{tool_server.name}' stderr: {stderr_content}"
+                )
+
+            self._handle_local_mcp_error(e, stderr_content)
+            raise  # unreachable but needed for type checker
 
     def _extract_first_exception(
         self, exception: Exception, target_type: type | tuple[type, ...]
@@ -111,31 +327,8 @@ class MCPSessionManager:
                     await session.initialize()
                     yield session
         except Exception as e:
-            # Handle HTTP errors with user-friendly messages
-
-            # Check for HTTPStatusError
-            http_error = self._extract_first_exception(e, httpx.HTTPStatusError)
-            if http_error and isinstance(http_error, httpx.HTTPStatusError):
-                raise ValueError(
-                    f"The MCP server rejected the request. "
-                    f"Status {http_error.response.status_code}. "
-                    f"Response from server:\n{http_error.response.reason_phrase}"
-                )
-
-            # Check for connection errors
-            connection_error_types = (ConnectionError, OSError, httpx.RequestError)
-            connection_error = self._extract_first_exception(e, connection_error_types)
-            if connection_error and isinstance(
-                connection_error, connection_error_types
-            ):
-                raise RuntimeError(
-                    f"Unable to connect to MCP server. Please verify the configurations are correct, the server is running, and your network connection is working. Original error: {connection_error}"
-                ) from e
-
-            # If no known error types found, re-raise the original exception
-            raise RuntimeError(
-                f"Failed to connect to the MCP Server. Check the server's docs for troubleshooting. Original error: {e}"
-            ) from e
+            self._handle_remote_mcp_error(e)
+            raise  # unreachable but needed for type checker
 
     @asynccontextmanager
     async def _create_local_mcp_session(
@@ -191,21 +384,59 @@ class MCPSessionManager:
                         await session.initialize()
                         yield session
             except Exception as e:
-                # Read stderr content from temporary file for debugging
-                err_log.seek(0)  # Read from the start of the file
+                err_log.seek(0)
                 stderr_content = err_log.read()
                 if stderr_content:
                     logger.error(
                         f"MCP server '{tool_server.name}' stderr output: {stderr_content}"
                     )
+                self._handle_local_mcp_error(e, stderr_content)
+                raise  # unreachable but needed for type checker
 
-                # Check for MCP errors. Things like wrong arguments would fall here.
-                mcp_error = self._extract_first_exception(e, McpError)
-                if mcp_error and isinstance(mcp_error, McpError):
-                    self._raise_local_mcp_error(mcp_error, stderr_content)
+    def _handle_remote_mcp_error(self, e: Exception) -> None:
+        """Shared error handling for remote MCP connection failures.
 
-                # Re-raise the original error but with a friendlier message
-                self._raise_local_mcp_error(e, stderr_content)
+        Args:
+            e: The exception to handle
+
+        Raises:
+            ValueError: If the server rejected the request with an HTTP error
+            RuntimeError: If connection to the server failed
+        """
+        http_error = self._extract_first_exception(e, httpx.HTTPStatusError)
+        if http_error and isinstance(http_error, httpx.HTTPStatusError):
+            raise ValueError(
+                f"The MCP server rejected the request. "
+                f"Status {http_error.response.status_code}. "
+                f"Response from server:\n{http_error.response.reason_phrase}"
+            ) from e
+
+        connection_error_types = (ConnectionError, OSError, httpx.RequestError)
+        connection_error = self._extract_first_exception(e, connection_error_types)
+        if connection_error and isinstance(connection_error, connection_error_types):
+            raise RuntimeError(
+                f"Unable to connect to MCP server. Please verify the configurations are correct, the server is running, and your network connection is working. Original error: {connection_error}"
+            ) from e
+
+        raise RuntimeError(
+            f"Failed to connect to the MCP Server. Check the server's docs for troubleshooting. Original error: {e}"
+        ) from e
+
+    def _handle_local_mcp_error(self, e: Exception, stderr: str) -> None:
+        """Shared error handling for local MCP connection failures.
+
+        Args:
+            e: The exception to handle
+            stderr: The stderr content from the MCP server
+
+        Raises:
+            RuntimeError: Always, with a friendly error message
+        """
+        mcp_error = self._extract_first_exception(e, McpError)
+        if mcp_error and isinstance(mcp_error, McpError):
+            self._raise_local_mcp_error(mcp_error, stderr)
+
+        self._raise_local_mcp_error(e, stderr)
 
     def _raise_local_mcp_error(self, e: Exception, stderr: str):
         """

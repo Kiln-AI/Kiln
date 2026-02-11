@@ -458,3 +458,177 @@ class TestMCPServerToolIntegration:
         tool = MCPServerTool(self.external_tool_server, "echo")
         mcp_tool = await tool._get_tool("echo")
         assert mcp_tool.name == "echo"
+
+
+class TestMCPServerToolSessionContext:
+    """Unit tests for MCPServerTool with session context."""
+
+    @pytest.fixture
+    def clear_context(self):
+        """Clear the MCP session context before each test."""
+        from kiln_ai.tools.mcp_session_context import clear_mcp_session_id
+
+        clear_mcp_session_id()
+        yield
+        clear_mcp_session_id()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_call_tool_with_session_context(
+        self, mock_session_manager, clear_context
+    ):
+        """Test that _call_tool uses get_or_create_session when session ID is set."""
+        from kiln_ai.tools.mcp_session_context import set_mcp_session_id
+
+        # Set a session context
+        session_id = "test_session_123"
+        set_mcp_session_id(session_id)
+
+        # Mock get_or_create_session as an async function
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
+
+        result_content = [TextContent(type="text", text="Test result")]
+        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        await tool._call_tool(param1="value1")
+
+        # Verify get_or_create_session was called
+        mock_session_manager.shared.return_value.get_or_create_session.assert_called_once_with(
+            server, session_id
+        )
+        # Verify call_tool was called on the cached session
+        mock_session.call_tool.assert_called_once_with(
+            name="test_tool", arguments={"param1": "value1"}
+        )
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_call_tool_without_session_context(
+        self, mock_session_manager, clear_context
+    ):
+        """Test that _call_tool falls back to ephemeral session when no session ID."""
+        # Mock mcp_client (ephemeral session)
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+
+        result_content = [TextContent(type="text", text="Test result")]
+        call_result = CallToolResult(content=result_content, isError=False)  # type: ignore
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        await tool._call_tool(param1="value1")
+
+        # Verify get_or_create_session was NOT called
+        mock_session_manager.shared.return_value.get_or_create_session.assert_not_called()
+        # Verify mcp_client was used (ephemeral session)
+        mock_session_manager.shared.return_value.mcp_client.assert_called_once_with(
+            server
+        )
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_get_tool_with_session_context(
+        self, mock_session_manager, clear_context
+    ):
+        """Test that _get_tool uses cached session when session ID is set."""
+        from kiln_ai.tools.mcp_session_context import set_mcp_session_id
+
+        # Set a session context
+        session_id = "test_session_123"
+        set_mcp_session_id(session_id)
+
+        # Mock get_or_create_session as an async function
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
+
+        # Mock tools list
+        target_tool = Tool(
+            name="target_tool",
+            description="Target tool description",
+            inputSchema={"type": "object", "properties": {"param": {"type": "string"}}},
+        )
+        tools_result = ListToolsResult(tools=[target_tool])
+        mock_session.list_tools.return_value = tools_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "target_tool")
+
+        result = await tool._get_tool("target_tool")
+
+        # Verify get_or_create_session was called
+        mock_session_manager.shared.return_value.get_or_create_session.assert_called_once_with(
+            server, session_id
+        )
+        # Verify list_tools was called on the cached session
+        mock_session.list_tools.assert_called_once()
+        assert result == target_tool
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_get_tool_without_session_context(
+        self, mock_session_manager, clear_context
+    ):
+        """Test that _get_tool falls back to ephemeral session when no session ID."""
+        # Mock mcp_client (ephemeral session)
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+
+        # Mock tools list
+        target_tool = Tool(
+            name="target_tool",
+            description="Target tool description",
+            inputSchema={"type": "object", "properties": {"param": {"type": "string"}}},
+        )
+        tools_result = ListToolsResult(tools=[target_tool])
+        mock_session.list_tools.return_value = tools_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "target_tool")
+
+        await tool._get_tool("target_tool")
+
+        # Verify get_or_create_session was NOT called
+        mock_session_manager.shared.return_value.get_or_create_session.assert_not_called()
+        # Verify mcp_client was used (ephemeral session)
+        mock_session_manager.shared.return_value.mcp_client.assert_called_once_with(
+            server
+        )

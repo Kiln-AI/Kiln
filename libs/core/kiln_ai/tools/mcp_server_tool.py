@@ -9,6 +9,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallDefinition,
     ToolCallResult,
 )
+from kiln_ai.tools.mcp_session_context import get_mcp_session_id
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 
 
@@ -66,14 +67,28 @@ class MCPServerTool(KilnToolInterface):
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:
-        async with MCPSessionManager.shared().mcp_client(
-            self._tool_server_model
-        ) as session:
+        session_id = get_mcp_session_id()
+
+        if session_id:
+            # Use cached session from the agent's session context
+            session = await MCPSessionManager.shared().get_or_create_session(
+                self._tool_server_model, session_id
+            )
             result = await session.call_tool(
                 name=await self.name(),
                 arguments=kwargs,
             )
             return result
+        else:
+            # Fallback: ephemeral session (outside agent context)
+            async with MCPSessionManager.shared().mcp_client(
+                self._tool_server_model
+            ) as session:
+                result = await session.call_tool(
+                    name=await self.name(),
+                    arguments=kwargs,
+                )
+                return result
 
     async def _load_tool_properties(self):
         if self._tool is not None:
@@ -89,10 +104,18 @@ class MCPServerTool(KilnToolInterface):
 
     #  Get the MCP Tool from the server
     async def _get_tool(self, tool_name: str) -> MCPTool:
-        async with MCPSessionManager.shared().mcp_client(
-            self._tool_server_model
-        ) as session:
+        session_id = get_mcp_session_id()
+
+        if session_id:
+            session = await MCPSessionManager.shared().get_or_create_session(
+                self._tool_server_model, session_id
+            )
             tools = await session.list_tools()
+        else:
+            async with MCPSessionManager.shared().mcp_client(
+                self._tool_server_model
+            ) as session:
+                tools = await session.list_tools()
 
         tool = next((tool for tool in tools.tools if tool.name == tool_name), None)
         if tool is None:

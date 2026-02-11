@@ -27,6 +27,14 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
+
+# Import MCP session context for session lifecycle management
+from kiln_ai.tools.mcp_session_context import (
+    clear_mcp_session_id,
+    generate_session_id,
+    get_mcp_session_id,
+    set_mcp_session_id,
+)
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -109,7 +117,7 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output, _ = await self.invoke_returning_run_output(input, input_source)
         return run_output
 
-    async def invoke_returning_run_output(
+    async def _run_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
@@ -197,6 +205,29 @@ class BaseAdapter(metaclass=ABCMeta):
             run.id = None
 
         return run, run_output
+
+    async def invoke_returning_run_output(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+    ) -> Tuple[TaskRun, RunOutput]:
+        # Determine if this is the root agent (no existing session context)
+        is_root_agent = get_mcp_session_id() is None
+
+        if is_root_agent:
+            session_id = generate_session_id()
+            set_mcp_session_id(session_id)
+
+        try:
+            return await self._run_returning_run_output(input, input_source)
+        finally:
+            if is_root_agent:
+                session_id = get_mcp_session_id()
+                if session_id:
+                    from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+
+                    await MCPSessionManager.shared().cleanup_session(session_id)
+                clear_mcp_session_id()
 
     def has_structured_output(self) -> bool:
         return self.output_schema is not None

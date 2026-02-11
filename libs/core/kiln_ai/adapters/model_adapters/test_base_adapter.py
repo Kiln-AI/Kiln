@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -657,3 +657,265 @@ async def test_custom_prompt_builder(base_task):
     formatter = adapter.build_chat_formatter(input="test input")
     assert formatter.system_message == "This is a custom prompt from injected builder"
     assert adapter.prompt_builder == custom_builder
+
+
+class TestMcpSessionContextLifecycle:
+    """Unit tests for MCP session context lifecycle in BaseAdapter."""
+
+    @pytest.fixture
+    def clear_context(self):
+        """Clear the MCP session context before each test."""
+        from kiln_ai.tools.mcp_session_context import clear_mcp_session_id
+
+        clear_mcp_session_id()
+        yield
+        clear_mcp_session_id()
+
+    @pytest.mark.asyncio
+    async def test_invoke_sets_session_context(self, adapter, clear_context):
+        """Test that invoke sets the session context for root agent."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.tools.mcp_session_context import get_mcp_session_id
+
+        # Mock the _run method
+        async def mock_run(input):
+            # Check that session ID is set during _run
+            session_id = get_mcp_session_id()
+            assert session_id is not None
+            assert session_id.startswith("mcp_")
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+    @pytest.mark.asyncio
+    async def test_invoke_clears_session_context_after(self, adapter, clear_context):
+        """Test that invoke clears the session context after completion."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.tools.mcp_session_context import get_mcp_session_id
+
+        # Mock the _run method
+        async def mock_run(input):
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # After invoke, session ID should be cleared
+            assert get_mcp_session_id() is None
+
+    @pytest.mark.asyncio
+    async def test_invoke_clears_session_context_on_error(self, adapter, clear_context):
+        """Test that invoke clears the session context even on error."""
+        from kiln_ai.tools.mcp_session_context import get_mcp_session_id
+
+        # Mock the _run method to raise an error
+        async def mock_run(input):
+            # Session ID should be set even when error occurs
+            session_id = get_mcp_session_id()
+            assert session_id is not None
+            raise ValueError("Test error")
+
+        adapter._run = mock_run
+
+        with pytest.raises(ValueError, match="Test error"):
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+        # After error, session ID should be cleared
+        assert get_mcp_session_id() is None
+
+    @pytest.mark.asyncio
+    async def test_sub_agent_inherits_session(self, adapter, clear_context):
+        """Test that sub-agent inherits parent's session ID."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.tools.mcp_session_context import (
+            get_mcp_session_id,
+            set_mcp_session_id,
+        )
+
+        # Simulate parent agent setting the session context
+        parent_session_id = "parent_mcp_session"
+        set_mcp_session_id(parent_session_id)
+
+        # Mock the _run method to check inherited session ID
+        async def mock_run(input):
+            # Sub-agent should see parent's session ID
+            session_id = get_mcp_session_id()
+            assert session_id == parent_session_id
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # After invoke, the parent's session ID should still be set
+            # (since we were acting as a sub-agent)
+            assert get_mcp_session_id() == parent_session_id
+
+    @pytest.mark.asyncio
+    async def test_sub_agent_does_not_create_new_session(self, adapter, clear_context):
+        """Test that sub-agent doesn't create a new session ID."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.tools.mcp_session_context import (
+            get_mcp_session_id,
+            set_mcp_session_id,
+        )
+
+        # Simulate parent agent setting the session context
+        parent_session_id = "parent_mcp_session"
+        set_mcp_session_id(parent_session_id)
+
+        session_id_during_run = None
+
+        # Mock the _run method to capture session ID
+        async def mock_run(input):
+            nonlocal session_id_during_run
+            session_id_during_run = get_mcp_session_id()
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # Sub-agent should have used the parent's session ID
+            assert session_id_during_run == parent_session_id
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_on_completion(self, adapter, clear_context):
+        """Test that cleanup_session is called when root agent completes."""
+        from kiln_ai.adapters.run_output import RunOutput
+
+        # Mock the _run method
+        async def mock_run(input):
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_parser_factory.return_value = parser
+
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # cleanup_session should have been called
+            mock_manager.cleanup_session.assert_called_once()
+            # The session ID should be a string that starts with "mcp_"
+            call_args = mock_manager.cleanup_session.call_args
+            assert call_args is not None
+            session_id = call_args[0][0] if call_args[0] else call_args[1]["session_id"]
+            assert session_id.startswith("mcp_")

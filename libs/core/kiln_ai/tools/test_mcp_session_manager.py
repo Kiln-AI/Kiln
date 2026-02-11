@@ -1558,3 +1558,400 @@ class TestMCPServerIntegration:
         assert tools is not None
         assert len(tools.tools) > 0
         assert "firecrawl_scrape" in [tool.name for tool in tools.tools]
+
+
+class TestMCPSessionCaching:
+    """Unit tests for MCP session caching functionality."""
+
+    def setup_method(self):
+        """Reset the session manager before each test."""
+        MCPSessionManager._shared_instance = None
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_get_or_create_session_creates_new(self, mock_client):
+        """Test that get_or_create_session creates a new session on first call."""
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "is_archived": False,
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+            session = await manager.get_or_create_session(tool_server, session_id)
+
+            assert session is mock_session_instance
+            mock_session_instance.initialize.assert_called_once()
+
+        # Verify the session was cached
+        cache_key = f"{tool_server.id}:{session_id}"
+        assert cache_key in manager._session_cache
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_get_or_create_session_returns_cached(self, mock_client):
+        """Test that get_or_create_session returns cached session on second call."""
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "is_archived": False,
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+
+            # First call should create and cache
+            session1 = await manager.get_or_create_session(tool_server, session_id)
+            # Second call should return cached
+            session2 = await manager.get_or_create_session(tool_server, session_id)
+
+            assert session1 is session2
+            # Initialize should only be called once (on creation)
+            mock_session_instance.initialize.assert_called_once()
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_get_or_create_session_different_servers(self, mock_client):
+        """Test that different servers get different cached sessions."""
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        server1 = ExternalToolServer(
+            name="server1",
+            type=ToolServerType.remote_mcp,
+            description="Test server 1",
+            properties={
+                "server_url": "http://example1.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server1.id = "server1_id"
+
+        server2 = ExternalToolServer(
+            name="server2",
+            type=ToolServerType.remote_mcp,
+            description="Test server 2",
+            properties={
+                "server_url": "http://example2.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server2.id = "server2_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance1 = AsyncMock()
+            mock_session_instance2 = AsyncMock()
+            mock_session_class.return_value.__aenter__.side_effect = [
+                mock_session_instance1,
+                mock_session_instance2,
+            ]
+
+            session_id = "test_session_123"
+
+            session1 = await manager.get_or_create_session(server1, session_id)
+            session2 = await manager.get_or_create_session(server2, session_id)
+
+            assert session1 is mock_session_instance1
+            assert session2 is mock_session_instance2
+            assert session1 is not session2
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_get_or_create_session_different_session_ids(self, mock_client):
+        """Test that different session IDs get different cached sessions."""
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "is_archived": False,
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance1 = AsyncMock()
+            mock_session_instance2 = AsyncMock()
+            mock_session_class.return_value.__aenter__.side_effect = [
+                mock_session_instance1,
+                mock_session_instance2,
+            ]
+
+            session1 = await manager.get_or_create_session(tool_server, "session_1")
+            session2 = await manager.get_or_create_session(tool_server, "session_2")
+
+            assert session1 is mock_session_instance1
+            assert session2 is mock_session_instance2
+            assert session1 is not session2
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_cleanup_session_closes_stacks(self, mock_client):
+        """Test that cleanup_session properly closes exit stacks."""
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "is_archived": False,
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+
+            # Create a session
+            await manager.get_or_create_session(tool_server, session_id)
+
+            # Verify it's cached
+            cache_key = f"{tool_server.id}:{session_id}"
+            assert cache_key in manager._session_cache
+
+            # Get the exit stack before cleanup and mock its aclose method
+            _, exit_stack = manager._session_cache[cache_key]
+            original_aclose = exit_stack.aclose
+
+            # Track if aclose was called
+            aclose_called = False
+
+            async def mock_aclose():
+                nonlocal aclose_called
+                aclose_called = True
+                # Call the original to properly clean up
+                return await original_aclose()
+
+            exit_stack.aclose = mock_aclose
+
+            # Cleanup the session
+            await manager.cleanup_session(session_id)
+
+            # Verify cache is empty
+            assert cache_key not in manager._session_cache
+
+            # Verify aclose was called on the exit stack
+            assert aclose_called
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_cleanup_ignores_other_sessions(self, mock_client):
+        """Test that cleanup only removes sessions matching the session ID."""
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        server1 = ExternalToolServer(
+            name="server1",
+            type=ToolServerType.remote_mcp,
+            description="Test server 1",
+            properties={
+                "server_url": "http://example1.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server1.id = "server1_id"
+
+        server2 = ExternalToolServer(
+            name="server2",
+            type=ToolServerType.remote_mcp,
+            description="Test server 2",
+            properties={
+                "server_url": "http://example2.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server2.id = "server2_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance1 = AsyncMock()
+            mock_session_instance2 = AsyncMock()
+            mock_session_class.return_value.__aenter__.side_effect = [
+                mock_session_instance1,
+                mock_session_instance2,
+            ]
+
+            session_id_1 = "session_1"
+            session_id_2 = "session_2"
+
+            # Create sessions for different server/session combinations
+            await manager.get_or_create_session(server1, session_id_1)
+            await manager.get_or_create_session(server2, session_id_2)
+
+            # Verify both are cached
+            cache_key_1 = f"{server1.id}:{session_id_1}"
+            cache_key_2 = f"{server2.id}:{session_id_2}"
+            assert cache_key_1 in manager._session_cache
+            assert cache_key_2 in manager._session_cache
+
+            # Cleanup only session_1
+            await manager.cleanup_session(session_id_1)
+
+            # Verify only session_1 was removed
+            assert cache_key_1 not in manager._session_cache
+            assert cache_key_2 in manager._session_cache
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    async def test_concurrent_get_or_create(self, mock_client):
+        """Test that concurrent get_or_create calls safely handle race conditions."""
+        import asyncio
+
+        # Mock the streams
+        mock_read_stream = MagicMock()
+        mock_write_stream = MagicMock()
+
+        # Configure the mock client context manager
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        tool_server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            description="Test server",
+            properties={
+                "server_url": "http://example.com/mcp",
+                "is_archived": False,
+            },
+        )
+        tool_server.id = "test_server_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+
+            # Create multiple coroutines that will try to create the same session
+            async def create_session():
+                return await manager.get_or_create_session(tool_server, session_id)
+
+            # Run them concurrently
+            results = await asyncio.gather(
+                create_session(),
+                create_session(),
+                create_session(),
+            )
+
+            # All should return the same session
+            assert len(set(results)) == 1
+            # Initialize should only be called once
+            mock_session_instance.initialize.assert_called_once()
