@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
 
@@ -40,12 +41,24 @@ from app.desktop.studio_server.eval_api import (
 )
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import GepaJob, Project, Prompt
+from kiln_ai.datamodel.prompt import BasePrompt
+from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+# locks per job ID to prevent race conditions when creating artifacts
+_job_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_job_lock(job_id: str) -> asyncio.Lock:
+    """Get or create a lock for a specific job ID."""
+    if job_id not in _job_locks:
+        _job_locks[job_id] = asyncio.Lock()
+    return _job_locks[job_id]
 
 
 def is_job_status_final(status: str) -> bool:
@@ -116,19 +129,153 @@ def gepa_job_from_id(project_id: str, task_id: str, gepa_job_id: str) -> GepaJob
     return gepa_job
 
 
-async def update_gepa_job_status_and_create_prompt(
+def create_prompt_from_optimization(
+    gepa_job: GepaJob, task, optimized_prompt_text: str
+) -> Prompt:
+    """
+    Create a prompt from an optimization job result. Does not guarantee idempotence so
+    make sure you have a proper locking mechanism around calling this function.
+    """
+    prompt = Prompt(
+        name=f"Kiln Optimized - {gepa_job.name}",
+        description=f"Prompt optimized by Kiln Prompt Optimizer {gepa_job.id}",
+        generator_id="kiln_prompt_optimizer",
+        prompt=optimized_prompt_text,
+        parent=task,
+    )
+    prompt.save_to_file()
+
+    logger.info(f"Created prompt {prompt.id} from GEPA job {gepa_job.job_id}")
+    return prompt
+
+
+def create_run_config_from_optimization(
+    gepa_job: GepaJob, task, optimized_prompt_text: str
+) -> TaskRunConfig | None:
+    """
+    Create a run config from an optimization job result. Does not guarantee idempotence so
+    make sure you have a proper locking mechanism around calling this function.
+    """
+    try:
+        parent_project = task.parent_project()
+        if parent_project is None:
+            raise HTTPException(status_code=500, detail="Task has no parent project")
+
+        if not parent_project.id or not task.id:
+            raise HTTPException(
+                status_code=500, detail="Task has no parent project or task"
+            )
+
+        # get the original target run config that we optimized for in the job
+        target_run_config = task_run_config_from_id(
+            parent_project.id, task.id, gepa_job.target_run_config_id
+        )
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        run_config_name = f"{target_run_config.name} optimized-{date_str}"
+
+        frozen_prompt = BasePrompt(
+            name=f"Kiln Optimized - {run_config_name}",
+            description=f"Kiln Optimized prompt for {run_config_name}",
+            generator_id="kiln_prompt_optimizer",
+            prompt=optimized_prompt_text,
+        )
+
+        # create new run config with the same properties but new prompt
+        new_run_config_properties = target_run_config.run_config_properties.model_copy()
+
+        new_run_config = TaskRunConfig(
+            parent=task,
+            name=run_config_name,
+            description=f"Optimized run config from GEPA job {gepa_job.name}",
+            run_config_properties=new_run_config_properties,
+            prompt=frozen_prompt,
+        )
+
+        # point the run config properties to the frozen prompt
+        new_run_config.run_config_properties.prompt_id = (
+            f"task_run_config::{parent_project.id}::{task.id}::{new_run_config.id}"
+        )
+
+        new_run_config.save_to_file()
+
+        logger.info(
+            f"Created run config {new_run_config.id} from GEPA job {gepa_job.job_id}"
+        )
+        return new_run_config
+
+    except Exception as e:
+        logger.error(f"Error creating run config from GEPA job: {e}", exc_info=True)
+        return None
+
+
+async def _create_artifacts_for_succeeded_job(
+    gepa_job: GepaJob,
+    task,
+    server_client: AuthenticatedClient,
+) -> None:
+    """
+    Create prompt and run config artifacts for a newly succeeded GEPA job.
+    Assumes caller has acquired the job lock. Modifies gepa_job in place.
+    """
+    parent_project = task.parent_project()
+    if not parent_project or not parent_project.id or not task.id or not gepa_job.id:
+        raise ValueError("Cannot reload GEPA job: missing required IDs")
+
+    # reload the job in case artifacts were created by another request while waiting for the lock
+    reloaded_job = gepa_job_from_id(
+        parent_project.id,
+        task.id,
+        gepa_job.id,
+    )
+
+    # check if artifacts already exist
+    if reloaded_job.created_prompt_id:
+        logger.info(
+            f"Artifacts already exist for GEPA job {gepa_job.job_id}, skipping creation"
+        )
+        gepa_job.created_prompt_id = reloaded_job.created_prompt_id
+        gepa_job.created_run_config_id = reloaded_job.created_run_config_id
+        gepa_job.optimized_prompt = reloaded_job.optimized_prompt
+        return
+
+    result_response = (
+        await get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio(
+            job_id=gepa_job.job_id,
+            client=server_client,
+        )
+    )
+
+    if (
+        result_response
+        and not isinstance(result_response, HTTPValidationError)
+        and result_response.output
+        and hasattr(result_response.output, "optimized_prompt")
+    ):
+        optimized_prompt_text = result_response.output.optimized_prompt
+        gepa_job.optimized_prompt = optimized_prompt_text
+
+        prompt = create_prompt_from_optimization(gepa_job, task, optimized_prompt_text)
+        gepa_job.created_prompt_id = f"id::{prompt.id}"
+
+        run_config = create_run_config_from_optimization(
+            gepa_job, task, optimized_prompt_text
+        )
+        if run_config:
+            gepa_job.created_run_config_id = run_config.id
+
+
+async def update_gepa_job_and_create_artifacts(
     gepa_job: GepaJob, server_client: AuthenticatedClient
 ) -> GepaJob:
     """
     Update the status of a GepaJob from the remote server.
-    If the job has succeeded and no prompt exists yet, create one.
+    If the job has succeeded for the first time, create a prompt and run config from the result.
+    Uses per-job locking to ensure the success transition is handled atomically.
     """
-
     task = gepa_job.parent_task()
     if task is None:
         raise HTTPException(status_code=500, detail="GepaJob has no parent task")
-
-    previous_status = gepa_job.latest_status
 
     try:
         status_response = (
@@ -144,44 +291,19 @@ async def update_gepa_job_status_and_create_prompt(
             return gepa_job
 
         new_status = str(status_response.status.value)
-        gepa_job.latest_status = new_status
 
-        if (
-            previous_status != JobStatus.SUCCEEDED
-            and new_status == JobStatus.SUCCEEDED
-            and not gepa_job.created_prompt_id
-        ):
-            result_response = (
-                await get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio(
-                    job_id=gepa_job.job_id,
-                    client=server_client,
-                )
-            )
+        lock = _get_job_lock(gepa_job.job_id)
+        async with lock:
+            previous_status = gepa_job.latest_status
+            gepa_job.latest_status = new_status
 
             if (
-                result_response
-                and not isinstance(result_response, HTTPValidationError)
-                and result_response.output
-                and hasattr(result_response.output, "optimized_prompt")
+                previous_status != JobStatus.SUCCEEDED
+                and new_status == JobStatus.SUCCEEDED
             ):
-                optimized_prompt_text = result_response.output.optimized_prompt
-                gepa_job.optimized_prompt = optimized_prompt_text
+                await _create_artifacts_for_succeeded_job(gepa_job, task, server_client)
 
-                prompt = Prompt(
-                    name=f"GEPA - {gepa_job.name}",
-                    description=f"Optimized prompt generated by GEPA job {gepa_job.id}",
-                    generator_id="kiln_prompt_optimizer",
-                    prompt=optimized_prompt_text,
-                    parent=task,
-                )
-                prompt.save_to_file()
-
-                gepa_job.created_prompt_id = f"id::{prompt.id}"
-                logger.info(
-                    f"Created prompt {prompt.id} from GEPA job {gepa_job.job_id}"
-                )
-
-        gepa_job.save_to_file()
+            gepa_job.save_to_file()
 
     except Exception as e:
         logger.error(f"Error updating GEPA job status: {e}", exc_info=True)
@@ -524,9 +646,7 @@ def connect_gepa_job_api(app: FastAPI):
                         )
                         await asyncio.gather(
                             *[
-                                update_gepa_job_status_and_create_prompt(
-                                    job, server_client
-                                )
+                                update_gepa_job_and_create_artifacts(job, server_client)
                                 for job in batch
                             ]
                         )
@@ -552,7 +672,7 @@ def connect_gepa_job_api(app: FastAPI):
         try:
             server_client = get_authenticated_client(_get_api_key())
             if isinstance(server_client, AuthenticatedClient):
-                gepa_job = await update_gepa_job_status_and_create_prompt(
+                gepa_job = await update_gepa_job_and_create_artifacts(
                     gepa_job, server_client
                 )
         except Exception as e:

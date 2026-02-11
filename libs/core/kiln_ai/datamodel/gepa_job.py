@@ -37,6 +37,10 @@ class GepaJob(KilnParentedModel):
         default=None,
         description="The ID of the prompt created from this job's result, if any.",
     )
+    created_run_config_id: str | None = Field(
+        default=None,
+        description="The ID of the run config created from this job's result, if any.",
+    )
     eval_ids: list[str] = Field(
         default_factory=list,
         description="List of eval IDs used for this job.",

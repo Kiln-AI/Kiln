@@ -30,12 +30,14 @@ from app.desktop.studio_server.gepa_job_api import (
     connect_gepa_job_api,
     gepa_job_from_id,
     is_job_status_final,
-    update_gepa_job_status_and_create_prompt,
+    update_gepa_job_and_create_artifacts,
     zip_project,
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import GepaJob, Project, Task
+from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
 
 
 @pytest.fixture
@@ -466,7 +468,7 @@ def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
-        assert prompts[0].name == f"GEPA - {gepa_job.name}"
+        assert prompts[0].name == f"Kiln Optimized - {gepa_job.name}"
         assert result["created_prompt_id"] == f"id::{prompts[0].id}"
 
 
@@ -752,7 +754,7 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
     with (
         patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.update_gepa_job_status_and_create_prompt",
+            "app.desktop.studio_server.gepa_job_api.update_gepa_job_and_create_artifacts",
             new_callable=AsyncMock,
             side_effect=mock_update,
         ) as mock_update_fn,
@@ -823,7 +825,7 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
     with (
         patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.update_gepa_job_status_and_create_prompt",
+            "app.desktop.studio_server.gepa_job_api.update_gepa_job_and_create_artifacts",
             new_callable=AsyncMock,
         ) as mock_update,
     ):
@@ -869,7 +871,7 @@ def test_gepa_job_from_id_not_found(client, tmp_path):
 
 
 def test_update_gepa_job_status_no_parent_task(mock_api_key):
-    """Test update_gepa_job_status_and_create_prompt when job has no parent task."""
+    """Test update_gepa_job_and_create_artifacts when job has no parent task."""
 
     gepa_job = GepaJob(
         name="Orphan Job",
@@ -884,14 +886,14 @@ def test_update_gepa_job_status_no_parent_task(mock_api_key):
     with pytest.raises(Exception) as exc_info:
         import asyncio
 
-        asyncio.run(update_gepa_job_status_and_create_prompt(gepa_job, mock_client))
+        asyncio.run(update_gepa_job_and_create_artifacts(gepa_job, mock_client))
 
     assert exc_info.value.status_code == 500
     assert "no parent task" in str(exc_info.value.detail)
 
 
 def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
-    """Test update_gepa_job_status_and_create_prompt when status response is None."""
+    """Test update_gepa_job_and_create_artifacts when status response is None."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -937,7 +939,7 @@ def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
 def test_update_gepa_job_status_response_validation_error(
     client, mock_api_key, tmp_path
 ):
-    """Test update_gepa_job_status_and_create_prompt when status response is HTTPValidationError."""
+    """Test update_gepa_job_and_create_artifacts when status response is HTTPValidationError."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -983,7 +985,7 @@ def test_update_gepa_job_status_response_validation_error(
 
 
 def test_update_gepa_job_status_exception_during_update(client, mock_api_key, tmp_path):
-    """Test that update_gepa_job_status_and_create_prompt handles exceptions during status update."""
+    """Test that update_gepa_job_and_create_artifacts handles exceptions during status update."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1055,7 +1057,7 @@ def test_list_gepa_jobs_exception_during_update(client, mock_api_key, tmp_path):
     with (
         patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.update_gepa_job_status_and_create_prompt",
+            "app.desktop.studio_server.gepa_job_api.update_gepa_job_and_create_artifacts",
             new_callable=AsyncMock,
             side_effect=Exception("Update failed"),
         ),
@@ -2105,3 +2107,348 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
 
         assert response.status_code == 500
         assert "Failed to start GEPA job" in response.json()["detail"]
+
+
+def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
+    """Test that a run config is created when a GEPA job succeeds."""
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    # Create a target run config
+    target_run_config = TaskRunConfig(
+        parent=task,
+        name="Original Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    target_run_config.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id=target_run_config.id,
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    optimized_prompt = "This is the optimized prompt from GEPA"
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.SUCCEEDED
+    )
+    mock_result_response = GEPAJobResultResponse(
+        status=JobStatus.SUCCEEDED,
+        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+    )
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=target_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_result_response,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "succeeded"
+        assert result["optimized_prompt"] == optimized_prompt
+
+        # Check that a prompt was created
+        prompts = task.prompts()
+        assert len(prompts) == 1
+        assert prompts[0].prompt == optimized_prompt
+
+        # Check that a run config was created
+        run_configs = task.run_configs()
+        assert len(run_configs) == 2
+        new_run_config = [rc for rc in run_configs if rc.id != target_run_config.id][0]
+        assert "optimized-" in new_run_config.name
+        assert new_run_config.name.startswith("Original Config")
+        assert new_run_config.prompt is not None
+        assert new_run_config.prompt.prompt == optimized_prompt
+        assert (
+            new_run_config.run_config_properties.model_name
+            == target_run_config.run_config_properties.model_name
+        )
+        assert (
+            new_run_config.run_config_properties.model_provider_name
+            == target_run_config.run_config_properties.model_provider_name
+        )
+
+        # Check that the gepa job has the created run config ID
+        assert result["created_run_config_id"] == new_run_config.id
+
+
+def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
+    """Test that a run config is only created once even if status is checked multiple times."""
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    target_run_config = TaskRunConfig(
+        parent=task,
+        name="Original Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    target_run_config.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id=target_run_config.id,
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    optimized_prompt = "This is the optimized prompt from GEPA"
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.SUCCEEDED
+    )
+    mock_result_response = GEPAJobResultResponse(
+        status=JobStatus.SUCCEEDED,
+        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+    )
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=target_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_result_response,
+        ),
+    ):
+        response_1 = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+        assert response_1.status_code == 200
+
+        response_2 = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+        assert response_2.status_code == 200
+
+        # Should only create one run config and one prompt
+        prompts = task.prompts()
+        assert len(prompts) == 1
+
+        run_configs = task.run_configs()
+        assert len(run_configs) == 2
+
+
+def test_gepa_job_run_config_handles_missing_target_config(
+    client, mock_api_key, tmp_path
+):
+    """Test that run config creation handles missing target config gracefully."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="nonexistent-config-id",
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    optimized_prompt = "This is the optimized prompt from GEPA"
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.SUCCEEDED
+    )
+    mock_result_response = GEPAJobResultResponse(
+        status=JobStatus.SUCCEEDED,
+        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+    )
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_result_response,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["latest_status"] == "succeeded"
+
+        # Prompt should be created
+        prompts = task.prompts()
+        assert len(prompts) == 1
+
+        # Run config should not be created due to error
+        run_configs = task.run_configs()
+        assert len(run_configs) == 0
+        assert result["created_run_config_id"] is None
+
+
+def test_gepa_job_prevents_race_condition_on_artifact_creation(
+    client, mock_api_key, tmp_path
+):
+    """Test that concurrent requests don't create duplicate artifacts due to locking."""
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    target_run_config = TaskRunConfig(
+        parent=task,
+        name="Original Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    target_run_config.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id=target_run_config.id,
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+    gepa_job_id = gepa_job.id
+
+    optimized_prompt = "This is the optimized prompt from GEPA"
+    mock_status_response = JobStatusResponse(
+        job_id="remote-job-123", status=JobStatus.SUCCEEDED
+    )
+    mock_result_response = GEPAJobResultResponse(
+        status=JobStatus.SUCCEEDED,
+        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+    )
+
+    with (
+        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=target_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_status_response,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            new_callable=AsyncMock,
+            return_value=mock_result_response,
+        ),
+    ):
+        # Make two concurrent requests - simulating a race condition
+        response_1 = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+        response_2 = client.get(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+        )
+
+        assert response_1.status_code == 200
+        assert response_2.status_code == 200
+
+        # Should only create one prompt and one run config despite concurrent requests
+        prompts = task.prompts()
+        assert len(prompts) == 1
+
+        run_configs = task.run_configs()
+        assert len(run_configs) == 2  # original + optimized

@@ -100,7 +100,7 @@
           task_id,
           gepa_job!.created_prompt_id!,
         )
-        return href ? [{ label: "View Generated Prompt", href }] : []
+        return href ? [{ label: "View Optimized Prompt", href }] : []
       })()
     : []
 
@@ -234,11 +234,19 @@
                 gepa_job.created_prompt_id,
               )}
               {#if created_prompt_href}
-                <div class="flex items-center">Generated Prompt</div>
+                <div class="flex items-center">Optimized Prompt</div>
                 <div class="flex items-center text-gray-500">
                   <a href={created_prompt_href} class="link"> View Prompt </a>
                 </div>
               {/if}
+            {/if}
+
+            {#if gepa_job.created_run_config_id}
+              <div class="flex items-center">Generated Run Config</div>
+              <div class="flex items-center text-gray-500">
+                {get_run_config_name(gepa_job.created_run_config_id)} (ID:
+                {gepa_job.created_run_config_id})
+              </div>
             {/if}
           </div>
         </div>

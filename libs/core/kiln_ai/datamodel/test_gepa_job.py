@@ -31,6 +31,7 @@ def test_gepa_job_creation(tmp_path):
     assert gepa_job.latest_status == "pending"
     assert gepa_job.optimized_prompt is None
     assert gepa_job.created_prompt_id is None
+    assert gepa_job.created_run_config_id is None
     assert gepa_job.eval_ids == []
 
 
@@ -93,12 +94,14 @@ def test_gepa_job_with_result(tmp_path):
         latest_status="succeeded",
         optimized_prompt="This is the optimized prompt",
         created_prompt_id="prompt-123",
+        created_run_config_id="run-config-456",
         parent=task,
     )
 
     assert gepa_job.latest_status == "succeeded"
     assert gepa_job.optimized_prompt == "This is the optimized prompt"
     assert gepa_job.created_prompt_id == "prompt-123"
+    assert gepa_job.created_run_config_id == "run-config-456"
     assert gepa_job.eval_ids == []
 
 
@@ -145,6 +148,7 @@ def test_gepa_job_save_and_load(tmp_path):
         token_budget="light",
         target_run_config_id="config-123",
         latest_status="running",
+        created_run_config_id="run-config-789",
         eval_ids=["eval-1", "eval-2"],
         parent=task,
     )
@@ -157,4 +161,5 @@ def test_gepa_job_save_and_load(tmp_path):
     assert loaded_jobs[0].job_id == "remote-job-123"
     assert loaded_jobs[0].token_budget == "light"
     assert loaded_jobs[0].latest_status == "running"
+    assert loaded_jobs[0].created_run_config_id == "run-config-789"
     assert loaded_jobs[0].eval_ids == ["eval-1", "eval-2"]
