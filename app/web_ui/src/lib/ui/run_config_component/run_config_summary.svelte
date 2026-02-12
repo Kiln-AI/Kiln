@@ -37,7 +37,7 @@
 </div>
 <div class="text-sm text-gray-500">
   {#if is_mcp}
-    <div>Type: MCP Tool (Direct)</div>
+    <div>Type: MCP Tool (No Agent)</div>
     <div>
       Tool: {task_run_config.run_config_properties.mcp_tool?.tool_name ??
         "Unknown"}

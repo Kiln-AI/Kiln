@@ -25,21 +25,48 @@
   let saved = false
   let form_error: KilnError | null = null
 
-  onMount(() => {
+  onMount(async () => {
     const cached_tool = get(selected_tool_for_task)
     if (!tool_id) {
       loading_error = createKilnError(
         new Error("No tool selected. Please start from the tool server page."),
       )
-    } else if (!cached_tool) {
-      loading_error = createKilnError(
-        new Error(
-          "Tool data not available. Please start from the tool server page.",
-        ),
-      )
-    } else {
+      return
+    }
+
+    if (cached_tool) {
       tool = cached_tool
       task_name = cached_tool.name
+      return
+    }
+
+    // Fallback: fetch tool data by tool_id (e.g., on refresh or direct link)
+    try {
+      const parts = tool_id.split("::")
+      if (parts.length < 4) {
+        throw new Error("Invalid tool ID.")
+      }
+      const tool_server_id = parts[2]
+      const tool_name = parts.slice(3).join("::")
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}",
+        {
+          params: { path: { project_id, tool_server_id } },
+        },
+      )
+      if (error || !data) {
+        throw new Error("Failed to load tool server.")
+      }
+      const matched_tool = data.available_tools?.find(
+        (available_tool) => available_tool.name === tool_name,
+      )
+      if (!matched_tool) {
+        throw new Error("Tool data not available.")
+      }
+      tool = matched_tool
+      task_name = matched_tool.name
+    } catch (err) {
+      loading_error = createKilnError(err)
     }
   })
 
@@ -104,7 +131,7 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="New Task from Tool"
+    title="New task from tool"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },

@@ -16,7 +16,7 @@
 
 <div class="flex flex-col gap-4">
   <div>
-    <div class="text-sm font-medium mb-2">MCP Tool Name</div>
+    <div class="text-sm font-medium mb-2">Tool Name</div>
     <div class="text-sm text-gray-500">{mcp_tool_name}</div>
   </div>
   <div>

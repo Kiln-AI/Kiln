@@ -86,7 +86,7 @@
 
   function handleCreateTask(tool_name: string) {
     selected_tool_name = tool_name
-    set_tool_store()
+    set_tool_store(tool_name)
     goto(
       `/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
         build_tool_id(tool_name),
@@ -121,12 +121,13 @@
     )
   }
 
-  function set_tool_store() {
-    if (!selected_tool_name) {
+  function set_tool_store(tool_name?: string) {
+    const name = tool_name ?? selected_tool_name
+    if (!name) {
       return
     }
     const tool = tool_server?.available_tools?.find(
-      (available_tool) => available_tool.name === selected_tool_name,
+      (available_tool) => available_tool.name === name,
     )
     if (tool) {
       selected_tool_for_task.set(tool)
@@ -448,10 +449,10 @@
         >
           <div class="card-body p-4">
             <div class="text-lg font-semibold">
-              Run Current Task with Tool Access
+              Run current task with tool access
             </div>
             <div class="text-sm text-gray-500">
-              Run current task, giving the agent access to this tool.
+              Run the current task with agent access to this tool.
             </div>
           </div>
         </div>
@@ -468,11 +469,11 @@
         >
           <div class="card-body p-4">
             <div class="text-lg font-semibold">
-              Task Directly Runs Tool (no Agent)
+              Run tool directly (no agent)
             </div>
             <div class="text-sm text-gray-500">
-              Have the task call this tool directly, without a wrapping agent.
-              Useful to evaluate external APIs in Kiln.
+              Run the tool directly, without an agent. Useful for evaluating
+              external APIs.
             </div>
           </div>
         </div>
@@ -628,14 +629,14 @@
                           >
                             <li>
                               <button on:click={() => open_modal(tool.name)}>
-                                Run Task with Tool
+                                Run task with tool
                               </button>
                             </li>
                             <li>
                               <button
                                 on:click={() => handleCreateTask(tool.name)}
                               >
-                                Create New Task From This Tool
+                                Create task from tool
                               </button>
                             </li>
                           </ul>
@@ -649,7 +650,7 @@
           </div>
         {:else}
           <div class="text-lg mb-4 text-gray-500">
-            This server does not expose any tools
+            This server has no tools.
           </div>
         {/if}
       </div>

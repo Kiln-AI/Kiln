@@ -31,7 +31,7 @@
   let compatibility_loading = false
   let loaded_tool_id: string | null = null
 
-  $: tool_missing = !tool_id || !get(selected_tool_for_task)
+  $: tool_missing = !tool_id
 
   $: compatible_task_options = [
     {
@@ -132,7 +132,7 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Run Tool Directly on Task"
+    title="Run tool directly on a task"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },
@@ -145,8 +145,8 @@
     {:else}
       <div class="flex flex-col gap-4 mb-6">
         <p class="text-sm text-gray-500">
-          This will call the MCP tool directly with task inputs — no wrapping
-          agent or prompt is used.
+          Runs the MCP tool directly with task inputs. No agent or prompt is
+          used.
         </p>
         <FormContainer
           submit_label="Save"
@@ -161,10 +161,10 @@
                 warning_message={no_compatible_tasks
                   ? `All ${incompatible_count} task${
                       incompatible_count === 1 ? "" : "s"
-                    } are not compatible with this tool. The task's input and output schema must match. Create a new task with this tool instead.`
+                    } are incompatible. Input and output schemas must match. Create a task from this tool instead.`
                   : `${incompatible_count} task${
                       incompatible_count === 1 ? "" : "s"
-                    } are not compatible with this tool. The task's input and output schema must match.`}
+                    } are incompatible. Input and output schemas must match.`}
                 warning_color="warning"
                 large_icon={true}
                 outline={true}
@@ -176,7 +176,7 @@
                     tool_id,
                   )}`}
                 >
-                  Create a new task from this tool
+                  Create task from this tool
                 </a>
               {/if}
             {/if}
