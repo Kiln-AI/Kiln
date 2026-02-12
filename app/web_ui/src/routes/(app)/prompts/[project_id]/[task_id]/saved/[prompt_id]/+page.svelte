@@ -25,6 +25,21 @@
     prompt_model?.id.startsWith("id::") ||
     prompt_model?.id.startsWith("task_run_config::")
 
+  function run_config_id_from_prompt_id(id: string): string | null {
+    const parts = id.split("::")
+    return parts.length === 4 ? parts[3] : null
+  }
+
+  $: is_frozen_prompt = prompt_model?.id.startsWith("task_run_config::")
+  $: run_config_id = is_frozen_prompt
+    ? run_config_id_from_prompt_id(prompt_model?.id || "")
+    : null
+
+  $: patch_url =
+    is_frozen_prompt && run_config_id
+      ? `/api/projects/${$current_project?.id}/tasks/${task_id}/run_config/${run_config_id}`
+      : `/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`
+
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
     prompt_props = Object.fromEntries(
@@ -131,13 +146,13 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
-  patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
+  {patch_url}
   {after_save}
   fields={[
     {
       label: "Prompt Name",
       description: "The name of the prompt",
-      api_name: "name",
+      api_name: is_frozen_prompt ? "prompt_name" : "name",
       value: prompt_model?.name || "",
       input_type: "input",
     },

@@ -226,12 +226,12 @@
     if (!config.id) return
     const new_starred = !config.starred
     const { error: err } = await client.PATCH(
-      "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/starred",
+      "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}",
       {
         params: {
           path: { project_id, task_id, run_config_id: config.id },
-          query: { starred: new_starred },
         },
+        body: { starred: new_starred },
       },
     )
     if (err) {
