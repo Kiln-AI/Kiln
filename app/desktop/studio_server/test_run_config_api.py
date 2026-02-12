@@ -3,10 +3,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.run_config_api import (
+    _create_mcp_run_config_properties,
     _load_mcp_input_schema,
     _load_mcp_output_schema,
     _load_mcp_tool,
     _normalize_schema,
+    _resolve_mcp_tool_from_id,
     _schemas_compatible,
     _validate_mcp_input_schema,
     _validate_mcp_output_schema,
@@ -349,9 +351,24 @@ def test_create_task_from_tool_plaintext(client, tmp_path):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "New Task"
+    assert data["instruction"] == "Complete the task as described."
     assert data["input_json_schema"] == json.dumps(tool_input_schema)
     assert data["output_json_schema"] is None
     assert data["default_run_config_id"] is not None
+
+    created_task = next(
+        (task for task in project.tasks() if task.name == "New Task"),
+        None,
+    )
+    assert created_task is not None
+    run_configs = created_task.run_configs()
+    assert len(run_configs) == 1
+    rc = run_configs[0]
+    assert rc.run_config_properties.kind == "mcp"
+    assert rc.run_config_properties.mcp_tool is not None
+    assert rc.run_config_properties.mcp_tool.tool_name == "fake_tool"
+    assert rc.run_config_properties.mcp_tool.input_schema == tool_input_schema
+    assert rc.run_config_properties.mcp_tool.output_schema is None
 
 
 def test_create_task_from_tool_structured(client, tmp_path):
@@ -397,6 +414,7 @@ def test_create_task_from_tool_structured(client, tmp_path):
     assert data["name"] == "Structured Task"
     assert data["default_run_config_id"] is not None
 
+    # Verify the task was created with the correct input and output schemas
     created_task = next(
         (task for task in project.tasks() if task.name == "Structured Task"),
         None,
@@ -404,6 +422,43 @@ def test_create_task_from_tool_structured(client, tmp_path):
     assert created_task is not None
     assert created_task.input_json_schema is not None
     assert created_task.output_json_schema is not None
+
+    # Verify the run config was created with the correct input and output schemas
+    run_configs = created_task.run_configs()
+    assert len(run_configs) == 1
+    rc = run_configs[0]
+    assert rc.run_config_properties.kind == "mcp"
+    assert rc.run_config_properties.mcp_tool is not None
+    assert rc.run_config_properties.mcp_tool.tool_name == "fake_tool"
+    assert rc.run_config_properties.mcp_tool.input_schema == tool_input_schema
+    assert rc.run_config_properties.mcp_tool.output_schema == tool_output_schema
+
+
+def test_create_task_from_tool_invalid_tool(client, tmp_path):
+    project = Project(
+        id="project_err",
+        name="Error Project",
+        path=tmp_path / "project_err.kiln",
+    )
+    project.save_to_file()
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.project_from_id"
+        ) as mock_project_from_id,
+        patch(
+            "app.desktop.studio_server.run_config_api._resolve_mcp_tool_from_id",
+            side_effect=ValueError("Tool selected is not an MCP tool."),
+        ),
+    ):
+        mock_project_from_id.return_value = project
+        response = client.post(
+            "/api/projects/project_err/create_task_from_tool",
+            json={"tool_id": "not_mcp", "task_name": "Should Fail"},
+        )
+
+    assert response.status_code == 400
+    assert "Tool selected is not an MCP tool." in response.text
 
 
 def test_create_mcp_run_config_success(client, tmp_path):
@@ -451,6 +506,15 @@ def test_create_mcp_run_config_success(client, tmp_path):
     assert data["run_config_properties"]["kind"] == "mcp"
     assert data["run_config_properties"]["mcp_tool"]["tool_name"] == "fake_tool"
 
+    run_configs = task.run_configs()
+    assert len(run_configs) == 1
+    rc = run_configs[0]
+    assert rc.run_config_properties.kind == "mcp"
+    assert rc.run_config_properties.mcp_tool is not None
+    assert rc.run_config_properties.mcp_tool.tool_name == "fake_tool"
+    assert rc.run_config_properties.mcp_tool.input_schema == task_input_schema
+    assert rc.run_config_properties.mcp_tool.output_schema is None
+
 
 def test_create_mcp_run_config_plaintext_success(client, tmp_path):
     project = Project(
@@ -491,6 +555,7 @@ def test_create_mcp_run_config_plaintext_success(client, tmp_path):
             "/api/projects/project5/tasks/task_plaintext_rc/mcp_run_config",
             json={
                 "name": "Plaintext MCP Config",
+                "description": "A test description",
                 "tool_id": "mcp::local::server123::test_tool",
             },
         )
@@ -498,8 +563,23 @@ def test_create_mcp_run_config_plaintext_success(client, tmp_path):
     assert response.status_code == 200
     result = response.json()
     assert result["name"] == "Plaintext MCP Config"
+    assert result["description"] == "A test description"
     assert result["run_config_properties"]["kind"] == "mcp"
     assert result["run_config_properties"]["mcp_tool"]["tool_name"] == "test_tool"
+
+    # Verify the run config was created with the correct input and output schemas
+    run_configs = task.run_configs()
+    assert len(run_configs) == 1
+    rc = run_configs[0]
+    assert rc.description == "A test description"
+    assert rc.run_config_properties.kind == "mcp"
+    assert rc.run_config_properties.mcp_tool is not None
+    assert rc.run_config_properties.mcp_tool.tool_name == "test_tool"
+    assert rc.run_config_properties.mcp_tool.input_schema == {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+    }
+    assert rc.run_config_properties.mcp_tool.output_schema is None
 
 
 def test_create_mcp_run_config_input_schema_mismatch(client, tmp_path):
@@ -593,15 +673,22 @@ def test_tasks_compatible_with_tool_mixed_results(client, project_and_tasks):
     by_name = {item["task_name"]: item for item in data}
 
     assert by_name["Plaintext Task"]["compatible"] is True
+    assert by_name["Plaintext Task"]["incompatibility_reason"] is None
+    assert by_name["Plaintext Task"]["task_id"] == "task_plaintext"
+
     assert by_name["Structured OK Task"]["compatible"] is True
+    assert by_name["Structured OK Task"]["incompatibility_reason"] is None
+    assert by_name["Structured OK Task"]["task_id"] == "task_structured_ok"
 
     assert by_name["Bad Input Task"]["compatible"] is False
+    assert by_name["Bad Input Task"]["task_id"] == "task_bad_input"
     assert (
         "Task input schema must be compatible with the MCP tool."
         in by_name["Bad Input Task"]["incompatibility_reason"]
     )
 
     assert by_name["Bad Output Task"]["compatible"] is False
+    assert by_name["Bad Output Task"]["task_id"] == "task_bad_output"
     assert (
         "Task output schema must be compatible with the MCP tool."
         in by_name["Bad Output Task"]["incompatibility_reason"]
@@ -626,6 +713,37 @@ def test_tasks_compatible_with_tool_invalid_tool(client, project_and_tasks):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Tool selected is not an MCP tool."
+
+
+def test_tasks_compatible_with_tool_empty_project(client, tmp_path):
+    project = Project(
+        id="project_empty",
+        name="Empty Project",
+        path=tmp_path / "project_empty.kiln",
+    )
+    project.save_to_file()
+
+    fake_tool = FakeMcpTool(
+        {"type": "object", "properties": {"x": {"type": "string"}}}, None
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.project_from_id"
+        ) as mock_project_from_id,
+        patch(
+            "app.desktop.studio_server.run_config_api._resolve_mcp_tool_from_id",
+            return_value=fake_tool,
+        ),
+    ):
+        mock_project_from_id.return_value = project
+        response = client.get(
+            "/api/projects/project_empty/tasks_compatible_with_tool",
+            params={"tool_id": "mcp::local::server::fake_tool"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 @pytest.mark.parametrize(
@@ -744,3 +862,82 @@ def test_schemas_compatible_true(task_schema, tool_schema, description):
 )
 def test_schemas_compatible_false(task_schema, tool_schema, description):
     assert not _schemas_compatible(task_schema, tool_schema)
+
+
+def test_resolve_mcp_tool_from_id_success():
+    mock_server = Mock()
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.is_mcp_tool_id", return_value=True
+        ),
+        patch(
+            "app.desktop.studio_server.run_config_api.mcp_server_and_tool_name_from_id",
+            return_value=("server123", "my_tool"),
+        ),
+        patch(
+            "app.desktop.studio_server.run_config_api.tool_server_from_id",
+            return_value=mock_server,
+        ),
+        patch(
+            "app.desktop.studio_server.run_config_api.MCPServerTool"
+        ) as mock_mcp_class,
+    ):
+        mock_mcp_class.return_value = Mock(spec=MCPServerTool)
+        result = _resolve_mcp_tool_from_id("proj1", "mcp::local::server123::my_tool")
+
+        mock_mcp_class.assert_called_once_with(mock_server, "my_tool")
+        assert isinstance(result, MCPServerTool)
+
+
+def test_resolve_mcp_tool_from_id_not_mcp():
+    with patch(
+        "app.desktop.studio_server.run_config_api.is_mcp_tool_id", return_value=False
+    ):
+        with pytest.raises(ValueError, match="not an MCP tool"):
+            _resolve_mcp_tool_from_id("proj1", "not_mcp_tool")
+
+
+def test_create_mcp_run_config_properties():
+    tool_input_schema = {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+    }
+    tool_output_schema = {
+        "type": "object",
+        "properties": {"result": {"type": "string"}},
+    }
+
+    result = _create_mcp_run_config_properties(
+        tool_id="mcp::local::server::my_tool",
+        tool_name="my_tool",
+        tool_input_schema=tool_input_schema,
+        tool_output_schema=tool_output_schema,
+    )
+
+    assert result.kind == "mcp"
+    assert result.model_name == "mcp_tool"
+    assert result.model_provider_name == "mcp_provider"
+    assert result.prompt_id == "simple_prompt_builder"
+    assert result.mcp_tool is not None
+    assert result.mcp_tool.tool_id == "mcp::local::server::my_tool"
+    assert result.mcp_tool.tool_name == "my_tool"
+    assert result.mcp_tool.input_schema == tool_input_schema
+    assert result.mcp_tool.output_schema == tool_output_schema
+
+
+def test_create_mcp_run_config_properties_no_output_schema():
+    tool_input_schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+    }
+
+    result = _create_mcp_run_config_properties(
+        tool_id="mcp::local::server::tool2",
+        tool_name="tool2",
+        tool_input_schema=tool_input_schema,
+        tool_output_schema=None,
+    )
+
+    assert result.kind == "mcp"
+    assert result.mcp_tool is not None
+    assert result.mcp_tool.output_schema is None
