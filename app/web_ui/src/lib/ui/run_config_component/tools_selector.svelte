@@ -1,7 +1,11 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import { available_tools, load_available_tools, ui_state } from "$lib/stores"
+  import {
+    available_tools,
+    load_available_tools,
+    pending_state,
+  } from "$lib/stores"
   import { onMount } from "svelte"
   import { get } from "svelte/store"
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
@@ -17,6 +21,7 @@
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
 
   let tools_store_loaded_task_id: string | null = null
+  let loading_tools = false
 
   let default_tools_selector_settings: ToolsSelectorSettings = {
     mandatory_tools: [],
@@ -43,33 +48,67 @@
   $: load_tools(project_id, task_id)
 
   async function load_tools(project_id: string, task_id: string | null) {
-    // Load available tools
-    load_available_tools(project_id)
-
-    if (!task_id) {
-      tools = tools_selector_settings.mandatory_tools || []
-      tools_store_loaded_task_id = null
-    } else if (task_id !== tools_store_loaded_task_id) {
-      // load selected tools for this task from tools_store
-      await tools_store_initialized
-      const existing_tools =
-        $tools_store.selected_tool_ids_by_task_id[task_id] || []
-
-      // Combine mandatory tools with existing selected tools
-      const combined_tools = [
-        ...(tools_selector_settings.mandatory_tools || []),
-        ...existing_tools,
-      ]
-      // Remove duplicates while preserving order (mandatory tools first)
-      tools = [...new Set(combined_tools)]
-
-      tools_store_loaded_task_id = task_id
+    // Prevent concurrent executions - if already loading, return
+    if (loading_tools) {
+      return
     }
+    loading_tools = true
 
-    const state = get(ui_state)
-    if (state.pending_tool_id && !tools.includes(state.pending_tool_id)) {
-      tools = [...tools, state.pending_tool_id]
-      ui_state.set({ ...state, pending_tool_id: null })
+    try {
+      // Load available tools and wait for them to be ready
+      await load_available_tools(project_id)
+
+      if (!task_id) {
+        tools = tools_selector_settings.mandatory_tools || []
+        tools_store_loaded_task_id = null
+      } else if (task_id !== tools_store_loaded_task_id) {
+        // load selected tools for this task from tools_store
+        await tools_store_initialized
+        const existing_tools =
+          $tools_store.selected_tool_ids_by_task_id[task_id] || []
+
+        // Combine mandatory tools with existing selected tools
+        const combined_tools = [
+          ...(tools_selector_settings.mandatory_tools || []),
+          ...existing_tools,
+        ]
+        // Remove duplicates while preserving order (mandatory tools first)
+        tools = [...new Set(combined_tools)]
+
+        tools_store_loaded_task_id = task_id
+      }
+
+      // Only add pending_tool_id if it exists in available_tools
+      const state = get(pending_state)
+      if (state.pending_tool_id && !tools.includes(state.pending_tool_id)) {
+        // Check if the tool is actually available before adding it
+        const available = get(available_tools)[project_id]
+        if (available) {
+          const available_tool_ids = new Set(
+            available.flatMap((tool_set) =>
+              tool_set.tools.map((tool) => tool.id),
+            ),
+          )
+          if (available_tool_ids.has(state.pending_tool_id)) {
+            tools = [...tools, state.pending_tool_id]
+
+            // Immediately save to tools_store to prevent it from being overwritten on next load_tools call
+            if (task_id) {
+              tools_store.update((store_state) => ({
+                ...store_state,
+                selected_tool_ids_by_task_id: {
+                  ...store_state.selected_tool_ids_by_task_id,
+                  [task_id]: tools,
+                },
+              }))
+            }
+          }
+        }
+        // Clear pending_tool_id regardless of whether we added it or not
+        pending_state.set({ ...state, pending_tool_id: null })
+      }
+    } finally {
+      loading_tools = false
     }
   }
 

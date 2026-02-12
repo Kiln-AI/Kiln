@@ -10,7 +10,7 @@
   import type { TaskToolCompatibility } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
-  import { ui_state } from "$lib/stores"
+  import { ui_state, pending_state } from "$lib/stores"
   import { get } from "svelte/store"
   import {
     save_new_mcp_run_config,
@@ -105,10 +105,10 @@
         tool_id,
         run_config_name || undefined,
       )
+      if (!config.id) {
+        throw new Error("Run config ID missing after save.")
+      }
       if (make_default) {
-        if (!config.id) {
-          throw new Error("Run config ID missing after save.")
-        }
         await update_task_default_run_config(
           project_id,
           selected_task_id,
@@ -119,6 +119,9 @@
         ...get(ui_state),
         current_task_id: selected_task_id,
         current_project_id: project_id,
+      })
+      pending_state.set({
+        ...get(pending_state),
         pending_run_config_id: config.id,
       })
       goto("/run")

@@ -45,28 +45,30 @@ export type UIState = {
   current_project_id: string | null
   current_task_id: string | null
   selected_model: string | null
-  pending_tool_id: string | null
-  pending_run_config_id: string | null
 }
 
 export const default_ui_state: UIState = {
   current_project_id: null,
   current_task_id: null,
   selected_model: null,
-  pending_tool_id: null,
-  pending_run_config_id: null,
 }
 
 // Private, used to store the current project, and task ID
 export const ui_state = localStorageStore("ui_state", default_ui_state)
 
-if (browser) {
-  ui_state.update((state) => ({
-    ...state,
-    pending_tool_id: null,
-    pending_run_config_id: null,
-  }))
+// Pending state for cross-page navigation (session-scoped, not persisted)
+// These values are consumed by components and cleared after use
+export type PendingState = {
+  pending_tool_id: string | null
+  pending_run_config_id: string | null
 }
+
+export const default_pending_state: PendingState = {
+  pending_tool_id: null,
+  pending_run_config_id: null,
+}
+
+export const pending_state = writable<PendingState>(default_pending_state)
 
 // These stores store nice structured data. They are auto-updating based on the ui_state and server calls to load data
 export const projects = writable<AllProjects | null>(null)

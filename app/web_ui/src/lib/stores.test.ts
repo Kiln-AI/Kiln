@@ -4,6 +4,8 @@ import {
   current_project,
   ui_state,
   default_ui_state,
+  pending_state,
+  default_pending_state,
   available_models,
   provider_name_from_id,
 } from "./stores"
@@ -109,10 +111,18 @@ describe("stores", () => {
   })
 
   describe("ui_state defaults", () => {
-    it("should include pending tool and run config fields", () => {
+    it("should not include pending fields (moved to pending_state)", () => {
       expect(get(ui_state)).toEqual(default_ui_state)
-      expect(default_ui_state.pending_tool_id).toBeNull()
-      expect(default_ui_state.pending_run_config_id).toBeNull()
+      expect(default_ui_state).not.toHaveProperty("pending_tool_id")
+      expect(default_ui_state).not.toHaveProperty("pending_run_config_id")
+    })
+  })
+
+  describe("pending_state defaults", () => {
+    it("should have pending tool and run config fields", () => {
+      expect(get(pending_state)).toEqual(default_pending_state)
+      expect(default_pending_state.pending_tool_id).toBeNull()
+      expect(default_pending_state.pending_run_config_id).toBeNull()
     })
   })
 })

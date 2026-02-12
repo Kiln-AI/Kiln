@@ -27,7 +27,7 @@
   import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
   import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { tick, onMount } from "svelte"
-  import { ui_state } from "$lib/stores"
+  import { ui_state, pending_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
   import { arrays_equal } from "$lib/utils/collections"
@@ -224,7 +224,7 @@
   }
 
   async function apply_pending_run_config_if_needed() {
-    const pending_run_config_id = $ui_state.pending_run_config_id
+    const pending_run_config_id = $pending_state.pending_run_config_id
     if (!pending_run_config_id || !current_task?.id) {
       return
     }
@@ -234,7 +234,7 @@
         get_task_composite_id(project_id, current_task.id)
       ] ?? []
     const exists = all_configs.find((c) => c.id === pending_run_config_id)
-    ui_state.set({ ...$ui_state, pending_run_config_id: null })
+    pending_state.set({ ...$pending_state, pending_run_config_id: null })
     if (exists) {
       selected_run_config_id = pending_run_config_id
     }
