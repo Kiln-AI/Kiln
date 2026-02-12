@@ -77,12 +77,14 @@
           message: "Failed to load tasks",
           status: 500,
         })
+        loaded_tool_id = tool_id
       } else {
         compatibility_tasks = data
         loaded_tool_id = tool_id
       }
     } catch (err) {
       error = createKilnError(err)
+      loaded_tool_id = tool_id
     } finally {
       compatibility_loading = false
     }

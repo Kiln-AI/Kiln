@@ -352,7 +352,8 @@ def test_create_task_from_tool_plaintext(client, tmp_path):
     data = response.json()
     assert data["name"] == "New Task"
     assert data["instruction"] == "Complete the task as described."
-    assert data["input_json_schema"] == json.dumps(tool_input_schema)
+    # Single string input MCP tools map to plaintext tasks.
+    assert data["input_json_schema"] is None
     assert data["output_json_schema"] is None
     assert data["default_run_config_id"] is not None
 
@@ -381,8 +382,11 @@ def test_create_task_from_tool_structured(client, tmp_path):
 
     tool_input_schema = {
         "type": "object",
-        "properties": {"message": {"type": "string"}},
-        "required": ["message"],
+        "properties": {
+            "message": {"type": "string"},
+            "priority": {"type": "integer"},
+        },
+        "required": ["message", "priority"],
     }
     tool_output_schema = {
         "type": "object",
