@@ -141,56 +141,77 @@ def create_prompt_from_optimization(
 
 def create_run_config_from_optimization(
     gepa_job: GepaJob, task, prompt: Prompt
-) -> TaskRunConfig | None:
+) -> TaskRunConfig:
     """
     Create a run config from an optimization job result. Does not guarantee idempotence so
     make sure you have a proper locking mechanism around calling this function.
+    Raises exceptions on failure.
     """
+    parent_project = task.parent_project()
+    if parent_project is None:
+        raise HTTPException(status_code=500, detail="Task has no parent project")
+
+    if not parent_project.id or not task.id:
+        raise HTTPException(
+            status_code=500, detail="Task has no parent project or task"
+        )
+
+    if not prompt.id:
+        raise HTTPException(status_code=500, detail="Prompt has no ID")
+
+    # get the original target run config that we optimized for in the job
+    target_run_config = task_run_config_from_id(
+        parent_project.id, task.id, gepa_job.target_run_config_id
+    )
+
+    timestamp = int(time.time())
+    run_config_name = f"{target_run_config.name} {timestamp}"
+
+    # create new run config with the same properties but new prompt
+    new_run_config_properties = target_run_config.run_config_properties.model_copy()
+
+    # point the run config properties to the new prompt - need id:: prefix because
+    # we point to a standalone prompt, not a frozen prompt
+    new_run_config_properties.prompt_id = f"id::{prompt.id}"
+
+    new_run_config = TaskRunConfig(
+        parent=task,
+        name=run_config_name,
+        description=f"Optimized run config from GEPA job {gepa_job.name}",
+        run_config_properties=new_run_config_properties,
+    )
+
+    new_run_config.save_to_file()
+
+    logger.info(
+        f"Created run config {new_run_config.id} from GEPA job {gepa_job.job_id}"
+    )
+    return new_run_config
+
+
+def _cleanup_artifact(
+    artifact: Prompt | TaskRunConfig | None, artifact_type: str, gepa_job_id: str
+) -> None:
+    """
+    Attempt to delete an artifact, logging errors if deletion fails.
+    """
+    if artifact is None:
+        return
+
     try:
-        parent_project = task.parent_project()
-        if parent_project is None:
-            raise HTTPException(status_code=500, detail="Task has no parent project")
-
-        if not parent_project.id or not task.id:
-            raise HTTPException(
-                status_code=500, detail="Task has no parent project or task"
-            )
-
-        if not prompt.id:
-            raise HTTPException(status_code=500, detail="Prompt has no ID")
-
-        # get the original target run config that we optimized for in the job
-        target_run_config = task_run_config_from_id(
-            parent_project.id, task.id, gepa_job.target_run_config_id
-        )
-
-        timestamp = int(time.time())
-        run_config_name = f"{target_run_config.name} {timestamp}"
-
-        # create new run config with the same properties but new prompt
-        new_run_config_properties = target_run_config.run_config_properties.model_copy()
-
-        # point the run config properties to the new prompt - need id:: prefix because
-        # we point to a standalone prompt, not a frozen prompt
-        new_run_config_properties.prompt_id = f"id::{prompt.id}"
-
-        new_run_config = TaskRunConfig(
-            parent=task,
-            name=run_config_name,
-            description=f"Optimized run config from GEPA job {gepa_job.name}",
-            run_config_properties=new_run_config_properties,
-        )
-
-        new_run_config.save_to_file()
-
+        artifact.delete()
+        artifact_id = getattr(artifact, "id", "unknown")
         logger.info(
-            f"Created run config {new_run_config.id} from GEPA job {gepa_job.job_id}"
+            f"Successfully cleaned up {artifact_type} artifact {artifact_id} "
+            f"for GEPA job {gepa_job_id}"
         )
-        return new_run_config
-
-    except Exception as e:
-        logger.error(f"Error creating run config from GEPA job: {e}", exc_info=True)
-        return None
+    except Exception as cleanup_error:
+        artifact_id = getattr(artifact, "id", "unknown")
+        logger.error(
+            f"Failed to clean up {artifact_type} artifact {artifact_id} "
+            f"for GEPA job {gepa_job_id}: {cleanup_error}",
+            exc_info=True,
+        )
 
 
 async def _create_artifacts_for_succeeded_job(
@@ -239,14 +260,28 @@ async def _create_artifacts_for_succeeded_job(
         optimized_prompt_text = result_response.output.optimized_prompt
         gepa_job.optimized_prompt = optimized_prompt_text
 
-        prompt = create_prompt_from_optimization(gepa_job, task, optimized_prompt_text)
-        gepa_job.created_prompt_id = f"id::{prompt.id}"
+        prompt: Prompt | None = None
+        run_config: TaskRunConfig | None = None
 
-        run_config = create_run_config_from_optimization(gepa_job, task, prompt)
-        if run_config:
+        try:
+            prompt = create_prompt_from_optimization(
+                gepa_job, task, optimized_prompt_text
+            )
+            gepa_job.created_prompt_id = f"id::{prompt.id}"
+
+            run_config = create_run_config_from_optimization(gepa_job, task, prompt)
             gepa_job.created_run_config_id = run_config.id
-        else:
-            logger.error(f"Error creating run config from GEPA job: {gepa_job.job_id}")
+
+        except Exception as e:
+            logger.error(
+                f"Failed to create artifacts for GEPA job {gepa_job.job_id}: {e}. "
+                f"Cleaning up any created artifacts to allow retry on next invocation.",
+                exc_info=True,
+            )
+            _cleanup_artifact(prompt, "prompt", gepa_job.job_id)
+            _cleanup_artifact(run_config, "run config", gepa_job.job_id)
+            gepa_job.created_prompt_id = None
+            gepa_job.created_run_config_id = None
 
 
 async def update_gepa_job_and_create_artifacts(

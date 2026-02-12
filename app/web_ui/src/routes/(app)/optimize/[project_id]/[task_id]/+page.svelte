@@ -16,6 +16,7 @@
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
+    update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { Task, TaskRunConfig } from "$lib/types"
@@ -31,10 +32,6 @@
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
   import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
-  import {
-    load_task_run_configs as reload_run_configs,
-    update_task_default_run_config,
-  } from "$lib/stores/run_configs_store"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
 
@@ -81,7 +78,7 @@
   }
 
   async function handleNewRunConfigCreated() {
-    await reload_run_configs(project_id, task_id, true)
+    await load_task_run_configs(project_id, task_id, true)
   }
 
   onMount(async () => {
@@ -91,7 +88,10 @@
         load_model_info(),
         load_available_tools(project_id),
         load_task_prompts(project_id, task_id),
-        load_task_run_configs(project_id, task_id),
+
+        // some run configs are created server-side as a result of async jobs
+        // frontend does not know about them until the store is refreshed
+        load_task_run_configs(project_id, task_id, true),
       ])
       task = await load_task(project_id, task_id)
       if (!task) {
