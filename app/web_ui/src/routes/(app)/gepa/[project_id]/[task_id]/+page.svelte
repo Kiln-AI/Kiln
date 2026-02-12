@@ -57,7 +57,7 @@
 <AppPage
   title="Prompt Optimizer Jobs"
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
+  sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
   breadcrumbs={[
     {
       label: "Optimize",

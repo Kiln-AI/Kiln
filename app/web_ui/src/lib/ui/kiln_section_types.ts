@@ -43,6 +43,8 @@ export interface PromptGeneratorItem {
   on_select: () => void
   disabled?: boolean
   disabled_reason?: string
+  disabled_docs_link?: string
+  recommended?: boolean
 }
 
 export type KilnSectionItem = SettingsItem | EvalTemplateItem

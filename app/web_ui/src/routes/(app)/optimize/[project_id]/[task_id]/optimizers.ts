@@ -17,13 +17,13 @@ export function get_optimizers(
 ): Optimizer[] {
   const optimizers: Optimizer[] = [
     {
-      title: "Improve Prompt",
+      title: "Refine Prompt",
       description:
-        "Improve output quality by refining instructions, structure, and examples. Best first step before changing models or tools.",
+        "Improve your prompt, manually or using our automatic optimizers.",
       metrics: {
         [METRIC_IMPACT]: 5,
-        [METRIC_COST_EFFICIENCY]: 3,
-        [METRIC_EASE]: 3,
+        [METRIC_COST_EFFICIENCY]: 4,
+        [METRIC_EASE]: 4,
       },
       on_click: () => {
         goto(
@@ -32,25 +32,24 @@ export function get_optimizers(
       },
     },
     {
-      title: "Try Different Models",
+      title: "Compare Models",
       description:
-        "Test different models to improve reasoning, structured output, speed, or cost for the same task.",
+        "Compare models to find the best quality/cost tradeoff for your task.",
       metrics: {
-        [METRIC_IMPACT]: 4,
+        [METRIC_IMPACT]: 3,
         [METRIC_COST_EFFICIENCY]: 4,
-        [METRIC_EASE]: 1,
+        [METRIC_EASE]: 2,
       },
       on_click: () => {
         goto(`/models`)
       },
     },
     {
-      title: "Fine-Tune a Model",
-      description:
-        "Train a custom model on your data for higher accuracy, consistency, and domain-specific performance at scale.",
+      title: "Fine-Tune",
+      description: "Train a custom model for your task.",
       metrics: {
-        [METRIC_IMPACT]: 4,
-        [METRIC_COST_EFFICIENCY]: 2,
+        [METRIC_IMPACT]: 3,
+        [METRIC_COST_EFFICIENCY]: 4,
         [METRIC_EASE]: 1,
       },
       on_click: () => {
@@ -58,25 +57,23 @@ export function get_optimizers(
       },
     },
     {
-      title: "Add Knowledge (RAG)",
-      description:
-        "Ground responses in your documents and data to reduce hallucinations and improve factual accuracy with Search Tools (RAG).",
+      title: "Add Docs & Search (RAG)",
+      description: "Let agents search for relevant knowledge.",
       metrics: {
         [METRIC_IMPACT]: 4,
-        [METRIC_COST_EFFICIENCY]: 2,
-        [METRIC_EASE]: 1,
+        [METRIC_COST_EFFICIENCY]: 4,
+        [METRIC_EASE]: 3,
       },
       on_click: () => {
         goto(`/docs/${project_id}`)
       },
     },
     {
-      title: "Add External Tools",
-      description:
-        "Give your task access to external capabilities like web search, code execution, and system integrations with MCP Tools.",
+      title: "Add Tools (MCP)",
+      description: "Add tools like web-search, code sandboxes, and more.",
       metrics: {
         [METRIC_IMPACT]: 3,
-        [METRIC_COST_EFFICIENCY]: 4,
+        [METRIC_COST_EFFICIENCY]: 3,
         [METRIC_EASE]: 2,
       },
       on_click: () => {
@@ -84,12 +81,11 @@ export function get_optimizers(
       },
     },
     {
-      title: "Build an Agent Workflow",
-      description:
-        "Break complex workflows into coordinated subtasks using multiple models and tools working together with Kiln Tasks as Tools.",
+      title: "Add Sub-Agents",
+      description: "Allow your task to call other agents and perform work.",
       metrics: {
         [METRIC_IMPACT]: 4,
-        [METRIC_COST_EFFICIENCY]: 3,
+        [METRIC_COST_EFFICIENCY]: 4,
         [METRIC_EASE]: 2,
       },
       on_click: () => {

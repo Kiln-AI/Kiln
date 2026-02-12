@@ -4,6 +4,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
+  import { prompt_link } from "$lib/utils/link_builder"
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
   import Output from "$lib/ui/output.svelte"
   import {
@@ -123,7 +124,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Prompts"
-    subtitle="Manage the instructions that tell models how to run your task."
+    subtitle="Manage prompts for this task."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
@@ -165,12 +166,12 @@
             <div>
               <h2 class="text-lg font-medium text-gray-900">Base Prompt</h2>
               <p class="text-sm text-gray-500">
-                Task base prompt used by prompt generators (Basic, Few-shot,
-                etc.).
+                The base prompt used by prompt generators (Few Shot, Chain of
+                Thought, etc.).
               </p>
             </div>
             <button
-              class="btn btn-sm"
+              class="btn btn-mid"
               on:click={() =>
                 goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)}
             >
@@ -187,11 +188,7 @@
         </div>
 
         <div>
-          <h2 class="text-lg font-medium text-gray-900">Saved Prompts</h2>
-          <p class="text-sm text-gray-500 mb-2">
-            Saved prompts include custom prompts, optimized prompts, frozen
-            prompts from saved run configurations, and fine-tuning prompts.
-          </p>
+          <h2 class="text-lg font-medium text-gray-900 mb-2">Saved Prompts</h2>
           {#if !has_prompts}
             <div class="text-gray-500 rounded-lg border p-4 text-sm">
               No saved prompts yet. Create one by clicking "Create Prompt"
@@ -227,12 +224,10 @@
                 </thead>
                 <tbody>
                   {#each sorted_prompts as prompt}
+                    {@const link = prompt_link(project_id, task_id, prompt.id)}
                     <tr
                       class="hover:bg-base-200 cursor-pointer"
-                      on:click={() =>
-                        goto(
-                          `/prompts/${project_id}/${task_id}/saved/${prompt.id}`,
-                        )}
+                      on:click={() => link && goto(link)}
                     >
                       <td class="font-medium">
                         {prompt.name}

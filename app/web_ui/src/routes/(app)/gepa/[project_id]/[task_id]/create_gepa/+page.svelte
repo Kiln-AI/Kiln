@@ -618,15 +618,6 @@
     })
   }
 
-  onMount(async () => {
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
-  })
-
   async function refresh_evaluators() {
     const { data: evals_data } = await client.GET(
       "/api/projects/{project_id}/tasks/{task_id}/evals",
@@ -756,7 +747,7 @@
     title="Create Optimized Prompt"
     subtitle="Create a prompt optimized for your evals using training data."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
     breadcrumbs={from_prompt_generators
       ? [
           {

@@ -78,17 +78,22 @@
   ): {
     disabled: boolean
     reason?: string
+    docs_link?: string
   } {
     if (template.requires_repairs && !has_repair) {
       return {
         disabled: true,
-        reason: "Requires repaired data in your dataset",
+        reason:
+          "This prompt generator uses repaired examples from your dataset to help the model learn from common errors. To use it, you'll need to repair at least one response in your dataset first.",
+        docs_link: "https://docs.kiln.tech/docs/repairing-responses",
       }
     }
     if (template.requires_data && !has_rated) {
       return {
         disabled: true,
-        reason: "Requires rated data in your dataset",
+        reason:
+          "This prompt generator uses rated examples from your dataset. To use it, you'll need to rate at least one response in your dataset first.",
+        docs_link: "https://docs.kiln.tech/docs/reviewing-and-rating",
       }
     }
     return { disabled: false }
@@ -110,6 +115,8 @@
           on_select: on_select(template),
           disabled: state.disabled,
           disabled_reason: state.reason,
+          disabled_docs_link: state.docs_link,
+          recommended: template.recommended,
         }
       },
     ),
@@ -119,7 +126,6 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Create a Prompt"
-    subtitle="Select a prompt generator to get started."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
@@ -144,7 +150,12 @@
     {:else}
       <div class="space-y-8">
         {#each generator_sections as section}
-          <CarouselSection title={section.category} items={section.items} />
+          <CarouselSection
+            title={section.category}
+            items={section.items}
+            min_height={150}
+            min_width={250}
+          />
         {/each}
       </div>
     {/if}

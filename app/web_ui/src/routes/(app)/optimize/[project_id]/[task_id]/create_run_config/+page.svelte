@@ -23,7 +23,6 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
-  // Gotten from URL params. Passing in both prompt info and model info at the same time will have unexpected behavior.
   let prompt_id: string | undefined = undefined
   let model: string | undefined = undefined // e.g. "openrouter/gpt_5_nano"
 
@@ -139,7 +138,6 @@
             }}
             hide_prompt_selector={!!prompt_info}
             {model}
-            disable_model_selection={!!model}
           />
         </div>
       </FormContainer>

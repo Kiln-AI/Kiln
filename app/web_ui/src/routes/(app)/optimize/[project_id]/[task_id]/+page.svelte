@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import OptimizeCard from "$lib/ui/optimize_card.svelte"
-  import { get_optimizers } from "./optimizers"
+  import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
+  import { get_optimizers, type Optimizer } from "./optimizers"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import {
@@ -38,6 +38,12 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: optimizers = get_optimizers(project_id, task_id)
+  $: optimizer_features = optimizers.map((o: Optimizer) => ({
+    name: o.title,
+    description: o.description,
+    metrics: o.metrics,
+    on_click: o.on_click,
+  }))
 
   let loading = true
   let error: KilnError | null = null
@@ -274,15 +280,9 @@
 
 <AppPage
   title="Optimize"
-  subtitle="Find the best way to run your task by comparing different prompts, models, and tools."
+  subtitle="Find the best way to run your task."
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
-  action_buttons={[
-    {
-      label: "Add Run Configuration",
-      handler: () => create_run_config_dialog?.show(),
-    },
-  ]}
+  sub_subtitle_link="https://docs.kiln.tech/docs/optimizers"
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -294,35 +294,14 @@
     </div>
   {:else}
     <div class="flex flex-col gap-4">
-      <div>
-        <h2 class="text-lg font-medium text-gray-900">
-          Optimization Strategies
-        </h2>
-        <p class="text-sm text-gray-500">
-          Strategies for optimizing your task, highlighting tradeoffs between
-          impact, cost efficiency, and simplicity.
-        </p>
-      </div>
-      <div
-        class="grid gap-6"
-        style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
-      >
-        {#each optimizers as optimizer}
-          <OptimizeCard
-            title={optimizer.title}
-            description={optimizer.description}
-            metrics={optimizer.metrics}
-            onClick={optimizer.on_click}
-          />
-        {/each}
-      </div>
-      <div class="flex flex-col sm:flex-row gap-4 sm:gap-8 mt-4">
+      <h2 class="text-lg font-medium text-gray-900">Optimization Strategies</h2>
+      <FeatureCarousel features={optimizer_features} />
+      <div class="flex flex-col sm:flex-row gap-4 sm:gap-8 mt-8">
         <div class="grow">
           <h2 class="text-lg font-medium text-gray-900">Run Configurations</h2>
           <div class="text-sm text-gray-500">
-            Select one or more configurations to compare their evaluation
-            results, or pick an optimization strategy below to create a new
-            configuration from an existing one.
+            Saved configurations for running this task. Compare configs to find
+            the best one.
           </div>
         </div>
         <div
@@ -339,7 +318,13 @@
             </button>
           {:else}
             <button class="btn btn-mid" on:click={() => (select_mode = true)}>
-              Select
+              Compare
+            </button>
+            <button
+              class="btn btn-mid"
+              on:click={() => create_run_config_dialog?.show()}
+            >
+              Create Run Config
             </button>
           {/if}
           {#if selected_run_configs.size > 0}

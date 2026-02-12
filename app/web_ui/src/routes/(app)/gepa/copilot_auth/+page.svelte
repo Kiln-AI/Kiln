@@ -14,6 +14,6 @@
     { label: "Prompts", href: `/prompts/${project_id}/${task_id}` },
     { label: "Optimizer Jobs", href: `/gepa/${project_id}/${task_id}` },
   ]}
-  success_redirect_url="/gepa/{project_id}/{task_id}/create_gepa"
-  cancel_redirect_url="/gepa/{project_id}/{task_id}/create_gepa"
+  success_redirect_url={`/gepa/${project_id}/${task_id}/create_gepa`}
+  cancel_redirect_url={`/gepa/${project_id}/${task_id}/create_gepa`}
 />

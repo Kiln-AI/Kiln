@@ -14,6 +14,8 @@
 
   let instruction = ""
   let initial_instruction = ""
+  let thinking_instruction = ""
+  let initial_thinking_instruction = ""
   let loading = true
   let save_error: KilnError | null = null
   let saving = false
@@ -25,6 +27,8 @@
       if (task) {
         instruction = task.instruction || ""
         initial_instruction = instruction
+        thinking_instruction = task.thinking_instruction || ""
+        initial_thinking_instruction = thinking_instruction
       }
       const pending = sessionStorage.getItem("pending_base_prompt")
       if (pending !== null) {
@@ -39,7 +43,9 @@
   })
 
   $: if (!loading) {
-    warn_before_unload = instruction !== initial_instruction
+    warn_before_unload =
+      instruction !== initial_instruction ||
+      thinking_instruction !== initial_thinking_instruction
   }
 
   async function save() {
@@ -52,7 +58,7 @@
           params: {
             path: { project_id, task_id },
           },
-          body: { instruction },
+          body: { instruction, thinking_instruction },
         },
       )
       if (err) {
@@ -106,6 +112,15 @@
               height="xl"
               bind:value={instruction}
               description="The base prompt used by prompt generators (Basic, Few-shot, etc.)."
+            />
+            <FormElement
+              label="'Thinking' Instructions"
+              inputType="textarea"
+              id="thinking_instructions"
+              optional={true}
+              description="Instructions for how the model should 'think' about the task prior to answering. Used for chain of thought style prompting."
+              info_description="Used when running a 'Chain of Thought' prompt. If left blank, a default 'think step by step' prompt will be used. Optionally customize this with your own instructions to better fit this task."
+              bind:value={thinking_instruction}
             />
           </FormContainer>
         </div>

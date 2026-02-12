@@ -12,6 +12,6 @@
   breadcrumbs={[
     { label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` },
   ]}
-  success_redirect_url="/specs/{project_id}/{task_id}/select_template"
-  cancel_redirect_url="/specs/{project_id}/{task_id}/select_workflow"
+  success_redirect_url={`/specs/${project_id}/${task_id}/select_template`}
+  cancel_redirect_url={`/specs/${project_id}/${task_id}/select_workflow`}
 />
