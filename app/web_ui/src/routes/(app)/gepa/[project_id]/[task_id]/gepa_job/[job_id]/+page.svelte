@@ -138,8 +138,9 @@
       {
         name: "Token Budget",
         value:
-          gepa_job.token_budget.charAt(0).toUpperCase() +
-          gepa_job.token_budget.slice(1),
+          { light: "Low", medium: "Medium", heavy: "High" }[
+            gepa_job.token_budget
+          ] || gepa_job.token_budget,
       },
       {
         name: "Target Run Config",
@@ -161,11 +162,21 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Kiln Prompt Optimization Job"
+    title="Prompt Optimizer Job"
     subtitle={gepa_job_loading ? undefined : `Name: ${gepa_job?.name}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
     breadcrumbs={[
       {
-        label: "Kiln Prompt Optimization Jobs",
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
+      {
+        label: "Prompts",
+        href: `/prompts/${project_id}/${task_id}`,
+      },
+      {
+        label: "Optimizer Jobs",
         href: `/gepa/${project_id}/${task_id}`,
       },
     ]}

@@ -1,9 +1,11 @@
 <script lang="ts">
   import AppPage from "../../app_page.svelte"
   import { page } from "$app/stores"
+  import { ui_state } from "$lib/stores"
   import MultiIntro from "$lib/ui/multi_intro.svelte"
 
   $: project_id = $page.params.project_id!
+  $: task_id = $ui_state.current_task_id
 </script>
 
 <AppPage
@@ -12,6 +14,14 @@
   limit_max_width
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag"
+  breadcrumbs={task_id
+    ? [
+        {
+          label: "Optimize",
+          href: `/optimize/${project_id}/${task_id}`,
+        },
+      ]
+    : []}
 >
   <MultiIntro
     intros={[

@@ -160,6 +160,11 @@ class CreateTaskRunConfigRequest(BaseModel):
     run_config_properties: RunConfigProperties
 
 
+class UpdateRunConfigRequest(BaseModel):
+    starred: bool | None = None
+    prompt_name: str | None = None
+
+
 class RunEvalConfigRequest(BaseModel):
     run_config_ids: list[str]
 
@@ -468,6 +473,33 @@ def connect_evals_api(app: FastAPI):
             )
         task_run_config.save_to_file()
         return task_run_config
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}")
+    async def update_run_config(
+        project_id: str,
+        task_id: str,
+        run_config_id: str,
+        request: UpdateRunConfigRequest,
+    ) -> TaskRunConfig:
+        run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+        if run_config.path is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot update this run config.",
+            )
+        if request.starred is not None:
+            run_config.starred = request.starred
+        if request.prompt_name is not None:
+            if run_config.prompt is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Run config has no frozen prompt to rename.",
+                )
+            run_config.prompt = run_config.prompt.model_copy(
+                update={"name": request.prompt_name}
+            )
+        run_config.save_to_file()
+        return run_config
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"

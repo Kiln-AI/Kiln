@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -31,6 +31,8 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -42,7 +44,17 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
-  let token_budget: "light" | "medium" | "heavy" = "light"
+  type TokenBudget = "light" | "medium" | "heavy"
+  let token_budget: TokenBudget = "light"
+  const token_budget_options: {
+    value: TokenBudget
+    title: string
+    description: string
+  }[] = [
+    { value: "light", title: "Low", description: "6 prompt candidates" },
+    { value: "medium", title: "Medium", description: "12 prompt candidates" },
+    { value: "heavy", title: "High", description: "18 prompt candidates" },
+  ]
   let target_run_config_id: string | null = null
 
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null
@@ -86,6 +98,8 @@
 
   let current_task: Task | null = null
   let task_loading = true
+  let kiln_copilot_connected: boolean | null = null
+  let copilot_check_error: KilnError | null = null
 
   type EvalWithConfig = {
     eval: Eval
@@ -115,6 +129,11 @@
     | "valid"
     | "invalid" = "unchecked"
   let run_config_validation_message: string | null = null
+  let run_config_blocking_reason:
+    | "has_tools"
+    | "unsupported_model"
+    | "other"
+    | null = null
 
   $: has_evals_without_config = evals_with_configs.some(
     (item) =>
@@ -192,13 +211,27 @@
     return configs.find((config) => config.id === run_config_id) || null
   }
 
+  let from_prompt_generators: boolean = false
+
   onMount(async () => {
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
+    from_prompt_generators =
+      $page.url.searchParams.get("from") === "prompt_generators"
+
+    try {
+      kiln_copilot_connected = await checkKilnCopilotAvailable()
+    } catch (e) {
+      copilot_check_error = createKilnError(e)
+      kiln_copilot_connected = false
+    }
+
+    if (kiln_copilot_connected) {
+      await Promise.all([
+        load_task(),
+        load_task_prompts(project_id, task_id),
+        load_task_run_configs(project_id, task_id),
+        load_evals_and_configs(),
+      ])
+    }
   })
 
   async function load_task() {
@@ -312,6 +345,7 @@
     try {
       run_config_validation_status = "checking"
       run_config_validation_message = null
+      run_config_blocking_reason = null
 
       const run_config = get_selected_run_config(
         target_run_config_id,
@@ -327,6 +361,7 @@
         run_config_validation_status = "invalid"
         run_config_validation_message =
           "Tools are not supported for Kiln Prompt Optimization"
+        run_config_blocking_reason = "has_tools"
         return
       }
 
@@ -351,6 +386,7 @@
 
       if (data && !data.is_supported) {
         run_config_validation_status = "invalid"
+        run_config_blocking_reason = "unsupported_model"
         if (run_config) {
           const friendly_model = model_name(
             run_config.run_config_properties.model_name,
@@ -367,10 +403,12 @@
       } else {
         run_config_validation_status = "valid"
         run_config_validation_message = null
+        run_config_blocking_reason = null
       }
     } catch (e) {
       run_config_validation_status = "invalid"
       run_config_validation_message = createKilnError(e).getMessage()
+      run_config_blocking_reason = "other"
     }
   }
 
@@ -564,6 +602,7 @@
   } else {
     run_config_validation_status = "unchecked"
     run_config_validation_message = null
+    run_config_blocking_reason = null
   }
 
   $: if (evals_with_configs.length > 0 && !evals_loading) {
@@ -578,15 +617,6 @@
       }
     })
   }
-
-  onMount(async () => {
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
-  })
 
   async function refresh_evaluators() {
     const { data: evals_data } = await client.GET(
@@ -714,16 +744,52 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="New Kiln Prompt Optimization Job"
-    subtitle="Use Kiln Prompt Optimizer to automatically optimize your prompt."
-    breadcrumbs={[
-      {
-        label: "Kiln Prompt Optimization",
-        href: `/gepa/${project_id}/${task_id}`,
-      },
-    ]}
+    title="Create Optimized Prompt"
+    subtitle="Create a prompt optimized for your evals using training data."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
+    breadcrumbs={from_prompt_generators
+      ? [
+          {
+            label: "Optimize",
+            href: `/optimize/${project_id}/${task_id}`,
+          },
+          {
+            label: "Prompts",
+            href: `/prompts/${project_id}/${task_id}`,
+          },
+          {
+            label: "Prompt Generators",
+            href: `/prompts/${project_id}/${task_id}/prompt_generators`,
+          },
+        ]
+      : [
+          {
+            label: "Optimize",
+            href: `/optimize/${project_id}/${task_id}`,
+          },
+          {
+            label: "Prompts",
+            href: `/prompts/${project_id}/${task_id}`,
+          },
+          {
+            label: "Optimizer Jobs",
+            href: `/gepa/${project_id}/${task_id}`,
+          },
+        ]}
   >
-    {#if task_loading}
+    {#if kiln_copilot_connected === null}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if kiln_copilot_connected === false}
+      <CopilotRequiredCard
+        description="Kiln Prompt Optimization requires Kiln Copilot to automatically optimize your prompts using advanced techniques."
+        auth_url="/gepa/copilot_auth"
+        back_label="Back to Optimizer Jobs"
+        error={copilot_check_error}
+      />
+    {:else if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -752,462 +818,479 @@
         bind:error={create_job_error}
         bind:submitting={create_job_loading}
       >
-        <div class="mb-4">
-          <Warning warning_color="primary" warning_icon="info" outline={true}>
-            <div class="text-sm">
-              <div class="text-gray-600">
-                Only the following providers are supported: OpenRouter, OpenAI,
-                Gemini, and Anthropic.
-              </div>
-            </div>
-          </Warning>
-        </div>
-
-        <div class="text-xl font-bold">Step 1: Select Token Budget</div>
-        <div>
-          <FormElement
-            label="Token Budget"
-            description="This determines the number of prompt candidates that the Kiln Prompt Optimizer will consider."
-            info_description="A higher budget will generally result in higher quality prompts, but will take longer to complete."
-            inputType="fancy_select"
-            id="token_budget"
-            fancy_select_options={[
-              {
-                options: [
-                  { value: "light", label: "Light (6 prompt candidates)" },
-                  { value: "medium", label: "Medium (12 prompt candidates)" },
-                  { value: "heavy", label: "Heavy (18 prompt candidates)" },
-                ],
-              },
-            ]}
-            bind:value={token_budget}
-          />
-        </div>
-
-        <div class="text-xl font-bold">
-          Step 2: Select Target Run Configuration
-        </div>
-        <div>
-          <SavedRunConfigurationsDropdown
-            title="Target Run Configuration"
-            description="The run configuration (model, prompt, etc.) to use for the optimization."
-            {project_id}
-            {current_task}
-            bind:selected_run_config_id={target_run_config_id}
-            run_page={false}
-            auto_select_default={false}
-          />
-
-          {#if selected_run_config}
-            {#if run_config_validation_status === "checking"}
-              <div class="flex items-center gap-2 text-sm text-gray-500 mt-2">
-                <span class="loading loading-spinner loading-xs"></span>
-                <span>Checking compatibility...</span>
-              </div>
-            {:else if run_config_validation_status === "invalid"}
-              <div class="mt-3">
-                <Warning warning_color="error" outline={true}>
-                  <div>
-                    <div class="text-error font-medium mb-2">
-                      {run_config_validation_message}
-                    </div>
-                    <div class="text-gray-600">
-                      {#if run_config_validation_message?.includes("Tools")}
-                        Kiln Prompt Optimization does not support run
-                        configurations that use tools. Please select a different
-                        run configuration or
-                        <button
-                          type="button"
-                          class="link underline"
-                          on:click={() => create_new_run_config_dialog?.show()}
-                        >
-                          create a new one
-                        </button>
-                        without tools configured.
-                      {:else}
-                        Kiln Prompt Optimization only supports OpenRouter,
-                        OpenAI, Gemini, and Anthropic providers. Please select a
-                        different run configuration or
-                        <button
-                          type="button"
-                          class="link underline"
-                          on:click={() => create_new_run_config_dialog?.show()}
-                        >
-                          create a new one
-                        </button>
-                        with a supported provider.
-                      {/if}
-                    </div>
-                  </div>
-                </Warning>
-              </div>
-            {/if}
-          {/if}
-        </div>
-
-        {#if step_3_visible && selected_run_config}
-          <div class="text-xl font-bold">Step 3: Review Configuration</div>
-
+        <div class="flex flex-col gap-12">
           <div>
-            <div class="text-sm font-medium text-gray-700 mb-2">
-              Target Run Configuration
+            <div class="flex flex-col gap-1">
+              <div class="text-xl font-bold flex justify-between items-center">
+                Step 1: Select Token Budget
+                <span class="font-normal">
+                  <InfoTooltip
+                    tooltip_text="A higher budget will generally result in higher quality prompts, but will take longer to complete."
+                  />
+                </span>
+              </div>
+              <div class="text-xs text-gray-500">
+                This determines the number of prompt candidates that the Kiln
+                Prompt Optimizer will consider.
+              </div>
             </div>
-            <div class="text-xs text-gray-500 mb-3">
-              Kiln Prompt Optimization will optimize the prompt to maximize
-              performance using this configuration.
-            </div>
-
-            <div class="bg-base-200 rounded-lg p-4">
-              <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-4">
-                <div>
-                  <span class="text-gray-500">Name:</span>
-                  <span class="font-medium ml-1"
-                    >{selected_run_config.name}</span
-                  >
-                </div>
-                <div>
-                  <span class="text-gray-500">Model:</span>
-                  <span class="font-medium ml-1"
-                    >{getDetailedModelName(
-                      selected_run_config,
-                      $model_info,
-                    )}</span
-                  >
-                </div>
-                <div>
-                  <span class="text-gray-500">Provider:</span>
-                  <span class="font-medium ml-1"
-                    >{provider_name_from_id(
-                      selected_run_config.run_config_properties
-                        .model_provider_name,
-                    )}</span
-                  >
-                </div>
-                {#if selected_run_config.run_config_properties.temperature !== undefined && selected_run_config.run_config_properties.temperature !== null}
-                  <div>
-                    <span class="text-gray-500">Temperature:</span>
-                    <span class="font-medium ml-1"
-                      >{selected_run_config.run_config_properties
-                        .temperature}</span
+            <div class="flex flex-col gap-3 mt-4">
+              {#each token_budget_options as option}
+                <label class="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="radio"
+                    name="token_budget"
+                    class="radio mt-0.5"
+                    checked={token_budget === option.value}
+                    on:change={() => {
+                      token_budget = option.value
+                    }}
+                  />
+                  <div class="flex flex-col">
+                    <span class="font-medium text-sm">{option.title}</span>
+                    <span class="text-xs text-gray-500"
+                      >{option.description}</span
                     >
                   </div>
-                {/if}
-                {#if selected_run_config.run_config_properties.top_p !== undefined && selected_run_config.run_config_properties.top_p !== null}
-                  <div>
-                    <span class="text-gray-500">Top P:</span>
-                    <span class="font-medium ml-1"
-                      >{selected_run_config.run_config_properties.top_p}</span
-                    >
-                  </div>
-                {/if}
-              </div>
-
-              <div class="text-xs text-gray-500 mb-2">
-                Prompt: {getRunConfigPromptDisplayName(
-                  selected_run_config,
-                  task_prompts,
-                )} (starting point for optimization)
-              </div>
-              {#if is_dynamic_prompt}
-                <div class="text-sm text-gray-600 italic">
-                  This run configuration uses a prompt generator that creates
-                  prompts at runtime.
-                </div>
-              {:else if prompt_text}
-                <Output raw_output={prompt_text} max_height="300px" />
-              {:else}
-                <div class="text-sm text-gray-500 italic">
-                  No prompt configured.
-                </div>
-              {/if}
+                </label>
+              {/each}
             </div>
           </div>
 
           <div>
-            <div
-              class="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between"
-            >
-              <div class="flex items-center gap-2">
-                <span>Evaluator Judges</span>
-                {#if evals_with_configs.length > 0}
-                  <span class="badge badge-sm badge-outline"
-                    >{evals_with_configs.length}</span
-                  >
-                {/if}
-              </div>
-              {#if evals_with_configs.length > 0}
-                <button
-                  type="button"
-                  class="btn btn-xs btn-outline"
-                  on:click={refresh_evaluators}
-                  disabled={is_validating}
-                >
-                  {#if is_validating}
-                    <span class="loading loading-spinner loading-xs"></span>
-                  {:else}
-                    ↻
-                  {/if}
-                  Refresh
-                </button>
-              {/if}
-            </div>
-            <div class="text-xs text-gray-500 mb-3">
-              Kiln Prompt Optimization will optimize the prompt to maximize
-              performance on each of these evaluators.
-            </div>
-
-            {#if evals_loading}
-              <div class="flex justify-center items-center py-8">
-                <div class="loading loading-spinner loading-md"></div>
-              </div>
-            {:else if evals_error}
-              <div class="bg-error/10 border border-error/20 rounded-lg p-4">
-                <div class="text-error text-sm">
-                  {evals_error.getMessage() || "Failed to load evaluators"}
+            <div class="flex flex-col gap-1 mb-4">
+              <div class="text-xl font-bold flex justify-between items-center">
+                <div class="text-xl font-bold">
+                  Step 2: Select Run Configuration
                 </div>
+                <span class="font-normal">
+                  <InfoTooltip
+                    tooltip_text="Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
+                  />
+                </span>
               </div>
-            {:else if evals_with_configs.length === 0}
-              <div class="bg-base-200 rounded-lg p-4 text-center text-gray-500">
-                No evaluators configured for this task.
+              <div class="text-xs text-gray-500">
+                The configuration to use when running the task during prompt
+                optimization.
               </div>
-            {:else}
-              <div class="bg-base-200 rounded-lg p-4 space-y-3">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, train_set_size, model_is_supported, validation_status, validation_message }}
-                  {@const spec_id = "legacy"}
-                  {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
-                  {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
-                  {@const is_selected = evalItem.id
-                    ? selected_eval_ids.has(evalItem.id)
-                    : false}
-                  <div
-                    class={`pl-3 py-2 ${
-                      !is_selected ? "opacity-80 text-base-content/70" : ""
-                    }`}
-                  >
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-sm shrink-0"
-                            checked={is_selected}
-                            disabled={validation_status === "invalid"}
-                            on:change={(e) => {
-                              if (evalItem.id) {
-                                const newSet = new Set(selected_eval_ids)
-                                if (e.currentTarget.checked) {
-                                  newSet.add(evalItem.id)
-                                } else {
-                                  newSet.delete(evalItem.id)
-                                }
-                                selected_eval_ids = newSet
-                              }
-                            }}
-                          />
-                          <a
-                            href={eval_url}
-                            target="_blank"
-                            class={`font-medium text-sm link hover:underline min-w-0 truncate ${
-                              !is_selected ? "text-base-content/70" : ""
-                            }`}
-                          >
-                            {evalItem.name}
-                          </a>
-                          {#if validation_status === "checking"}
-                            <span
-                              class="loading loading-spinner loading-xs shrink-0"
-                            ></span>
+            </div>
+            <SavedRunConfigurationsDropdown
+              title=""
+              {project_id}
+              {current_task}
+              bind:selected_run_config_id={target_run_config_id}
+              run_page={false}
+              auto_select_default={false}
+            />
+
+            {#if selected_run_config}
+              {#if run_config_validation_status === "checking"}
+                <div class="flex items-center gap-2 text-sm text-gray-500 mt-4">
+                  <span class="loading loading-spinner loading-xs"></span>
+                  <span>Checking compatibility...</span>
+                </div>
+              {:else if run_config_validation_status === "invalid"}
+                <div class="mt-3">
+                  <Warning warning_color="error" outline={true}>
+                    <div>
+                      <div class="text-error font-medium">
+                        {run_config_validation_message}
+                      </div>
+                      {#if run_config_blocking_reason !== "other"}
+                        <div class="mt-2 text-gray-600">
+                          {#if run_config_blocking_reason === "has_tools"}
+                            Kiln Prompt Optimization does not support run
+                            configurations that use tools. Please select a
+                            different run configuration or
+                            <button
+                              type="button"
+                              class="link underline"
+                              on:click={() =>
+                                create_new_run_config_dialog?.show()}
+                            >
+                              create a new one
+                            </button>
+                            without tools configured.
+                          {:else if run_config_blocking_reason === "unsupported_model"}
+                            Kiln Prompt Optimization only supports OpenRouter,
+                            OpenAI, Gemini, and Anthropic providers. Please
+                            select a different run configuration or
+                            <button
+                              type="button"
+                              class="link underline"
+                              on:click={() =>
+                                create_new_run_config_dialog?.show()}
+                            >
+                              create a new one
+                            </button>
+                            with a supported provider.
                           {/if}
                         </div>
-
-                        {#if evalItem.description}
-                          <div class="text-xs text-gray-600 mb-1">
-                            {evalItem.description}
-                          </div>
-                        {/if}
-
-                        {#if current_config}
-                          <div class="text-xs text-gray-500">
-                            Judge: {current_config.name} - {model_name(
-                              current_config.model_name,
-                              $model_info,
-                            )} ({provider_name_from_id(
-                              current_config.model_provider,
-                            )})
-                          </div>
-                        {/if}
-
-                        {#if has_train_set && train_set_size !== null}
-                          <div class="text-xs text-gray-500">
-                            {train_set_size} examples tagged with "{tagFromFilterId(
-                              evalItem.train_set_filter_id || "",
-                            )}"
-                          </div>
-                        {/if}
-
-                        {#if validation_message}
-                          <div
-                            class="text-xs mt-1 {validation_status === 'invalid'
-                              ? 'text-error'
-                              : 'text-gray-600'}"
-                          >
-                            {#if !has_default_config}
-                              Please set a default config for this evaluator.
-                              <a
-                                href={eval_configs_url}
-                                target="_blank"
-                                class="link"
-                              >
-                                Set default judge
-                              </a>
-                            {:else if !model_is_supported}
-                              {validation_message}
-                              <a
-                                href={eval_configs_url}
-                                target="_blank"
-                                class="link"
-                              >
-                                Change default judge
-                              </a>
-                            {:else if !has_train_set}
-                              {validation_message}
-                              <button
-                                type="button"
-                                class="link"
-                                on:click={() => {
-                                  if (evalItem.id) {
-                                    showing_train_set_picker[evalItem.id] = true
-                                    showing_train_set_picker = {
-                                      ...showing_train_set_picker,
-                                    }
-                                  }
-                                }}
-                              >
-                                Set train set tag
-                              </button>
-                            {:else if train_set_size === 0}
-                              {validation_message}
-                              <a
-                                href="/dataset/{project_id}/{task_id}"
-                                target="_blank"
-                                class="link"
-                              >
-                                Tag data with "{tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
-                                )}"
-                              </a>
-                            {:else}
-                              {validation_message}
-                            {/if}
-                          </div>
-                        {/if}
-
-                        {#if !has_train_set && showing_train_set_picker[evalItem.id || ""]}
-                          <div class="mt-2 space-y-2">
-                            <div class="text-xs text-gray-600">
-                              Enter a tag name for the train set:
-                            </div>
-                            <div class="flex items-center gap-2">
-                              <TagDropdown
-                                {project_id}
-                                {task_id}
-                                bind:tag={train_set_tags[evalItem.id || ""]}
-                                on_select={(tag) => {
-                                  if (evalItem.id) {
-                                    save_train_set_for_eval(evalItem.id, tag)
-                                  }
-                                }}
-                                on_escape={() => {
-                                  if (evalItem.id) {
-                                    train_set_tags[evalItem.id] = ""
-                                    showing_train_set_picker[evalItem.id] =
-                                      false
-                                    train_set_tags = { ...train_set_tags }
-                                    showing_train_set_picker = {
-                                      ...showing_train_set_picker,
-                                    }
-                                  }
-                                }}
-                                example_tag_set="task_run"
-                                focus_on_mount={true}
-                              />
-                              {#if saving_train_set[evalItem.id || ""]}
-                                <span class="loading loading-spinner loading-xs"
-                                ></span>
-                              {/if}
-                            </div>
-                            {#if train_set_errors[evalItem.id || ""]}
-                              <div class="text-error text-xs">
-                                {train_set_errors[evalItem.id || ""]}
-                              </div>
-                            {/if}
-                            <div class="text-xs text-gray-500">
-                              After setting the tag, go to the
-                              <a
-                                href="/dataset/{project_id}/{task_id}"
-                                target="_blank"
-                                class="link"
-                              >
-                                Dataset page
-                              </a>
-                              to tag your training data with "{train_set_tags[
-                                evalItem.id || ""
-                              ] || "(tag name)"}"
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
+                      {/if}
                     </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-
-            {#if selected_eval_ids.size === 0}
-              <div class="mt-3">
-                <Warning
-                  warning_color="gray"
-                  warning_icon="info"
-                  outline={true}
-                  tight={true}
-                >
-                  <div class="text-sm text-gray-600">
-                    No evaluators selected. Please select at least one
-                    evaluator.
-                  </div>
-                </Warning>
-              </div>
-            {:else if selected_eval_ids.size < evals_with_configs.length}
-              <div class="mt-3">
-                <Warning
-                  warning_color="gray"
-                  warning_icon="info"
-                  outline={true}
-                  tight={true}
-                >
-                  <div class="text-sm text-gray-600">
-                    Some evaluators are disabled. The optimizer will not be able
-                    to optimize for these evaluators.
-                  </div>
-                </Warning>
-              </div>
-            {:else if has_evals_without_train_set}
-              <div class="mt-3">
-                <Warning
-                  warning_color="warning"
-                  warning_icon="info"
-                  outline={true}
-                  tight={true}
-                >
-                  <div class="text-sm text-gray-600">
-                    Some selected evals have no train set and will not be used
-                    during optimization.
-                  </div>
-                </Warning>
-              </div>
+                  </Warning>
+                </div>
+              {/if}
             {/if}
           </div>
-        {/if}
+
+          {#if step_3_visible && selected_run_config}
+            <div>
+              <div class="flex flex-col gap-1">
+                <div class="text-xl font-bold">
+                  Step 3: Review Configuration
+                </div>
+                <div class="text-xs text-gray-500">
+                  Kiln Prompt Optimization will optimize the prompt to maximize
+                  performance using this configuration.
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="bg-base-200 rounded-lg p-4">
+                <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-4">
+                  <div>
+                    <span class="text-gray-500">Name:</span>
+                    <span class="font-medium ml-1"
+                      >{selected_run_config.name}</span
+                    >
+                  </div>
+                  <div>
+                    <span class="text-gray-500">Model:</span>
+                    <span class="font-medium ml-1"
+                      >{getDetailedModelName(
+                        selected_run_config,
+                        $model_info,
+                      )}</span
+                    >
+                  </div>
+                  <div>
+                    <span class="text-gray-500">Provider:</span>
+                    <span class="font-medium ml-1"
+                      >{provider_name_from_id(
+                        selected_run_config.run_config_properties
+                          .model_provider_name,
+                      )}</span
+                    >
+                  </div>
+                  {#if selected_run_config.run_config_properties.temperature !== undefined && selected_run_config.run_config_properties.temperature !== null}
+                    <div>
+                      <span class="text-gray-500">Temperature:</span>
+                      <span class="font-medium ml-1"
+                        >{selected_run_config.run_config_properties
+                          .temperature}</span
+                      >
+                    </div>
+                  {/if}
+                  {#if selected_run_config.run_config_properties.top_p !== undefined && selected_run_config.run_config_properties.top_p !== null}
+                    <div>
+                      <span class="text-gray-500">Top P:</span>
+                      <span class="font-medium ml-1"
+                        >{selected_run_config.run_config_properties.top_p}</span
+                      >
+                    </div>
+                  {/if}
+                </div>
+
+                <div class="text-xs text-gray-500 mb-2">
+                  Prompt: {getRunConfigPromptDisplayName(
+                    selected_run_config,
+                    task_prompts,
+                  )} (starting point for optimization)
+                </div>
+                {#if is_dynamic_prompt}
+                  <div class="text-sm text-gray-600 italic">
+                    This run configuration uses a prompt generator that creates
+                    prompts at runtime.
+                  </div>
+                {:else if prompt_text}
+                  <Output raw_output={prompt_text} max_height="300px" />
+                {:else}
+                  <div class="text-sm text-gray-500 italic">
+                    No prompt configured.
+                  </div>
+                {/if}
+              </div>
+            </div>
+
+            <div>
+              <div
+                class="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between"
+              >
+                <div class="flex items-center gap-2">
+                  <span>Evaluator Judges</span>
+                  {#if evals_with_configs.length > 0}
+                    <span class="badge badge-sm badge-outline"
+                      >{selected_eval_ids.size} of {evals_with_configs.length} selected</span
+                    >
+                  {/if}
+                </div>
+                {#if evals_with_configs.length > 0}
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline"
+                    on:click={refresh_evaluators}
+                    disabled={is_validating}
+                  >
+                    {#if is_validating}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else}
+                      ↻
+                    {/if}
+                    Refresh
+                  </button>
+                {/if}
+              </div>
+              <div class="text-xs text-gray-500 mb-3">
+                Kiln Prompt Optimization will optimize the prompt to maximize
+                performance on each of these evaluators.
+              </div>
+
+              {#if evals_loading}
+                <div class="flex justify-center items-center py-8">
+                  <div class="loading loading-spinner loading-md"></div>
+                </div>
+              {:else if evals_error}
+                <div class="bg-error/10 border border-error/20 rounded-lg p-4">
+                  <div class="text-error text-sm">
+                    {evals_error.getMessage() || "Failed to load evaluators"}
+                  </div>
+                </div>
+              {:else if evals_with_configs.length === 0}
+                <div
+                  class="bg-base-200 rounded-lg p-4 text-center text-gray-500"
+                >
+                  No evaluators configured for this task.
+                </div>
+              {:else}
+                <div class="bg-base-200 rounded-lg p-4 space-y-3">
+                  {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, train_set_size, model_is_supported, validation_status, validation_message }}
+                    {@const spec_id = "legacy"}
+                    {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
+                    {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
+                    {@const is_selected = evalItem.id
+                      ? selected_eval_ids.has(evalItem.id)
+                      : false}
+                    <div
+                      class={`pl-3 py-2 ${
+                        !is_selected ? "opacity-80 text-base-content/70" : ""
+                      }`}
+                    >
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-2 mb-1">
+                            <input
+                              type="checkbox"
+                              class="checkbox checkbox-sm shrink-0"
+                              checked={is_selected}
+                              disabled={validation_status === "invalid"}
+                              on:change={(e) => {
+                                if (evalItem.id) {
+                                  const newSet = new Set(selected_eval_ids)
+                                  if (e.currentTarget.checked) {
+                                    newSet.add(evalItem.id)
+                                  } else {
+                                    newSet.delete(evalItem.id)
+                                  }
+                                  selected_eval_ids = newSet
+                                }
+                              }}
+                            />
+                            <a
+                              href={eval_url}
+                              target="_blank"
+                              class={`font-medium text-sm link hover:underline min-w-0 truncate ${
+                                !is_selected ? "text-base-content/70" : ""
+                              }`}
+                            >
+                              {evalItem.name}
+                            </a>
+                            {#if validation_status === "checking"}
+                              <span
+                                class="loading loading-spinner loading-xs shrink-0"
+                              ></span>
+                            {/if}
+                          </div>
+
+                          {#if evalItem.description}
+                            <div class="text-xs text-gray-600 mb-1">
+                              {evalItem.description}
+                            </div>
+                          {/if}
+
+                          {#if current_config}
+                            <div class="text-xs text-gray-500">
+                              Judge: {current_config.name} - {model_name(
+                                current_config.model_name,
+                                $model_info,
+                              )} ({provider_name_from_id(
+                                current_config.model_provider,
+                              )})
+                            </div>
+                          {/if}
+
+                          {#if has_train_set && train_set_size !== null}
+                            <div class="text-xs text-gray-500">
+                              {train_set_size} examples tagged with "{tagFromFilterId(
+                                evalItem.train_set_filter_id || "",
+                              )}"
+                            </div>
+                          {/if}
+
+                          {#if validation_message}
+                            <div
+                              class="text-xs mt-1 {validation_status ===
+                              'invalid'
+                                ? 'text-error'
+                                : 'text-gray-600'}"
+                            >
+                              {#if !has_default_config}
+                                Please set a default config for this evaluator.
+                                <a
+                                  href={eval_configs_url}
+                                  target="_blank"
+                                  class="link"
+                                >
+                                  Set default judge
+                                </a>
+                              {:else if !model_is_supported}
+                                {validation_message}
+                                <a
+                                  href={eval_configs_url}
+                                  target="_blank"
+                                  class="link"
+                                >
+                                  Change default judge
+                                </a>
+                              {:else if !has_train_set}
+                                {validation_message}
+                                <button
+                                  type="button"
+                                  class="link"
+                                  on:click={() => {
+                                    if (evalItem.id) {
+                                      showing_train_set_picker[evalItem.id] =
+                                        true
+                                      showing_train_set_picker = {
+                                        ...showing_train_set_picker,
+                                      }
+                                    }
+                                  }}
+                                >
+                                  Set train set tag
+                                </button>
+                              {:else if train_set_size === 0}
+                                {validation_message}
+                                <a
+                                  href="/dataset/{project_id}/{task_id}"
+                                  target="_blank"
+                                  class="link"
+                                >
+                                  Tag data with "{tagFromFilterId(
+                                    evalItem.train_set_filter_id || "",
+                                  )}"
+                                </a>
+                              {:else}
+                                {validation_message}
+                              {/if}
+                            </div>
+                          {/if}
+
+                          {#if !has_train_set && showing_train_set_picker[evalItem.id || ""]}
+                            <div class="mt-2 space-y-2">
+                              <div class="text-xs text-gray-600">
+                                Enter a tag name for the train set:
+                              </div>
+                              <div class="flex items-center gap-2">
+                                <TagDropdown
+                                  {project_id}
+                                  {task_id}
+                                  bind:tag={train_set_tags[evalItem.id || ""]}
+                                  on_select={(tag) => {
+                                    if (evalItem.id) {
+                                      save_train_set_for_eval(evalItem.id, tag)
+                                    }
+                                  }}
+                                  on_escape={() => {
+                                    if (evalItem.id) {
+                                      train_set_tags[evalItem.id] = ""
+                                      showing_train_set_picker[evalItem.id] =
+                                        false
+                                      train_set_tags = { ...train_set_tags }
+                                      showing_train_set_picker = {
+                                        ...showing_train_set_picker,
+                                      }
+                                    }
+                                  }}
+                                  example_tag_set="task_run"
+                                  focus_on_mount={true}
+                                />
+                                {#if saving_train_set[evalItem.id || ""]}
+                                  <span
+                                    class="loading loading-spinner loading-xs"
+                                  ></span>
+                                {/if}
+                              </div>
+                              {#if train_set_errors[evalItem.id || ""]}
+                                <div class="text-error text-xs">
+                                  {train_set_errors[evalItem.id || ""]}
+                                </div>
+                              {/if}
+                              <div class="text-xs text-gray-500">
+                                After setting the tag, go to the
+                                <a
+                                  href="/dataset/{project_id}/{task_id}"
+                                  target="_blank"
+                                  class="link"
+                                >
+                                  Dataset page
+                                </a>
+                                to tag your training data with "{train_set_tags[
+                                  evalItem.id || ""
+                                ] || "(tag name)"}"
+                              </div>
+                            </div>
+                          {/if}
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if selected_eval_ids.size === 0}
+                <div class="mt-3">
+                  <Warning
+                    warning_color="gray"
+                    warning_icon="info"
+                    outline={true}
+                    tight={true}
+                  >
+                    <div class="text-sm text-gray-600">
+                      No evaluators selected. Please select at least one
+                      evaluator.
+                    </div>
+                  </Warning>
+                </div>
+              {:else if selected_eval_ids.size < evals_with_configs.length}
+                <div class="mt-3">
+                  <Warning
+                    warning_color="gray"
+                    warning_icon="info"
+                    outline={true}
+                    tight={true}
+                  >
+                    <div class="text-sm text-gray-600">
+                      Some evaluators are disabled. The optimizer will not be
+                      able to optimize for these evaluators.
+                    </div>
+                  </Warning>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </FormContainer>
     {/if}
   </AppPage>

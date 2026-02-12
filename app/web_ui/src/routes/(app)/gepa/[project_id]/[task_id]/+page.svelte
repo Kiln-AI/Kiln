@@ -1,23 +1,24 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import EmptyGepa from "./empty_gepa.svelte"
   import { client } from "$lib/api_client"
   import type { GepaJob } from "$lib/types"
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
+  import Intro from "$lib/ui/intro.svelte"
+  import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: is_empty = !gepa_jobs || gepa_jobs.length == 0
+  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
   let gepa_jobs: GepaJob[] | null = null
   let gepa_jobs_error: KilnError | null = null
   let gepa_jobs_loading = true
 
-  onMount(async () => {
+  onMount(() => {
     get_gepa_jobs()
   })
 
@@ -65,30 +66,58 @@
     }
   }
 
-  const status_map: Record<string, string> = {
-    pending: "Pending",
-    running: "Running",
-    succeeded: "Succeeded",
-    failed: "Failed",
-    cancelled: "Cancelled",
+  type StatusBadge = { label: string; badge_class: string }
+  const status_badge_map: Record<string, StatusBadge> = {
+    pending: { label: "Pending", badge_class: "badge-outline" },
+    running: { label: "Running", badge_class: "badge-outline badge-success" },
+    succeeded: {
+      label: "Succeeded",
+      badge_class: "badge-outline badge-primary",
+    },
+    failed: { label: "Failed", badge_class: "badge-outline badge-error" },
+    cancelled: {
+      label: "Cancelled",
+      badge_class: "badge-outline badge-warning",
+    },
   }
-  function format_status(status: string) {
-    return status_map[status] || status
+  function get_status_badge(status: string): StatusBadge {
+    return (
+      status_badge_map[status] || {
+        label: status,
+        badge_class: "badge-outline",
+      }
+    )
   }
 
+  const token_budget_labels: Record<string, string> = {
+    light: "Low",
+    medium: "Medium",
+    heavy: "High",
+  }
   function format_token_budget(budget: string): string {
-    return budget.charAt(0).toUpperCase() + budget.slice(1)
+    return token_budget_labels[budget] || budget
   }
 </script>
 
 <AppPage
-  title="Kiln Prompt Optimization"
-  subtitle="Use Kiln Prompt Optimization to automatically optimize your prompts."
+  title="Prompt Optimizer Jobs"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${task_id}`,
+    },
+    {
+      label: "Prompts",
+      href: `/prompts/${project_id}/${task_id}`,
+    },
+  ]}
   action_buttons={is_empty
     ? []
     : [
         {
-          label: "Run Kiln Prompt Optimization",
+          label: "Create Optimized Prompt",
           href: `/gepa/${project_id}/${task_id}/create_gepa`,
           primary: true,
         },
@@ -98,9 +127,37 @@
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
+  {:else if gepa_jobs_error}
+    <div
+      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+    >
+      <div class="font-medium">Error Loading Optimizer Jobs</div>
+      <div class="text-error text-sm">
+        {gepa_jobs_error.getMessage() || "An unknown error occurred"}
+      </div>
+    </div>
   {:else if is_empty}
     <div class="flex flex-col items-center justify-center min-h-[60vh]">
-      <EmptyGepa {project_id} {task_id} />
+      <Intro
+        title="Kiln Prompt Optimizer automatically optimizes your prompts."
+        description_paragraphs={[
+          "Improve eval performance by optimizing your prompts using training data.",
+        ]}
+        align_title_left={true}
+        action_buttons={[
+          {
+            label: "Create Optimized Prompt",
+            href: `/gepa/${project_id}/${task_id}/create_gepa`,
+            is_primary: true,
+          },
+        ]}
+      >
+        <div slot="icon">
+          <div class="h-12 w-12">
+            <OptimizeIcon />
+          </div>
+        </div>
+      </Intro>
     </div>
   {:else if gepa_jobs}
     <div class="overflow-x-auto rounded-lg border">
@@ -115,6 +172,7 @@
         </thead>
         <tbody>
           {#each gepa_jobs as gepa_job}
+            {@const badge = get_status_badge(gepa_job.latest_status)}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
@@ -124,26 +182,19 @@
               <td> {gepa_job.name} </td>
               <td> {format_token_budget(gepa_job.token_budget)} </td>
               <td>
-                {#if gepa_job.latest_status === "pending" || gepa_job.latest_status === "running"}
-                  <span class="loading loading-spinner mr-2 h-[14px] w-[14px]"
-                  ></span>
-                {/if}
-                {format_status(gepa_job.latest_status)}
+                <div class="badge px-3 py-1 gap-1 {badge.badge_class}">
+                  {#if gepa_job.latest_status === "pending" || gepa_job.latest_status === "running"}
+                    <span class="loading loading-spinner h-[12px] w-[12px]"
+                    ></span>
+                  {/if}
+                  {badge.label}
+                </div>
               </td>
               <td> {formatDate(gepa_job.created_at)} </td>
             </tr>
           {/each}
         </tbody>
       </table>
-    </div>
-  {:else if gepa_jobs_error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Kiln Prompt Optimization Jobs</div>
-      <div class="text-error text-sm">
-        {gepa_jobs_error.getMessage() || "An unknown error occurred"}
-      </div>
     </div>
   {/if}
 </AppPage>

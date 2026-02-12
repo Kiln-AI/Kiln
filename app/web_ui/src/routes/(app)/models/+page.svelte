@@ -4,12 +4,18 @@
   import FancySelect from "$lib/ui/fancy_select.svelte"
   import type { ModelProviderName } from "$lib/types"
   import AppPage from "../app_page.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import {
     available_models,
     load_available_models,
     provider_name_from_id,
+    ui_state,
   } from "$lib/stores"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import { goto } from "$app/navigation"
+
+  $: project_id = $ui_state.current_project_id
+  $: task_id = $ui_state.current_task_id
 
   const CAPABILITY_TOOLTIP_MESSAGES = {
     suggested_for_data_gen:
@@ -456,6 +462,41 @@
     }
     return "Connect the provider to use this model"
   }
+
+  let connect_provider_dialog: Dialog | null = null
+  let connect_provider_model: Model | null = null
+
+  function findFirstConnectedProvider(model: Model): Provider | null {
+    return (
+      model.providers.find((p) =>
+        model_provider_is_connected(
+          p.name,
+          model.name,
+          p.model_id,
+          p.provider_finetune_id,
+        ),
+      ) || null
+    )
+  }
+
+  function handleKeyPress(event: KeyboardEvent, model: Model) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      onClick(model)
+    }
+  }
+
+  function onClick(model: Model) {
+    const connectedProvider = findFirstConnectedProvider(model)
+    if (!connectedProvider) {
+      connect_provider_model = model
+      connect_provider_dialog?.show()
+      return
+    }
+    goto(
+      `/optimize/${project_id}/${task_id}/create_run_config?model=${encodeURIComponent(`${connectedProvider.name}/${model.name}`)}`,
+    )
+  }
 </script>
 
 <svelte:head>
@@ -468,6 +509,14 @@
     subtitle="Browse available models"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
+    breadcrumbs={project_id && task_id
+      ? [
+          {
+            label: "Optimize",
+            href: `/optimize/${project_id}/${task_id}`,
+          },
+        ]
+      : []}
     action_buttons={[
       {
         label: "Manage Providers",
@@ -516,152 +565,86 @@
         </div>
       </div>
     {:else}
-      <!-- Search Bar -->
-      <div class="mb-8">
-        <label for="search" class="block text-sm font-medium text-gray-700 mb-3"
-          >Search Models</label
-        >
-        <div class="relative">
-          <div
-            class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
+      <div class="px-1">
+        <!-- Search Bar -->
+        <div class="mb-8">
+          <label
+            for="search"
+            class="block text-sm font-medium text-gray-700 mb-3"
+            >Search Models</label
           >
-            <svg
-              class="h-5 w-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div class="relative">
+            <div
+              class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <input
-            id="search"
-            type="text"
-            bind:value={searchQuery}
-            placeholder="Search by name, model ID..."
-            class="block w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-          />
-        </div>
-      </div>
-
-      <!-- Filters Row -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <!-- Provider Filter -->
-        <div>
-          <label
-            for="provider"
-            class="block text-sm font-medium text-gray-700 mb-2">Provider</label
-          >
-          <FancySelect
-            bind:selected={selectedProvider}
-            options={providerOptions}
-            empty_label="All Providers"
-          />
-        </div>
-
-        <!-- Capability Filter -->
-        <div>
-          <label
-            for="capability"
-            class="block text-sm font-medium text-gray-700 mb-2"
-            >Capability</label
-          >
-          <FancySelect
-            bind:selected={selectedCapability}
-            options={capabilityOptions}
-            empty_label="All Capabilities"
-          />
-        </div>
-      </div>
-
-      <!-- Active Filters Badges -->
-      {#if activeFilters.length > 0}
-        <div class="mb-6">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-sm text-gray-500">Active filters:</span>
-            {#each activeFilters as filter}
-              <button
-                on:click={() => removeFilter(filter.type)}
-                class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+              <svg
+                class="h-5 w-5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                {filter.label}
-                <svg
-                  class="ml-1.5 h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </div>
+            <input
+              id="search"
+              type="text"
+              bind:value={searchQuery}
+              placeholder="Search by name, model ID..."
+              class="block w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
+
+        <!-- Filters Row -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <!-- Provider Filter -->
+          <div>
+            <label
+              for="provider"
+              class="block text-sm font-medium text-gray-700 mb-2"
+              >Provider</label
+            >
+            <FancySelect
+              bind:selected={selectedProvider}
+              options={providerOptions}
+              empty_label="All Providers"
+            />
+          </div>
+
+          <!-- Capability Filter -->
+          <div>
+            <label
+              for="capability"
+              class="block text-sm font-medium text-gray-700 mb-2"
+              >Capability</label
+            >
+            <FancySelect
+              bind:selected={selectedCapability}
+              options={capabilityOptions}
+              empty_label="All Capabilities"
+            />
+          </div>
+        </div>
+
+        <!-- Active Filters Badges -->
+        {#if activeFilters.length > 0}
+          <div class="mb-6">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm text-gray-500">Active filters:</span>
+              {#each activeFilters as filter}
+                <button
+                  on:click={() => removeFilter(filter.type)}
+                  class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
-
-      <!-- Results Count -->
-      <div class="text-sm text-gray-500 mb-6">
-        Showing {filteredModels.length} of {models.length} models
-      </div>
-
-      <!-- Action Bar (Clear Filters + Sorting) -->
-      <div class="flex items-center justify-between mb-6">
-        <!-- Clear Filters Button -->
-        {#if hasActiveFilters}
-          <button
-            on:click={clearFilters}
-            class="inline-flex items-center px-3 py-2 text-sm leading-4 font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-            title="Clear all filters and sorting"
-          >
-            <svg
-              class="h-4 w-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-            Clear Filters
-          </button>
-        {:else}
-          <div></div>
-        {/if}
-
-        <!-- Sorting Controls -->
-        <div class="flex items-center space-x-2">
-          <span class="text-sm text-gray-500">Sort by:</span>
-
-          <!-- Sort Options -->
-          <div class="flex items-center space-x-1">
-            {#each sortOptions as option}
-              <button
-                on:click={() => toggleSort(option.value)}
-                class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md transition-colors {sortBy ===
-                option.value
-                  ? 'text-gray-700 bg-gray-100 hover:bg-gray-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-transparent'}"
-              >
-                {option.label}
-                {#if sortBy === option.value}
+                  {filter.label}
                   <svg
-                    class="ml-1 h-4 w-4 {sortDirection === 'desc'
-                      ? 'rotate-180'
-                      : ''}"
+                    class="ml-1.5 h-4 w-4"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -670,209 +653,337 @@
                       stroke-linecap="round"
                       stroke-linejoin="round"
                       stroke-width="2"
-                      d="M5 15l7-7 7 7"
+                      d="M6 18L18 6M6 6l12 12"
                     />
                   </svg>
-                {/if}
-              </button>
-            {/each}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Results Count -->
+        <div class="text-sm text-gray-500 mb-6">
+          Showing {filteredModels.length} of {models.length} models
+        </div>
+
+        <!-- Action Bar (Clear Filters + Sorting) -->
+        <div class="flex items-center justify-between mb-6">
+          <!-- Clear Filters Button -->
+          {#if hasActiveFilters}
+            <button
+              on:click={clearFilters}
+              class="inline-flex items-center px-3 py-2 text-sm leading-4 font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              title="Clear all filters and sorting"
+            >
+              <svg
+                class="h-4 w-4 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+              Clear Filters
+            </button>
+          {:else}
+            <div></div>
+          {/if}
+
+          <!-- Sorting Controls -->
+          <div class="flex items-center space-x-2">
+            <span class="text-sm text-gray-500">Sort by:</span>
+
+            <!-- Sort Options -->
+            <div class="flex items-center space-x-1">
+              {#each sortOptions as option}
+                <button
+                  on:click={() => toggleSort(option.value)}
+                  class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md transition-colors {sortBy ===
+                  option.value
+                    ? 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-transparent'}"
+                >
+                  {option.label}
+                  {#if sortBy === option.value}
+                    <svg
+                      class="ml-1 h-4 w-4 {sortDirection === 'desc'
+                        ? 'rotate-180'
+                        : ''}"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M5 15l7-7 7 7"
+                      />
+                    </svg>
+                  {/if}
+                </button>
+              {/each}
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Models Grid -->
-      {#if filteredModels.length === 0}
-        <div class="text-center py-12">
-          <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-          <svg
-            class="mx-auto h-12 w-12"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-            <path
-              d="M15 18H9"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-            />
-            <path
-              d="M2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.2855 9.04765 22.0625 10.6294 21.6165 13.793L21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793Z"
-              stroke="currentColor"
-              stroke-width="1.5"
-            />
-          </svg>
-          <h3 class="mt-2 text-sm font-medium text-gray-900">
-            No models found
-          </h3>
-          <p class="mt-1 text-sm text-gray-500">
-            Try adjusting your search or filter criteria.
-          </p>
-        </div>
-      {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {#each filteredModels as model}
-            <div class="bg-white rounded-lg border">
-              <!-- Model Header -->
-              <div class="p-6 border-b border-gray-100">
-                <div class="flex items-start justify-between">
-                  <div class="flex-1">
-                    <h3 class="text-lg font-semibold text-gray-900 break-all">
-                      {model.friendly_name}
-                    </h3>
+        <!-- Models Grid -->
+        {#if filteredModels.length === 0}
+          <div class="text-center py-12">
+            <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+            <svg
+              class="mx-auto h-12 w-12"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M19.5617 7C19.7904 5.69523 18.7863 4.5 17.4617 4.5H6.53788C5.21323 4.5 4.20922 5.69523 4.43784 7"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+              <path
+                d="M17.4999 4.5C17.5283 4.24092 17.5425 4.11135 17.5427 4.00435C17.545 2.98072 16.7739 2.12064 15.7561 2.01142C15.6497 2 15.5194 2 15.2588 2H8.74099C8.48035 2 8.35002 2 8.24362 2.01142C7.22584 2.12064 6.45481 2.98072 6.45704 4.00434C6.45727 4.11135 6.47146 4.2409 6.49983 4.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+              <path
+                d="M15 18H9"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+              <path
+                d="M2.38351 13.793C1.93748 10.6294 1.71447 9.04765 2.66232 8.02383C3.61017 7 5.29758 7 8.67239 7H15.3276C18.7024 7 20.3898 7 21.3377 8.02383C22.2855 9.04765 22.0625 10.6294 21.6165 13.793L21.1935 16.793C20.8437 19.2739 20.6689 20.5143 19.7717 21.2572C18.8745 22 17.5512 22 14.9046 22H9.09536C6.44881 22 5.12553 22 4.22834 21.2572C3.33115 20.5143 3.15626 19.2739 2.80648 16.793L2.38351 13.793Z"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">
+              No models found
+            </h3>
+            <p class="mt-1 text-sm text-gray-500">
+              Try adjusting your search or filter criteria.
+            </p>
+          </div>
+        {:else}
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {#each filteredModels as model}
+              <div
+                class="bg-white rounded-lg border border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 transform hover:-translate-y-1 hover:z-10"
+                on:click={() => onClick(model)}
+                on:keydown={(event) => handleKeyPress(event, model)}
+                role="button"
+                tabindex="0"
+                aria-label={model.friendly_name}
+              >
+                <!-- Model Header -->
+                <div class="p-6 border-b border-gray-100">
+                  <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                      <h3 class="text-lg font-semibold text-gray-900 break-all">
+                        {model.friendly_name}
+                      </h3>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <!-- Capability Badges -->
-              <div class="p-6 pt-4">
-                <div class="flex flex-wrap gap-2 mb-4">
-                  {#each getCapabilityBadges(model.providers) as badge}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium tooltip tooltip-top before:z-50 before:whitespace-normal {badge.color}"
-                      data-tip={badge.tooltip}
-                    >
-                      {badge.text}
-                    </span>
-                  {/each}
-                </div>
-
-                <!-- Providers -->
-                <div>
-                  <h4 class="text-sm font-medium text-gray-700 mb-3">
-                    Available Providers
-                  </h4>
-                  <div class="space-y-2">
-                    {#each model.providers as provider}
-                      <div
-                        class="flex items-center justify-between p-3 bg-gray-50 rounded-md"
+                <!-- Capability Badges -->
+                <div class="p-6 pt-4">
+                  <div class="flex flex-wrap gap-2 mb-4">
+                    {#each getCapabilityBadges(model.providers) as badge}
+                      <span
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium tooltip tooltip-top before:z-50 before:whitespace-normal {badge.color}"
+                        data-tip={badge.tooltip}
                       >
-                        {#if model_provider_is_connected(provider.name, model.name, provider.model_id, provider.provider_finetune_id)}
-                          <div class="flex items-center space-x-3">
-                            <img
-                              src={get_provider_image(provider.name)}
-                              alt={provider.name}
-                              class="w-6 h-6 rounded"
-                              on:error={(e) => {
-                                if (e.target instanceof HTMLImageElement) {
-                                  e.target.style.display = "none"
-                                }
-                              }}
-                            />
-                            <div>
-                              <p class="text-sm font-medium text-gray-900">
-                                {provider_name_from_id(provider.name)}
-                              </p>
-                              <p class="text-xs text-gray-500 break-all">
-                                {provider.model_id ||
-                                  `${provider.provider_finetune_id} (Finetune Only)`}
-                              </p>
-                            </div>
-                          </div>
-                        {:else}
-                          <a
-                            href={model_not_connected_href(
-                              provider.name,
-                              provider.model_id,
-                            )}
-                            class="text-left flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
-                            data-tip={model_not_connected_tooltip(
-                              provider.name,
-                            )}
-                          >
-                            <img
-                              src={get_provider_image(provider.name)}
-                              alt={provider.name}
-                              class="w-6 h-6 rounded"
-                              on:error={(e) => {
-                                if (e.target instanceof HTMLImageElement) {
-                                  e.target.style.display = "none"
-                                }
-                              }}
-                            />
-                            <div>
-                              <p class="text-sm font-medium text-gray-900">
-                                {provider_name_from_id(provider.name)}
-                              </p>
-                              <p class="text-xs text-gray-500 break-all">
-                                {provider.model_id}
-                              </p>
-                            </div>
-                          </a>
-                        {/if}
-                        <div class="flex items-center space-x-1">
-                          {#if provider.reasoning_capable}
-                            <span
-                              class="w-2 h-2 bg-lime-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.reasoning_capable}
-                            ></span>
-                          {/if}
-                          {#if provider.provider_finetune_id}
-                            <span
-                              class="w-2 h-2 bg-purple-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_finetuning}
-                            ></span>
-                          {/if}
-                          {#if provider.supports_structured_output}
-                            <span
-                              class="w-2 h-2 bg-teal-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_structured_output}
-                            ></span>
-                          {/if}
-                          {#if provider.supports_function_calling}
-                            <span
-                              class="w-2 h-2 bg-indigo-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_function_calling}
-                            ></span>
-                          {/if}
-                          {#if provider.supports_doc_extraction}
-                            <span
-                              class="w-2 h-2 bg-amber-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_doc_extraction}
-                            ></span>
-                          {/if}
-                          {#if provider.supports_vision}
-                            <span
-                              class="w-2 h-2 bg-pink-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={// in practice, vision models should always have some mime types, if the fallback kicks in, the model definition is probably incorrect
-                              provider.multimodal_mime_types &&
-                              provider.multimodal_mime_types.length > 0
-                                ? provider.multimodal_mime_types.join(", ")
-                                : CAPABILITY_TOOLTIP_MESSAGES.supports_vision}
-                            ></span>
-                          {/if}
-                          {#if provider.supports_logprobs}
-                            <span
-                              class="w-2 h-2 bg-orange-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_logprobs}
-                            ></span>
-                          {/if}
-                          {#if provider.uncensored}
-                            <span
-                              class="w-2 h-2 bg-red-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
-                              data-tip={CAPABILITY_TOOLTIP_MESSAGES.uncensored}
-                            ></span>
-                          {/if}
-                        </div>
-                      </div>
+                        {badge.text}
+                      </span>
                     {/each}
                   </div>
+
+                  <!-- Providers -->
+                  <div>
+                    <h4 class="text-sm font-medium text-gray-700 mb-3">
+                      Available Providers
+                    </h4>
+                    <div class="space-y-2">
+                      {#each model.providers as provider}
+                        <div
+                          class="flex items-center justify-between p-3 bg-gray-50 rounded-md"
+                        >
+                          {#if model_provider_is_connected(provider.name, model.name, provider.model_id, provider.provider_finetune_id)}
+                            <div class="flex items-center space-x-3">
+                              <img
+                                src={get_provider_image(provider.name)}
+                                alt={provider.name}
+                                class="w-6 h-6 rounded"
+                                on:error={(e) => {
+                                  if (e.target instanceof HTMLImageElement) {
+                                    e.target.style.display = "none"
+                                  }
+                                }}
+                              />
+                              <div>
+                                <p class="text-sm font-medium text-gray-900">
+                                  {provider_name_from_id(provider.name)}
+                                </p>
+                                <p class="text-xs text-gray-500 break-all">
+                                  {provider.model_id ||
+                                    `${provider.provider_finetune_id} (Finetune Only)`}
+                                </p>
+                              </div>
+                            </div>
+                          {:else}
+                            <a
+                              href={model_not_connected_href(
+                                provider.name,
+                                provider.model_id,
+                              )}
+                              class="text-left flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              on:click|stopPropagation
+                              data-tip={model_not_connected_tooltip(
+                                provider.name,
+                              )}
+                            >
+                              <img
+                                src={get_provider_image(provider.name)}
+                                alt={provider.name}
+                                class="w-6 h-6 rounded"
+                                on:error={(e) => {
+                                  if (e.target instanceof HTMLImageElement) {
+                                    e.target.style.display = "none"
+                                  }
+                                }}
+                              />
+                              <div>
+                                <p class="text-sm font-medium text-gray-900">
+                                  {provider_name_from_id(provider.name)}
+                                </p>
+                                <p class="text-xs text-gray-500 break-all">
+                                  {provider.model_id}
+                                </p>
+                              </div>
+                            </a>
+                          {/if}
+                          <div class="flex items-center space-x-1">
+                            {#if provider.reasoning_capable}
+                              <span
+                                class="w-2 h-2 bg-lime-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.reasoning_capable}
+                              ></span>
+                            {/if}
+                            {#if provider.provider_finetune_id}
+                              <span
+                                class="w-2 h-2 bg-purple-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_finetuning}
+                              ></span>
+                            {/if}
+                            {#if provider.supports_structured_output}
+                              <span
+                                class="w-2 h-2 bg-teal-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_structured_output}
+                              ></span>
+                            {/if}
+                            {#if provider.supports_function_calling}
+                              <span
+                                class="w-2 h-2 bg-indigo-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_function_calling}
+                              ></span>
+                            {/if}
+                            {#if provider.supports_doc_extraction}
+                              <span
+                                class="w-2 h-2 bg-amber-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_doc_extraction}
+                              ></span>
+                            {/if}
+                            {#if provider.supports_vision}
+                              <span
+                                class="w-2 h-2 bg-pink-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={// in practice, vision models should always have some mime types, if the fallback kicks in, the model definition is probably incorrect
+                                provider.multimodal_mime_types &&
+                                provider.multimodal_mime_types.length > 0
+                                  ? provider.multimodal_mime_types.join(", ")
+                                  : CAPABILITY_TOOLTIP_MESSAGES.supports_vision}
+                              ></span>
+                            {/if}
+                            {#if provider.supports_logprobs}
+                              <span
+                                class="w-2 h-2 bg-orange-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.supports_logprobs}
+                              ></span>
+                            {/if}
+                            {#if provider.uncensored}
+                              <span
+                                class="w-2 h-2 bg-red-400 rounded-full tooltip tooltip-top before:z-50 before:whitespace-normal"
+                                data-tip={CAPABILITY_TOOLTIP_MESSAGES.uncensored}
+                              ></span>
+                            {/if}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          {/each}
-        </div>
-      {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/if}
   </AppPage>
 </div>
+
+<Dialog
+  bind:this={connect_provider_dialog}
+  title="Connect to Provider"
+  action_buttons={[
+    {
+      label: "Cancel",
+      isCancel: true,
+    },
+    {
+      label: "Connect Provider",
+      isPrimary: true,
+      action: () => {
+        goto("/settings/providers")
+        return true
+      },
+    },
+  ]}
+>
+  <div class="flex flex-col gap-4">
+    <p class="text-sm text-gray-600">
+      To use <span class="font-medium"
+        >{connect_provider_model?.friendly_name ?? "this model"}</span
+      >, please connect at least one of its providers.
+    </p>
+    {#if connect_provider_model}
+      <div class="flex flex-col gap-2">
+        <p class="text-sm font-medium text-gray-700">Available providers</p>
+        {#each connect_provider_model.providers as provider}
+          <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+            <img
+              src={get_provider_image(provider.name)}
+              alt={provider.name}
+              class="w-6 h-6 rounded"
+              on:error={(e) => {
+                if (e.target instanceof HTMLImageElement) {
+                  e.target.style.display = "none"
+                }
+              }}
+            />
+            <span class="text-sm text-gray-700"
+              >{provider_name_from_id(provider.name)}</span
+            >
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+</Dialog>
