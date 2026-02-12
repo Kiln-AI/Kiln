@@ -55,7 +55,6 @@
         prompt = prompt_response.prompt
 
         const gen_name_map: Record<string, string> = {
-          simple_prompt_builder: "Basic (Zero Shot)",
           few_shot_prompt_builder: "Few-Shot",
           multi_shot_prompt_builder: "Many-Shot",
           repairs_prompt_builder: "Repair Multi-Shot",
@@ -194,7 +193,7 @@
             inputType="textarea"
             height="large"
             description="A prompt to use for this task."
-            info_description="A LLM prompt such as 'You are a helpful assistant.'. This prompt is specific to this task. To use this prompt after creation, select it from the prompts dropdown."
+            info_description="Model prompt such as 'You are a helpful assistant.'. This prompt is specific to this task. To use this prompt after creation, select it from the prompts dropdown."
           />
           {#if is_custom}
             <FormElement

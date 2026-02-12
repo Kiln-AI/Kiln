@@ -5,6 +5,7 @@ export type PromptGeneratorTemplate = {
   requires_data: boolean
   requires_repairs: boolean
   chain_of_thought: boolean
+  recommended?: boolean
 }
 
 export type PromptGeneratorCategory = {
@@ -14,38 +15,23 @@ export type PromptGeneratorCategory = {
 
 export const prompt_generator_categories: PromptGeneratorCategory[] = [
   {
-    category: "Automated Optimization",
+    category: "Automatic Optimization",
     templates: [
       {
         generator_id: "kiln_prompt_optimizer",
         name: "Kiln Prompt Optimizer",
         description:
-          "Run GEPA to automatically optimize your prompt with training data.",
+          "Our state-of-the-art automatic prompt optimizer. We use evals to pinpoint and fix failure modes—no manual prompting required.",
         requires_data: false,
         requires_repairs: false,
         chain_of_thought: false,
+        recommended: true,
       },
     ],
   },
   {
-    category: "Standard Prompts",
+    category: "Prompt Generators",
     templates: [
-      {
-        generator_id: null,
-        name: "Custom",
-        description: "Write your own prompt from scratch.",
-        requires_data: false,
-        requires_repairs: false,
-        chain_of_thought: false,
-      },
-      {
-        generator_id: "simple_prompt_builder",
-        name: "Basic (Zero Shot)",
-        description: "Just the prompt, no examples.",
-        requires_data: false,
-        requires_repairs: false,
-        chain_of_thought: false,
-      },
       {
         generator_id: "few_shot_prompt_builder",
         name: "Few-Shot",
@@ -71,35 +57,43 @@ export const prompt_generator_categories: PromptGeneratorCategory[] = [
         requires_repairs: true,
         chain_of_thought: false,
       },
-    ],
-  },
-  {
-    category: "Chain of Thought",
-    templates: [
       {
         generator_id: "simple_chain_of_thought_prompt_builder",
         name: "Chain of Thought",
         description:
-          "Give the LLM time to 'think' before answering. Zero-shot with reasoning.",
+          "Give the model time to 'think' before answering. Zero-shot with reasoning.",
         requires_data: false,
         requires_repairs: false,
         chain_of_thought: true,
       },
       {
         generator_id: "few_shot_chain_of_thought_prompt_builder",
-        name: "Chain of Thought - Few Shot",
-        description: "Combines CoT and few-shot with up to 4 examples.",
+        name: "Chain of Thought + Few Shot",
+        description: "Combines chain-of-thought and few-shot (4 examples).",
         requires_data: true,
         requires_repairs: false,
         chain_of_thought: true,
       },
       {
         generator_id: "multi_shot_chain_of_thought_prompt_builder",
-        name: "Chain of Thought - Many Shot",
-        description: "Combines CoT and many-shot with up to 25 examples.",
+        name: "Chain of Thought + Many Shot",
+        description: "Combines chain-of-thought and many-shot (25 examples).",
         requires_data: true,
         requires_repairs: false,
         chain_of_thought: true,
+      },
+    ],
+  },
+  {
+    category: "Manual",
+    templates: [
+      {
+        generator_id: null,
+        name: "Custom",
+        description: "Write your own prompt.",
+        requires_data: false,
+        requires_repairs: false,
+        chain_of_thought: false,
       },
     ],
   },

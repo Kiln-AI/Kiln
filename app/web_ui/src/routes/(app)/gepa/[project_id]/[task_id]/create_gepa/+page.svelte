@@ -731,7 +731,7 @@
     title="Create Optimized Prompt"
     subtitle="Create a prompt optimized for your evals using training data."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
     breadcrumbs={from_prompt_generators
       ? [
           {

@@ -148,6 +148,8 @@
   <AppPage
     title="Prompt Optimizer Job"
     subtitle={gepa_job_loading ? undefined : `Name: ${gepa_job?.name}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
     breadcrumbs={[
       {
         label: "Optimize",

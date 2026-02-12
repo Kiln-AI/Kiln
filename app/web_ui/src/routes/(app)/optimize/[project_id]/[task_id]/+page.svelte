@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import OptimizeCard from "$lib/ui/optimize_card.svelte"
-  import { get_optimizers } from "./optimizers"
+  import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
+  import { get_optimizers, type Optimizer } from "./optimizers"
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import {
@@ -41,6 +41,12 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: optimizers = get_optimizers(project_id, task_id)
+  $: optimizer_features = optimizers.map((o: Optimizer) => ({
+    name: o.title,
+    description: o.description,
+    metrics: o.metrics,
+    on_click: o.on_click,
+  }))
 
   let loading = true
   let error: KilnError | null = null
@@ -276,7 +282,7 @@
   title="Optimize"
   subtitle="Find the best way to run your task."
   sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/optimize"
+  sub_subtitle_link="https://docs.kiln.tech/docs/optimizers"
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -289,19 +295,7 @@
   {:else}
     <div class="flex flex-col gap-4">
       <h2 class="text-lg font-medium text-gray-900">Optimization Strategies</h2>
-      <div
-        class="grid gap-6"
-        style="grid-template-columns: repeat(auto-fit, minmax(300px, 350px));"
-      >
-        {#each optimizers as optimizer}
-          <OptimizeCard
-            title={optimizer.title}
-            description={optimizer.description}
-            metrics={optimizer.metrics}
-            onClick={optimizer.on_click}
-          />
-        {/each}
-      </div>
+      <FeatureCarousel features={optimizer_features} />
       <div class="flex flex-col sm:flex-row gap-4 sm:gap-8 mt-8">
         <div class="grow">
           <h2 class="text-lg font-medium text-gray-900">Run Configurations</h2>
