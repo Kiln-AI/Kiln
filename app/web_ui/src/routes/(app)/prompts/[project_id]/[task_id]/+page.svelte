@@ -14,6 +14,7 @@
   import { onMount } from "svelte"
   import type { Task } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { getPromptType } from "./prompt_generators/prompt_generators"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -51,22 +52,6 @@
       sortColumn = column
       sortDirection = "desc"
     }
-  }
-
-  function getPromptType(
-    prompt_id: string,
-    generator_id?: string | null,
-  ):
-    | "Custom"
-    | "Fine Tuning Prompt"
-    | "Frozen Prompt"
-    | "Optimized Prompt"
-    | "Unknown" {
-    if (generator_id === "kiln_prompt_optimizer") return "Optimized Prompt"
-    if (prompt_id.startsWith("id::")) return "Custom"
-    if (prompt_id.startsWith("fine_tune_prompt::")) return "Fine Tuning Prompt"
-    if (prompt_id.startsWith("task_run_config::")) return "Frozen Prompt"
-    return "Unknown"
   }
 
   $: sorted_prompts = (() => {

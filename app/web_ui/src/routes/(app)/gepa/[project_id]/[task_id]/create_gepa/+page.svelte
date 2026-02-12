@@ -1273,6 +1273,20 @@
                     </div>
                   </Warning>
                 </div>
+              {:else if selected_eval_ids.size < evals_with_configs.length}
+                <div class="mt-3">
+                  <Warning
+                    warning_color="gray"
+                    warning_icon="info"
+                    outline={true}
+                    tight={true}
+                  >
+                    <div class="text-sm text-gray-600">
+                      Some evaluators are disabled. The optimizer will not be
+                      able to optimize for these evaluators.
+                    </div>
+                  </Warning>
+                </div>
               {:else if has_evals_without_train_set}
                 <div class="mt-3">
                   <Warning

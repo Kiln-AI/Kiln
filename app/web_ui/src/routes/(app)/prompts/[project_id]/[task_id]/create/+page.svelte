@@ -92,6 +92,7 @@
             },
           },
           body: {
+            generator_id: generator_id,
             name: prompt_name,
             prompt: prompt,
             chain_of_thought_instructions:

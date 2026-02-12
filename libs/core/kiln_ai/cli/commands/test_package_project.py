@@ -592,7 +592,6 @@ class TestIsDynamicPrompt:
         "prompt_id,expected",
         [
             (PromptGenerators.SIMPLE.value, False),
-            (PromptGenerators.SHORT.value, False),
             (PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT.value, False),
             (PromptGenerators.FEW_SHOT.value, True),
             (PromptGenerators.MULTI_SHOT.value, True),

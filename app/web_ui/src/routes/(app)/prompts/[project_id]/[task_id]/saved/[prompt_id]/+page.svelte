@@ -1,14 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import {
-    current_task,
-    current_task_prompts,
-    prompt_name_from_id,
-  } from "$lib/stores"
+  import { current_task, current_task_prompts } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { getPromptType } from "../../prompt_generators/prompt_generators"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -25,17 +22,12 @@
         ID: prompt_model?.id,
         Name: prompt_model?.name,
         Description: prompt_model?.description || undefined,
+        Type: getPromptType(
+          prompt_model?.id || "",
+          prompt_model?.generator_id || null,
+        ),
         "Created By": prompt_model?.created_by,
         "Created At": formatDate(prompt_model?.created_at || undefined),
-        "Chain of Thought": prompt_model?.chain_of_thought_instructions
-          ? "Yes"
-          : "No",
-        "Source Generator": prompt_model?.generator_id
-          ? prompt_name_from_id(
-              prompt_model?.generator_id,
-              $current_task_prompts,
-            )
-          : undefined,
       }).filter(([_, value]) => value !== undefined && value !== null),
     )
   }
