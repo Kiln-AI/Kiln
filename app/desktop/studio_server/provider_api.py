@@ -160,9 +160,6 @@ class ModelDetails(BaseModel):
     task_filter: List[str] | None = Field(default=None)
     # if the model has a model-specific run config which should be used when running the model (like a fine-tune model's baked in run config)
     model_specific_run_config: str | None = Field(default=None)
-    # Editorial
-    featured_rank: int | None = Field(default=None)
-    editorial_notes: str | None = Field(default=None)
 
 
 class AvailableModels(BaseModel):
@@ -282,8 +279,6 @@ def connect_provider_api(app: FastAPI):
                                 suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
                                 multimodal_capable=provider.multimodal_capable,
                                 multimodal_mime_types=mime_types_as_str,
-                                featured_rank=model.featured_rank,
-                                editorial_notes=model.editorial_notes,
                             )
                         )
 

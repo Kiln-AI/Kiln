@@ -888,8 +888,6 @@ async def test_get_available_models(app, client):
             name="model2",
             friendly_name="Model 2",
             family="",
-            featured_rank=1,
-            editorial_notes="Model 2 is a great model for evals.",
             providers=[
                 KilnModelProvider(
                     name=ModelProviderName.amazon_bedrock,
@@ -968,8 +966,6 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
-                    "featured_rank": None,
-                    "editorial_notes": None,
                 }
             ],
         },
@@ -997,8 +993,6 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
-                    "featured_rank": None,
-                    "editorial_notes": None,
                 },
             ],
         },
@@ -1026,8 +1020,6 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
-                    "featured_rank": 1,
-                    "editorial_notes": "Model 2 is a great model for evals.",
                 }
             ],
         },
@@ -1105,8 +1097,6 @@ async def test_get_available_models_ollama_exception(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
-                    "featured_rank": None,
-                    "editorial_notes": None,
                 }
             ],
         },

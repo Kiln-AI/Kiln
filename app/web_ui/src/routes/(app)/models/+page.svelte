@@ -167,18 +167,6 @@
     }
   }
 
-  function enrichModelsWithFeaturedData() {
-    const allModelDetails = $available_models.flatMap((p) => p.models)
-    for (const model of models) {
-      if (model.featured_rank != null) continue
-      const match = allModelDetails.find((m) => m.id === model.name)
-      if (match) {
-        model.featured_rank = match.featured_rank
-        model.editorial_notes = match.editorial_notes
-      }
-    }
-  }
-
   async function fetchModelsFromRemoteConfig() {
     try {
       loading = true
@@ -193,8 +181,6 @@
 
       const data: ConfigData = await response.json()
       models = data.model_list
-
-      enrichModelsWithFeaturedData()
 
       // Extract unique providers for filters
       providers = [
