@@ -13,6 +13,7 @@
   } from "$lib/stores"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
+  import { fetchPricingData, getModelPrice } from "./price"
 
   $: project_id = $ui_state.current_project_id
   $: task_id = $ui_state.current_task_id
@@ -77,6 +78,7 @@
   let models: Model[] = []
   let filteredModels: Model[] = []
   let loading = true
+  let pricingLoading = true
   let error: KilnError | null = null
 
   // Search and filter state
@@ -193,6 +195,12 @@
     } finally {
       loading = false
     }
+  }
+
+  async function loadPricing() {
+    pricingLoading = true
+    await fetchPricingData()
+    pricingLoading = false
   }
 
   // Apply search and filters
@@ -425,6 +433,7 @@
   $: void (sortBy, sortDirection, applySorting())
 
   onMount(async () => {
+    loadPricing()
     await load_available_models()
     await fetchModelsFromRemoteConfig()
   })
@@ -475,6 +484,15 @@
       return "Install the model in Ollama to use it"
     }
     return "Connect the provider to use this model"
+  }
+
+  function getModelPricing(model: Model) {
+    const pricingProvider =
+      model.providers.find((p) => p.name === "openrouter") || model.providers[0]
+    if (!pricingProvider?.model_id) {
+      return null
+    }
+    return getModelPrice(pricingProvider.name, pricingProvider.model_id)
   }
 
   let connect_provider_dialog: Dialog | null = null
@@ -539,7 +557,7 @@
     ]}
   >
     <!-- Loading State -->
-    {#if loading}
+    {#if loading || pricingLoading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -789,6 +807,7 @@
         {:else}
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {#each filteredModels as model}
+              {@const prices = getModelPricing(model)}
               <div
                 class="bg-white rounded-lg border border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 transform hover:-translate-y-1 hover:z-10"
                 on:click={() => onClick(model)}
@@ -812,6 +831,19 @@
                     </div>
                   </div>
                 </div>
+
+                {#if prices && (prices.inputPrice !== null || prices.outputPrice !== null)}
+                  <div
+                    class="text-xs font-light text-gray-500 border-b border-gray-100 px-6 py-3 flex items-center justify-around"
+                  >
+                    {#if prices.inputPrice !== null}
+                      <span>Input: ${prices.inputPrice.toFixed(2)}/M</span>
+                    {/if}
+                    {#if prices.outputPrice !== null}
+                      <span>Output: ${prices.outputPrice.toFixed(2)}/M</span>
+                    {/if}
+                  </div>
+                {/if}
 
                 <!-- Capability Badges -->
                 <div class="p-6 pt-4">
