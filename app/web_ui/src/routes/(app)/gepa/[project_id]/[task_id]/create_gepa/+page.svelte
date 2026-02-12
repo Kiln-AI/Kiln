@@ -1287,20 +1287,6 @@
                     </div>
                   </Warning>
                 </div>
-              {:else if has_evals_without_train_set}
-                <div class="mt-3">
-                  <Warning
-                    warning_color="warning"
-                    warning_icon="info"
-                    outline={true}
-                    tight={true}
-                  >
-                    <div class="text-sm text-gray-600">
-                      Some selected evals have no train set and will not be used
-                      during optimization.
-                    </div>
-                  </Warning>
-                </div>
               {/if}
             </div>
           {/if}
