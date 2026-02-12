@@ -148,6 +148,39 @@ def _validate_mcp_output_schema(task: Task, tool_output_schema: dict | None) -> 
         raise ValueError("Task output schema must be compatible with the MCP tool.")
 
 
+def _create_mcp_run_config_properties(
+    tool_id: str,
+    tool_name: str,
+    tool_input_schema: dict,
+    tool_output_schema: dict | None,
+) -> RunConfigProperties:
+    """
+    Create RunConfigProperties for an MCP tool.
+
+    Args:
+        tool_id: The ID of the MCP tool
+        tool_name: The name of the MCP tool
+        tool_input_schema: The input schema of the tool
+        tool_output_schema: The output schema of the tool (optional)
+
+    Returns:
+        RunConfigProperties configured for the MCP tool
+    """
+    return RunConfigProperties(
+        kind=RunConfigKind.mcp,
+        mcp_tool=MCPToolReference(
+            tool_id=tool_id,
+            tool_name=tool_name,
+            input_schema=tool_input_schema,
+            output_schema=tool_output_schema,
+        ),
+        model_name="mcp_tool",
+        model_provider_name=ModelProviderName.mcp_provider,
+        prompt_id=PromptGenerators.SIMPLE,
+        structured_output_mode=StructuredOutputMode.default,
+    )
+
+
 def connect_run_config_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks_compatible_with_tool")
     async def tasks_compatible_with_tool(
@@ -206,18 +239,11 @@ def connect_run_config_api(app: FastAPI):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        run_config_properties = RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id=tool_id,
-                tool_name=tool_name,
-                input_schema=tool_input_schema,
-                output_schema=tool_output_schema,
-            ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id=PromptGenerators.SIMPLE,
-            structured_output_mode=StructuredOutputMode.default,
+        run_config_properties = _create_mcp_run_config_properties(
+            tool_id=tool_id,
+            tool_name=tool_name,
+            tool_input_schema=tool_input_schema,
+            tool_output_schema=tool_output_schema,
         )
 
         task_run_config = TaskRunConfig(
@@ -254,18 +280,11 @@ def connect_run_config_api(app: FastAPI):
         )
         task.save_to_file()
 
-        run_config_properties = RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id=request.tool_id,
-                tool_name=tool_name,
-                input_schema=tool_input_schema,
-                output_schema=tool_output_schema,
-            ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id=PromptGenerators.SIMPLE,
-            structured_output_mode=StructuredOutputMode.default,
+        run_config_properties = _create_mcp_run_config_properties(
+            tool_id=request.tool_id,
+            tool_name=tool_name,
+            tool_input_schema=tool_input_schema,
+            tool_output_schema=tool_output_schema,
         )
 
         task_run_config = TaskRunConfig(
