@@ -336,6 +336,10 @@ class KilnModel(BaseModel):
     friendly_name: str
     providers: List[KilnModelProvider]
 
+    # Editorial
+    featured_rank: int | None = None
+    editorial_notes: str | None = None
+
 
 built_in_models: List[KilnModel] = [
     # GPT 5.2
@@ -343,6 +347,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_2,
         friendly_name="GPT-5.2",
+        featured_rank=1,
+        editorial_notes="The latest version of GPT from OpenAI.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1260,6 +1266,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_4_5_haiku,
         friendly_name="Claude 4.5 Haiku",
+        featured_rank=3,
+        editorial_notes="A faster and cheaper Claude model.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1407,6 +1415,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_6,
         friendly_name="Claude Opus 4.6",
+        featured_rank=2,
+        editorial_notes="Anthropic's most powerful model.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1525,6 +1535,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_pro_preview,
         friendly_name="Gemini 3 Pro Preview",
+        featured_rank=5,
+        editorial_notes="Google's most powerful model.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1603,6 +1615,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_flash,
         friendly_name="Gemini 3 Flash",
+        featured_rank=6,
+        editorial_notes="A smart and affordable model from Google.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5268,6 +5282,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_4_7,
         friendly_name="GLM 4.7",
+        featured_rank=4,
+        editorial_notes="Powerful and economical model from Z-AI.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
