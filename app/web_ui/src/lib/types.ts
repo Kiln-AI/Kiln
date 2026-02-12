@@ -95,6 +95,8 @@ export type KilnTaskToolDescription =
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
+export type ExternalToolApiDescription =
+  components["schemas"]["ExternalToolApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]

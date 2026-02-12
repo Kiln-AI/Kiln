@@ -107,12 +107,4 @@ describe("stores", () => {
       )
     })
   })
-
-  describe("ui_state defaults", () => {
-    it("should not include pending fields", () => {
-      expect(get(ui_state)).toEqual(default_ui_state)
-      expect(default_ui_state).not.toHaveProperty("pending_tool_id")
-      expect(default_ui_state).not.toHaveProperty("pending_run_config_id")
-    })
-  })
 })

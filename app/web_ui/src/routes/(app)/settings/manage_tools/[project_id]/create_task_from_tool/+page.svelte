@@ -10,10 +10,8 @@
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
   import { ui_state } from "$lib/stores"
-  import {
-    selected_tool_for_task,
-    type ExternalToolApiDescription,
-  } from "$lib/stores/tool_store"
+  import { selected_tool_for_task } from "$lib/stores/tool_store"
+  import type { ExternalToolApiDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
