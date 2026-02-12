@@ -119,7 +119,7 @@ export function getRunConfigUiProperties(
       },
       {
         name: "Type",
-        value: "MCP Tool (Direct)",
+        value: "MCP Tool (No Agent)",
       },
       {
         name: "Tool Name",
