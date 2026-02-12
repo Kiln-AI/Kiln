@@ -1,36 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte"
-  import createKindeClient from "@kinde-oss/kinde-auth-pkce-js"
   import { base_url } from "$lib/api_client"
   import posthog from "posthog-js"
-  import { env } from "$env/dynamic/public"
+  import {
+    initKindeClient,
+    openSelfServePortal as openSelfServePortalUtil,
+  } from "$lib/utils/copilot_utils"
 
   export let onSuccess: () => void
   export let showCheckmark = false
 
-  let kindeClient: Awaited<ReturnType<typeof createKindeClient>> | null = null
   let apiKey = ""
   let apiKeyError = false
   let apiKeyMessage: string | null = null
   let submitting = false
-
-  const KINDE_ACCOUNT_DOMAIN =
-    env.PUBLIC_KINDE_ACCOUNT_DOMAIN || "https://account.kiln.tech"
-  const KINDE_ACCOUNT_CLIENT_ID =
-    env.PUBLIC_KINDE_ACCOUNT_CLIENT_ID || "2428f47a1e0b404b82e68400a2d580c6"
-
-  async function initKindeClient() {
-    if (kindeClient) return kindeClient
-
-    kindeClient = await createKindeClient({
-      client_id: KINDE_ACCOUNT_CLIENT_ID,
-      domain: KINDE_ACCOUNT_DOMAIN,
-      redirect_uri: window.location.origin + window.location.pathname,
-      on_redirect_callback: () => {},
-    })
-
-    return kindeClient
-  }
 
   async function openSignup() {
     try {
@@ -50,41 +33,10 @@
   }
 
   async function openSelfServePortal() {
-    try {
-      const kinde = await initKindeClient()
-      if (!kinde) {
-        apiKeyError = true
-        apiKeyMessage = "Please sign up first"
-        return
-      }
-
-      const accessToken = await kinde.getToken()
-      if (!accessToken) {
-        apiKeyError = true
-        apiKeyMessage = "Please sign up first before accessing the portal"
-        return
-      }
-
-      const response = await fetch(
-        `${KINDE_ACCOUNT_DOMAIN}/account_api/v1/portal_link`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        },
-      )
-
-      if (!response.ok) {
-        throw new Error("Failed to generate portal link")
-      }
-
-      const data = await response.json()
-      window.open(data.url, "_blank")
-    } catch (e) {
-      console.error("openSelfServePortal error", e)
+    const result = await openSelfServePortalUtil()
+    if (!result.success) {
       apiKeyError = true
-      apiKeyMessage =
-        "Failed to open self-serve portal. Please try signing up first."
+      apiKeyMessage = result.error || "Failed to open self-serve portal"
     }
   }
 

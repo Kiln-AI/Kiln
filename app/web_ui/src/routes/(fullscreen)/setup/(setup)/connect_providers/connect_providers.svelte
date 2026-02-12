@@ -798,6 +798,11 @@
     document.getElementById("openai_compatible_dialog")?.showModal()
   }
 
+  async function open_kiln_copilot_portal() {
+    const { openSelfServePortal } = await import("$lib/utils/copilot_utils")
+    await openSelfServePortal()
+  }
+
   let new_provider_name = ""
   let new_provider_base_url = ""
   let new_provider_api_key = ""
@@ -1010,6 +1015,14 @@
                   on:click={show_docker_model_runner_custom_url_dialog}
                 >
                   Set Docker Model Runner Custom URL
+                </button>
+              {/if}
+              {#if provider.id === "kiln_copilot" && is_connected}
+                <button
+                  class="link text-left text-sm text-gray-500"
+                  on:click={open_kiln_copilot_portal}
+                >
+                  Manage Billing & Payments
                 </button>
               {/if}
             </div>
