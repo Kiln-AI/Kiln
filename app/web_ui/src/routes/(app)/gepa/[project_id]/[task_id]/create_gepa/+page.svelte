@@ -31,6 +31,8 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import TagDropdown from "$lib/ui/tag_dropdown.svelte"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -96,6 +98,8 @@
 
   let current_task: Task | null = null
   let task_loading = true
+  let kiln_copilot_connected: boolean | null = null
+  let copilot_check_error: KilnError | null = null
 
   type EvalWithConfig = {
     eval: Eval
@@ -125,6 +129,11 @@
     | "valid"
     | "invalid" = "unchecked"
   let run_config_validation_message: string | null = null
+  let run_config_blocking_reason:
+    | "has_tools"
+    | "unsupported_model"
+    | "other"
+    | null = null
 
   $: has_evals_without_config = evals_with_configs.some(
     (item) =>
@@ -207,12 +216,22 @@
   onMount(async () => {
     from_prompt_generators =
       $page.url.searchParams.get("from") === "prompt_generators"
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
+
+    try {
+      kiln_copilot_connected = await checkKilnCopilotAvailable()
+    } catch (e) {
+      copilot_check_error = createKilnError(e)
+      kiln_copilot_connected = false
+    }
+
+    if (kiln_copilot_connected) {
+      await Promise.all([
+        load_task(),
+        load_task_prompts(project_id, task_id),
+        load_task_run_configs(project_id, task_id),
+        load_evals_and_configs(),
+      ])
+    }
   })
 
   async function load_task() {
@@ -326,6 +345,7 @@
     try {
       run_config_validation_status = "checking"
       run_config_validation_message = null
+      run_config_blocking_reason = null
 
       const run_config = get_selected_run_config(
         target_run_config_id,
@@ -341,6 +361,7 @@
         run_config_validation_status = "invalid"
         run_config_validation_message =
           "Tools are not supported for Kiln Prompt Optimization"
+        run_config_blocking_reason = "has_tools"
         return
       }
 
@@ -365,6 +386,7 @@
 
       if (data && !data.is_supported) {
         run_config_validation_status = "invalid"
+        run_config_blocking_reason = "unsupported_model"
         if (run_config) {
           const friendly_model = model_name(
             run_config.run_config_properties.model_name,
@@ -381,10 +403,12 @@
       } else {
         run_config_validation_status = "valid"
         run_config_validation_message = null
+        run_config_blocking_reason = null
       }
     } catch (e) {
       run_config_validation_status = "invalid"
       run_config_validation_message = createKilnError(e).getMessage()
+      run_config_blocking_reason = "other"
     }
   }
 
@@ -578,6 +602,7 @@
   } else {
     run_config_validation_status = "unchecked"
     run_config_validation_message = null
+    run_config_blocking_reason = null
   }
 
   $: if (evals_with_configs.length > 0 && !evals_loading) {
@@ -592,15 +617,6 @@
       }
     })
   }
-
-  onMount(async () => {
-    await Promise.all([
-      load_task(),
-      load_task_prompts(project_id, task_id),
-      load_task_run_configs(project_id, task_id),
-      load_evals_and_configs(),
-    ])
-  })
 
   async function refresh_evaluators() {
     const { data: evals_data } = await client.GET(
@@ -762,7 +778,18 @@
           },
         ]}
   >
-    {#if task_loading}
+    {#if kiln_copilot_connected === null}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if kiln_copilot_connected === false}
+      <CopilotRequiredCard
+        description="Kiln Prompt Optimization requires Kiln Copilot to automatically optimize your prompts using advanced techniques."
+        auth_url="/gepa/copilot_auth"
+        back_label="Back to Optimizer Jobs"
+        error={copilot_check_error}
+      />
+    {:else if task_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -866,38 +893,40 @@
                 <div class="mt-3">
                   <Warning warning_color="error" outline={true}>
                     <div>
-                      <div class="text-error font-medium mb-2">
+                      <div class="text-error font-medium">
                         {run_config_validation_message}
                       </div>
-                      <div class="text-gray-600">
-                        {#if run_config_validation_message?.includes("Tools")}
-                          Kiln Prompt Optimization does not support run
-                          configurations that use tools. Please select a
-                          different run configuration or
-                          <button
-                            type="button"
-                            class="link underline"
-                            on:click={() =>
-                              create_new_run_config_dialog?.show()}
-                          >
-                            create a new one
-                          </button>
-                          without tools configured.
-                        {:else}
-                          Kiln Prompt Optimization only supports OpenRouter,
-                          OpenAI, Gemini, and Anthropic providers. Please select
-                          a different run configuration or
-                          <button
-                            type="button"
-                            class="link underline"
-                            on:click={() =>
-                              create_new_run_config_dialog?.show()}
-                          >
-                            create a new one
-                          </button>
-                          with a supported provider.
-                        {/if}
-                      </div>
+                      {#if run_config_blocking_reason !== "other"}
+                        <div class="mt-2 text-gray-600">
+                          {#if run_config_blocking_reason === "has_tools"}
+                            Kiln Prompt Optimization does not support run
+                            configurations that use tools. Please select a
+                            different run configuration or
+                            <button
+                              type="button"
+                              class="link underline"
+                              on:click={() =>
+                                create_new_run_config_dialog?.show()}
+                            >
+                              create a new one
+                            </button>
+                            without tools configured.
+                          {:else if run_config_blocking_reason === "unsupported_model"}
+                            Kiln Prompt Optimization only supports OpenRouter,
+                            OpenAI, Gemini, and Anthropic providers. Please
+                            select a different run configuration or
+                            <button
+                              type="button"
+                              class="link underline"
+                              on:click={() =>
+                                create_new_run_config_dialog?.show()}
+                            >
+                              create a new one
+                            </button>
+                            with a supported provider.
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                   </Warning>
                 </div>

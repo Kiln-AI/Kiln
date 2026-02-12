@@ -19,12 +19,12 @@
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
   import {
-    checkKilnCopilotAvailable,
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
     type SuggestedEdit,
     type ReviewRow,
   } from "../spec_utils"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import { client } from "$lib/api_client"
   import {
     load_task,

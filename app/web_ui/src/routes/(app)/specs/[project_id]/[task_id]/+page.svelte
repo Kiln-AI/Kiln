@@ -19,8 +19,8 @@
   import {
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
-    checkKilnCopilotAvailable,
   } from "./spec_utils"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import posthog from "posthog-js"
 
