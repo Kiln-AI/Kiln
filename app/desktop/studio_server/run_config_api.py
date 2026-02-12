@@ -281,28 +281,45 @@ def connect_run_config_api(app: FastAPI):
 
         task = Task(
             name=request.task_name,
-            instruction="Complete the task as described.",
+            instruction=f"Call the {tool_name} tool to complete this task.",
             input_json_schema=input_json_schema,
             output_json_schema=output_json_schema,
             parent=project,
         )
-        task.save_to_file()
 
-        run_config_properties = _create_mcp_run_config_properties(
-            tool_id=request.tool_id,
-            tool_name=tool_name,
-            tool_input_schema=tool_input_schema,
-            tool_output_schema=tool_output_schema,
-        )
+        task_run_config: TaskRunConfig | None = None
+        try:
+            # Save task first
+            task.save_to_file()
 
-        task_run_config = TaskRunConfig(
-            parent=task,
-            name=generate_memorable_name(),
-            run_config_properties=run_config_properties,
-        )
-        task_run_config.save_to_file()
+            # Create and save run config
+            run_config_properties = _create_mcp_run_config_properties(
+                tool_id=request.tool_id,
+                tool_name=tool_name,
+                tool_input_schema=tool_input_schema,
+                tool_output_schema=tool_output_schema,
+            )
 
-        task.default_run_config_id = task_run_config.id
-        task.save_to_file()
+            task_run_config = TaskRunConfig(
+                parent=task,
+                name=generate_memorable_name(),
+                run_config_properties=run_config_properties,
+            )
+            task_run_config.save_to_file()
+
+            # Second save: now that run config exists, update task with default run config ID
+            task.default_run_config_id = task_run_config.id
+            task.save_to_file()
+        except Exception:
+            # Rollback: delete child (run_config) first, then parent (task)
+            if (
+                task_run_config
+                and task_run_config.path
+                and task_run_config.path.exists()
+            ):
+                task_run_config.path.unlink(missing_ok=True)
+            if task.path and task.path.exists():
+                task.path.unlink(missing_ok=True)
+            raise
 
         return task

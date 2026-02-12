@@ -121,12 +121,14 @@
     }
   }
 
-  $: input_schema_output = tool?.inputSchema
-    ? JSON.stringify(tool.inputSchema, null, 2)
-    : "Input Format: Plain text"
-  $: output_schema_output = tool?.outputSchema
-    ? JSON.stringify(tool.outputSchema, null, 2)
-    : "Output Format: Plain text"
+  $: input_schema_output =
+    tool?.inputSchema && Object.keys(tool.inputSchema).length > 0
+      ? JSON.stringify(tool.inputSchema, null, 2)
+      : "Input Format: Plain text"
+  $: output_schema_output =
+    tool?.outputSchema && Object.keys(tool.outputSchema).length > 0
+      ? JSON.stringify(tool.outputSchema, null, 2)
+      : "Output Format: Plain text"
 </script>
 
 <div class="max-w-[900px]">

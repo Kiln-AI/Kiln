@@ -351,7 +351,7 @@ def test_create_task_from_tool_plaintext(client, tmp_path):
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "New Task"
-    assert data["instruction"] == "Complete the task as described."
+    assert data["instruction"] == "Call the fake_tool tool to complete this task."
     # Single string input MCP tools map to plaintext tasks.
     assert data["input_json_schema"] is None
     assert data["output_json_schema"] is None

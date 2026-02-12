@@ -1,5 +1,5 @@
 import { writable, get } from "svelte/store"
-import { dev } from "$app/environment"
+import { dev, browser } from "$app/environment"
 import type {
   ModelProviderName,
   RerankerModelDetails,
@@ -59,6 +59,14 @@ export const default_ui_state: UIState = {
 
 // Private, used to store the current project, and task ID
 export const ui_state = localStorageStore("ui_state", default_ui_state)
+
+if (browser) {
+  ui_state.update((state) => ({
+    ...state,
+    pending_tool_id: null,
+    pending_run_config_id: null,
+  }))
+}
 
 // These stores store nice structured data. They are auto-updating based on the ui_state and server calls to load data
 export const projects = writable<AllProjects | null>(null)
