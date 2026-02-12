@@ -1540,7 +1540,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_pro_preview,
         friendly_name="Gemini 3 Pro Preview",
-        featured_rank=5,
+        featured_rank=3,
         editorial_notes="Google's state-of-the-art model. Great for tough problems.",
         providers=[
             KilnModelProvider(
