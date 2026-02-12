@@ -4,10 +4,10 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import { onDestroy, onMount } from "svelte"
+  import { onDestroy } from "svelte"
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
-  import type { components } from "$lib/api_schema"
+  import type { TaskToolCompatibility } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
   import { ui_state } from "$lib/stores"
@@ -25,37 +25,13 @@
   let run_config_name = ""
   let make_default = false
   let submitting = false
-  let saved = false
   let error: KilnError | null = null
-
-  let tool_loading_error: KilnError | null = null
-  type TaskToolCompatibility = components["schemas"]["TaskToolCompatibility"]
 
   let compatibility_tasks: TaskToolCompatibility[] = []
   let compatibility_loading = false
-  let compatibility_error: string | null = null
+  let loaded_tool_id: string | null = null
 
-  onMount(async () => {
-    const cached_tool = get(selected_tool_for_task)
-    if (!tool_id) {
-      tool_loading_error = createKilnError(
-        new Error("No tool selected. Please start from the tool server page."),
-      )
-    } else if (!cached_tool) {
-      tool_loading_error = createKilnError(
-        new Error(
-          "Tool data not available. Please start from the tool server page.",
-        ),
-      )
-    }
-    if (tool_id) {
-      await load_compatibility_tasks()
-    }
-  })
-
-  onDestroy(() => {
-    selected_tool_for_task.set(null)
-  })
+  $: tool_missing = !tool_id || !get(selected_tool_for_task)
 
   $: compatible_task_options = [
     {
@@ -72,14 +48,23 @@
   $: incompatible_count = compatibility_tasks.filter(
     (t) => !t.compatible,
   ).length
+  $: no_compatible_tasks =
+    compatibility_tasks.length > 0 &&
+    incompatible_count === compatibility_tasks.length
+
+  $: if (tool_id && tool_id !== loaded_tool_id && !compatibility_loading) {
+    load_compatibility_tasks()
+  }
+
+  onDestroy(() => {
+    selected_tool_for_task.set(null)
+  })
 
   async function load_compatibility_tasks() {
-    if (!tool_id) {
-      compatibility_error = "Tool not selected."
-      return
-    }
+    if (!tool_id) return
+
     compatibility_loading = true
-    compatibility_error = null
+    error = null
     try {
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/tasks_compatible_with_tool",
@@ -88,33 +73,33 @@
         },
       )
       if (fetch_error) {
-        compatibility_error = "Failed to load tasks: " + fetch_error
+        error = createKilnError({
+          message: "Failed to load tasks",
+          status: 500,
+        })
       } else {
         compatibility_tasks = data
+        loaded_tool_id = tool_id
       }
+    } catch (err) {
+      error = createKilnError(err)
     } finally {
       compatibility_loading = false
     }
   }
 
   async function handle_save() {
-    if (!tool_id) {
-      error = createKilnError({ message: "Tool not selected.", status: 400 })
-      return
-    }
-    if (!selected_task_id) {
+    if (!tool_id || !selected_task_id) {
       error = createKilnError({ message: "Please select a task.", status: 400 })
       return
     }
-    const task_id = selected_task_id
 
     submitting = true
-    saved = false
     error = null
     try {
       const config = await save_new_mcp_run_config(
         project_id,
-        task_id,
+        selected_task_id,
         tool_id,
         run_config_name || undefined,
       )
@@ -122,11 +107,15 @@
         if (!config.id) {
           throw new Error("Run config ID missing after save.")
         }
-        await update_task_default_run_config(project_id, task_id, config.id)
+        await update_task_default_run_config(
+          project_id,
+          selected_task_id,
+          config.id,
+        )
       }
       ui_state.set({
         ...get(ui_state),
-        current_task_id: task_id,
+        current_task_id: selected_task_id,
         current_project_id: project_id,
         pending_run_config_id: config.id,
       })
@@ -147,10 +136,9 @@
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },
     ]}
   >
-    {#if tool_loading_error}
+    {#if tool_missing}
       <div class="text-error">
-        {tool_loading_error.getMessage() ||
-          "Tool data not available. Please start from the tool server page."}
+        Tool data not available. Please start from the tool server page.
       </div>
     {:else}
       <div class="flex flex-col gap-4 mb-6">
@@ -163,48 +151,64 @@
           on:submit={handle_save}
           bind:error
           bind:submitting
-          bind:saved
+          submit_disabled={submitting || no_compatible_tasks}
         >
           <div class="flex flex-col gap-4">
             {#if incompatible_count > 0}
               <Warning
-                warning_message="{incompatible_count} task{incompatible_count ===
-                1
-                  ? ''
-                  : 's'} not available — schema doesn't match this tool. Create a new task, update the MCP tool schema, or use the agent option instead."
+                warning_message={no_compatible_tasks
+                  ? `All ${incompatible_count} task${
+                      incompatible_count === 1 ? "" : "s"
+                    } are not compatible with this tool. The task's input and output schema must match. Create a new task with this tool instead.`
+                  : `${incompatible_count} task${
+                      incompatible_count === 1 ? "" : "s"
+                    } are not compatible with this tool. The task's input and output schema must match.`}
                 warning_color="warning"
                 large_icon={true}
                 outline={true}
               />
+              {#if tool_id}
+                <a
+                  class="btn btn-outline btn-sm w-full"
+                  href={`/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+                    tool_id,
+                  )}`}
+                >
+                  Create a new task from this tool
+                </a>
+              {/if}
             {/if}
-            <FormElement
-              inputType="fancy_select"
-              label="Select a Task"
-              id="task_id"
-              bind:value={selected_task_id}
-              fancy_select_options={compatible_task_options}
-              disabled={compatibility_loading}
-              empty_state_message={compatibility_loading
-                ? "Loading tasks..."
-                : "No compatible tasks found"}
-            />
-            {#if compatibility_error}
-              <div class="text-error text-sm">{compatibility_error}</div>
-            {/if}
-            <FormElement
-              inputType="input"
-              label="Run Config Name"
-              id="run_config_name"
-              bind:value={run_config_name}
-              optional={true}
-              placeholder="Auto-generated if empty"
-            />
-            <FormElement
-              inputType="checkbox"
-              label="Make Default"
-              id="make_default"
-              bind:value={make_default}
-            />
+            <div
+              class="flex flex-col gap-6 {no_compatible_tasks
+                ? 'opacity-60 pointer-events-none'
+                : ''}"
+            >
+              <FormElement
+                inputType="fancy_select"
+                label="Select a Task"
+                id="task_id"
+                bind:value={selected_task_id}
+                fancy_select_options={compatible_task_options}
+                disabled={compatibility_loading || no_compatible_tasks}
+                empty_state_message={compatibility_loading
+                  ? "Loading tasks..."
+                  : "No compatible tasks found"}
+              />
+              <FormElement
+                inputType="input"
+                label="Run Config Name"
+                id="run_config_name"
+                bind:value={run_config_name}
+                optional={true}
+                placeholder="Auto-generated if empty"
+              />
+              <FormElement
+                inputType="checkbox"
+                label="Make Default"
+                id="make_default"
+                bind:value={make_default}
+              />
+            </div>
           </div>
         </FormContainer>
       </div>

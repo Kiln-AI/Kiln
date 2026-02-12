@@ -106,6 +106,8 @@ export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
 export type KilnTaskServerProperties =
   components["schemas"]["KilnTaskServerProperties"]
+export type TaskToolCompatibility =
+  components["schemas"]["TaskToolCompatibility"]
 
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
