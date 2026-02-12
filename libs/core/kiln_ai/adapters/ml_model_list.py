@@ -204,6 +204,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5 = "glm_5"
     glm_4_7 = "glm_4_7"
     glm_4_7_flash = "glm_4_7_flash"
     glm_4_6 = "glm_4_6"
@@ -5274,6 +5275,27 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # GLM 5
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5,
+        friendly_name="GLM 5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/zai-org/GLM-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
