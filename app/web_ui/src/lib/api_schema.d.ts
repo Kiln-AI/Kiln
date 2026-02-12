@@ -1686,7 +1686,8 @@ export interface paths {
         delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Eval */
+        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -2153,6 +2154,152 @@ export interface paths {
          *         tool_id: The tool ID to get the definition for
          */
         get: operations["get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Run Config
+         * @description Check if a run config is valid for a GEPA job by validating the model is supported.
+         */
+        get: operations["check_run_config_api_projects__project_id__tasks__task_id__gepa_jobs_check_run_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Eval
+         * @description Check if an eval is valid for a GEPA job.
+         *     Validates that the eval has a default config and that the model is supported.
+         */
+        get: operations["check_eval_api_projects__project_id__tasks__task_id__gepa_jobs_check_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Gepa Job
+         * @description Start a GEPA job by zipping the project and sending it to the Kiln server.
+         *     Creates and saves a GepaJob datamodel to track the job.
+         */
+        post: operations["start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Gepa Jobs
+         * @description List all GEPA jobs for a task.
+         *     Optionally update the status of non-final jobs from the remote server.
+         */
+        get: operations["list_gepa_jobs_api_projects__project_id__tasks__task_id__gepa_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gepa Job
+         * @description Get a specific GEPA job and update its status from the remote server.
+         *     If the job has succeeded, create a prompt if one doesn't exist yet.
+         *     If the job is already in a settled state (succeeded, failed, cancelled),
+         *     skip the status update and return the cached model.
+         */
+        get: operations["get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gepa_jobs/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gepa Job Status
+         * @description Get the status of a GEPA job.
+         */
+        get: operations["get_gepa_job_status_api_gepa_jobs__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gepa_jobs/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Gepa Job Result
+         * @description Get the result of a GEPA job (includes status and output if completed).
+         */
+        get: operations["get_gepa_job_result_api_gepa_jobs__job_id__result_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2679,6 +2826,26 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
+        /**
+         * CheckEvalResponse
+         * @description Response model for check_eval endpoint.
+         */
+        CheckEvalResponse: {
+            /** Has Default Config */
+            has_default_config: boolean;
+            /** Has Train Set */
+            has_train_set: boolean;
+            /** Model Is Supported */
+            model_is_supported: boolean;
+        };
+        /**
+         * CheckRunConfigResponse
+         * @description Response model for check_run_config endpoint.
+         */
+        CheckRunConfigResponse: {
+            /** Is Supported */
+            is_supported: boolean;
+        };
         /** ChunkerConfig */
         ChunkerConfig: {
             /**
@@ -4486,6 +4653,76 @@ export interface components {
                 [key: string]: components["schemas"]["SampleApi"][];
             };
         };
+        /**
+         * GepaJob
+         * @description The Kiln GEPA job datamodel.
+         */
+        GepaJob: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the GEPA job.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the GEPA job for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Job Id
+             * @description The ID of the job on the remote Kiln server.
+             */
+            job_id: string;
+            /**
+             * Token Budget
+             * @description The token budget for this job: 'light', 'medium', or 'heavy'.
+             */
+            token_budget: string;
+            /**
+             * Target Run Config Id
+             * @description The ID of the run configuration used for this job.
+             */
+            target_run_config_id: string;
+            /**
+             * Latest Status
+             * @description The latest known status of this GEPA job (pending, running, succeeded, failed, cancelled). Not updated in real time.
+             * @default pending
+             */
+            latest_status: string;
+            /**
+             * Optimized Prompt
+             * @description The optimized prompt result when the job succeeds.
+             */
+            optimized_prompt?: string | null;
+            /**
+             * Created Prompt Id
+             * @description The ID of the prompt created from this job's result, if any.
+             */
+            created_prompt_id?: string | null;
+            /**
+             * Eval Ids
+             * @description List of eval IDs used for this job.
+             */
+            eval_ids?: string[];
+            /** Model Type */
+            readonly model_type: string;
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -4557,6 +4794,11 @@ export interface components {
             /** Jailbroken Examples */
             jailbroken_examples: string;
         };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -5196,6 +5438,23 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /**
+         * PublicGEPAJobResultResponse
+         * @description Public response model for GEPA job result containing only the optimized prompt.
+         */
+        PublicGEPAJobResultResponse: {
+            /** Optimized Prompt */
+            optimized_prompt: string;
+        };
+        /**
+         * PublicGEPAJobStatusResponse
+         * @description Public response model for GEPA job status.
+         */
+        PublicGEPAJobStatusResponse: {
+            /** Job Id */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
         };
         /** Question */
         Question: {
@@ -5976,6 +6235,18 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** StartGepaJobRequest */
+        StartGepaJobRequest: {
+            /**
+             * Token Budget
+             * @enum {string}
+             */
+            token_budget: "light" | "medium" | "heavy";
+            /** Target Run Config Id */
+            target_run_config_id: string;
+            /** Eval Ids */
+            eval_ids: string[];
+        };
         /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
@@ -6645,6 +6916,15 @@ export interface components {
             core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
+        };
+        /** UpdateEvalRequest */
+        UpdateEvalRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Train Set Filter Id */
+            train_set_filter_id?: string | null;
         };
         /**
          * UpdateFinetuneRequest
@@ -10523,6 +10803,43 @@ export interface operations {
             };
         };
     };
+    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_evals_api_projects__project_id__tasks__task_id__evals_get: {
         parameters: {
             query?: never;
@@ -11470,6 +11787,239 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_run_config_api_projects__project_id__tasks__task_id__gepa_jobs_check_run_config_get: {
+        parameters: {
+            query: {
+                run_config_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckRunConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_eval_api_projects__project_id__tasks__task_id__gepa_jobs_check_eval_get: {
+        parameters: {
+            query: {
+                eval_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckEvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartGepaJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GepaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_gepa_jobs_api_projects__project_id__tasks__task_id__gepa_jobs_get: {
+        parameters: {
+            query?: {
+                update_status?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GepaJob"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                gepa_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GepaJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gepa_job_status_api_gepa_jobs__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicGEPAJobStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_gepa_job_result_api_gepa_jobs__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicGEPAJobResultResponse"];
                 };
             };
             /** @description Validation Error */

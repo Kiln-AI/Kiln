@@ -11,6 +11,7 @@
   export let new_run_config_created:
     | ((run_config: TaskRunConfig) => void)
     | null = null
+  export let hide_tools_selector: boolean = false
 
   let submitting: boolean
   let save_config_error: KilnError | null = null
@@ -70,6 +71,7 @@
           tools_selector_settings={{
             hide_create_kiln_task_tool_button: true,
           }}
+          {hide_tools_selector}
         />
       {/if}
 

@@ -31,6 +31,7 @@
     Run,
     FineTune,
     Models,
+    Optimizer,
     None,
   }
 
@@ -265,6 +266,16 @@
           </div>
 
           Fine Tune</a
+        >
+      </li>
+
+      <li class="menu-md">
+        <a
+          href={`/gepa/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+          class={section == Section.Optimizer ? "active" : ""}
+        >
+          <div class="h-6 w-6 mr-2"></div>
+          Kiln Optimizer</a
         >
       </li>
 

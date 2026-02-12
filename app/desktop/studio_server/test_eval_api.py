@@ -1260,6 +1260,163 @@ async def test_create_eval_then_delete_on_spec_failure(
     assert len(mock_task.evals()) == 0
 
 
+def test_update_eval_name_and_description(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that update_eval successfully updates name and description."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "name": "Updated Eval Name",
+            "description": "Updated description",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+    assert updated_eval["name"] == "Updated Eval Name"
+    assert updated_eval["description"] == "Updated description"
+
+    # Verify the eval was saved
+    eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.name == "Updated Eval Name"
+    assert eval_from_disk.description == "Updated description"
+
+
+def test_update_eval_train_set_filter_id_when_none(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that update_eval successfully sets train_set_filter_id when it's None."""
+    # Ensure train_set_filter_id is None
+    mock_eval.train_set_filter_id = None
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::train_my_eval",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+    assert updated_eval["train_set_filter_id"] == "tag::train_my_eval"
+
+    # Verify the eval was saved
+    eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.train_set_filter_id == "tag::train_my_eval"
+
+
+def test_update_eval_train_set_filter_id_when_already_set(
+    client, mock_task_from_id, mock_eval
+):
+    """Test that update_eval raises error when trying to change existing train_set_filter_id."""
+    # Set an existing train_set_filter_id
+    mock_eval.train_set_filter_id = "tag::existing_train_set"
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::new_train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 400
+    assert (
+        "Train set filter is already set and cannot be changed"
+        in response.json()["detail"]
+    )
+
+
+def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_task):
+    """Test that update_eval only updates provided fields."""
+    original_name = mock_eval.name
+    original_description = mock_eval.description
+    mock_eval.train_set_filter_id = None
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # Only update train_set_filter_id
+        update_request = {
+            "train_set_filter_id": "tag::train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+
+    # Name and description should remain unchanged
+    assert updated_eval["name"] == original_name
+    assert updated_eval["description"] == original_description
+    # train_set_filter_id should be updated
+    assert updated_eval["train_set_filter_id"] == "tag::train_set"
+
+
+def test_update_eval_not_found(client):
+    """Test that update_eval returns 404 when eval is not found."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.side_effect = HTTPException(
+            status_code=404, detail="Eval not found. ID: nonexistent_eval"
+        )
+
+        update_request = {
+            "name": "Updated Name",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/nonexistent_eval",
+            json=update_request,
+        )
+
+    assert response.status_code == 404
+    assert "Eval not found" in response.json()["detail"]
+
+
+def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_task):
+    """Test that update_eval succeeds with empty request (no fields to update)."""
+    original_name = mock_eval.name
+    original_description = mock_eval.description
+    original_train_set_filter_id = mock_eval.train_set_filter_id
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # Empty update request
+        update_request = {}
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+
+    # All fields should remain unchanged
+    assert updated_eval["name"] == original_name
+    assert updated_eval["description"] == original_description
+    assert updated_eval["train_set_filter_id"] == original_train_set_filter_id
+
+
 def test_runs_in_filter():
     # Create a mock task with runs
     mock_task = Mock(spec=Task)

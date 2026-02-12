@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from io import BytesIO
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -23,12 +23,14 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
         token_budget (BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget): The token budget to use
         task_id (str): The task ID
         target_run_config_id (str): The target run config ID
+        eval_ids (list[str]): The list of eval IDs to use for optimization
         project_zip (File): The project zip file
     """
 
     token_budget: BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget
     task_id: str
     target_run_config_id: str
+    eval_ids: list[str]
     project_zip: File
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -39,6 +41,8 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
 
         target_run_config_id = self.target_run_config_id
 
+        eval_ids = self.eval_ids
+
         project_zip = self.project_zip.to_tuple()
 
         field_dict: dict[str, Any] = {}
@@ -48,6 +52,7 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
                 "token_budget": token_budget,
                 "task_id": task_id,
                 "target_run_config_id": target_run_config_id,
+                "eval_ids": eval_ids,
                 "project_zip": project_zip,
             }
         )
@@ -62,6 +67,9 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
         files.append(("task_id", (None, str(self.task_id).encode(), "text/plain")))
 
         files.append(("target_run_config_id", (None, str(self.target_run_config_id).encode(), "text/plain")))
+
+        for eval_ids_item_element in self.eval_ids:
+            files.append(("eval_ids", (None, str(eval_ids_item_element).encode(), "text/plain")))
 
         files.append(("project_zip", self.project_zip.to_tuple()))
 
@@ -79,12 +87,15 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
 
         target_run_config_id = d.pop("target_run_config_id")
 
+        eval_ids = cast(list[str], d.pop("eval_ids"))
+
         project_zip = File(payload=BytesIO(d.pop("project_zip")))
 
         body_start_gepa_job_v1_jobs_gepa_job_start_post = cls(
             token_budget=token_budget,
             task_id=task_id,
             target_run_config_id=target_run_config_id,
+            eval_ids=eval_ids,
             project_zip=project_zip,
         )
 

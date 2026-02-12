@@ -401,3 +401,57 @@ def test_task_specs_readonly(tmp_path):
     specs_default = task.specs(readonly=False)
     assert len(specs_default) == 1
     assert specs_default[0].name == "Readonly Spec"
+
+
+def test_task_gepa_jobs_relationship(tmp_path):
+    """Test that gepa_jobs can be created, saved, and retrieved through the task parent."""
+    from kiln_ai.datamodel import GepaJob
+
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Test GEPA Job",
+        job_id="remote-job-123",
+        token_budget="medium",
+        target_run_config_id="config-123",
+        latest_status="pending",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    gepa_jobs = task.gepa_jobs()
+    assert len(gepa_jobs) == 1
+    assert gepa_jobs[0].name == "Test GEPA Job"
+    assert gepa_jobs[0].job_id == "remote-job-123"
+    assert gepa_jobs[0].token_budget == "medium"
+
+
+def test_task_gepa_jobs_readonly(tmp_path):
+    """Test that gepa_jobs can be retrieved with readonly parameter."""
+    from kiln_ai.datamodel import GepaJob
+
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    gepa_job = GepaJob(
+        name="Readonly GEPA Job",
+        job_id="remote-job-456",
+        token_budget="heavy",
+        target_run_config_id="config-456",
+        latest_status="succeeded",
+        parent=task,
+    )
+    gepa_job.save_to_file()
+
+    gepa_jobs_readonly = task.gepa_jobs(readonly=True)
+    assert len(gepa_jobs_readonly) == 1
+    assert gepa_jobs_readonly[0].name == "Readonly GEPA Job"
+
+    gepa_jobs_default = task.gepa_jobs(readonly=False)
+    assert len(gepa_jobs_default) == 1
+    assert gepa_jobs_default[0].name == "Readonly GEPA Job"

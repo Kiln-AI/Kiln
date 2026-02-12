@@ -18,6 +18,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.dataset_split import DatasetSplit
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.finetune import Finetune
+from kiln_ai.datamodel.gepa_job import GepaJob
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
     JsonSchema,
@@ -107,6 +108,7 @@ class Task(
         "runs": TaskRun,
         "dataset_splits": DatasetSplit,
         "finetunes": Finetune,
+        "gepa_jobs": GepaJob,
         "prompts": Prompt,
         "evals": Eval,
         "specs": Spec,
@@ -176,6 +178,9 @@ class Task(
 
     def specs(self, readonly: bool = False) -> list[Spec]:
         return super().specs(readonly=readonly)  # type: ignore
+
+    def gepa_jobs(self, readonly: bool = False) -> list[GepaJob]:
+        return super().gepa_jobs(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:
