@@ -1,10 +1,11 @@
 import json
+from typing import Any, Dict
 
 from app.desktop.studio_server.tool_api import tool_server_from_id
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-from kiln_ai.datamodel.json_schema import schemas_compatible, single_string_field_name
+from kiln_ai.datamodel.json_schema import single_string_field_name
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import MCPToolReference, RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
@@ -70,6 +71,54 @@ async def _load_mcp_output_schema(tool: MCPServerTool) -> dict | None:
         raise ValueError("MCP tool definition has an invalid output schema.")
 
 
+def _schemas_compatible(task_schema: Dict, tool_schema: Dict) -> bool:
+    """
+    Check if a task schema is compatible with a tool schema.
+
+    Compatible means: task provides all fields the tool requires, task doesn't
+    provide fields the tool doesn't accept, and field types match (ignoring
+    additionalProperties differences).
+    """
+    if task_schema.get("type") != tool_schema.get("type"):
+        return False
+
+    # For non-object types, compare after removing additionalProperties
+    if task_schema.get("type") != "object":
+        return _normalize_schema(task_schema) == _normalize_schema(tool_schema)
+
+    # Get properties from both schemas
+    task_props = task_schema.get("properties", {})
+    tool_props = tool_schema.get("properties", {})
+    if not isinstance(task_props, dict) or not isinstance(tool_props, dict):
+        return False
+
+    # Task must provide all fields required by the tool
+    tool_required = set(tool_schema.get("required", []) or [])
+    if not tool_required.issubset(set(task_props.keys())):
+        return False
+
+    # Task can't provide fields the tool doesn't accept
+    if not set(task_props.keys()).issubset(set(tool_props.keys())):
+        return False
+
+    # Each field's schema must match (ignoring additionalProperties)
+    for field_name, task_field_schema in task_props.items():
+        tool_field_schema = tool_props.get(field_name)
+        if _normalize_schema(task_field_schema) != _normalize_schema(tool_field_schema):
+            return False
+
+    return True
+
+
+def _normalize_schema(schema: Any) -> Any:
+    """Remove additionalProperties from schema to allow compatibility check."""
+    if not isinstance(schema, dict):
+        return schema
+    normalized = dict(schema)
+    normalized.pop("additionalProperties", None)
+    return normalized
+
+
 def _validate_mcp_input_schema(task: Task, tool_input_schema: dict) -> None:
     """Validate that the task input schema matches the MCP tool input schema"""
     if task.input_json_schema is None:
@@ -83,7 +132,7 @@ def _validate_mcp_input_schema(task: Task, tool_input_schema: dict) -> None:
     task_schema = task.input_schema()
     if task_schema is None:
         raise ValueError("Task input schema must be set for structured input tasks.")
-    if not schemas_compatible(task_schema, tool_input_schema):
+    if not _schemas_compatible(task_schema, tool_input_schema):
         raise ValueError("Task input schema must be compatible with the MCP tool.")
 
 
@@ -95,7 +144,7 @@ def _validate_mcp_output_schema(task: Task, tool_output_schema: dict | None) -> 
     task_output_schema = task.output_schema()
     if task_output_schema is None:
         raise ValueError("Task output schema must be set for structured output tasks.")
-    if not schemas_compatible(task_output_schema, tool_output_schema):
+    if not _schemas_compatible(task_output_schema, tool_output_schema):
         raise ValueError("Task output schema must be compatible with the MCP tool.")
 
 

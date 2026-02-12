@@ -6,6 +6,8 @@ from app.desktop.studio_server.run_config_api import (
     _load_mcp_input_schema,
     _load_mcp_output_schema,
     _load_mcp_tool,
+    _normalize_schema,
+    _schemas_compatible,
     _validate_mcp_input_schema,
     _validate_mcp_output_schema,
     connect_run_config_api,
@@ -624,3 +626,121 @@ def test_tasks_compatible_with_tool_invalid_tool(client, project_and_tasks):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Tool selected is not an MCP tool."
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        # Removes additionalProperties from dict
+        (
+            {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+        ),
+        # Returns dict unchanged if no additionalProperties
+        (
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+        ),
+        # Returns non-dict types unchanged
+        ("string", "string"),
+        # Only removes top-level additionalProperties, not nested
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "nested": {"type": "object", "additionalProperties": False}
+                },
+                "additionalProperties": True,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "nested": {"type": "object", "additionalProperties": False}
+                },
+            },
+        ),
+    ],
+)
+def test_normalize_schema(schema, expected):
+    result = _normalize_schema(schema)
+    assert result == expected
+    # Ensure it returns a copy, not modifying the original
+    if isinstance(schema, dict):
+        assert result is not schema
+
+
+@pytest.mark.parametrize(
+    "task_schema, tool_schema, description",
+    [
+        (
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            "identical_schemas",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": True,
+            },
+            "different_additionalProperties",
+        ),
+        (
+            {"type": "string", "minLength": 1},
+            {"type": "string", "minLength": 1},
+            "non_object_matching",
+        ),
+    ],
+)
+def test_schemas_compatible_true(task_schema, tool_schema, description):
+    assert _schemas_compatible(task_schema, tool_schema)
+
+
+@pytest.mark.parametrize(
+    "task_schema, tool_schema, description",
+    [
+        (
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+            {"type": "string"},
+            "different_types",
+        ),
+        (
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "age": {"type": "number"}},
+                "required": ["name", "age"],
+            },
+            "missing_required_field",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "extra": {"type": "string"}},
+            },
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            "unaccepted_field",
+        ),
+        (
+            {"type": "object", "properties": {"age": {"type": "string"}}},
+            {"type": "object", "properties": {"age": {"type": "number"}}},
+            "field_type_mismatch",
+        ),
+        (
+            {"type": "number", "minimum": 0},
+            {"type": "number", "minimum": 10},
+            "non_object_different_constraints",
+        ),
+    ],
+)
+def test_schemas_compatible_false(task_schema, tool_schema, description):
+    assert not _schemas_compatible(task_schema, tool_schema)
