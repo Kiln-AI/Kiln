@@ -47,66 +47,96 @@
   // Load tools if project_id or task_id changes
   $: load_tools(project_id, task_id)
 
-  async function load_tools(project_id: string, task_id: string | null) {
-    // Prevent concurrent executions - if already loading, return
-    if (loading_tools) {
-      return
+  async function load_tools_for_task(task_id: string): Promise<string[]> {
+    await tools_store_initialized
+    const existing_tools =
+      $tools_store.selected_tool_ids_by_task_id[task_id] || []
+
+    const combined_tools = [
+      ...(tools_selector_settings.mandatory_tools || []),
+      ...existing_tools,
+    ]
+    return [...new Set(combined_tools)]
+  }
+
+  function is_tool_available(tool_id: string, project_id: string): boolean {
+    const available = get(available_tools)[project_id]
+    if (!available) return false
+
+    const available_tool_ids = new Set(
+      available.flatMap((tool_set) => tool_set.tools.map((tool) => tool.id)),
+    )
+    return available_tool_ids.has(tool_id)
+  }
+
+  function add_pending_tool_to_list(
+    current_tools: string[],
+    pending_tool_id: string,
+    task_id: string,
+  ): string[] {
+    const updated_tools = [...current_tools, pending_tool_id]
+
+    // Immediately save to tools_store to prevent overwrite on next load
+    tools_store.update((store_state) => ({
+      ...store_state,
+      selected_tool_ids_by_task_id: {
+        ...store_state.selected_tool_ids_by_task_id,
+        [task_id]: updated_tools,
+      },
+    }))
+
+    return updated_tools
+  }
+
+  function consume_pending_tool(
+    current_tools: string[],
+    project_id: string,
+    task_id: string | null,
+  ): string[] {
+    const state = get(pending_state)
+    const pending_tool_id = state.pending_tool_id
+
+    // Always clear pending state to prevent reuse
+    pending_state.set({ ...state, pending_tool_id: null })
+
+    // Nothing to add - no pending tool or already in list
+    if (!pending_tool_id || current_tools.includes(pending_tool_id)) {
+      return current_tools
     }
+
+    // Tool not available (e.g., server offline) - skip silently
+    if (!is_tool_available(pending_tool_id, project_id)) {
+      return current_tools
+    }
+
+    // No task - just add to list without persisting
+    if (!task_id) {
+      return [...current_tools, pending_tool_id]
+    }
+
+    // Has task - add and persist to tools_store
+    return add_pending_tool_to_list(current_tools, pending_tool_id, task_id)
+  }
+
+  async function load_tools(project_id: string, task_id: string | null) {
+    if (loading_tools) return
     loading_tools = true
 
     try {
-      // Load available tools and wait for them to be ready
       await load_available_tools(project_id)
 
       if (!task_id) {
+        // No task - use only mandatory tools
         tools = tools_selector_settings.mandatory_tools || []
         tools_store_loaded_task_id = null
       } else if (task_id !== tools_store_loaded_task_id) {
-        // load selected tools for this task from tools_store
-        await tools_store_initialized
-        const existing_tools =
-          $tools_store.selected_tool_ids_by_task_id[task_id] || []
-
-        // Combine mandatory tools with existing selected tools
-        const combined_tools = [
-          ...(tools_selector_settings.mandatory_tools || []),
-          ...existing_tools,
-        ]
-        // Remove duplicates while preserving order (mandatory tools first)
-        tools = [...new Set(combined_tools)]
-
+        // Task changed - load saved tools for this task
+        tools = await load_tools_for_task(task_id)
         tools_store_loaded_task_id = task_id
       }
 
-      // Only add pending_tool_id if it exists in available_tools
-      const state = get(pending_state)
-      if (state.pending_tool_id && !tools.includes(state.pending_tool_id)) {
-        // Check if the tool is actually available before adding it
-        const available = get(available_tools)[project_id]
-        if (available) {
-          const available_tool_ids = new Set(
-            available.flatMap((tool_set) =>
-              tool_set.tools.map((tool) => tool.id),
-            ),
-          )
-          if (available_tool_ids.has(state.pending_tool_id)) {
-            tools = [...tools, state.pending_tool_id]
-
-            // Immediately save to tools_store to prevent it from being overwritten on next load_tools call
-            if (task_id) {
-              tools_store.update((store_state) => ({
-                ...store_state,
-                selected_tool_ids_by_task_id: {
-                  ...store_state.selected_tool_ids_by_task_id,
-                  [task_id]: tools,
-                },
-              }))
-            }
-          }
-        }
-        // Clear pending_tool_id regardless of whether we added it or not
-        pending_state.set({ ...state, pending_tool_id: null })
-      }
+      // Add any pending tool from navigation flow
+      tools = consume_pending_tool(tools, project_id, task_id)
     } finally {
       loading_tools = false
     }
