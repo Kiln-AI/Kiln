@@ -37,7 +37,7 @@ from app.desktop.studio_server.gepa_job_api import (
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import GepaJob, Project, Task
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 
@@ -2128,12 +2128,14 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
         name="Original Config",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.default,
         ),
     )
     target_run_config.save_to_file()
+
+    assert target_run_config.id is not None
 
     gepa_job = GepaJob(
         name="Test Job",
@@ -2184,19 +2186,34 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
         assert result["latest_status"] == "succeeded"
         assert result["optimized_prompt"] == optimized_prompt
 
-        # Check that a prompt was created
+        # Check that exactly 1 prompt was created
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
+        assert prompts[0].name == f"Kiln Optimized - {gepa_job.name}"
+        assert prompts[0].description is not None
+        assert (
+            f"Optimized for run config {target_run_config.id}" in prompts[0].description
+        )
 
-        # Check that a run config was created
+        # Check that exactly 1 new run config was created (2 total including target)
         run_configs = task.run_configs()
         assert len(run_configs) == 2
         new_run_config = [rc for rc in run_configs if rc.id != target_run_config.id][0]
-        assert "optimized-" in new_run_config.name
+
+        # Verify name follows new pattern: "{target_run_config.name} {timestamp}"
         assert new_run_config.name.startswith("Original Config")
-        assert new_run_config.prompt is not None
-        assert new_run_config.prompt.prompt == optimized_prompt
+        assert new_run_config.name != "Original Config"  # Should have timestamp suffix
+
+        # Verify the description mentions GEPA job
+        assert new_run_config.description is not None
+        assert "Optimized run config from GEPA job" in new_run_config.description
+
+        # Verify prompt is referenced by ID, not frozen
+        assert new_run_config.prompt is None
+        assert new_run_config.run_config_properties.prompt_id == f"id::{prompts[0].id}"
+
+        # Verify other properties match target run config
         assert (
             new_run_config.run_config_properties.model_name
             == target_run_config.run_config_properties.model_name
@@ -2228,12 +2245,14 @@ def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
         name="Original Config",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.default,
         ),
     )
     target_run_config.save_to_file()
+
+    assert target_run_config.id is not None
 
     gepa_job = GepaJob(
         name="Test Job",

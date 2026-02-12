@@ -1,8 +1,8 @@
 import asyncio
 import io
 import logging
+import time
 import zipfile
-from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
 
@@ -41,7 +41,6 @@ from app.desktop.studio_server.eval_api import (
 )
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import GepaJob, Project, Prompt
-from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
@@ -129,7 +128,7 @@ def create_prompt_from_optimization(
     """
     prompt = Prompt(
         name=f"Kiln Optimized - {gepa_job.name}",
-        description=f"Prompt optimized by Kiln Prompt Optimizer {gepa_job.id}",
+        description=f"Optimized for run config {gepa_job.target_run_config_id} in job {gepa_job.job_id}",
         generator_id="kiln_prompt_optimizer",
         prompt=optimized_prompt_text,
         parent=task,
@@ -141,7 +140,7 @@ def create_prompt_from_optimization(
 
 
 def create_run_config_from_optimization(
-    gepa_job: GepaJob, task, optimized_prompt_text: str
+    gepa_job: GepaJob, task, prompt: Prompt
 ) -> TaskRunConfig | None:
     """
     Create a run config from an optimization job result. Does not guarantee idempotence so
@@ -157,35 +156,29 @@ def create_run_config_from_optimization(
                 status_code=500, detail="Task has no parent project or task"
             )
 
+        if not prompt.id:
+            raise HTTPException(status_code=500, detail="Prompt has no ID")
+
         # get the original target run config that we optimized for in the job
         target_run_config = task_run_config_from_id(
             parent_project.id, task.id, gepa_job.target_run_config_id
         )
 
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        run_config_name = f"{target_run_config.name} optimized-{date_str}"
-
-        frozen_prompt = BasePrompt(
-            name=f"Kiln Optimized - {run_config_name}",
-            description=f"Kiln Optimized prompt for {run_config_name}",
-            generator_id="kiln_prompt_optimizer",
-            prompt=optimized_prompt_text,
-        )
+        timestamp = int(time.time())
+        run_config_name = f"{target_run_config.name} {timestamp}"
 
         # create new run config with the same properties but new prompt
         new_run_config_properties = target_run_config.run_config_properties.model_copy()
+
+        # point the run config properties to the new prompt - need id:: prefix because
+        # we point to a standalone prompt, not a frozen prompt
+        new_run_config_properties.prompt_id = f"id::{prompt.id}"
 
         new_run_config = TaskRunConfig(
             parent=task,
             name=run_config_name,
             description=f"Optimized run config from GEPA job {gepa_job.name}",
             run_config_properties=new_run_config_properties,
-            prompt=frozen_prompt,
-        )
-
-        # point the run config properties to the frozen prompt
-        new_run_config.run_config_properties.prompt_id = (
-            f"task_run_config::{parent_project.id}::{task.id}::{new_run_config.id}"
         )
 
         new_run_config.save_to_file()
@@ -249,11 +242,11 @@ async def _create_artifacts_for_succeeded_job(
         prompt = create_prompt_from_optimization(gepa_job, task, optimized_prompt_text)
         gepa_job.created_prompt_id = f"id::{prompt.id}"
 
-        run_config = create_run_config_from_optimization(
-            gepa_job, task, optimized_prompt_text
-        )
+        run_config = create_run_config_from_optimization(gepa_job, task, prompt)
         if run_config:
             gepa_job.created_run_config_id = run_config.id
+        else:
+            logger.error(f"Error creating run config from GEPA job: {gepa_job.job_id}")
 
 
 async def update_gepa_job_and_create_artifacts(
