@@ -1,11 +1,7 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
-  import {
-    available_tools,
-    load_available_tools,
-    pending_state,
-  } from "$lib/stores"
+  import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
   import { get } from "svelte/store"
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
@@ -19,9 +15,11 @@
   export let settings: Partial<ToolsSelectorSettings> = {}
   export let tools: string[] = []
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
+  export let pending_tool_id: string | null = null
 
   let tools_store_loaded_task_id: string | null = null
   let loading_tools = false
+  let consumed_pending_tool_id: string | null = null
 
   let default_tools_selector_settings: ToolsSelectorSettings = {
     mandatory_tools: [],
@@ -93,16 +91,16 @@
     project_id: string,
     task_id: string | null,
   ): string[] {
-    const state = get(pending_state)
-    const pending_tool_id = state.pending_tool_id
-
-    // Always clear pending state to prevent reuse
-    pending_state.set({ ...state, pending_tool_id: null })
-
     // Nothing to add - no pending tool or already in list
-    if (!pending_tool_id || current_tools.includes(pending_tool_id)) {
+    if (
+      !pending_tool_id ||
+      pending_tool_id === consumed_pending_tool_id ||
+      current_tools.includes(pending_tool_id)
+    ) {
       return current_tools
     }
+
+    consumed_pending_tool_id = pending_tool_id
 
     // Tool not available (e.g., server offline) - skip silently
     if (!is_tool_available(pending_tool_id, project_id)) {

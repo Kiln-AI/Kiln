@@ -18,8 +18,6 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
   import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
-  import { pending_state } from "$lib/stores"
-  import { get } from "svelte/store"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -101,11 +99,7 @@
     const tool_id = build_tool_id(selected_tool_name)
     set_tool_store()
     dialog.close()
-    pending_state.set({
-      ...get(pending_state),
-      pending_tool_id: tool_id,
-    })
-    goto("/run")
+    goto(`/run?tool_id=${encodeURIComponent(tool_id)}`)
   }
 
   function handleDirectMcp() {

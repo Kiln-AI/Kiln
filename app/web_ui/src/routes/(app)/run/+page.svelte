@@ -13,6 +13,7 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { is_mcp_run_config_properties } from "$lib/utils/run_config_kind"
+  import { page } from "$app/stores"
 
   let run_error: KilnError | null = null
   let submitting = false
@@ -36,6 +37,8 @@
   $: project_id = $current_project?.id ?? ""
   $: task_id = $current_task?.id ?? ""
   $: input_schema = $current_task?.input_json_schema
+  $: pending_tool_id = $page.url.searchParams.get("tool_id")
+  $: pending_run_config_id = $page.url.searchParams.get("run_config_id")
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
 
@@ -215,6 +218,8 @@
             bind:save_config_error
             bind:set_default_error
             bind:selected_model_specific_run_config_id
+            {pending_tool_id}
+            {pending_run_config_id}
           />
         </div>
       {/if}

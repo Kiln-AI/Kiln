@@ -10,7 +10,7 @@
   import type { TaskToolCompatibility } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
-  import { ui_state, pending_state } from "$lib/stores"
+  import { ui_state } from "$lib/stores"
   import { get } from "svelte/store"
   import {
     save_new_mcp_run_config,
@@ -120,11 +120,7 @@
         current_task_id: selected_task_id,
         current_project_id: project_id,
       })
-      pending_state.set({
-        ...get(pending_state),
-        pending_run_config_id: config.id,
-      })
-      goto("/run")
+      goto(`/run?run_config_id=${encodeURIComponent(config.id)}`)
     } catch (err) {
       error = createKilnError(err)
     } finally {

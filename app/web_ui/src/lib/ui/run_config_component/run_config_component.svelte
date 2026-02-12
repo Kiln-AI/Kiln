@@ -27,7 +27,7 @@
   import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
   import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { tick, onMount } from "svelte"
-  import { ui_state, pending_state } from "$lib/stores"
+  import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
   import { arrays_equal } from "$lib/utils/collections"
@@ -48,6 +48,8 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  export let pending_tool_id: string | null = null
+  export let pending_run_config_id: string | null = null
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
 
@@ -55,6 +57,7 @@
   let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
+  let consumed_pending_run_config_id: string | null = null
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -224,17 +227,20 @@
   }
 
   async function apply_pending_run_config_if_needed() {
-    const pending_run_config_id = $pending_state.pending_run_config_id
-    if (!pending_run_config_id || !current_task?.id) {
+    if (
+      !pending_run_config_id ||
+      pending_run_config_id === consumed_pending_run_config_id ||
+      !current_task?.id
+    ) {
       return
     }
+    consumed_pending_run_config_id = pending_run_config_id
     await load_task_run_configs(project_id, current_task.id)
     const all_configs =
       $run_configs_by_task_composite_id[
         get_task_composite_id(project_id, current_task.id)
       ] ?? []
     const exists = all_configs.find((c) => c.id === pending_run_config_id)
-    pending_state.set({ ...$pending_state, pending_run_config_id: null })
     if (exists) {
       selected_run_config_id = pending_run_config_id
     }
@@ -434,6 +440,7 @@
           {project_id}
           task_id={current_task?.id ?? null}
           settings={tools_selector_settings}
+          {pending_tool_id}
         />
       {/if}
       <Collapse title="Advanced Options">
@@ -454,6 +461,7 @@
             {project_id}
             task_id={current_task?.id ?? null}
             settings={tools_selector_settings}
+            {pending_tool_id}
           />
         {/if}
         <AdvancedRunOptions
