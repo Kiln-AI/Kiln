@@ -66,6 +66,8 @@
     friendly_name: string
     name: string
     providers: Provider[]
+    featured_rank?: number | null
+    editorial_notes?: string | null
   }
 
   interface ConfigData {
@@ -80,7 +82,7 @@
   // Search and filter state
   let searchQuery = ""
   let selectedProvider = ""
-  let selectedCapability = ""
+  let selectedCapability = "featured"
 
   // Sorting state
   let sortBy = ""
@@ -89,6 +91,7 @@
   // Available filter options
   let providers: string[] = []
   let capabilities = [
+    { value: "featured", label: "Featured" },
     { value: "data_gen", label: "Data Generation" },
     { value: "structured_output", label: "Structured Output" },
     { value: "logprobs", label: "Logprobs" },
@@ -164,6 +167,18 @@
     }
   }
 
+  function enrichModelsWithFeaturedData() {
+    const allModelDetails = $available_models.flatMap((p) => p.models)
+    for (const model of models) {
+      if (model.featured_rank != null) continue
+      const match = allModelDetails.find((m) => m.id === model.name)
+      if (match) {
+        model.featured_rank = match.featured_rank
+        model.editorial_notes = match.editorial_notes
+      }
+    }
+  }
+
   async function fetchModelsFromRemoteConfig() {
     try {
       loading = true
@@ -178,6 +193,8 @@
 
       const data: ConfigData = await response.json()
       models = data.model_list
+
+      enrichModelsWithFeaturedData()
 
       // Extract unique providers for filters
       providers = [
@@ -212,7 +229,9 @@
 
       // Capability filter
       let matchesCapability = true
-      if (selectedCapability) {
+      if (selectedCapability === "featured") {
+        matchesCapability = model.featured_rank != null
+      } else if (selectedCapability) {
         matchesCapability = model.providers.some((p) => {
           switch (selectedCapability) {
             case "data_gen":
@@ -250,6 +269,15 @@
 
   // Apply sorting to filtered models
   function applySorting() {
+    if (selectedCapability === "featured") {
+      filteredModels = filteredModels.toSorted((a, b) => {
+        const aRank = a.featured_rank ?? Number.MAX_SAFE_INTEGER
+        const bRank = b.featured_rank ?? Number.MAX_SAFE_INTEGER
+        return aRank - bRank
+      })
+      return
+    }
+
     if (!sortBy) {
       return // No sorting applied
     }
@@ -622,7 +650,7 @@
             <label
               for="capability"
               class="block text-sm font-medium text-gray-700 mb-2"
-              >Capability</label
+              >Filter by Capability</label
             >
             <FancySelect
               bind:selected={selectedCapability}
@@ -790,6 +818,11 @@
                       <h3 class="text-lg font-semibold text-gray-900 break-all">
                         {model.friendly_name}
                       </h3>
+                      {#if model.editorial_notes}
+                        <p class="text-sm text-gray-500 mt-1">
+                          {model.editorial_notes}
+                        </p>
+                      {/if}
                     </div>
                   </div>
                 </div>
@@ -932,6 +965,17 @@
               </div>
             {/each}
           </div>
+
+          {#if selectedCapability === "featured"}
+            <div class="flex justify-center mt-10">
+              <button
+                on:click={() => (selectedCapability = "")}
+                class="btn btn-primary btn-lg"
+              >
+                See All {models.length} Models
+              </button>
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}

@@ -5154,6 +5154,10 @@ export interface components {
             task_filter?: string[] | null;
             /** Model Specific Run Config */
             model_specific_run_config?: string | null;
+            /** Featured Rank */
+            featured_rank?: number | null;
+            /** Editorial Notes */
+            editorial_notes?: string | null;
         };
         /**
          * ModelProviderName
