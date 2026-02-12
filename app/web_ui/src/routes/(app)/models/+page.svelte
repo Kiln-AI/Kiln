@@ -846,6 +846,7 @@
                                 provider.model_id,
                               )}
                               class="text-left flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              on:click|stopPropagation
                               data-tip={model_not_connected_tooltip(
                                 provider.name,
                               )}

@@ -1,13 +1,10 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import {
-    current_project,
     current_task,
     current_task_prompts,
-    load_available_prompts,
     prompt_name_from_id,
   } from "$lib/stores"
-  import { load_task_run_configs } from "$lib/stores/run_configs_store"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -21,32 +18,13 @@
     (prompt) => prompt.id === prompt_id,
   )
 
-  $: can_edit =
-    prompt_model?.id.startsWith("id::") ||
-    prompt_model?.id.startsWith("task_run_config::")
-
-  function run_config_id_from_prompt_id(id: string): string | null {
-    const parts = id.split("::")
-    return parts.length === 4 ? parts[3] : null
-  }
-
-  $: is_frozen_prompt = prompt_model?.id.startsWith("task_run_config::")
-  $: run_config_id = is_frozen_prompt
-    ? run_config_id_from_prompt_id(prompt_model?.id || "")
-    : null
-
-  $: patch_url =
-    is_frozen_prompt && run_config_id
-      ? `/api/projects/${$current_project?.id}/tasks/${task_id}/run_config/${run_config_id}`
-      : `/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`
-
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
     prompt_props = Object.fromEntries(
       Object.entries({
         ID: prompt_model?.id,
         Name: prompt_model?.name,
-        Description: prompt_model?.description,
+        Description: prompt_model?.description || undefined,
         "Created By": prompt_model?.created_by,
         "Created At": formatDate(prompt_model?.created_at || undefined),
         "Chain of Thought": prompt_model?.chain_of_thought_instructions
@@ -63,14 +41,6 @@
   }
 
   let edit_dialog: EditDialog | null = null
-
-  async function after_save() {
-    edit_dialog?.close()
-    await Promise.all([
-      load_available_prompts(true),
-      load_task_run_configs(project_id, task_id, true),
-    ])
-  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -88,7 +58,7 @@
         href: `/prompts/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={can_edit
+    action_buttons={prompt_model?.id.startsWith("id::")
       ? [
           {
             label: "Edit",
@@ -146,15 +116,22 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
-  {patch_url}
-  {after_save}
+  warning="Prompt body is locked to preserve consistency of past data. If you want to edit the prompt body, create a new prompt."
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/prompts/${prompt_id}`}
+  delete_url={`/api/projects/${project_id}/tasks/${task_id}/prompts/${prompt_id}`}
   fields={[
     {
       label: "Prompt Name",
-      description: "The name of the prompt",
-      api_name: is_frozen_prompt ? "prompt_name" : "name",
+      api_name: "name",
       value: prompt_model?.name || "",
       input_type: "input",
+    },
+    {
+      label: "Prompt Description",
+      api_name: "description",
+      optional: true,
+      value: prompt_model?.description || "",
+      input_type: "textarea",
     },
   ]}
 />

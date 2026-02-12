@@ -336,8 +336,8 @@
       </div>
       {#if sorted_run_configs.length === 0}
         <div class="text-gray-500 rounded-lg border p-4 text-sm">
-          No run configurations yet. Create one by clicking "Add Run
-          Configuration" above.
+          No run configurations yet. Create one by clicking "Create Run Config"
+          above.
         </div>
       {:else}
         <div class="overflow-x-auto overflow-y-hidden rounded-lg border">

@@ -50,7 +50,7 @@
   export let selected_model_specific_run_config_id: string | null = null
 
   export let model: string = $ui_state.selected_model
-  let prompt_method: string = "simple_prompt_builder"
+  export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
 

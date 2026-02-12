@@ -6,13 +6,12 @@
   export let badge_position: "left" | "right" = "left"
   export let badge_data_tip: string | null = null
   export let open: boolean = false
-  export let background_color: "default" | "white" = "default"
 </script>
 
 <div
-  class="collapse collapse-arrow {background_color === 'white'
-    ? 'bg-white border rounded-lg'
-    : 'bg-base-200'} {small ? 'collapse-sm' : 'collapse-md'}"
+  class="collapse collapse-arrow bg-base-200 {small
+    ? 'collapse-sm'
+    : 'collapse-md'}"
 >
   <input type="checkbox" class="peer min-h-[24px]" bind:checked={open} />
   <div
@@ -61,12 +60,5 @@
   .collapse-sm .collapse-title {
     padding-top: 12px;
     padding-bottom: 12px;
-  }
-
-  .collapse:focus-within,
-  .collapse input:focus,
-  .collapse input:focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
   }
 </style>
