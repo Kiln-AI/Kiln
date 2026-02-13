@@ -64,7 +64,7 @@ If the user asks you to find new models, **do NOT just web search "new AI models
 2. **Query the LiteLLM catalog** for the new model. This is the primary slug source since Kiln uses LiteLLM. See the [Slug Lookup Reference](#slug-lookup-reference) for query syntax and all verified sources.
 
 3. **Get the OpenRouter slug** via:
-   - `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "model-name"`
+   - `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "SEARCH_TERM"`
    - Fallback: WebSearch for `openrouter [model name] model id`
 
 4. **Get the direct-provider slug** (Anthropic, OpenAI, Google, etc.). Use the LiteLLM catalog first, then official docs. See the [Slug Lookup Reference](#slug-lookup-reference) for provider-specific URLs.

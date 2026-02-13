@@ -219,10 +219,10 @@ class ModelName(str, Enum):
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
-    minimax_m1_80k = "minimax_m1_80k"
-    minimax_m2 = "minimax_m2"
     minimax_m2_5 = "minimax_m2_5"
     minimax_m2_1 = "minimax_m2_1"
+    minimax_m2 = "minimax_m2"
+    minimax_m1_80k = "minimax_m1_80k"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     bytedance_seed_1_6 = "bytedance_seed_1_6"
@@ -5845,30 +5845,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Minimax M1 80K
-    KilnModel(
-        family=ModelFamily.minimax,
-        name=ModelName.minimax_m1_80k,
-        friendly_name="Minimax M1",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="minimax/minimax-m1",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                supports_data_gen=True,
-                r1_openrouter_options=True,
-                require_openrouter_reasoning=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.siliconflow_cn,
-                model_id="MiniMaxAI/MiniMax-M1-80k",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                reasoning_capable=True,
-                supports_data_gen=True,
-                supports_function_calling=False,
-            ),
-        ],
-    ),
     # Minimax M2.5
     # OpenRouter accepts json_schema but M2.5 ignores the constraint;
     # json_instruction_and_object works because the simpler response_format:json_object
@@ -5945,6 +5921,30 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
+    # Minimax M1 80K
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m1_80k,
+        friendly_name="Minimax M1",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="MiniMaxAI/MiniMax-M1-80k",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                supports_function_calling=False,
             ),
         ],
     ),
