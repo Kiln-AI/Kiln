@@ -486,7 +486,7 @@ def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
-        assert prompts[0].name == f"Kiln Optimized - {gepa_job.name}"
+        assert prompts[0].name == gepa_job.name
         assert result["created_prompt_id"] == f"id::{prompts[0].id}"
 
 
@@ -2222,24 +2222,15 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
-        assert prompts[0].name == f"Kiln Optimized - {gepa_job.name}"
-        assert prompts[0].description is not None
-        assert (
-            f"Optimized for run config {target_run_config.id}" in prompts[0].description
-        )
+        assert prompts[0].name == gepa_job.name
 
         # Check that exactly 1 new run config was created (2 total including target)
         run_configs = task.run_configs()
         assert len(run_configs) == 2
         new_run_config = [rc for rc in run_configs if rc.id != target_run_config.id][0]
 
-        # Verify name follows new pattern: "{target_run_config.name} {timestamp}"
-        assert new_run_config.name.startswith("Original Config")
-        assert new_run_config.name != "Original Config"  # Should have timestamp suffix
-
-        # Verify the description mentions GEPA job
-        assert new_run_config.description is not None
-        assert "Optimized run config from GEPA job" in new_run_config.description
+        assert new_run_config.name
+        assert new_run_config.name != target_run_config.name
 
         # Verify prompt is referenced by ID, not frozen
         assert new_run_config.prompt is None

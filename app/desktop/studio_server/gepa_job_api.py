@@ -1,7 +1,6 @@
 import asyncio
 import io
 import logging
-import time
 import zipfile
 from pathlib import Path
 from typing import Literal, cast
@@ -127,15 +126,13 @@ def create_prompt_from_optimization(
     make sure you have a proper locking mechanism around calling this function.
     """
     prompt = Prompt(
-        name=f"Kiln Optimized - {gepa_job.name}",
-        description=f"Optimized for run config {gepa_job.target_run_config_id} in job {gepa_job.job_id}",
+        name=gepa_job.name,
         generator_id="kiln_prompt_optimizer",
         prompt=optimized_prompt_text,
         parent=task,
     )
     prompt.save_to_file()
 
-    logger.info(f"Created prompt {prompt.id} from GEPA job {gepa_job.job_id}")
     return prompt
 
 
@@ -164,9 +161,6 @@ def create_run_config_from_optimization(
         parent_project.id, task.id, gepa_job.target_run_config_id
     )
 
-    timestamp = int(time.time())
-    run_config_name = f"{target_run_config.name} {timestamp}"
-
     # create new run config with the same properties but new prompt
     new_run_config_properties = target_run_config.run_config_properties.model_copy()
 
@@ -176,16 +170,12 @@ def create_run_config_from_optimization(
 
     new_run_config = TaskRunConfig(
         parent=task,
-        name=run_config_name,
-        description=f"Optimized run config from GEPA job {gepa_job.name}",
+        name=generate_memorable_name(),
         run_config_properties=new_run_config_properties,
     )
 
     new_run_config.save_to_file()
 
-    logger.info(
-        f"Created run config {new_run_config.id} from GEPA job {gepa_job.job_id}"
-    )
     return new_run_config
 
 
@@ -201,10 +191,6 @@ def _cleanup_artifact(
     try:
         artifact.delete()
         artifact_id = getattr(artifact, "id", "unknown")
-        logger.info(
-            f"Successfully cleaned up {artifact_type} artifact {artifact_id} "
-            f"for GEPA job {gepa_job_id}"
-        )
     except Exception as cleanup_error:
         artifact_id = getattr(artifact, "id", "unknown")
         logger.error(
@@ -236,9 +222,6 @@ async def _create_artifacts_for_succeeded_job(
 
     # check if artifacts already exist
     if reloaded_job.created_prompt_id:
-        logger.info(
-            f"Artifacts already exist for GEPA job {gepa_job.job_id}, skipping creation"
-        )
         gepa_job.created_prompt_id = reloaded_job.created_prompt_id
         gepa_job.created_run_config_id = reloaded_job.created_run_config_id
         gepa_job.optimized_prompt = reloaded_job.optimized_prompt
@@ -555,8 +538,6 @@ def connect_gepa_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            logger.info(f"Starting GEPA job for task {task_id}")
-
             # Create ZIP file of the project
             project_zip_bytes = zip_project(cast(Project, task.parent))
 
@@ -576,10 +557,6 @@ def connect_gepa_job_api(app: FastAPI):
                 target_run_config_id=request.target_run_config_id,
                 project_zip=project_zip_file,
                 eval_ids=request.eval_ids,
-            )
-
-            logger.info(
-                f"Starting GEPA job upload for task {task_id}, project ZIP size: {len(project_zip_bytes)} bytes"
             )
 
             response = await start_gepa_job_v1_jobs_gepa_job_start_post.asyncio(
@@ -610,10 +587,6 @@ def connect_gepa_job_api(app: FastAPI):
                 parent=task,
             )
             gepa_job.save_to_file()
-
-            logger.info(
-                f"Created GEPA job {gepa_job.id} for remote job {response.job_id}"
-            )
 
             return gepa_job
 
@@ -659,9 +632,6 @@ def connect_gepa_job_api(app: FastAPI):
                     batch_size = 5
                     for i in range(0, len(jobs_to_update), batch_size):
                         batch = jobs_to_update[i : i + batch_size]
-                        logger.info(
-                            f"Updating GEPA job statuses for batch of {len(batch)} jobs"
-                        )
                         await asyncio.gather(
                             *[
                                 update_gepa_job_and_create_artifacts(job, server_client)
