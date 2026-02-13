@@ -9,22 +9,41 @@
   import { formatDate } from "$lib/utils/formatters"
   import Intro from "$lib/ui/intro.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
+  let loading = true
+
   let gepa_jobs: GepaJob[] | null = null
   let gepa_jobs_error: KilnError | null = null
-  let gepa_jobs_loading = true
 
-  onMount(() => {
+  let kiln_copilot_connected: boolean | null = null
+  let copilot_check_error: KilnError | null = null
+
+  $: error = copilot_check_error || gepa_jobs_error
+
+  onMount(async () => {
     get_gepa_jobs()
+
+    if (!gepa_jobs || gepa_jobs.length === 0) {
+      try {
+        kiln_copilot_connected = await checkKilnCopilotAvailable()
+      } catch (e) {
+        copilot_check_error = createKilnError(e)
+        kiln_copilot_connected = false
+      }
+    }
+
+    loading = false
   })
 
   async function get_gepa_jobs() {
     try {
-      gepa_jobs_loading = true
+      gepa_jobs_error = null
       if (!project_id || !task_id) {
         throw new Error("Project or task ID not set.")
       }
@@ -61,8 +80,6 @@
       } else {
         gepa_jobs_error = createKilnError(e)
       }
-    } finally {
-      gepa_jobs_loading = false
     }
   }
 
@@ -87,15 +104,6 @@
         badge_class: "badge-outline",
       }
     )
-  }
-
-  const token_budget_labels: Record<string, string> = {
-    light: "Low",
-    medium: "Medium",
-    heavy: "High",
-  }
-  function format_token_budget(budget: string): string {
-    return token_budget_labels[budget] || budget
   }
 </script>
 
@@ -123,49 +131,51 @@
         },
       ]}
 >
-  {#if gepa_jobs_loading}
+  {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
-  {:else if gepa_jobs_error}
+  {:else if error}
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
-      <div class="font-medium">Error Loading Optimizer Jobs</div>
       <div class="text-error text-sm">
-        {gepa_jobs_error.getMessage() || "An unknown error occurred"}
+        {error.getMessage() || "An unknown error occurred"}
       </div>
     </div>
   {:else if is_empty}
-    <div class="flex flex-col items-center justify-center min-h-[60vh]">
-      <Intro
-        title="Kiln Prompt Optimizer automatically optimizes your prompts."
-        description_paragraphs={[
-          "Improve eval performance by optimizing your prompts using training data.",
-        ]}
-        align_title_left={true}
-        action_buttons={[
-          {
-            label: "Create Optimized Prompt",
-            href: `/gepa/${project_id}/${task_id}/create_gepa`,
-            is_primary: true,
-          },
-        ]}
-      >
-        <div slot="icon">
-          <div class="h-12 w-12">
-            <OptimizeIcon />
+    {#if kiln_copilot_connected === false}
+      <CopilotRequiredCard />
+    {:else}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Intro
+          title="Kiln Prompt Optimizer automatically optimizes your prompts."
+          description_paragraphs={[
+            "Improve eval performance by optimizing your prompts using training data.",
+          ]}
+          align_title_left={true}
+          action_buttons={[
+            {
+              label: "Create Optimized Prompt",
+              href: `/gepa/${project_id}/${task_id}/create_gepa`,
+              is_primary: true,
+            },
+          ]}
+        >
+          <div slot="icon">
+            <div class="h-12 w-12">
+              <OptimizeIcon />
+            </div>
           </div>
-        </div>
-      </Intro>
-    </div>
+        </Intro>
+      </div>
+    {/if}
   {:else if gepa_jobs}
     <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
           <tr>
             <th> Name </th>
-            <th> Token Budget </th>
             <th> Status </th>
             <th> Created At </th>
           </tr>
@@ -180,7 +190,6 @@
               }}
             >
               <td> {gepa_job.name} </td>
-              <td> {format_token_budget(gepa_job.token_budget)} </td>
               <td>
                 <div class="badge px-3 py-1 gap-1 {badge.badge_class}">
                   {#if gepa_job.latest_status === "pending" || gepa_job.latest_status === "running"}

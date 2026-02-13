@@ -86,9 +86,12 @@
   let created_job: { id: string } | null = null
 
   let current_task: Task | null = null
-  let task_loading = true
+  let task_load_error: KilnError | null = null
   let kiln_copilot_connected: boolean | null = null
   let copilot_check_error: KilnError | null = null
+
+  let loading = true
+  $: error = task_load_error || copilot_check_error
 
   type EvalWithConfig = {
     eval: Eval
@@ -211,8 +214,7 @@
         item.eval.id &&
         selected_eval_ids.has(item.eval.id) &&
         item.validation_status === "unchecked",
-    ) ||
-    task_loading
+    )
 
   $: review_visible = run_config_validation_status === "valid"
 
@@ -245,12 +247,7 @@
     return configs.find((config) => config.id === run_config_id) || null
   }
 
-  let from_prompt_generators: boolean = false
-
   onMount(async () => {
-    from_prompt_generators =
-      $page.url.searchParams.get("from") === "prompt_generators"
-
     try {
       kiln_copilot_connected = await checkKilnCopilotAvailable()
     } catch (e) {
@@ -267,11 +264,12 @@
         load_evals_and_configs(),
       ])
     }
+    loading = false
   })
 
   async function load_task() {
     try {
-      task_loading = true
+      task_load_error = null
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}",
         {
@@ -286,11 +284,12 @@
       if (error) {
         throw error
       }
+      if (!data) {
+        throw new KilnError("Task not found")
+      }
       current_task = data
     } catch (e) {
-      create_job_error = createKilnError(e)
-    } finally {
-      task_loading = false
+      task_load_error = createKilnError(e)
     }
   }
 
@@ -718,68 +717,37 @@
   subtitle="Create a prompt optimized for your evals using training data."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
-  breadcrumbs={from_prompt_generators
-    ? [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${task_id}`,
-        },
-        {
-          label: "Prompts",
-          href: `/prompts/${project_id}/${task_id}`,
-        },
-        {
-          label: "Prompt Generators",
-          href: `/prompts/${project_id}/${task_id}/prompt_generators`,
-        },
-      ]
-    : [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${task_id}`,
-        },
-        {
-          label: "Prompts",
-          href: `/prompts/${project_id}/${task_id}`,
-        },
-        {
-          label: "Optimizer Jobs",
-          href: `/gepa/${project_id}/${task_id}`,
-        },
-      ]}
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${task_id}`,
+    },
+    {
+      label: "Prompts",
+      href: `/prompts/${project_id}/${task_id}`,
+    },
+  ]}
 >
-  {#if kiln_copilot_connected === null}
+  {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
+    </div>
+  {:else if error}
+    <div class="w-full min-h-[50vh] flex justify-center items-center">
+      <div class="text-error text-sm">
+        {error.getMessage() || "An unknown error occurred"}
+      </div>
     </div>
   {:else if kiln_copilot_connected === false}
-    <CopilotRequiredCard
-      description="Kiln Prompt Optimization requires Kiln Copilot to automatically optimize your prompts using advanced techniques."
-      auth_url="/gepa/copilot_auth"
-      back_label="Back to Optimizer Jobs"
-      error={copilot_check_error}
-    />
-  {:else if task_loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
+    <CopilotRequiredCard />
   {:else if created_job}
     <Completed
       title="Prompt Optimization Job Started"
-      subtitle="It will take a while to complete optimization (could take up to several hours depending on the token budget, number of evaluators and examples)."
+      subtitle="Optimization may take up to several hours depending on the number of evaluators and training examples."
+      button_text="View Optimizer Jobs"
       link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
-      button_text="View Job"
     />
-  {:else if !current_task}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Task</div>
-      <div class="text-error text-sm">
-        {create_job_error?.getMessage() || "Task not found"}
-      </div>
-    </div>
-  {:else}
+  {:else if current_task}
     <FormContainer
       submit_visible={true}
       submit_label="Run Optimization"

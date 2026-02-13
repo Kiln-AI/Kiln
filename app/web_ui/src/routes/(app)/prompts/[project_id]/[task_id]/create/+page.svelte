@@ -154,10 +154,6 @@
         label: "Prompts",
         href: `/prompts/${project_id}/${task_id}`,
       },
-      {
-        label: "Prompt Generators",
-        href: `/prompts/${project_id}/${task_id}/prompt_generators`,
-      },
     ]}
   >
     {#if loading_generator}

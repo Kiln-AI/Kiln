@@ -190,9 +190,6 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">
-          Error Loading Kiln Prompt Optimization Job
-        </div>
         <div class="text-error text-sm">
           {gepa_job_error?.getMessage() || "An unknown error occurred"}
         </div>
