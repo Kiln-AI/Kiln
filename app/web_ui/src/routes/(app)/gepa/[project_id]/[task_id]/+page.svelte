@@ -31,7 +31,11 @@
 
   onMount(async () => {
     if (USE_DUMMY_DATA) {
-      gepa_jobs = DUMMY_GEPA_JOBS
+      gepa_jobs = [...DUMMY_GEPA_JOBS].sort(
+        (a, b) =>
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime(),
+      )
       kiln_copilot_connected = true
       loading = false
       return
