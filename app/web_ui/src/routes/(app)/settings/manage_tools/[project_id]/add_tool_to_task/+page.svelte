@@ -17,6 +17,7 @@
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
+  import { MCP_RUN_CONFIGS_DOCS_LINK } from "$lib/utils/docs_links"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
@@ -132,6 +133,8 @@
 <div class="max-w-[900px]">
   <AppPage
     title="Run tool directly on a task"
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },

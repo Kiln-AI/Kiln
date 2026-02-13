@@ -10,8 +10,11 @@ import {
   prompt_name_from_id,
   provider_name_from_id,
 } from "$lib/stores"
-import { get_tools_property_info } from "$lib/stores/tools_store"
-import { prompt_link } from "$lib/utils/link_builder"
+import {
+  get_tools_property_info,
+  get_tool_server_name,
+} from "$lib/stores/tools_store"
+import { prompt_link, tool_link } from "$lib/utils/link_builder"
 import type { UiProperty } from "$lib/ui/property_list"
 import { formatDate } from "./formatters"
 
@@ -104,6 +107,14 @@ export function getRunConfigUiProperties(
   available_tools: Record<string, ToolSetApiDescription[]> | null,
 ): UiProperty[] {
   if (is_mcp_run_config(run_config)) {
+    const tool_id = run_config.run_config_properties.mcp_tool?.tool_id ?? null
+    const tool_name =
+      run_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"
+    const tool_server_link = tool_id ? tool_link(project_id, tool_id) : null
+    const tool_server_name = available_tools
+      ? get_tool_server_name(available_tools, project_id, tool_id)
+      : null
+
     return [
       {
         name: "ID",
@@ -122,13 +133,22 @@ export function getRunConfigUiProperties(
         value: "MCP Tool (No Agent)",
       },
       {
-        name: "Tool Name",
-        value:
-          run_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown",
+        name: "MCP Tool",
+        value: tool_name,
+        link: tool_server_link || undefined,
+        tooltip: `This run configuration will invoke the MCP tool "${tool_name}" directly, without any wrapper agent.`,
       },
+      ...(tool_server_name
+        ? [
+            {
+              name: "Tool Server",
+              value: tool_server_name,
+            },
+          ]
+        : []),
       {
         name: "Tool ID",
-        value: run_config.run_config_properties.mcp_tool?.tool_id ?? "Unknown",
+        value: tool_id ?? "Unknown",
       },
     ]
   }

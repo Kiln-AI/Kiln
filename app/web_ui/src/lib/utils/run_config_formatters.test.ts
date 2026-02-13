@@ -48,7 +48,7 @@ describe("run_config_formatters (MCP)", () => {
     )
     const propNames = props.map((p) => p.name)
     expect(propNames).toContain("Type")
-    expect(propNames).toContain("Tool Name")
+    expect(propNames).toContain("MCP Tool")
     expect(propNames).toContain("Tool ID")
     expect(propNames).not.toContain("Model")
     expect(propNames).not.toContain("Prompt")

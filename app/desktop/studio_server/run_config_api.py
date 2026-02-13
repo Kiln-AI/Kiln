@@ -227,7 +227,6 @@ def connect_run_config_api(app: FastAPI):
         request: CreateMcpRunConfigRequest,
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
-        name = request.name or generate_memorable_name()
 
         try:
             tool_id = request.tool_id
@@ -239,6 +238,8 @@ def connect_run_config_api(app: FastAPI):
             tool_name = await tool.name()
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+        name = request.name or f"MCP {tool_name} - {generate_memorable_name()}"
 
         run_config_properties = _create_mcp_run_config_properties(
             tool_id=tool_id,
@@ -303,7 +304,7 @@ def connect_run_config_api(app: FastAPI):
 
             task_run_config = TaskRunConfig(
                 parent=task,
-                name=generate_memorable_name(),
+                name=f"MCP {tool_name} - {generate_memorable_name()}",
                 run_config_properties=run_config_properties,
             )
             task_run_config.save_to_file()

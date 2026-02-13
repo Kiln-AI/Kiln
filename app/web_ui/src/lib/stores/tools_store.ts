@@ -33,6 +33,26 @@ export function get_tools_property_info(
   }
 }
 
+export function get_tool_server_name(
+  available_tools: Record<string, ToolSetApiDescription[]>,
+  project_id: string,
+  tool_id: string | null | undefined,
+): string | null {
+  if (!tool_id) {
+    return null
+  }
+  const project_tools = available_tools[project_id]
+  if (!project_tools) {
+    return null
+  }
+  for (const tool_set of project_tools) {
+    if (tool_set.tools.some((tool) => tool.id === tool_id)) {
+      return tool_set.set_name
+    }
+  }
+  return null
+}
+
 function get_tool_names_from_ids(
   tool_ids: string[],
   project_tools: ToolSetApiDescription[],

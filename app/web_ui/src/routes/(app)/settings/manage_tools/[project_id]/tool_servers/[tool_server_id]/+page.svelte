@@ -18,6 +18,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tool_store"
   import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import { MCP_RUN_CONFIGS_DOCS_LINK } from "$lib/utils/docs_links"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -407,6 +408,8 @@
   <AppPage
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
     breadcrumbs={[
       {
         label: "Settings",
@@ -428,7 +431,13 @@
       },
     ]}
   >
-    <Dialog bind:this={dialog} title="Run Task with Tool" width="wide">
+    <Dialog
+      bind:this={dialog}
+      title="Run Task with Tool"
+      sub_subtitle="Read the Docs"
+      sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
+      width="wide"
+    >
       <div class="flex flex-col gap-4">
         <div
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name

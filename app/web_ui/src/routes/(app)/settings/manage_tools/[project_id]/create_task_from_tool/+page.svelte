@@ -4,6 +4,8 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Output from "$lib/ui/output.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import { MCP_RUN_CONFIGS_DOCS_LINK } from "$lib/utils/docs_links"
   import { onDestroy, onMount } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { get } from "svelte/store"
@@ -142,6 +144,8 @@
 <div class="max-w-[900px]">
   <AppPage
     title="New task from tool"
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },
@@ -165,22 +169,27 @@
           id="task_name"
           bind:value={task_name}
         />
-        <FormElement
-          inputType="textarea"
-          label="Prompt / Task Instructions"
-          id="instruction"
-          height="medium"
-          bind:value={instruction}
-          description="This prompt won't be used when calling MCP directly. Only if you want to invoke this task with a model call."
-        />
-        <div class="mt-6">
+        <div>
           <div class="text-sm font-medium mb-2">Input Schema (from tool)</div>
           <Output raw_output={input_schema_output} />
         </div>
-        <div class="mt-6">
+        <div>
           <div class="text-sm font-medium mb-2">Output Schema (from tool)</div>
           <Output raw_output={output_schema_output} />
         </div>
+        <Collapse title="Advanced">
+          <FormElement
+            inputType="textarea"
+            label="Prompt / Task Instructions"
+            id="instruction"
+            height="medium"
+            bind:value={instruction}
+            description="By default, we'll call the selected MCP tool directly—no prompt required. We'll use this prompt if you later add a model-based agent to this task."
+            info_description={`You're creating a task from a MCP tool, so by default we'll call the MCP tool directly when you invoke this task.
+However, in the future you may choose to add other ways of invoking this task later, such as a agent. For that case, we need a prompt describing the task for the agent to follow.
+This prompt won't be used unless you add agent-based task run configurations.`}
+          />
+        </Collapse>
       </FormContainer>
     {/if}
   </AppPage>

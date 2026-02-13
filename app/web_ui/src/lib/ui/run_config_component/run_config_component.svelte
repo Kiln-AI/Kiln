@@ -408,7 +408,7 @@
 <div class="w-full flex flex-col gap-4">
   {#if is_mcp}
     {#if selected_mcp_config}
-      <McpRunConfigPanel run_config={selected_mcp_config} />
+      <McpRunConfigPanel run_config={selected_mcp_config} {project_id} />
     {/if}
   {:else}
     {#if !hide_model_selector}
