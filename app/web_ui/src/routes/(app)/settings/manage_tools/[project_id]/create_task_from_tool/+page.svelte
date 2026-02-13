@@ -185,8 +185,8 @@
             height="medium"
             bind:value={instruction}
             description="By default, we'll call the selected MCP tool directly—no prompt required. We'll use this prompt if you later add a model-based agent to this task."
-            info_description={`You're creating a task from a MCP tool, so by default we'll call the MCP tool directly when you invoke this task.
-However, in the future you may choose to add other ways of invoking this task later, such as a agent. For that case, we need a prompt describing the task for the agent to follow.
+            info_description={`You're creating a task from an MCP tool, so by default we'll call the MCP tool directly when you invoke this task.
+However, in the future you may choose to add other ways of invoking this task later, such as an agent. For that case, we need a prompt describing the task for the agent to follow.
 This prompt won't be used unless you add agent-based task run configurations.`}
           />
         </Collapse>

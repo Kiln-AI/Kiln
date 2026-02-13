@@ -76,23 +76,37 @@
       tools_store_loaded_task_id = task_id
     }
 
-    // Add pending tool if it is available and not already in the list
+    apply_pending_tool()
+  }
+
+  function apply_pending_tool() {
     if (
       pending_tool_id &&
       !tools.includes(pending_tool_id) &&
       is_tool_available(pending_tool_id, project_id)
     ) {
-      tools = [...tools, pending_tool_id]
-      if (task_id) {
+      const next_tools = [...new Set([...tools, pending_tool_id])]
+      tools = next_tools
+      if (task_id && tools_store_loaded_task_id === task_id) {
         tools_store.update((state) => ({
           ...state,
           selected_tool_ids_by_task_id: {
             ...state.selected_tool_ids_by_task_id,
-            [task_id]: tools,
+            [task_id]: [
+              ...new Set([
+                ...(state.selected_tool_ids_by_task_id[task_id] || []),
+                ...next_tools,
+              ]),
+            ],
           },
         }))
       }
     }
+  }
+
+  // If tools load after initial render, re-apply pending tool
+  $: if (pending_tool_id && $available_tools[project_id]) {
+    apply_pending_tool()
   }
 
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value

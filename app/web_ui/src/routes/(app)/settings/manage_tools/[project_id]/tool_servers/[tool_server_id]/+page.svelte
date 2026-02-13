@@ -436,7 +436,6 @@
       title="Run Task with Tool"
       sub_subtitle="Read the Docs"
       sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
-      width="wide"
     >
       <div class="flex flex-col gap-4">
         <div
@@ -452,10 +451,10 @@
         >
           <div class="card-body p-4">
             <div class="text-lg font-semibold">
-              Run current task with tool access
+              Run Current Task with Tool Access
             </div>
             <div class="text-sm text-gray-500">
-              Run the current task with agent access to this tool.
+              Run the current task, giving the agent access to this tool.
             </div>
           </div>
         </div>
@@ -472,11 +471,11 @@
         >
           <div class="card-body p-4">
             <div class="text-lg font-semibold">
-              Run tool directly (no agent)
+              Task Runs Tool Directly (No Agent)
             </div>
             <div class="text-sm text-gray-500">
-              Run the tool directly, without an agent. Useful for evaluating
-              external APIs.
+              The task will call the tool directly, without a wrapping agent.
+              Useful for evaluating external APIs or agents.
             </div>
           </div>
         </div>
