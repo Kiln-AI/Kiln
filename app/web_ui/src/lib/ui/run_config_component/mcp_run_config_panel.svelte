@@ -8,10 +8,10 @@
   $: mcp_tool_name = mcp_tool?.tool_name ?? "Unknown"
   $: input_schema_output = mcp_tool?.input_schema
     ? JSON.stringify(mcp_tool.input_schema, null, 2)
-    : "Input Format: Plain text"
+    : "Plain text"
   $: output_schema_output = mcp_tool?.output_schema
     ? JSON.stringify(mcp_tool.output_schema, null, 2)
-    : "Output Format: Plain text"
+    : "Plain text"
 </script>
 
 <div class="flex flex-col gap-4">
