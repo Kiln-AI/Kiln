@@ -125,7 +125,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Create a Prompt"
+    title="Create Prompt"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
