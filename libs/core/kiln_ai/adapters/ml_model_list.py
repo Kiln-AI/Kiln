@@ -5860,6 +5860,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
             ),
         ],
