@@ -304,3 +304,4 @@ When you find a reliable URL for looking up model slugs, **append it here** so f
 
 - OpenRouter: https://openrouter.ai/api/v1/models — JSON list of all models, search for the `id` field
 - Anthropic: https://docs.anthropic.com/en/api/models/list — API endpoint docs with example response showing exact model IDs (note: format changed over time, newer models may not have date stamps)
+- Cerebras: https://inference-docs.cerebras.ai/models/overview — Lists all production and preview models with exact model IDs (e.g. `zai-glm-4.7`, `gpt-oss-120b`)
