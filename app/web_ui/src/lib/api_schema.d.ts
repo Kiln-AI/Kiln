@@ -3971,6 +3971,8 @@ export interface components {
             golden_dataset_partially_rated_count: number;
             /** Golden Dataset Fully Rated Count */
             golden_dataset_fully_rated_count: number;
+            /** Train Dataset Size */
+            train_dataset_size: number;
             current_eval_method: components["schemas"]["EvalConfig"] | null;
         };
         /** EvalResultSummary */

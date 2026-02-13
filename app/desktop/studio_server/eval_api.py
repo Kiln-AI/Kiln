@@ -206,6 +206,8 @@ class EvalProgress(BaseModel):
     golden_dataset_not_rated_count: int
     golden_dataset_partially_rated_count: int
     golden_dataset_fully_rated_count: int
+    # The total size of the train dataset used for the eval
+    train_dataset_size: int
     # The current selected eval method
     current_eval_method: EvalConfig | None
 
@@ -664,6 +666,12 @@ def connect_evals_api(app: FastAPI):
             build_score_key_to_task_requirement_id(task),
         )
 
+        train_dataset_runs = (
+            runs_in_filter(task, eval.train_set_filter_id, readonly=True)
+            if eval.train_set_filter_id
+            else []
+        )
+
         current_eval_method = next(
             (
                 eval_config
@@ -679,6 +687,7 @@ def connect_evals_api(app: FastAPI):
             golden_dataset_not_rated_count=not_rated_count,
             golden_dataset_partially_rated_count=partially_rated_count,
             golden_dataset_fully_rated_count=fully_rated_count,
+            train_dataset_size=len(train_dataset_runs),
             current_eval_method=current_eval_method,
         )
 

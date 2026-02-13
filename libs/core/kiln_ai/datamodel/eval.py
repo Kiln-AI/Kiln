@@ -432,6 +432,27 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         return self
 
     @model_validator(mode="after")
+    def migrate_train_set_filter_id(self) -> Self:
+        """
+        Migration: Auto-create a train_set_filter_id for legacy evals that don't have one.
+
+        Generates a tag-based filter ID from the eval name following the convention
+        used by spec-based evals (e.g., "train_{name_slug}").
+        """
+        if self.id is None:
+            return self
+
+        if not self._loaded_from_file:
+            return self
+
+        if self.train_set_filter_id is not None:
+            return self
+
+        tag_suffix = self.name.lower().replace(" ", "_")
+        self.train_set_filter_id = f"tag::train_{tag_suffix}"
+        return self
+
+    @model_validator(mode="after")
     def validate_scores(self) -> Self:
         if self.output_scores is None or len(self.output_scores) == 0:
             raise ValueError(

@@ -5,6 +5,7 @@
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { formatDate } from "$lib/utils/formatters"
   import { onMount } from "svelte"
   import Completed from "$lib/ui/completed.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
@@ -16,9 +17,9 @@
   import {
     available_tools,
     get_task_composite_id,
+    load_available_models,
+    load_model_info,
     model_info,
-    model_name,
-    provider_name_from_id,
   } from "$lib/stores"
   import {
     load_task_run_configs,
@@ -26,13 +27,12 @@
   } from "$lib/stores/run_configs_store"
   import {
     getDetailedModelName,
-    getRunConfigPromptDisplayName,
+    getDetailedModelNameFromParts,
     getRunConfigUiProperties,
   } from "$lib/utils/run_config_formatters"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import TagDropdown from "$lib/ui/tag_dropdown.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -81,9 +81,6 @@
       selected_run_config?.run_config_properties.prompt_id,
     )
 
-  $: is_dynamic_prompt =
-    selected_run_config?.run_config_properties.prompt_id && !prompt_text
-
   let create_job_error: KilnError | null = null
   let create_job_loading = false
   let created_job: { id: string } | null = null
@@ -102,7 +99,9 @@
     train_set_size: number | null
     model_is_supported: boolean
     validation_status: "unchecked" | "checking" | "valid" | "invalid"
-    validation_message: string | null
+    judge_error: string | null
+    train_error: string | null
+    other_error: string | null
   }
 
   let evals_with_configs: EvalWithConfig[] = []
@@ -110,10 +109,60 @@
   let evals_error: KilnError | null = null
   let selected_eval_ids: Set<string> = new Set()
 
-  let train_set_tags: Record<string, string> = {} // eval_id -> tag name
-  let saving_train_set: Record<string, boolean> = {} // eval_id -> is_saving
-  let train_set_errors: Record<string, string> = {} // eval_id -> error_message
-  let showing_train_set_picker: Record<string, boolean> = {} // eval_id -> showing picker
+  type EvalSortableColumn = "name" | "status" | "created_at"
+  let evalSortColumn: EvalSortableColumn = "created_at"
+  let evalSortDirection: "asc" | "desc" = "desc"
+
+  function handleEvalSort(column: EvalSortableColumn) {
+    if (evalSortColumn === column) {
+      evalSortDirection = evalSortDirection === "asc" ? "desc" : "asc"
+    } else {
+      evalSortColumn = column
+      evalSortDirection = "desc"
+    }
+  }
+
+  function evalStatusOrder(
+    status: "unchecked" | "checking" | "valid" | "invalid",
+  ): number {
+    switch (status) {
+      case "valid":
+        return 0
+      case "invalid":
+        return 1
+      case "checking":
+        return 2
+      case "unchecked":
+        return 3
+    }
+  }
+
+  $: sorted_evals_with_configs = (() => {
+    if (evals_with_configs.length === 0) return []
+    return [...evals_with_configs].sort((a, b) => {
+      let aValue: string | number
+      let bValue: string | number
+      switch (evalSortColumn) {
+        case "name":
+          aValue = (a.eval.name || "").toLowerCase()
+          bValue = (b.eval.name || "").toLowerCase()
+          break
+        case "status":
+          aValue = evalStatusOrder(a.validation_status)
+          bValue = evalStatusOrder(b.validation_status)
+          break
+        case "created_at":
+          aValue = a.eval.created_at ? new Date(a.eval.created_at).getTime() : 0
+          bValue = b.eval.created_at ? new Date(b.eval.created_at).getTime() : 0
+          break
+        default:
+          return 0
+      }
+      if (aValue < bValue) return evalSortDirection === "asc" ? -1 : 1
+      if (aValue > bValue) return evalSortDirection === "asc" ? 1 : -1
+      return 0
+    })
+  })()
 
   let run_config_validation_status:
     | "unchecked"
@@ -132,12 +181,6 @@
       item.eval.id &&
       selected_eval_ids.has(item.eval.id) &&
       !item.has_default_config,
-  )
-  $: has_evals_without_train_set = evals_with_configs.some(
-    (item) =>
-      item.eval.id &&
-      selected_eval_ids.has(item.eval.id) &&
-      !item.has_train_set,
   )
   $: has_unsupported_models =
     run_config_validation_status === "invalid" ||
@@ -159,7 +202,6 @@
   $: submit_disabled =
     selected_eval_ids.size === 0 ||
     has_evals_without_config ||
-    has_evals_without_train_set ||
     evals_loading ||
     has_unsupported_models ||
     is_validating ||
@@ -217,6 +259,7 @@
     }
 
     if (kiln_copilot_connected) {
+      await Promise.all([load_model_info(), load_available_models()])
       await Promise.all([
         load_task(),
         load_task_prompts(project_id, task_id),
@@ -313,7 +356,9 @@
           train_set_size: null,
           model_is_supported: false,
           validation_status: "unchecked" as const,
-          validation_message: null,
+          judge_error: null,
+          train_error: null,
+          other_error: null,
         }
       })
 
@@ -380,14 +425,7 @@
         run_config_validation_status = "invalid"
         run_config_blocking_reason = "unsupported_model"
         if (run_config) {
-          const friendly_model = model_name(
-            run_config.run_config_properties.model_name,
-            $model_info,
-          )
-          const friendly_provider = provider_name_from_id(
-            run_config.run_config_properties.model_provider_name,
-          )
-          run_config_validation_message = `${friendly_model} (${friendly_provider}) is not supported for Kiln Prompt Optimization`
+          run_config_validation_message = `${getDetailedModelName(run_config, $model_info)} is not supported for Prompt Optimization`
         } else {
           run_config_validation_message =
             "Model is not supported for Kiln Prompt Optimization"
@@ -417,7 +455,9 @@
 
     try {
       evals_with_configs[index].validation_status = "checking"
-      evals_with_configs[index].validation_message = null
+      evals_with_configs[index].judge_error = null
+      evals_with_configs[index].train_error = null
+      evals_with_configs[index].other_error = null
       evals_with_configs = [...evals_with_configs]
 
       const { data, error } = await client.GET(
@@ -471,46 +511,31 @@
           }
         }
 
-        // Construct friendly message
         if (!data.has_default_config) {
-          evals_with_configs[index].validation_message =
-            "Please set a default config for this evaluator"
-          evals_with_configs[index].validation_status = "invalid"
+          evals_with_configs[index].judge_error = "No judge configured"
         } else if (!data.model_is_supported) {
-          const config = evals_with_configs[index].current_config
-          if (config) {
-            const friendly_model = model_name(config.model_name, $model_info)
-            const friendly_provider = provider_name_from_id(
-              config.model_provider,
-            )
-            evals_with_configs[index].validation_message =
-              `${friendly_model} (${friendly_provider}) is not supported for Kiln Prompt Optimization`
-          } else {
-            evals_with_configs[index].validation_message =
-              "Model is not supported for Kiln Prompt Optimization"
-          }
-          evals_with_configs[index].validation_status = "invalid"
-        } else if (!data.has_train_set) {
-          evals_with_configs[index].validation_message =
-            "This eval requires a training set to use as examples during optimization."
-          evals_with_configs[index].validation_status = "invalid"
+          evals_with_configs[index].judge_error = "Model not supported"
+        }
+
+        if (!data.has_train_set) {
+          evals_with_configs[index].train_error = "Training set required"
         } else if (
           evals_with_configs[index].train_set_size !== null &&
           evals_with_configs[index].train_set_size === 0
         ) {
-          const train_tag = tagFromFilterId(item.eval.train_set_filter_id || "")
-          evals_with_configs[index].validation_message =
-            `The train set is empty. Add data to the tag "${train_tag}" to use it for optimization.`
-          evals_with_configs[index].validation_status = "invalid"
-        } else {
-          evals_with_configs[index].validation_message = null
-          evals_with_configs[index].validation_status = "valid"
+          evals_with_configs[index].train_error = "Training set is empty"
         }
+
+        const has_errors =
+          evals_with_configs[index].judge_error !== null ||
+          evals_with_configs[index].train_error !== null
+        evals_with_configs[index].validation_status = has_errors
+          ? "invalid"
+          : "valid"
       }
     } catch (e) {
       evals_with_configs[index].validation_status = "invalid"
-      evals_with_configs[index].validation_message =
-        createKilnError(e).getMessage()
+      evals_with_configs[index].other_error = createKilnError(e).getMessage()
     }
     evals_with_configs = [...evals_with_configs]
     if (
@@ -520,68 +545,6 @@
       selected_eval_ids = new Set(
         [...selected_eval_ids].filter((id) => id !== item.eval.id),
       )
-    }
-  }
-
-  async function save_train_set_for_eval(eval_id: string, tag: string) {
-    if (!tag || tag.trim().length === 0) {
-      train_set_errors[eval_id] = "Tag cannot be empty"
-      train_set_errors = { ...train_set_errors }
-      return
-    }
-
-    try {
-      saving_train_set[eval_id] = true
-      saving_train_set = { ...saving_train_set }
-      train_set_errors[eval_id] = ""
-      train_set_errors = { ...train_set_errors }
-
-      const cleaned_tag = tag.trim().replace(/\s+/g, "_")
-      const train_set_filter_id = `tag::${cleaned_tag}`
-
-      const { error } = await client.PATCH(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-              eval_id,
-            },
-          },
-          body: {
-            train_set_filter_id,
-          },
-        },
-      )
-
-      if (error) {
-        throw error
-      }
-
-      // Clear the input and hide the picker
-      train_set_tags[eval_id] = ""
-      showing_train_set_picker[eval_id] = false
-      train_set_tags = { ...train_set_tags }
-      showing_train_set_picker = { ...showing_train_set_picker }
-
-      // Find the eval index and re-check validation
-      const index = evals_with_configs.findIndex(
-        (item) => item.eval.id === eval_id,
-      )
-      if (index !== -1) {
-        // Update the eval object with the new train_set_filter_id
-        evals_with_configs[index].eval.train_set_filter_id = train_set_filter_id
-        evals_with_configs = [...evals_with_configs]
-        await check_eval_validation(index, true)
-      }
-    } catch (e) {
-      train_set_errors[eval_id] =
-        createKilnError(e).getMessage() || "Failed to save train set"
-      train_set_errors = { ...train_set_errors }
-    } finally {
-      saving_train_set[eval_id] = false
-      saving_train_set = { ...saving_train_set }
     }
   }
 
@@ -659,14 +622,18 @@
           configs,
           current_config,
           validation_status: "unchecked" as const,
-          validation_message: null,
+          judge_error: null,
+          train_error: null,
+          other_error: null,
         }
       })
     } else {
       evals_with_configs = evals_with_configs.map((item) => ({
         ...item,
         validation_status: "unchecked" as const,
-        validation_message: null,
+        judge_error: null,
+        train_error: null,
+        other_error: null,
       }))
     }
 
@@ -820,6 +787,7 @@
       on:submit={create_gepa_job}
       bind:error={create_job_error}
       bind:submitting={create_job_loading}
+      compact_button={true}
       warn_before_unload={selected_run_config !== null}
     >
       <div class="flex flex-col gap-8">
@@ -897,9 +865,9 @@
               <div class="mt-6 flex flex-row gap-6">
                 <div class="flex-1 min-w-0">
                   <div class="text-md font-semibold text-left">
-                    Run ConfigurationPrompt
+                    Run Configuration Prompt
                   </div>
-                  <div class="text-xs font-medium text-gray-500 mt-1 mb-1">
+                  <div class="text-xs text-gray-500 mt-1 mb-1">
                     Your selected run configuration's prompt. Will be used as
                     the starting point for optimization.
                   </div>
@@ -918,280 +886,253 @@
 
         {#if review_visible && selected_run_config}
           <div>
-            <div class="flex flex-col gap-1">
-              <div class="text-xl font-bold">Step 2: Select Evals</div>
-              <div class="text-xs text-gray-500">
-                Your prompt will be optimized to maximize performance across
-                these evaluators using their tagged training data.
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div
-              class="text-sm font-medium text-gray-700 mb-2 flex items-center justify-between"
-            >
-              <div class="flex items-center gap-2">
-                <span>Evaluator Judges</span>
-                {#if evals_with_configs.length > 0}
-                  <span class="badge badge-sm badge-outline"
-                    >{selected_eval_ids.size} of {evals_with_configs.length} selected</span
-                  >
-                {/if}
-              </div>
-              {#if evals_with_configs.length > 0}
-                <button
-                  type="button"
-                  class="btn btn-xs btn-outline"
-                  on:click={refresh_evaluators}
-                  disabled={is_validating}
-                >
-                  {#if is_validating}
-                    <span class="loading loading-spinner loading-xs"></span>
-                  {:else}
-                    ↻
-                  {/if}
-                  Refresh
-                </button>
-              {/if}
-            </div>
-
-            {#if evals_loading}
-              <div class="flex justify-center items-center py-8">
-                <div class="loading loading-spinner loading-md"></div>
-              </div>
-            {:else if evals_error}
-              <div class="bg-error/10 border border-error/20 rounded-lg p-4">
-                <div class="text-error text-sm">
-                  {evals_error.getMessage() || "Failed to load Evals"}
+            <div>
+              <div class="flex flex-col gap-1">
+                <div class="text-xl font-bold">Step 2: Select Evals</div>
+                <div class="text-xs text-gray-500 font-medium">
+                  Your prompt will be optimized to maximize performance across
+                  these evaluators using their tagged training data.
                 </div>
               </div>
-            {:else if evals_with_configs.length === 0}
-              <div class="bg-base-200 rounded-lg p-4 text-center text-gray-500">
-                No evals configured for this task.
-              </div>
-            {:else}
-              <div class="bg-base-200 rounded-lg p-4 space-y-3">
-                {#each evals_with_configs as { eval: evalItem, current_config, has_default_config, has_train_set, train_set_size, model_is_supported, validation_status, validation_message }}
-                  {@const spec_id = "legacy"}
-                  {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
-                  {@const eval_configs_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
-                  {@const is_selected = evalItem.id
-                    ? selected_eval_ids.has(evalItem.id)
-                    : false}
-                  <div
-                    class={`pl-3 py-2 ${
-                      !is_selected ? "opacity-80 text-base-content/70" : ""
-                    }`}
+            </div>
+
+            <div>
+              <div
+                class="text-sm font-medium text-gray-700 mt-2 mb-2 flex items-center justify-between"
+              >
+                <div class="flex items-center gap-2">
+                  {#if evals_with_configs.length > 0}
+                    <span
+                      >{selected_eval_ids.size} of {evals_with_configs.length} selected</span
+                    >
+                  {/if}
+                </div>
+                {#if evals_with_configs.length > 0}
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline"
+                    on:click={refresh_evaluators}
+                    disabled={is_validating}
                   >
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-sm shrink-0"
-                            checked={is_selected}
-                            disabled={validation_status === "invalid"}
-                            on:change={(e) => {
-                              if (evalItem.id) {
-                                const newSet = new Set(selected_eval_ids)
-                                if (e.currentTarget.checked) {
-                                  newSet.add(evalItem.id)
-                                } else {
-                                  newSet.delete(evalItem.id)
+                    {#if is_validating}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else}
+                      ↻
+                    {/if}
+                    Refresh
+                  </button>
+                {/if}
+              </div>
+
+              {#if evals_loading}
+                <div class="flex justify-center items-center py-8">
+                  <div class="loading loading-spinner loading-md"></div>
+                </div>
+              {:else if evals_error}
+                <div class="bg-error/10 border border-error/20 rounded-lg p-4">
+                  <div class="text-error text-sm">
+                    {evals_error.getMessage() || "Failed to load Evals"}
+                  </div>
+                </div>
+              {:else if evals_with_configs.length === 0}
+                <div
+                  class="bg-base-200 rounded-lg p-4 text-center text-gray-500"
+                >
+                  No evals configured for this task.
+                </div>
+              {:else}
+                <div
+                  class="overflow-x-auto overflow-y-hidden rounded-lg border"
+                >
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th style="width: 40px;"></th>
+                        <th
+                          on:click={() => handleEvalSort("name")}
+                          class="hover:bg-base-200 cursor-pointer"
+                        >
+                          Name
+                          <span class="inline-block w-3 text-center">
+                            {evalSortColumn === "name"
+                              ? evalSortDirection === "asc"
+                                ? "▲"
+                                : "▼"
+                              : "\u200B"}
+                          </span>
+                        </th>
+                        <th>Judge</th>
+                        <th>Training Dataset</th>
+                        <th
+                          on:click={() => handleEvalSort("status")}
+                          class="hover:bg-base-200 cursor-pointer"
+                        >
+                          Status
+                          <span class="inline-block w-3 text-center">
+                            {evalSortColumn === "status"
+                              ? evalSortDirection === "asc"
+                                ? "▲"
+                                : "▼"
+                              : "\u200B"}
+                          </span>
+                        </th>
+                        <th
+                          on:click={() => handleEvalSort("created_at")}
+                          class="hover:bg-base-200 cursor-pointer"
+                        >
+                          Created
+                          <span class="inline-block w-3 text-center">
+                            {evalSortColumn === "created_at"
+                              ? evalSortDirection === "asc"
+                                ? "▲"
+                                : "▼"
+                              : "\u200B"}
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each sorted_evals_with_configs as { eval: evalItem, current_config, train_set_size, validation_status, judge_error, train_error, other_error }}
+                        {@const spec_id = "legacy"}
+                        {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
+                        {@const is_selected = evalItem.id
+                          ? selected_eval_ids.has(evalItem.id)
+                          : false}
+                        <tr
+                          class="hover:bg-base-200 cursor-pointer {!is_selected
+                            ? 'opacity-70 text-base-content/70'
+                            : ''}"
+                          on:click={() =>
+                            eval_url && window.open(eval_url, "_blank")}
+                        >
+                          <td on:click|stopPropagation>
+                            <input
+                              type="checkbox"
+                              class="checkbox checkbox-sm"
+                              checked={is_selected}
+                              disabled={validation_status === "invalid"}
+                              on:change={(e) => {
+                                if (evalItem.id) {
+                                  const newSet = new Set(selected_eval_ids)
+                                  if (e.currentTarget.checked) {
+                                    newSet.add(evalItem.id)
+                                  } else {
+                                    newSet.delete(evalItem.id)
+                                  }
+                                  selected_eval_ids = newSet
                                 }
-                                selected_eval_ids = newSet
-                              }
-                            }}
-                          />
-                          <a
-                            href={eval_url}
-                            target="_blank"
-                            class={`font-medium text-sm link hover:underline min-w-0 truncate ${
-                              !is_selected ? "text-base-content/70" : ""
-                            }`}
-                          >
+                              }}
+                            />
+                          </td>
+                          <td class="font-medium">
                             {evalItem.name}
-                          </a>
-                          {#if validation_status === "checking"}
-                            <span
-                              class="loading loading-spinner loading-xs shrink-0"
-                            ></span>
-                          {/if}
-                        </div>
-
-                        {#if evalItem.description}
-                          <div class="text-xs text-gray-600 mb-1">
-                            {evalItem.description}
-                          </div>
-                        {/if}
-
-                        {#if current_config}
-                          <div class="text-xs text-gray-500">
-                            Judge: {current_config.name} - {model_name(
-                              current_config.model_name,
-                              $model_info,
-                            )} ({provider_name_from_id(
-                              current_config.model_provider,
-                            )})
-                          </div>
-                        {/if}
-
-                        {#if has_train_set && train_set_size !== null}
-                          <div class="text-xs text-gray-500">
-                            {train_set_size} examples tagged with "{tagFromFilterId(
-                              evalItem.train_set_filter_id || "",
-                            )}"
-                          </div>
-                        {/if}
-
-                        {#if validation_message}
-                          <div
-                            class="text-xs mt-1 {validation_status === 'invalid'
-                              ? 'text-error'
-                              : 'text-gray-600'}"
-                          >
-                            {#if !has_default_config}
-                              Please set a default config for this evaluator.
-                              <a
-                                href={eval_configs_url}
-                                target="_blank"
-                                class="link"
-                              >
-                                Set default judge
-                              </a>
-                            {:else if !model_is_supported}
-                              {validation_message}
-                              <a
-                                href={eval_configs_url}
-                                target="_blank"
-                                class="link"
-                              >
-                                Change default judge
-                              </a>
-                            {:else if !has_train_set}
-                              {validation_message}
-                              <button
-                                type="button"
-                                class="link"
-                                on:click={() => {
-                                  if (evalItem.id) {
-                                    showing_train_set_picker[evalItem.id] = true
-                                    showing_train_set_picker = {
-                                      ...showing_train_set_picker,
-                                    }
-                                  }
-                                }}
-                              >
-                                Set train set tag
-                              </button>
-                            {:else if train_set_size === 0}
-                              {validation_message}
-                              <a
-                                href="/dataset/{project_id}/{task_id}"
-                                target="_blank"
-                                class="link"
-                              >
-                                Tag data with "{tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
-                                )}"
-                              </a>
+                          </td>
+                          <td class="text-sm">
+                            {#if current_config}
+                              <div class="text-gray-600">
+                                {current_config.name}
+                              </div>
+                              <div class="text-xs text-gray-500">
+                                {getDetailedModelNameFromParts(
+                                  current_config.model_name,
+                                  current_config.model_provider,
+                                  $model_info,
+                                )}
+                              </div>
                             {:else}
-                              {validation_message}
+                              <span class="text-gray-400">—</span>
                             {/if}
-                          </div>
-                        {/if}
-
-                        {#if !has_train_set && showing_train_set_picker[evalItem.id || ""]}
-                          <div class="mt-2 space-y-2">
-                            <div class="text-xs text-gray-600">
-                              Enter a tag name for the train set:
-                            </div>
-                            <div class="flex items-center gap-2">
-                              <TagDropdown
-                                {project_id}
-                                {task_id}
-                                bind:tag={train_set_tags[evalItem.id || ""]}
-                                on_select={(tag) => {
-                                  if (evalItem.id) {
-                                    save_train_set_for_eval(evalItem.id, tag)
-                                  }
-                                }}
-                                on_escape={() => {
-                                  if (evalItem.id) {
-                                    train_set_tags[evalItem.id] = ""
-                                    showing_train_set_picker[evalItem.id] =
-                                      false
-                                    train_set_tags = { ...train_set_tags }
-                                    showing_train_set_picker = {
-                                      ...showing_train_set_picker,
-                                    }
-                                  }
-                                }}
-                                example_tag_set="task_run"
-                                focus_on_mount={true}
-                              />
-                              {#if saving_train_set[evalItem.id || ""]}
-                                <span class="loading loading-spinner loading-xs"
-                                ></span>
-                              {/if}
-                            </div>
-                            {#if train_set_errors[evalItem.id || ""]}
-                              <div class="text-error text-xs">
-                                {train_set_errors[evalItem.id || ""]}
+                            {#if judge_error}
+                              <div class="text-xs text-error mt-1">
+                                {judge_error}
                               </div>
                             {/if}
-                            <div class="text-xs text-gray-500">
-                              After setting the tag, go to the
-                              <a
-                                href="/dataset/{project_id}/{task_id}"
-                                target="_blank"
-                                class="link"
+                          </td>
+                          <td
+                            class="text-sm whitespace-nowrap"
+                            on:click|stopPropagation
+                          >
+                            {#if train_set_size !== null}
+                              {@const train_tag = tagFromFilterId(
+                                evalItem.train_set_filter_id || "",
+                              )}
+                              {@const dataset_link = train_tag
+                                ? `/dataset/${project_id}/${task_id}?tags=${train_tag}`
+                                : undefined}
+                              {#if dataset_link}
+                                <a
+                                  href={dataset_link}
+                                  target="_blank"
+                                  class="link text-gray-600 hover:text-secondary"
+                                >
+                                  {train_set_size}
+                                  {train_set_size === 1 ? "item" : "items"}
+                                </a>
+                              {:else}
+                                <span class="text-gray-500">
+                                  {train_set_size}
+                                  {train_set_size === 1 ? "item" : "items"}
+                                </span>
+                              {/if}
+                            {/if}
+                            {#if train_error}
+                              <div class="text-xs text-error mt-1">
+                                {train_error}
+                              </div>
+                            {/if}
+                          </td>
+                          <td on:click|stopPropagation>
+                            {#if validation_status === "checking"}
+                              <span class="loading loading-spinner loading-xs"
+                              ></span>
+                            {:else if validation_status === "valid"}
+                              <div
+                                class="badge badge-outline badge-sm badge-success"
                               >
-                                Dataset page
-                              </a>
-                              to tag your training data with "{train_set_tags[
-                                evalItem.id || ""
-                              ] || "(tag name)"}"
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
+                                Ready
+                              </div>
+                            {:else if validation_status === "invalid"}
+                              <div
+                                class="badge badge-outline badge-sm badge-error"
+                              >
+                                Not Ready
+                              </div>
+                              {#if other_error}
+                                <div class="text-xs text-error mt-1">
+                                  {other_error}
+                                </div>
+                              {/if}
+                            {/if}
+                          </td>
+                          <td class="text-sm text-gray-500 whitespace-nowrap">
+                            {formatDate(evalItem.created_at || undefined)}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
 
-            {#if selected_eval_ids.size === 0}
-              <div class="mt-3">
-                <Warning
-                  warning_color="gray"
-                  warning_icon="info"
-                  outline={true}
-                  tight={true}
-                >
-                  <div class="text-sm text-gray-600">
-                    No evaluators selected. Please select at least one
-                    evaluator.
-                  </div>
-                </Warning>
-              </div>
-            {:else if selected_eval_ids.size < evals_with_configs.length}
-              <div class="mt-3">
-                <Warning
-                  warning_color="gray"
-                  warning_icon="info"
-                  outline={true}
-                  tight={true}
-                >
-                  <div class="text-sm text-gray-600">
-                    Some evaluators are disabled. The optimizer will not be able
-                    to optimize for these evaluators.
-                  </div>
-                </Warning>
-              </div>
-            {/if}
+              {#if selected_eval_ids.size === 0}
+                <div class="mt-4 text-sm text-error text-end">
+                  No evaluators selected. Please select at least one evaluator.
+                </div>
+              {:else if selected_eval_ids.size < evals_with_configs.length}
+                <div class="mt-4 flex justify-end">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="exclaim"
+                    tight={true}
+                  >
+                    <div class="text-sm text-gray-600">
+                      Some evaluators are not selected. Your prompt will not be
+                      optimized for these evaluators.
+                    </div>
+                  </Warning>
+                </div>
+              {/if}
+            </div>
           </div>
         {/if}
       </div>
