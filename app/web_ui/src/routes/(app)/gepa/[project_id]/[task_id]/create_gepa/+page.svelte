@@ -34,7 +34,7 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
-  import { checkEntitlements } from "$lib/utils/entitlement_utils"
+  import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -259,13 +259,10 @@
     }
 
     if (kiln_copilot_connected) {
-      try {
-        const entitlements = await checkEntitlements(["prompt-optimization"])
-        has_prompt_optimization_entitlement =
-          entitlements["prompt-optimization"] ?? false
-      } catch (e) {
-        copilot_check_error = createKilnError(e)
-        has_prompt_optimization_entitlement = false
+      const { has_access, error } = await checkPromptOptimizationAccess()
+      has_prompt_optimization_entitlement = has_access
+      if (error) {
+        copilot_check_error = error
       }
     }
 

@@ -1,16 +1,8 @@
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from kiln_ai.utils.config import Config
-from kiln_ai.utils.filesystem import open_folder
-from kiln_server.project_api import project_from_id
-
 from app.desktop.log_config import get_log_file_path
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
     check_entitlements_v1_check_entitlements_get,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    HTTPValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
@@ -19,6 +11,10 @@ from app.desktop.studio_server.utils.copilot_utils import (
     check_response_error,
     get_copilot_api_key,
 )
+from fastapi import FastAPI, HTTPException
+from kiln_ai.utils.config import Config
+from kiln_ai.utils.filesystem import open_folder
+from kiln_server.project_api import project_from_id
 
 
 def open_logs_folder() -> None:
@@ -90,12 +86,6 @@ def connect_settings(app: FastAPI):
             raise HTTPException(
                 status_code=500,
                 detail="Failed to check entitlements. Please try again.",
-            )
-
-        if isinstance(result, HTTPValidationError):
-            raise HTTPException(
-                status_code=422,
-                detail="Validation error.",
             )
 
         return result.additional_properties

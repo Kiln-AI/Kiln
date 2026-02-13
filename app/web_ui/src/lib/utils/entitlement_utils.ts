@@ -1,4 +1,5 @@
 import { client } from "$lib/api_client"
+import { createKilnError, type KilnError } from "./error_handlers"
 
 /**
  * Check if the user has specific entitlements (feature access)
@@ -23,4 +24,22 @@ export async function checkEntitlements(
     throw new Error("Failed to check entitlements")
   }
   return data
+}
+
+export async function checkPromptOptimizationAccess(): Promise<{
+  has_access: boolean
+  error: KilnError | null
+}> {
+  try {
+    const entitlements = await checkEntitlements(["prompt-optimization"])
+    return {
+      has_access: entitlements["prompt-optimization"] ?? false,
+      error: null,
+    }
+  } catch (e) {
+    return {
+      has_access: false,
+      error: createKilnError(e),
+    }
+  }
 }

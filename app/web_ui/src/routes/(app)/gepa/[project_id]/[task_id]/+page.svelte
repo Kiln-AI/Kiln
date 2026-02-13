@@ -10,7 +10,7 @@
   import Intro from "$lib/ui/intro.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
-  import { checkEntitlements } from "$lib/utils/entitlement_utils"
+  import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import { DUMMY_GEPA_JOBS } from "$lib/dummy/gepa_jobs"
@@ -56,13 +56,10 @@
       }
 
       if (kiln_copilot_connected) {
-        try {
-          const entitlements = await checkEntitlements(["prompt-optimization"])
-          has_prompt_optimization_entitlement =
-            entitlements["prompt-optimization"] ?? false
-        } catch (e) {
-          copilot_check_error = createKilnError(e)
-          has_prompt_optimization_entitlement = false
+        const { has_access, error } = await checkPromptOptimizationAccess()
+        has_prompt_optimization_entitlement = has_access
+        if (error) {
+          copilot_check_error = error
         }
       }
     }
