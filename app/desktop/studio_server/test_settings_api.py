@@ -1,5 +1,5 @@
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
@@ -7,6 +7,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.utils.config import Config
 
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
+    CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
+    HTTPValidationError,
+)
 from app.desktop.studio_server.settings_api import connect_settings
 
 
@@ -161,3 +167,155 @@ def test_open_logs_endpoint(client):
         response = client.post("/api/open_logs")
         assert response.status_code == 200
         m.assert_called_once()
+
+
+class TestCheckEntitlements:
+    @pytest.fixture
+    def mock_api_key(self):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = "test_api_key"
+            yield mock_config
+
+    def test_check_entitlements_no_api_key(self, client):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization"
+            )
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["detail"]
+
+    def test_check_entitlements_single_feature_true(self, client, mock_api_key):
+        mock_response = MagicMock(
+            spec=CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet
+        )
+        mock_response.additional_properties = {"prompt-optimization": True}
+
+        mock_detailed_response = MagicMock()
+        mock_detailed_response.status_code = 200
+        mock_detailed_response.parsed = mock_response
+
+        with patch(
+            "app.desktop.studio_server.settings_api.check_entitlements_v1_check_entitlements_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check:
+            mock_check.return_value = mock_detailed_response
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization"
+            )
+            assert response.status_code == 200
+            assert response.json() == {"prompt-optimization": True}
+            mock_check.assert_called_once()
+
+    def test_check_entitlements_single_feature_false(self, client, mock_api_key):
+        mock_response = MagicMock(
+            spec=CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet
+        )
+        mock_response.additional_properties = {"prompt-optimization": False}
+
+        mock_detailed_response = MagicMock()
+        mock_detailed_response.status_code = 200
+        mock_detailed_response.parsed = mock_response
+
+        with patch(
+            "app.desktop.studio_server.settings_api.check_entitlements_v1_check_entitlements_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check:
+            mock_check.return_value = mock_detailed_response
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization"
+            )
+            assert response.status_code == 200
+            assert response.json() == {"prompt-optimization": False}
+
+    def test_check_entitlements_multiple_features(self, client, mock_api_key):
+        mock_response = MagicMock(
+            spec=CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet
+        )
+        mock_response.additional_properties = {
+            "prompt-optimization": True,
+            "advanced-analytics": False,
+            "custom-models": True,
+        }
+
+        mock_detailed_response = MagicMock()
+        mock_detailed_response.status_code = 200
+        mock_detailed_response.parsed = mock_response
+
+        with patch(
+            "app.desktop.studio_server.settings_api.check_entitlements_v1_check_entitlements_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check:
+            mock_check.return_value = mock_detailed_response
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization,advanced-analytics,custom-models"
+            )
+            assert response.status_code == 200
+            assert response.json() == {
+                "prompt-optimization": True,
+                "advanced-analytics": False,
+                "custom-models": True,
+            }
+
+    def test_check_entitlements_validation_error(self, client, mock_api_key):
+        mock_validation_error = MagicMock(spec=HTTPValidationError)
+
+        mock_detailed_response = MagicMock()
+        mock_detailed_response.status_code = 200
+        mock_detailed_response.parsed = mock_validation_error
+
+        with patch(
+            "app.desktop.studio_server.settings_api.check_entitlements_v1_check_entitlements_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check:
+            mock_check.return_value = mock_detailed_response
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization"
+            )
+            assert response.status_code == 422
+            assert "Validation error" in response.json()["detail"]
+
+    def test_check_entitlements_server_error(self, client, mock_api_key):
+        mock_detailed_response = MagicMock()
+        mock_detailed_response.status_code = 200
+        mock_detailed_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.settings_api.check_entitlements_v1_check_entitlements_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check:
+            mock_check.return_value = mock_detailed_response
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization"
+            )
+            assert response.status_code == 500
+            assert "Failed to check entitlements" in response.json()["detail"]
+
+    def test_check_entitlements_api_error_response(self, client, mock_api_key):
+        mock_detailed_response = MagicMock()
+        mock_detailed_response.status_code = 403
+        mock_detailed_response.content = b'{"message": "Forbidden: Invalid API key"}'
+
+        with patch(
+            "app.desktop.studio_server.settings_api.check_entitlements_v1_check_entitlements_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check:
+            mock_check.return_value = mock_detailed_response
+
+            response = client.get(
+                "/api/check_entitlements?feature_codes=prompt-optimization"
+            )
+            assert response.status_code == 403
+            assert "Forbidden: Invalid API key" in response.json()["detail"]

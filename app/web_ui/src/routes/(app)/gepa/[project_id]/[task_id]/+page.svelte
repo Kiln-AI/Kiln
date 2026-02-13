@@ -10,7 +10,9 @@
   import Intro from "$lib/ui/intro.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import { checkEntitlements } from "$lib/utils/entitlement_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
+  import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import { DUMMY_GEPA_JOBS } from "$lib/dummy/gepa_jobs"
 
   const USE_DUMMY_DATA = true
@@ -25,6 +27,7 @@
   let gepa_jobs_error: KilnError | null = null
 
   let kiln_copilot_connected: boolean | null = null
+  let has_prompt_optimization_entitlement: boolean | null = null
   let copilot_check_error: KilnError | null = null
 
   $: error = copilot_check_error || gepa_jobs_error
@@ -37,6 +40,7 @@
           new Date(a.created_at || "").getTime(),
       )
       kiln_copilot_connected = true
+      has_prompt_optimization_entitlement = true
       loading = false
       return
     }
@@ -49,6 +53,17 @@
       } catch (e) {
         copilot_check_error = createKilnError(e)
         kiln_copilot_connected = false
+      }
+
+      if (kiln_copilot_connected) {
+        try {
+          const entitlements = await checkEntitlements(["prompt-optimization"])
+          has_prompt_optimization_entitlement =
+            entitlements["prompt-optimization"] ?? false
+        } catch (e) {
+          copilot_check_error = createKilnError(e)
+          has_prompt_optimization_entitlement = false
+        }
       }
     }
 
@@ -160,6 +175,8 @@
   {:else if is_empty}
     {#if kiln_copilot_connected === false}
       <CopilotRequiredCard />
+    {:else if has_prompt_optimization_entitlement === false}
+      <EntitlementRequiredCard feature_name="Prompt Optimization" />
     {:else}
       <div class="flex flex-col items-center justify-center min-h-[60vh]">
         <Intro

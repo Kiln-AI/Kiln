@@ -1405,6 +1405,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/check_entitlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Entitlements
+         * @description Check whether the authenticated user has the given entitlements.
+         *
+         *     Args:
+         *         feature_codes: Comma-separated entitlement feature codes to check
+         *
+         *     Returns:
+         *         Dict mapping each feature code to a boolean indicating if user has that entitlement
+         */
+        get: operations["check_entitlements_api_check_entitlements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/generate_categories": {
         parameters: {
             query?: never;
@@ -10142,6 +10168,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_entitlements_api_check_entitlements_get: {
+        parameters: {
+            query: {
+                feature_codes: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */
