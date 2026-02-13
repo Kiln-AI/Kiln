@@ -820,6 +820,7 @@
       on:submit={create_gepa_job}
       bind:error={create_job_error}
       bind:submitting={create_job_loading}
+      warn_before_unload={selected_run_config !== null}
     >
       <div class="flex flex-col gap-8">
         <div>
@@ -918,10 +919,10 @@
         {#if review_visible && selected_run_config}
           <div>
             <div class="flex flex-col gap-1">
-              <div class="text-xl font-bold">Step 2: Review Configuration</div>
+              <div class="text-xl font-bold">Step 2: Select Evals</div>
               <div class="text-xs text-gray-500">
-                Kiln Prompt Optimization will optimize the prompt to maximize
-                performance using this configuration.
+                Your prompt will be optimized to maximize performance across
+                these evaluators using their tagged training data.
               </div>
             </div>
           </div>
@@ -954,10 +955,6 @@
                 </button>
               {/if}
             </div>
-            <div class="text-xs text-gray-500 mb-3">
-              Kiln Prompt Optimization will optimize the prompt to maximize
-              performance on each of these evaluators.
-            </div>
 
             {#if evals_loading}
               <div class="flex justify-center items-center py-8">
@@ -966,12 +963,12 @@
             {:else if evals_error}
               <div class="bg-error/10 border border-error/20 rounded-lg p-4">
                 <div class="text-error text-sm">
-                  {evals_error.getMessage() || "Failed to load evaluators"}
+                  {evals_error.getMessage() || "Failed to load Evals"}
                 </div>
               </div>
             {:else if evals_with_configs.length === 0}
               <div class="bg-base-200 rounded-lg p-4 text-center text-gray-500">
-                No evaluators configured for this task.
+                No evals configured for this task.
               </div>
             {:else}
               <div class="bg-base-200 rounded-lg p-4 space-y-3">
