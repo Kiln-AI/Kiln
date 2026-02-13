@@ -3137,6 +3137,8 @@ export interface components {
             tool_id: string;
             /** Task Name */
             task_name: string;
+            /** Instruction */
+            instruction: string;
         };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {

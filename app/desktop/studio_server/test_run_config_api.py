@@ -345,13 +345,17 @@ def test_create_task_from_tool_plaintext(client, tmp_path):
         mock_project_from_id.return_value = project
         response = client.post(
             "/api/projects/project2/create_task_from_tool",
-            json={"tool_id": "mcp::local::server::fake_tool", "task_name": "New Task"},
+            json={
+                "tool_id": "mcp::local::server::fake_tool",
+                "task_name": "New Task",
+                "instruction": "Use the tool to complete the task.",
+            },
         )
 
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "New Task"
-    assert data["instruction"] == "Call the fake_tool tool to complete this task."
+    assert data["instruction"] == "Use the tool to complete the task."
     # Single string input MCP tools map to plaintext tasks.
     assert data["input_json_schema"] is None
     assert data["output_json_schema"] is None
@@ -410,6 +414,7 @@ def test_create_task_from_tool_structured(client, tmp_path):
             json={
                 "tool_id": "mcp::local::server::fake_tool",
                 "task_name": "Structured Task",
+                "instruction": "Use the tool to complete the task.",
             },
         )
 
@@ -458,7 +463,11 @@ def test_create_task_from_tool_invalid_tool(client, tmp_path):
         mock_project_from_id.return_value = project
         response = client.post(
             "/api/projects/project_err/create_task_from_tool",
-            json={"tool_id": "not_mcp", "task_name": "Should Fail"},
+            json={
+                "tool_id": "not_mcp",
+                "task_name": "Should Fail",
+                "instruction": "Use the tool to complete the task.",
+            },
         )
 
     assert response.status_code == 400

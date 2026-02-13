@@ -15,12 +15,13 @@ from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CreateTaskFromToolRequest(BaseModel):
     tool_id: str
     task_name: str
+    instruction: str = Field(min_length=1)
 
 
 class CreateMcpRunConfigRequest(BaseModel):
@@ -281,7 +282,7 @@ def connect_run_config_api(app: FastAPI):
 
         task = Task(
             name=request.task_name,
-            instruction=f"Call the {tool_name} tool to complete this task.",
+            instruction=request.instruction,
             input_json_schema=input_json_schema,
             output_json_schema=output_json_schema,
             parent=project,

@@ -19,6 +19,7 @@
   let tool: ExternalToolApiDescription | null = null
   let loading_error: KilnError | null = null
   let task_name = ""
+  let instruction = ""
   let submitting = false
   let saved = false
   let form_error: KilnError | null = null
@@ -35,6 +36,7 @@
     if (cached_tool) {
       tool = cached_tool
       task_name = cached_tool.name
+      instruction = cached_tool.description?.trim() || instruction
       return
     }
 
@@ -63,6 +65,7 @@
       }
       tool = matched_tool
       task_name = matched_tool.name
+      instruction = matched_tool.description?.trim() || instruction
     } catch (err) {
       loading_error = createKilnError(err)
     }
@@ -87,6 +90,13 @@
       })
       return
     }
+    if (!instruction.trim()) {
+      form_error = createKilnError({
+        message: "Instruction is required.",
+        status: 400,
+      })
+      return
+    }
 
     submitting = true
     saved = false
@@ -97,7 +107,7 @@
         "/api/projects/{project_id}/create_task_from_tool",
         {
           params: { path: { project_id } },
-          body: { tool_id, task_name },
+          body: { tool_id, task_name, instruction },
         },
       )
       if (error) {
@@ -154,6 +164,14 @@
           label="Task Name"
           id="task_name"
           bind:value={task_name}
+        />
+        <FormElement
+          inputType="textarea"
+          label="Prompt / Task Instructions"
+          id="instruction"
+          height="medium"
+          bind:value={instruction}
+          description="This prompt won't be used when calling MCP directly. Only if you want to invoke this task with a model call."
         />
         <div class="mt-6">
           <div class="text-sm font-medium mb-2">Input Schema (from tool)</div>
