@@ -128,6 +128,16 @@
         "You must have deno, a JavaScript runtime, installed: https://deno.com. If you had to install deno, restart Kiln before connecting the server.",
     },
     {
+      name: "Memory",
+      subtitle: "by Anthropic",
+      description: "Save and retrieve information to a local knowledge graph.",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-memory"],
+      env_vars: [],
+      installation_instruction:
+        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
+    },
+    {
       name: "Access Files",
       subtitle: "by Anthropic",
       description: "Read, write, and manipulate local files on your machine.",

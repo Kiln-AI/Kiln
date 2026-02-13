@@ -26,6 +26,14 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties
+
+# Import agent run context for run lifecycle management
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    generate_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -109,7 +117,7 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output, _ = await self.invoke_returning_run_output(input, input_source)
         return run_output
 
-    async def invoke_returning_run_output(
+    async def _run_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
@@ -197,6 +205,33 @@ class BaseAdapter(metaclass=ABCMeta):
             run.id = None
 
         return run, run_output
+
+    async def invoke_returning_run_output(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+    ) -> Tuple[TaskRun, RunOutput]:
+        # Determine if this is the root agent (no existing run context)
+        is_root_agent = get_agent_run_id() is None
+
+        if is_root_agent:
+            run_id = generate_agent_run_id()
+            set_agent_run_id(run_id)
+
+        try:
+            return await self._run_returning_run_output(input, input_source)
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        from kiln_ai.tools.mcp_session_manager import (
+                            MCPSessionManager,
+                        )
+
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
 
     def has_structured_output(self) -> bool:
         return self.output_schema is not None
