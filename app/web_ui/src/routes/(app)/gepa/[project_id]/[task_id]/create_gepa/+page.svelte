@@ -795,10 +795,10 @@
       </div>
     {:else if created_job}
       <Completed
-        title="Kiln Prompt Optimization Job Created"
-        subtitle="It will take a while to optimize your prompt."
+        title="Prompt Optimization Job Started"
+        subtitle="It will take a while to complete optimization (could take up to several hours depending on the token budget, number of evaluators and examples)."
         link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
-        button_text="View Kiln Prompt Optimization Job"
+        button_text="View Job"
       />
     {:else if !current_task}
       <div

@@ -4733,6 +4733,11 @@ export interface components {
              */
             created_prompt_id?: string | null;
             /**
+             * Created Run Config Id
+             * @description The ID of the run config created from this job's result, if any.
+             */
+            created_run_config_id?: string | null;
+            /**
              * Eval Ids
              * @description List of eval IDs used for this job.
              */
