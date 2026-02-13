@@ -259,10 +259,11 @@
     }
 
     if (kiln_copilot_connected) {
-      const { has_access, error } = await checkPromptOptimizationAccess()
+      const { has_access, error: entitlement_error } =
+        await checkPromptOptimizationAccess()
       has_prompt_optimization_entitlement = has_access
-      if (error) {
-        copilot_check_error = error
+      if (entitlement_error) {
+        copilot_check_error = entitlement_error
       }
     }
 
