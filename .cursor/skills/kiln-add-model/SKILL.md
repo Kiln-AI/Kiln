@@ -106,11 +106,30 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
 
-**Inherit from predecessor** — if the predecessor uses `StructuredOutputMode.json_schema`, assume the new model does too unless you found a quirk.
+**Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
-**Common flags:** `structured_output_mode`, `reasoning_capable`, `temp_top_p_exclusive`, `parser`/`formatter`, multimodal flags, `suggested_for_evals`/`suggested_for_data_gen`.
+**Setting flags — use catalog data + predecessor as dual signals:**
 
-### 3c. Multimodal capabilities
+The LiteLLM catalog and models.dev responses include capability flags (`supports_vision`, `supports_function_calling`, `supports_reasoning`, etc.). Use these as the **primary signal** for what to enable on the new model:
+
+- If the catalog says `supports_vision: true` → enable `supports_vision`, `multimodal_capable`, and vision MIME types (see 2c)
+- If the catalog says `supports_function_calling: true` → use `StructuredOutputMode.json_schema` (or `function_calling` depending on provider norms — check predecessor)
+- If the catalog says `supports_reasoning: true` → enable `reasoning_capable` and check if parser/formatter/thinking flags are needed
+
+Then **cross-check against the predecessor**. The predecessor tells you *how* Kiln configures a similar model (which `structured_output_mode`, which provider-specific flags, etc.). The catalog tells you *what* the model can do. Use both:
+- Catalog says the model supports vision but predecessor doesn't have it? Enable it — this is a new capability.
+- Predecessor has `temp_top_p_exclusive` but nothing in the catalog mentions it? Keep it — it's a provider quirk the catalog doesn't track.
+- Catalog and predecessor disagree on something? Trust the catalog for capabilities, trust the predecessor for Kiln-specific configuration patterns.
+
+**Common flags:**
+- `structured_output_mode` – how the model handles JSON output
+- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
+- `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
+- `reasoning_capable` – for thinking/reasoning models
+- `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
+- `parser` / `formatter` – for models needing special parsing (e.g. R1-style thinking)
+
+#### 2c. Multimodal capabilities
 
 If the model supports non-text inputs, configure:
 
