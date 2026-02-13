@@ -1,17 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import {
-    current_project,
-    current_task,
-    current_task_prompts,
-    load_available_prompts,
-    prompt_name_from_id,
-  } from "$lib/stores"
-  import { load_task_run_configs } from "$lib/stores/run_configs_store"
+  import { current_task, current_task_prompts } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { getPromptType } from "../../prompt_generators/prompt_generators"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -21,41 +15,24 @@
     (prompt) => prompt.id === prompt_id,
   )
 
-  $: can_edit =
-    prompt_model?.id.startsWith("id::") ||
-    prompt_model?.id.startsWith("task_run_config::")
-
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
     prompt_props = Object.fromEntries(
       Object.entries({
         ID: prompt_model?.id,
         Name: prompt_model?.name,
-        Description: prompt_model?.description,
+        Description: prompt_model?.description || undefined,
+        Type: getPromptType(
+          prompt_model?.id || "",
+          prompt_model?.generator_id || null,
+        ),
         "Created By": prompt_model?.created_by,
         "Created At": formatDate(prompt_model?.created_at || undefined),
-        "Chain of Thought": prompt_model?.chain_of_thought_instructions
-          ? "Yes"
-          : "No",
-        "Source Generator": prompt_model?.generator_id
-          ? prompt_name_from_id(
-              prompt_model?.generator_id,
-              $current_task_prompts,
-            )
-          : undefined,
       }).filter(([_, value]) => value !== undefined && value !== null),
     )
   }
 
   let edit_dialog: EditDialog | null = null
-
-  async function after_save() {
-    edit_dialog?.close()
-    await Promise.all([
-      load_available_prompts(true),
-      load_task_run_configs(project_id, task_id, true),
-    ])
-  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -73,7 +50,7 @@
         href: `/prompts/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={can_edit
+    action_buttons={prompt_model?.id.startsWith("id::")
       ? [
           {
             label: "Edit",
@@ -131,15 +108,22 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Prompt"
-  patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
-  {after_save}
+  warning="Prompt body is locked to preserve consistency of past data. If you want to edit the prompt body, create a new prompt."
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/prompts/${prompt_id}`}
+  delete_url={`/api/projects/${project_id}/tasks/${task_id}/prompts/${prompt_id}`}
   fields={[
     {
       label: "Prompt Name",
-      description: "The name of the prompt",
       api_name: "name",
       value: prompt_model?.name || "",
       input_type: "input",
+    },
+    {
+      label: "Prompt Description",
+      api_name: "description",
+      optional: true,
+      value: prompt_model?.description || "",
+      input_type: "textarea",
     },
   ]}
 />

@@ -46,6 +46,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
+from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
 
@@ -689,8 +690,8 @@ def test_update_run_config_starred(client, mock_task_from_id, mock_run_config):
     assert mock_run_config.starred is False
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1/starred",
-        params={"starred": True},
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"starred": True},
     )
     assert response.status_code == 200
     result = response.json()
@@ -706,8 +707,8 @@ def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
     mock_run_config.save_to_file()
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1/starred",
-        params={"starred": False},
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"starred": False},
     )
     assert response.status_code == 200
     result = response.json()
@@ -717,17 +718,17 @@ def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
     assert loaded.starred is False
 
 
-def test_update_run_config_starred_not_found(client, mock_task_from_id, mock_task):
+def test_update_run_config_not_found(client, mock_task_from_id, mock_task):
     """Test the PATCH endpoint returns 404 for non-existent run config."""
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/non_existent/starred",
-        params={"starred": True},
+        "/api/projects/project1/tasks/task1/run_config/non_existent",
+        json={"starred": True},
     )
     assert response.status_code == 404
 
 
-def test_update_run_config_starred_finetune(client, mock_task_from_id, mock_task):
-    """Test that starring a finetune run config (no path) returns 400."""
+def test_update_run_config_no_path(client, mock_task_from_id, mock_task):
+    """Test that updating a run config without a path (e.g. finetune) returns 400."""
     finetune_run_config = TaskRunConfig(
         id="finetune_run_config::project1::task1::ft1",
         name="Finetune Config",
@@ -745,10 +746,45 @@ def test_update_run_config_starred_finetune(client, mock_task_from_id, mock_task
     ) as mock_from_id:
         mock_from_id.return_value = finetune_run_config
         response = client.patch(
-            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1/starred",
-            params={"starred": True},
+            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1",
+            json={"starred": True},
         )
     assert response.status_code == 400
+
+
+def test_update_run_config_prompt_name(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to update a frozen prompt's name."""
+    mock_run_config.prompt = BasePrompt(
+        name="Original Name",
+        prompt="This is a frozen prompt",
+    )
+    mock_run_config.save_to_file()
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"prompt_name": "Updated Name"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["prompt"]["name"] == "Updated Name"
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.prompt is not None
+    assert loaded.prompt.name == "Updated Name"
+
+
+def test_update_run_config_prompt_name_no_prompt(
+    client, mock_task_from_id, mock_run_config
+):
+    """Test that updating prompt_name when no frozen prompt exists returns 400."""
+    assert mock_run_config.prompt is None
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"prompt_name": "New Name"},
+    )
+    assert response.status_code == 400
+    assert "no frozen prompt" in response.json()["detail"].lower()
 
 
 @pytest.fixture

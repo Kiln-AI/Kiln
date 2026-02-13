@@ -13,6 +13,7 @@
   } from "$lib/stores"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
+  import { fetchPricingData, getModelPrice } from "./price"
 
   $: project_id = $ui_state.current_project_id
   $: task_id = $ui_state.current_task_id
@@ -66,6 +67,8 @@
     friendly_name: string
     name: string
     providers: Provider[]
+    featured_rank?: number | null
+    editorial_notes?: string | null
   }
 
   interface ConfigData {
@@ -75,12 +78,13 @@
   let models: Model[] = []
   let filteredModels: Model[] = []
   let loading = true
+  let pricingLoading = true
   let error: KilnError | null = null
 
   // Search and filter state
   let searchQuery = ""
   let selectedProvider = ""
-  let selectedCapability = ""
+  let selectedCapability = "featured"
 
   // Sorting state
   let sortBy = ""
@@ -89,6 +93,7 @@
   // Available filter options
   let providers: string[] = []
   let capabilities = [
+    { value: "featured", label: "Featured" },
     { value: "data_gen", label: "Data Generation" },
     { value: "structured_output", label: "Structured Output" },
     { value: "logprobs", label: "Logprobs" },
@@ -192,6 +197,12 @@
     }
   }
 
+  async function loadPricing() {
+    pricingLoading = true
+    await fetchPricingData()
+    pricingLoading = false
+  }
+
   // Apply search and filters
   function applyFilters() {
     filteredModels = models.filter((model) => {
@@ -212,7 +223,9 @@
 
       // Capability filter
       let matchesCapability = true
-      if (selectedCapability) {
+      if (selectedCapability === "featured") {
+        matchesCapability = model.featured_rank != null
+      } else if (selectedCapability) {
         matchesCapability = model.providers.some((p) => {
           switch (selectedCapability) {
             case "data_gen":
@@ -250,6 +263,15 @@
 
   // Apply sorting to filtered models
   function applySorting() {
+    if (selectedCapability === "featured") {
+      filteredModels = filteredModels.toSorted((a, b) => {
+        const aRank = a.featured_rank ?? Number.MAX_SAFE_INTEGER
+        const bRank = b.featured_rank ?? Number.MAX_SAFE_INTEGER
+        return aRank - bRank
+      })
+      return
+    }
+
     if (!sortBy) {
       return // No sorting applied
     }
@@ -411,6 +433,7 @@
   $: void (sortBy, sortDirection, applySorting())
 
   onMount(async () => {
+    loadPricing()
     await load_available_models()
     await fetchModelsFromRemoteConfig()
   })
@@ -461,6 +484,15 @@
       return "Install the model in Ollama to use it"
     }
     return "Connect the provider to use this model"
+  }
+
+  function getModelPricing(model: Model) {
+    const pricingProvider =
+      model.providers.find((p) => p.name === "openrouter") || model.providers[0]
+    if (!pricingProvider?.model_id) {
+      return null
+    }
+    return getModelPrice(pricingProvider.name, pricingProvider.model_id)
   }
 
   let connect_provider_dialog: Dialog | null = null
@@ -525,7 +557,7 @@
     ]}
   >
     <!-- Loading State -->
-    {#if loading}
+    {#if loading || pricingLoading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
@@ -622,7 +654,7 @@
             <label
               for="capability"
               class="block text-sm font-medium text-gray-700 mb-2"
-              >Capability</label
+              >Filter by Capability</label
             >
             <FancySelect
               bind:selected={selectedCapability}
@@ -775,6 +807,7 @@
         {:else}
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {#each filteredModels as model}
+              {@const prices = getModelPricing(model)}
               <div
                 class="bg-white rounded-lg border border-base-300 shadow-md hover:shadow-lg hover:border-primary/50 transition-all duration-200 transform hover:-translate-y-1 hover:z-10"
                 on:click={() => onClick(model)}
@@ -790,9 +823,27 @@
                       <h3 class="text-lg font-semibold text-gray-900 break-all">
                         {model.friendly_name}
                       </h3>
+                      {#if model.editorial_notes}
+                        <p class="text-sm text-gray-500 mt-1">
+                          {model.editorial_notes}
+                        </p>
+                      {/if}
                     </div>
                   </div>
                 </div>
+
+                {#if prices && (prices.inputPrice !== null || prices.outputPrice !== null)}
+                  <div
+                    class="text-xs font-light text-gray-500 border-b border-gray-100 px-6 py-3 flex items-center justify-around"
+                  >
+                    {#if prices.inputPrice !== null}
+                      <span>Input: ${prices.inputPrice.toFixed(2)}/M</span>
+                    {/if}
+                    {#if prices.outputPrice !== null}
+                      <span>Output: ${prices.outputPrice.toFixed(2)}/M</span>
+                    {/if}
+                  </div>
+                {/if}
 
                 <!-- Capability Badges -->
                 <div class="p-6 pt-4">
@@ -846,6 +897,7 @@
                                 provider.model_id,
                               )}
                               class="text-left flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              on:click|stopPropagation
                               data-tip={model_not_connected_tooltip(
                                 provider.name,
                               )}
@@ -932,6 +984,17 @@
               </div>
             {/each}
           </div>
+
+          {#if selectedCapability === "featured"}
+            <div class="flex justify-center mt-10">
+              <button
+                on:click={() => (selectedCapability = "")}
+                class="btn btn-primary btn-lg"
+              >
+                See All {models.length} Models
+              </button>
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}

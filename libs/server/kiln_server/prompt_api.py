@@ -3,27 +3,9 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
-from kiln_ai.datamodel.task import TaskRunConfig
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
-
-
-def _run_config_from_prompt_id(
-    project_id: str, task_id: str, prompt_id: str
-) -> TaskRunConfig:
-    """Look up a TaskRunConfig from a frozen prompt ID like task_run_config::proj::task::rc_id."""
-    parts = prompt_id.split("::")
-    if len(parts) != 4:
-        raise HTTPException(status_code=400, detail="Invalid frozen prompt ID format")
-    run_config_id = parts[3]
-    parent_task = task_from_id(project_id, task_id)
-    run_config = next(
-        (rc for rc in parent_task.run_configs() if rc.id == run_config_id), None
-    )
-    if not run_config:
-        raise HTTPException(status_code=404, detail="Run config not found")
-    return run_config
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -51,6 +33,7 @@ class ApiPrompt(BasePrompt):
 
 
 class PromptCreateRequest(BaseModel):
+    generator_id: str | None = None
     name: str
     description: str | None = None
     prompt: str
@@ -96,6 +79,7 @@ def connect_prompt_api(app: FastAPI):
         parent_task = task_from_id(project_id, task_id)
         prompt = Prompt(
             parent=parent_task,
+            generator_id=prompt_data.generator_id,
             name=prompt_data.name,
             description=prompt_data.description,
             prompt=prompt_data.prompt,
@@ -135,29 +119,12 @@ def connect_prompt_api(app: FastAPI):
     async def update_prompt(
         project_id: str, task_id: str, prompt_id: str, prompt_data: PromptUpdateRequest
     ) -> ApiPrompt:
-        if prompt_id.startswith("task_run_config::"):
-            run_config = _run_config_from_prompt_id(project_id, task_id, prompt_id)
-            if not run_config.prompt:
-                raise HTTPException(
-                    status_code=404, detail="Run config has no frozen prompt"
-                )
-            run_config.prompt = run_config.prompt.model_copy(
-                update={"name": prompt_data.name}
-            )
-            run_config.save_to_file()
-            properties = run_config.prompt.model_dump(exclude={"id"})
-            return ApiPrompt(
-                id=prompt_id,
-                created_at=run_config.created_at,
-                **properties,
-            )
-        else:
-            prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
-            prompt.name = prompt_data.name
-            prompt.description = prompt_data.description
-            prompt.save_to_file()
-            properties = prompt.model_dump(exclude={"id"})
-            return ApiPrompt(id=f"id::{prompt.id}", **properties)
+        prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
+        prompt.name = prompt_data.name
+        prompt.description = prompt_data.description
+        prompt.save_to_file()
+        properties = prompt.model_dump(exclude={"id"})
+        return ApiPrompt(id=f"id::{prompt.id}", **properties)
 
     @app.delete("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
     async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:
@@ -187,7 +154,7 @@ _prompt_generators = [
         id="simple_prompt_builder",
         name="Basic (Zero Shot)",
         short_description="Just the prompt, no examples.",
-        description="A basic prompt generator. It will include the instructions and requirements from your task definition. It won't include any examples from your runs (zero-shot).",
+        description="A basic prompt generator. It will include the instructions from your task definition. It won't include any examples from your runs (zero-shot).",
         chain_of_thought=False,
     ),
     PromptGenerator(
@@ -220,23 +187,16 @@ _prompt_generators = [
     ),
     PromptGenerator(
         id="few_shot_chain_of_thought_prompt_builder",
-        name="Chain of Thought - Few Shot",
+        name="Chain of Thought + Few Shot",
         short_description="Combines CoT and few-shot.",
         description="Combines our 'Chain of Thought' generator with our 'Few-Shot' generator, for both the thinking and the few shot examples.",
         chain_of_thought=True,
     ),
     PromptGenerator(
         id="multi_shot_chain_of_thought_prompt_builder",
-        name="Chain of Thought - Many Shot",
+        name="Chain of Thought + Many Shot",
         short_description="Combines CoT and many-shot.",
         description="Combines our 'Chain of Thought' generator with our 'Many-Shot' generator, for both the thinking and the many shot examples.",
         chain_of_thought=True,
-    ),
-    PromptGenerator(
-        id="short_prompt_builder",
-        name="Short",
-        short_description="Just the prompt, no requirements or examples.",
-        description="A short prompt generator. It will include only the task's instruction/prompt. It excludes your task's requirements, and does not include any examples from your dataset.",
-        chain_of_thought=False,
     ),
 ]

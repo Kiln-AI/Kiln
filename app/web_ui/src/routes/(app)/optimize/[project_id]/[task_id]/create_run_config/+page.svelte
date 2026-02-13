@@ -138,6 +138,9 @@
             }}
             hide_prompt_selector={!!prompt_info}
             {model}
+            prompt_method={prompt_info
+              ? prompt_info.id
+              : "simple_prompt_builder"}
           />
         </div>
       </FormContainer>

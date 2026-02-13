@@ -2,6 +2,7 @@
   import AppPage from "../../../../../app_page.svelte"
   import { page } from "$app/stores"
   import { onMount, onDestroy } from "svelte"
+  import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { GepaJob } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
@@ -12,7 +13,6 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
-  import { load_gepa_job } from "$lib/stores/gepa_store"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -67,7 +67,23 @@
         gepa_job = null
       }
 
-      gepa_job = await load_gepa_job(project_id, task_id, gepa_job_id)
+      const { data: gepa_job_response, error: get_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+              gepa_job_id,
+            },
+          },
+        },
+      )
+
+      if (get_error) {
+        throw get_error
+      }
+      gepa_job = gepa_job_response
       build_properties()
     } catch (error) {
       if (show_loading) {

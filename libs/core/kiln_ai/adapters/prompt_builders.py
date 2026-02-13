@@ -105,18 +105,6 @@ class SimplePromptBuilder(BasePromptBuilder):
         return base_prompt
 
 
-class ShortPromptBuilder(BasePromptBuilder):
-    """A prompt builder that includes a the base prompt but excludes the requirements."""
-
-    def build_base_prompt(self) -> str:
-        """Build a short prompt with just the base prompt, no requirements.
-
-        Returns:
-            str: The constructed prompt string.
-        """
-        return self.task.instruction
-
-
 class MultiShotPromptBuilder(BasePromptBuilder):
     """A prompt builder that includes multiple examples in the prompt."""
 
@@ -451,8 +439,6 @@ def prompt_builder_from_id(prompt_id: PromptId, task: Task) -> BasePromptBuilder
     match typed_prompt_generator:
         case PromptGenerators.SIMPLE:
             return SimplePromptBuilder(task)
-        case PromptGenerators.SHORT:
-            return ShortPromptBuilder(task)
         case PromptGenerators.FEW_SHOT:
             return FewShotPromptBuilder(task)
         case PromptGenerators.MULTI_SHOT:

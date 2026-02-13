@@ -9,6 +9,7 @@
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
   import { onMount } from "svelte"
+  import { prompt_generator_categories } from "../prompt_generators/prompt_generators"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -54,17 +55,10 @@
         }
         prompt = prompt_response.prompt
 
-        const gen_name_map: Record<string, string> = {
-          few_shot_prompt_builder: "Few-Shot",
-          multi_shot_prompt_builder: "Many-Shot",
-          repairs_prompt_builder: "Repair Multi-Shot",
-          simple_chain_of_thought_prompt_builder: "Chain of Thought",
-          few_shot_chain_of_thought_prompt_builder:
-            "Chain of Thought - Few Shot",
-          multi_shot_chain_of_thought_prompt_builder:
-            "Chain of Thought - Many Shot",
-        }
-        generator_name = gen_name_map[generator_id] || generator_id
+        const template = prompt_generator_categories
+          .flatMap((c) => c.templates)
+          .find((t) => t.generator_id === generator_id)
+        generator_name = template?.name || generator_id
 
         initial_prompt = prompt
       } catch (e) {
@@ -98,6 +92,7 @@
             },
           },
           body: {
+            generator_id: generator_id,
             name: prompt_name,
             prompt: prompt,
             chain_of_thought_instructions:

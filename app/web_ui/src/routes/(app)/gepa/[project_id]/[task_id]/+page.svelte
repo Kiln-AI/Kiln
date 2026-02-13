@@ -1,25 +1,70 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
+  import { client } from "$lib/api_client"
+  import type { GepaJob } from "$lib/types"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
   import Intro from "$lib/ui/intro.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
-  import {
-    gepa_jobs,
-    gepa_jobs_loading,
-    gepa_jobs_error,
-    load_gepa_jobs,
-  } from "$lib/stores/gepa_store"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: is_empty = !$gepa_jobs || $gepa_jobs.length === 0
+  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
+
+  let gepa_jobs: GepaJob[] | null = null
+  let gepa_jobs_error: KilnError | null = null
+  let gepa_jobs_loading = true
 
   onMount(() => {
-    load_gepa_jobs(project_id, task_id)
+    get_gepa_jobs()
   })
+
+  async function get_gepa_jobs() {
+    try {
+      gepa_jobs_loading = true
+      if (!project_id || !task_id) {
+        throw new Error("Project or task ID not set.")
+      }
+      const { data: gepa_jobs_response, error: get_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id,
+            },
+            query: {
+              update_status: true,
+            },
+          },
+        },
+      )
+      if (get_error) {
+        throw get_error
+      }
+      const sorted_gepa_jobs = gepa_jobs_response.sort((a, b) => {
+        return (
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+        )
+      })
+      gepa_jobs = sorted_gepa_jobs
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Load failed")) {
+        gepa_jobs_error = new KilnError(
+          "Could not load GEPA jobs. This task may belong to a project you don't have access to.",
+          null,
+        )
+      } else {
+        gepa_jobs_error = createKilnError(e)
+      }
+    } finally {
+      gepa_jobs_loading = false
+    }
+  }
 
   type StatusBadge = { label: string; badge_class: string }
   const status_badge_map: Record<string, StatusBadge> = {
@@ -78,17 +123,17 @@
         },
       ]}
 >
-  {#if $gepa_jobs_loading}
+  {#if gepa_jobs_loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
-  {:else if $gepa_jobs_error}
+  {:else if gepa_jobs_error}
     <div
       class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
     >
       <div class="font-medium">Error Loading Optimizer Jobs</div>
       <div class="text-error text-sm">
-        {$gepa_jobs_error.message || "An unknown error occurred"}
+        {gepa_jobs_error.getMessage() || "An unknown error occurred"}
       </div>
     </div>
   {:else if is_empty}
@@ -114,7 +159,7 @@
         </div>
       </Intro>
     </div>
-  {:else}
+  {:else if gepa_jobs}
     <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
@@ -126,7 +171,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each $gepa_jobs as gepa_job}
+          {#each gepa_jobs as gepa_job}
             {@const badge = get_status_badge(gepa_job.latest_status)}
             <tr
               class="hover cursor-pointer"
