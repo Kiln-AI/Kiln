@@ -1,6 +1,6 @@
-from typing import List
+from typing import Annotated, Any, List, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.datamodel_enums import (
@@ -21,13 +21,14 @@ class ToolsRunConfig(BaseModel):
     )
 
 
-class RunConfigProperties(BaseModel):
+class KilnAgentRunConfigProperties(BaseModel):
     """
-    A configuration for running a task.
+    A configuration for running a task using a Kiln AI agent.
 
     This includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
     """
 
+    type: Literal["kiln_agent"] = "kiln_agent"
     model_name: str = Field(description="The model to use for this run config.")
     model_provider_name: ModelProviderName = Field(
         description="The provider to use for this run config."
@@ -60,3 +61,41 @@ class RunConfigProperties(BaseModel):
             raise ValueError("temperature must be between 0 and 2")
 
         return self
+
+
+class McpToolReference(BaseModel):
+    """A reference to an MCP tool, identified by server and tool name."""
+
+    server_id: str = Field(description="The ID of the MCP tool server.")
+    tool_name: str = Field(description="The name of the tool on the server.")
+
+
+class McpRunConfigProperties(BaseModel):
+    """
+    A configuration for running a task via an MCP tool.
+    """
+
+    type: Literal["mcp"]
+    tool_reference: McpToolReference = Field(
+        description="The MCP tool to use for this run config."
+    )
+
+
+def _get_run_config_type(data: Any) -> str:
+    """Discriminator function for RunConfigProperties union.
+
+    Defaults to 'kiln_agent' when type is missing, providing backward
+    compatibility with legacy JSON that predates the type discriminator.
+    """
+    if isinstance(data, dict):
+        return data.get("type", "kiln_agent")
+    return getattr(data, "type", "kiln_agent")
+
+
+RunConfigProperties = Annotated[
+    Union[
+        Annotated[KilnAgentRunConfigProperties, Tag("kiln_agent")],
+        Annotated[McpRunConfigProperties, Tag("mcp")],
+    ],
+    Discriminator(_get_run_config_type),
+]

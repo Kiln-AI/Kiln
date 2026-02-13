@@ -93,14 +93,16 @@ class TaskRunConfig(KilnParentedModel):
         if not isinstance(data, dict):
             return data
 
-        structured_output_mode = data.get("run_config_properties", {}).get(
-            "structured_output_mode", None
-        )
-        if structured_output_mode is None and "run_config_properties" in data:
-            # Default to unknown. Adapter will have to guess at runtime.
-            data["run_config_properties"]["structured_output_mode"] = (
-                StructuredOutputMode.unknown
-            )
+        run_config_props = data.get("run_config_properties", {})
+        if isinstance(run_config_props, dict) and run_config_props:
+            config_type = run_config_props.get("type", "kiln_agent")
+            if "type" not in run_config_props:
+                run_config_props["type"] = "kiln_agent"
+            if config_type == "kiln_agent" and "structured_output_mode" not in run_config_props:
+                run_config_props["structured_output_mode"] = (
+                    StructuredOutputMode.unknown
+                )
+            data["run_config_properties"] = run_config_props
 
         return data
 
