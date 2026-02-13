@@ -416,7 +416,7 @@
             empty_content={{
               name: "",
               description: "",
-              instructions: "",
+              instruction: "",
               priority: 1,
             }}
             let:item_index

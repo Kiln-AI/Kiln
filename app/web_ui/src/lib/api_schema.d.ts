@@ -1758,7 +1758,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/starred": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1771,8 +1771,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Run Config Starred */
-        patch: operations["update_run_config_starred_api_projects__project_id__tasks__task_id__run_config__run_config_id__starred_patch"];
+        /** Update Run Config */
+        patch: operations["update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
@@ -5385,6 +5385,8 @@ export interface components {
         };
         /** PromptCreateRequest */
         PromptCreateRequest: {
+            /** Generator Id */
+            generator_id?: string | null;
             /** Name */
             name: string;
             /** Description */
@@ -6973,6 +6975,13 @@ export interface components {
             description?: string | null;
             /** Is Archived */
             is_archived?: boolean | null;
+        };
+        /** UpdateRunConfigRequest */
+        UpdateRunConfigRequest: {
+            /** Starred */
+            starred?: boolean | null;
+            /** Prompt Name */
+            prompt_name?: string | null;
         };
         /** UpdateSpecRequest */
         UpdateSpecRequest: {
@@ -11004,11 +11013,9 @@ export interface operations {
             };
         };
     };
-    update_run_config_starred_api_projects__project_id__tasks__task_id__run_config__run_config_id__starred_patch: {
+    update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch: {
         parameters: {
-            query: {
-                starred: boolean;
-            };
+            query?: never;
             header?: never;
             path: {
                 project_id: string;
@@ -11017,7 +11024,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRunConfigRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
