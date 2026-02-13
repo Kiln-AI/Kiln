@@ -3,7 +3,6 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-  import { get } from "svelte/store"
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
@@ -18,8 +17,6 @@
   export let pending_tool_id: string | null = null
 
   let tools_store_loaded_task_id: string | null = null
-  let loading_tools = false
-  let consumed_pending_tool_id: string | null = null
 
   let default_tools_selector_settings: ToolsSelectorSettings = {
     mandatory_tools: [],
@@ -45,20 +42,8 @@
   // Load tools if project_id or task_id changes
   $: load_tools(project_id, task_id)
 
-  async function load_tools_for_task(task_id: string): Promise<string[]> {
-    await tools_store_initialized
-    const existing_tools =
-      $tools_store.selected_tool_ids_by_task_id[task_id] || []
-
-    const combined_tools = [
-      ...(tools_selector_settings.mandatory_tools || []),
-      ...existing_tools,
-    ]
-    return [...new Set(combined_tools)]
-  }
-
   function is_tool_available(tool_id: string, project_id: string): boolean {
-    const available = get(available_tools)[project_id]
+    const available = $available_tools[project_id]
     if (!available) return false
 
     const available_tool_ids = new Set(
@@ -67,76 +52,46 @@
     return available_tool_ids.has(tool_id)
   }
 
-  function add_pending_tool_to_list(
-    current_tools: string[],
-    pending_tool_id: string,
-    task_id: string,
-  ): string[] {
-    const updated_tools = [...current_tools, pending_tool_id]
-
-    // Immediately save to tools_store to prevent overwrite on next load
-    tools_store.update((store_state) => ({
-      ...store_state,
-      selected_tool_ids_by_task_id: {
-        ...store_state.selected_tool_ids_by_task_id,
-        [task_id]: updated_tools,
-      },
-    }))
-
-    return updated_tools
-  }
-
-  function consume_pending_tool(
-    current_tools: string[],
-    project_id: string,
-    task_id: string | null,
-  ): string[] {
-    // Nothing to add - no pending tool or already in list
-    if (
-      !pending_tool_id ||
-      pending_tool_id === consumed_pending_tool_id ||
-      current_tools.includes(pending_tool_id)
-    ) {
-      return current_tools
-    }
-
-    consumed_pending_tool_id = pending_tool_id
-
-    // Tool not available (e.g., server offline) - skip silently
-    if (!is_tool_available(pending_tool_id, project_id)) {
-      return current_tools
-    }
-
-    // No task - just add to list without persisting
-    if (!task_id) {
-      return [...current_tools, pending_tool_id]
-    }
-
-    // Has task - add and persist to tools_store
-    return add_pending_tool_to_list(current_tools, pending_tool_id, task_id)
-  }
-
   async function load_tools(project_id: string, task_id: string | null) {
-    if (loading_tools) return
-    loading_tools = true
+    // Load available tools
+    load_available_tools(project_id)
 
-    try {
-      await load_available_tools(project_id)
+    if (!task_id) {
+      tools = tools_selector_settings.mandatory_tools || []
+      tools_store_loaded_task_id = null
+    } else if (task_id !== tools_store_loaded_task_id) {
+      // load selected tools for this task from tools_store
+      await tools_store_initialized
+      const existing_tools =
+        $tools_store.selected_tool_ids_by_task_id[task_id] || []
 
-      if (!task_id) {
-        // No task - use only mandatory tools
-        tools = tools_selector_settings.mandatory_tools || []
-        tools_store_loaded_task_id = null
-      } else if (task_id !== tools_store_loaded_task_id) {
-        // Task changed - load saved tools for this task
-        tools = await load_tools_for_task(task_id)
-        tools_store_loaded_task_id = task_id
+      // Combine mandatory tools with existing selected tools
+      const combined_tools = [
+        ...(tools_selector_settings.mandatory_tools || []),
+        ...existing_tools,
+      ]
+      // Remove duplicates while preserving order (mandatory tools first)
+      tools = [...new Set(combined_tools)]
+
+      tools_store_loaded_task_id = task_id
+    }
+
+    // Add pending tool if it is available and not already in the list
+    if (
+      pending_tool_id &&
+      !tools.includes(pending_tool_id) &&
+      is_tool_available(pending_tool_id, project_id)
+    ) {
+      tools = [...tools, pending_tool_id]
+      if (task_id) {
+        tools_store.update((state) => ({
+          ...state,
+          selected_tool_ids_by_task_id: {
+            ...state.selected_tool_ids_by_task_id,
+            [task_id]: tools,
+          },
+        }))
       }
-
-      // Add any pending tool from navigation flow
-      tools = consume_pending_tool(tools, project_id, task_id)
-    } finally {
-      loading_tools = false
     }
   }
 

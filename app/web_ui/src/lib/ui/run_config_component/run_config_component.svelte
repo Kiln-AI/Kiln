@@ -57,7 +57,6 @@
   let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
-  let consumed_pending_run_config_id: string | null = null
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
   let temperature: number = 1.0
@@ -227,14 +226,9 @@
   }
 
   async function apply_pending_run_config_if_needed() {
-    if (
-      !pending_run_config_id ||
-      pending_run_config_id === consumed_pending_run_config_id ||
-      !current_task?.id
-    ) {
+    if (!pending_run_config_id || !current_task?.id) {
       return
     }
-    consumed_pending_run_config_id = pending_run_config_id
     await load_task_run_configs(project_id, current_task.id)
     const all_configs =
       $run_configs_by_task_composite_id[

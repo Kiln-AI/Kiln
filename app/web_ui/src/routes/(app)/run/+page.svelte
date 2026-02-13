@@ -14,6 +14,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { is_mcp_run_config_properties } from "$lib/utils/run_config_kind"
   import { page } from "$app/stores"
+  import { replaceState } from "$app/navigation"
 
   let run_error: KilnError | null = null
   let submitting = false
@@ -30,6 +31,7 @@
   let run_config_component: RunConfigComponent
   let save_config_error: KilnError | null = null
   let set_default_error: KilnError | null = null
+  let pending_params_cleared = false
 
   let response: TaskRun | null = null
   $: run_focus = !response
@@ -41,6 +43,35 @@
   $: pending_run_config_id = $page.url.searchParams.get("run_config_id")
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
+  $: consume_pending_params()
+
+  function consume_pending_params() {
+    // One-time consumption: waits for URL params (tool_id, run_config_id) to be applied to the UI,
+    // then cleans them from the URL. This prevents re-application on refresh.
+    if (
+      pending_params_cleared ||
+      !run_config_component ||
+      (!pending_tool_id && !pending_run_config_id)
+    ) {
+      return
+    }
+
+    const tool_applied =
+      !pending_tool_id ||
+      run_config_component.get_tools().includes(pending_tool_id)
+    const run_config_applied =
+      !pending_run_config_id || selected_run_config_id === pending_run_config_id
+
+    if (!tool_applied || !run_config_applied) {
+      return
+    }
+
+    const url = new URL($page.url)
+    url.searchParams.delete("tool_id")
+    url.searchParams.delete("run_config_id")
+    replaceState(url, {})
+    pending_params_cleared = true
+  }
 
   async function run_task() {
     try {
