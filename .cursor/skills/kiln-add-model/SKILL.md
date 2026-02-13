@@ -217,6 +217,27 @@ Simply restart Kiln, and all these models will appear in your model dropdown if 
 
 Use ⚠️ for flaky features, ❌ for unsupported.
 
+### Test Summary
+
+After the Discord announcement, print a per-test summary listing every test that ran for the model. Use the full pytest parametrize ID so the user can see exactly which test+provider combos passed, failed, or were flaky.
+
+Format:
+```
+Test Summary: [Model Name]
+✅ test_data_gen_all_models_providers[model_enum-provider]
+✅ test_data_gen_sample_all_models_providers[model_enum-provider]
+✅ test_tools_all_built_in_models[model_enum-provider]
+⚠️ test_structured_input_cot_prompt_builder[model_enum-provider] — assert 3 == 5 (content quality flake)
+❌ test_all_built_in_models_structured_output[model_enum-provider] — 400 Bad Request (unsupported feature)
+```
+
+Rules:
+- ✅ for passed tests
+- ⚠️ for tests that failed due to content quality flakes (e.g. model returned fewer items than expected, weak assertion mismatches) — include a brief reason
+- ❌ for tests that failed due to real errors (bad slug, unsupported feature, 400/500 errors) — include a brief reason
+- List every test, grouped by provider if the model has multiple providers
+- Include extraction tests (Phase 4c) if they were run
+
 ---
 
 ## Checklist
