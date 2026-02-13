@@ -403,9 +403,7 @@ export function get_model_info(
   }
   // Could be a number, so convert to string
   model_id = "" + model_id
-  console.log("provider_models?.models", provider_models?.models)
   const model = provider_models?.models[model_id]
-  console.log("model", model)
   if (model) {
     return model
   }
@@ -416,12 +414,10 @@ export function get_model_info(
     const models = provider.models || []
     for (const model of models) {
       if (model.id === model_id) {
-        console.log("model found in available models", model)
         return model
       }
     }
   }
-  console.log("model not found")
   return null
 }
 
@@ -471,8 +467,6 @@ export function model_name(
   model_id: string | number | undefined,
   provider_models: ProviderModels | null,
 ): string {
-  console.log("model_id", model_id)
-  console.log("provider_models", provider_models)
   if (!model_id) {
     return "Unknown"
   }
