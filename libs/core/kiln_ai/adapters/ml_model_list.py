@@ -164,6 +164,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
     qwen_3_next_80b_a3b = "qwen_3_next_80b_a3b"
     qwen_3_next_80b_a3b_thinking = "qwen_3_next_80b_a3b_thinking"
@@ -220,6 +221,7 @@ class ModelName(str, Enum):
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
     minimax_m1_80k = "minimax_m1_80k"
     minimax_m2 = "minimax_m2"
+    minimax_m2_5 = "minimax_m2_5"
     minimax_m2_1 = "minimax_m2_1"
     pangu_pro_moe_72b_a16b = "pangu_pro_moe_72b_a16b"
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
@@ -3990,6 +3992,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.1 Fast
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_1_fast,
+        friendly_name="Grok 4.1 Fast",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.1-fast",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4
     KilnModel(
         family=ModelFamily.grok,
@@ -5301,6 +5330,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="Pro/zai-org/GLM-5",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -5831,6 +5866,25 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Minimax M2.5
+    # OpenRouter accepts json_schema but M2.5 ignores the constraint;
+    # json_instruction_and_object works because the simpler response_format:json_object
+    # IS respected, and the schema is included in the prompt instructions.
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m2_5,
+        friendly_name="Minimax M2.5",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m2.5",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                parser=ModelParserID.r1_thinking,
             ),
         ],
     ),

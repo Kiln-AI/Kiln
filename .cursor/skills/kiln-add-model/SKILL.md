@@ -1,121 +1,127 @@
 ---
 name: kiln-add-model
-description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, or mentions adding a model to ml_model_list.py.
+description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, or asks to discover/find new models that are available but not yet in Kiln.
 ---
 
 # Add a New AI Model to Kiln
 
-This skill walks you through the end-to-end process of integrating a new AI model into Kiln's `libs/core/kiln_ai/adapters/ml_model_list.py` and writing a Discord release note.
-
-## Overview
-
-Adding a model requires touching **three areas** of `ml_model_list.py` and then running tests:
+Integrating a new model into `libs/core/kiln_ai/adapters/ml_model_list.py` requires:
 
 1. **`ModelName` enum** – add an enum member
-2. **`built_in_models` list** – add a `KilnModel(...)` entry with its providers
-3. **`ModelFamily` enum** – only if the model belongs to a brand-new family
+2. **`built_in_models` list** – add a `KilnModel(...)` entry with providers
+3. **`ModelFamily` enum** – only if the vendor is brand-new
 
-After code changes you run paid integration tests, then draft a Discord post.
+After code changes, run paid integration tests, then draft a Discord post.
 
 ---
 
-## Step-by-step Workflow
+## Global Rules
 
-### Phase 0 - Get the current date and time. Often these models come out extremely recently, so if the user is asking you to add a model, it probably came out in the last couple days and you will not know about it before hand.
+These apply throughout the entire workflow.
 
-### Phase 1 – Gather Context
+- **Sandbox:** All `curl` and `uv run` commands MUST use `required_permissions: ["all"]`. The sandbox breaks `uv run` (Rust panics) and blocks network access for `curl`.
+- **Slug verification:** NEVER guess or infer model slugs from naming patterns. Every `model_id` must come from an authoritative source (LiteLLM catalog, official docs, API reference, or changelog). If you can't verify a slug, tell the user and ask them to provide it.
+- **Date awareness:** These models are often released very recently. Web search for current info before assuming you know the details.
 
-1. **Read the predecessor model** in `ml_model_list.py` (e.g. for Claude Opus 4.6 → read Claude Opus 4.5). You will inherit most parameters from it.
-2. **Get the OpenRouter slug.** Try these approaches in order:
-   - **Best:** Use Shell with curl to query the API and grep for the model: `curl -s https://openrouter.ai/api/v1/models | python3 -m json.tool | grep -i "model-name"` (use `required_permissions: ["network"]`). This is more reliable than WebFetch for this large JSON response.
-   - **Fallback:** WebSearch for `openrouter [model name] model id` or check the model's OpenRouter page directly (e.g. `https://openrouter.ai/anthropic/claude-opus-4.6`).
-   - **Last resort:** WebFetch on `https://openrouter.ai/api/v1/models` — but this response is very large and may time out.
+---
 
-3. **Get the EXACT direct-provider slug** (Anthropic API, OpenAI API, Google Gemini API, etc.) and any known quirks.
+## Phase 1 – Model Discovery (only when asked to find new/missing models)
 
-   **CRITICAL: NEVER guess or infer slugs from naming patterns.** Every slug must come from an authoritative source — official docs, API reference, or changelog. The date-stamped portion of Anthropic IDs, the exact casing of OpenAI IDs, etc. are NOT predictable. You MUST verify each one.
+If the user asks you to find new models, **do NOT just web search "new AI models this week"** — that only surfaces major releases. Instead, systematically check each family against **both** the LiteLLM catalog **and** models.dev, then union the results. Both are attempts to catalog available models and each has gaps the other fills.
 
-   **Fetching strategies** (use whichever works — WebFetch and WebSearch can both time out):
-   - **WebSearch** — good first attempt for most providers
-   - **WebFetch** — good for specific doc pages or lightweight API endpoints (e.g. Anthropic models list)
-   - **Shell with curl** — most reliable fallback, especially for API endpoints. Use `required_permissions: ["network"]`.
+1. **Read the `ModelFamily` and `ModelName` enums** to know what we already have.
 
-   Suggested search queries / URLs:
-   - Anthropic: fetch `https://docs.anthropic.com/en/api/models/list` or search `anthropic [model name] API model identifier [current year]`
-   - OpenAI: search `openai [model name] API model ID [current year]` or `"[model name]" site:platform.openai.com`
-   - Google: search `gemini [model name] API model ID [current year]` or `"[model name]" site:ai.google.dev`
-   - DeepSeek, Kimi, Qwen, etc.: search their official docs for the exact model identifier.
+2. **Query both catalogs for each family** (run in parallel where possible):
 
-   If you cannot find the exact slug after trying multiple approaches, **tell the user you couldn't verify it** and ask them to provide it. Do NOT fall back to guessing based on naming conventions of older models.
+   **LiteLLM catalog** — filters out mirror providers to avoid duplicates:
+   ```bash
+   curl -s 'https://api.litellm.ai/model_catalog?model=SEARCH_TERM&mode=chat&page_size=500' -H 'accept: application/json' | jq '[.data[] | select(.provider != "openrouter" and .provider != "bedrock" and .provider != "bedrock_converse" and .provider != "vertex_ai-anthropic_models" and .provider != "azure") | .id] | unique | .[]'
+   ```
 
-4. **Identify quirks** from search results – things like:
-   - Does the model support JSON schema structured output, or only function calling?
-   - Does it have `temp_top_p_exclusive` (Anthropic Opus 4.1+ and Sonnet 4.5)?
-   - Is it a reasoning model (needs `reasoning_capable`, parsers, special OpenRouter options)?
-   - Does it support vision/multimodal? What MIME types?
-   - Any rate limit concerns (`max_parallel_requests`)?
+   **models.dev** — search all model IDs across all providers:
+   ```bash
+   curl -s https://models.dev/api.json | jq '[to_entries[].value.models // {} | keys[]] | .[]' | grep -i "SEARCH_TERM"
+   ```
+   For details on a specific provider+model: `curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'`
 
-### Phase 2 – Code Changes
+3. **Search terms** (one query per term):
+   `claude`, `gpt`, `o1`, `o3`, `o4` (OpenAI reasoning), `gemini`, `llama`, `deepseek`, `qwen`, `qwq`, `mistral`, `grok`, `kimi`, `glm`, `minimax`, `hunyuan`, `ernie`, `phi`, `gemma`, `seed`, `step`, `pangu`
+
+4. **Union and cross-reference** results from both catalogs against `ModelName`. A model found in either source counts as available. Focus on direct-provider entries (not OpenRouter/Bedrock/Azure mirrors). **Skip pure coding models** (e.g. `codestral`, `deepseek-coder`, `qwen-coder`).
+
+5. **Run targeted web searches** per family to catch very fresh releases not yet in either catalog:
+   - `"[family] new model [current year]"`
+   - `"[family] release [current month] [current year]"`
+
+6. **Present findings** as a summary. Let the user decide which to add.
+
+---
+
+## Phase 2 – Gather Context
+
+1. **Read the predecessor model** in `ml_model_list.py` (e.g. for Opus 4.6 → read Opus 4.5). You inherit most parameters from it.
+
+2. **Query the LiteLLM catalog** for the new model. This is the primary slug source since Kiln uses LiteLLM. See the [Slug Lookup Reference](#slug-lookup-reference) for query syntax and all verified sources.
+
+3. **Get the OpenRouter slug** via:
+   - `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "model-name"`
+   - Fallback: WebSearch for `openrouter [model name] model id`
+
+4. **Get the direct-provider slug** (Anthropic, OpenAI, Google, etc.). Use the LiteLLM catalog first, then official docs. See the [Slug Lookup Reference](#slug-lookup-reference) for provider-specific URLs.
+
+5. **Identify quirks** — check the [Provider Quirks Reference](#provider-quirks-reference) for the relevant provider, and web search for any new quirks:
+   - Structured output mode (JSON schema vs function calling)?
+   - Reasoning model (needs `reasoning_capable`, parsers, OpenRouter options)?
+   - Vision/multimodal support? Which MIME types?
+   - Provider-specific flags (`temp_top_p_exclusive`, `thinking_level`, etc.)?
+   - Rate limit concerns (`max_parallel_requests`)?
+
+---
+
+## Phase 3 – Code Changes
 
 All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 
-#### 2a. Add to `ModelName` enum
+### 3a. `ModelName` enum
 
-- Use snake_case: `claude_opus_4_6 = "claude_opus_4_6"`
-- Place it **before** the predecessor (newer models first within their group)
-- Follow the existing grouping convention (all claude together, all gpt together, etc.)
+- snake_case: `claude_opus_4_6 = "claude_opus_4_6"`
+- Place **before** predecessor (newer first within group)
+- Follow existing grouping (all claude together, all gpt together, etc.)
 
-#### 2b. Add to `built_in_models` list
+### 3b. `KilnModel` entry in `built_in_models`
 
-- Place the new `KilnModel(...)` **before** the predecessor entry (newer = higher in list)
-- Copy the predecessor's structure and modify:
-  - `name=ModelName.your_new_enum`
-  - `friendly_name="Human Readable Name"`
-  - `model_id` for each provider (the slug you found)
-  - Adjust any flags based on quirks discovered
+- Place **before** predecessor entry (newer = higher in list)
+- Copy predecessor's structure and modify: `name`, `friendly_name`, `model_id` per provider, flags
 
-**Key rules for provider configuration (Note: these rules are not set in stone, things change):**
+**Provider `model_id` formats:**
 
-| Provider | `model_id` format | Notes |
-|----------|-------------------|-------|
-| `openrouter` | `vendor/model-name` | Verify via OpenRouter API or model page |
-| `openai` | Bare model name | Verify via OpenAI docs/changelog |
-| `anthropic` | Variable format | **Format changed over time:** Older models use date stamps (e.g. `claude-opus-4-5-20251101`), newer models may not (e.g. `claude-opus-4-6`). **Always verify via Anthropic docs** |
+| Provider | Format | Notes |
+|----------|--------|-------|
+| `openrouter` | `vendor/model-name` | Always verify via API |
+| `openai` | Bare model name | Verify via OpenAI docs |
+| `anthropic` | Variable — older models have date stamps, newer may not | Always verify via Anthropic docs |
 | `gemini_api` | Bare name | Verify via Google AI Studio docs |
 | `fireworks_ai` | `accounts/fireworks/models/...` | Verify via Fireworks docs |
 | `together_ai` | Vendor path format | Verify via Together docs |
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
 
-**Every single `model_id` must be verified from an authoritative source. No exceptions.**
+**Inherit from predecessor** — if the predecessor uses `StructuredOutputMode.json_schema`, assume the new model does too unless you found a quirk.
 
-**Inherit from predecessor** – if Claude Opus 4.5 uses `StructuredOutputMode.json_schema`, assume Opus 4.6 does too unless you found a quirk in your web search.
+**Common flags:** `structured_output_mode`, `reasoning_capable`, `temp_top_p_exclusive`, `parser`/`formatter`, multimodal flags, `suggested_for_evals`/`suggested_for_data_gen`.
 
-**Common flags to consider:**
-- `structured_output_mode` – how the model handles JSON output
-- `suggested_for_evals` / `suggested_for_data_gen` – see **zero-sum rule** below
-- `multimodal_capable` / `supports_vision` / `supports_doc_extraction` – see **multimodal rules** below
-- `reasoning_capable` – for thinking/reasoning models
-- `temp_top_p_exclusive` – Anthropic models that can't have both temp and top_p
-- `parser` / `formatter` – for models needing special parsing (e.g. R1-style thinking)
+### 3c. Multimodal capabilities
 
-#### 2c. Multimodal capabilities
+If the model supports non-text inputs, configure:
 
-If the model supports any non-text inputs (images, documents, audio, video), configure multimodal flags. These follow a hierarchy:
+- `multimodal_capable=True` and `supports_doc_extraction=True` if it supports any MIME types
+- `supports_vision=True` if it supports images
+- `multimodal_requires_pdf_as_image=True` if vision-capable but no native PDF support (also add `KilnMimeType.PDF` to MIME list). **Always set this on OpenRouter providers** — OpenRouter routes PDFs through Mistral OCR which breaks LiteLLM parsing.
+- Always include `KilnMimeType.TXT` and `KilnMimeType.MD` on any `multimodal_capable` model
 
-- Set `multimodal_capable=True` and `supports_doc_extraction=True` if the model supports **one or more** MIME types
-- Set `supports_vision=True` if the model supports **images**
-- If `supports_vision=True`, you can also support PDFs by setting `multimodal_requires_pdf_as_image=True` (and adding `KilnMimeType.PDF` to the MIME type list). This renders PDFs as images before sending them to the model.
-- **OpenRouter:** always set `multimodal_requires_pdf_as_image=True` — see OpenRouter quirks section for why.
-- `KilnMimeType.TXT` and `KilnMimeType.MD` are supported on **all** models that have `multimodal_capable=True` — always include them
+**Strategy: start broad, narrow based on test failures.** Enable a generous set of MIME types, run tests, and remove only types the provider explicitly rejects (400 errors). Don't remove types for timeout/auth/content-mismatch failures.
 
-**Strategy: start broad, narrow based on test failures.**
-1. Enable a generous set of MIME types based on what the model claims to support
-2. Run the tests
-3. If a test fails because the provider/model **rejects a specific data type**, that's a valid failure — remove that MIME type and re-run
-4. If a test fails for other reasons (timeout, auth, structured output), that's a different issue — don't remove MIME types for non-rejection failures
-
-The full superset of MIME types available (Gemini uses all of these):
+Full MIME superset (Gemini uses all):
 ```python
 # documents
 KilnMimeType.PDF, KilnMimeType.CSV, KilnMimeType.TXT, KilnMimeType.HTML, KilnMimeType.MD
@@ -127,110 +133,78 @@ KilnMimeType.MP3, KilnMimeType.WAV, KilnMimeType.OGG
 KilnMimeType.MP4, KilnMimeType.MOV
 ```
 
-#### 2d. `suggested_for_evals` / `suggested_for_data_gen` rules
+### 3d. `suggested_for_evals` / `suggested_for_data_gen`
 
-**Not every model gets these flags.** Only set them if:
-- The **predecessor** in the same tier already has them (e.g. Opus 4.5 has `suggested_for_evals` → Opus 4.6 should too), OR
-- Web search results indicate this model is a clear SOTA leap — in which case **ask the user to confirm** before setting the flag.
+**Only set these if** the predecessor already has them, OR web search shows the model is a clear SOTA leap (ask user to confirm first).
 
-If the predecessor does NOT have the flag, do NOT add it to the new model by default.
+**Zero-sum rule:** When adding a new model with these flags, remove them from the oldest same-family model to keep the suggested count stable. **Ask the user to confirm** the swap before making changes.
 
-**Zero-sum rule:** When adding a new model with `suggested_for_evals=True` or `suggested_for_data_gen=True`, **remove those flags from the oldest model in the same family** to keep the total count roughly constant. The UI surfaces these as recommended picks, and too many suggestions dilutes the signal.
+### 3e. `ModelFamily` enum (only if needed)
 
-Before making any changes, **ask the user to confirm** the swap. For example:
+Only add a new family if the vendor is completely new.
 
-> "Opus 4.8 looks like it should be suggested for evals (inheriting from 4.7). Currently Opus 4.5, 4.6, and 4.7 are all suggested. I'd like to add 4.8 and delist 4.5. Sound good?"
+---
 
-Steps:
-1. Search `built_in_models` for all entries in the same `ModelFamily` that have the flag set
-2. Identify the oldest one(s)
-3. Propose the swap to the user and wait for confirmation
-4. Remove the flag (or set it to `False`) on the oldest
-5. Set the flag on the new model
+## Phase 4 – Run Tests
 
-#### 2e. Add to `ModelFamily` enum (only if needed)
+Tests call real LLMs and cost money. Just execute commands directly — Cursor prompts for approval.
 
-Only add a new family if the model vendor is completely new (not already in the enum).
+**`-k` filter syntax:** Always use bracket notation for model+provider filtering, never `and`:
+- Good: `-k "test_name[glm_5-fireworks_ai]"` or `-k "glm_5"`
+- Bad: `-k "glm_5 and fireworks"` — `and` is a pytest keyword expression that can match wrong tests
 
-### Phase 3 – Run Tests
+### 4a. Smoke test — verify slug works
 
-Tests are paid (they call real LLMs). The user's Cursor is configured to prompt for approval on `uv run` commands, so **just execute the commands directly** (with `required_permissions: ["all"]` since they need network access). You can briefly mention what the test does, but don't wait for a separate text confirmation — the Cursor approval dialog handles gating.
-
-#### 3a. Smoke test – verify the slug works
-
-Before running the full suite, run a **single specific test** to confirm the provider slug is valid and the model responds. Pick one test+provider combo. Just execute it:
+Run a single test+provider combo first:
 
 ```bash
-uv run pytest --runpaid --ollama -k "test_data_gen_sample_all_models_providers[model_enum_name-provider_name]"
+uv run pytest --runpaid --ollama -k "test_data_gen_sample_all_models_providers[MODEL_ENUM-PROVIDER]"
 ```
 
-Example: `uv run pytest --runpaid --ollama -k "test_data_gen_sample_all_models_providers[kimi_k2_5-openrouter]"`
+If it fails, fix the slug/config before proceeding. Use `--collect-only` to find exact parameter IDs if unsure.
 
-The pytest parameter IDs use `ModelName` enum value + `ModelProviderName` enum value (from `get_all_models_and_providers()` in `test_prompt_adaptors.py` which iterates `built_in_models`). You can find the exact IDs by running `--collect-only` first if unsure.
-
-This catches bad slugs, auth issues, or provider misconfigurations early before burning through a full paid test run. If the smoke test fails, fix the slug/config before proceeding.
-
-#### 3b. Full test suite
-
-Once the smoke test passes, execute the full suite:
+### 4b. Full test suite
 
 ```bash
-uv run pytest --runpaid --ollama -k "model_enum_name"
+uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v 2>&1 | grep -E "PASSED|FAILED|ERROR|short test|=====|collected"
 ```
 
-Example: `uv run pytest --runpaid --ollama -k "kimi_k2_5"`
+**If tests fail — debug one at a time:**
+1. Pick ONE failing test, run it with `-v` for full output
+2. Fix the config
+3. Re-run that single test to verify
+4. Only re-run the full suite once the single test passes
 
-The test key (`-k`) uses the `ModelName` enum value (snake_case).
+### 4c. Extraction tests (if `supports_doc_extraction=True`)
 
-**If tests fail:**
-- Re-run only the failing test(s) **with `-v`** to get verbose output for debugging
-- Check the error output for structured output issues, API errors, or parameter mismatches
-- Common fixes: change `structured_output_mode`, adjust provider-specific flags, comment out a problematic provider
-
-#### 3c. Multimodal / extraction tests
-
-If the model has `supports_doc_extraction=True`, run the extraction tests separately. These are in `libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py`.
-
-The key test is `test_extract_document_success` — it's parametrized by model+provider AND by MIME type, so it tests each supported type individually. Tests automatically skip MIME types not in the model's `multimodal_mime_types` list.
-
-**Step 1:** Collect the test IDs for the new model to see what will run:
+Tests are in `libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py`.
 
 ```bash
-uv run pytest --collect-only libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py::test_extract_document_success -q | grep model_enum_name
+# See what will run:
+uv run pytest --collect-only libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py::test_extract_document_success -q | grep MODEL_ENUM
+
+# Run them:
+uv run pytest --runpaid --ollama libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py::test_extract_document_success -k "MODEL_ENUM"
 ```
 
-This will show test IDs like:
-```
-...::test_extract_document_success[application/pdf-text_probe0-claude_opus_4_6-openrouter]
-...::test_extract_document_success[image/png-text_probe5-claude_opus_4_6-anthropic]
-```
+If a provider rejects a data type (400 error), remove that `KilnMimeType` and re-run.
 
-**Step 2:** Run the extraction tests for the new model. Use `-k` with the model name to filter:
+---
 
-```bash
-uv run pytest --runpaid --ollama libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py::test_extract_document_success -k "model_enum_name"
-```
-
-**Handling MIME type failures:**
-- If a test fails because the provider **rejects the data type** (e.g. 400 error, unsupported format), that's a valid failure — remove that `KilnMimeType` from the model's `multimodal_mime_types` list and re-run
-- If a test fails for other reasons (timeout, content mismatch, auth), investigate the root cause — don't just remove the MIME type
-
-### Phase 4 – Discord Announcement
-
-After tests pass, draft a Discord post. Format:
+## Phase 5 – Discord Announcement
 
 ```
 New Model: [Model Name] 🚀
-[One-liner about what the model is and that it's now in Kiln]
+[One-liner about the model and that it's now in Kiln]
 
 Kiln Test Pass Results
 [Model Name]:
 ✅ Tool Calling
 ✅ Structured Data ([mode used])
 ✅ Synthetic Data Generation
-✅ Evals (only include if suggested_for_evals=True)
-✅ Document extraction: [list formats] (only include if supports_doc_extraction=True)
-✅ Vision: [list formats] (only include if supports_vision=True)
+✅ Evals (only if suggested_for_evals=True)
+✅ Document extraction: [formats] (only if supports_doc_extraction=True)
+✅ Vision: [formats] (only if supports_vision=True)
 
 Model Variants, Hosts and Quirks
 [Model Name]:
@@ -241,67 +215,96 @@ How to Use These Models in Kiln
 Simply restart Kiln, and all these models will appear in your model dropdown if you have the appropriate API configured.
 ```
 
-Use ⚠️ for features that are flaky or have caveats. Use ❌ for unsupported features.
+Use ⚠️ for flaky features, ❌ for unsupported.
 
 ---
 
-## Provider-Specific Quirk Reference
-
-### Anthropic
-- Newer models (Opus 4.1+, Sonnet 4.5+) need `temp_top_p_exclusive=True` on the Anthropic provider
-- Opus 4.5 uses `json_schema`, older Opus uses `function_calling`
-- Extended thinking models need `anthropic_extended_thinking=True` and `reasoning_capable=True`
-- **Model ID format has changed over time.** Older models used date-stamped IDs (e.g. `claude-opus-4-5-20251101`), but newer models may drop the date stamp (e.g. `claude-opus-4-6`). **Do NOT assume the format — always verify via the Anthropic models list API:** `https://docs.anthropic.com/en/api/models/list`. The `id` field in the response is the exact model ID to use.
-
-### OpenAI
-- Most GPT models use `json_schema` for structured output
-- Reasoning models (o-series) need `thinking_level` parameter
-- Chat variants sometimes lack JSON schema support (use `json_instruction_and_object`)
-- OpenRouter slugs: `openai/model-name`
-
-### Google/Gemini
-- Need `gemini_reasoning_enabled=True` for reasoning-capable models
-- Gemini API provider often needs `thinking_level="medium"` and `max_parallel_requests=2`
-- Support rich multimodal (audio, video, images, documents)
-
-### DeepSeek
-- R1 models need `parser=ModelParserID.r1_thinking` and `reasoning_capable=True`
-- V3 models often available on OpenRouter, Fireworks, SiliconFlow CN
-- Some need `r1_openrouter_options=True` and `require_openrouter_reasoning=True`
-
-### OpenRouter (general)
-- Slugs: `vendor/model-name`
-- For reasoning models: may need `require_openrouter_reasoning=True`
-- Some models need `openrouter_skip_required_parameters=True`
-- Logprobs: `logprobs_openrouter_options=True` if supported
-- **Always set `multimodal_requires_pdf_as_image=True` on OpenRouter providers.** OpenRouter claims to use the model's native PDF capability but in practice routes PDFs through Mistral OCR, which adds metadata annotations that LiteLLM can't parse, causing validation failures. Sending PDFs as images bypasses this.
-
-### Qwen3 / Thinking Models
-- Thinking variants need `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
-- No-thinking variants need `formatter=ModelFormatterID.qwen3_style_no_think`
-- SiliconFlow may need `siliconflow_enable_thinking=True/False`
-
----
-
-## Checklist Before Finishing
+## Checklist
 
 - [ ] `ModelName` enum entry added (before predecessor)
 - [ ] `KilnModel` entry added to `built_in_models` (before predecessor)
 - [ ] `ModelFamily` enum updated (only if new family)
-- [ ] Provider slugs verified (OpenRouter, direct API)
+- [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
-- [ ] Zero-sum: if new model is suggested for evals/data gen, oldest same-family suggestion removed
-- [ ] Smoke test passed (single test to verify slug)
-- [ ] Full test suite passed (with user permission)
+- [ ] Zero-sum applied if model is suggested for evals/data gen
+- [ ] Smoke test passed
+- [ ] Full test suite passed
 - [ ] Discord announcement drafted
-- [ ] If you found a useful URL for verifying slugs, append it to the Verified Slug Sources section below
 
 ---
 
-## Verified Slug Sources
+## Provider Quirks Reference
 
-When you find a reliable URL for looking up model slugs, **append it here** so future runs of this skill benefit. Format: `- [Provider]: [URL] — [brief note]`
+### Anthropic
+- Newer models (Opus 4.1+, Sonnet 4.5+) need `temp_top_p_exclusive=True`
+- Opus 4.5+ uses `json_schema`; older Opus uses `function_calling`
+- Extended thinking models: `anthropic_extended_thinking=True` + `reasoning_capable=True`
 
-- OpenRouter: https://openrouter.ai/api/v1/models — JSON list of all models, search for the `id` field
-- Anthropic: https://docs.anthropic.com/en/api/models/list — API endpoint docs with example response showing exact model IDs (note: format changed over time, newer models may not have date stamps)
-- Cerebras: https://inference-docs.cerebras.ai/models/overview — Lists all production and preview models with exact model IDs (e.g. `zai-glm-4.7`, `gpt-oss-120b`)
+### OpenAI
+- Most GPT models use `json_schema` for structured output
+- Reasoning models (o-series) need `thinking_level` parameter
+- Chat variants sometimes lack JSON schema (use `json_instruction_and_object`)
+
+### Google/Gemini
+- `gemini_reasoning_enabled=True` for reasoning-capable models
+- Gemini API often needs `thinking_level="medium"` + `max_parallel_requests=2`
+- Rich multimodal support (audio, video, images, documents)
+
+### DeepSeek
+- R1 models: `parser=ModelParserID.r1_thinking` + `reasoning_capable=True`
+- V3 models: often available on OpenRouter, Fireworks, SiliconFlow CN
+- Some need `r1_openrouter_options=True` + `require_openrouter_reasoning=True`
+
+### OpenRouter (general)
+- Slugs: `vendor/model-name`
+- Reasoning models: may need `require_openrouter_reasoning=True`
+- Some models: `openrouter_skip_required_parameters=True`
+- Logprobs: `logprobs_openrouter_options=True` if supported
+- Always `multimodal_requires_pdf_as_image=True` (OpenRouter's PDF routing breaks LiteLLM)
+
+### Qwen3 / Thinking Models
+- Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
+- No-thinking variants: `formatter=ModelFormatterID.qwen3_style_no_think`
+- SiliconFlow may need `siliconflow_enable_thinking=True/False`
+
+---
+
+## Slug Lookup Reference
+
+Use **both** LiteLLM and models.dev when looking up slugs — they complement each other. LiteLLM gives you the exact slugs Kiln will use (since Kiln runs on LiteLLM), while models.dev often has broader coverage of newer or niche models with pricing, context limits, and capability details.
+
+### LiteLLM Model Catalog (https://api.litellm.ai/model_catalog)
+
+100 free requests/day, no key needed. Supports server-side filtering: `model=` (substring match), `provider=`, `mode=`, `supports_vision=true`, `supports_reasoning=true`, `page_size=500`.
+
+```bash
+# Find all variants of a model across providers:
+curl -s 'https://api.litellm.ai/model_catalog?model=MODEL_NAME&mode=chat&page_size=500' \
+  -H 'accept: application/json' | jq '.data[] | {id, provider, mode, max_input_tokens, supports_vision, supports_reasoning, supports_function_calling}'
+
+# List all models for a provider:
+curl -s 'https://api.litellm.ai/model_catalog?provider=PROVIDER&mode=chat&page_size=500' \
+  -H 'accept: application/json' | jq '.data[].id'
+```
+
+### models.dev (https://models.dev/api.json)
+
+Mega JSON covering 50+ providers with model IDs, pricing, context limits, capabilities, and release dates. **Large file — always use curl+jq, never WebFetch.**
+
+```bash
+# Search all model IDs across all providers:
+curl -s https://models.dev/api.json | jq '[to_entries[].value.models // {} | keys[]] | .[]' | grep -i "SEARCH_TERM"
+
+# List all model IDs for a specific provider:
+curl -s https://models.dev/api.json | jq '.["PROVIDER"].models | keys[]'
+
+# Get full details for a specific provider+model:
+curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
+```
+
+### Other verified sources
+- OpenRouter: `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "SEARCH_TERM"`
+- Anthropic: https://docs.anthropic.com/en/api/models/list
+- Cerebras: https://inference-docs.cerebras.ai/models/overview
+
+When you find a new reliable slug source, append it here.
