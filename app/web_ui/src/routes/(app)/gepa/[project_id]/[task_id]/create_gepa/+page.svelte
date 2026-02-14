@@ -667,7 +667,6 @@
         throw new Error("Please select a saved run configuration")
       }
 
-      const token_budget = "medium"
       const { data: response, error: post_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
         {
@@ -678,7 +677,6 @@
             },
           },
           body: {
-            token_budget,
             target_run_config_id,
             eval_ids: Array.from(selected_eval_ids),
           },

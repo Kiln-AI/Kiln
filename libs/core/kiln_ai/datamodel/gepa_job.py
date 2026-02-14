@@ -19,9 +19,6 @@ class GepaJob(KilnParentedModel):
         description="A description of the GEPA job for you and your team.",
     )
     job_id: str = Field(description="The ID of the job on the remote Kiln server.")
-    token_budget: str = Field(
-        description="The token budget for this job: 'light', 'medium', or 'heavy'."
-    )
     target_run_config_id: str = Field(
         description="The ID of the run configuration used for this job."
     )

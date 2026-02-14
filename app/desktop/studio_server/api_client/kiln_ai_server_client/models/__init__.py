@@ -4,9 +4,6 @@ from .answer_option import AnswerOption
 from .answer_option_with_selection import AnswerOptionWithSelection
 from .api_key_verification_result import ApiKeyVerificationResult
 from .body_start_gepa_job_v1_jobs_gepa_job_start_post import BodyStartGepaJobV1JobsGepaJobStartPost
-from .body_start_gepa_job_v1_jobs_gepa_job_start_post_token_budget import (
-    BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget,
-)
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
 from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
@@ -62,7 +59,6 @@ __all__ = (
     "AnswerOptionWithSelection",
     "ApiKeyVerificationResult",
     "BodyStartGepaJobV1JobsGepaJobStartPost",
-    "BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",

@@ -310,7 +310,6 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": ["eval-1", "eval-2"],
             },
@@ -319,7 +318,6 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["job_id"] == "remote-job-123"
-        assert result["token_budget"] == "medium"
         assert result["target_run_config_id"] == "test-run-config-id"
         assert result["latest_status"] == "pending"
         assert result["eval_ids"] == ["eval-1", "eval-2"]
@@ -379,7 +377,6 @@ def test_start_gepa_job_calls_package_with_correct_params(
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "rc-123",
                 "eval_ids": ["eval-a", "eval-b"],
             },
@@ -416,7 +413,6 @@ def test_list_gepa_jobs(client, mock_api_key, tmp_path):
     gepa_job_1 = GepaJob(
         name="Job 1",
         job_id="remote-job-1",
-        token_budget="light",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -426,7 +422,6 @@ def test_list_gepa_jobs(client, mock_api_key, tmp_path):
     gepa_job_2 = GepaJob(
         name="Job 2",
         job_id="remote-job-2",
-        token_budget="heavy",
         target_run_config_id="config-2",
         latest_status="succeeded",
         parent=task,
@@ -469,7 +464,6 @@ def test_get_gepa_job_detail(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -531,7 +525,6 @@ def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -612,7 +605,6 @@ def test_gepa_job_only_creates_prompt_once(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -679,7 +671,6 @@ def test_get_gepa_job_skips_update_when_succeeded(client, mock_api_key, tmp_path
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="succeeded",
         optimized_prompt="Already optimized",
@@ -731,7 +722,6 @@ def test_get_gepa_job_skips_update_when_failed(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="failed",
         parent=task,
@@ -781,7 +771,6 @@ def test_get_gepa_job_skips_update_when_cancelled(client, mock_api_key, tmp_path
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="cancelled",
         parent=task,
@@ -851,7 +840,6 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
         GepaJob(
             name=f"Job {i}",
             job_id=f"remote-job-{i}",
-            token_budget="light",
             target_run_config_id="config-1",
             latest_status=JobStatus.PENDING.value
             if i % 2 == 0
@@ -863,7 +851,6 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
         GepaJob(
             name=f"Job {i}",
             job_id=f"remote-job-{i}",
-            token_budget="light",
             target_run_config_id="config-1",
             latest_status=JobStatus.SUCCEEDED.value,
             parent=task,
@@ -923,7 +910,6 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
     GepaJob(
         name="Succeeded Job",
         job_id="remote-job-succeeded",
-        token_budget="light",
         target_run_config_id="config-1",
         latest_status=JobStatus.SUCCEEDED.value,
         parent=task,
@@ -932,7 +918,6 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
     GepaJob(
         name="Failed Job",
         job_id="remote-job-failed",
-        token_budget="light",
         target_run_config_id="config-1",
         latest_status=JobStatus.FAILED.value,
         parent=task,
@@ -941,7 +926,6 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
     GepaJob(
         name="Cancelled Job",
         job_id="remote-job-cancelled",
-        token_budget="light",
         target_run_config_id="config-1",
         latest_status=JobStatus.CANCELLED.value,
         parent=task,
@@ -1004,7 +988,6 @@ def test_update_gepa_job_status_no_parent_task(mock_api_key):
     gepa_job = GepaJob(
         name="Orphan Job",
         job_id="remote-job-orphan",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
     )
@@ -1034,7 +1017,6 @@ def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -1080,7 +1062,6 @@ def test_update_gepa_job_status_response_validation_error(
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -1126,7 +1107,6 @@ def test_update_gepa_job_status_exception_during_update(client, mock_api_key, tm
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -1170,7 +1150,6 @@ def test_list_gepa_jobs_exception_during_update(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -1792,7 +1771,6 @@ def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -1834,7 +1812,6 @@ def test_start_gepa_job_with_tools_in_run_config(client, mock_api_key, tmp_path)
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -1880,7 +1857,6 @@ def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path)
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -1933,7 +1909,6 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -1983,7 +1958,6 @@ def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -2036,7 +2010,6 @@ def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -2087,7 +2060,6 @@ def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -2132,7 +2104,6 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
         response = client.post(
             f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
             json={
-                "token_budget": "medium",
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
             },
@@ -2173,7 +2144,6 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -2281,7 +2251,6 @@ def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -2354,7 +2323,6 @@ def test_gepa_job_run_config_handles_missing_target_config(
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="nonexistent-config-id",
         latest_status="pending",
         parent=task,
@@ -2547,7 +2515,6 @@ def test_gepa_job_cleanup_prompt_when_prompt_creation_fails(
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
@@ -2634,7 +2601,6 @@ def test_gepa_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_crea
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -2723,7 +2689,6 @@ def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -2841,7 +2806,6 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(mock_api_key, tmp
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
@@ -2951,7 +2915,6 @@ def test_update_gepa_job_status_transitions(
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status=previous_status.value,
         parent=task,
@@ -3051,7 +3014,6 @@ def test_update_gepa_job_running_to_succeeded_creates_artifacts(mock_api_key, tm
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id=target_run_config.id,
         latest_status=JobStatus.RUNNING.value,
         parent=task,
@@ -3122,7 +3084,6 @@ def test_update_gepa_job_succeeded_to_succeeded_no_artifacts(mock_api_key, tmp_p
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status=JobStatus.SUCCEEDED.value,
         optimized_prompt="Already optimized",
@@ -3186,7 +3147,6 @@ def test_update_gepa_job_pending_to_running_no_artifacts(mock_api_key, tmp_path)
     gepa_job = GepaJob(
         name="Test Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-1",
         latest_status=JobStatus.PENDING.value,
         parent=task,

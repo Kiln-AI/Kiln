@@ -3,7 +3,6 @@ import io
 import logging
 import tempfile
 from pathlib import Path
-from typing import Literal
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
     check_model_supported_v1_jobs_gepa_job_check_model_supported_get,
@@ -16,9 +15,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.body_start_gepa_job_v1_jobs_gepa_job_start_post import (
     BodyStartGepaJobV1JobsGepaJobStartPost,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.body_start_gepa_job_v1_jobs_gepa_job_start_post_token_budget import (
-    BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
     HTTPValidationError,
@@ -106,7 +102,6 @@ def _get_api_key() -> str:
 
 
 class StartGepaJobRequest(BaseModel):
-    token_budget: Literal["light", "medium", "heavy"]
     target_run_config_id: str
     eval_ids: list[str]
 
@@ -528,9 +523,6 @@ def connect_gepa_job_api(app: FastAPI):
 
             # Create the request body
             body = BodyStartGepaJobV1JobsGepaJobStartPost(
-                token_budget=BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget(
-                    request.token_budget
-                ),
                 task_id=task_id,
                 target_run_config_id=request.target_run_config_id,
                 project_zip=project_zip_file,
@@ -557,7 +549,6 @@ def connect_gepa_job_api(app: FastAPI):
             gepa_job = GepaJob(
                 name=generate_memorable_name(),
                 job_id=response.job_id,
-                token_budget=request.token_budget,
                 target_run_config_id=request.target_run_config_id,
                 latest_status=JobStatus.PENDING,
                 eval_ids=request.eval_ids,

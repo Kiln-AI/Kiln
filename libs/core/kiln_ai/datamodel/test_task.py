@@ -415,7 +415,6 @@ def test_task_gepa_jobs_relationship(tmp_path):
     gepa_job = GepaJob(
         name="Test GEPA Job",
         job_id="remote-job-123",
-        token_budget="medium",
         target_run_config_id="config-123",
         latest_status="pending",
         parent=task,
@@ -426,7 +425,6 @@ def test_task_gepa_jobs_relationship(tmp_path):
     assert len(gepa_jobs) == 1
     assert gepa_jobs[0].name == "Test GEPA Job"
     assert gepa_jobs[0].job_id == "remote-job-123"
-    assert gepa_jobs[0].token_budget == "medium"
 
 
 def test_task_gepa_jobs_readonly(tmp_path):
@@ -441,7 +439,6 @@ def test_task_gepa_jobs_readonly(tmp_path):
     gepa_job = GepaJob(
         name="Readonly GEPA Job",
         job_id="remote-job-456",
-        token_budget="heavy",
         target_run_config_id="config-456",
         latest_status="succeeded",
         parent=task,
