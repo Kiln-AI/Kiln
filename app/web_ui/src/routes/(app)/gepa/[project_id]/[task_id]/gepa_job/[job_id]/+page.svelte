@@ -4,9 +4,11 @@
   import { onMount, onDestroy } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type { GepaJob } from "$lib/types"
+  import type { GepaJob, Eval } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import Output from "$lib/ui/output.svelte"
+  import PropertyList from "$lib/ui/property_list.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
   import { get_task_composite_id } from "$lib/stores"
   import {
     load_task_run_configs,
@@ -51,7 +53,10 @@
   }
 
   onMount(async () => {
-    await load_task_run_configs(project_id, task_id)
+    await Promise.all([
+      load_task_run_configs(project_id, task_id),
+      load_evals(),
+    ])
     await get_gepa_job()
   })
 
@@ -96,33 +101,74 @@
     }
   }
 
-  type Property = {
-    name: string
-    value: string | null | undefined
-    link?: string
-  }
-
-  let properties: Property[] = []
+  let properties: UiProperty[] = []
+  let evals: Eval[] = []
 
   $: run_configs =
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
     ] || []
 
-  $: view_prompt_action_buttons = gepa_job?.created_prompt_id
-    ? (() => {
-        const href = prompt_link(
-          project_id,
-          task_id,
-          gepa_job!.created_prompt_id!,
-        )
-        return href ? [{ label: "View Optimized Prompt", href }] : []
-      })()
-    : []
+  $: optimize_page_link = `/optimize/${project_id}/${task_id}`
+
+  $: is_terminal =
+    gepa_job?.latest_status === "succeeded" ||
+    gepa_job?.latest_status === "failed" ||
+    gepa_job?.latest_status === "cancelled"
+
+  $: view_prompt_action_buttons = (() => {
+    const buttons: { label: string; href?: string; handler?: () => void }[] = []
+    if (gepa_job?.created_prompt_id) {
+      const href = prompt_link(project_id, task_id, gepa_job.created_prompt_id)
+      if (href) {
+        buttons.push({ label: "View Optimized Prompt", href })
+      }
+    }
+    if (!is_terminal) {
+      buttons.push({
+        label: "Refresh Status",
+        handler: () => get_gepa_job(false),
+      })
+    }
+    return buttons
+  })()
+
+  async function load_evals() {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/evals",
+        {
+          params: {
+            path: { project_id, task_id },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      evals = data || []
+    } catch {
+      evals = []
+    }
+  }
 
   function get_run_config_name(run_config_id: string): string {
     const config = run_configs.find((rc) => rc.id === run_config_id)
     return config?.name || run_config_id
+  }
+
+  function get_eval_name(eval_id: string): string {
+    const found = evals.find((e) => e.id === eval_id)
+    return found?.name || eval_id
+  }
+
+  function eval_link(eval_id: string): string {
+    return `/specs/${project_id}/${task_id}/legacy/${encodeURIComponent(eval_id)}`
+  }
+
+  function format_status(s: string): string {
+    if (s === "succeeded") return "Complete"
+    return s.charAt(0).toUpperCase() + s.slice(1)
   }
 
   function build_properties() {
@@ -130,33 +176,51 @@
       properties = []
       return
     }
-    properties = [
-      { name: "Kiln ID", value: gepa_job.id },
-      { name: "Name", value: gepa_job.name },
-      { name: "Description", value: gepa_job.description },
-      { name: "Remote Job ID", value: gepa_job.job_id },
+
+    let base: UiProperty[] = [
       {
-        name: "Token Budget",
-        value:
-          { light: "Low", medium: "Medium", heavy: "High" }[
-            gepa_job.token_budget
-          ] || gepa_job.token_budget,
+        name: "Status",
+        value: format_status(gepa_job.latest_status),
       },
+      { name: "ID", value: gepa_job.id || "" },
+      { name: "Name", value: gepa_job.name },
       {
         name: "Target Run Config",
         value: get_run_config_name(gepa_job.target_run_config_id),
+        link: optimize_page_link,
       },
-      {
-        name: "Eval IDs",
-        value:
-          gepa_job.eval_ids && gepa_job.eval_ids.length > 0
-            ? gepa_job.eval_ids.join(", ")
-            : "None",
-      },
-      { name: "Created At", value: formatDate(gepa_job.created_at) },
-      { name: "Created By", value: gepa_job.created_by },
     ]
-    properties = properties.filter((property) => !!property.value)
+
+    if (gepa_job.created_run_config_id) {
+      base.push({
+        name: "Optimized Run Config",
+        value: get_run_config_name(gepa_job.created_run_config_id),
+        link: optimize_page_link,
+      })
+    }
+
+    if (gepa_job.eval_ids && gepa_job.eval_ids.length > 0) {
+      base.push({
+        name: "Evals",
+        value: gepa_job.eval_ids.map((id) => get_eval_name(id)),
+        links: gepa_job.eval_ids.map((id) => eval_link(id)),
+        badge: true,
+      })
+    } else {
+      base.push({ name: "Evals", value: "None" })
+    }
+
+    base.push(
+      ...[
+        {
+          name: "Created At",
+          value: gepa_job.created_at ? formatDate(gepa_job.created_at) : "",
+        },
+        { name: "Created By", value: gepa_job.created_by || "" },
+      ].filter((p) => !!p.value),
+    )
+
+    properties = base
   }
 </script>
 
@@ -190,83 +254,34 @@
       <div
         class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
       >
-        <div class="font-medium">
-          Error Loading Kiln Prompt Optimization Job
-        </div>
         <div class="text-error text-sm">
           {gepa_job_error?.getMessage() || "An unknown error occurred"}
         </div>
       </div>
     {:else}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
-        <div class="grow flex flex-col gap-4">
-          <div class="text-xl font-bold">Details</div>
-          <div
-            class="grid grid-cols-[auto,1fr] gap-y-4 gap-x-4 text-sm 2xl:text-base"
-          >
-            {#each properties as property}
-              <div class="flex items-center">{property.name}</div>
-              <div class="flex items-center text-gray-500">
-                {#if property.link}
-                  <a href={property.link} target="_blank" class="link">
-                    {property.value}
+        {#if gepa_job.optimized_prompt}
+          <div class="flex flex-col gap-1">
+            <div class="flex flex-row justify-between items-center mb-4">
+              <div class="text-xl font-bold">Optimized Prompt</div>
+              {#if gepa_job.created_prompt_id}
+                {@const created_prompt_href = prompt_link(
+                  project_id,
+                  task_id,
+                  gepa_job.created_prompt_id,
+                )}
+                <div class="flex items-center text-gray-500 text-xs">
+                  <a href={created_prompt_href} class="link">
+                    View Prompt Details
                   </a>
-                {:else}
-                  {property.value}
-                {/if}
-              </div>
-            {/each}
-          </div>
-
-          {#if gepa_job.optimized_prompt}
-            <div class="text-xl font-bold mt-8">Optimized Prompt</div>
-            <Output raw_output={gepa_job.optimized_prompt} />
-          {/if}
-        </div>
-
-        <div class="grow flex flex-col gap-4 min-w-[400px]">
-          <div class="text-xl font-bold">Status</div>
-          <div
-            class="grid grid-cols-[auto,1fr] gap-y-4 gap-x-4 text-sm 2xl:text-base"
-          >
-            <div class="flex items-center">Status</div>
-            <div class="flex items-center text-gray-500">
-              {#if running}
-                <span class="loading loading-spinner mr-2 h-[14px] w-[14px]"
-                ></span>
-              {/if}
-              {gepa_job.latest_status.charAt(0).toUpperCase() +
-                gepa_job.latest_status.slice(1)}
-              <button
-                class="link ml-2 font-medium"
-                on:click={() => get_gepa_job(false)}
-              >
-                Reload Status
-              </button>
-            </div>
-
-            {#if gepa_job.created_prompt_id}
-              {@const created_prompt_href = prompt_link(
-                project_id,
-                task_id,
-                gepa_job.created_prompt_id,
-              )}
-              {#if created_prompt_href}
-                <div class="flex items-center">Optimized Prompt</div>
-                <div class="flex items-center text-gray-500">
-                  <a href={created_prompt_href} class="link"> View Prompt </a>
                 </div>
               {/if}
-            {/if}
-
-            {#if gepa_job.created_run_config_id}
-              <div class="flex items-center">Generated Run Config</div>
-              <div class="flex items-center text-gray-500">
-                {get_run_config_name(gepa_job.created_run_config_id)} (ID:
-                {gepa_job.created_run_config_id})
-              </div>
-            {/if}
+            </div>
+            <Output raw_output={gepa_job.optimized_prompt} />
           </div>
+        {/if}
+        <div class="max-w-md">
+          <PropertyList title="Details" {properties} />
         </div>
       </div>
     {/if}

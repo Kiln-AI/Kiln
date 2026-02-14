@@ -52,9 +52,7 @@
   function on_select(template: PromptGeneratorTemplate): () => void {
     return () => {
       if (template.generator_id === "kiln_prompt_optimizer") {
-        const params = new URLSearchParams()
-        params.set("from", "prompt_generators")
-        goto(`/gepa/${project_id}/${task_id}/create_gepa?${params.toString()}`)
+        goto(`/gepa/${project_id}/${task_id}/create_gepa`)
         return
       }
 
@@ -125,7 +123,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Create a Prompt"
+    title="Create Prompt"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts"
     breadcrumbs={[
