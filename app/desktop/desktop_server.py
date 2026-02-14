@@ -22,6 +22,7 @@ from app.desktop.studio_server.finetune_api import connect_fine_tune_api
 from app.desktop.studio_server.import_api import connect_import_api
 from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
+from app.desktop.studio_server.run_config_api import connect_run_config_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.settings_api import connect_settings
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
@@ -63,6 +64,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_data_gen_api(app)
     connect_fine_tune_api(app)
     connect_evals_api(app)
+    connect_run_config_api(app)
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
     connect_copilot_api(app)

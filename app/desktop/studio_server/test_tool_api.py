@@ -3674,6 +3674,13 @@ class TestExternalToolApiDescription:
                 },
                 "required": ["param1"],
             },
+            outputSchema={
+                "type": "object",
+                "properties": {
+                    "result": {"type": "string", "description": "Output result"},
+                },
+                "required": ["result"],
+            },
         )
 
         result = ExternalToolApiDescription.tool_from_mcp_tool(mcp_tool)
@@ -3687,6 +3694,13 @@ class TestExternalToolApiDescription:
                 "param2": {"type": "number", "description": "Second parameter"},
             },
             "required": ["param1"],
+        }
+        assert result.outputSchema == {
+            "type": "object",
+            "properties": {
+                "result": {"type": "string", "description": "Output result"},
+            },
+            "required": ["result"],
         }
 
     def test_tool_from_mcp_tool_with_minimal_fields(self):
@@ -3702,6 +3716,7 @@ class TestExternalToolApiDescription:
         assert result.name == "minimal_tool"
         assert result.description is None
         assert result.inputSchema == {}
+        assert result.outputSchema is None
 
     @pytest.mark.asyncio
     async def test_tool_from_kiln_task_tool_with_all_fields(self):
@@ -3733,6 +3748,7 @@ class TestExternalToolApiDescription:
             },
             "required": ["input"],
         }
+        assert result.outputSchema is None
 
     @pytest.mark.asyncio
     async def test_tool_from_kiln_task_tool_with_minimal_fields(self):
@@ -3748,6 +3764,7 @@ class TestExternalToolApiDescription:
         assert result.name == "minimal_kiln_tool"
         assert result.description == ""
         assert result.inputSchema == {}
+        assert result.outputSchema is None
 
 
 @pytest.mark.asyncio

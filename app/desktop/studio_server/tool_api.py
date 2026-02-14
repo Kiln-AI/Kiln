@@ -93,6 +93,7 @@ class ExternalToolApiDescription(BaseModel):
     name: str
     description: str | None
     inputSchema: dict[str, Any] = Field(default_factory=dict)
+    outputSchema: dict[str, Any] | None = None
 
     @classmethod
     def tool_from_mcp_tool(cls, tool: MCPTool):
@@ -102,6 +103,7 @@ class ExternalToolApiDescription(BaseModel):
             name=tool.name,
             description=tool.description,
             inputSchema=tool.inputSchema or {},
+            outputSchema=tool.outputSchema,
         )
 
     @classmethod
@@ -112,6 +114,7 @@ class ExternalToolApiDescription(BaseModel):
             name=await tool.name(),
             description=await tool.description(),
             inputSchema=tool.parameters_schema or {},
+            outputSchema=None,
         )
 
 
