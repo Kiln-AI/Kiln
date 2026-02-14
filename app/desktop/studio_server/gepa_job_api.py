@@ -498,10 +498,8 @@ def connect_gepa_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            with tempfile.NamedTemporaryFile(
-                suffix=".zip", prefix="kiln_gepa_", delete=True
-            ) as tmp:
-                tmp_file = Path(tmp.name)
+            with tempfile.TemporaryDirectory(prefix="kiln_gepa_") as tmpdir:
+                tmp_file = Path(tmpdir) / "kiln_gepa_project.zip"
                 package_project_for_training(
                     project=project,
                     task_ids=[task_id],
@@ -519,7 +517,6 @@ def connect_gepa_job_api(app: FastAPI):
                     f"Created project ZIP, total size: {len(zip_bytes)} bytes and file name: {tmp_file.name}"
                 )
 
-                # Create the File object for the SDK
                 project_zip_file = File(
                     payload=io.BytesIO(zip_bytes),
                     file_name="project.zip",
