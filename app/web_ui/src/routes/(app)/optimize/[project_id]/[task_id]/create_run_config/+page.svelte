@@ -83,11 +83,7 @@
 <div class="max-w-[900px]">
   <AppPage
     title="Create Run Configuration"
-    subtitle="Create a new run configuration for your task{prompt_info
-      ? ' with your new prompt'
-      : model
-        ? ' with your selected model'
-        : ''}."
+    subtitle="Create a configuration to run your task."
     breadcrumbs={model
       ? [
           {

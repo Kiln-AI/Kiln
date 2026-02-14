@@ -15,6 +15,7 @@
   import type { Task } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { getPromptType } from "./prompt_generators/prompt_generators"
+  import Banner from "$lib/ui/banner.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -146,6 +147,18 @@
       </div>
     {:else}
       <div class="flex flex-col gap-8">
+        <Banner
+          title="Automatically Optimize Your Prompt"
+          description="Use Kiln's state-of-the-art prompt optimizer to automatically improve your prompt."
+          button_label="Create Optimized Prompt"
+          href={`/gepa/${project_id}/${task_id}/create_gepa`}
+        >
+          <div slot="icon" class="p-4 border rounded-lg">
+            <div class="h-12 w-12">
+              <img src="/images/animated_logo.svg" alt="Kiln Copilot" />
+            </div>
+          </div>
+        </Banner>
         <div>
           <div class="flex items-center justify-between mb-2">
             <div>
@@ -171,6 +184,30 @@
             </div>
           {/if}
         </div>
+
+        {#if task?.thinking_instruction}
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h2 class="text-lg font-medium text-gray-900">
+                  Thinking Instructions
+                </h2>
+                <p class="text-sm text-gray-500">
+                  Instructions for how the model should 'think' about the task
+                  prior to answering. Used for chain of thought style prompting.
+                </p>
+              </div>
+              <button
+                class="btn btn-mid"
+                on:click={() =>
+                  goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)}
+              >
+                Edit
+              </button>
+            </div>
+            <Output raw_output={task.thinking_instruction} max_height="200px" />
+          </div>
+        {/if}
 
         <div>
           <h2 class="text-lg font-medium text-gray-900 mb-2">Saved Prompts</h2>

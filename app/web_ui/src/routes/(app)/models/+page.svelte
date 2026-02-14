@@ -2,12 +2,14 @@
   import { onMount } from "svelte"
   import { get_provider_image } from "$lib/ui/provider_image"
   import FancySelect from "$lib/ui/fancy_select.svelte"
-  import type { ModelProviderName } from "$lib/types"
+  import type { ModelProviderName, Task } from "$lib/types"
   import AppPage from "../app_page.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import {
     available_models,
     load_available_models,
+    load_task,
     provider_name_from_id,
     ui_state,
   } from "$lib/stores"
@@ -170,31 +172,22 @@
   }
 
   async function fetchModelsFromRemoteConfig() {
-    try {
-      loading = true
-      error = null
-
-      const response = await fetch(
-        "https://remote-config.getkiln.ai/kiln_config_v2.json",
-      )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.status}`)
-      }
-
-      const data: ConfigData = await response.json()
-      models = data.model_list
-
-      // Extract unique providers for filters
-      providers = [
-        ...new Set(models.flatMap((m) => m.providers.map((p) => p.name))),
-      ].sort()
-
-      applyFilters()
-    } catch (err) {
-      error = createKilnError(err)
-    } finally {
-      loading = false
+    const response = await fetch(
+      "https://remote-config.getkiln.ai/kiln_config_v2.json",
+    )
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models: ${response.status}`)
     }
+
+    const data: ConfigData = await response.json()
+    models = data.model_list
+
+    // Extract unique providers for filters
+    providers = [
+      ...new Set(models.flatMap((m) => m.providers.map((p) => p.name))),
+    ].sort()
+
+    applyFilters()
   }
 
   async function loadPricing() {
@@ -433,9 +426,27 @@
   $: void (sortBy, sortDirection, applySorting())
 
   onMount(async () => {
-    loadPricing()
-    await load_available_models()
-    await fetchModelsFromRemoteConfig()
+    try {
+      loading = true
+      error = null
+
+      loadPricing()
+
+      if (project_id && task_id) {
+        task = await load_task(project_id, task_id)
+      }
+
+      if (!task) {
+        throw new Error("Task not found")
+      }
+
+      await load_available_models()
+      await fetchModelsFromRemoteConfig()
+    } catch (err) {
+      error = createKilnError(err)
+    } finally {
+      loading = false
+    }
   })
 
   function model_provider_is_connected(
@@ -498,6 +509,10 @@
   let connect_provider_dialog: Dialog | null = null
   let connect_provider_model: Model | null = null
 
+  let create_run_config_dialog: CreateNewRunConfigDialog | null = null
+  let create_run_config_model_id: string | undefined = undefined
+  let task: Task | null = null
+
   function findFirstConnectedProvider(model: Model): Provider | null {
     return (
       model.providers.find((p) =>
@@ -518,16 +533,15 @@
     }
   }
 
-  function onClick(model: Model) {
-    const connectedProvider = findFirstConnectedProvider(model)
+  function onClick(model: Model, provider?: Provider) {
+    const connectedProvider = provider || findFirstConnectedProvider(model)
     if (!connectedProvider) {
       connect_provider_model = model
       connect_provider_dialog?.show()
       return
     }
-    goto(
-      `/optimize/${project_id}/${task_id}/create_run_config?model=${encodeURIComponent(`${connectedProvider.name}/${model.name}`)}`,
-    )
+    create_run_config_model_id = `${connectedProvider.name}/${model.name}`
+    create_run_config_dialog?.show()
   }
 </script>
 
@@ -865,10 +879,33 @@
                     </h4>
                     <div class="space-y-2">
                       {#each model.providers as provider}
+                        {@const isConnected = model_provider_is_connected(
+                          provider.name,
+                          model.name,
+                          provider.model_id,
+                          provider.provider_finetune_id,
+                        )}
+                        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
                         <div
-                          class="flex items-center justify-between p-3 bg-gray-50 rounded-md"
+                          class="flex items-center justify-between p-3 bg-gray-50 rounded-md transition-all cursor-pointer hover:outline hover:outline-1 hover:outline-primary/50 {isConnected
+                            ? ''
+                            : 'opacity-50 hover:opacity-60'}"
+                          on:click|stopPropagation={() => {
+                            if (isConnected) onClick(model, provider)
+                          }}
+                          on:keydown|stopPropagation={(e) => {
+                            if (
+                              (e.key === "Enter" || e.key === " ") &&
+                              isConnected
+                            ) {
+                              e.preventDefault()
+                              onClick(model, provider)
+                            }
+                          }}
+                          role="button"
+                          tabindex="0"
                         >
-                          {#if model_provider_is_connected(provider.name, model.name, provider.model_id, provider.provider_finetune_id)}
+                          {#if isConnected}
                             <div class="flex items-center space-x-3">
                               <img
                                 src={get_provider_image(provider.name)}
@@ -896,7 +933,7 @@
                                 provider.name,
                                 provider.model_id,
                               )}
-                              class="text-left flex items-center space-x-3 opacity-50 hover:opacity-60 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
+                              class="text-left flex items-center space-x-3 transition-all cursor-pointer flex-1 tooltip tooltip-top before:z-50 before:whitespace-normal"
                               on:click|stopPropagation
                               data-tip={model_not_connected_tooltip(
                                 provider.name,
@@ -1049,3 +1086,13 @@
     {/if}
   </div>
 </Dialog>
+
+{#if task && project_id}
+  <CreateNewRunConfigDialog
+    bind:this={create_run_config_dialog}
+    {project_id}
+    {task}
+    model={create_run_config_model_id}
+    new_run_config_created={() => goto(`/optimize/${project_id}/${task_id}`)}
+  />
+{/if}
