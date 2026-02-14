@@ -4735,11 +4735,6 @@ export interface components {
              */
             job_id: string;
             /**
-             * Token Budget
-             * @description The token budget for this job: 'light', 'medium', or 'heavy'.
-             */
-            token_budget: string;
-            /**
              * Target Run Config Id
              * @description The ID of the run configuration used for this job.
              */
@@ -6289,11 +6284,6 @@ export interface components {
         };
         /** StartGepaJobRequest */
         StartGepaJobRequest: {
-            /**
-             * Token Budget
-             * @enum {string}
-             */
-            token_budget: "light" | "medium" | "heavy";
             /** Target Run Config Id */
             target_run_config_id: string;
             /** Eval Ids */
