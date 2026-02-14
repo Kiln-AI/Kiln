@@ -11,9 +11,6 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
 from .check_model_supported_response import CheckModelSupportedResponse
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
-from .entitlement import Entitlement
-from .entitlements_list import EntitlementsList
-from .entitlements_response import EntitlementsResponse
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
 from .generate_batch_input import GenerateBatchInput
@@ -64,9 +61,6 @@ __all__ = (
     "CheckModelSupportedResponse",
     "ClarifySpecInput",
     "ClarifySpecOutput",
-    "Entitlement",
-    "EntitlementsList",
-    "EntitlementsResponse",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
     "GenerateBatchInput",
