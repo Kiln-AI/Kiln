@@ -34,7 +34,9 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
+  import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
+  import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
 
   function tagFromFilterId(filter_id: string): string | undefined {
@@ -88,6 +90,7 @@
   let current_task: Task | null = null
   let task_load_error: KilnError | null = null
   let kiln_copilot_connected: boolean | null = null
+  let has_prompt_optimization_entitlement: boolean | null = null
   let copilot_check_error: KilnError | null = null
 
   let loading = true
@@ -256,6 +259,15 @@
     }
 
     if (kiln_copilot_connected) {
+      const { has_access, error: entitlement_error } =
+        await checkPromptOptimizationAccess()
+      has_prompt_optimization_entitlement = has_access
+      if (entitlement_error) {
+        copilot_check_error = entitlement_error
+      }
+    }
+
+    if (kiln_copilot_connected && has_prompt_optimization_entitlement) {
       await Promise.all([load_model_info(), load_available_models()])
       await Promise.all([
         load_task(),
@@ -655,7 +667,6 @@
         throw new Error("Please select a saved run configuration")
       }
 
-      const token_budget = "medium"
       const { data: response, error: post_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
         {
@@ -666,7 +677,6 @@
             },
           },
           body: {
-            token_budget,
             target_run_config_id,
             eval_ids: Array.from(selected_eval_ids),
           },
@@ -740,6 +750,8 @@
     </div>
   {:else if kiln_copilot_connected === false}
     <CopilotRequiredCard />
+  {:else if has_prompt_optimization_entitlement === false}
+    <EntitlementRequiredCard feature_name="Prompt Optimization" />
   {:else if created_job}
     <Completed
       title="Prompt Optimization Job Started"

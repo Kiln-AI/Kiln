@@ -8,9 +8,6 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from .. import types
-from ..models.body_start_gepa_job_v1_jobs_gepa_job_start_post_token_budget import (
-    BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget,
-)
 from ..types import File
 
 T = TypeVar("T", bound="BodyStartGepaJobV1JobsGepaJobStartPost")
@@ -20,14 +17,12 @@ T = TypeVar("T", bound="BodyStartGepaJobV1JobsGepaJobStartPost")
 class BodyStartGepaJobV1JobsGepaJobStartPost:
     """
     Attributes:
-        token_budget (BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget): The token budget to use
         task_id (str): The task ID
         target_run_config_id (str): The target run config ID
         eval_ids (list[str]): The list of eval IDs to use for optimization
         project_zip (File): The project zip file
     """
 
-    token_budget: BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget
     task_id: str
     target_run_config_id: str
     eval_ids: list[str]
@@ -35,8 +30,6 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        token_budget = self.token_budget.value
-
         task_id = self.task_id
 
         target_run_config_id = self.target_run_config_id
@@ -49,7 +42,6 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "token_budget": token_budget,
                 "task_id": task_id,
                 "target_run_config_id": target_run_config_id,
                 "eval_ids": eval_ids,
@@ -61,8 +53,6 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
 
     def to_multipart(self) -> types.RequestFiles:
         files: types.RequestFiles = []
-
-        files.append(("token_budget", (None, str(self.token_budget.value).encode(), "text/plain")))
 
         files.append(("task_id", (None, str(self.task_id).encode(), "text/plain")))
 
@@ -81,8 +71,6 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        token_budget = BodyStartGepaJobV1JobsGepaJobStartPostTokenBudget(d.pop("token_budget"))
-
         task_id = d.pop("task_id")
 
         target_run_config_id = d.pop("target_run_config_id")
@@ -92,7 +80,6 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
         project_zip = File(payload=BytesIO(d.pop("project_zip")))
 
         body_start_gepa_job_v1_jobs_gepa_job_start_post = cls(
-            token_budget=token_budget,
             task_id=task_id,
             target_run_config_id=target_run_config_id,
             eval_ids=eval_ids,
