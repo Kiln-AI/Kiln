@@ -19,7 +19,6 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
   let loading = true
 
@@ -31,6 +30,7 @@
   let copilot_check_error: KilnError | null = null
 
   $: error = copilot_check_error || gepa_jobs_error
+  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
   onMount(async () => {
     if (USE_DUMMY_DATA) {
@@ -45,7 +45,7 @@
       return
     }
 
-    get_gepa_jobs()
+    await get_gepa_jobs()
 
     if (!gepa_jobs || gepa_jobs.length === 0) {
       try {
