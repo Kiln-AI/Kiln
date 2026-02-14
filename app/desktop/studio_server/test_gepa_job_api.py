@@ -1,6 +1,7 @@
 import asyncio
-import io
+import json
 import zipfile
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,6 +26,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_statu
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_status_response import (
     JobStatusResponse,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
+    Response as SdkResponse,
+)
 from app.desktop.studio_server.gepa_job_api import (
     PublicGEPAJobResultResponse,
     PublicGEPAJobStatusResponse,
@@ -32,14 +36,36 @@ from app.desktop.studio_server.gepa_job_api import (
     gepa_job_from_id,
     is_job_status_final,
     update_gepa_job_and_create_artifacts,
-    zip_project,
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
 from kiln_ai.datamodel import GepaJob, Project, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
+
+
+def _mock_package_project_for_training(**kwargs):
+    """Mock that writes a minimal valid zip file to the output path."""
+    output = kwargs.get("output")
+    if output is None:
+        return
+    with zipfile.ZipFile(output, "w") as z:
+        z.writestr("project.kiln", "{}")
+
+
+def _make_sdk_response(
+    parsed=None,
+    status_code: HTTPStatus = HTTPStatus.OK,
+    content: bytes = b"{}",
+) -> SdkResponse:
+    return SdkResponse(
+        status_code=status_code,
+        content=content,
+        headers={},
+        parsed=parsed,
+    )
 
 
 @pytest.fixture
@@ -257,8 +283,6 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
     project_id = project.id
     task_id = task.id
 
-    mock_start_response = JobStartResponse(job_id="remote-job-123")
-
     mock_run_config = MagicMock()
     mock_run_config.run_config_properties.tools_config = None
 
@@ -272,13 +296,15 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.zip_project",
-            return_value=b"fake zip data",
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_start_response,
+            return_value=_make_sdk_response(
+                parsed=JobStartResponse(job_id="remote-job-123")
+            ),
         ),
     ):
         response = client.post(
@@ -304,6 +330,74 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
         assert len(gepa_jobs) == 1
         assert gepa_jobs[0].job_id == "remote-job-123"
         assert gepa_jobs[0].eval_ids == ["eval-1", "eval-2"]
+
+
+def test_start_gepa_job_calls_package_with_correct_params(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_gepa_job calls package_project_for_training with the correct arguments."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        description="Test task for GEPA",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    project_id = project.id
+    task_id = task.id
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties.tools_config = None
+
+    mock_packager = MagicMock(side_effect=_mock_package_project_for_training)
+
+    with (
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            mock_packager,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(
+                parsed=JobStartResponse(job_id="remote-job-456")
+            ),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            json={
+                "token_budget": "medium",
+                "target_run_config_id": "rc-123",
+                "eval_ids": ["eval-a", "eval-b"],
+            },
+        )
+
+        assert response.status_code == 200
+
+        mock_packager.assert_called_once()
+        call_kwargs = mock_packager.call_args.kwargs
+
+        assert call_kwargs["project"] is project
+        assert call_kwargs["task_ids"] == [task_id]
+        assert call_kwargs["run_config_id"] == "rc-123"
+        assert call_kwargs["eval_ids"] == ["eval-a", "eval-b"]
+        assert isinstance(call_kwargs["config"], PackageForTrainingConfig)
+        assert call_kwargs["config"].include_documents is False
+        assert call_kwargs["config"].exclude_task_runs is False
+        assert call_kwargs["config"].exclude_eval_config_runs is True
 
 
 def test_list_gepa_jobs(client, mock_api_key, tmp_path):
@@ -1104,101 +1198,6 @@ def test_list_gepa_jobs_exception_during_update(client, mock_api_key, tmp_path):
         assert len(result) == 1
 
 
-def test_zip_project_no_path():
-    """Test that zip_project raises ValueError when project path is not set."""
-
-    project = Project(name="Test Project")
-
-    with pytest.raises(ValueError, match="Project path is not set"):
-        zip_project(project)
-
-
-def test_zip_project_basic(tmp_path):
-    """Test basic zip_project functionality."""
-
-    project_dir = tmp_path / "test_project"
-    project_dir.mkdir()
-
-    (project_dir / "file1.txt").write_text("content1")
-    (project_dir / "file2.py").write_text("hello")
-
-    subdir = project_dir / "subdir"
-    subdir.mkdir()
-    (subdir / "file3.txt").write_text("content3")
-
-    project = Project(name="Test Project", path=project_dir / "project.kiln")
-    project.save_to_file()
-
-    zip_bytes = zip_project(project)
-
-    assert len(zip_bytes) > 0
-    assert isinstance(zip_bytes, bytes)
-
-    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zip_file:
-        names = zip_file.namelist()
-        assert any("file1.txt" in name for name in names)
-        assert any("file2.py" in name for name in names)
-        assert any("file3.txt" in name for name in names)
-
-
-def test_zip_project_skips_ignored_directories(tmp_path):
-    """Test that zip_project skips common directories like .git, __pycache__, etc."""
-
-    project_dir = tmp_path / "test_project"
-    project_dir.mkdir()
-
-    (project_dir / "normal_file.txt").write_text("should be included")
-
-    git_dir = project_dir / ".git"
-    git_dir.mkdir()
-    (git_dir / "config").write_text("git config")
-
-    pycache_dir = project_dir / "__pycache__"
-    pycache_dir.mkdir()
-    (pycache_dir / "cache.pyc").write_text("cached")
-
-    node_modules = project_dir / "node_modules"
-    node_modules.mkdir()
-    (node_modules / "package.json").write_text("{}")
-
-    venv_dir = project_dir / ".venv"
-    venv_dir.mkdir()
-    (venv_dir / "lib.py").write_text("lib")
-
-    project = Project(name="Test Project", path=project_dir / "project.kiln")
-    project.save_to_file()
-
-    zip_bytes = zip_project(project)
-
-    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zip_file:
-        names = zip_file.namelist()
-        assert any("normal_file.txt" in name for name in names)
-        assert not any(".git" in name for name in names)
-        assert not any("__pycache__" in name for name in names)
-        assert not any("node_modules" in name for name in names)
-        assert not any(".venv" in name for name in names)
-
-
-def test_zip_project_handles_unreadable_files(tmp_path):
-    """Test that zip_project handles files that cannot be read gracefully."""
-
-    project_dir = tmp_path / "test_project"
-    project_dir.mkdir()
-
-    (project_dir / "good_file.txt").write_text("readable content")
-
-    project = Project(name="Test Project", path=project_dir / "project.kiln")
-    project.save_to_file()
-
-    with patch(
-        "zipfile.ZipFile.write", side_effect=[None, Exception("Cannot read file")]
-    ):
-        zip_bytes = zip_project(project)
-
-        assert len(zip_bytes) > 0
-        assert isinstance(zip_bytes, bytes)
-
-
 def test_check_run_config_with_tools(client, mock_api_key, tmp_path):
     """Test that check_run_config returns False when run config has tools."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
@@ -1892,7 +1891,7 @@ def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path)
 
 
 def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job handles HTTPValidationError from server."""
+    """Test that start_gepa_job surfaces upstream validation errors via check_response_error."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1909,8 +1908,6 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
     mock_run_config = MagicMock()
     mock_run_config.run_config_properties.tools_config = None
 
-    mock_error = HTTPValidationError(detail="Invalid request")
-
     with (
         patch(
             "app.desktop.studio_server.gepa_job_api.task_from_id",
@@ -1921,13 +1918,16 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.zip_project",
-            return_value=b"fake zip data",
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+                content=json.dumps({"message": "Upstream validation error"}).encode(),
+            ),
         ),
     ):
         response = client.post(
@@ -1940,10 +1940,11 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 422
+        assert "Upstream validation error" in response.json()["detail"]
 
 
 def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job handles None response from server."""
+    """Test that start_gepa_job handles None parsed response from server."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1970,13 +1971,13 @@ def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.zip_project",
-            return_value=b"fake zip data",
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_sdk_response(parsed=None),
         ),
     ):
         response = client.post(
@@ -1989,7 +1990,7 @@ def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "No response from server" in response.json()["detail"]
+        assert "unexpected response from server" in response.json()["detail"]
 
 
 def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
@@ -2023,11 +2024,11 @@ def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.zip_project",
-            return_value=b"fake zip data",
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             side_effect=ReadError("Connection lost"),
         ),
@@ -2074,11 +2075,11 @@ def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.zip_project",
-            return_value=b"fake zip data",
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             side_effect=Exception("Request timeout occurred"),
         ),
@@ -2124,7 +2125,7 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.zip_project",
+            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
             side_effect=Exception("Unexpected error"),
         ),
     ):

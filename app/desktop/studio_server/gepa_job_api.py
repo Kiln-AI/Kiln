@@ -1,9 +1,9 @@
 import asyncio
 import io
 import logging
-import zipfile
+import tempfile
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
     check_model_supported_v1_jobs_gepa_job_check_model_supported_get,
@@ -38,8 +38,13 @@ from app.desktop.studio_server.eval_api import (
     eval_from_id,
     task_run_config_from_id,
 )
+from app.desktop.studio_server.utils.copilot_utils import check_response_error
 from fastapi import FastAPI, HTTPException
-from kiln_ai.datamodel import GepaJob, Project, Prompt
+from kiln_ai.cli.commands.package_project import (
+    PackageForTrainingConfig,
+    package_project_for_training,
+)
+from kiln_ai.datamodel import GepaJob, Prompt
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
@@ -312,52 +317,6 @@ async def update_gepa_job_and_create_artifacts(
     return gepa_job
 
 
-def zip_project(project: Project) -> bytes:
-    """
-    Create a ZIP file of the entire project directory.
-    Returns the ZIP file as bytes.
-    """
-    if not project.path:
-        raise ValueError("Project path is not set")
-    project_path = Path(project.path).parent
-
-    # Skip common directories that shouldn't be included
-    skip_patterns = {
-        ".git",
-        "__pycache__",
-        ".pytest_cache",
-        "node_modules",
-        ".venv",
-        "venv",
-        ".DS_Store",
-        ".vscode",
-        ".idea",
-    }
-
-    buffer = io.BytesIO()
-    file_count = 0
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for file_path in project_path.rglob("*"):
-            # Skip if any parent directory matches skip patterns
-            if any(skip_dir in file_path.parts for skip_dir in skip_patterns):
-                continue
-
-            if file_path.is_file():
-                arcname = file_path.relative_to(project_path)
-                try:
-                    zip_file.write(file_path, arcname=arcname)
-                    file_count += 1
-                except Exception as e:
-                    logger.warning(f"Skipping file {file_path}: {e}")
-
-    buffer.seek(0)
-    zip_bytes = buffer.getvalue()
-    logger.info(
-        f"Created project ZIP with {file_count} files, total size: {len(zip_bytes)} bytes"
-    )
-    return zip_bytes
-
-
 def connect_gepa_job_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config")
     async def check_run_config(
@@ -515,7 +474,8 @@ def connect_gepa_job_api(app: FastAPI):
         Creates and saves a GepaJob datamodel to track the job.
         """
         task = task_from_id(project_id, task_id)
-        if not task.parent:
+        project = task.parent_project()
+        if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
         try:
@@ -538,15 +498,33 @@ def connect_gepa_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            # Create ZIP file of the project
-            project_zip_bytes = zip_project(cast(Project, task.parent))
+            with tempfile.NamedTemporaryFile(
+                suffix=".zip", prefix="kiln_gepa_", delete=True
+            ) as tmp:
+                tmp_file = Path(tmp.name)
+                package_project_for_training(
+                    project=project,
+                    task_ids=[task_id],
+                    run_config_id=request.target_run_config_id,
+                    eval_ids=request.eval_ids,
+                    output=tmp_file,
+                    config=PackageForTrainingConfig(
+                        include_documents=False,
+                        exclude_task_runs=False,
+                        exclude_eval_config_runs=True,
+                    ),
+                )
+                zip_bytes = tmp_file.read_bytes()
+                logger.info(
+                    f"Created project ZIP, total size: {len(zip_bytes)} bytes and file name: {tmp_file.name}"
+                )
 
-            # Create the File object for the SDK
-            project_zip_file = File(
-                payload=io.BytesIO(project_zip_bytes),
-                file_name="project.zip",
-                mime_type="application/zip",
-            )
+                # Create the File object for the SDK
+                project_zip_file = File(
+                    payload=io.BytesIO(zip_bytes),
+                    file_name="project.zip",
+                    mime_type="application/zip",
+                )
 
             # Create the request body
             body = BodyStartGepaJobV1JobsGepaJobStartPost(
@@ -559,22 +537,21 @@ def connect_gepa_job_api(app: FastAPI):
                 eval_ids=request.eval_ids,
             )
 
-            response = await start_gepa_job_v1_jobs_gepa_job_start_post.asyncio(
-                client=server_client, body=body
+            detailed_response = (
+                await start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed(
+                    client=server_client, body=body
+                )
+            )
+            check_response_error(
+                detailed_response,
+                default_detail="Failed to start GEPA job: unexpected error from server",
             )
 
-            if isinstance(response, HTTPValidationError):
-                error_detail = (
-                    str(response.detail)
-                    if hasattr(response, "detail")
-                    else "Validation error"
-                )
-                raise HTTPException(status_code=422, detail=error_detail)
-
-            if response is None:
+            response = detailed_response.parsed
+            if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to start GEPA job: No response from server",
+                    detail="Failed to start GEPA job: unexpected response from server",
                 )
 
             gepa_job = GepaJob(

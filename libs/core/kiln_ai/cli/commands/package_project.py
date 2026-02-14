@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -727,3 +728,201 @@ def package_project(
     )
 
     return task_prompts
+
+
+@dataclass
+class PackageForTrainingConfig:
+    include_documents: bool = True
+    exclude_task_runs: bool = False
+    exclude_eval_config_runs: bool = False
+
+
+def _ignore_eval_config_runs(directory: str, contents: list[str]) -> set[str]:
+    """shutil.copytree ignore callback that skips runs/ dirs under config dirs.
+
+    The eval on-disk hierarchy is: eval/configs/{config_id}/runs/...
+    We want to skip the runs/ directory inside each config directory.
+    A config directory is one whose parent is named 'configs'.
+    """
+    dir_path = Path(directory)
+    if dir_path.parent.name == "configs" and "runs" in contents:
+        return {"runs"}
+    return set()
+
+
+def export_evals(
+    task: Task,
+    eval_ids: list[str],
+    exported_task: Task,
+    exclude_eval_config_runs: bool = False,
+) -> list[str]:
+    """Copy selected evals (with their full subtree) to the exported task directory.
+
+    Args:
+        task: The source task containing the evals
+        eval_ids: List of eval IDs to include
+        exported_task: The exported task to copy evals into
+        exclude_eval_config_runs: If True, skip runs/ directories under eval configs
+
+    Returns:
+        List of eval IDs that were actually exported (intersection of eval_ids and task's evals)
+    """
+    if exported_task.path is None:
+        raise ValueError("Exported task path is not set")
+
+    exported_eval_ids: list[str] = []
+    evals = task.evals(readonly=True)
+    eval_ids_set = set(eval_ids)
+
+    ignore_fn = _ignore_eval_config_runs if exclude_eval_config_runs else None
+
+    for eval_obj in evals:
+        if eval_obj.id not in eval_ids_set:
+            continue
+        if eval_obj.path is None:
+            raise ValueError(f"Eval '{eval_obj.name}' path is not set")
+
+        eval_dir = eval_obj.path.parent
+        dest_dir = exported_task.path.parent / "evals" / eval_dir.name
+
+        shutil.copytree(eval_dir, dest_dir, ignore=ignore_fn)
+        exported_eval_ids.append(eval_obj.id)
+
+    return exported_eval_ids
+
+
+def export_documents(project: Project, exported_project: Project) -> None:
+    """Copy the entire documents directory from the source project to the export.
+
+    Args:
+        project: The source project
+        exported_project: The exported project to copy documents into
+    """
+    if project.path is None:
+        raise ValueError("Project path is not set")
+    if exported_project.path is None:
+        raise ValueError("Exported project path is not set")
+
+    source_docs_dir = project.path.parent / "documents"
+    if not source_docs_dir.exists() or not source_docs_dir.is_dir():
+        return
+
+    dest_docs_dir = exported_project.path.parent / "documents"
+    shutil.copytree(source_docs_dir, dest_docs_dir)
+
+
+def export_task_runs(task: Task, exported_task: Task) -> None:
+    """Copy the runs/ directory from the source task to the exported task.
+
+    Args:
+        task: The source task containing the runs
+        exported_task: The exported task to copy runs into
+    """
+    if task.path is None:
+        raise ValueError(f"Task '{task.name}' path is not set")
+    if exported_task.path is None:
+        raise ValueError("Exported task path is not set")
+
+    source_runs_dir = task.path.parent / "runs"
+    if not source_runs_dir.exists() or not source_runs_dir.is_dir():
+        return
+
+    dest_runs_dir = exported_task.path.parent / "runs"
+    shutil.copytree(source_runs_dir, dest_runs_dir)
+
+
+def _get_run_config_by_id(task: Task, run_config_id: str) -> TaskRunConfig:
+    """Look up a run config by ID from a task's run configs.
+
+    Raises:
+        ValueError: If the run config is not found
+    """
+    run_configs = task.run_configs()
+    run_config = next((rc for rc in run_configs if rc.id == run_config_id), None)
+    if not run_config:
+        raise ValueError(
+            f"Run config '{run_config_id}' not found for task '{task.name}' (ID: {task.id})"
+        )
+    return run_config
+
+
+def package_project_for_training(
+    project: Project,
+    task_ids: list[str],
+    run_config_id: str,
+    eval_ids: list[str],
+    output: Path,
+    config: PackageForTrainingConfig | None = None,
+) -> None:
+    """Package a Kiln project for training, including evals and optionally documents.
+
+    This is a library function (no CLI/interactive dependencies). It raises
+    exceptions on errors instead of using typer.Exit or console output.
+
+    Args:
+        project: The loaded project to package
+        task_ids: List of task IDs to include
+        run_config_id: The run config ID to use for the task
+        eval_ids: List of eval IDs to include (matched against evals in each task)
+        output: Output path for the zip file
+        config: Optional configuration; defaults to PackageForTrainingConfig()
+    """
+    if config is None:
+        config = PackageForTrainingConfig()
+
+    validated_tasks = validate_tasks(task_ids, project)
+
+    run_configs: dict[str, TaskRunConfig] = {}
+    for task in validated_tasks:
+        run_config = _get_run_config_by_id(task, run_config_id)
+        run_configs[task.id] = run_config  # type: ignore
+
+    required_server_ids = collect_required_tool_servers(validated_tasks, run_configs)
+
+    task_prompts = validate_and_build_prompts(validated_tasks, run_configs)
+
+    temp_dir, exported_project = create_export_directory(project)
+
+    try:
+        exported_tasks: dict[str, Task] = {}
+        exported_run_configs: dict[str, TaskRunConfig] = {}
+
+        for task in validated_tasks:
+            run_config = run_configs[task.id]  # type: ignore
+            exported_task, exported_run_config = export_task(
+                task, run_config, exported_project
+            )
+            exported_tasks[task.id] = exported_task  # type: ignore
+            exported_run_configs[task.id] = exported_run_config  # type: ignore
+
+        for task in validated_tasks:
+            prompt = task_prompts[task.id]  # type: ignore
+            exported_task = exported_tasks[task.id]  # type: ignore
+            exported_run_config = exported_run_configs[task.id]  # type: ignore
+            save_prompt_to_task(prompt, exported_task, exported_run_config)
+
+        validate_exported_prompts(task_prompts, exported_tasks, exported_run_configs)
+
+        export_tool_servers(required_server_ids, project, exported_project)
+
+        for task in validated_tasks:
+            exported_task = exported_tasks[task.id]  # type: ignore
+            export_evals(
+                task,
+                eval_ids,
+                exported_task,
+                exclude_eval_config_runs=config.exclude_eval_config_runs,
+            )
+
+        if not config.exclude_task_runs:
+            for task in validated_tasks:
+                exported_task = exported_tasks[task.id]  # type: ignore
+                export_task_runs(task, exported_task)
+
+        if config.include_documents:
+            export_documents(project, exported_project)
+
+        create_zip(temp_dir, output)
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
