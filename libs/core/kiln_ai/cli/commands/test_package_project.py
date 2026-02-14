@@ -56,8 +56,10 @@ from .package_project import (
     print_tasks_table,
     save_prompt_to_task,
     validate_and_build_prompts,
+    validate_and_build_prompts_noncli,
     validate_exported_prompts,
     validate_tasks,
+    validate_tasks_noncli,
     validate_tools,
 )
 
@@ -576,6 +578,31 @@ class TestValidateTasks:
         assert exc_info.value.exit_code == 1
 
 
+class TestValidateTasksNoncli:
+    def test_validate_existing_tasks(self, temp_project_with_multiple_tasks):
+        project = temp_project_with_multiple_tasks["project"]
+        tasks = temp_project_with_multiple_tasks["tasks"]
+        task_ids = [tasks[0].id, tasks[1].id]
+
+        result = validate_tasks_noncli(task_ids, project)
+        assert len(result) == 2
+
+    def test_validate_missing_task_raises_value_error(
+        self, temp_project_with_multiple_tasks
+    ):
+        project = temp_project_with_multiple_tasks["project"]
+        with pytest.raises(ValueError, match="Task ID\\(s\\) not found"):
+            validate_tasks_noncli(["nonexistent_id"], project)
+
+    def test_validate_partial_missing_raises_value_error(
+        self, temp_project_with_multiple_tasks
+    ):
+        project = temp_project_with_multiple_tasks["project"]
+        tasks = temp_project_with_multiple_tasks["tasks"]
+        with pytest.raises(ValueError, match="nonexistent"):
+            validate_tasks_noncli([tasks[0].id, "nonexistent"], project)
+
+
 class TestGetDefaultRunConfig:
     def test_get_valid_run_config(self, temp_project):
         """Test getting a valid default run config."""
@@ -661,6 +688,43 @@ class TestValidateAndBuildPrompts:
             with pytest.raises(typer.Exit) as exc_info:
                 validate_and_build_prompts([task], {task.id: run_config})
             assert exc_info.value.exit_code == 0
+
+
+class TestValidateAndBuildPromptsNoncli:
+    def test_build_static_prompts(self, temp_project):
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        result = validate_and_build_prompts_noncli([task], {task.id: run_config})
+
+        assert task.id in result
+        assert isinstance(result[task.id], Prompt)
+        assert "Test instruction" in result[task.id].prompt
+
+    def test_build_dynamic_prompts_without_confirmation(
+        self, temp_project_with_dynamic_prompt
+    ):
+        """Dynamic prompts are accepted silently without typer.confirm."""
+        task = Task.load_from_file(temp_project_with_dynamic_prompt["task"].path)
+        run_config = TaskRunConfig.load_from_file(
+            temp_project_with_dynamic_prompt["run_config"].path
+        )
+
+        result = validate_and_build_prompts_noncli([task], {task.id: run_config})
+
+        assert task.id in result
+        assert isinstance(result[task.id], Prompt)
+
+    def test_raises_value_error_on_build_failure(self, temp_project):
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        with patch(
+            "kiln_ai.cli.commands.package_project.prompt_builder_from_id",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(ValueError, match="Failed to build prompt"):
+                validate_and_build_prompts_noncli([task], {task.id: run_config})
 
 
 class TestPackageProjectCommand:
@@ -1875,6 +1939,42 @@ class TestPackageProjectForTraining:
         assert configs[0].id == source["eval1_config"].id
         eval_runs = configs[0].runs(readonly=True)
         assert len(eval_runs) == 0
+
+
+class TestPackageProjectForTrainingNoncli:
+    def test_missing_task_raises_value_error(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "bad.zip"
+
+        with pytest.raises(ValueError, match="Task ID\\(s\\) not found"):
+            package_project_for_training(
+                project=source["project"],
+                task_ids=["nonexistent_id"],
+                run_config_id=source["run_config"].id,
+                eval_ids=[],
+                output=output_path,
+            )
+
+    def test_bad_prompt_raises_value_error(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "bad_prompt.zip"
+
+        with patch(
+            "kiln_ai.cli.commands.package_project.prompt_builder_from_id",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(ValueError, match="Failed to build prompt"):
+                package_project_for_training(
+                    project=source["project"],
+                    task_ids=[source["task"].id],
+                    run_config_id=source["run_config"].id,
+                    eval_ids=[],
+                    output=output_path,
+                )
 
 
 class TestExportTaskRuns:

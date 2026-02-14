@@ -112,6 +112,22 @@ def validate_tasks(task_ids: list[str], project: Project) -> list[Task]:
     return [task_id_to_task[tid] for tid in task_ids]
 
 
+def validate_tasks_noncli(task_ids: list[str], project: Project) -> list[Task]:
+    """Validate that all requested task IDs exist in the project (non-CLI variant).
+
+    Raises ValueError instead of typer.Exit so it is safe to call from
+    library / server code that must never block on stdin or exit the process.
+    """
+    available_tasks = project.tasks()
+    task_id_to_task = {task.id: task for task in available_tasks if task.id}
+
+    missing_ids = [tid for tid in task_ids if tid not in task_id_to_task]
+    if missing_ids:
+        raise ValueError(f"Task ID(s) not found: {', '.join(missing_ids)}")
+
+    return [task_id_to_task[tid] for tid in task_ids]
+
+
 def get_default_run_config(task: Task) -> TaskRunConfig:
     """Get and validate the default run config for a task."""
     if not task.default_run_config_id:
@@ -413,6 +429,36 @@ def validate_and_build_prompts(
     return task_prompts
 
 
+def validate_and_build_prompts_noncli(
+    tasks: list[Task], run_configs: dict[str, TaskRunConfig]
+) -> dict[str, Prompt]:
+    """Validate prompts and build Prompt objects for each task (non-CLI variant).
+
+    Unlike validate_and_build_prompts this never calls typer.confirm or
+    typer.Exit.  Dynamic prompt generators are accepted silently (the caller
+    is non-interactive) and build failures raise ValueError.
+    """
+    task_prompts: dict[str, Prompt] = {}
+
+    for task in tasks:
+        if task.id is None:
+            raise ValueError(f"Task '{task.name}' ID is not set")
+
+        run_config = run_configs[task.id]
+        prompt_id = run_config.run_config_properties.prompt_id
+
+        try:
+            builder = prompt_builder_from_id(prompt_id, task)
+            prompt = build_prompt_from_builder(builder)
+            task_prompts[task.id] = prompt
+        except Exception as e:
+            raise ValueError(
+                f"Failed to build prompt for task '{task.name}': {e}"
+            ) from e
+
+    return task_prompts
+
+
 def create_export_directory(project: Project) -> tuple[Path, Project]:
     """Create a temporary export directory and copy project.kiln into it.
 
@@ -515,7 +561,7 @@ def validate_exported_prompts(
                 f"No prompts found for exported task '{exported_task.name}'"
             )
 
-        rebuilt_prompts = validate_and_build_prompts(
+        rebuilt_prompts = validate_and_build_prompts_noncli(
             [exported_task], {task_id: exported_run_config}
         )
         rebuilt_prompt = rebuilt_prompts[task_id]
@@ -870,7 +916,7 @@ def package_project_for_training(
     if config is None:
         config = PackageForTrainingConfig()
 
-    validated_tasks = validate_tasks(task_ids, project)
+    validated_tasks = validate_tasks_noncli(task_ids, project)
 
     run_configs: dict[str, TaskRunConfig] = {}
     for task in validated_tasks:
@@ -879,7 +925,7 @@ def package_project_for_training(
 
     required_server_ids = collect_required_tool_servers(validated_tasks, run_configs)
 
-    task_prompts = validate_and_build_prompts(validated_tasks, run_configs)
+    task_prompts = validate_and_build_prompts_noncli(validated_tasks, run_configs)
 
     temp_dir, exported_project = create_export_directory(project)
 
