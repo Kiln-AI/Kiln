@@ -10,12 +10,13 @@
   import posthog from "posthog-js"
   import { onMount } from "svelte"
   import { prompt_generator_categories } from "../prompt_generators/prompt_generators"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
   let generator_name = ""
-  let prompt_name = ""
+  let prompt_name = generate_memorable_name()
   let prompt = ""
   let is_chain_of_thought = false
   let chain_of_thought_instructions =
