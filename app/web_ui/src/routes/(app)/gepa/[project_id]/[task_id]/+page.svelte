@@ -11,13 +11,9 @@
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
-  import { DUMMY_GEPA_JOBS } from "$lib/dummy/gepa_jobs"
-
-  const USE_DUMMY_DATA = true
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
   let loading = true
 
@@ -29,19 +25,10 @@
 
   $: error = copilot_check_error || gepa_jobs_error
 
-  onMount(async () => {
-    if (USE_DUMMY_DATA) {
-      gepa_jobs = [...DUMMY_GEPA_JOBS].sort(
-        (a, b) =>
-          new Date(b.created_at || "").getTime() -
-          new Date(a.created_at || "").getTime(),
-      )
-      kiln_copilot_connected = true
-      loading = false
-      return
-    }
+  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
-    get_gepa_jobs()
+  onMount(async () => {
+    await get_gepa_jobs()
 
     if (!gepa_jobs || gepa_jobs.length === 0) {
       try {
