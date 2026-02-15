@@ -8,157 +8,331 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { getContext } from "svelte"
   import type { Writable } from "svelte/store"
+  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import type { UserModelEntry, AvailableProviderInfo } from "$lib/types"
 
-  let connected_providers: [string, string][] = []
-  let loading_providers = true
+  let available_providers: AvailableProviderInfo[] = []
+  let user_models: UserModelEntry[] = []
+  let loading = true
   let error: KilnError | null = null
-  let custom_models: string[] = []
+
+  // Form state
   let new_model_provider: string | null = null
   let new_model_name: string | null = null
+  let new_model_display_name: string | null = null
+  let show_advanced = false
 
-  const load_existing_providers = async () => {
+  // Override form state (Advanced section)
+  // Use "" for default/unset state so fancy_select shows the default option selected
+  const default_structured_output_mode = "json_schema"
+  let override_supports_structured_output: string = ""
+  let override_structured_output_mode: string = default_structured_output_mode
+  let override_supports_logprobs: string = ""
+  let override_supports_function_calling: string = ""
+  let override_supports_vision: string = ""
+  let override_reasoning_capable: string = ""
+  let override_parser: string = ""
+
+  // Fancy select option groups for model settings
+  const yes_no_default_options: OptionGroup[] = [
+    {
+      options: [
+        { label: "Default (No)", value: "" },
+        { label: "Yes", value: "true" },
+        { label: "No", value: "false" },
+      ],
+    },
+  ]
+
+  const structured_output_options: OptionGroup[] = [
+    {
+      options: [
+        {
+          label: "Default (No)",
+          value: "",
+          description: "Model does not support structured output.",
+        },
+        {
+          label: "Yes",
+          value: "true",
+          description: "Model supports structured JSON output.",
+        },
+        {
+          label: "No",
+          value: "false",
+          description: "Model does not support structured output.",
+        },
+      ],
+    },
+  ]
+
+  const structured_output_mode_options: OptionGroup[] = [
+    {
+      options: [
+        {
+          label: "JSON Schema",
+          value: "json_schema",
+          description:
+            "Provider enforces output matches a JSON schema. Most reliable if supported.",
+        },
+        {
+          label: "Function Calling (Strict)",
+          value: "function_calling",
+          description: "Request JSON using function calling capabilities.",
+        },
+        {
+          label: "Function Calling (Weak)",
+          value: "function_calling_weak",
+          description:
+            "Request JSON using function calling capabilities, but with weaker schema enforcement.",
+        },
+        {
+          label: "JSON Mode",
+          value: "json_mode",
+          description:
+            "Provider guarantees valid JSON, but not a specific schema.",
+        },
+        {
+          label: "JSON Instructions + JSON Mode",
+          value: "json_instruction_and_object",
+          description:
+            "Add prompt instructions for schema, plus API JSON mode for valid JSON.",
+        },
+        {
+          label: "JSON Instructions",
+          value: "json_instructions",
+          description:
+            "Add prompt instructions to request JSON matching the schema. No API capabilities are used.",
+        },
+        {
+          label: "JSON Custom Instructions",
+          value: "json_custom_instructions",
+          description:
+            "Model outputs JSON with custom instructions already in the system prompt. Don't append additional JSON instructions.",
+        },
+      ],
+    },
+  ]
+
+  const parser_options: OptionGroup[] = [
+    {
+      options: [
+        { label: "None", value: "" },
+        {
+          label: "R1 Thinking",
+          value: "r1_thinking",
+          description: "Parse <think> tags from reasoning models.",
+        },
+      ],
+    },
+  ]
+
+  const reasoning_capable_options: OptionGroup[] = [
+    {
+      options: [
+        { label: "Default (No)", value: "" },
+        {
+          label: "Yes",
+          value: "true",
+          description: "Reasoning should always be returned, fail if missing.",
+        },
+        {
+          label: "No",
+          value: "false",
+          description: "Reasoning not expected or optional.",
+        },
+      ],
+    },
+  ]
+
+  const load_data = async () => {
     try {
-      loading_providers = true
-      connected_providers = []
-      let { data: settings, error: settings_error } =
-        await client.GET("/api/settings")
-      if (settings_error) {
-        throw settings_error
-      }
-      if (!settings) {
-        throw new KilnError("Settings not found", null)
-      }
-      const incoming_settings_custom_models = settings["custom_models"]
-      if (!incoming_settings_custom_models) {
-        custom_models = []
-      } else if (
-        !Array.isArray(incoming_settings_custom_models) ||
-        incoming_settings_custom_models.some((m) => typeof m !== "string")
-      ) {
-        throw new KilnError("Custom models must be an array of strings", null)
-      } else {
-        custom_models = incoming_settings_custom_models
-      }
-      if (settings["open_ai_api_key"]) {
-        connected_providers.push(["openai", "OpenAI"])
-      }
-      if (settings["groq_api_key"]) {
-        connected_providers.push(["groq", "Groq"])
-      }
-      if (settings["bedrock_access_key"] && settings["bedrock_secret_key"]) {
-        connected_providers.push(["amazon_bedrock", "AWS Bedrock"])
-      }
-      if (settings["open_router_api_key"]) {
-        connected_providers.push(["openrouter", "OpenRouter"])
-      }
-      if (settings["fireworks_api_key"] && settings["fireworks_account_id"]) {
-        connected_providers.push(["fireworks_ai", "Fireworks AI"])
-      }
-      if (settings["vertex_project_id"] && settings["vertex_location"]) {
-        connected_providers.push(["vertex", "Vertex AI"])
-      }
-      if (settings["anthropic_api_key"]) {
-        connected_providers.push(["anthropic", "Anthropic"])
-      }
-      if (settings["gemini_api_key"]) {
-        connected_providers.push(["gemini_api", "Gemini"])
-      }
-      if (
-        settings["azure_openai_api_key"] &&
-        settings["azure_openai_endpoint"]
-      ) {
-        connected_providers.push(["azure_openai", "Azure OpenAI"])
-      }
-      if (settings["huggingface_api_key"]) {
-        connected_providers.push(["huggingface", "Hugging Face"])
-      }
-      if (settings["together_api_key"]) {
-        connected_providers.push(["together_ai", "Together AI"])
-      }
-      if (settings["siliconflow_cn_api_key"]) {
-        connected_providers.push(["siliconflow_cn", "SiliconFlow (硅基流动)"])
-      }
-      // Skipping Ollama -- we pull all models from it automatically
-      if (connected_providers.length > 0) {
-        new_model_provider = connected_providers[0][0] || null
-      } else {
-        new_model_provider = null
-      }
+      loading = true
+      error = null
+
+      // Load available providers
+      const { data: providers, error: providers_error } = await client.GET(
+        "/api/settings/available_providers",
+      )
+      if (providers_error) throw providers_error
+      available_providers = providers || []
+
+      // Load user models
+      const { data: models, error: models_error } = await client.GET(
+        "/api/settings/user_models",
+      )
+      if (models_error) throw models_error
+      user_models = models || []
     } catch (e) {
       error = createKilnError(e)
     } finally {
-      loading_providers = false
+      loading = false
     }
   }
 
   onMount(async () => {
-    await load_existing_providers()
+    await load_data()
   })
 
-  function remove_model(model_index: number) {
-    custom_models = custom_models.filter((_, index) => index !== model_index)
-    save_model_list()
-  }
+  function build_overrides(): Record<string, unknown> | undefined {
+    const overrides: Record<string, unknown> = {}
 
-  let add_model_dialog: Dialog | null = null
+    if (override_supports_structured_output !== "") {
+      overrides.supports_structured_output =
+        override_supports_structured_output === "true"
+    }
+    if (override_structured_output_mode !== "") {
+      overrides.structured_output_mode = override_structured_output_mode
+    }
+    if (override_supports_logprobs !== "") {
+      overrides.supports_logprobs = override_supports_logprobs === "true"
+    }
+    if (override_supports_function_calling !== "") {
+      overrides.supports_function_calling =
+        override_supports_function_calling === "true"
+    }
+    if (override_supports_vision !== "") {
+      overrides.supports_vision = override_supports_vision === "true"
+    }
+    if (override_reasoning_capable !== "") {
+      overrides.reasoning_capable = override_reasoning_capable === "true"
+    }
+    if (override_parser !== "") {
+      overrides.parser = override_parser
+    }
 
-  function show_add_model_modal() {
-    add_model_dialog?.show()
+    return Object.keys(overrides).length > 0 ? overrides : undefined
   }
 
   async function add_model() {
-    if (
-      new_model_provider &&
-      new_model_provider.length > 0 &&
-      new_model_name &&
-      new_model_name.length > 0
-    ) {
-      let model_id = new_model_provider + "::" + new_model_name
-      custom_models = [...custom_models, model_id]
-      await save_model_list()
-      new_model_name = null
-    } else {
-      throw new KilnError(
-        "Invalid model provider or name. Please try again with all fields.",
-        null,
-      )
+    if (!new_model_provider || !new_model_name) {
+      throw new KilnError("Provider and model ID are required", null)
     }
+
+    const provider = available_providers.find(
+      (p) => p.id === new_model_provider,
+    )
+    if (!provider) {
+      throw new KilnError("Provider not found", null)
+    }
+
+    const entry: UserModelEntry = {
+      provider_type: provider.provider_type,
+      provider_id: new_model_provider,
+      model_id: new_model_name,
+    }
+
+    if (new_model_display_name) {
+      entry.name = new_model_display_name
+    }
+
+    const overrides = build_overrides()
+    if (overrides) {
+      entry.overrides = overrides
+    }
+
+    const { error: add_error } = await client.POST(
+      "/api/settings/user_models",
+      {
+        body: entry,
+      },
+    )
+    if (add_error) throw add_error
+
+    // Reset form
+    new_model_name = null
+    new_model_display_name = null
+    reset_overrides()
+
+    // Refresh list
+    await load_data()
 
     return true
   }
 
-  let saving_model_list = false
-  let save_model_list_error: KilnError | null = null
-  async function save_model_list() {
-    try {
-      saving_model_list = true
-      let { data: save_result, error: save_error } = await client.POST(
-        "/api/settings",
-        { body: { custom_models: custom_models } },
-      )
-      if (save_error) {
-        throw save_error
-      }
-      if (!save_result) {
-        throw new KilnError("No response from server", null)
-      }
-    } catch (e) {
-      save_model_list_error = createKilnError(e)
-      // Re-throw the error so the dialog can can show it
-      throw save_model_list_error
-    } finally {
-      saving_model_list = false
+  function reset_overrides() {
+    override_supports_structured_output = ""
+    override_structured_output_mode = default_structured_output_mode
+    override_supports_logprobs = ""
+    override_supports_function_calling = ""
+    override_supports_vision = ""
+    override_reasoning_capable = ""
+    override_parser = ""
+    show_advanced = false
+  }
+
+  async function remove_model(model: UserModelEntry) {
+    // Delete by ID if available, otherwise delete by tuple
+    const query: Record<string, string> = {}
+    if (model.id) {
+      query.id = model.id
+    } else {
+      query.provider_type = model.provider_type
+      query.provider_id = model.provider_id
+      query.model_id = model.model_id
     }
+
+    const { error: delete_error } = await client.DELETE(
+      "/api/settings/user_models",
+      {
+        params: {
+          query,
+        },
+      },
+    )
+    if (delete_error) {
+      console.error("remove_model error", delete_error)
+      alert("There was an error deleting the model.")
+    }
+
+    // Refresh list
+    await load_data()
   }
 
-  function get_model_name(model_id: string) {
-    let [_, ...model_name_parts] = model_id.split("::")
-    return model_name_parts.join("::")
+  function get_provider_display_name(model: UserModelEntry): string {
+    if (model.provider_type === "custom") {
+      return model.provider_id
+    }
+    return provider_name_from_id(model.provider_id)
   }
 
-  function get_provider_name(model_id: string) {
-    let [provider, ..._] = model_id.split("::")
-    return provider_name_from_id(provider)
+  function get_model_display_name(model: UserModelEntry): string {
+    return model.name || model.model_id
+  }
+
+  function has_overrides(model: UserModelEntry): boolean {
+    return (
+      model.overrides !== undefined &&
+      model.overrides !== null &&
+      Object.keys(model.overrides).length > 0
+    )
+  }
+
+  const override_labels: Record<string, string> = {
+    supports_structured_output: "Structured Output",
+    structured_output_mode: "Output Mode",
+    supports_data_gen: "Data Generation",
+    supports_logprobs: "Logprobs",
+    supports_function_calling: "Function Calling",
+    supports_vision: "Vision",
+    reasoning_capable: "Reasoning",
+    parser: "Parser",
+  }
+
+  function format_overrides(model: UserModelEntry): string {
+    if (!model.overrides) return ""
+    const items = Object.entries(model.overrides)
+      .map(([key, value]) => {
+        const label = override_labels[key] || key
+        const displayValue =
+          typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)
+        return `**${label}**: ${displayValue}`
+      })
+      .join("\n")
+    return items
   }
 
   // You can get here 2 ways, build a breadcrumb for each
@@ -172,13 +346,21 @@
 
     return breadcrumbs
   }
+
+  let add_model_dialog: Dialog | null = null
+
+  function show_add_model_modal() {
+    add_model_dialog?.show()
+  }
 </script>
 
 <AppPage
-  title="Manage Custom Models"
-  sub_subtitle="Add/remove additional models from your connected AI providers, on top of those already included with Kiln."
+  title="Custom Models"
+  subtitle="Add models from your connected AI providers"
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
   breadcrumbs={get_breadcrumbs()}
-  action_buttons={custom_models && custom_models.length > 0
+  action_buttons={user_models && user_models.length > 0
     ? [
         {
           label: "Add Model",
@@ -188,58 +370,121 @@
       ]
     : []}
 >
-  {#if loading_providers}
+  {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
     </div>
   {:else if error}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="alert alert-error">
-        <span>{error.message}</span>
+    <div
+      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+    >
+      <div class="font-medium">Error Loading Models</div>
+      <div class="text-error text-sm">
+        {error.message || "An unknown error occurred"}
       </div>
     </div>
-  {:else if custom_models.length > 0}
-    <div class="flex flex-col gap-4">
-      {#each custom_models as model, index}
-        <div class="flex flex-row gap-2 card bg-base-200 py-2 px-4">
-          <div class="font-medium min-w-24">
-            {get_provider_name(model)}
-          </div>
-          <div class="grow">
-            {get_model_name(model)}
-          </div>
-          <button
-            on:click={() => remove_model(index)}
-            class="link text-sm text-gray-500">Remove</button
-          >
-        </div>
-      {/each}
+  {:else if user_models.length > 0}
+    <div class="rounded-lg border">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Settings</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each user_models as model}
+            <tr>
+              <td class="font-medium">{get_provider_display_name(model)}</td>
+              <td>
+                <div class="flex flex-col">
+                  <span>{get_model_display_name(model)}</span>
+                  {#if model.name && model.name !== model.model_id}
+                    <span class="text-xs text-base-content/60"
+                      >{model.model_id}</span
+                    >
+                  {/if}
+                </div>
+              </td>
+              <td>
+                {#if has_overrides(model)}
+                  <span class="text-base-content/60">Custom</span>
+                  <InfoTooltip
+                    tooltip_text={format_overrides(model)}
+                    no_pad={true}
+                  />
+                {:else}
+                  <span class="text-base-content/60">Default</span>
+                {/if}
+              </td>
+              <td class="p-0">
+                <div class="dropdown dropdown-end dropdown-hover">
+                  <TableButton />
+                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                  <ul
+                    tabindex="0"
+                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
+                  >
+                    <li>
+                      <button on:click={() => remove_model(model)}>
+                        Remove Model
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     </div>
   {:else}
-    <div class="flex flex-col gap-4 justify-center items-center min-h-[30vh]">
-      <button
-        class="btn btn-wide btn-primary mt-4"
-        on:click={show_add_model_modal}
+    <div class="flex flex-col items-center justify-center min-h-[50vh]">
+      <Intro
+        title="Add Custom Models"
+        description_paragraphs={[
+          "Add models from your connected AI providers beyond those already included with Kiln.",
+          "Custom models let you use the latest models or specialized variants from any connected provider.",
+        ]}
+        action_buttons={[
+          {
+            label: "Add Model",
+            onClick: show_add_model_modal,
+            is_primary: true,
+          },
+        ]}
       >
-        Add Model
-      </button>
-    </div>
-  {/if}
-  {#if saving_model_list}
-    <div class="flex flex-row gap-2 mt-4">
-      <div class="loading loading-spinner"></div>
-      Saving
-    </div>
-  {:else if save_model_list_error}
-    <div class="mt-4 text-error font-medium">
-      <span>Error saving model list: {save_model_list_error.message}</span>
+        <svelte:fragment slot="icon">
+          <svg
+            class="w-12 h-12"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 6V18M18 12H6"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+          </svg>
+        </svelte:fragment>
+      </Intro>
     </div>
   {/if}
 </AppPage>
 
 <Dialog
   bind:this={add_model_dialog}
-  title="Add Model"
+  title="Add Custom Model"
   action_buttons={[
     { label: "Cancel", isCancel: true },
     {
@@ -250,24 +495,111 @@
     },
   ]}
 >
-  <div class="text-sm">Add a model from an existing provider.</div>
-  <div class="text-sm text-gray-500 mt-3">
-    Provide the exact model ID used by the provider API. For example, OpenAI's
-    "gpt-3.5-turbo" or Groq's "gemma2-9b-it".
-  </div>
-  <div class="flex flex-col gap-4 mt-8">
+  <div class="flex flex-col gap-4">
     <FormElement
       label="Model Provider"
       id="model_provider"
-      inputType="select"
-      select_options={connected_providers}
+      inputType="fancy_select"
+      fancy_select_options={[
+        {
+          options: available_providers.map((p) => ({
+            label: p.name,
+            value: p.id,
+          })),
+        },
+      ]}
       bind:value={new_model_provider}
     />
+
     <FormElement
-      label="Model Name"
-      id="model_name"
+      label="Model ID"
+      id="model_id"
       inputType="input"
+      placeholder="e.g., gpt-4o-mini or llama3"
+      description="Must be the exact model ID used by the provider API."
       bind:value={new_model_name}
     />
+
+    <FormElement
+      label="Display Name"
+      id="display_name"
+      inputType="input"
+      placeholder="e.g., My Custom Model"
+      info_description="The name you'll see in Kiln dropdowns."
+      optional={true}
+      bind:value={new_model_display_name}
+    />
+
+    <!-- Model Settings Section -->
+    <div class="collapse collapse-arrow bg-base-200">
+      <input type="checkbox" bind:checked={show_advanced} />
+      <div class="collapse-title font-medium">Model Settings</div>
+      <div class="collapse-content">
+        <div class="flex flex-col gap-4 pt-2">
+          <FormElement
+            label="Supports Structured Output"
+            id="supports_structured_output"
+            inputType="fancy_select"
+            fancy_select_options={structured_output_options}
+            info_description="Whether the model can return responses in a specific JSON format."
+            bind:value={override_supports_structured_output}
+          />
+
+          <FormElement
+            label="Structured Output Mode"
+            id="structured_output_mode"
+            inputType="fancy_select"
+            fancy_select_options={structured_output_mode_options}
+            info_description="JSON Schema typically works best on newer models. See API docs from the providers for the best mode."
+            bind:value={override_structured_output_mode}
+          />
+
+          <FormElement
+            label="Supports Logprobs"
+            id="supports_logprobs"
+            inputType="fancy_select"
+            fancy_select_options={yes_no_default_options}
+            info_description="Whether the model returns token log probabilities. Used for confidence scoring in evals."
+            bind:value={override_supports_logprobs}
+          />
+
+          <FormElement
+            label="Supports Function Calling"
+            id="supports_function_calling"
+            inputType="fancy_select"
+            fancy_select_options={yes_no_default_options}
+            info_description="Whether the model supports tool/function calling APIs for structured interactions."
+            bind:value={override_supports_function_calling}
+          />
+
+          <FormElement
+            label="Supports Vision"
+            id="supports_vision"
+            inputType="fancy_select"
+            fancy_select_options={yes_no_default_options}
+            info_description="Whether the model can process images as input."
+            bind:value={override_supports_vision}
+          />
+
+          <FormElement
+            label="Reasoning Capable (Thinking Model)"
+            id="reasoning_capable"
+            inputType="fancy_select"
+            fancy_select_options={reasoning_capable_options}
+            info_description="Leave off if reasoning is optional. Only set to Yes if reasoning is always returned."
+            bind:value={override_reasoning_capable}
+          />
+
+          <FormElement
+            label="Output Parser"
+            id="parser"
+            inputType="fancy_select"
+            fancy_select_options={parser_options}
+            info_description="Special parsing for model output. Use R1 Thinking for models that return reasoning in <think> tags."
+            bind:value={override_parser}
+          />
+        </div>
+      </div>
+    </div>
   </div>
 </Dialog>

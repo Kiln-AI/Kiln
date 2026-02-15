@@ -287,7 +287,7 @@
         run_options_as_run_config_properties(),
       )
       // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
-      await load_task_prompts(project_id, current_task.id)
+      await load_task_prompts(project_id, current_task.id, true)
       if (!saved_config || !saved_config.id) {
         throw new Error("Saved config id not found")
       }

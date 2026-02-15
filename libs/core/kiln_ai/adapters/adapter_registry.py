@@ -7,6 +7,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
 )
 from kiln_ai.adapters.provider_tools import (
     core_provider,
+    find_user_model,
     lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -20,9 +21,23 @@ def litellm_core_provider_config(
         run_config_properties.model_name, run_config_properties.model_provider_name
     )
 
-    # For OpenAI compatible providers, we want to retrieve the underlying provider and update the run config properties to match
+    # Resolve openai_compatible_provider_name for providers that need it.
+    # Two cases need this:
+    # 1. user_model_registry entries with custom providers (provider_type="custom")
+    # 2. Legacy openai_compatible providers (model_name format: "provider_name::model_id")
     openai_compatible_provider_name = None
-    if run_config_properties.model_provider_name == ModelProviderName.openai_compatible:
+    user_model_provider = find_user_model(run_config_properties.model_name)
+    if (
+        user_model_provider
+        and user_model_provider.openai_compatible_provider_name is not None
+    ):
+        openai_compatible_provider_name = (
+            user_model_provider.openai_compatible_provider_name
+        )
+    elif (
+        run_config_properties.model_provider_name == ModelProviderName.openai_compatible
+        and not run_config_properties.model_name.startswith("user_model::")
+    ):
         model_id = run_config_properties.model_name
         try:
             openai_compatible_provider_name, model_id = model_id.split("::")

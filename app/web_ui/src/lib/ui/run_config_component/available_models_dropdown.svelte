@@ -59,15 +59,26 @@
   // Export the parsed model name and provider name
   export let model_name: string | null = null
   export let provider_name: string | null = null
-  $: get_model_provider(model)
-  function get_model_provider(model_provider: string) {
+  let provider_display_name: string | null = null
+
+  // Map of model value to provider display name, to correctly identify custom providers
+  let model_value_to_provider_name: Map<string, string> = new Map()
+  $: get_model_provider(model, model_value_to_provider_name)
+
+  function get_model_provider(
+    model_provider: string,
+    model_value_to_provider_name_map: Map<string, string>,
+  ) {
     model_name = model_provider
       ? model_provider.split("/").slice(1).join("/")
       : null
     provider_name = model_provider ? model_provider.split("/")[0] : null
+    // Use the map to get the provider display name (for custom providers)
+    provider_display_name =
+      model_value_to_provider_name_map.get(model_provider) || null
   }
 
-  $: addRecentModel(model_name, provider_name)
+  $: addRecentModel(model_name, provider_name, provider_display_name)
 
   onMount(async () => {
     await load_available_models()
@@ -112,6 +123,8 @@
     let options: OptionGroup[] = []
     unsupported_models = []
     untested_models = []
+    // Clear and rebuild the map
+    model_value_to_provider_name = new Map()
 
     // Recent models section
     let recent_model_list: Option[] = []
@@ -120,6 +133,7 @@
         recent_model.model_id,
         recent_model.model_provider,
         providers,
+        recent_model.provider_display_name,
       )
       if (
         !model_details ||
@@ -127,12 +141,16 @@
       ) {
         continue
       }
+      // Use the stored provider_display_name for custom providers, otherwise fall back to provider_name_from_id
+      const display_name =
+        recent_model.provider_display_name ||
+        provider_name_from_id(recent_model.model_provider)
       recent_model_list.push({
         value: recent_model.model_provider + "/" + recent_model.model_id,
         label:
           model_name_from_id(recent_model.model_id, model_data) +
           " (" +
-          provider_name_from_id(recent_model.model_provider) +
+          display_name +
           ")",
       })
     }
@@ -166,6 +184,7 @@
             value: id,
             label: long_label,
           })
+          model_value_to_provider_name.set(id, provider.provider_name)
           continue
         }
 
@@ -187,6 +206,7 @@
             value: id,
             label: long_label,
           })
+          model_value_to_provider_name.set(id, provider.provider_name)
           continue
         }
 
@@ -207,6 +227,7 @@
           label: model.name,
           badge: badge,
         })
+        model_value_to_provider_name.set(id, provider.provider_name)
       }
       if (model_list.length > 0) {
         options.push({

@@ -19,3 +19,6 @@ libs/core/build
 libs/server/build
 
 dist/
+
+.mcp.json
+

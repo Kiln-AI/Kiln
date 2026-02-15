@@ -2,6 +2,10 @@
 # https://github.com/scosman/hooks_mcp
 
 actions:
+  - name: "check_all"
+    description: "Run all checks for the project (web, python, formatting, etc). Very slow. Use for final checks before committing but use more lightweight checks for faster feedback."
+    command: "uv run ./checks.sh"
+
   - name: "all_python_tests"
     description: "Run all python tests in the project"
     command: "uv run python -m pytest --benchmark-quiet -q ."

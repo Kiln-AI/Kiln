@@ -832,3 +832,95 @@ def test_docker_model_runner_adapter_creation_with_none_url(mock_config, basic_t
     )
     assert adapter.config.base_url == "http://localhost:12434/engines/llama.cpp/v1"
     assert adapter.config.default_headers is None
+
+
+def test_user_model_builtin_provider_adapter_creation(basic_task):
+    """Test adapter creation for user models with builtin providers"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-um-builtin",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "gpt-custom",
+                "overrides": {"supports_structured_output": True},
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        mock_lite_llm_core_config_result = LiteLlmCoreConfig(
+            additional_body_options={"api_key": "test-openai-key"},
+        )
+
+        with patch(
+            "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
+        ) as mock_lite_llm_core_config:
+            mock_lite_llm_core_config.return_value = mock_lite_llm_core_config_result
+
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=RunConfigProperties(
+                    model_name="user_model::test-um-builtin",
+                    model_provider_name=ModelProviderName.openai,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+            assert isinstance(adapter, LiteLlmAdapter)
+            mock_lite_llm_core_config.assert_called_once_with(
+                ModelProviderName.openai, None
+            )
+
+
+def test_user_model_custom_provider_adapter_creation(basic_task):
+    """Test adapter creation for user models with custom providers"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-um-custom",
+                "provider_type": "custom",
+                "provider_id": "MyProvider",
+                "model_id": "custom-model",
+                "overrides": {"supports_vision": True},
+            }
+        ]
+        config_instance.custom_models = []
+        config_instance.openai_compatible_providers = [
+            {
+                "name": "MyProvider",
+                "base_url": "https://my-provider.com/v1",
+                "api_key": "my-key",
+            },
+        ]
+        mock.shared.return_value = config_instance
+
+        mock_lite_llm_core_config_result = LiteLlmCoreConfig(
+            base_url="https://my-provider.com/v1",
+            additional_body_options={"api_key": "my-key"},
+        )
+
+        with patch(
+            "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
+        ) as mock_lite_llm_core_config:
+            mock_lite_llm_core_config.return_value = mock_lite_llm_core_config_result
+
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=RunConfigProperties(
+                    model_name="user_model::test-um-custom",
+                    model_provider_name=ModelProviderName.openai_compatible,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+            assert isinstance(adapter, LiteLlmAdapter)
+            # Should call with custom provider name
+            mock_lite_llm_core_config.assert_called_once_with(
+                ModelProviderName.openai_compatible, "MyProvider"
+            )
+            assert adapter.config.base_url == "https://my-provider.com/v1"
