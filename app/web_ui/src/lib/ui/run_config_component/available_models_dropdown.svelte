@@ -61,6 +61,10 @@
   export let provider_name: string | null = null
   let provider_display_name: string | null = null
   $: get_model_provider(model)
+
+  // Map of model value to provider display name, to correctly identify custom providers
+  let model_value_to_provider_name: Map<string, string> = new Map()
+
   function get_model_provider(model_provider: string) {
     model_name = model_provider
       ? model_provider.split("/").slice(1).join("/")
@@ -81,8 +85,6 @@
   let unsupported_models: Option[] = []
   let untested_models: Option[] = []
   let previous_model: string = model
-  // Map of model value to provider display name, to correctly identify custom providers
-  let model_value_to_provider_name: Map<string, string> = new Map()
 
   function get_model_warning(selected: string): string | null {
     if (

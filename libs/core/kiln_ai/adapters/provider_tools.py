@@ -360,7 +360,7 @@ def get_all_user_models() -> list[UserModelEntry]:
     Legacy custom_models (format "provider::model_id") are handled separately
     via get_legacy_custom_models() to preserve their stable ID format.
     """
-    result = []
+    result: list[UserModelEntry] = []
 
     registry = Config.shared().user_model_registry or []
     for entry in registry:

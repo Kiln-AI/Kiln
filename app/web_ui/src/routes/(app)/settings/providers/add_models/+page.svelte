@@ -12,22 +12,9 @@
   import Intro from "$lib/ui/intro.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
+  import type { UserModelEntry, AvailableProviderInfo } from "$lib/types"
 
-  type ProviderInfo = {
-    id: string
-    name: string
-    provider_type: "builtin" | "custom"
-  }
-
-  type UserModelEntry = {
-    provider_type: "builtin" | "custom"
-    provider_id: string
-    model_id: string
-    name?: string | null
-    overrides?: Record<string, unknown> | null
-  }
-
-  let available_providers: ProviderInfo[] = []
+  let available_providers: AvailableProviderInfo[] = []
   let user_models: UserModelEntry[] = []
   let loading = true
   let error: KilnError | null = null
@@ -276,15 +263,21 @@
   }
 
   async function remove_model(model: UserModelEntry) {
+    // Delete by ID if available, otherwise delete by tuple
+    const query: Record<string, string> = {}
+    if (model.id) {
+      query.id = model.id
+    } else {
+      query.provider_type = model.provider_type
+      query.provider_id = model.provider_id
+      query.model_id = model.model_id
+    }
+
     const { error: delete_error } = await client.DELETE(
       "/api/settings/user_models",
       {
         params: {
-          query: {
-            provider_type: model.provider_type,
-            provider_id: model.provider_id,
-            model_id: model.model_id,
-          },
+          query,
         },
       },
     )
