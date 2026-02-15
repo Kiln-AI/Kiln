@@ -3040,6 +3040,7 @@ async def test_get_embedding_providers(app, client):
                     "n_dimensions": 1536,
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": True,
+                    "supports_instructions": False,
                     "suggested_for_chunk_embedding": True,
                 }
             ],
@@ -3054,6 +3055,7 @@ async def test_get_embedding_providers(app, client):
                     "n_dimensions": 1536,
                     "max_input_tokens": None,
                     "supports_custom_dimensions": False,
+                    "supports_instructions": False,
                     "suggested_for_chunk_embedding": False,
                 }
             ],
@@ -3068,6 +3070,7 @@ async def test_get_embedding_providers(app, client):
                     "n_dimensions": 1536,
                     "max_input_tokens": 8192,
                     "supports_custom_dimensions": False,
+                    "supports_instructions": False,
                     "suggested_for_chunk_embedding": True,
                 }
             ],
@@ -3273,6 +3276,7 @@ def test_available_embedding_models_endpoint_includes_ollama(client):
                 "n_dimensions": 768,
                 "max_input_tokens": 8192,
                 "supports_custom_dimensions": False,
+                "supports_instructions": False,
                 "suggested_for_chunk_embedding": True,
             }
         ],
