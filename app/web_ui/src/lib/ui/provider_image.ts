@@ -24,6 +24,7 @@ const provider_image_map: Record<
   siliconflow_cn: "/images/siliconflow.svg",
   cerebras: "/images/cerebras.svg",
   kiln_copilot: "/images/kiln_logo_black.svg",
+  mcp_provider: "/images/api.svg",
 }
 
 export function get_provider_image(provider_name: string) {

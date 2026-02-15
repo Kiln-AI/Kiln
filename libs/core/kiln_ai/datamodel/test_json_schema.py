@@ -6,7 +6,10 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
+    _normalize_schema,
     schema_from_json_str,
+    schemas_compatible,
+    single_string_field_name,
     string_to_json_key,
     validate_schema,
     validate_schema_with_value_error,
@@ -190,3 +193,150 @@ def test_array_schema_validation():
 
     # Arrays are valid if we don't require an object
     validate_schema(value, schema_str, require_object=False)
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        # Returns field name when exactly one string property
+        ({"properties": {"message": {"type": "string"}}}, "message"),
+        (
+            {
+                "properties": {
+                    "content": {"type": "string", "description": "The content"}
+                }
+            },
+            "content",
+        ),
+        # Returns None for empty or multiple properties
+        ({"properties": {}}, None),
+        ({"properties": {"name": {"type": "string"}, "age": {"type": "number"}}}, None),
+        # Returns None when single property is not a string
+        ({"properties": {"count": {"type": "number"}}}, None),
+        ({"properties": {"user": {"type": "object"}}}, None),
+        ({"properties": {"items": {"type": "array"}}}, None),
+        # Returns None for invalid schemas
+        ({}, None),
+        ({"properties": "invalid"}, None),
+    ],
+)
+def test_single_string_field_name(schema, expected):
+    assert single_string_field_name(schema) == expected
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        # Removes additionalProperties from dict
+        (
+            {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+        ),
+        # Returns dict unchanged if no additionalProperties
+        (
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+        ),
+        # Returns non-dict types unchanged
+        ("string", "string"),
+        # Only removes top-level additionalProperties, not nested
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "nested": {"type": "object", "additionalProperties": False}
+                },
+                "additionalProperties": True,
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "nested": {"type": "object", "additionalProperties": False}
+                },
+            },
+        ),
+    ],
+)
+def test_normalize_schema(schema, expected):
+    result = _normalize_schema(schema)
+    assert result == expected
+    # Ensure it returns a copy, not modifying the original
+    if isinstance(schema, dict):
+        assert result is not schema
+
+
+@pytest.mark.parametrize(
+    "task_schema, tool_schema, description",
+    [
+        (
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            "identical_schemas",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "additionalProperties": True,
+            },
+            "different_additionalProperties",
+        ),
+        (
+            {"type": "string", "minLength": 1},
+            {"type": "string", "minLength": 1},
+            "non_object_matching",
+        ),
+    ],
+)
+def test_schemas_compatible_true(task_schema, tool_schema, description):
+    assert schemas_compatible(task_schema, tool_schema)
+
+
+@pytest.mark.parametrize(
+    "task_schema, tool_schema, description",
+    [
+        (
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+            {"type": "string"},
+            "different_types",
+        ),
+        (
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "age": {"type": "number"}},
+                "required": ["name", "age"],
+            },
+            "missing_required_field",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "extra": {"type": "string"}},
+            },
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            "unaccepted_field",
+        ),
+        (
+            {"type": "object", "properties": {"age": {"type": "string"}}},
+            {"type": "object", "properties": {"age": {"type": "number"}}},
+            "field_type_mismatch",
+        ),
+        (
+            {"type": "number", "minimum": 0},
+            {"type": "number", "minimum": 10},
+            "non_object_different_constraints",
+        ),
+    ],
+)
+def test_schemas_compatible_false(task_schema, tool_schema, description):
+    assert not schemas_compatible(task_schema, tool_schema)

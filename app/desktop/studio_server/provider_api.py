@@ -774,6 +774,7 @@ def connect_provider_api(app: FastAPI):
                 | ModelProviderName.openai_compatible
                 | ModelProviderName.ollama
                 | ModelProviderName.docker_model_runner
+                | ModelProviderName.mcp_provider
             ):
                 return JSONResponse(
                     status_code=400,
@@ -838,6 +839,7 @@ def connect_provider_api(app: FastAPI):
                     | ModelProviderName.openai_compatible
                     | ModelProviderName.ollama
                     | ModelProviderName.docker_model_runner
+                    | ModelProviderName.mcp_provider
                 ):
                     return JSONResponse(
                         status_code=400,

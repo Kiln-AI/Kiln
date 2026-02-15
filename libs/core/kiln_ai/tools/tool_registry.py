@@ -42,9 +42,7 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 raise_exhaustive_enum_error(typed_tool_id)
 
     # Check if this looks like an MCP or Kiln Task tool ID that requires a project
-    is_mcp_tool = tool_id.startswith(
-        (MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX)
-    )
+    is_mcp_tool = is_mcp_tool_id(tool_id)
     is_kiln_task_tool = tool_id.startswith(KILN_TASK_TOOL_ID_PREFIX)
 
     if is_mcp_tool or is_kiln_task_tool:
@@ -134,3 +132,7 @@ async def tool_definitions_from_ids(
                 f"Failed to get tool definition for tool ID: {tool_id}. Original error: {e}"
             )
     return tool_definitions
+
+
+def is_mcp_tool_id(tool_id: str) -> bool:
+    return tool_id.startswith((MCP_REMOTE_TOOL_ID_PREFIX, MCP_LOCAL_TOOL_ID_PREFIX))
